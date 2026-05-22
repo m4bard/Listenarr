@@ -44,6 +44,12 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public AudiobookBuilder WithSeriesNumber(string value)
+        {
+            _audiobook.SeriesNumber = value;
+            return this;
+        }
+
         public AudiobookBuilder WithYear(string value)
         {
             _audiobook.PublishYear = value;

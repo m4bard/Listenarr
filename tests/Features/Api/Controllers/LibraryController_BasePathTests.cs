@@ -21,147 +21,95 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using Listenarr.Api.Controllers;
-using Listenarr.Domain.Models;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
+using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
+    [Trait("Area", "LibraryApi")]
+    [Trait("Name", "LibraryController_BasePathTests")]
+    [Trait("Category", "LibraryController")]
     public class LibraryController_BasePathTests : BaseTests
     {
-        [Fact]
-        public void ComputeAudiobookBaseDirectoryFromPattern_NonSeriesBook_ReturnsCorrectPath()
-        {
-            // Arrange
-            var audiobook = new Audiobook
-            {
-                Title = "The Buffalo Hunter Hunter",
-                Authors = new List<string> { "Stephen Graham Jones" },
-                PublishYear = "2025",
-                Series = null, // No series
-                SeriesNumber = null
-            };
+        private const string RootPath = "/server/mnt/drive/Audiobooks";
+        private const string FileNamingPattern = "{Author}/{Series}/{Title}";
 
-            var rootPath = "/server/mnt/drive/Audiobooks";
-            var fileNamingPattern = "{Author}/{Series}/{Title}"; // Default pattern
+        private static readonly MethodInfo ComputeBaseDirectoryMethod =
+            typeof(LibraryController).GetMethod("ComputeAudiobookBaseDirectoryFromPattern",
+                BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-            // Mock dependencies
-            var mockRepo = new Mock<IAudiobookRepository>();
-            var mockImageCache = new Mock<IImageCacheService>();
-            var mockLogger = new Mock<ILogger<LibraryController>>();
-            var mockScanQueue = new Mock<IScanQueueService>();
-
-            var mockFileNamingService = new Mock<IFileNamingService>();
-            mockFileNamingService
-                .Setup(x => x.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
-                .Returns((string pattern, Dictionary<string, object> vars, bool sanitize) =>
-                {
-                    // For non-series book, the method derives pattern from fileNamingPattern by removing file-specific tokens
-                    // Input: "{Author}/{Series}/{Title}"
-                    // Output after processing: "{Author}/{Title}" (Series removed since empty)
-                    if (pattern == "{Author}/{Title}")
-                    {
-                        return "Stephen Graham Jones/The Buffalo Hunter Hunter";
-                    }
-                    return pattern;
-                });
-
-            var scopeFactory = new Mock<IServiceScopeFactory>();
-
-            // Create controller instance
-            var controller = new LibraryController(
-                mockRepo.Object,
-                mockImageCache.Object,
-                mockLogger.Object,
-                scopeFactory.Object,
+        private LibraryController CreateController(Mock<IFileNamingService> fileNamingService) =>
+            new LibraryController(
+                new Mock<IAudiobookRepository>().Object,
+                new Mock<IImageCacheService>().Object,
+                new Mock<ILogger<LibraryController>>().Object,
+                new Mock<IServiceScopeFactory>().Object,
                 new Mock<IHistoryRepository>().Object,
                 new Mock<IAudiobookFileRepository>().Object,
                 new Mock<IQualityProfileRepository>().Object,
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
-                mockFileNamingService.Object,
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == FileService.GetTempPath()),
+                fileNamingService.Object,
+                applicationPathService: Mock.Of<IApplicationPathService>(s => s.ContentRootPath == FileService.GetTempPath()),
                 libraryListService: Mock.Of<ILibraryListService>(),
-                scanQueueService: mockScanQueue.Object);
+                scanQueueService: new Mock<IScanQueueService>().Object);
 
-            // Get the private method using reflection
-            var method = typeof(LibraryController).GetMethod("ComputeAudiobookBaseDirectoryFromPattern",
-                BindingFlags.NonPublic | BindingFlags.Instance);
+        [Fact]
+        [Trait("Method", "ComputeAudiobookBaseDirectoryFromPattern")]
+        [Trait("Scenario", "NonSeriesBook_ReturnsCorrectPath")]
+        public void ComputeAudiobookBaseDirectoryFromPattern_NonSeriesBook_ReturnsCorrectPath()
+        {
+            // Given
+            var audiobook = new AudiobookBuilder()
+                .WithTitle("The Buffalo Hunter Hunter")
+                .WithAuthor("Stephen Graham Jones")
+                .WithYear("2025")
+                .Build();
 
-            // Act
-            var result = (string)method.Invoke(controller, new object[] { audiobook, rootPath, fileNamingPattern });
+            var mockFileNamingService = new Mock<IFileNamingService>();
+            mockFileNamingService
+                .Setup(x => x.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
+                .Returns((string pattern, Dictionary<string, object> vars, bool sanitize) =>
+                    pattern == "{Author}/{Title}" ? "Stephen Graham Jones/The Buffalo Hunter Hunter" : pattern);
 
-            // Assert
-            var expected = Path.Join("/server/mnt/drive/Audiobooks", "Stephen Graham Jones/The Buffalo Hunter Hunter");
-            Assert.Equal(expected, result);
+            var controller = CreateController(mockFileNamingService);
+
+            // When
+            var result = (string)ComputeBaseDirectoryMethod.Invoke(controller, new object[] { audiobook, RootPath, FileNamingPattern });
+
+            // Then
+            Assert.Equal(Path.Join(RootPath, "Stephen Graham Jones/The Buffalo Hunter Hunter"), result);
         }
 
         [Fact]
+        [Trait("Method", "ComputeAudiobookBaseDirectoryFromPattern")]
+        [Trait("Scenario", "SeriesBook_ReturnsCorrectPath")]
         public void ComputeAudiobookBaseDirectoryFromPattern_SeriesBook_ReturnsCorrectPath()
         {
-            // Arrange
-            var audiobook = new Audiobook
-            {
-                Title = "The Gunslinger",
-                Authors = new List<string> { "Stephen King" },
-                PublishYear = "1982",
-                Series = "The Dark Tower",
-                SeriesNumber = "1"
-            };
-
-            var rootPath = "/server/mnt/drive/Audiobooks";
-            var fileNamingPattern = "{Author}/{Series}/{Title}"; // Default pattern
-
-            // Mock dependencies
-            var mockRepo = new Mock<IAudiobookRepository>();
-            var mockImageCache = new Mock<IImageCacheService>();
-            var mockLogger = new Mock<ILogger<LibraryController>>();
-            var mockScanQueue = new Mock<IScanQueueService>();
+            // Given
+            var audiobook = new AudiobookBuilder()
+                .WithTitle("The Gunslinger")
+                .WithAuthor("Stephen King")
+                .WithYear("1982")
+                .WithSeries("The Dark Tower")
+                .WithSeriesNumber("1")
+                .Build();
 
             var mockFileNamingService = new Mock<IFileNamingService>();
             mockFileNamingService
                 .Setup(x => x.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
                 .Returns((string pattern, Dictionary<string, object> vars, bool sanitize) =>
-                {
-                    // For series book, the method derives pattern from fileNamingPattern by removing file-specific tokens
-                    // Input: "{Author}/{Series}/{Title}"
-                    // Output after processing: "{Author}/{Series}/{Title}" (DiskNumber and ChapterNumber removed)
-                    if (pattern == "{Author}/{Series}/{Title}")
-                    {
-                        return "Stephen King/The Dark Tower/The Gunslinger";
-                    }
-                    return pattern;
-                });
+                    pattern == FileNamingPattern ? "Stephen King/The Dark Tower/The Gunslinger" : pattern);
 
-            var scopeFactory = new Mock<IServiceScopeFactory>();
+            var controller = CreateController(mockFileNamingService);
 
-            // Create controller instance
-            var controller = new LibraryController(
-                mockRepo.Object,
-                mockImageCache.Object,
-                mockLogger.Object,
-                scopeFactory.Object,
-                new Mock<IHistoryRepository>().Object,
-                new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                mockFileNamingService.Object,
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == FileService.GetTempPath()),
-                libraryListService: Mock.Of<ILibraryListService>(),
-                scanQueueService: mockScanQueue.Object);
+            // When
+            var result = (string)ComputeBaseDirectoryMethod.Invoke(controller, new object[] { audiobook, RootPath, FileNamingPattern });
 
-            // Get the private method using reflection
-            var method = typeof(LibraryController).GetMethod("ComputeAudiobookBaseDirectoryFromPattern",
-                BindingFlags.NonPublic | BindingFlags.Instance);
-
-            // Act
-            var result = (string)method.Invoke(controller, new object[] { audiobook, rootPath, fileNamingPattern });
-
-            // Assert
-            var expected = Path.Join("/server/mnt/drive/Audiobooks", "Stephen King/The Dark Tower/The Gunslinger");
-            Assert.Equal(expected, result);
+            // Then
+            Assert.Equal(Path.Join(RootPath, "Stephen King/The Dark Tower/The Gunslinger"), result);
         }
     }
 }
