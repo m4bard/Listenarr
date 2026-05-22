@@ -17,6 +17,7 @@
  */
 using System.Net;
 using Listenarr.Api.Attributes;
+using Listenarr.Api.Controllers;
 using Listenarr.Api.Controllers.Configurations;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
@@ -42,7 +43,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Arrange
             var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
             var downloadClientGateway = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
-            var logger = NullLogger<DownloadClientsController>.Instance;
+            var logger = NullLogger<DownloadClientController>.Instance;
 
             var testedClient = new DownloadClientConfiguration
             {
@@ -65,7 +66,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 .Setup(x => x.TestConnectionAsync(It.IsAny<DownloadClientConfiguration>()))
                 .ReturnsAsync((true, "Connection successful"));
 
-            var controller = new DownloadClientsController(
+            var controller = new DownloadClientController(
                 configurationService.Object,
                 downloadClientGateway.Object,
                 logger);
@@ -128,7 +129,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Arrange
             var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
             var downloadClientGateway = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
-            var logger = NullLogger<DownloadClientsController>.Instance;
+            var logger = NullLogger<DownloadClientController>.Instance;
 
             var testedClient = new DownloadClientConfiguration
             {
@@ -151,7 +152,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 .Setup(x => x.TestConnectionAsync(It.IsAny<DownloadClientConfiguration>()))
                 .ReturnsAsync((true, "Connection successful"));
 
-            var controller = new DownloadClientsController(
+            var controller = new DownloadClientController(
                 configurationService.Object,
                 downloadClientGateway.Object,
                 logger);

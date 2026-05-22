@@ -22,21 +22,22 @@ using Listenarr.Application.Security;
 using Listenarr.Domain.Models;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Listenarr.Api.Controllers.Configurations
+namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/v{version:apiVersion}/configuration")]
+    [Route("api/v{version:apiVersion}/download-clients")]
     [RequireAdminOrApiKey]
-    public class DownloadClientsController : ControllerBase
+    [Tags("Download Clients")]
+    public class DownloadClientController : ControllerBase
     {
         private readonly IConfigurationService _configurationService;
         private readonly IDownloadClientGateway _downloadClientGateway;
-        private readonly ILogger<DownloadClientsController> _logger;
+        private readonly ILogger<DownloadClientController> _logger;
 
-        public DownloadClientsController(
+        public DownloadClientController(
             IConfigurationService configurationService,
             IDownloadClientGateway downloadClientGateway,
-            ILogger<DownloadClientsController> logger)
+            ILogger<DownloadClientController> logger)
         {
             _configurationService = configurationService;
             _downloadClientGateway = downloadClientGateway;
@@ -46,8 +47,7 @@ namespace Listenarr.Api.Controllers.Configurations
         /// <summary>
         /// Get all download client configurations.
         /// </summary>
-        [Tags("Download Clients")]
-        [HttpGet("download-clients")]
+        [HttpGet]
         [ProducesResponseType(typeof(List<DownloadClientConfiguration>), 200)]
         [ProducesResponseType(500)]
         public async Task<ActionResult<List<DownloadClientConfiguration>>> GetDownloadClientConfigurations()
@@ -74,8 +74,7 @@ namespace Listenarr.Api.Controllers.Configurations
         /// Get a specific download client configuration by ID.
         /// </summary>
         /// <param name="id">Download client configuration ID</param>
-        [Tags("Download Clients")]
-        [HttpGet("download-clients/{id}")]
+        [HttpGet("{id}")]
         [ProducesResponseType(typeof(DownloadClientConfiguration), 200)]
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
@@ -107,8 +106,7 @@ namespace Listenarr.Api.Controllers.Configurations
         /// Save or update a download client configuration. Preserves existing credentials when incoming values are blank.
         /// </summary>
         /// <param name="config">Download client configuration to save.</param>
-        [Tags("Download Clients")]
-        [HttpPost("download-clients")]
+        [HttpPost]
         public async Task<ActionResult<object>> SaveDownloadClientConfiguration([FromBody] DownloadClientConfiguration config)
         {
             try
@@ -184,8 +182,7 @@ namespace Listenarr.Api.Controllers.Configurations
         /// Delete a download client configuration by ID.
         /// </summary>
         /// <param name="id">Download client configuration ID.</param>
-        [Tags("Download Clients")]
-        [HttpDelete("download-clients/{id}")]
+        [HttpDelete("{id}")]
         public async Task<ActionResult<bool>> DeleteDownloadClientConfiguration(string id)
         {
             try
@@ -205,8 +202,7 @@ namespace Listenarr.Api.Controllers.Configurations
         /// </summary>
         /// <param name="config">Download client configuration to test.</param>
         /// <returns>Success flag, message, and the (optionally redacted) client configuration.</returns>
-        [Tags("Download Clients")]
-        [HttpPost("download-clients/test")]
+        [HttpPost("test")]
         public async Task<ActionResult<object>> TestDownloadClientConfiguration([FromBody] DownloadClientConfiguration config)
         {
             try

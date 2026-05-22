@@ -42,7 +42,7 @@ describe('Hardlink/Copy Move Flow (E2E)', () => {
     // Stub other endpoints
     cy.intercept('GET', '/api/qualityprofile', { statusCode: 200, body: [] }).as('getProfiles')
     cy.intercept('GET', '/api/configuration/apis', { statusCode: 200, body: [] }).as('getApis')
-    cy.intercept('GET', '/api/configuration/download-clients', { statusCode: 200, body: [] }).as('getDownloadClients')
+    cy.intercept('GET', '/api/download-clients', { statusCode: 200, body: [] }).as('getDownloadClients')
 
     // Capture the PUT update request for assertions
     cy.intercept('PUT', '/api/library/1', (req) => {

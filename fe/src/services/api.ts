@@ -796,24 +796,24 @@ class ApiService {
     return this.request<boolean>(`/configuration/apis/${id}`, { method: 'DELETE' })
   }
 
-  // Download Client Configuration
+  // Download Clients
   async getDownloadClientConfigurations(): Promise<DownloadClientConfiguration[]> {
-    return this.request<DownloadClientConfiguration[]>('/configuration/download-clients')
+    return this.request<DownloadClientConfiguration[]>('/download-clients')
   }
 
   async getDownloadClientConfiguration(id: string): Promise<DownloadClientConfiguration> {
-    return this.request<DownloadClientConfiguration>(`/configuration/download-clients/${id}`)
+    return this.request<DownloadClientConfiguration>(`/download-clients/${id}`)
   }
 
   async saveDownloadClientConfiguration(config: DownloadClientConfiguration): Promise<string> {
-    return this.request<string>('/configuration/download-clients', {
+    return this.request<string>('/download-clients', {
       method: 'POST',
       body: JSON.stringify(config),
     })
   }
 
   async deleteDownloadClientConfiguration(id: string): Promise<boolean> {
-    return this.request<boolean>(`/configuration/download-clients/${id}`, { method: 'DELETE' })
+    return this.request<boolean>(`/download-clients/${id}`, { method: 'DELETE' })
   }
 
   async testDownloadClient(
@@ -823,7 +823,7 @@ class ApiService {
       success: boolean
       message: string
       client?: DownloadClientConfiguration
-    }>('/configuration/download-clients/test', {
+    }>('/download-clients/test', {
       method: 'POST',
       body: JSON.stringify(config),
     })
