@@ -59,11 +59,6 @@ namespace Listenarr.Domain.Common
             return !string.IsNullOrEmpty(ext) && AudioExtensions.Contains(ext);
         }
 
-        public static bool IsPathMissing(string? path)
-        {
-            return path == null || path.Length == 0;
-        }
-
         public static bool IsPathInvalidForCurrentOs(string? path)
         {
             return IsPathInvalidForOs(path, OperatingSystem.IsWindows());
@@ -71,12 +66,12 @@ namespace Listenarr.Domain.Common
 
         public static bool IsPathInvalidForOs(string? path, bool isWindows)
         {
-            if (IsPathMissing(path))
+            if (string.IsNullOrEmpty(path))
             {
                 return false;
             }
 
-            return isWindows && HasInvalidWindowsPathWhitespace(path!);
+            return isWindows && HasInvalidWindowsPathWhitespace(path);
         }
 
         public static HashSet<string> NormalizeExtensions(IEnumerable<string>? extensions)
@@ -106,10 +101,6 @@ namespace Listenarr.Domain.Common
 
         public static string NormalizeStoredPath(string? path, Func<string, string?>? longPathResolver = null)
         {
-            if (IsPathMissing(path))
-            {
-                path = string.Empty;
-            }
             path ??= string.Empty;
 
             try

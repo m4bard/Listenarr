@@ -294,16 +294,6 @@ namespace Listenarr.Tests.Features.Domain.Utils
         }
 
         [Theory]
-        [InlineData(null, true)]
-        [InlineData("", true)]
-        [InlineData(" ", false)]
-        [InlineData("  folder  ", false)]
-        public void IsPathMissing_OnlyTreatsNullOrEmptyAsMissing(string? path, bool expected)
-        {
-            Assert.Equal(expected, FileUtils.IsPathMissing(path));
-        }
-
-        [Theory]
         [InlineData(" ", true)]
         [InlineData("folder ", true)]
         [InlineData("folder.", true)]

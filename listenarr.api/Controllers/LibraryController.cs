@@ -2807,7 +2807,7 @@ namespace Listenarr.Api.Controllers
             if (audiobook == null) return NotFound(new { message = "Audiobook not found" });
             if (request == null) return BadRequest(new { message = "Request body is required" });
 
-            if (FileUtils.IsPathMissing(request.DestinationPath))
+            if (string.IsNullOrEmpty(request.DestinationPath))
             {
                 return BadRequest(new { message = "DestinationPath is required" });
             }
@@ -2846,11 +2846,11 @@ namespace Listenarr.Api.Controllers
                 // Determine source path snapshot to use for the move. Prefer an explicit source from the request
                 // (the frontend should send the original source if it updated the audiobook BasePath before requesting a move),
                 // otherwise fall back to the current audiobook.BasePath as a best-effort.
-                var sourcePath = !FileUtils.IsPathMissing(request.SourcePath)
+                var sourcePath = !string.IsNullOrEmpty(request.SourcePath)
                     ? request.SourcePath
                     : audiobook.BasePath;
 
-                if (FileUtils.IsPathMissing(sourcePath))
+                if (string.IsNullOrEmpty(sourcePath))
                 {
                     return BadRequest(new { message = "Source path not provided. Supply current source path in the Move request or ensure audiobook has a valid BasePath." });
                 }
