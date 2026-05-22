@@ -842,13 +842,10 @@ class ApiService {
         body: JSON.stringify({ trigger, data, webhookId, webhookUrl }),
       })
     }
-    // Otherwise use the old configuration endpoint for backward compatibility
-    return this.request<{ success: boolean; message: string }>(
-      '/configuration/notifications/test',
-      {
-        method: 'POST',
-      },
-    )
+    // Otherwise send a test notification using the saved notification settings.
+    return this.request<{ success: boolean; message: string }>('/notifications/test', {
+      method: 'POST',
+    })
   }
 
   // Application Settings

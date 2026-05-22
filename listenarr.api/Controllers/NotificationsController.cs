@@ -21,11 +21,12 @@ using Listenarr.Application.Interfaces;
 using Listenarr.Application.Notification;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Listenarr.Api.Controllers.Configurations
+namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/v{version:apiVersion}/configuration")]
+    [Route("api/v{version:apiVersion}/notifications")]
     [RequireAdminOrApiKey]
+    [Tags("Notifications")]
     public class NotificationsController : ControllerBase
     {
         private readonly IConfigurationService _configurationService;
@@ -45,8 +46,7 @@ namespace Listenarr.Api.Controllers.Configurations
         /// <summary>
         /// Send a test notification to the configured webhook URL.
         /// </summary>
-        [Tags("Notifications")]
-        [HttpPost("notifications/test")]
+        [HttpPost("test")]
         public async Task<ActionResult<object>> TestNotification()
         {
             try
