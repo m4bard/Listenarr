@@ -293,6 +293,60 @@ namespace Listenarr.Tests.Features.Domain.Utils
                 normalized);
         }
 
+        [Theory]
+        [InlineData(null, true)]
+        [InlineData("", true)]
+        [InlineData(" ", false)]
+        [InlineData("  folder  ", false)]
+        public void IsPathMissing_OnlyTreatsNullOrEmptyAsMissing(string? path, bool expected)
+        {
+            Assert.Equal(expected, FileUtils.IsPathMissing(path));
+        }
+
+        [Theory]
+        [InlineData(" ", true)]
+        [InlineData("folder ", true)]
+        [InlineData("folder.", true)]
+        [InlineData("folder name", false)]
+        [InlineData("  folder", false)]
+        [InlineData(@"C:\Program Files\Listenarr", false)]
+        [InlineData(@"C:\media\folder \book.m4b", true)]
+        public void IsPathInvalidForOs_UsesWindowsWhitespaceRules(string path, bool expected)
+        {
+            Assert.Equal(expected, FileUtils.IsPathInvalidForOs(path, isWindows: true));
+        }
+
+        [Theory]
+        [InlineData(" ", false)]
+        [InlineData("folder ", false)]
+        [InlineData("folder.", false)]
+        [InlineData("folder name", false)]
+        [InlineData("  folder", false)]
+        [InlineData("/media/folder /book.m4b", false)]
+        public void IsPathInvalidForOs_AllowsLinuxWhitespacePaths(string path, bool expected)
+        {
+            Assert.Equal(expected, FileUtils.IsPathInvalidForOs(path, isWindows: false));
+        }
+
+        [Theory]
+        [InlineData(" ", true)]
+        [InlineData("folder ", true)]
+        [InlineData("folder name", false)]
+        public void IsPathInvalidForCurrentOs_UsesHostOsRules(string path, bool expectedOnWindows)
+        {
+            Assert.Equal(OperatingSystem.IsWindows() && expectedOnWindows, FileUtils.IsPathInvalidForCurrentOs(path));
+        }
+
+        [Fact]
+        public void CombineWithOptionalBase_PreservesPathWhitespace()
+        {
+            var result = FileUtils.CombineWithOptionalBase("root", "  folder  ");
+
+            Assert.Equal(
+                string.Join(Path.DirectorySeparatorChar, "root", "  folder  "),
+                result);
+        }
+
         [Fact]
         public void CombineRelativePath_JoinsRelativeSegmentsAndTrimsLeadingSeparators()
         {

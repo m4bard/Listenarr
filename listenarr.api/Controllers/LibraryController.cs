@@ -127,31 +127,7 @@ namespace Listenarr.Api.Controllers
 
         private static string ResolvePathWithOptionalBase(string? basePath, string candidatePath)
         {
-            var normalizedPath = candidatePath.Trim();
-
-            if (string.IsNullOrEmpty(normalizedPath))
-            {
-                return normalizedPath;
-            }
-
-            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
-            {
-                return normalizedPath;
-            }
-
-            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-            // Defensive check: if the candidate path is rooted, do not call Path.Combine
-            // because it would discard the base path argument.
-            if (Path.IsPathRooted(relativePath))
-            {
-                return relativePath;
-            }
-
-            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            return string.IsNullOrEmpty(normalizedBasePath)
-                ? relativePath
-                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+            return FileUtils.CombineWithOptionalBase(basePath, candidatePath);
         }
 
         public class ScanRequest
@@ -2831,9 +2807,13 @@ namespace Listenarr.Api.Controllers
             if (audiobook == null) return NotFound(new { message = "Audiobook not found" });
             if (request == null) return BadRequest(new { message = "Request body is required" });
 
-            if (string.IsNullOrWhiteSpace(request.DestinationPath))
+            if (FileUtils.IsPathMissing(request.DestinationPath))
             {
                 return BadRequest(new { message = "DestinationPath is required" });
+            }
+            if (FileUtils.IsPathInvalidForCurrentOs(request.DestinationPath))
+            {
+                return BadRequest(new { message = "DestinationPath is not valid for this operating system" });
             }
 
             try
@@ -2843,12 +2823,7 @@ namespace Listenarr.Api.Controllers
                 var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
                 var settings = await configService.GetApplicationSettingsAsync();
 
-                var final = request.DestinationPath!;
-                if (!Path.IsPathRooted(final))
-                {
-                    var root = settings.OutputPath ?? string.Empty;
-                    final = Path.Join(root, final.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                }
+                var final = FileUtils.CombineWithOptionalBase(settings.OutputPath, request.DestinationPath!);
                 final = FileUtils.NormalizeStoredPath(final);
 
                 // If caller explicitly asked to change the DB without moving files, update the BasePath and return early.
@@ -2871,13 +2846,17 @@ namespace Listenarr.Api.Controllers
                 // Determine source path snapshot to use for the move. Prefer an explicit source from the request
                 // (the frontend should send the original source if it updated the audiobook BasePath before requesting a move),
                 // otherwise fall back to the current audiobook.BasePath as a best-effort.
-                var sourcePath = !string.IsNullOrWhiteSpace(request.SourcePath)
+                var sourcePath = !FileUtils.IsPathMissing(request.SourcePath)
                     ? request.SourcePath
                     : audiobook.BasePath;
 
-                if (string.IsNullOrWhiteSpace(sourcePath))
+                if (FileUtils.IsPathMissing(sourcePath))
                 {
                     return BadRequest(new { message = "Source path not provided. Supply current source path in the Move request or ensure audiobook has a valid BasePath." });
+                }
+                if (FileUtils.IsPathInvalidForCurrentOs(sourcePath))
+                {
+                    return BadRequest(new { message = "Source path is not valid for this operating system." });
                 }
 
                 // Validate source exists now to provide earlier feedback to clients (avoids enqueueing doomed jobs)

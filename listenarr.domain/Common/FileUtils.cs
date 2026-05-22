@@ -59,6 +59,26 @@ namespace Listenarr.Domain.Common
             return !string.IsNullOrEmpty(ext) && AudioExtensions.Contains(ext);
         }
 
+        public static bool IsPathMissing(string? path)
+        {
+            return path == null || path.Length == 0;
+        }
+
+        public static bool IsPathInvalidForCurrentOs(string? path)
+        {
+            return IsPathInvalidForOs(path, OperatingSystem.IsWindows());
+        }
+
+        public static bool IsPathInvalidForOs(string? path, bool isWindows)
+        {
+            if (IsPathMissing(path))
+            {
+                return false;
+            }
+
+            return isWindows && HasInvalidWindowsPathWhitespace(path!);
+        }
+
         public static HashSet<string> NormalizeExtensions(IEnumerable<string>? extensions)
         {
             var normalized = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -86,10 +106,11 @@ namespace Listenarr.Domain.Common
 
         public static string NormalizeStoredPath(string? path, Func<string, string?>? longPathResolver = null)
         {
-            if (string.IsNullOrWhiteSpace(path))
+            if (IsPathMissing(path))
             {
                 path = string.Empty;
             }
+            path ??= string.Empty;
 
             try
             {
@@ -715,6 +736,33 @@ namespace Listenarr.Domain.Common
                && char.IsLetter(path[0])
                && path[1] == ':'
                && (path[2] == '/' || path[2] == '\\' || path[2] == Path.DirectorySeparatorChar);
+
+        private static bool HasInvalidWindowsPathWhitespace(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return true;
+            }
+
+            var root = Path.GetPathRoot(path);
+            var pathWithoutRoot = !string.IsNullOrEmpty(root) && path.StartsWith(root, StringComparison.OrdinalIgnoreCase)
+                ? path[root.Length..]
+                : path;
+
+            return pathWithoutRoot
+                .Split(new[] { '\\', '/' }, StringSplitOptions.None)
+                .Any(IsInvalidWindowsPathSegmentWhitespace);
+        }
+
+        private static bool IsInvalidWindowsPathSegmentWhitespace(string segment)
+        {
+            if (string.IsNullOrEmpty(segment) || segment == "." || segment == "..")
+            {
+                return false;
+            }
+
+            return segment.EndsWith(' ') || segment.EndsWith('.');
+        }
 
         /// <summary>
         /// Create a filesystem-safe name from arbitrary text by removing invalid path characters

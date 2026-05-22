@@ -265,5 +265,64 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Ensure move queue was NOT enqueued
             mockMoveQueue.Verify(m => m.EnqueueMoveAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
+
+        [Fact]
+        public async Task MoveAudiobook_PreservesDestinationPathWhitespace_WhenMoveFilesFalse()
+        {
+            // Arrange
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var dbContext = new ListenArrDbContext(options);
+            var mockRepo = new Mock<IAudiobookRepository>();
+            var mockImageCache = new Mock<IImageCacheService>();
+            var mockLogger = new Mock<ILogger<LibraryController>>();
+            var mockFileNaming = new Mock<IFileNamingService>();
+            var mockMoveQueue = new Mock<IMoveQueueService>();
+
+            var outputPath = Path.GetTempPath();
+            var services = new ServiceCollection();
+            var mockConfig = new Mock<IConfigurationService>();
+            mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings { OutputPath = outputPath });
+            services.AddSingleton<IConfigurationService>(mockConfig.Object);
+            var provider = services.BuildServiceProvider();
+            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+
+            var ab = new Audiobook { Title = "Test", BasePath = Path.Join(outputPath, "listenarr-move-src-" + Guid.NewGuid().ToString("N")) };
+            dbContext.Audiobooks.Add(ab);
+            await dbContext.SaveChangesAsync();
+            mockRepo.Setup(m => m.GetByIdAsync(It.IsAny<int>())).ReturnsAsync((int audiobookId) => dbContext.Audiobooks.Find(audiobookId));
+
+            var controller = new LibraryController(
+                mockRepo.Object,
+                mockImageCache.Object,
+                mockLogger.Object,
+                scopeFactory,
+                new Mock<IHistoryRepository>().Object,
+                new Mock<IAudiobookFileRepository>().Object,
+                new Mock<IQualityProfileRepository>().Object,
+                new Mock<IDownloadRepository>().Object,
+                new Mock<IRootFolderRepository>().Object,
+                mockFileNaming.Object,
+                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(outputPath),
+                libraryListService: LibraryControllerMockFactory.CreateLibraryListService(),
+                moveQueueService: mockMoveQueue.Object);
+
+            var relativeTarget = "  listenarr-move-dst-" + Guid.NewGuid().ToString("N");
+            var request = new LibraryController.MoveRequest { DestinationPath = relativeTarget, MoveFiles = false };
+
+            // Act
+            var result = await controller.EnqueueMove(ab.Id, request);
+
+            // Assert
+            var okObj = Assert.IsAssignableFrom<ObjectResult>(result);
+            Assert.Equal(200, okObj.StatusCode);
+
+            var updated = await dbContext.Audiobooks.FindAsync(ab.Id);
+            Assert.Equal(FileUtils.NormalizeStoredPath(Path.Join(outputPath, relativeTarget)), updated.BasePath);
+            Assert.StartsWith("  listenarr-move-dst-", Path.GetFileName(updated.BasePath), StringComparison.Ordinal);
+            mockMoveQueue.Verify(m => m.EnqueueMoveAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
     }
 }
