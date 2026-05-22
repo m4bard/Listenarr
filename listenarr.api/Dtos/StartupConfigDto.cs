@@ -16,8 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using Listenarr.Domain.Models;
-
 namespace Listenarr.Api.Dtos
 {
     public sealed class StartupConfigDto
@@ -26,14 +24,11 @@ namespace Listenarr.Api.Dtos
 
         public string ApiVersion { get; set; } = "1";
 
-        public static StartupConfigDto FromStartupConfig(StartupConfig? config, string? requestedApiVersion)
-        {
-            var effectiveConfig = config ?? new StartupConfig();
-            return new StartupConfigDto
+        public static StartupConfigDto FromStartupConfig(bool authenticationRequired, string apiVersion)
+            => new()
             {
-                AuthenticationRequired = effectiveConfig.IsAuthenticationEnabled(),
-                ApiVersion = effectiveConfig.GetEffectiveApiVersion(requestedApiVersion),
+                AuthenticationRequired = authenticationRequired,
+                ApiVersion = apiVersion,
             };
-        }
     }
 }

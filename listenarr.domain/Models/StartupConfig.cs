@@ -16,7 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Text.Json.Serialization;
-using Listenarr.Domain.Common;
 
 namespace Listenarr.Domain.Models
 {
@@ -49,15 +48,8 @@ namespace Listenarr.Domain.Models
         public FfmpegConfig? Ffmpeg { get; set; }
 
         public bool IsAuthenticationEnabled()
-            => IsAuthenticationRequiredValue(AuthenticationRequired);
-
-        public string GetEffectiveApiVersion(string? requestedApiVersion = null)
-            => ApiVersionNormalizer.NormalizeApiVersionString(ApiVersion)
-               ?? ApiVersionNormalizer.NormalizeApiVersionString(requestedApiVersion)
-               ?? ApiVersionNormalizer.DefaultApiVersion;
-
-        public static bool IsAuthenticationRequiredValue(string? value)
         {
+            var value = AuthenticationRequired;
             if (string.IsNullOrWhiteSpace(value))
             {
                 return false;
@@ -70,6 +62,5 @@ namespace Listenarr.Domain.Models
 
             return value.Trim().ToLowerInvariant() is "enabled" or "true" or "yes" or "1";
         }
-
     }
 }

@@ -206,7 +206,7 @@ namespace Listenarr.Application.Common
             => (_config ?? new StartupConfig()).IsAuthenticationEnabled();
 
         public string GetEffectiveApiVersion(string? requestedApiVersion = null)
-            => (_config ?? new StartupConfig()).GetEffectiveApiVersion(requestedApiVersion);
+            => NormalizeApiVersion(_config?.ApiVersion, requestedApiVersion);
 
         public string NormalizeApiVersion(string? configuredApiVersion, string? requestedApiVersion = null)
             => ApiVersionNormalizer.NormalizeApiVersionString(configuredApiVersion)
@@ -349,4 +349,3 @@ namespace Listenarr.Application.Common
         }
     }
 }
-

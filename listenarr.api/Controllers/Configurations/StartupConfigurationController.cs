@@ -54,10 +54,11 @@ namespace Listenarr.Api.Controllers.Configurations
         [AllowAnonymous]
         [ProducesResponseType(typeof(StartupConfigDto), 200)]
         [ProducesResponseType(500)]
-        public async Task<ActionResult<StartupConfigDto>> GetBootstrapConfig()
+        public ActionResult<StartupConfigDto> GetBootstrapConfig()
         {
-            var config = await _configurationService.GetStartupConfigAsync() ?? new StartupConfig();
-            return Ok(StartupConfigDto.FromStartupConfig(config, GetRequestedApiVersion()));
+            return Ok(StartupConfigDto.FromStartupConfig(
+                _startupConfigService.IsAuthenticationRequired(),
+                _startupConfigService.GetEffectiveApiVersion(GetRequestedApiVersion())));
         }
 
         /// <summary>

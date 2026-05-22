@@ -20,6 +20,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
 using Xunit;
 using System.Runtime.InteropServices;
+using Listenarr.Domain.Common;
 using Listenarr.Domain.Models;
 using Moq;
 using Listenarr.Application.Interfaces;
@@ -42,9 +43,11 @@ namespace Listenarr.Tests.Features.Api.Services
             public FakeStartupConfigService(StartupConfig cfg) => _cfg = cfg;
             public StartupConfig? GetConfig() => _cfg;
             public bool IsAuthenticationRequired() => _cfg.IsAuthenticationEnabled();
-            public string GetEffectiveApiVersion(string? requestedApiVersion = null) => _cfg.GetEffectiveApiVersion(requestedApiVersion);
+            public string GetEffectiveApiVersion(string? requestedApiVersion = null) => NormalizeApiVersion(_cfg.ApiVersion, requestedApiVersion);
             public string NormalizeApiVersion(string? configuredApiVersion, string? requestedApiVersion = null)
-                => new StartupConfig { ApiVersion = configuredApiVersion }.GetEffectiveApiVersion(requestedApiVersion);
+                => ApiVersionNormalizer.NormalizeApiVersionString(configuredApiVersion)
+                   ?? ApiVersionNormalizer.NormalizeApiVersionString(requestedApiVersion)
+                   ?? ApiVersionNormalizer.DefaultApiVersion;
             public Task ReloadAsync() => Task.CompletedTask;
             public Task SaveAsync(StartupConfig config) { return Task.CompletedTask; }
         }
