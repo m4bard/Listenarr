@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Interfaces;
 using Listenarr.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -25,20 +26,17 @@ namespace Listenarr.Tests.Features.Api.Services
     public class ImageCacheServiceTests
     {
         [Fact]
-        public async Task MoveToAuthorLibraryStorageAsync_UsesRepoRoot_WhenDevContentRootPointsToBinOutput()
+        public async Task MoveToAuthorLibraryStorageAsync_UsesApplicationPathServiceCachePaths()
         {
-            var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
             var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-image-cache-tests", Guid.NewGuid().ToString("N"));
 
             try
             {
-                Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
-
                 var repoApiRoot = Path.Join(tempRoot, "listenarr.api");
-                var binRoot = Path.Join(repoApiRoot, "bin", "Debug", "net8.0");
-                Directory.CreateDirectory(Path.Join(repoApiRoot, "config"));
-                Directory.CreateDirectory(Path.Join(binRoot, "config"));
-                File.WriteAllText(Path.Join(repoApiRoot, "listenarr.api.csproj"), "<Project />");
+                var tempCachePath = Path.Join(repoApiRoot, "config", "cache", "images", "temp");
+                var libraryCachePath = Path.Join(repoApiRoot, "config", "cache", "images", "library");
+                var authorCachePath = Path.Join(repoApiRoot, "config", "cache", "images", "authors");
+                var seriesCachePath = Path.Join(repoApiRoot, "config", "cache", "images", "series");
 
                 using var httpClientForFactory = new HttpClient();
                 var httpClientFactory = new Mock<IHttpClientFactory>();
@@ -46,28 +44,40 @@ namespace Listenarr.Tests.Features.Api.Services
                     .Setup(factory => factory.CreateClient(ImageCacheHttpClientNames.ImageCache))
                     .Returns(httpClientForFactory);
 
+                var applicationPathService = new Mock<IApplicationPathService>();
+                applicationPathService.SetupGet(service => service.ContentRootPath).Returns(repoApiRoot);
+                applicationPathService
+                    .Setup(service => service.ResolveFromConfig("cache", "images", "temp"))
+                    .Returns(tempCachePath);
+                applicationPathService
+                    .Setup(service => service.ResolveFromConfig("cache", "images", "library"))
+                    .Returns(libraryCachePath);
+                applicationPathService
+                    .Setup(service => service.ResolveFromConfig("cache", "images", "authors"))
+                    .Returns(authorCachePath);
+                applicationPathService
+                    .Setup(service => service.ResolveFromConfig("cache", "images", "series"))
+                    .Returns(seriesCachePath);
+
                 var service = new ImageCacheService(
                     Mock.Of<ILogger<ImageCacheService>>(),
                     httpClientFactory.Object,
-                    binRoot);
+                    applicationPathService.Object);
 
-                var repoTempImage = Path.Join(repoApiRoot, "config", "cache", "images", "temp", "AUTHOR123.jpg");
+                var repoTempImage = Path.Join(tempCachePath, "AUTHOR123.jpg");
                 Directory.CreateDirectory(Path.GetDirectoryName(repoTempImage)!);
                 await File.WriteAllBytesAsync(repoTempImage, new byte[] { 1, 2, 3, 4 });
 
                 var relativePath = await service.MoveToAuthorLibraryStorageAsync("AUTHOR123");
 
-                var expectedAuthorImage = Path.Join(repoApiRoot, "config", "cache", "images", "authors", "AUTHOR123.jpg");
-                var wrongAuthorImage = Path.Join(binRoot, "config", "cache", "images", "authors", "AUTHOR123.jpg");
+                var expectedAuthorImage = Path.Join(authorCachePath, "AUTHOR123.jpg");
 
                 Assert.Equal("config/cache/images/authors/AUTHOR123.jpg", relativePath);
                 Assert.True(File.Exists(expectedAuthorImage));
-                Assert.False(File.Exists(wrongAuthorImage));
                 httpClientFactory.Verify(factory => factory.CreateClient(ImageCacheHttpClientNames.ImageCache), Times.Once);
             }
             finally
             {
-                Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
                 if (Directory.Exists(tempRoot))
                 {
                     Directory.Delete(tempRoot, recursive: true);

@@ -71,162 +71,23 @@ namespace Listenarr.Infrastructure.Services
         private readonly string _contentRootPath;
         private readonly AsyncKeyedLocker<string> _downloadLocks = new();
 
-        private readonly record struct ImageCachePaths(
-            string ContentRootPath,
-            string TempCachePath,
-            string LibraryImagePath,
-            string AuthorImagePath,
-            string SeriesImagePath);
-
         public ImageCacheService(
             ILogger<ImageCacheService> logger,
             IHttpClientFactory httpClientFactory,
             IApplicationPathService applicationPathService)
-            : this(
-                  logger,
-                  httpClientFactory.CreateClient(ImageCacheHttpClientNames.ImageCache),
-                  applicationPathService.ContentRootPath,
-                  applicationPathService.ResolveFromConfig("cache", "images", "temp"),
-                  applicationPathService.ResolveFromConfig("cache", "images", "library"),
-                  applicationPathService.ResolveFromConfig("cache", "images", "authors"),
-                  applicationPathService.ResolveFromConfig("cache", "images", "series"))
-        {
-        }
-
-        public ImageCacheService(ILogger<ImageCacheService> logger, IHttpClientFactory httpClientFactory, string contentRootPath)
-            : this(
-                  logger,
-                  httpClientFactory.CreateClient(ImageCacheHttpClientNames.ImageCache),
-                  CreateLegacyCachePaths(logger, contentRootPath))
-        {
-        }
-
-        private ImageCacheService(
-            ILogger<ImageCacheService> logger,
-            HttpClient httpClient,
-            ImageCachePaths paths)
-            : this(
-                  logger,
-                  httpClient,
-                  paths.ContentRootPath,
-                  paths.TempCachePath,
-                  paths.LibraryImagePath,
-                  paths.AuthorImagePath,
-                  paths.SeriesImagePath)
-        {
-        }
-
-        private ImageCacheService(
-            ILogger<ImageCacheService> logger,
-            HttpClient httpClient,
-            string contentRootPath,
-            string tempCachePath,
-            string libraryImagePath,
-            string authorImagePath,
-            string seriesImagePath)
         {
             _logger = logger;
-            _httpClient = httpClient;
-            _contentRootPath = contentRootPath;
-            _tempCachePath = tempCachePath;
-            _libraryImagePath = libraryImagePath;
-            _authorImagePath = authorImagePath;
-            _seriesImagePath = seriesImagePath;
+            _httpClient = httpClientFactory.CreateClient(ImageCacheHttpClientNames.ImageCache);
+            _contentRootPath = applicationPathService.ContentRootPath;
+            _tempCachePath = applicationPathService.ResolveFromConfig("cache", "images", "temp");
+            _libraryImagePath = applicationPathService.ResolveFromConfig("cache", "images", "library");
+            _authorImagePath = applicationPathService.ResolveFromConfig("cache", "images", "authors");
+            _seriesImagePath = applicationPathService.ResolveFromConfig("cache", "images", "series");
 
             Directory.CreateDirectory(_tempCachePath);
             Directory.CreateDirectory(_libraryImagePath);
             Directory.CreateDirectory(_authorImagePath);
             Directory.CreateDirectory(_seriesImagePath);
-        }
-
-        private static ImageCachePaths CreateLegacyCachePaths(ILogger<ImageCacheService> logger, string contentRootPath)
-        {
-            var effectiveContentRoot = ResolveEffectiveContentRoot(logger, contentRootPath);
-            var baseDir = FileUtils.CombineRelativePath(effectiveContentRoot, "config");
-
-            return new ImageCachePaths(
-                effectiveContentRoot,
-                FileUtils.CombineRelativePath(baseDir, "cache", "images", "temp"),
-                FileUtils.CombineRelativePath(baseDir, "cache", "images", "library"),
-                FileUtils.CombineRelativePath(baseDir, "cache", "images", "authors"),
-                FileUtils.CombineRelativePath(baseDir, "cache", "images", "series"));
-        }
-
-        private static string ResolveEffectiveContentRoot(ILogger<ImageCacheService> logger, string? contentRootPath)
-        {
-            var fallbackRoot = string.IsNullOrWhiteSpace(contentRootPath)
-                ? AppContext.BaseDirectory
-                : contentRootPath;
-
-            var resolvedRoot = TryResolveListenarrApiRoot(fallbackRoot);
-            if (!string.IsNullOrWhiteSpace(resolvedRoot) &&
-                !string.Equals(resolvedRoot, fallbackRoot, StringComparison.OrdinalIgnoreCase))
-            {
-                logger.LogInformation(
-                    "Resolved image cache content root to repo path: {ResolvedRoot}",
-                    resolvedRoot);
-                return resolvedRoot;
-            }
-
-            return fallbackRoot;
-        }
-
-        private static string? TryResolveListenarrApiRoot(string? startingPath)
-        {
-            if (string.IsNullOrWhiteSpace(startingPath))
-            {
-                return null;
-            }
-
-            try
-            {
-                var dir = new DirectoryInfo(Path.GetFullPath(startingPath));
-                const int maxDepth = 8;
-                var depth = 0;
-
-                while (dir != null && depth++ < maxDepth)
-                {
-                    if (LooksLikeListenarrApiRoot(dir.FullName))
-                    {
-                        return dir.FullName;
-                    }
-
-                    var nestedApiRoot = FileUtils.CombineRelativePath(dir.FullName, "listenarr.api");
-                    if (LooksLikeListenarrApiRoot(nestedApiRoot))
-                    {
-                        return nestedApiRoot;
-                    }
-
-                    dir = dir.Parent;
-                }
-            }
-            catch (Exception ex) when (
-                ex is IOException or
-                UnauthorizedAccessException or
-                ArgumentException or
-                System.Security.SecurityException or
-                NotSupportedException or
-                PathTooLongException)
-            {
-                return null;
-            }
-
-            return null;
-        }
-
-        private static bool LooksLikeListenarrApiRoot(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
-            {
-                return false;
-            }
-
-            var hasConfigDirectory = Directory.Exists(FileUtils.CombineRelativePath(path, "config"));
-            var hasProjectMarkers =
-                File.Exists(FileUtils.CombineRelativePath(path, "listenarr.api.csproj")) ||
-                Directory.Exists(FileUtils.CombineRelativePath(path, "wwwroot"));
-
-            return hasConfigDirectory && hasProjectMarkers;
         }
 
         /// <summary>
