@@ -286,6 +286,7 @@ Listenarr/
 │   └── Models/               # Domain objects
 ├── listenarr.infrastructure/ # Defines domain model
 │   ├── Adapters/             # External download client implementations
+│   ├── Cache/                # Caching implementations
 │   ├── Extensions/           # Dpendancy injection extensions 
 │   ├── Factories/            # External download client implementations
 │   ├── Ffmpeg/               # Ffmpeg interface
@@ -404,7 +405,7 @@ If you have any questions about contributing, please:
 - `listenarr.api` should only compose services, host controllers, and register DI; do not add new interfaces that duplicate application/infrastructure contracts.
 - Migration checklist for misplaced interface + implementation found in `listenarr.api`:
   1. Move the interface/DTO to `listenarr.application` or `listenarr.domain`.
-  2. Move the concrete implementation to `listenarr.infrastructure/Services`.
+  2. Move the concrete implementation to the appropriate `listenarr.infrastructure` feature/technology folder (for example `Cache`, `Filesystem`, or `Services` when no narrower home exists).
   3. Add registration in `listenarr.infrastructure/Extensions/InfrastructureServiceRegistrationExtensions.cs` (e.g., `services.AddScoped<IFoo, Foo>();`).
   4. In `listenarr.api/Program.cs` call the infrastructure registration extension instead of registering types inline.
   5. Delete the old API placeholder files and run `dotnet test` to verify no regressions.

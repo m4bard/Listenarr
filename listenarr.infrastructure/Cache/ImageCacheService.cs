@@ -25,7 +25,7 @@ using SixLabors.ImageSharp;
 using System.Net;
 using System.Net.Sockets;
 
-namespace Listenarr.Infrastructure.Services
+namespace Listenarr.Infrastructure.Cache
 {
     public static class ImageCacheHttpClientNames
     {

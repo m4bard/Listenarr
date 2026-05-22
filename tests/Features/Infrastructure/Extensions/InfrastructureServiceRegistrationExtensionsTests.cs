@@ -19,8 +19,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using Listenarr.Infrastructure.Extensions;
 using Listenarr.Application.Interfaces;
+using Listenarr.Infrastructure.Cache;
 using Listenarr.Infrastructure.Platform;
-using Listenarr.Infrastructure.Services;
 using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Options;
 
