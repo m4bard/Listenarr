@@ -113,22 +113,6 @@
 
   
   <ItemGroup>
-    <Content Remove="config\config.json" />
-    <None Remove="config\config.json" />
-    <!-- Do not copy ignored local config if it exists under the project root; dev runs use ../.env/development. -->
-    <Content Update="config\appsettings\**\*">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
-    </Content>
-    <None Update="config\appsettings\**\*">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
-    </None>
-  </ItemGroup>
-
-  
-  
-  <ItemGroup>
     
     <Content Remove="tools\**" />
     <None Remove="tools\**" />

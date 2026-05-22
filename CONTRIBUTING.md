@@ -47,6 +47,7 @@ Setup guides, FAQ, troubleshooting tips - the more information we have in the do
    dotnet restore
    cd ..
    ```
+   If you previously ran Listenarr with local files under `listenarr.api/config`, delete that folder. Development config now lives under `.env/development`, and `listenarr.api/config` should not be used for local configuration.
 6. **Start development servers**
   Option A - Single command (recommended, runs both API and web):
   ```bash
