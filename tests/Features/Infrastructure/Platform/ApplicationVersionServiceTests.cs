@@ -24,9 +24,14 @@ using Xunit;
 
 namespace Listenarr.Tests.Features.Infrastructure.Platform
 {
+    [Trait("Area", "Infrastructure")]
+    [Trait("Name", "ApplicationVersionServiceTests")]
+    [Trait("Category", "ApplicationVersionService")]
     public class ApplicationVersionServiceTests
     {
         [Fact]
+        [Trait("Method", "Resolve")]
+        [Trait("Scenario", "UsesHostApplicationAssemblyInformationalVersion")]
         public void Resolve_UsesHostApplicationAssemblyInformationalVersion()
         {
             var expectedVersion = ApplicationVersionTestUtils.GetExpectedApiVersion();
@@ -40,6 +45,5 @@ namespace Listenarr.Tests.Features.Infrastructure.Platform
             Assert.Equal(expectedVersion, version);
             Assert.NotEqual("1.0.0.0", version);
         }
-
     }
 }

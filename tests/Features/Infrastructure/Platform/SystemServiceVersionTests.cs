@@ -27,9 +27,14 @@ using Xunit;
 
 namespace Listenarr.Tests.Features.Infrastructure.Platform
 {
+    [Trait("Area", "Infrastructure")]
+    [Trait("Name", "SystemServiceVersionTests")]
+    [Trait("Category", "SystemService")]
     public class SystemServiceVersionTests
     {
         [Fact]
+        [Trait("Method", "GetSystemInfo")]
+        [Trait("Scenario", "UsesHostApplicationVersion")]
         public void GetSystemInfo_UsesHostApplicationVersion()
         {
             var systemService = CreateSystemService();
@@ -41,6 +46,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Platform
         }
 
         [Fact]
+        [Trait("Method", "GetServiceHealthAsync")]
+        [Trait("Scenario", "UsesHostApplicationVersion")]
         public async Task GetServiceHealthAsync_UsesHostApplicationVersion()
         {
             var systemService = CreateSystemService();
@@ -74,6 +81,5 @@ namespace Listenarr.Tests.Features.Infrastructure.Platform
                 applicationPathService.Object,
                 applicationVersionService.Object);
         }
-
     }
 }

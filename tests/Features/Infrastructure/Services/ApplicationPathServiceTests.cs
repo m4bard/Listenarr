@@ -21,9 +21,14 @@ using Xunit;
 
 namespace Listenarr.Tests.Features.Infrastructure.Services
 {
+    [Trait("Area", "Infrastructure")]
+    [Trait("Name", "ApplicationPathServiceTests")]
+    [Trait("Category", "ApplicationPathService")]
     public class ApplicationPathServiceTests
     {
         [Fact]
+        [Trait("Method", "Constructor")]
+        [Trait("Scenario", "ExposesDiscordBotRootPathUnderToolsRoot")]
         public void Constructor_ExposesDiscordBotRootPathUnderToolsRoot()
         {
             var contentRootPath = Path.Join(Path.GetTempPath(), "listenarr-path-service-tests", Guid.NewGuid().ToString("N"));
