@@ -16,262 +16,139 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using Listenarr.Api.Controllers;
-using Listenarr.Domain.Models;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
-using Listenarr.Domain.Models.Configurations;
 using Listenarr.Domain.Common;
-using Listenarr.Infrastructure.Persistence;
-using Listenarr.Application.Notification;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks.Api;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
+    [Trait("Area", "LibraryApi")]
+    [Trait("Name", "LibraryController_MoveTests")]
+    [Trait("Category", "LibraryController")]
     public class LibraryController_MoveTests : BaseTests
     {
-        private static void TryDeleteDirectory(string path)
+        private LibraryController CreateController(
+            IAudiobookRepository? audiobookRepository = null,
+            IMoveQueueService? moveQueueService = null)
         {
-            try
-            {
-                Directory.Delete(path, true);
-            }
-            catch (IOException ex)
-            {
-                System.Diagnostics.Debug.WriteLine(ex.Message);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                System.Diagnostics.Debug.WriteLine(ex.Message);
-            }
-        }
-
-        [Fact]
-        public async Task MoveAudiobook_ReturnsBadRequest_WhenSourceDoesNotExist()
-        {
-            // Arrange
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
-
-            var dbContext = new ListenArrDbContext(options);
-            var mockRepo = new Mock<IAudiobookRepository>();
-            // Return the audiobook from the in-memory DB when asked
-            mockRepo.Setup(m => m.GetByIdAsync(It.IsAny<int>())).ReturnsAsync((int id) => dbContext.Audiobooks.Find(id));
-            var mockImageCache = new Mock<IImageCacheService>();
-            var mockLogger = new Mock<ILogger<LibraryController>>();
-            var mockFileNaming = new Mock<IFileNamingService>();
-
-            var services = new ServiceCollection();
-            var mockConfig = new Mock<IConfigurationService>();
-            mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings { OutputPath = Path.GetTempPath() });
-            services.AddSingleton<IConfigurationService>(mockConfig.Object);
-            // Provide a mock signalR hub context (with Clients.All mocked) to avoid exceptions during broadcast
-            var mockHub = new Mock<Microsoft.AspNetCore.SignalR.IHubContext<DownloadHub>>();
-            var mockClients = new Mock<Microsoft.AspNetCore.SignalR.IHubClients>();
-            var mockClientProxy = new Mock<Microsoft.AspNetCore.SignalR.IClientProxy>();
-            mockClientProxy.Setup(m => m.SendCoreAsync(It.IsAny<string>(), It.IsAny<object[]>(), default)).Returns(System.Threading.Tasks.Task.CompletedTask);
-            mockClients.SetupGet(c => c.All).Returns(mockClientProxy.Object);
-            mockHub.SetupGet(h => h.Clients).Returns(mockClients.Object);
-            services.AddSingleton(typeof(Microsoft.AspNetCore.SignalR.IHubContext<DownloadHub>), mockHub.Object);
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
-
-            // Ensure move queue exists for controller (prevent early NotFound responses in tests)
-            var mockMoveQueue = new Mock<IMoveQueueService>();
-
-            // Add an audiobook with a non-existent base path
-            var ab = new Audiobook { Title = "Test", BasePath = Path.Join(Path.GetTempPath(), "nonexistent-" + Guid.NewGuid().ToString("N")) };
-            dbContext.Audiobooks.Add(ab);
-            await dbContext.SaveChangesAsync();
-            // Ensure repo returns the audiobook from the in-memory DB when asked
-            mockRepo.Setup(m => m.GetByIdAsync(It.IsAny<int>())).ReturnsAsync((int id) => dbContext.Audiobooks.Find(id));
-
-            var controller = new LibraryController(
-                mockRepo.Object,
-                mockImageCache.Object,
-                mockLogger.Object,
-                scopeFactory,
+            return new LibraryController(
+                audiobookRepository ?? _audiobookRepository,
+                new Mock<IImageCacheService>().Object,
+                new Mock<ILogger<LibraryController>>().Object,
+                _provider.GetRequiredService<IServiceScopeFactory>(),
                 new Mock<IHistoryRepository>().Object,
                 new Mock<IAudiobookFileRepository>().Object,
                 new Mock<IQualityProfileRepository>().Object,
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
-                mockFileNaming.Object,
-                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(Path.GetTempPath()),
+                new Mock<IFileNamingService>().Object,
+                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(FileService.GetTempPath()),
                 libraryListService: LibraryControllerMockFactory.CreateLibraryListService(),
-                moveQueueService: mockMoveQueue.Object);
+                moveQueueService: moveQueueService ?? new Mock<IMoveQueueService>().Object);
+        }
 
-            var request = new LibraryController.MoveRequest { DestinationPath = Path.Join(Path.GetTempPath(), "target") };
+        [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "ReturnsBadRequest_WhenSourceDoesNotExist")]
+        public async Task MoveAudiobook_ReturnsBadRequest_WhenSourceDoesNotExist()
+        {
+            // Given
+            var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(Path.Join(FileService.GetTempPath(), "nonexistent"))
+                .Build());
 
-            // Act
+            var controller = CreateController();
+
+            var request = new LibraryController.MoveRequest { DestinationPath = Path.Join(FileService.GetTempPath(), "target") };
+
+            // When
             var result = await controller.EnqueueMove(ab.Id, request);
 
-            // Assert: expect 400 Bad Request with 'Source path' message
+            // Then: expect 400 Bad Request with 'Source path' message
             var badObj = Assert.IsAssignableFrom<ObjectResult>(result);
             Assert.Equal(400, badObj.StatusCode);
             Assert.Contains("Source path", badObj.Value?.ToString() ?? string.Empty);
         }
 
         [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "EnqueuesJob_WhenSourceExists")]
         public async Task MoveAudiobook_EnqueuesJob_WhenSourceExists()
         {
-            // Arrange
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
-
-            var dbContext = new ListenArrDbContext(options);
-            var mockRepo = new Mock<IAudiobookRepository>();
-            var mockImageCache = new Mock<IImageCacheService>();
-            var mockLogger = new Mock<ILogger<LibraryController>>();
-            var mockFileNaming = new Mock<IFileNamingService>();
-
+            // Given
             var mockMoveQueue = new Mock<IMoveQueueService>();
             var expectedId = Guid.NewGuid();
             mockMoveQueue.Setup(m => m.EnqueueMoveAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>()))
                 .ReturnsAsync(expectedId);
 
-            var services = new ServiceCollection();
-            var mockConfig = new Mock<IConfigurationService>();
-            mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings { OutputPath = Path.GetTempPath() });
-            services.AddSingleton<IConfigurationService>(mockConfig.Object);
-            // Provide a mock hub context with Clients.All mocked
-            var mockHub = new Mock<Microsoft.AspNetCore.SignalR.IHubContext<DownloadHub>>();
-            var mockClients = new Mock<Microsoft.AspNetCore.SignalR.IHubClients>();
-            var mockClientProxy = new Mock<Microsoft.AspNetCore.SignalR.IClientProxy>();
-            mockClientProxy.Setup(m => m.SendCoreAsync(It.IsAny<string>(), It.IsAny<object[]>(), default)).Returns(System.Threading.Tasks.Task.CompletedTask);
-            mockClients.SetupGet(c => c.All).Returns(mockClientProxy.Object);
-            mockHub.SetupGet(h => h.Clients).Returns(mockClients.Object);
-            services.AddSingleton(typeof(Microsoft.AspNetCore.SignalR.IHubContext<DownloadHub>), mockHub.Object);
-            services.AddSingleton<IMoveQueueService>(mockMoveQueue.Object);
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+            var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(FileService.GetTempDirectory("listenarr-move-src"))
+                .Build());
 
-            // Create a real temporary source directory
-            var tempSource = Path.Join(Path.GetTempPath(), "listenarr-move-src-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tempSource);
+            var controller = CreateController(moveQueueService: mockMoveQueue.Object);
 
-            var ab = new Audiobook { Title = "Test", BasePath = tempSource };
-            dbContext.Audiobooks.Add(ab);
-            await dbContext.SaveChangesAsync();
-            // Ensure repo returns the audiobook from the in-memory DB when asked
-            mockRepo.Setup(m => m.GetByIdAsync(It.IsAny<int>())).ReturnsAsync((int id) => dbContext.Audiobooks.Find(id));
-
-            var controller = new LibraryController(
-                mockRepo.Object,
-                mockImageCache.Object,
-                mockLogger.Object,
-                scopeFactory,
-                new Mock<IHistoryRepository>().Object,
-                new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                mockFileNaming.Object,
-                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(Path.GetTempPath()),
-                libraryListService: LibraryControllerMockFactory.CreateLibraryListService(),
-                moveQueueService: mockMoveQueue.Object);
-
-            var target = Path.Join(Path.GetTempPath(), "listenarr-move-dst-" + Guid.NewGuid().ToString("N"));
+            var target = Path.Join(FileService.GetTempPath(), "listenarr-move-dst");
             var request = new LibraryController.MoveRequest { DestinationPath = target };
 
-            // Act
+            // When
             var result = await controller.EnqueueMove(ab.Id, request);
 
-            // Assert: expect 202 Accepted
+            // Then: expect 202 Accepted
             var acceptedObj = Assert.IsAssignableFrom<ObjectResult>(result);
             Assert.Equal(202, acceptedObj.StatusCode);
             Assert.NotNull(acceptedObj.Value);
-
-            // Cleanup
-            TryDeleteDirectory(tempSource);
-            TryDeleteDirectory(target);
         }
 
         [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "UpdatesBasePath_WhenMoveFilesFalse")]
         public async Task MoveAudiobook_UpdatesBasePath_WhenMoveFilesFalse()
         {
-            // Arrange
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
-
-            var dbContext = new ListenArrDbContext(options);
-            var mockRepo = new Mock<IAudiobookRepository>();
-            var mockImageCache = new Mock<IImageCacheService>();
-            var mockLogger = new Mock<ILogger<LibraryController>>();
-            var mockFileNaming = new Mock<IFileNamingService>();
-
+            // Given
             var mockMoveQueue = new Mock<IMoveQueueService>();
 
-            var services = new ServiceCollection();
-            var mockConfig = new Mock<IConfigurationService>();
-            mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings { OutputPath = Path.GetTempPath() });
-            services.AddSingleton<IConfigurationService>(mockConfig.Object);
-            // Provide a mock hub context with Clients.All mocked
-            var mockHub = new Mock<Microsoft.AspNetCore.SignalR.IHubContext<DownloadHub>>();
-            var mockClients = new Mock<Microsoft.AspNetCore.SignalR.IHubClients>();
-            var mockClientProxy = new Mock<Microsoft.AspNetCore.SignalR.IClientProxy>();
-            mockClientProxy.Setup(m => m.SendCoreAsync(It.IsAny<string>(), It.IsAny<object[]>(), default)).Returns(System.Threading.Tasks.Task.CompletedTask);
-            mockClients.SetupGet(c => c.All).Returns(mockClientProxy.Object);
-            mockHub.SetupGet(h => h.Clients).Returns(mockClients.Object);
-            services.AddSingleton(typeof(Microsoft.AspNetCore.SignalR.IHubContext<DownloadHub>), mockHub.Object);
-            services.AddSingleton<IMoveQueueService>(mockMoveQueue.Object);
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+            var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(Path.Join(FileService.GetTempPath(), "listenarr-move-src"))
+                .Build());
 
-            var ab = new Audiobook { Title = "Test", BasePath = Path.Join(Path.GetTempPath(), "listenarr-move-src-" + Guid.NewGuid().ToString("N")) };
-            dbContext.Audiobooks.Add(ab);
-            await dbContext.SaveChangesAsync();
-            // Ensure repo returns the audiobook from the in-memory DB when asked
-            mockRepo.Setup(m => m.GetByIdAsync(It.IsAny<int>())).ReturnsAsync((int id) => dbContext.Audiobooks.Find(id));
+            var controller = CreateController(moveQueueService: mockMoveQueue.Object);
 
-            var controller = new LibraryController(
-                mockRepo.Object,
-                mockImageCache.Object,
-                mockLogger.Object,
-                scopeFactory,
-                new Mock<IHistoryRepository>().Object,
-                new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                mockFileNaming.Object,
-                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(Path.GetTempPath()),
-                libraryListService: LibraryControllerMockFactory.CreateLibraryListService(),
-                moveQueueService: mockMoveQueue.Object);
-
-            var target = Path.Join(Path.GetTempPath(), "listenarr-move-dst-" + Guid.NewGuid().ToString("N"));
+            var target = Path.Join(FileService.GetTempPath(), "listenarr-move-dst");
             var request = new LibraryController.MoveRequest { DestinationPath = target, MoveFiles = false };
 
-            // Act
+            // When
             var result = await controller.EnqueueMove(ab.Id, request);
 
-            // Assert: expect 200 OK
+            // Then: expect 200 OK
             var okObj = Assert.IsAssignableFrom<ObjectResult>(result);
             Assert.Equal(200, okObj.StatusCode);
             Assert.NotNull(okObj.Value);
 
             // Ensure DB was updated
-            var updated = await dbContext.Audiobooks.FindAsync(ab.Id);
-            Assert.Equal(FileUtils.NormalizeStoredPath(target), updated.BasePath);
+            var updated = await _audiobookRepository.GetByIdAsync(ab.Id);
+            Assert.Equal(FileUtils.NormalizeStoredPath(target), updated!.BasePath);
 
             // Ensure move queue was NOT enqueued
             mockMoveQueue.Verify(m => m.EnqueueMoveAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "PreservesDestinationPathWhitespace_WhenMoveFilesFalse")]
         public async Task MoveAudiobook_PreservesDestinationPathWhitespace_WhenMoveFilesFalse()
         {
-            // Arrange
+            // Given
             var outputPath = FileService.GetTempPath();
             await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
                 .WithOutputPath(outputPath)
@@ -287,10 +164,10 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var relativeTarget = "  listenarr-move-dst-" + Guid.NewGuid().ToString("N");
             var request = new LibraryController.MoveRequest { DestinationPath = relativeTarget, MoveFiles = false };
 
-            // Act
+            // When
             var result = await controller.EnqueueMove(audiobook.Id, request);
 
-            // Assert
+            // Then
             var okObj = Assert.IsAssignableFrom<ObjectResult>(result);
             Assert.Equal(200, okObj.StatusCode);
 

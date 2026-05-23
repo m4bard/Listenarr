@@ -29,45 +29,51 @@ using Moq;
 using Xunit;
 using Listenarr.Application.Interfaces;
 using Listenarr.Infrastructure.Persistence;
+using Listenarr.Tests.Builders;
+using Listenarr.Tests.Mocks.Api;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
+    [Trait("Area", "LibraryApi")]
+    [Trait("Name", "LibraryController_LibraryListSlimPayloadTests")]
+    [Trait("Category", "LibraryController")]
     public class LibraryController_LibraryListSlimPayloadTests
     {
         [Fact]
+        [Trait("Method", "GetAll")]
+        [Trait("Scenario", "ReturnsSlimPayload_WithServerComputedStatus")]
         public async Task GetAll_ReturnsSlimPayload_WithServerComputedStatus()
         {
+            // Given
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;
 
             using var db = new ListenArrDbContext(options);
 
-            var book = new Audiobook
-            {
-                Title = "Slim Book",
-                Authors = new System.Collections.Generic.List<string> { "Author One" },
-                Genres = new System.Collections.Generic.List<string> { "Fantasy", "Adventure" },
-                Monitored = true,
-                Description = "Detail-only field",
-                Subtitle = "Detail Subtitle",
-                BasePath = FileUtils.GetAbsolutePath("library", "Slim Book"),
-                FilePath = FileUtils.GetAbsolutePath("library", "Slim Book", "book.m4b"),
-                FileSize = 12345,
-                OpenLibraryId = "OL123",
-                AuthorAsins = new System.Collections.Generic.List<string> { "AUTHORASIN1" }
-            };
+            var book = new AudiobookBuilder()
+                .WithTitle("Slim Book")
+                .WithAuthor("Author One")
+                .WithGenre("Fantasy")
+                .WithGenre("Adventure")
+                .WithMonitored()
+                .WithDescription("Detail-only field")
+                .WithSubtitle("Detail Subtitle")
+                .WithBasePath(FileUtils.GetAbsolutePath("library", "Slim Book"))
+                .WithFilePath(FileUtils.GetAbsolutePath("library", "Slim Book", "book.m4b"))
+                .WithFileSize(12345)
+                .WithOpenLibraryId("OL123")
+                .WithAuthorAsin("AUTHORASIN1")
+                .Build();
             db.Audiobooks.Add(book);
             await db.SaveChangesAsync();
 
-            db.AudiobookFiles.Add(new AudiobookFile
-            {
-                AudiobookId = book.Id,
-                Path = book.FilePath,
-                Size = book.FileSize,
-                Format = "m4b",
-                CreatedAt = DateTime.UtcNow
-            });
+            db.AudiobookFiles.Add(new AudiobookFileBuilder()
+                .WithAudiobook(book)
+                .WithPath(book.FilePath!)
+                .WithSize(book.FileSize ?? 0)
+                .WithFormat("m4b")
+                .Build());
             db.Downloads.Add(new Download
             {
                 AudiobookId = book.Id,
@@ -136,10 +142,13 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 mockDownloadRepo.Object,
                 Mock.Of<IRootFolderRepository>(),
                 Mock.Of<IFileNamingService>(),
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(Path.GetTempPath()),
                 libraryListService: new LibraryListService(mockRepo.Object, mockAudioFileRepo.Object, mockQualityProfileRepo.Object, mockDownloadRepo.Object));
 
+            // When
             var actionResult = await controller.GetAll();
+
+            // Then
             var ok = Assert.IsType<OkObjectResult>(actionResult);
 
             var json = JsonSerializer.Serialize(ok.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web));

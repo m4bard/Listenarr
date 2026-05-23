@@ -25,15 +25,23 @@ using Microsoft.AspNetCore.Mvc;
 using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models.Configurations;
 using Listenarr.Application.Notification;
+using Listenarr.Tests.Builders;
+using Listenarr.Tests.Common;
+using Listenarr.Tests.Mocks.Api;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
-    public class LibraryController_DeleteImageSafetyTests
+    [Trait("Area", "LibraryApi")]
+    [Trait("Name", "LibraryController_DeleteImageSafetyTests")]
+    [Trait("Category", "LibraryController")]
+    public class LibraryController_DeleteImageSafetyTests : BaseTests
     {
         [Fact]
+        [Trait("Method", "DeleteAudiobook")]
+        [Trait("Scenario", "InvalidImageUrl_DoesNotCallImageCacheService")]
         public async Task DeleteAudiobook_InvalidImageUrl_DoesNotCallImageCacheService()
         {
-            // Arrange
+            // Given
             var mockRepo = new Mock<IAudiobookRepository>();
             var mockImageCache = new Mock<IImageCacheService>();
             var mockLogger = new Mock<ILogger<LibraryController>>();
@@ -56,7 +64,11 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
             var fileNaming = new Mock<IFileNamingService>().Object;
 
-            var audiobook = new Listenarr.Domain.Models.Audiobook { Id = 123, Title = "Test", ImageUrl = "/config/cache/images/library/../evil/../../secret.txt" };
+            var audiobook = new AudiobookBuilder()
+                .WithId(123)
+                .WithTitle("Test")
+                .WithImageUrl("/config/cache/images/library/../evil/../../secret.txt")
+                .Build();
             mockRepo.Setup(r => r.GetByIdAsync(It.IsAny<int>())).ReturnsAsync(audiobook);
             mockRepo.Setup(r => r.DeleteByIdAsync(It.IsAny<int>())).ReturnsAsync(true);
 
@@ -71,13 +83,13 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 fileNaming,
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(FileService.GetTempPath()),
                 libraryListService: Mock.Of<ILibraryListService>());
 
-            // Act
+            // When
             var result = await controller.DeleteAudiobook(audiobook.Id);
 
-            // Assert
+            // Then
             // The identifier 'secret' should be extracted and validated; ensure we called into the image cache service
             mockImageCache.Verify(s => s.GetCachedImagePathAsync("secret"), Times.Once);
             Assert.IsType<OkObjectResult>(result);
