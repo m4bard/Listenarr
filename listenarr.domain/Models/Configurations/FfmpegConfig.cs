@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-namespace Listenarr.Domain.Models
+namespace Listenarr.Domain.Models.Configurations
 {
     public class FfmpegConfig
     {
