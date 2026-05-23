@@ -18,15 +18,7 @@ namespace Listenarr.Tests.Features.Api.Services
         [Trait("Category", "Release")]
         public async Task EnsureFfprobeInstalledAsync()
         {
-            var ffmpegDirectory = FileService.GetTempDirectory("ffmpeg");
-
-            try
-            {
-                Directory.Delete(ffmpegDirectory, true);
-            }
-            catch (DirectoryNotFoundException)
-            {
-            }
+            var ffmpegDirectory = Path.Combine(FileService.GetTempPath(), "ffmpeg");
 
             Assert.False(Path.Exists(ffmpegDirectory));
 
@@ -41,10 +33,6 @@ namespace Listenarr.Tests.Features.Api.Services
             Assert.NotNull(ffprobePath);
             Assert.True(Path.Exists(ffprobePath));
             Assert.True(Path.Exists(ffmpegDirectory));
-
-            // Cleanup
-            Directory.Delete(ffmpegDirectory, true);
-            Assert.False(Path.Exists(ffmpegDirectory));
         }
     }
 }
