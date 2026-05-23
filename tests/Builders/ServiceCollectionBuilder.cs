@@ -86,6 +86,7 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<MoveBackgroundService>();
             services.AddSingleton<MoveQueueService>();
             services.AddSingleton<LibraryController>();
+            services.AddSingleton<ImagesController>();
             services.AddSingleton(new EphemeralDataProtectionProvider().CreateProtector("Listenarr.ConfigurationService.ProwlarrImport"));
 
             services.AddSingleton<AudibleApiMock>();
