@@ -22,6 +22,9 @@ namespace Listenarr.Domain.Common
     {
         public const string DefaultApiVersion = "1";
 
+        public static string NormalizeOrDefault(string? version)
+            => NormalizeApiVersionString(version) ?? DefaultApiVersion;
+
         public static string? NormalizeApiVersionString(string? version)
         {
             if (string.IsNullOrWhiteSpace(version)) return null;

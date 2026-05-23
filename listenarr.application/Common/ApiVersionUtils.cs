@@ -30,12 +30,9 @@ namespace Listenarr.Application.Common
         private static readonly Regex ApiVersionFromPathRegex = new(@"^/api/v(?<version>\d+(?:\.\d+)?)(?:/|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex LeadingApiPrefixRegex = new(@"^/api(?:/v\d+(?:\.\d+)?)?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        public static string NormalizeApiVersionString(string? version)
-            => ApiVersionNormalizer.NormalizeApiVersionString(version) ?? ApiVersionNormalizer.DefaultApiVersion;
-
         public static string ResolveApiVersion(HttpContext? context, string? fallbackVersion = null)
         {
-            var fallback = NormalizeApiVersionString(fallbackVersion);
+            var fallback = ApiVersionNormalizer.NormalizeOrDefault(fallbackVersion);
 
             try
             {
@@ -44,7 +41,7 @@ namespace Listenarr.Application.Common
                     var routeVersion = routeVersionObj?.ToString();
                     if (!string.IsNullOrWhiteSpace(routeVersion))
                     {
-                        return NormalizeApiVersionString(routeVersion);
+                        return ApiVersionNormalizer.NormalizeOrDefault(routeVersion);
                     }
                 }
             }
@@ -64,7 +61,7 @@ namespace Listenarr.Application.Common
                         var parsed = match.Groups["version"].Value;
                         if (!string.IsNullOrWhiteSpace(parsed))
                         {
-                            return NormalizeApiVersionString(parsed);
+                            return ApiVersionNormalizer.NormalizeOrDefault(parsed);
                         }
                     }
                 }
