@@ -74,19 +74,12 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 .WithSize(book.FileSize ?? 0)
                 .WithFormat("m4b")
                 .Build());
-            db.Downloads.Add(new Download
-            {
-                AudiobookId = book.Id,
-                Title = book.Title ?? string.Empty,
-                Artist = "Author One",
-                Album = book.Title ?? string.Empty,
-                DownloadClientId = "TEST",
-                OriginalUrl = "https://example.invalid",
-                DownloadPath = FileUtils.GetAbsolutePath("downloads"),
-                FinalPath = book.FilePath ?? string.Empty,
-                StartedAt = DateTime.UtcNow,
-                Status = DownloadStatus.Downloading
-            });
+            db.Downloads.Add(new DownloadBuilder()
+                .WithAudiobookId(book.Id)
+                .WithTitle(book.Title ?? string.Empty)
+                .WithArtist("Author One")
+                .WithStatus(DownloadStatus.Downloading)
+                .Build());
             await db.SaveChangesAsync();
 
             var allBooks = db.Audiobooks.ToList();
@@ -96,23 +89,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var mockRepo = new Mock<IAudiobookRepository>();
             mockRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allBooks);
 
-            var mockAudioFileRepo = new Mock<IAudiobookFileRepository>();
-            mockAudioFileRepo
-                .Setup(r => r.GetFormatSummariesAsync(default))
-                .ReturnsAsync(allFiles.Select(f => new AudiobookFileFormatSummary
-                {
-                    AudiobookId = f.AudiobookId,
-                    Path = f.Path,
-                    Format = f.Format,
-                    Container = f.Container,
-                    Codec = f.Codec,
-                    Bitrate = f.Bitrate,
-                }).ToList());
-            mockAudioFileRepo
-                .Setup(r => r.GetCountsByAudiobookIdAsync(default))
-                .ReturnsAsync(allFiles
-                    .GroupBy(f => f.AudiobookId)
-                    .ToDictionary(g => g.Key, g => g.Count()));
+            var mockAudioFileRepo = LibraryControllerMockFactory.CreateAudiobookFileRepository(allFiles);
 
             var mockDownloadRepo = new Mock<IDownloadRepository>();
             mockDownloadRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allDownloads);
