@@ -63,6 +63,12 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public AudiobookBuilder WithFilePath(string value)
+        {
+            _audiobook.FilePath = value;
+            return this;
+        }
+
         public AudiobookBuilder WithQualityProfile(QualityProfile value)
         {
             _audiobook.QualityProfile = value;
