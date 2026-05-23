@@ -18,6 +18,7 @@
 using System.Text.RegularExpressions;
 using Listenarr.Domain.Common;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Common
 {
@@ -30,7 +31,7 @@ namespace Listenarr.Application.Common
         private static readonly Regex ApiVersionFromPathRegex = new(@"^/api/v(?<version>\d+(?:\.\d+)?)(?:/|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex LeadingApiPrefixRegex = new(@"^/api(?:/v\d+(?:\.\d+)?)?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        public static string ResolveApiVersion(HttpContext? context, string? fallbackVersion = null)
+        public static string ResolveApiVersion(HttpContext? context, string? fallbackVersion = null, ILogger? logger = null)
         {
             var fallback = ApiVersionNormalizer.NormalizeOrDefault(fallbackVersion);
 
@@ -47,7 +48,7 @@ namespace Listenarr.Application.Common
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                System.Diagnostics.Debug.WriteLine($"ApiVersionUtils.ResolveApiVersion route parse failed: {ex.Message}");
+                logger?.LogWarning(ex, "API version route parse failed.");
             }
 
             try
@@ -68,7 +69,7 @@ namespace Listenarr.Application.Common
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                System.Diagnostics.Debug.WriteLine($"ApiVersionUtils.ResolveApiVersion path parse failed: {ex.Message}");
+                logger?.LogWarning(ex, "API version path parse failed.");
             }
 
             return fallback;
