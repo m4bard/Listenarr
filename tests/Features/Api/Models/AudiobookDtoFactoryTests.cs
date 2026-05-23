@@ -20,6 +20,7 @@ using Xunit;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Application.Mapping;
+using Listenarr.Tests.Builders;
 
 namespace Listenarr.Tests.Features.Api.Models
 {
@@ -65,7 +66,7 @@ namespace Listenarr.Tests.Features.Api.Models
             db.Audiobooks.Add(book);
             await db.SaveChangesAsync();
 
-            var file = new AudiobookFile { AudiobookId = book.Id, Path = "C:\\test\\book\\file1.m4b", Size = 12345, CreatedAt = DateTime.UtcNow };
+            var file = new AudiobookFileBuilder().WithAudiobook(book).WithPath("C:\\test\\book\\file1.m4b").WithSize(12345).Build();
             db.AudiobookFiles.Add(file);
             await db.SaveChangesAsync();
 

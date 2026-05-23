@@ -24,15 +24,40 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
+using Listenarr.Tests.Common;
+using Listenarr.Tests.Mocks.Api;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
-    public class LibraryController_UpdateAudiobookTests
+    [Trait("Area", "LibraryApi")]
+    [Trait("Name", "LibraryController_UpdateAudiobookTests")]
+    [Trait("Category", "LibraryController")]
+    public class LibraryController_UpdateAudiobookTests : BaseTests
     {
+        private LibraryController CreateController(
+            IAudiobookRepository? audiobookRepository = null)
+        {
+            return new LibraryController(
+                audiobookRepository ?? _audiobookRepository,
+                new Mock<IImageCacheService>().Object,
+                new Mock<ILogger<LibraryController>>().Object,
+                _provider.GetRequiredService<IServiceScopeFactory>(),
+                new Mock<IHistoryRepository>().Object,
+                new Mock<IAudiobookFileRepository>().Object,
+                new Mock<IQualityProfileRepository>().Object,
+                new Mock<IDownloadRepository>().Object,
+                new Mock<IRootFolderRepository>().Object,
+                new Mock<IFileNamingService>().Object,
+                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(FileService.GetTempPath()),
+                libraryListService: LibraryControllerMockFactory.CreateLibraryListService());
+        }
+
         [Fact]
+        [Trait("Method", "UpdateAudiobook")]
+        [Trait("Scenario", "PersistsExpandedMetadataFields")]
         public async Task UpdateAudiobook_PersistsExpandedMetadataFields()
         {
-            // Arrange
+            // Given
             var existingAudiobook = new Audiobook
             {
                 Id = 1,
@@ -72,27 +97,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             mockRepo.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(existingAudiobook);
             mockRepo.Setup(r => r.UpdateAsync(It.IsAny<Audiobook>())).ReturnsAsync(true);
 
-            var mockImageCache = new Mock<IImageCacheService>();
-            var mockLogger = new Mock<ILogger<LibraryController>>();
-            var mockFileNaming = new Mock<IFileNamingService>();
-
-            var services = new ServiceCollection();
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
-
-            var controller = new LibraryController(
-                mockRepo.Object,
-                mockImageCache.Object,
-                mockLogger.Object,
-                scopeFactory,
-                new Mock<IHistoryRepository>().Object,
-                new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                mockFileNaming.Object,
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
-                libraryListService: Mock.Of<ILibraryListService>());
+            var controller = CreateController(audiobookRepository: mockRepo.Object);
 
             var updatedAudiobook = new Audiobook
             {
@@ -135,10 +140,10 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 Abridged = true,
             };
 
-            // Act
+            // When
             var actionResult = await controller.UpdateAudiobook(1, updatedAudiobook);
 
-            // Assert
+            // Then
             Assert.IsType<OkObjectResult>(actionResult);
             Assert.Equal("Edited Title", existingAudiobook.Title);
             Assert.Equal("Edited Subtitle", existingAudiobook.Subtitle);

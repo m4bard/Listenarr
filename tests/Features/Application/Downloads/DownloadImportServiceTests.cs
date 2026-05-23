@@ -281,15 +281,12 @@ namespace Listenarr.Tests.Features.Application.Downloads
                 .Build());
 
             // Simulate existing AudiobookFile (MP3 320) in DB
-            await _audiobookFileRepository.AddAsync(new AudiobookFile
-            {
-                AudiobookId = audiobook.Id,
-                Path = highQualityFile,
-                Format = "mp3",
-                Bitrate = 320000,
-                Source = "manual",
-                CreatedAt = DateTime.UtcNow
-            });
+            await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
+                .WithAudiobook(audiobook)
+                .WithPath(highQualityFile)
+                .WithFormat("mp3")
+                .WithBitrate(320000)
+                .Build());
 
             // Create a temp file representing a lower-quality completed download (MP3 128)
             var tmpMp3 = await FileService.GetTempFileAsync("dummy.mp3");
