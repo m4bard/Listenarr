@@ -18,12 +18,10 @@
 using System.Reflection;
 using Listenarr.Api.Controllers;
 using Listenarr.Application.Interfaces;
-using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.DependencyInjection;
-using Moq;
 using Xunit;
 
 namespace Listenarr.Tests.Features.Api.Controllers
@@ -33,47 +31,13 @@ namespace Listenarr.Tests.Features.Api.Controllers
     [Trait("Category", "LibraryController")]
     public class LibraryController_QualityCutoffTests : BaseTests
     {
-        private LibraryController CreateController(
-            IAudiobookFileRepository? audioFileRepository = null,
-            IDownloadRepository? downloadRepository = null)
-        {
-            var serviceDescriptors = new List<ServiceDescriptor>();
-
-            if (audioFileRepository != null)
-            {
-                serviceDescriptors.Add(ServiceDescriptor.Singleton(audioFileRepository));
-            }
-
-            if (downloadRepository != null)
-            {
-                serviceDescriptors.Add(ServiceDescriptor.Singleton(downloadRepository));
-            }
-
-            return GetRequiredServiceWithOverrides<LibraryController>(serviceDescriptors.ToArray());
-        }
-
         [Fact]
         [Trait("Method", "IsQualityCutoffMetAsync")]
         [Trait("Scenario", "ImportPendingDownload_ReturnsTrue")]
         public async Task IsQualityCutoffMetAsync_ImportPendingDownload_ReturnsTrue()
         {
             // Given
-            var downloadRepo = new Mock<IDownloadRepository>();
-            downloadRepo.Setup(r => r.GetByAudiobookIdAsync(1, default)).ReturnsAsync(new List<Download>
-            {
-                new DownloadBuilder()
-                    .WithId("dl-1")
-                    .WithAudiobookId(1)
-                    .WithStatus(DownloadStatus.ImportPending)
-                    .WithTitle("Dune")
-                    .Build()
-            });
-
-            var audioFileRepo = new Mock<IAudiobookFileRepository>();
-            audioFileRepo.Setup(r => r.GetByAudiobookIdAsync(1, default)).ReturnsAsync(new List<AudiobookFile>());
-
-            var audiobook = new AudiobookBuilder()
-                .WithId(1)
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Dune")
                 .WithQualityProfile(new QualityProfile
                 {
@@ -83,9 +47,16 @@ namespace Listenarr.Tests.Features.Api.Controllers
                         new() { Quality = "MP3", Priority = 1 }
                     }
                 })
-                .Build();
+                .Build());
 
-            var controller = CreateController(audioFileRepository: audioFileRepo.Object, downloadRepository: downloadRepo.Object);
+            await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithId("dl-1")
+                .WithAudiobookId(audiobook.Id)
+                .WithStatus(DownloadStatus.ImportPending)
+                .WithTitle("Dune")
+                .Build());
+
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             // When
             var method = typeof(LibraryController).GetMethod(
@@ -93,7 +64,13 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.NotNull(method);
 
-            var task = (Task<bool>?)method!.Invoke(controller, new object[] { audiobook, Mock.Of<IQualityProfileService>(), downloadRepo.Object, audioFileRepo.Object });
+            var task = (Task<bool>?)method!.Invoke(controller, new object[]
+            {
+                audiobook,
+                _provider.GetRequiredService<IQualityProfileService>(),
+                _downloadRepository,
+                _audiobookFileRepository
+            });
             Assert.NotNull(task);
             var result = await task!;
 

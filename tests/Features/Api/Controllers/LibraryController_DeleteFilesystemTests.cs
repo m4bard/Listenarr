@@ -16,17 +16,11 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Api.Controllers;
-using Listenarr.Application.Interfaces;
-using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Persistence;
-using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Moq;
 using Xunit;
 
 namespace Listenarr.Tests.Features.Api.Controllers
@@ -54,26 +48,19 @@ namespace Listenarr.Tests.Features.Api.Controllers
             await File.WriteAllTextAsync(sidecarPath, "cover");
             await File.WriteAllTextAsync(notePath, "notes");
 
-            await using var dbContext = CreateDbContext();
-            var audiobook = new AudiobookBuilder()
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithId(50)
                 .WithTitle("Jack of Shadows")
                 .WithBasePath(bookFolder)
                 .WithFilePath(audioPath)
-                .Build();
+                .Build());
 
-            var audioFile = new AudiobookFileBuilder()
+            await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
                 .WithAudiobook(audiobook)
                 .WithPath(audioPath)
-                .Build();
+                .Build());
 
-            audiobook.Files = [audioFile];
-
-            dbContext.Audiobooks.Add(audiobook);
-            dbContext.AudiobookFiles.AddRange(audiobook.Files);
-            await dbContext.SaveChangesAsync();
-
-            var controller = CreateController(dbContext);
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             // When
             var result = await controller.DeleteAudiobook(audiobook.Id, deleteFiles: true, deleteFolder: false);
@@ -103,26 +90,19 @@ namespace Listenarr.Tests.Features.Api.Controllers
             await File.WriteAllTextAsync(audioPath, "audio");
             await File.WriteAllTextAsync(sidecarPath, "cover");
 
-            await using var dbContext = CreateDbContext();
-            var audiobook = new AudiobookBuilder()
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithId(1)
                 .WithTitle("Jack of Shadows")
                 .WithBasePath(bookFolder)
                 .WithFilePath(audioPath)
-                .Build();
+                .Build());
 
-            var audioFile = new AudiobookFileBuilder()
+            await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
                 .WithAudiobook(audiobook)
                 .WithPath(audioPath)
-                .Build();
+                .Build());
 
-            audiobook.Files = [audioFile];
-
-            dbContext.Audiobooks.Add(audiobook);
-            dbContext.AudiobookFiles.AddRange(audiobook.Files);
-            await dbContext.SaveChangesAsync();
-
-            var controller = CreateController(dbContext);
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             // When
             var result = await controller.DeleteAudiobook(audiobook.Id, deleteFiles: true, deleteFolder: true);
@@ -149,37 +129,29 @@ namespace Listenarr.Tests.Features.Api.Controllers
             await File.WriteAllTextAsync(currentAudioPath, "audio");
             await File.WriteAllTextAsync(otherAudioPath, "audio");
 
-            await using var dbContext = CreateDbContext();
-            var current = new AudiobookBuilder()
+            var current = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithId(1)
                 .WithTitle("Current")
                 .WithBasePath(sharedFolder)
                 .WithFilePath(currentAudioPath)
-                .Build();
-            var other = new AudiobookBuilder()
+                .Build());
+            var other = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithId(2)
                 .WithTitle("Other")
                 .WithBasePath(sharedFolder)
                 .WithFilePath(otherAudioPath)
-                .Build();
+                .Build());
 
-            var currentFile = new AudiobookFileBuilder()
+            await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
                 .WithAudiobook(current)
                 .WithPath(currentAudioPath)
-                .Build();
-            var otherFile = new AudiobookFileBuilder()
+                .Build());
+            await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
                 .WithAudiobook(other)
                 .WithPath(otherAudioPath)
-                .Build();
+                .Build());
 
-            current.Files = [currentFile];
-            other.Files = [otherFile];
-
-            dbContext.Audiobooks.AddRange(current, other);
-            dbContext.AudiobookFiles.AddRange(current.Files.Concat(other.Files));
-            await dbContext.SaveChangesAsync();
-
-            var controller = CreateController(dbContext);
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             // When
             var result = await controller.DeleteAudiobook(current.Id, deleteFiles: true, deleteFolder: true);
@@ -212,34 +184,26 @@ namespace Listenarr.Tests.Features.Api.Controllers
             Directory.CreateDirectory(discFolder);
             await File.WriteAllTextAsync(audioPath, "audio");
 
-            await using var dbContext = CreateDbContext();
-            dbContext.RootFolders.Add(new RootFolder
+            await _rootFolderRepository.AddAsync(new RootFolder
             {
-                Id = 500,
                 Name = "Library",
                 Path = tempRoot,
                 IsDefault = true
             });
 
-            var audiobook = new AudiobookBuilder()
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithId(10)
                 .WithTitle("Jack of Shadows")
                 .WithBasePath(tempRoot)
                 .WithFilePath(audioPath)
-                .Build();
+                .Build());
 
-            var audioFile = new AudiobookFileBuilder()
+            await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
                 .WithAudiobook(audiobook)
                 .WithPath(audioPath)
-                .Build();
+                .Build());
 
-            audiobook.Files = [audioFile];
-
-            dbContext.Audiobooks.Add(audiobook);
-            dbContext.AudiobookFiles.AddRange(audiobook.Files);
-            await dbContext.SaveChangesAsync();
-
-            var controller = CreateController(dbContext);
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             // When
             var result = await controller.DeleteAudiobook(audiobook.Id, deleteFiles: true, deleteFolder: true);
@@ -269,35 +233,27 @@ namespace Listenarr.Tests.Features.Api.Controllers
             Directory.CreateDirectory(bookFolder);
             await File.WriteAllTextAsync(audioPath, "audio");
 
-            await using var dbContext = CreateDbContext();
-            dbContext.RootFolders.Add(new RootFolder
+            await _rootFolderRepository.AddAsync(new RootFolder
             {
-                Id = 600,
                 Name = "Library",
                 Path = tempRoot,
                 IsDefault = true
             });
 
-            var audiobook = new AudiobookBuilder()
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithId(12)
                 .WithTitle("Jack of Shadows")
                 .WithAuthor("Roger Zelazny")
                 .WithBasePath(bookFolder)
                 .WithFilePath(audioPath)
-                .Build();
+                .Build());
 
-            var audioFile = new AudiobookFileBuilder()
+            await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
                 .WithAudiobook(audiobook)
                 .WithPath(audioPath)
-                .Build();
+                .Build());
 
-            audiobook.Files = [audioFile];
-
-            dbContext.Audiobooks.Add(audiobook);
-            dbContext.AudiobookFiles.AddRange(audiobook.Files);
-            await dbContext.SaveChangesAsync();
-
-            var controller = CreateController(dbContext);
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             // When
             var result = await controller.DeleteAudiobook(audiobook.Id, deleteFiles: true, deleteFolder: true);
@@ -312,62 +268,6 @@ namespace Listenarr.Tests.Features.Api.Controllers
             Assert.False(Directory.Exists(authorFolder));
             Assert.True(Directory.Exists(tempRoot));
             Assert.True(deletedParentFolder ?? false);
-        }
-
-        private static ListenArrDbContext CreateDbContext()
-        {
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
-
-            return new ListenArrDbContext(options);
-        }
-
-        private LibraryController CreateController(ListenArrDbContext dbContext)
-        {
-            var repo = new Mock<IAudiobookRepository>();
-            repo.Setup(r => r.GetByIdAsync(It.IsAny<int>()))
-                .ReturnsAsync((int id) => dbContext.Audiobooks.Include(a => a.Files).FirstOrDefault(a => a.Id == id));
-            repo.Setup(r => r.GetAllAsync())
-                .ReturnsAsync(() => dbContext.Audiobooks.ToList());
-            repo.Setup(r => r.DeleteByIdAsync(It.IsAny<int>()))
-                .ReturnsAsync((int id) =>
-                {
-                    var audiobook = dbContext.Audiobooks.FirstOrDefault(a => a.Id == id);
-                    if (audiobook == null)
-                    {
-                        return false;
-                    }
-
-                    dbContext.Audiobooks.Remove(audiobook);
-                    dbContext.SaveChanges();
-                    return true;
-                });
-
-            return GetRequiredServiceWithOverrides<LibraryController>(
-                new[]
-                {
-                    ServiceDescriptor.Singleton(repo.Object),
-                    ServiceDescriptor.Singleton<IAudiobookFileRepository>(new EfAudiobookFileRepository(dbContext)),
-                    ServiceDescriptor.Singleton(CreateRootFolderRepo(dbContext)),
-                    ServiceDescriptor.Singleton(CreateRootFolderService(dbContext))
-                });
-        }
-
-        private static IRootFolderRepository CreateRootFolderRepo(ListenArrDbContext dbContext)
-        {
-            var mock = new Mock<IRootFolderRepository>();
-            mock.Setup(r => r.GetAllAsync())
-                .ReturnsAsync(() => dbContext.RootFolders.ToList());
-            return mock.Object;
-        }
-
-        private static IRootFolderService CreateRootFolderService(ListenArrDbContext dbContext)
-        {
-            var mock = new Mock<IRootFolderService>();
-            mock.Setup(r => r.GetAllAsync())
-                .ReturnsAsync(() => dbContext.RootFolders.ToList());
-            return mock.Object;
         }
 
     }

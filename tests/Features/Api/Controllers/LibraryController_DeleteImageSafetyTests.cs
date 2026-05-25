@@ -18,8 +18,6 @@
 using Xunit;
 using Moq;
 using Microsoft.Extensions.DependencyInjection;
-using Listenarr.Api.Controllers;
-using Listenarr.Application.Interfaces.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using Listenarr.Application.Interfaces;
 using Listenarr.Tests.Builders;
@@ -38,20 +36,15 @@ namespace Listenarr.Tests.Features.Api.Controllers
         public async Task DeleteAudiobook_InvalidImageUrl_DoesNotCallImageCacheService()
         {
             // Given
-            var mockRepo = new Mock<IAudiobookRepository>();
             var mockImageCache = new Mock<IImageCacheService>();
 
-            var audiobook = new AudiobookBuilder()
-                .WithId(123)
+            var controller = CreateLibraryController(
+                ServiceDescriptor.Singleton(mockImageCache.Object));
+
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Test")
                 .WithImageUrl("/config/cache/images/library/../evil/../../secret.txt")
-                .Build();
-            mockRepo.Setup(r => r.GetByIdAsync(It.IsAny<int>())).ReturnsAsync(audiobook);
-            mockRepo.Setup(r => r.DeleteByIdAsync(It.IsAny<int>())).ReturnsAsync(true);
-
-            var controller = GetRequiredServiceWithOverrides<LibraryController>(
-                ServiceDescriptor.Singleton(mockRepo.Object),
-                ServiceDescriptor.Singleton(mockImageCache.Object));
+                .Build());
 
             // When
             var result = await controller.DeleteAudiobook(audiobook.Id);

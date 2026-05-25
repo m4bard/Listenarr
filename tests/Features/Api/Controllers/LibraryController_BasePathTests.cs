@@ -16,13 +16,11 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Reflection;
-using Microsoft.Extensions.DependencyInjection;
-using Moq;
 using Xunit;
 using Listenarr.Api.Controllers;
-using Listenarr.Application.Interfaces;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
@@ -38,10 +36,6 @@ namespace Listenarr.Tests.Features.Api.Controllers
             typeof(LibraryController).GetMethod("ComputeAudiobookBaseDirectoryFromPattern",
                 BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-        private LibraryController CreateController(Mock<IFileNamingService> fileNamingService) =>
-            GetRequiredServiceWithOverrides<LibraryController>(
-                ServiceDescriptor.Singleton(fileNamingService.Object));
-
         [Fact]
         [Trait("Method", "ComputeAudiobookBaseDirectoryFromPattern")]
         [Trait("Scenario", "NonSeriesBook_ReturnsCorrectPath")]
@@ -54,19 +48,13 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 .WithYear("2025")
                 .Build();
 
-            var mockFileNamingService = new Mock<IFileNamingService>();
-            mockFileNamingService
-                .Setup(x => x.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
-                .Returns((string pattern, Dictionary<string, object> vars, bool sanitize) =>
-                    pattern == "{Author}/{Title}" ? "Stephen Graham Jones/The Buffalo Hunter Hunter" : pattern);
-
-            var controller = CreateController(mockFileNamingService);
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             // When
             var result = (string)ComputeBaseDirectoryMethod.Invoke(controller, new object[] { audiobook, RootPath, FileNamingPattern });
 
             // Then
-            Assert.Equal(Path.Join(RootPath, "Stephen Graham Jones/The Buffalo Hunter Hunter"), result);
+            Assert.Equal(Path.Join(RootPath, "Stephen Graham Jones", "The Buffalo Hunter Hunter"), result);
         }
 
         [Fact]
@@ -83,19 +71,13 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 .WithSeriesNumber("1")
                 .Build();
 
-            var mockFileNamingService = new Mock<IFileNamingService>();
-            mockFileNamingService
-                .Setup(x => x.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
-                .Returns((string pattern, Dictionary<string, object> vars, bool sanitize) =>
-                    pattern == FileNamingPattern ? "Stephen King/The Dark Tower/The Gunslinger" : pattern);
-
-            var controller = CreateController(mockFileNamingService);
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             // When
             var result = (string)ComputeBaseDirectoryMethod.Invoke(controller, new object[] { audiobook, RootPath, FileNamingPattern });
 
             // Then
-            Assert.Equal(Path.Join(RootPath, "Stephen King/The Dark Tower/The Gunslinger"), result);
+            Assert.Equal(Path.Join(RootPath, "Stephen King", "The Dark Tower", "The Gunslinger"), result);
         }
     }
 }

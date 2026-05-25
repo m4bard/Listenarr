@@ -16,11 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Api.Controllers;
-using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
-using Moq;
 using Xunit;
 using Listenarr.Tests.Common;
 
@@ -31,28 +29,14 @@ namespace Listenarr.Tests.Features.Api.Controllers
     [Trait("Category", "LibraryController")]
     public class LibraryController_UpdateAudiobookTests : BaseTests
     {
-        private LibraryController CreateController(
-            IAudiobookRepository? audiobookRepository = null)
-        {
-            var serviceDescriptors = new List<ServiceDescriptor>();
-
-            if (audiobookRepository != null)
-            {
-                serviceDescriptors.Add(ServiceDescriptor.Singleton(audiobookRepository));
-            }
-
-            return GetRequiredServiceWithOverrides<LibraryController>(serviceDescriptors.ToArray());
-        }
-
         [Fact]
         [Trait("Method", "UpdateAudiobook")]
         [Trait("Scenario", "PersistsExpandedMetadataFields")]
         public async Task UpdateAudiobook_PersistsExpandedMetadataFields()
         {
             // Given
-            var existingAudiobook = new Audiobook
+            var existingAudiobook = await _audiobookRepository.AddAsync(new Audiobook
             {
-                Id = 1,
                 Title = "Original Title",
                 Subtitle = "Original Subtitle",
                 Authors = new List<string> { "Original Author" },
@@ -83,13 +67,9 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 Monitored = true,
                 Explicit = false,
                 Abridged = false,
-            };
+            });
 
-            var mockRepo = new Mock<IAudiobookRepository>();
-            mockRepo.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(existingAudiobook);
-            mockRepo.Setup(r => r.UpdateAsync(It.IsAny<Audiobook>())).ReturnsAsync(true);
-
-            var controller = CreateController(audiobookRepository: mockRepo.Object);
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             var updatedAudiobook = new Audiobook
             {
@@ -133,27 +113,29 @@ namespace Listenarr.Tests.Features.Api.Controllers
             };
 
             // When
-            var actionResult = await controller.UpdateAudiobook(1, updatedAudiobook);
+            var actionResult = await controller.UpdateAudiobook(existingAudiobook.Id, updatedAudiobook);
 
             // Then
             Assert.IsType<OkObjectResult>(actionResult);
-            Assert.Equal("Edited Title", existingAudiobook.Title);
-            Assert.Equal("Edited Subtitle", existingAudiobook.Subtitle);
-            Assert.Equal(new List<string> { "Edited Author" }, existingAudiobook.Authors);
-            Assert.Equal(new List<string> { "Edited Narrator" }, existingAudiobook.Narrators);
-            Assert.Equal("Edited description", existingAudiobook.Description);
-            Assert.Equal("Edited Publisher", existingAudiobook.Publisher);
-            Assert.Equal("swedish", existingAudiobook.Language);
-            Assert.Equal("2025-02-01", existingAudiobook.PublishedDate);
-            Assert.Equal("2025", existingAudiobook.PublishYear);
-            Assert.Equal(720, existingAudiobook.Runtime);
-            Assert.Equal("Collector Edition", existingAudiobook.Edition);
-            Assert.Equal("Edited Version", existingAudiobook.Version);
-            Assert.Equal("Edited Universe", existingAudiobook.Series);
-            Assert.Equal("4", existingAudiobook.SeriesNumber);
-            Assert.NotNull(existingAudiobook.SeriesMemberships);
+            var storedAudiobook = await _audiobookRepository.GetByIdAsync(existingAudiobook.Id);
+            Assert.NotNull(storedAudiobook);
+            Assert.Equal("Edited Title", storedAudiobook.Title);
+            Assert.Equal("Edited Subtitle", storedAudiobook.Subtitle);
+            Assert.Equal(new List<string> { "Edited Author" }, storedAudiobook.Authors);
+            Assert.Equal(new List<string> { "Edited Narrator" }, storedAudiobook.Narrators);
+            Assert.Equal("Edited description", storedAudiobook.Description);
+            Assert.Equal("Edited Publisher", storedAudiobook.Publisher);
+            Assert.Equal("swedish", storedAudiobook.Language);
+            Assert.Equal("2025-02-01", storedAudiobook.PublishedDate);
+            Assert.Equal("2025", storedAudiobook.PublishYear);
+            Assert.Equal(720, storedAudiobook.Runtime);
+            Assert.Equal("Collector Edition", storedAudiobook.Edition);
+            Assert.Equal("Edited Version", storedAudiobook.Version);
+            Assert.Equal("Edited Universe", storedAudiobook.Series);
+            Assert.Equal("4", storedAudiobook.SeriesNumber);
+            Assert.NotNull(storedAudiobook.SeriesMemberships);
             Assert.Collection(
-                existingAudiobook.SeriesMemberships!,
+                storedAudiobook.SeriesMemberships!,
                 membership =>
                 {
                     Assert.Equal("Edited Universe", membership.SeriesName);
@@ -166,14 +148,12 @@ namespace Listenarr.Tests.Features.Api.Controllers
                     Assert.Equal("12", membership.SeriesNumber);
                     Assert.False(membership.IsPrimary);
                 });
-            Assert.Equal(new List<string> { "Sci-Fi", "Adventure" }, existingAudiobook.Genres);
-            Assert.Equal("https://example.com/edited.jpg", existingAudiobook.ImageUrl);
-            Assert.Equal(new List<string> { "tag-two" }, existingAudiobook.Tags);
-            Assert.False(existingAudiobook.Monitored);
-            Assert.True(existingAudiobook.Explicit);
-            Assert.True(existingAudiobook.Abridged);
-
-            mockRepo.Verify(r => r.UpdateAsync(existingAudiobook), Times.Once);
+            Assert.Equal(new List<string> { "Sci-Fi", "Adventure" }, storedAudiobook.Genres);
+            Assert.Equal("https://example.com/edited.jpg", storedAudiobook.ImageUrl);
+            Assert.Equal(new List<string> { "tag-two" }, storedAudiobook.Tags);
+            Assert.False(storedAudiobook.Monitored);
+            Assert.True(storedAudiobook.Explicit);
+            Assert.True(storedAudiobook.Abridged);
         }
     }
 }

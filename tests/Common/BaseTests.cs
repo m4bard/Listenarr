@@ -1,11 +1,11 @@
 using System.Diagnostics.CodeAnalysis;
+using Listenarr.Api.Controllers;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Models.Configurations;
 using Listenarr.Tests.Builders;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
 
 namespace Listenarr.Tests.Common
@@ -81,35 +81,16 @@ namespace Listenarr.Tests.Common
             _applicationPathService = _provider.GetRequiredService<IApplicationPathService>();
         }
 
-        protected TService GetRequiredServiceWithOverrides<TService>(params ServiceDescriptor[] serviceDescriptors)
-            where TService : class
+        protected LibraryController CreateLibraryController(params ServiceDescriptor[] serviceDescriptors)
         {
-            return GetRequiredServiceWithOverrides<TService>(serviceDescriptors, Array.Empty<Type>());
+            return MockUtils.CreateLibraryController(_services, Init, () => _provider, serviceDescriptors);
         }
 
-        protected TService GetRequiredServiceWithOverrides<TService>(
+        protected LibraryController CreateLibraryController(
             IEnumerable<ServiceDescriptor> serviceDescriptors,
             params Type[] serviceTypesToRemove)
-            where TService : class
         {
-            foreach (var serviceDescriptor in serviceDescriptors)
-            {
-                _services.RemoveAll(serviceDescriptor.ServiceType);
-            }
-
-            foreach (var serviceType in serviceTypesToRemove)
-            {
-                _services.RemoveAll(serviceType);
-            }
-
-            foreach (var serviceDescriptor in serviceDescriptors)
-            {
-                _services.Add(serviceDescriptor);
-            }
-
-            Init();
-
-            return _provider.GetRequiredService<TService>();
+            return MockUtils.CreateLibraryController(_services, Init, () => _provider, serviceDescriptors, serviceTypesToRemove);
         }
 
         public virtual async Task InitializeAsync()

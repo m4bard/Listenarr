@@ -20,8 +20,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Xunit;
 using Listenarr.Api.Controllers;
-using Listenarr.Domain.Models;
-using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
@@ -33,32 +31,6 @@ namespace Listenarr.Tests.Features.Api.Controllers
     [Trait("Category", "LibraryController")]
     public class LibraryController_ScanPathConfigFailureTests : BaseTests
     {
-        private LibraryController CreateController(
-            IAudiobookRepository? audiobookRepository = null,
-            IRootFolderService? rootFolderService = null,
-            IConfigurationService? configurationService = null)
-        {
-            var serviceDescriptors = new List<ServiceDescriptor>();
-
-            if (audiobookRepository != null)
-            {
-                serviceDescriptors.Add(ServiceDescriptor.Singleton(audiobookRepository));
-            }
-
-            if (rootFolderService != null)
-            {
-                serviceDescriptors.Add(ServiceDescriptor.Singleton(rootFolderService));
-            }
-
-            if (configurationService != null)
-            {
-                serviceDescriptors.Add(ServiceDescriptor.Singleton(configurationService));
-            }
-
-            return GetRequiredServiceWithOverrides<LibraryController>(
-                serviceDescriptors,
-                typeof(IScanQueueService));
-        }
         [Fact]
         [Trait("Method", "ScanAudiobookFiles")]
         [Trait("Scenario", "ConfigUnavailable_NoBasePath_Returns500")]
@@ -67,12 +39,10 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Given
             var mockConfig = new Mock<IConfigurationService>();
             mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ThrowsAsync(new Exception("config failure"));
-            var mockRootFolderSvc = new Mock<IRootFolderService>();
-            mockRootFolderSvc.Setup(r => r.GetAllAsync()).ReturnsAsync(new List<RootFolder>());
 
-            var controller = CreateController(
-                rootFolderService: mockRootFolderSvc.Object,
-                configurationService: mockConfig.Object);
+            var controller = CreateLibraryController(
+                new[] { ServiceDescriptor.Singleton(mockConfig.Object) },
+                typeof(IScanQueueService));
 
             var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Test")

@@ -17,11 +17,9 @@
  */
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
-using Moq;
 using Xunit;
 using Listenarr.Api.Controllers;
 using Listenarr.Domain.Models;
-using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
@@ -33,26 +31,6 @@ namespace Listenarr.Tests.Features.Api.Controllers
     [Trait("Category", "LibraryController")]
     public class LibraryController_ScanPathValidationTests : BaseTests
     {
-        private LibraryController CreateController(
-            IAudiobookRepository? audiobookRepository = null,
-            IRootFolderService? rootFolderService = null)
-        {
-            var serviceDescriptors = new List<ServiceDescriptor>();
-
-            if (audiobookRepository != null)
-            {
-                serviceDescriptors.Add(ServiceDescriptor.Singleton(audiobookRepository));
-            }
-
-            if (rootFolderService != null)
-            {
-                serviceDescriptors.Add(ServiceDescriptor.Singleton(rootFolderService));
-            }
-
-            return GetRequiredServiceWithOverrides<LibraryController>(
-                serviceDescriptors,
-                typeof(IScanQueueService));
-        }
         [Fact]
         [Trait("Method", "ScanAudiobookFiles")]
         [Trait("Scenario", "AllowsRequestPathWithinConfiguredRoot_ReturnsOk")]
@@ -61,13 +39,15 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Given
             var tempRoot = FileService.GetTempDirectory("listenarr-test-root");
 
-            var mockRootFolderSvc = new Mock<IRootFolderService>();
-            mockRootFolderSvc.Setup(r => r.GetAllAsync()).ReturnsAsync(new List<RootFolder>
-            {
-                new RootFolder { Id = 1, Name = "root", Path = tempRoot }
-            });
+            var controller = CreateLibraryController(
+                Array.Empty<ServiceDescriptor>(),
+                typeof(IScanQueueService));
 
-            var controller = CreateController(rootFolderService: mockRootFolderSvc.Object);
+            await _rootFolderRepository.AddAsync(new RootFolder
+            {
+                Name = "root",
+                Path = tempRoot
+            });
 
             await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
                 .WithOutputPath(FileService.GetTempPath())
@@ -98,13 +78,15 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var tempRoot = FileService.GetTempDirectory("listenarr-test-root");
             var other = FileService.GetTempDirectory("listenarr-other");
 
-            var mockRootFolderSvc = new Mock<IRootFolderService>();
-            mockRootFolderSvc.Setup(r => r.GetAllAsync()).ReturnsAsync(new List<RootFolder>
-            {
-                new RootFolder { Id = 1, Name = "root", Path = tempRoot }
-            });
+            var controller = CreateLibraryController(
+                Array.Empty<ServiceDescriptor>(),
+                typeof(IScanQueueService));
 
-            var controller = CreateController(rootFolderService: mockRootFolderSvc.Object);
+            await _rootFolderRepository.AddAsync(new RootFolder
+            {
+                Name = "root",
+                Path = tempRoot
+            });
 
             await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
                 .WithOutputPath(Path.Join(FileService.GetTempPath(), "different-root"))
