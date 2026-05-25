@@ -39,7 +39,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Given
             var mockImageCache = new Mock<IImageCacheService>();
 
-            Init(services => services.AddSingleton(mockImageCache.Object));
+            Init(services => services.WithSingleton(mockImageCache.Object));
             var controller = _provider.GetRequiredService<LibraryController>();
 
             var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()

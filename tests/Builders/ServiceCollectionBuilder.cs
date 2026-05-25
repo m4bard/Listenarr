@@ -33,8 +33,6 @@ namespace Listenarr.Tests.Builders
         private readonly List<ServiceDescriptor> _serviceDescriptors = new();
         private readonly List<Type> _serviceTypesToRemove = new();
 
-        public bool HasOverrides => _serviceDescriptors.Count > 0 || _serviceTypesToRemove.Count > 0;
-
         public ServiceCollectionBuilder()
         {
         }
@@ -58,7 +56,7 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
-        public ServiceCollectionBuilder AddSingleton<TService>(TService implementationInstance)
+        public ServiceCollectionBuilder WithSingleton<TService>(TService implementationInstance)
             where TService : class
         {
             _serviceDescriptors.Add(ServiceDescriptor.Singleton(implementationInstance));
@@ -66,7 +64,7 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
-        public ServiceCollectionBuilder AddSingleton<TService, TImplementation>()
+        public ServiceCollectionBuilder WithSingleton<TService, TImplementation>()
             where TService : class
             where TImplementation : class, TService
         {
@@ -75,7 +73,7 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
-        public ServiceCollectionBuilder AddSingleton<TService>(Func<IServiceProvider, TService> implementationFactory)
+        public ServiceCollectionBuilder WithSingleton<TService>(Func<IServiceProvider, TService> implementationFactory)
             where TService : class
         {
             _serviceDescriptors.Add(ServiceDescriptor.Singleton(implementationFactory));
@@ -83,7 +81,7 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
-        public ServiceCollectionBuilder AddScoped<TService, TImplementation>()
+        public ServiceCollectionBuilder WithScoped<TService, TImplementation>()
             where TService : class
             where TImplementation : class, TService
         {
@@ -92,7 +90,7 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
-        public ServiceCollectionBuilder AddScoped<TService>(Func<IServiceProvider, TService> implementationFactory)
+        public ServiceCollectionBuilder WithScoped<TService>(Func<IServiceProvider, TService> implementationFactory)
             where TService : class
         {
             _serviceDescriptors.Add(ServiceDescriptor.Scoped(implementationFactory));
@@ -100,7 +98,7 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
-        public ServiceCollectionBuilder AddTransient<TService, TImplementation>()
+        public ServiceCollectionBuilder WithTransient<TService, TImplementation>()
             where TService : class
             where TImplementation : class, TService
         {
@@ -109,7 +107,7 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
-        public ServiceCollectionBuilder AddTransient<TService>(Func<IServiceProvider, TService> implementationFactory)
+        public ServiceCollectionBuilder WithTransient<TService>(Func<IServiceProvider, TService> implementationFactory)
             where TService : class
         {
             _serviceDescriptors.Add(ServiceDescriptor.Transient(implementationFactory));
@@ -129,7 +127,15 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
-        public ServiceCollection Build()
+        public ServiceCollection Build(ServiceCollection? services = null)
+        {
+            services ??= BuildServices();
+            ApplyOverrides(services);
+
+            return services;
+        }
+
+        private ServiceCollection BuildServices()
         {
             var configuration = new ConfigurationManager();
 
@@ -217,12 +223,10 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<DownloadMonitorService>(); // FIXME: This should be a processor
             services.AddSingleton<DownloadProcessingJobProcessor>();
 
-            ApplyOverrides(services);
-
             return services;
         }
 
-        public void ApplyOverrides(ServiceCollection services)
+        private void ApplyOverrides(ServiceCollection services)
         {
             foreach (var serviceDescriptor in _serviceDescriptors)
             {

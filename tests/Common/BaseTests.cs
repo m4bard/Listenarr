@@ -61,15 +61,7 @@ namespace Listenarr.Tests.Common
                 .WithContentRootPath(FileService.GetTempPath());
 
             configureBuilder?.Invoke(builder);
-
-            if (_services == null)
-            {
-                _services = builder.Build();
-            }
-            else if (builder.HasOverrides)
-            {
-                builder.ApplyOverrides(_services);
-            }
+            _services = builder.Build(_services);
 
             _provider?.Dispose();
             _provider = _services.BuildServiceProvider();

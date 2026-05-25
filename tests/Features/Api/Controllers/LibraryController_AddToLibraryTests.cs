@@ -39,7 +39,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             imageCacheServiceMock.Setup(m => m.MoveToLibraryStorageAsync(It.IsAny<string>(), imageUrl1)).ReturnsAsync("config/cache/images/library/B000TEST01.jpg");
             imageCacheServiceMock.Setup(m => m.MoveToLibraryStorageAsync(It.IsAny<string>(), imageUrl2)).ReturnsAsync("config/cache/images/library/derived.jpg");
 
-            Init(services => services.AddSingleton(imageCacheServiceMock.Object));
+            Init(services => services.WithSingleton(imageCacheServiceMock.Object));
             await InitDataAsync();
         }
 

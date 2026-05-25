@@ -41,7 +41,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ThrowsAsync(new Exception("config failure"));
 
             Init(services => services
-                .AddSingleton(mockConfig.Object)
+                .WithSingleton(mockConfig.Object)
                 .Without<IScanQueueService>());
             var controller = _provider.GetRequiredService<LibraryController>();
 
