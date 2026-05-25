@@ -695,7 +695,7 @@ namespace Listenarr.Domain.Common
                 }
 
                 var relativeSegment = NormalizePathSegmentForCombine(segment);
-                if (Path.IsPathRooted(relativeSegment) || IsWindowsDriveRootedPath(relativeSegment))
+                if (Path.IsPathRooted(relativeSegment))
                 {
                     throw new ArgumentException("Path segments must be relative.", nameof(segments));
                 }
@@ -721,12 +721,6 @@ namespace Listenarr.Domain.Common
 
         private static string TrimTrailingPathSeparators(string path)
             => path.TrimEnd('/', '\\');
-
-        private static bool IsWindowsDriveRootedPath(string path)
-            => path.Length >= 3
-               && char.IsLetter(path[0])
-               && path[1] == ':'
-               && (path[2] == '/' || path[2] == '\\' || path[2] == Path.DirectorySeparatorChar);
 
         private static bool HasInvalidWindowsPathWhitespace(string path)
         {
