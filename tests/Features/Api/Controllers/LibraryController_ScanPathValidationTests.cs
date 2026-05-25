@@ -17,7 +17,6 @@
  */
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using Listenarr.Api.Controllers;
@@ -38,20 +37,21 @@ namespace Listenarr.Tests.Features.Api.Controllers
             IAudiobookRepository? audiobookRepository = null,
             IRootFolderService? rootFolderService = null)
         {
-            return new LibraryController(
-                audiobookRepository ?? _audiobookRepository,
-                new Mock<IImageCacheService>().Object,
-                new Mock<ILogger<LibraryController>>().Object,
-                _provider.GetRequiredService<IServiceScopeFactory>(),
-                new Mock<IHistoryRepository>().Object,
-                new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                new Mock<IFileNamingService>().Object,
-                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
-                libraryListService: _provider.GetRequiredService<ILibraryListService>(),
-                rootFolderService: rootFolderService ?? new Mock<IRootFolderService>().Object);
+            var serviceDescriptors = new List<ServiceDescriptor>();
+
+            if (audiobookRepository != null)
+            {
+                serviceDescriptors.Add(ServiceDescriptor.Singleton(audiobookRepository));
+            }
+
+            if (rootFolderService != null)
+            {
+                serviceDescriptors.Add(ServiceDescriptor.Singleton(rootFolderService));
+            }
+
+            return GetRequiredServiceWithOverrides<LibraryController>(
+                serviceDescriptors,
+                typeof(IScanQueueService));
         }
         [Fact]
         [Trait("Method", "ScanAudiobookFiles")]
@@ -59,15 +59,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
         public async Task ScanAudiobook_AllowsRequestPathWithinConfiguredRoot_ReturnsOk()
         {
             // Given
-            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
-                .WithOutputPath(FileService.GetTempPath())
-                .Build());
-
             var tempRoot = FileService.GetTempDirectory("listenarr-test-root");
-
-            var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
-                .WithTitle("Test")
-                .Build());
 
             var mockRootFolderSvc = new Mock<IRootFolderService>();
             mockRootFolderSvc.Setup(r => r.GetAllAsync()).ReturnsAsync(new List<RootFolder>
@@ -76,6 +68,15 @@ namespace Listenarr.Tests.Features.Api.Controllers
             });
 
             var controller = CreateController(rootFolderService: mockRootFolderSvc.Object);
+
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(FileService.GetTempPath())
+                .Build());
+
+            var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .Build());
+
             var request = new LibraryController.ScanRequest { Path = tempRoot };
 
             // When
@@ -94,16 +95,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
         public async Task ScanAudiobook_RejectsRequestPathOutsideConfiguredRoots_ReturnsBadRequest()
         {
             // Given
-            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
-                .WithOutputPath(Path.Join(FileService.GetTempPath(), "different-root"))
-                .Build());
-
             var tempRoot = FileService.GetTempDirectory("listenarr-test-root");
             var other = FileService.GetTempDirectory("listenarr-other");
-
-            var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
-                .WithTitle("Test")
-                .Build());
 
             var mockRootFolderSvc = new Mock<IRootFolderService>();
             mockRootFolderSvc.Setup(r => r.GetAllAsync()).ReturnsAsync(new List<RootFolder>
@@ -112,6 +105,15 @@ namespace Listenarr.Tests.Features.Api.Controllers
             });
 
             var controller = CreateController(rootFolderService: mockRootFolderSvc.Object);
+
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(Path.Join(FileService.GetTempPath(), "different-root"))
+                .Build());
+
+            var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .Build());
+
             var request = new LibraryController.ScanRequest { Path = other };
 
             // When

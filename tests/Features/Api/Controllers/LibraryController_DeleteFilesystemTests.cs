@@ -19,7 +19,6 @@ using Listenarr.Api.Controllers;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Domain.Models.Configurations;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Tests.Builders;
@@ -27,7 +26,6 @@ using Listenarr.Tests.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
@@ -346,37 +344,27 @@ namespace Listenarr.Tests.Features.Api.Controllers
                     return true;
                 });
 
-            var imageCache = new Mock<IImageCacheService>();
-            var logger = new Mock<ILogger<LibraryController>>();
-            var fileNaming = new Mock<IFileNamingService>();
-
-            var services = new ServiceCollection();
-            var config = new Mock<IConfigurationService>();
-            config.Setup(c => c.GetApplicationSettingsAsync())
-                .ReturnsAsync(new ApplicationSettings { OutputPath = Path.GetTempPath() });
-            services.AddSingleton<IConfigurationService>(config.Object);
-
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
-
-            return new LibraryController(
-                repo.Object,
-                imageCache.Object,
-                logger.Object,
-                scopeFactory,
-                new Mock<IHistoryRepository>().Object,
-                new EfAudiobookFileRepository(dbContext),
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                CreateRootFolderRepo(dbContext),
-                fileNaming.Object,
-                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
-                libraryListService: _provider.GetRequiredService<ILibraryListService>());
+            return GetRequiredServiceWithOverrides<LibraryController>(
+                new[]
+                {
+                    ServiceDescriptor.Singleton(repo.Object),
+                    ServiceDescriptor.Singleton<IAudiobookFileRepository>(new EfAudiobookFileRepository(dbContext)),
+                    ServiceDescriptor.Singleton(CreateRootFolderRepo(dbContext)),
+                    ServiceDescriptor.Singleton(CreateRootFolderService(dbContext))
+                });
         }
 
         private static IRootFolderRepository CreateRootFolderRepo(ListenArrDbContext dbContext)
         {
             var mock = new Mock<IRootFolderRepository>();
+            mock.Setup(r => r.GetAllAsync())
+                .ReturnsAsync(() => dbContext.RootFolders.ToList());
+            return mock.Object;
+        }
+
+        private static IRootFolderService CreateRootFolderService(ListenArrDbContext dbContext)
+        {
+            var mock = new Mock<IRootFolderService>();
             mock.Setup(r => r.GetAllAsync())
                 .ReturnsAsync(() => dbContext.RootFolders.ToList());
             return mock.Object;

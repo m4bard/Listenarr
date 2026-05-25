@@ -5,6 +5,7 @@ using Listenarr.Domain.Models;
 using Listenarr.Domain.Models.Configurations;
 using Listenarr.Tests.Builders;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
 
 namespace Listenarr.Tests.Common
@@ -78,6 +79,37 @@ namespace Listenarr.Tests.Common
             _moveJobRepository = _provider.GetRequiredService<IMoveJobRepository>();
             _rootFolderRepository = _provider.GetRequiredService<IRootFolderRepository>();
             _applicationPathService = _provider.GetRequiredService<IApplicationPathService>();
+        }
+
+        protected TService GetRequiredServiceWithOverrides<TService>(params ServiceDescriptor[] serviceDescriptors)
+            where TService : class
+        {
+            return GetRequiredServiceWithOverrides<TService>(serviceDescriptors, Array.Empty<Type>());
+        }
+
+        protected TService GetRequiredServiceWithOverrides<TService>(
+            IEnumerable<ServiceDescriptor> serviceDescriptors,
+            params Type[] serviceTypesToRemove)
+            where TService : class
+        {
+            foreach (var serviceDescriptor in serviceDescriptors)
+            {
+                _services.RemoveAll(serviceDescriptor.ServiceType);
+            }
+
+            foreach (var serviceType in serviceTypesToRemove)
+            {
+                _services.RemoveAll(serviceType);
+            }
+
+            foreach (var serviceDescriptor in serviceDescriptors)
+            {
+                _services.Add(serviceDescriptor);
+            }
+
+            Init();
+
+            return _provider.GetRequiredService<TService>();
         }
 
         public virtual async Task InitializeAsync()

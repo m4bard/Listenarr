@@ -17,7 +17,6 @@
  */
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using Listenarr.Api.Controllers;
@@ -37,22 +36,28 @@ namespace Listenarr.Tests.Features.Api.Controllers
         private LibraryController CreateController(
             IAudiobookRepository? audiobookRepository = null,
             IRootFolderService? rootFolderService = null,
-            IServiceScopeFactory? scopeFactory = null)
+            IConfigurationService? configurationService = null)
         {
-            return new LibraryController(
-                audiobookRepository ?? _audiobookRepository,
-                new Mock<IImageCacheService>().Object,
-                new Mock<ILogger<LibraryController>>().Object,
-                scopeFactory ?? _provider.GetRequiredService<IServiceScopeFactory>(),
-                new Mock<IHistoryRepository>().Object,
-                new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                new Mock<IFileNamingService>().Object,
-                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
-                libraryListService: _provider.GetRequiredService<ILibraryListService>(),
-                rootFolderService: rootFolderService ?? new Mock<IRootFolderService>().Object);
+            var serviceDescriptors = new List<ServiceDescriptor>();
+
+            if (audiobookRepository != null)
+            {
+                serviceDescriptors.Add(ServiceDescriptor.Singleton(audiobookRepository));
+            }
+
+            if (rootFolderService != null)
+            {
+                serviceDescriptors.Add(ServiceDescriptor.Singleton(rootFolderService));
+            }
+
+            if (configurationService != null)
+            {
+                serviceDescriptors.Add(ServiceDescriptor.Singleton(configurationService));
+            }
+
+            return GetRequiredServiceWithOverrides<LibraryController>(
+                serviceDescriptors,
+                typeof(IScanQueueService));
         }
         [Fact]
         [Trait("Method", "ScanAudiobookFiles")]
@@ -62,21 +67,16 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Given
             var mockConfig = new Mock<IConfigurationService>();
             mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ThrowsAsync(new Exception("config failure"));
-            var scopeFactory = new ServiceCollection()
-                .AddSingleton<IConfigurationService>(mockConfig.Object)
-                .BuildServiceProvider()
-                .GetRequiredService<IServiceScopeFactory>();
-
-            var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
-                .WithTitle("Test")
-                .Build());
-
             var mockRootFolderSvc = new Mock<IRootFolderService>();
             mockRootFolderSvc.Setup(r => r.GetAllAsync()).ReturnsAsync(new List<RootFolder>());
 
             var controller = CreateController(
                 rootFolderService: mockRootFolderSvc.Object,
-                scopeFactory: scopeFactory);
+                configurationService: mockConfig.Object);
+
+            var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .Build());
 
             var request = new LibraryController.ScanRequest { Path = Path.Join(Path.GetTempPath(), "somepath") };
 

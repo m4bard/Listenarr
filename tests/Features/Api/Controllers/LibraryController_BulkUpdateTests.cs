@@ -123,25 +123,13 @@ namespace Listenarr.Tests.Features.Api.Controllers
             mockConfigService.Setup(c => c.GetApplicationSettingsAsync())
                 .ReturnsAsync(new ApplicationSettings { OutputPath = tempRoot, FileNamingPattern = "{Author}/{Title}" });
 
-            var services = new ServiceCollection();
-            services.AddSingleton<IConfigurationService>(mockConfigService.Object);
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
-
-            // Create controller instance
-            var controller = new LibraryController(
-                mockRepo.Object,
-                mockImageCache.Object,
-                mockLogger.Object,
-                scopeFactory,
-                new EfHistoryRepository(dbContext),
-                new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                mockFileNaming.Object,
-                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
-                libraryListService: _provider.GetRequiredService<ILibraryListService>());
+            var controller = GetRequiredServiceWithOverrides<LibraryController>(
+                ServiceDescriptor.Singleton(mockRepo.Object),
+                ServiceDescriptor.Singleton(mockImageCache.Object),
+                ServiceDescriptor.Singleton(mockLogger.Object),
+                ServiceDescriptor.Singleton<IHistoryRepository>(new EfHistoryRepository(dbContext)),
+                ServiceDescriptor.Singleton(mockFileNaming.Object),
+                ServiceDescriptor.Singleton(mockConfigService.Object));
 
             // Build request: update monitored + qualityProfileId + rootFolder (include a non-existent id)
             var request = new LibraryController.BulkUpdateRequest

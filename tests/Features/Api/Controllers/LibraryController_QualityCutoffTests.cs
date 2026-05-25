@@ -23,7 +23,6 @@ using Listenarr.Domain.Models;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
@@ -38,19 +37,19 @@ namespace Listenarr.Tests.Features.Api.Controllers
             IAudiobookFileRepository? audioFileRepository = null,
             IDownloadRepository? downloadRepository = null)
         {
-            return new LibraryController(
-                _audiobookRepository,
-                new Mock<IImageCacheService>().Object,
-                new Mock<ILogger<LibraryController>>().Object,
-                _provider.GetRequiredService<IServiceScopeFactory>(),
-                new Mock<IHistoryRepository>().Object,
-                audioFileRepository ?? new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                downloadRepository ?? new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                new Mock<IFileNamingService>().Object,
-                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
-                libraryListService: _provider.GetRequiredService<ILibraryListService>());
+            var serviceDescriptors = new List<ServiceDescriptor>();
+
+            if (audioFileRepository != null)
+            {
+                serviceDescriptors.Add(ServiceDescriptor.Singleton(audioFileRepository));
+            }
+
+            if (downloadRepository != null)
+            {
+                serviceDescriptors.Add(ServiceDescriptor.Singleton(downloadRepository));
+            }
+
+            return GetRequiredServiceWithOverrides<LibraryController>(serviceDescriptors.ToArray());
         }
 
         [Fact]

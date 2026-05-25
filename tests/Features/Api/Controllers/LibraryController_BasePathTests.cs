@@ -17,11 +17,9 @@
  */
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using Listenarr.Api.Controllers;
-using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
@@ -41,20 +39,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         private LibraryController CreateController(Mock<IFileNamingService> fileNamingService) =>
-            new LibraryController(
-                new Mock<IAudiobookRepository>().Object,
-                new Mock<IImageCacheService>().Object,
-                new Mock<ILogger<LibraryController>>().Object,
-                new Mock<IServiceScopeFactory>().Object,
-                new Mock<IHistoryRepository>().Object,
-                new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                fileNamingService.Object,
-                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
-                libraryListService: _provider.GetRequiredService<ILibraryListService>(),
-                scanQueueService: new Mock<IScanQueueService>().Object);
+            GetRequiredServiceWithOverrides<LibraryController>(
+                ServiceDescriptor.Singleton(fileNamingService.Object));
 
         [Fact]
         [Trait("Method", "ComputeAudiobookBaseDirectoryFromPattern")]

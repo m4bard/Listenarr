@@ -17,14 +17,11 @@
  */
 using Xunit;
 using Moq;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Listenarr.Api.Controllers;
 using Listenarr.Application.Interfaces.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using Listenarr.Application.Interfaces;
-using Listenarr.Domain.Models.Configurations;
-using Listenarr.Application.Notification;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 
@@ -43,25 +40,6 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Given
             var mockRepo = new Mock<IAudiobookRepository>();
             var mockImageCache = new Mock<IImageCacheService>();
-            var mockLogger = new Mock<ILogger<LibraryController>>();
-
-            var services = new ServiceCollection();
-            var mockConfig = new Mock<IConfigurationService>();
-            mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings { OutputPath = System.IO.Path.GetTempPath() });
-            services.AddSingleton<IConfigurationService>(mockConfig.Object);
-
-            // Provide a mock signalR hub context (with Clients.All mocked) to avoid exceptions during broadcast
-            var mockHub = new Mock<Microsoft.AspNetCore.SignalR.IHubContext<DownloadHub>>();
-            var mockClients = new Mock<Microsoft.AspNetCore.SignalR.IHubClients>();
-            var mockClientProxy = new Mock<Microsoft.AspNetCore.SignalR.IClientProxy>();
-            mockClientProxy.Setup(m => m.SendCoreAsync(It.IsAny<string>(), It.IsAny<object[]>(), default)).Returns(System.Threading.Tasks.Task.CompletedTask);
-            mockClients.SetupGet(c => c.All).Returns(mockClientProxy.Object);
-            mockHub.SetupGet(h => h.Clients).Returns(mockClients.Object);
-            services.AddSingleton(typeof(Microsoft.AspNetCore.SignalR.IHubContext<DownloadHub>), mockHub.Object);
-
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
-            var fileNaming = new Mock<IFileNamingService>().Object;
 
             var audiobook = new AudiobookBuilder()
                 .WithId(123)
@@ -71,19 +49,9 @@ namespace Listenarr.Tests.Features.Api.Controllers
             mockRepo.Setup(r => r.GetByIdAsync(It.IsAny<int>())).ReturnsAsync(audiobook);
             mockRepo.Setup(r => r.DeleteByIdAsync(It.IsAny<int>())).ReturnsAsync(true);
 
-            var controller = new LibraryController(
-                mockRepo.Object,
-                mockImageCache.Object,
-                mockLogger.Object,
-                scopeFactory,
-                new Mock<IHistoryRepository>().Object,
-                new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                fileNaming,
-                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
-                libraryListService: _provider.GetRequiredService<ILibraryListService>());
+            var controller = GetRequiredServiceWithOverrides<LibraryController>(
+                ServiceDescriptor.Singleton(mockRepo.Object),
+                ServiceDescriptor.Singleton(mockImageCache.Object));
 
             // When
             var result = await controller.DeleteAudiobook(audiobook.Id);

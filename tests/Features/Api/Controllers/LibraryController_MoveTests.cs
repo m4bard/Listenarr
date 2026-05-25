@@ -17,7 +17,6 @@
  */
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using Listenarr.Api.Controllers;
@@ -38,20 +37,19 @@ namespace Listenarr.Tests.Features.Api.Controllers
             IAudiobookRepository? audiobookRepository = null,
             IMoveQueueService? moveQueueService = null)
         {
-            return new LibraryController(
-                audiobookRepository ?? _audiobookRepository,
-                new Mock<IImageCacheService>().Object,
-                new Mock<ILogger<LibraryController>>().Object,
-                _provider.GetRequiredService<IServiceScopeFactory>(),
-                new Mock<IHistoryRepository>().Object,
-                new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                new Mock<IFileNamingService>().Object,
-                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
-                libraryListService: _provider.GetRequiredService<ILibraryListService>(),
-                moveQueueService: moveQueueService ?? new Mock<IMoveQueueService>().Object);
+            var serviceDescriptors = new List<ServiceDescriptor>();
+
+            if (audiobookRepository != null)
+            {
+                serviceDescriptors.Add(ServiceDescriptor.Singleton(audiobookRepository));
+            }
+
+            if (moveQueueService != null)
+            {
+                serviceDescriptors.Add(ServiceDescriptor.Singleton(moveQueueService));
+            }
+
+            return GetRequiredServiceWithOverrides<LibraryController>(serviceDescriptors.ToArray());
         }
 
         [Fact]
@@ -60,12 +58,12 @@ namespace Listenarr.Tests.Features.Api.Controllers
         public async Task MoveAudiobook_ReturnsBadRequest_WhenSourceDoesNotExist()
         {
             // Given
+            var controller = CreateController();
+
             var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Test")
                 .WithBasePath(Path.Join(FileService.GetTempPath(), "nonexistent"))
                 .Build());
-
-            var controller = CreateController();
 
             var request = new LibraryController.MoveRequest { DestinationPath = Path.Join(FileService.GetTempPath(), "target") };
 
@@ -89,12 +87,12 @@ namespace Listenarr.Tests.Features.Api.Controllers
             mockMoveQueue.Setup(m => m.EnqueueMoveAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>()))
                 .ReturnsAsync(expectedId);
 
+            var controller = CreateController(moveQueueService: mockMoveQueue.Object);
+
             var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Test")
                 .WithBasePath(FileService.GetTempDirectory("listenarr-move-src"))
                 .Build());
-
-            var controller = CreateController(moveQueueService: mockMoveQueue.Object);
 
             var target = Path.Join(FileService.GetTempPath(), "listenarr-move-dst");
             var request = new LibraryController.MoveRequest { DestinationPath = target };
@@ -116,12 +114,12 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Given
             var mockMoveQueue = new Mock<IMoveQueueService>();
 
+            var controller = CreateController(moveQueueService: mockMoveQueue.Object);
+
             var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Test")
                 .WithBasePath(Path.Join(FileService.GetTempPath(), "listenarr-move-src"))
                 .Build());
-
-            var controller = CreateController(moveQueueService: mockMoveQueue.Object);
 
             var target = Path.Join(FileService.GetTempPath(), "listenarr-move-dst");
             var request = new LibraryController.MoveRequest { DestinationPath = target, MoveFiles = false };

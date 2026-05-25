@@ -17,13 +17,10 @@
  */
 using System.Text.Json;
 using Listenarr.Api.Controllers;
-using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Moq;
 using Xunit;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
@@ -70,19 +67,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 .WithStatus(DownloadStatus.Downloading)
                 .Build());
 
-            var controller = new LibraryController(
-                _audiobookRepository,
-                new Mock<IImageCacheService>().Object,
-                new Mock<ILogger<LibraryController>>().Object,
-                _provider.GetRequiredService<IServiceScopeFactory>(),
-                _historyRepository,
-                _audiobookFileRepository,
-                _qualityProfileRepository,
-                _downloadRepository,
-                _rootFolderRepository,
-                new Mock<IFileNamingService>().Object,
-                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
-                libraryListService: _provider.GetRequiredService<ILibraryListService>());
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             // When
             var actionResult = await controller.GetAll();

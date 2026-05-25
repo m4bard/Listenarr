@@ -16,12 +16,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Api.Controllers;
-using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using Listenarr.Tests.Common;
@@ -36,19 +34,14 @@ namespace Listenarr.Tests.Features.Api.Controllers
         private LibraryController CreateController(
             IAudiobookRepository? audiobookRepository = null)
         {
-            return new LibraryController(
-                audiobookRepository ?? _audiobookRepository,
-                new Mock<IImageCacheService>().Object,
-                new Mock<ILogger<LibraryController>>().Object,
-                _provider.GetRequiredService<IServiceScopeFactory>(),
-                new Mock<IHistoryRepository>().Object,
-                new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                new Mock<IFileNamingService>().Object,
-                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
-                libraryListService: _provider.GetRequiredService<ILibraryListService>());
+            var serviceDescriptors = new List<ServiceDescriptor>();
+
+            if (audiobookRepository != null)
+            {
+                serviceDescriptors.Add(ServiceDescriptor.Singleton(audiobookRepository));
+            }
+
+            return GetRequiredServiceWithOverrides<LibraryController>(serviceDescriptors.ToArray());
         }
 
         [Fact]
