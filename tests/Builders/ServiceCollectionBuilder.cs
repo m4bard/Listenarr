@@ -42,6 +42,7 @@ namespace Listenarr.Tests.Builders
                 .Returns(new StartupConfig { AuthenticationRequired = "false" });
 
             var services = new ServiceCollection();
+            services.AddLogging();
             services.AddMemoryCache();
             services.AddListenarrAppServices(configuration);
             services.AddListenarrAdapters(configuration);
