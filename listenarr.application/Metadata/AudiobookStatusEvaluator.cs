@@ -32,7 +32,7 @@ namespace Listenarr.Application.Metadata
             bool hasAnyFile,
             string? audiobookQuality,
             QualityProfile? qualityProfile,
-            IReadOnlyList<AudiobookFileFormatSummary>? files)
+            IReadOnlyList<AudiobookFormatSummary>? files)
         {
             if (isDownloading)
             {
@@ -54,7 +54,7 @@ namespace Listenarr.Application.Metadata
                 .Where(v => v.Length > 0)
                 .ToList();
 
-            var candidateFiles = (files ?? Array.Empty<AudiobookFileFormatSummary>())
+            var candidateFiles = (files ?? Array.Empty<AudiobookFormatSummary>())
                 .Where(f =>
                 {
                     var fileFormat = Normalize(f.Format);
@@ -126,7 +126,7 @@ namespace Listenarr.Application.Metadata
             return QualityMismatch;
         }
 
-        private static string DeriveQualityLabel(AudiobookFileFormatSummary? file, string? audiobookQuality)
+        private static string DeriveQualityLabel(AudiobookFormatSummary? file, string? audiobookQuality)
         {
             var normalizedAudiobookQuality = Normalize(audiobookQuality);
             if (normalizedAudiobookQuality.Length > 0)

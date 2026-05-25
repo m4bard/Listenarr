@@ -20,7 +20,7 @@ namespace Listenarr.Tests.Mocks.Api
             var repository = new Mock<IAudiobookFileRepository>();
             repository
                 .Setup(r => r.GetFormatSummariesAsync(default))
-                .ReturnsAsync(fileList.Select(f => new AudiobookFileFormatSummary
+                .ReturnsAsync(fileList.Select(f => new AudiobookFormatSummary
                 {
                     AudiobookId = f.AudiobookId,
                     Path = f.Path,

@@ -18,7 +18,7 @@
 
 namespace Listenarr.Application.Audiobooks
 {
-    public sealed class AudiobookFileFormatSummary
+    public sealed class AudiobookFormatSummary
     {
         public int AudiobookId { get; set; }
         public string? Path { get; set; }

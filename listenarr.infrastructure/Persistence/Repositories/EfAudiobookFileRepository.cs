@@ -109,7 +109,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 .ToListAsync(ct);
         }
 
-        public async Task<List<AudiobookFileFormatSummary>> GetFormatSummariesAsync(CancellationToken ct = default)
+        public async Task<List<AudiobookFormatSummary>> GetFormatSummariesAsync(CancellationToken ct = default)
         {
             // One row per (AudiobookId, Format, Codec, Container) — avoids materialising chapter-level rows
             var rows = await _db.AudiobookFiles
@@ -126,7 +126,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 })
                 .ToListAsync(ct);
 
-            return rows.Select(r => new AudiobookFileFormatSummary
+            return rows.Select(r => new AudiobookFormatSummary
             {
                 AudiobookId = r.AudiobookId,
                 Format = r.Format,
