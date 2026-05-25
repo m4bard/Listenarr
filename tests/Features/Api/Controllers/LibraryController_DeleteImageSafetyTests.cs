@@ -27,7 +27,6 @@ using Listenarr.Domain.Models.Configurations;
 using Listenarr.Application.Notification;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
-using Listenarr.Tests.Mocks.Api;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
@@ -83,8 +82,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 fileNaming,
-                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(FileService.GetTempPath()),
-                libraryListService: Mock.Of<ILibraryListService>());
+                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
+                libraryListService: _provider.GetRequiredService<ILibraryListService>());
 
             // When
             var result = await controller.DeleteAudiobook(audiobook.Id);

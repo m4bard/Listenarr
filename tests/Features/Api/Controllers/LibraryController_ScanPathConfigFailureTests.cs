@@ -26,7 +26,6 @@ using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
-using Listenarr.Tests.Mocks.Api;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
@@ -51,8 +50,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 new Mock<IFileNamingService>().Object,
-                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(FileService.GetTempPath()),
-                libraryListService: LibraryControllerMockFactory.CreateLibraryListService(),
+                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
+                libraryListService: _provider.GetRequiredService<ILibraryListService>(),
                 rootFolderService: rootFolderService ?? new Mock<IRootFolderService>().Object);
         }
         [Fact]

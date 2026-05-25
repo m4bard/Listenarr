@@ -22,7 +22,6 @@ using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
-using Listenarr.Tests.Mocks.Api;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -50,8 +49,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 downloadRepository ?? new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 new Mock<IFileNamingService>().Object,
-                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(FileService.GetTempPath()),
-                libraryListService: LibraryControllerMockFactory.CreateLibraryListService());
+                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
+                libraryListService: _provider.GetRequiredService<ILibraryListService>());
         }
 
         [Fact]

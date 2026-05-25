@@ -52,8 +52,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 fileNamingService.Object,
-                applicationPathService: Mock.Of<IApplicationPathService>(s => s.ContentRootPath == FileService.GetTempPath()),
-                libraryListService: Mock.Of<ILibraryListService>(),
+                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
+                libraryListService: _provider.GetRequiredService<ILibraryListService>(),
                 scanQueueService: new Mock<IScanQueueService>().Object);
 
         [Fact]

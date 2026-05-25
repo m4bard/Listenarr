@@ -24,7 +24,6 @@ using Listenarr.Infrastructure.Persistence;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
-using Listenarr.Tests.Mocks.Api;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -371,8 +370,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 CreateRootFolderRepo(dbContext),
                 fileNaming.Object,
-                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(FileService.GetTempPath()),
-                libraryListService: Mock.Of<ILibraryListService>());
+                applicationPathService: _provider.GetRequiredService<IApplicationPathService>(),
+                libraryListService: _provider.GetRequiredService<ILibraryListService>());
         }
 
         private static IRootFolderRepository CreateRootFolderRepo(ListenArrDbContext dbContext)

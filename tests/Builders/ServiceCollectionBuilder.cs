@@ -32,7 +32,7 @@ namespace Listenarr.Tests.Builders
         {
         }
 
-        public ServiceCollection Build()
+        public ServiceCollection Build(string? contentRootPath = null)
         {
             var configuration = new ConfigurationManager();
 
@@ -45,8 +45,9 @@ namespace Listenarr.Tests.Builders
             services.AddMemoryCache();
             services.AddListenarrAppServices(configuration);
             services.AddListenarrAdapters(configuration);
-            services.AddListenarrInfrastructure(options =>
-                options.UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()));
+            services.AddListenarrInfrastructure(
+                options => options.UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()),
+                contentRootPath: contentRootPath);
 
             var appMetricsServiceMock = new Mock<IAppMetricsService>();
             services.AddSingleton(appMetricsServiceMock);
