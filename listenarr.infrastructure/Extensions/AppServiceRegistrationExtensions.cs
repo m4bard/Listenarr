@@ -73,6 +73,7 @@ namespace Listenarr.Infrastructure.Extensions
             // Service to accept client-pushed download updates and maintain recent-push cache
             services.AddSingleton<IDownloadPushService, DownloadPushService>();
             services.AddScoped<IAsinLookupService, AsinLookupService>();
+            services.AddScoped<IAudiobookMetadataService, AudiobookMetadataService>();
             // Notification service for webhook notifications (typed HttpClient so a HttpClient is injected)
             services.AddHttpClient<NotificationService>();
             // Also register the concrete NotificationService type in the container so constructors

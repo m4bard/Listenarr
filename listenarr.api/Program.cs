@@ -307,9 +307,6 @@ builder.Services.AddHttpClient<IAudnexusService, AudnexusService>()
         AutomaticDecompression = System.Net.DecompressionMethods.All
     });
 
-// Metadata routing across providers
-builder.Services.AddScoped<IAudiobookMetadataService, AudiobookMetadataService>();
-
 // Add metadata converters helper
 builder.Services.AddScoped<MetadataConverters>();
 builder.Services.AddScoped<MetadataMerger>();
