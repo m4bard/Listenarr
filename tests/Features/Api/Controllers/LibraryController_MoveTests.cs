@@ -67,7 +67,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
             mockMoveQueue.Setup(m => m.EnqueueMoveAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>()))
                 .ReturnsAsync(expectedId);
 
-            var controller = CreateLibraryController(ServiceDescriptor.Singleton(mockMoveQueue.Object));
+            Init(services => services.AddSingleton(mockMoveQueue.Object));
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Test")
@@ -94,7 +95,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Given
             var mockMoveQueue = new Mock<IMoveQueueService>();
 
-            var controller = CreateLibraryController(ServiceDescriptor.Singleton(mockMoveQueue.Object));
+            Init(services => services.AddSingleton(mockMoveQueue.Object));
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Test")

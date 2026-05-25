@@ -19,6 +19,7 @@ using Xunit;
 using Moq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Mvc;
+using Listenarr.Api.Controllers;
 using Listenarr.Application.Interfaces;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
@@ -38,8 +39,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Given
             var mockImageCache = new Mock<IImageCacheService>();
 
-            var controller = CreateLibraryController(
-                ServiceDescriptor.Singleton(mockImageCache.Object));
+            Init(services => services.AddSingleton(mockImageCache.Object));
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Test")

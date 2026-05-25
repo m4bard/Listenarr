@@ -18,6 +18,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Moq;
 
 namespace Listenarr.Tests.Builders
@@ -29,6 +30,10 @@ namespace Listenarr.Tests.Builders
     public class ServiceCollectionBuilder
     {
         private string? _contentRootPath;
+        private readonly List<ServiceDescriptor> _serviceDescriptors = new();
+        private readonly List<Type> _serviceTypesToRemove = new();
+
+        public bool HasOverrides => _serviceDescriptors.Count > 0 || _serviceTypesToRemove.Count > 0;
 
         public ServiceCollectionBuilder()
         {
@@ -37,6 +42,89 @@ namespace Listenarr.Tests.Builders
         public ServiceCollectionBuilder WithContentRootPath(string? contentRootPath)
         {
             _contentRootPath = contentRootPath;
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder WithMocks(params ServiceDescriptor[] serviceDescriptors)
+        {
+            return WithMocks((IEnumerable<ServiceDescriptor>)serviceDescriptors);
+        }
+
+        public ServiceCollectionBuilder WithMocks(IEnumerable<ServiceDescriptor> serviceDescriptors)
+        {
+            _serviceDescriptors.AddRange(serviceDescriptors);
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder AddSingleton<TService>(TService implementationInstance)
+            where TService : class
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Singleton(implementationInstance));
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder AddSingleton<TService, TImplementation>()
+            where TService : class
+            where TImplementation : class, TService
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Singleton<TService, TImplementation>());
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder AddSingleton<TService>(Func<IServiceProvider, TService> implementationFactory)
+            where TService : class
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Singleton(implementationFactory));
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder AddScoped<TService, TImplementation>()
+            where TService : class
+            where TImplementation : class, TService
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Scoped<TService, TImplementation>());
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder AddScoped<TService>(Func<IServiceProvider, TService> implementationFactory)
+            where TService : class
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Scoped(implementationFactory));
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder AddTransient<TService, TImplementation>()
+            where TService : class
+            where TImplementation : class, TService
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Transient<TService, TImplementation>());
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder AddTransient<TService>(Func<IServiceProvider, TService> implementationFactory)
+            where TService : class
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Transient(implementationFactory));
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder Without<TService>()
+        {
+            return Without(typeof(TService));
+        }
+
+        public ServiceCollectionBuilder Without(params Type[] serviceTypes)
+        {
+            _serviceTypesToRemove.AddRange(serviceTypes);
 
             return this;
         }
@@ -129,7 +217,27 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<DownloadMonitorService>(); // FIXME: This should be a processor
             services.AddSingleton<DownloadProcessingJobProcessor>();
 
+            ApplyOverrides(services);
+
             return services;
+        }
+
+        public void ApplyOverrides(ServiceCollection services)
+        {
+            foreach (var serviceDescriptor in _serviceDescriptors)
+            {
+                services.RemoveAll(serviceDescriptor.ServiceType);
+            }
+
+            foreach (var serviceType in _serviceTypesToRemove)
+            {
+                services.RemoveAll(serviceType);
+            }
+
+            foreach (var serviceDescriptor in _serviceDescriptors)
+            {
+                services.Add(serviceDescriptor);
+            }
         }
     }
 }

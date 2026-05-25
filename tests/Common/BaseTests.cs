@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using Listenarr.Api.Controllers;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
@@ -56,11 +55,21 @@ namespace Listenarr.Tests.Common
             nameof(_rootFolderRepository),
             nameof(_applicationPathService)
         )]
-        public void Init()
+        public void Init(Action<ServiceCollectionBuilder>? configureBuilder = null)
         {
-            _services ??= new ServiceCollectionBuilder()
-                .WithContentRootPath(FileService.GetTempPath())
-                .Build();
+            var builder = new ServiceCollectionBuilder()
+                .WithContentRootPath(FileService.GetTempPath());
+
+            configureBuilder?.Invoke(builder);
+
+            if (_services == null)
+            {
+                _services = builder.Build();
+            }
+            else if (builder.HasOverrides)
+            {
+                builder.ApplyOverrides(_services);
+            }
 
             _provider?.Dispose();
             _provider = _services.BuildServiceProvider();
@@ -79,18 +88,6 @@ namespace Listenarr.Tests.Common
             _moveJobRepository = _provider.GetRequiredService<IMoveJobRepository>();
             _rootFolderRepository = _provider.GetRequiredService<IRootFolderRepository>();
             _applicationPathService = _provider.GetRequiredService<IApplicationPathService>();
-        }
-
-        protected LibraryController CreateLibraryController(params ServiceDescriptor[] serviceDescriptors)
-        {
-            return MockUtils.CreateLibraryController(_services, Init, () => _provider, serviceDescriptors);
-        }
-
-        protected LibraryController CreateLibraryController(
-            IEnumerable<ServiceDescriptor> serviceDescriptors,
-            params Type[] serviceTypesToRemove)
-        {
-            return MockUtils.CreateLibraryController(_services, Init, () => _provider, serviceDescriptors, serviceTypesToRemove);
         }
 
         public virtual async Task InitializeAsync()

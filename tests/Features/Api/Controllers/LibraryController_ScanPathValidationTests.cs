@@ -39,9 +39,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Given
             var tempRoot = FileService.GetTempDirectory("listenarr-test-root");
 
-            var controller = CreateLibraryController(
-                Array.Empty<ServiceDescriptor>(),
-                typeof(IScanQueueService));
+            Init(services => services.Without<IScanQueueService>());
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             await _rootFolderRepository.AddAsync(new RootFolder
             {
@@ -78,9 +77,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var tempRoot = FileService.GetTempDirectory("listenarr-test-root");
             var other = FileService.GetTempDirectory("listenarr-other");
 
-            var controller = CreateLibraryController(
-                Array.Empty<ServiceDescriptor>(),
-                typeof(IScanQueueService));
+            Init(services => services.Without<IScanQueueService>());
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             await _rootFolderRepository.AddAsync(new RootFolder
             {

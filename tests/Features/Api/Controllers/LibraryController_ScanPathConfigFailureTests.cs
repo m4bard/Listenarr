@@ -40,9 +40,10 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var mockConfig = new Mock<IConfigurationService>();
             mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ThrowsAsync(new Exception("config failure"));
 
-            var controller = CreateLibraryController(
-                new[] { ServiceDescriptor.Singleton(mockConfig.Object) },
-                typeof(IScanQueueService));
+            Init(services => services
+                .AddSingleton(mockConfig.Object)
+                .Without<IScanQueueService>());
+            var controller = _provider.GetRequiredService<LibraryController>();
 
             var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Test")

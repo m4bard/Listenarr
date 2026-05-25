@@ -14,7 +14,6 @@ using Listenarr.Tests.Builders;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Moq;
 
@@ -159,53 +158,6 @@ namespace Listenarr.Tests.Common
                 provider.GetRequiredService<ILogger<DownloadsController>>(),
                 provider.GetRequiredService<IConfigurationService>(),
                 provider.GetRequiredService<IMemoryCache>());
-        }
-
-        public static LibraryController CreateLibraryController(
-            ServiceCollection services,
-            Action rebuildProvider,
-            Func<ServiceProvider> getProvider,
-            params ServiceDescriptor[] serviceDescriptors)
-        {
-            return CreateLibraryController(
-                services,
-                rebuildProvider,
-                getProvider,
-                serviceDescriptors,
-                Array.Empty<Type>());
-        }
-
-        public static LibraryController CreateLibraryController(
-            ServiceCollection services,
-            Action rebuildProvider,
-            Func<ServiceProvider> getProvider,
-            IEnumerable<ServiceDescriptor> serviceDescriptors,
-            params Type[] serviceTypesToRemove)
-        {
-            var descriptors = serviceDescriptors.ToList();
-            if (descriptors.Count == 0 && serviceTypesToRemove.Length == 0)
-            {
-                return getProvider().GetRequiredService<LibraryController>();
-            }
-
-            foreach (var serviceDescriptor in descriptors)
-            {
-                services.RemoveAll(serviceDescriptor.ServiceType);
-            }
-
-            foreach (var serviceType in serviceTypesToRemove)
-            {
-                services.RemoveAll(serviceType);
-            }
-
-            foreach (var serviceDescriptor in descriptors)
-            {
-                services.Add(serviceDescriptor);
-            }
-
-            rebuildProvider();
-
-            return getProvider().GetRequiredService<LibraryController>();
         }
 
         public static IndexersController CreateIndexersController(ServiceProvider provider, HttpMessageHandler handler)
