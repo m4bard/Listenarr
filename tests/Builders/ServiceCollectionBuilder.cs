@@ -28,11 +28,20 @@ namespace Listenarr.Tests.Builders
     /// </summary>
     public class ServiceCollectionBuilder
     {
+        private string? _contentRootPath;
+
         public ServiceCollectionBuilder()
         {
         }
 
-        public ServiceCollection Build(string? contentRootPath = null)
+        public ServiceCollectionBuilder WithContentRootPath(string? contentRootPath)
+        {
+            _contentRootPath = contentRootPath;
+
+            return this;
+        }
+
+        public ServiceCollection Build()
         {
             var configuration = new ConfigurationManager();
 
@@ -48,7 +57,7 @@ namespace Listenarr.Tests.Builders
             services.AddListenarrAdapters(configuration);
             services.AddListenarrInfrastructure(
                 options => options.UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()),
-                contentRootPath: contentRootPath);
+                contentRootPath: _contentRootPath);
 
             var appMetricsServiceMock = new Mock<IAppMetricsService>();
             services.AddSingleton(appMetricsServiceMock);

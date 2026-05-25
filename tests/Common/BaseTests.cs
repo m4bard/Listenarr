@@ -57,7 +57,9 @@ namespace Listenarr.Tests.Common
         )]
         public void Init()
         {
-            _services ??= new ServiceCollectionBuilder().Build(FileService.GetTempPath());
+            _services ??= new ServiceCollectionBuilder()
+                .WithContentRootPath(FileService.GetTempPath())
+                .Build();
 
             _provider?.Dispose();
             _provider = _services.BuildServiceProvider();
