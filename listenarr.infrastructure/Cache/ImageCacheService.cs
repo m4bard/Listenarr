@@ -27,11 +27,6 @@ using System.Net.Sockets;
 
 namespace Listenarr.Infrastructure.Cache
 {
-    public static class ImageCacheHttpClientNames
-    {
-        public const string ImageCache = "ImageCache";
-    }
-
     public class ImageCacheService : IImageCacheService, IDisposable
     {
         private const int MaxImageRedirects = 5;
@@ -73,11 +68,11 @@ namespace Listenarr.Infrastructure.Cache
 
         public ImageCacheService(
             ILogger<ImageCacheService> logger,
-            IHttpClientFactory httpClientFactory,
+            HttpClient httpClient,
             IApplicationPathService applicationPathService)
         {
             _logger = logger;
-            _httpClient = httpClientFactory.CreateClient(ImageCacheHttpClientNames.ImageCache);
+            _httpClient = httpClient;
             _contentRootPath = applicationPathService.ContentRootPath;
             _tempCachePath = applicationPathService.ResolveFromConfig("cache", "images", "temp");
             _libraryImagePath = applicationPathService.ResolveFromConfig("cache", "images", "library");

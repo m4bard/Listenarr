@@ -38,11 +38,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Cache
             var authorCachePath = Path.Join(repoApiRoot, "config", "cache", "images", "authors");
             var seriesCachePath = Path.Join(repoApiRoot, "config", "cache", "images", "series");
 
-            using var httpClientForFactory = new HttpClient();
-            var httpClientFactory = new Mock<IHttpClientFactory>();
-            httpClientFactory
-                .Setup(factory => factory.CreateClient(ImageCacheHttpClientNames.ImageCache))
-                .Returns(httpClientForFactory);
+            using var httpClient = new HttpClient();
 
             var applicationPathService = new Mock<IApplicationPathService>();
             applicationPathService.SetupGet(service => service.ContentRootPath).Returns(repoApiRoot);
@@ -61,7 +57,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Cache
 
             var service = new ImageCacheService(
                 Mock.Of<ILogger<ImageCacheService>>(),
-                httpClientFactory.Object,
+                httpClient,
                 applicationPathService.Object);
 
             var repoTempImage = Path.Join(tempCachePath, "AUTHOR123.jpg");
@@ -74,7 +70,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Cache
 
             Assert.Equal("config/cache/images/authors/AUTHOR123.jpg", relativePath);
             Assert.True(File.Exists(expectedAuthorImage));
-            httpClientFactory.Verify(factory => factory.CreateClient(ImageCacheHttpClientNames.ImageCache), Times.Once);
         }
     }
 }

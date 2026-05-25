@@ -74,7 +74,7 @@ namespace Listenarr.Infrastructure.Extensions
             services.AddScoped<IRootFolderRepository, EfRootFolderRepository>();
             services.AddScoped<IDownloadHistoryRepository, DownloadHistoryRepository>();
             services.AddSingleton<IApplicationPathService>(_ => new ApplicationPathService(contentRootPath));
-            services.AddHttpClient(ImageCacheHttpClientNames.ImageCache)
+            services.AddHttpClient<ImageCacheService>()
                 .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
                 {
                     AllowAutoRedirect = false,

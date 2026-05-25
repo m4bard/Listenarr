@@ -54,7 +54,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Extensions
             using var serviceProvider = services.BuildServiceProvider();
             var httpClientOptions = serviceProvider
                 .GetRequiredService<IOptionsMonitor<HttpClientFactoryOptions>>()
-                .Get(ImageCacheHttpClientNames.ImageCache);
+                .Get(typeof(ImageCacheService).Name);
 
             Assert.NotEmpty(httpClientOptions.HttpMessageHandlerBuilderActions);
         }
