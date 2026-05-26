@@ -18,6 +18,7 @@
 
 using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Controllers
@@ -37,6 +38,19 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
+        /// Lightweight readiness probe for local tooling and reverse proxies.
+        /// </summary>
+        [AllowAnonymous]
+        [HttpGet("ready")]
+        public IActionResult GetReady()
+        {
+            return Ok(new
+            {
+                status = "ready"
+            });
+        }
+
+        /// <summary>
         /// Get current system information including OS, runtime, memory, and CPU usage.
         /// </summary>
         [HttpGet("info")]
@@ -45,7 +59,7 @@ namespace Listenarr.Api.Controllers
             try
             {
                 var cfg = _systemService.GetStartupConfig();
-                var authEnabled = cfg?.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+                var authEnabled = cfg?.IsAuthenticationEnabled() == true;
                 if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
                 {
                     return Unauthorized();
@@ -70,7 +84,7 @@ namespace Listenarr.Api.Controllers
             try
             {
                 var cfg = _systemService.GetStartupConfig();
-                var authEnabled = cfg?.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+                var authEnabled = cfg?.IsAuthenticationEnabled() == true;
                 if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
                 {
                     return Unauthorized();
@@ -94,7 +108,7 @@ namespace Listenarr.Api.Controllers
             try
             {
                 var cfg = _systemService.GetStartupConfig();
-                var authEnabled = cfg?.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+                var authEnabled = cfg?.IsAuthenticationEnabled() == true;
                 if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
                 {
                     return Unauthorized();
@@ -119,7 +133,7 @@ namespace Listenarr.Api.Controllers
             try
             {
                 var cfg = _systemService.GetStartupConfig();
-                var authEnabled = cfg?.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+                var authEnabled = cfg?.IsAuthenticationEnabled() == true;
                 if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
                 {
                     return Unauthorized();
@@ -144,7 +158,7 @@ namespace Listenarr.Api.Controllers
             try
             {
                 var cfg = _systemService.GetStartupConfig();
-                var authEnabled = cfg?.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+                var authEnabled = cfg?.IsAuthenticationEnabled() == true;
                 if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
                 {
                     return Unauthorized();
@@ -170,7 +184,7 @@ namespace Listenarr.Api.Controllers
             try
             {
                 var cfg = _systemService.GetStartupConfig();
-                var authEnabled = cfg?.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+                var authEnabled = cfg?.IsAuthenticationEnabled() == true;
                 if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
                 {
                     return Unauthorized();
@@ -221,4 +235,3 @@ namespace Listenarr.Api.Controllers
         }
     }
 }
-

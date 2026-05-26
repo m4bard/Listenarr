@@ -80,6 +80,30 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public DownloadBuilder WithTitle(string value)
+        {
+            _download.Title = value;
+            return this;
+        }
+
+        public DownloadBuilder WithArtist(string value)
+        {
+            _download.Artist = value;
+            return this;
+        }
+
+        public DownloadBuilder WithSeries(string? value)
+        {
+            _download.Series = value;
+            return this;
+        }
+
+        public DownloadBuilder WithAudiobookId(int value)
+        {
+            _download.AudiobookId = value;
+            return this;
+        }
+
         public DownloadBuilder WithAudiobook(Audiobook value)
         {
             _download.AudiobookId = value.Id;

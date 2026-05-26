@@ -51,10 +51,10 @@
 
         <AuthenticationSection
           :settings="localSettings"
-          :startupConfig="props.startupConfig"
+          :apiKey="props.apiKey"
           v-model:authEnabled="authEnabled"
           @update:settings="(val) => Object.assign(localSettings, val)"
-          @update:startupConfig="(val) => emit('update:startupConfig', val)"
+          @update:apiKey="(val) => emit('update:apiKey', val)"
         ></AuthenticationSection>
       </div>
       <!-- settings-form -->
@@ -78,6 +78,7 @@ import AuthenticationSection from '@/components/settings/AuthenticationSection.v
 interface Props {
   settings: ApplicationSettings | null
   startupConfig: StartupConfig | null | undefined
+  apiKey?: string
   authEnabled: boolean
 }
 
@@ -85,6 +86,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   'update:authEnabled': [value: boolean]
   'update:startupConfig': [value: StartupConfig]
+  'update:apiKey': [value: string]
   'update:settings': [value: ApplicationSettings | null]
 }>()
 

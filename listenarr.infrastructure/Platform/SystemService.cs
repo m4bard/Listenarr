@@ -17,7 +17,6 @@
  */
 
 using System.Diagnostics;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Listenarr.Application.Interfaces;
@@ -30,13 +29,21 @@ namespace Listenarr.Infrastructure.Platform
     {
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<SystemService> _logger;
+        private readonly IApplicationPathService _applicationPathService;
+        private readonly IApplicationVersionService _applicationVersionService;
         private readonly DateTime _startTime;
         private static readonly Process _currentProcess = Process.GetCurrentProcess();
 
-        public SystemService(IConfigurationService configurationService, ILogger<SystemService> logger)
+        public SystemService(
+            IConfigurationService configurationService,
+            ILogger<SystemService> logger,
+            IApplicationPathService applicationPathService,
+            IApplicationVersionService applicationVersionService)
         {
             _configurationService = configurationService;
             _logger = logger;
+            _applicationPathService = applicationPathService;
+            _applicationVersionService = applicationVersionService;
             _startTime = DateTime.UtcNow;
         }
 
@@ -57,8 +64,7 @@ namespace Listenarr.Infrastructure.Platform
         {
             try
             {
-                var assembly = Assembly.GetExecutingAssembly();
-                var version = assembly.GetName().Version?.ToString() ?? "1.0.0";
+                var version = _applicationVersionService.Resolve();
 
                 var uptime = DateTime.UtcNow - _startTime;
                 var uptimeFormatted = FormatUptime(uptime);
@@ -89,7 +95,7 @@ namespace Listenarr.Infrastructure.Platform
             try
             {
                 // Get the drive where the application is running
-                var appPath = AppDomain.CurrentDomain.BaseDirectory;
+                var appPath = _applicationPathService.ContentRootPath;
                 var driveInfo = new DriveInfo(Path.GetPathRoot(appPath) ?? "C:\\");
 
                 if (!driveInfo.IsReady)
@@ -129,8 +135,7 @@ namespace Listenarr.Infrastructure.Platform
         {
             try
             {
-                var assembly = Assembly.GetExecutingAssembly();
-                var version = assembly.GetName().Version?.ToString() ?? "1.0.0";
+                var version = _applicationVersionService.Resolve();
                 var uptime = DateTime.UtcNow - _startTime;
                 var uptimeFormatted = FormatUptime(uptime);
 
@@ -494,8 +499,9 @@ namespace Listenarr.Infrastructure.Platform
 
         public string GetLogFilePath()
         {
-            // Get the logs directory from the application base path
-            var logsDir = Path.Join(Directory.GetCurrentDirectory(), "config", "logs");
+            // Use the host content root so local development lands in
+            // listenarr.api/config/logs and production stays under the deployed root.
+            var logsDir = _applicationPathService.LogsRootPath;
 
             // Ensure the directory exists
             if (!Directory.Exists(logsDir))
@@ -587,6 +593,3 @@ namespace Listenarr.Infrastructure.Platform
         }
     }
 }
-
-
-

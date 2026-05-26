@@ -111,11 +111,7 @@
                 >
                   <img
                     :src="
-                      getProtectedImageSrc(
-                        seriesHeroSinglePosterBook.imageUrl,
-                        `series-hero:${seriesHeroName}:0:${seriesHeroSinglePosterBook.imageUrl || ''}`,
-                        getPlaceholderUrl(),
-                      )
+                      getProtectedImageSrc(seriesHeroSinglePosterBook.imageUrl, getPlaceholderUrl())
                     "
                     :alt="`${seriesHeroSinglePosterBook.title} cover`"
                     class="series-hero-cover-image centered"
@@ -134,13 +130,7 @@
                   :style="getSeriesHeroCoverStyle(index, seriesHeroPosterBooks.length)"
                 >
                   <img
-                    :src="
-                      getProtectedImageSrc(
-                        book.imageUrl,
-                        `series-hero:${seriesHeroName}:${index}:${book.imageUrl || ''}`,
-                        getPlaceholderUrl(),
-                      )
-                    "
+                    :src="getProtectedImageSrc(book.imageUrl, getPlaceholderUrl())"
                     :alt="`${book.title} cover`"
                     class="series-hero-cover-image"
                     loading="lazy"
@@ -415,13 +405,7 @@
 
             <img
               class="list-thumb"
-              :src="
-                getProtectedImageSrc(
-                  audiobook.imageUrl,
-                  `collection-${audiobook.id}`,
-                  getPlaceholderUrl(),
-                )
-              "
+              :src="getProtectedImageSrc(audiobook.imageUrl, getPlaceholderUrl())"
               :alt="audiobook.title"
               loading="lazy"
               decoding="async"
@@ -567,13 +551,7 @@
               <div class="collection-cover">
                 <img
                   v-if="audiobook.imageUrl"
-                  :src="
-                    getProtectedImageSrc(
-                      audiobook.imageUrl,
-                      `collection-${audiobook.id}`,
-                      getPlaceholderUrl(),
-                    )
-                  "
+                  :src="getProtectedImageSrc(audiobook.imageUrl, getPlaceholderUrl())"
                   :alt="audiobook.title"
                   loading="lazy"
                   decoding="async"
@@ -1288,11 +1266,7 @@ const authorHeroRawImageUrl = computed(() => {
   )
 })
 const authorHeroImageUrl = computed(() =>
-  getProtectedImageSrc(
-    authorHeroRawImageUrl.value,
-    `author-hero-${name.value}`,
-    getPlaceholderUrl(),
-  ),
+  getProtectedImageSrc(authorHeroRawImageUrl.value, getPlaceholderUrl()),
 )
 const authorHeroBackdropStyle = computed(() => ({
   backgroundImage: `linear-gradient(90deg, rgba(10, 12, 18, 0.9), rgba(10, 12, 18, 0.55)), url(${authorHeroImageUrl.value})`,
@@ -1331,11 +1305,7 @@ const seriesHeroRawImageUrl = computed(() => {
   )
 })
 const seriesHeroImageUrl = computed(() =>
-  getProtectedImageSrc(
-    seriesHeroRawImageUrl.value,
-    `series-hero-${name.value}`,
-    getPlaceholderUrl(),
-  ),
+  getProtectedImageSrc(seriesHeroRawImageUrl.value, getPlaceholderUrl()),
 )
 const seriesHeroBackdropStyle = computed(() => ({
   backgroundImage: `linear-gradient(90deg, rgba(10, 12, 18, 0.9), rgba(10, 12, 18, 0.55)), url(${seriesHeroImageUrl.value})`,
@@ -1357,13 +1327,10 @@ const seriesHeroPosterBooks = computed(() =>
 )
 const seriesHeroSinglePosterBook = computed(() => seriesHeroPosterBooks.value[0] ?? null)
 const seriesHeroSingleBackgroundStyle = computed(() => ({
-  backgroundImage: `url(${
-    getProtectedImageSrc(
-      seriesHeroSinglePosterBook.value?.imageUrl,
-      `series-hero-bg:${seriesHeroName.value}:${seriesHeroSinglePosterBook.value?.imageUrl || ''}`,
-      getPlaceholderUrl(),
-    ) || getPlaceholderUrl()
-  })`,
+  backgroundImage: `url(${getProtectedImageSrc(
+    seriesHeroSinglePosterBook.value?.imageUrl,
+    getPlaceholderUrl(),
+  )})`,
 }))
 
 function getSeriesHeroCoverStyle(index: number, count: number) {
@@ -2183,15 +2150,9 @@ const handleImageError = (event: Event) => {
       })
     }
 
-    // set placeholder and clear lazy attributes
+    // set placeholder
     try {
       img.src = getPlaceholderUrl()
-    } catch {}
-    try {
-      img.removeAttribute('data-src')
-    } catch {}
-    try {
-      img.removeAttribute('data-original-src')
     } catch {}
     try {
       ;(img as unknown as { onerror?: null }).onerror = null

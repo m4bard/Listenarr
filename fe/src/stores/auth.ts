@@ -21,36 +21,112 @@ import { apiService } from '@/services/api'
 import { sessionTokenManager } from '@/utils/sessionToken'
 import { clearAllAuthData } from '@/utils/sessionDebug'
 import { errorTracking } from '@/services/errorTracking'
+import { getStartupConfigCached } from '@/services/startupConfigCache'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<{ authenticated: boolean; name?: string }>({ authenticated: false })
   // Whether we've attempted to load the current user at least once
   const loaded = ref<boolean>(false)
   const redirectTo = ref<string | null>(null)
+  let currentUserLoadPromise: Promise<void> | null = null
+
+  const isAuthRequired = async (): Promise<boolean> => {
+    try {
+      const cfg = await getStartupConfigCached(0)
+      const raw =
+        cfg?.authenticationRequired ??
+        (cfg as { AuthenticationRequired?: string | boolean } | null)?.AuthenticationRequired
+
+      if (typeof raw === 'boolean') {
+        return raw
+      }
+
+      if (typeof raw === 'string') {
+        const normalized = raw.toLowerCase().trim()
+        return (
+          normalized === 'enabled' ||
+          normalized === 'true' ||
+          normalized === 'yes' ||
+          normalized === '1'
+        )
+      }
+    } catch {}
+
+    return false
+  }
+
+  const redirectToLoginIfRequired = async () => {
+    if (!(await isAuthRequired())) {
+      return
+    }
+
+    const current = window.location.pathname + window.location.search + window.location.hash
+    if (current.startsWith('/login')) {
+      return
+    }
+
+    try {
+      const routerModule = await import('@/router')
+      const router = routerModule.default
+      const route = router.currentRoute.value
+      const redirect = route.fullPath || current
+
+      if (route.name === 'login') {
+        return
+      }
+
+      await router.replace({ name: 'login', query: { redirect } })
+    } catch {
+      try {
+        window.location.href = `/login?redirect=${encodeURIComponent(current)}`
+      } catch {
+        window.location.href = '/login'
+      }
+    }
+  }
 
   const loadCurrentUser = async () => {
-    console.log('[AuthStore] Loading current user...')
-    try {
-      const u = await apiService.getCurrentUser()
-      console.log('[AuthStore] Current user loaded:', u)
-      user.value = u
-      loaded.value = true
-    } catch (error) {
-      console.warn('[AuthStore] Failed to load current user:', error)
-      const status =
-        error && typeof error === 'object' && 'status' in error
-          ? ((error as unknown as { status?: number }).status ?? 0)
-          : 0
-      if (status === 401 || status === 403) {
-        console.log('[AuthStore] Authentication error - clearing session')
-        // Clear any stale tokens when we get auth errors
-        try {
-          sessionTokenManager.clearToken()
-        } catch {}
-      }
-      user.value = { authenticated: false }
-      loaded.value = true
+    if (currentUserLoadPromise) {
+      return currentUserLoadPromise
     }
+
+    currentUserLoadPromise = (async () => {
+      console.log('[AuthStore] Loading current user...')
+      try {
+        const u = await apiService.getCurrentUser()
+        console.log('[AuthStore] Current user loaded:', u)
+        user.value = u
+        loaded.value = true
+
+        if (!u.authenticated && sessionTokenManager.hasToken()) {
+          console.log(
+            '[AuthStore] Clearing stale browser auth marker after unauthenticated /account/me response',
+          )
+          sessionTokenManager.clearToken()
+        }
+      } catch (error) {
+        console.warn('[AuthStore] Failed to load current user:', error)
+        const status =
+          error && typeof error === 'object' && 'status' in error
+            ? ((error as unknown as { status?: number }).status ?? 0)
+            : 0
+        if (status === 401 || status === 403) {
+          console.log('[AuthStore] Authentication error - clearing session')
+          // Clear any stale cross-tab auth marker when we get auth errors.
+          try {
+            if (sessionTokenManager.hasToken()) {
+              sessionTokenManager.clearToken()
+            }
+          } catch {}
+        }
+        user.value = { authenticated: false }
+        loaded.value = true
+      } finally {
+        currentUserLoadPromise = null
+      }
+    })()
+
+    return currentUserLoadPromise
   }
 
   const login = async (
@@ -63,29 +139,26 @@ export const useAuthStore = defineStore('auth', () => {
     await loadCurrentUser()
   }
 
-  // React to token changes from other tabs (cross-tab logout)
+  // React to browser auth marker changes from other tabs (cross-tab login/logout).
   try {
-    sessionTokenManager.onTokenChange((token) => {
-      if (!token) {
-        console.log('[AuthStore] Session token removed in another tab - clearing auth state')
-        user.value = { authenticated: false }
-
-        // Attempt SPA navigation to login using the router if available.
-        // Use dynamic import to avoid circular dependency at module load time.
-        try {
-          const current = window.location.pathname + window.location.search + window.location.hash
-          if (!current.startsWith('/login')) {
-            try {
-              window.location.href = `/login?redirect=${encodeURIComponent(current)}`
-            } catch {
-              window.location.href = '/login'
-            }
-          }
-        } catch {
-          try {
-            window.location.href = '/login'
-          } catch {}
+    sessionTokenManager.onTokenChange((token, context) => {
+      if (token) {
+        if (!user.value.authenticated) {
+          void loadCurrentUser()
         }
+        return
+      }
+
+      if (!token) {
+        if (context?.source === 'initial') {
+          return
+        }
+
+        console.log('[AuthStore] Auth marker removed in another tab - clearing auth state')
+        user.value = { authenticated: false }
+        loaded.value = true
+
+        void redirectToLoginIfRequired()
       }
     })
   } catch {}

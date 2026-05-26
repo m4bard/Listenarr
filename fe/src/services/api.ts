@@ -61,11 +61,7 @@ import type {
   RenameOperation,
   RenameResult,
 } from '@/types'
-import {
-  getStartupConfigCached,
-  getCachedStartupConfig,
-  resetCache as resetStartupConfigCache,
-} from './startupConfigCache'
+import { getStartupConfigCached, resetCache as resetStartupConfigCache } from './startupConfigCache'
 import { sessionTokenManager } from '@/utils/sessionToken'
 import { logger } from '@/utils/logger'
 import { getRegionFromLanguage } from '@/utils/languageMapping'
@@ -75,13 +71,21 @@ import {
   applyApiVersionFromStartupConfig,
   API_BASE_PATH,
   API_BASE_URL,
-  API_IMAGES_PATH_PREFIX,
   API_ORIGIN,
   EFFECTIVE_API_BASE,
 } from './apiBase'
 
 const getApiImageOrigin = (): string => (import.meta.env.DEV ? '' : API_ORIGIN)
 const getApiImagesBaseUrl = (): string => `${getApiImageOrigin()}${API_BASE_PATH}/images`
+const buildApiImageUrl = (identifier: string, sourceUrl?: string): string => {
+  let url = `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
+  if (sourceUrl) {
+    const params = new URLSearchParams()
+    params.append('url', sourceUrl)
+    url += `?${params.toString()}`
+  }
+  return url
+}
 const ABSOLUTE_URL_REGEX = /^https?:\/\//i
 
 const buildApiRequestUrl = (endpoint: string): string => {
@@ -98,33 +102,10 @@ class ApiService {
   private antiforgeryToken: string | null = null
   private antiforgeryTokenSession: string | null = null
   private tokenReadyPromise: Promise<void> | null = null
-  private imageBlobFetchInFlight = new Map<string, Promise<Blob>>()
   // Placeholder URL helper moved to '@/utils/placeholder' - import and use that utility instead
 
   private buildAuthHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {}
-    try {
-      const sc = getCachedStartupConfig()
-      const rawAuth = sc?.authenticationRequired ?? sc?.AuthenticationRequired
-      const authEnabled =
-        typeof rawAuth === 'boolean'
-          ? rawAuth
-          : typeof rawAuth === 'string'
-            ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
-            : false
-
-      // Always prefer the session token when present, even before startup
-      // config cache is populated. This prevents early authenticated requests
-      // (especially protected image fetches) from being sent without auth.
-      const sessionToken = sessionTokenManager.getToken()
-      if (sessionToken) {
-        headers['Authorization'] = `Bearer ${sessionToken}`
-      } else if (!authEnabled) {
-        const apiKey = sc?.apiKey
-        if (apiKey) headers['X-Api-Key'] = apiKey
-      }
-    } catch {}
-    return headers
+    return {}
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -142,7 +123,7 @@ class ApiService {
       ...(options.headers ? (options.headers as Record<string, string>) : {}),
     }
 
-    // Attach Authorization or API key if needed
+    // Attach API-key auth when the app is running in no-auth mode.
     Object.assign(headers, this.buildAuthHeaders())
 
     // Attach antiforgery token for unsafe requests
@@ -177,10 +158,11 @@ class ApiService {
     }
 
     if (resp.status === 401) {
-      // Unauthorized: clear session token and antiforgery token
+      // Unauthorized: clear the browser auth marker and cached antiforgery token.
       sessionTokenManager.clearToken()
       this.antiforgeryToken = null
       this.antiforgeryTokenSession = null
+      this.tokenReadyPromise = null
       // Optionally, trigger a global logout or redirect
       throw Object.assign(new Error('Unauthorized'), { status: 401 })
     }
@@ -230,6 +212,7 @@ class ApiService {
             sessionTokenManager.clearToken()
             this.antiforgeryToken = null
             this.antiforgeryTokenSession = null
+            this.tokenReadyPromise = null
             throw Object.assign(new Error('Unauthorized'), { status: 401 })
           }
 
@@ -663,31 +646,13 @@ class ApiService {
     const start = Date.now()
     const perFetchTimeout = 5000
 
-    // Build headers like `request()` would (API key or session token)
-    const sc = await getStartupConfigCached(2000).catch(() => null)
-    const apiKey = sc?.apiKey
-    const rawAuth =
-      sc?.authenticationRequired ??
-      (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
-    const authEnabled =
-      typeof rawAuth === 'boolean'
-        ? rawAuth
-        : typeof rawAuth === 'string'
-          ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
-          : false
-    const sessionToken = sessionTokenManager.getToken()
-
     const fetchWithTimeout = async (url: string, timeoutMs: number) => {
       const controller = new AbortController()
       const id = setTimeout(() => controller.abort(), timeoutMs)
       try {
-        const headers: Record<string, string> = {}
-        if (apiKey && !authEnabled) headers['X-Api-Key'] = apiKey
-        if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`
         const resp = await fetch(url, {
           method: 'GET',
           credentials: 'include',
-          headers,
           signal: controller.signal,
         })
         clearTimeout(id)
@@ -831,24 +796,24 @@ class ApiService {
     return this.request<boolean>(`/configuration/apis/${id}`, { method: 'DELETE' })
   }
 
-  // Download Client Configuration
+  // Download Clients
   async getDownloadClientConfigurations(): Promise<DownloadClientConfiguration[]> {
-    return this.request<DownloadClientConfiguration[]>('/configuration/download-clients')
+    return this.request<DownloadClientConfiguration[]>('/download-clients')
   }
 
   async getDownloadClientConfiguration(id: string): Promise<DownloadClientConfiguration> {
-    return this.request<DownloadClientConfiguration>(`/configuration/download-clients/${id}`)
+    return this.request<DownloadClientConfiguration>(`/download-clients/${id}`)
   }
 
   async saveDownloadClientConfiguration(config: DownloadClientConfiguration): Promise<string> {
-    return this.request<string>('/configuration/download-clients', {
+    return this.request<string>('/download-clients', {
       method: 'POST',
       body: JSON.stringify(config),
     })
   }
 
   async deleteDownloadClientConfiguration(id: string): Promise<boolean> {
-    return this.request<boolean>(`/configuration/download-clients/${id}`, { method: 'DELETE' })
+    return this.request<boolean>(`/download-clients/${id}`, { method: 'DELETE' })
   }
 
   async testDownloadClient(
@@ -858,7 +823,7 @@ class ApiService {
       success: boolean
       message: string
       client?: DownloadClientConfiguration
-    }>('/configuration/download-clients/test', {
+    }>('/download-clients/test', {
       method: 'POST',
       body: JSON.stringify(config),
     })
@@ -877,13 +842,10 @@ class ApiService {
         body: JSON.stringify({ trigger, data, webhookId, webhookUrl }),
       })
     }
-    // Otherwise use the old configuration endpoint for backward compatibility
-    return this.request<{ success: boolean; message: string }>(
-      '/configuration/notifications/test',
-      {
-        method: 'POST',
-      },
-    )
+    // Otherwise send a test notification using the saved notification settings.
+    return this.request<{ success: boolean; message: string }>('/notifications/test', {
+      method: 'POST',
+    })
   }
 
   // Application Settings
@@ -997,33 +959,28 @@ class ApiService {
   }
 
   // Startup configuration (read + write) — backend exposes under /configuration/startupconfig
-  async getStartupConfig(): Promise<import('@/types').StartupConfig> {
-    // Prefer session auth when a token exists, even when startup-config cache is cold.
-    // This avoids false 401s immediately after cache reset (login/logout/settings save).
-    let authEnabled = false
-    try {
-      const cached = getCachedStartupConfig()
-      const rawAuth = cached?.authenticationRequired ?? cached?.AuthenticationRequired
-      authEnabled =
-        typeof rawAuth === 'boolean'
-          ? rawAuth
-          : typeof rawAuth === 'string'
-            ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
-            : false
-    } catch {}
-
-    const headers: Record<string, string> = {}
-    const sessionToken = sessionTokenManager.getToken()
-    if (sessionToken) {
-      headers['Authorization'] = `Bearer ${sessionToken}`
-    } else if (authEnabled) {
-      // Auth is expected to be enabled, but no token is available yet.
-      // Leave headers empty so backend can return a typed 401.
+  async getBootstrapConfig(): Promise<import('@/types').StartupConfigDto> {
+    const resp = await fetch(`${API_BASE_URL}/configuration/bootstrap`, {
+      method: 'GET',
+      credentials: 'include',
+    })
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '')
+      const err: ErrorWithStatus = new Error(`Failed to fetch bootstrap config: ${resp.status}`)
+      err.status = resp.status
+      err.body = body
+      throw err
     }
+    const config = await resp.json()
+    applyApiVersionFromStartupConfig(config)
+    return config
+  }
+
+  // Startup configuration (read + write) — backend exposes under /configuration/startupconfig
+  async getStartupConfig(): Promise<import('@/types').StartupConfig> {
     const resp = await fetch(`${API_BASE_URL}/configuration/startupconfig`, {
       method: 'GET',
       credentials: 'include',
-      headers,
     })
     if (!resp.ok) {
       const body = await resp.text().catch(() => '')
@@ -1035,6 +992,10 @@ class ApiService {
     const config = await resp.json()
     applyApiVersionFromStartupConfig(config)
     return config
+  }
+
+  async getApiKey(): Promise<{ apiKey: string }> {
+    return this.request<{ apiKey: string }>('/configuration/apikey')
   }
 
   /**
@@ -1436,13 +1397,7 @@ class ApiService {
             }
           }
           if (asinMatch && asinMatch[1]) {
-            const identifier = asinMatch[1]
-            let url = `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
-            const params = new URLSearchParams()
-            params.append('url', imageUrl)
-            const query = params.toString()
-            if (query) url += `?${query}`
-            return url
+            return buildApiImageUrl(asinMatch[1], imageUrl)
           }
 
           // If we couldn't extract ASIN, try to parse filename from path and
@@ -1452,13 +1407,7 @@ class ApiService {
             const fname = pathname.split('/').pop() || ''
             const base = fname.replace(/\.[^.]+$/, '')
             if (base && base.length >= 10 && base.length <= 12) {
-              const identifier = base
-              let url = `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
-              const params = new URLSearchParams()
-              params.append('url', imageUrl)
-              const query = params.toString()
-              if (query) url += `?${query}`
-              return url
+              return buildApiImageUrl(base, imageUrl)
             }
           } catch {}
         }
@@ -1476,7 +1425,7 @@ class ApiService {
         // Extract filename (with extension) and strip extension to use as identifier
         const filename = libMatch[1]
         const identifier = filename.replace(/\.[^.]+$/, '')
-        return `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
+        return buildApiImageUrl(identifier)
       }
     } catch (e) {
       // fall back to default behavior below on any error
@@ -1490,7 +1439,7 @@ class ApiService {
       if (authorMatch && authorMatch[1]) {
         const filename = authorMatch[1]
         const identifier = filename.replace(/\.[^.]+$/, '')
-        return `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
+        return buildApiImageUrl(identifier)
       }
     } catch (e) {
       logger.debug('[ApiService] getImageUrl authors-detect error', e)
@@ -1500,114 +1449,18 @@ class ApiService {
     return `${getApiImageOrigin()}${imageUrl}`
   }
 
-  async fetchImageObjectUrl(imageUrl: string | undefined): Promise<string> {
-    if (!imageUrl) return ''
-    const resolved = this.getImageUrl(imageUrl)
-    if (!resolved) return ''
-
-    // Prefer direct same-origin backend image URLs only when auth is not in
-    // play. In authenticated mode, <img src="/api/vX/images/..."> cannot attach
-    // Authorization headers and will fail with 401.
-    try {
-      if (typeof window !== 'undefined') {
-        const parsed = new URL(resolved, window.location.origin)
-        if (
-          parsed.origin === window.location.origin &&
-          parsed.pathname.startsWith(API_IMAGES_PATH_PREFIX)
-        ) {
-          const cfg = getCachedStartupConfig() as Record<string, unknown> | null
-          const rawAuth = cfg?.authenticationRequired ?? cfg?.AuthenticationRequired
-          const authRequired =
-            typeof rawAuth === 'boolean'
-              ? rawAuth
-              : typeof rawAuth === 'string'
-                ? rawAuth.trim().toLowerCase() === 'enabled' ||
-                  rawAuth.trim().toLowerCase() === 'true'
-                : true
-          const hasSessionToken = !!sessionTokenManager.getToken()
-          if (!authRequired && !hasSessionToken) {
-            return `${parsed.pathname}${parsed.search}`
-          }
-        }
-      }
-    } catch {
-      // If URL parsing fails, continue with existing fetch->blob behavior below.
-    }
-
-    // Keep external URLs as-is; auth headers/cors may not be accepted cross-origin.
-    if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
-      try {
-        const u = new URL(resolved)
-        if (typeof window !== 'undefined' && u.origin !== window.location.origin) {
-          return resolved
-        }
-      } catch {
-        // If URL parsing fails, fall through and try fetch anyway.
-      }
-    }
-
-    let blobPromise = this.imageBlobFetchInFlight.get(resolved)
-    if (!blobPromise) {
-      const headers: Record<string, string> = {
-        ...this.buildAuthHeaders(),
-      }
-
-      blobPromise = (async () => {
-        const resp = await fetch(resolved, {
-          method: 'GET',
-          headers,
-          credentials: 'include',
-        })
-
-        if (!resp.ok) {
-          throw new Error(`Image request failed with status ${resp.status}`)
-        }
-
-        return await resp.blob()
-      })()
-
-      this.imageBlobFetchInFlight.set(resolved, blobPromise)
-    }
-
-    let blob: Blob
-    try {
-      blob = await blobPromise
-    } finally {
-      if (this.imageBlobFetchInFlight.get(resolved) === blobPromise) {
-        this.imageBlobFetchInFlight.delete(resolved)
-      }
-    }
-
-    return URL.createObjectURL(blob)
-  }
-
-  // Expose a lightweight cache for image metadata candidates (tests and UI may seed/read this)
-  // Keys: ASIN-like identifier => { urls: string[]; fetchedAt: number }
-  public metadataUrlCache = new Map<string, { urls: string[]; fetchedAt: number }>()
-
   /**
    * Ensure the backend image cache has a cached copy for the given image endpoint.
-   * Attempts to resolve candidate image URLs from Audible and Audnexus metadata,
-   * caches discovered candidate URLs, and triggers a backend fetch for each candidate URL.
-   * Returns true if any candidate (or the base image endpoint) returned a successful response.
+   * Fetches the provided endpoint first so `/images/{id}?url=...` can populate
+   * the cache, then falls back to the base `/images/{id}` endpoint.
    */
   async ensureImageCached(path: string): Promise<boolean> {
     try {
       // Expect path like '/api/vX/images/{id}' optionally with query string
-      const m = String(path).match(/\/api(?:\/v\d+(?:\.\d+)?)?\/images\/([^\?\/]+)/)
+      const input = String(path)
+      const m = input.match(/\/api(?:\/v\d+(?:\.\d+)?)?\/images\/([^\?\/]+)/)
       if (!m || !m[1]) return false
       const id = decodeURIComponent(m[1])
-
-      // Check seeded cache first
-      const cached = this.metadataUrlCache.get(id)
-      let candidates: string[] = []
-      if (cached && Array.isArray(cached.urls) && cached.urls.length > 0) {
-        candidates = cached.urls.slice()
-      } else {
-        // Deprecated metadata endpoints removed; skip dynamic candidate discovery
-        // Cache empty candidates for future calls
-        this.metadataUrlCache.set(id, { urls: candidates, fetchedAt: Date.now() })
-      }
 
       const requestConfig: RequestInit = {
         method: 'GET',
@@ -1617,25 +1470,16 @@ class ApiService {
         credentials: 'include',
       }
 
-      // Try each candidate by asking backend to fetch and cache it via /api/vX/images/{id}?url=...
-      for (const url of candidates) {
+      const endpoints = new Set<string>()
+      endpoints.add(input)
+      endpoints.add(`${API_BASE_URL}/images/${encodeURIComponent(id)}`)
+
+      for (const endpoint of endpoints) {
         try {
-          const resp = await fetch(
-            `${API_BASE_URL}/images/${encodeURIComponent(id)}?url=${encodeURIComponent(url)}`,
-            requestConfig,
-          )
+          const resp = await fetch(endpoint, requestConfig)
           if (resp.ok) return true
         } catch {}
       }
-
-      // As a fallback, check the base image endpoint (maybe already cached)
-      try {
-        const baseResp = await fetch(
-          `${API_BASE_URL}/images/${encodeURIComponent(id)}`,
-          requestConfig,
-        )
-        if (baseResp.ok) return true
-      } catch {}
 
       return false
     } catch {
@@ -1861,6 +1705,7 @@ class ApiService {
       sessionTokenManager.clearToken()
       this.antiforgeryToken = null
       this.antiforgeryTokenSession = null
+      this.tokenReadyPromise = null
       throw Object.assign(new Error('Unauthorized'), { status: 401 })
     }
 
@@ -1968,25 +1813,6 @@ class ApiService {
       // If the caller provides headers, use them as the base.
       const headers: Record<string, string> = headersToUse ? { ...headersToUse } : {}
 
-      // If Authorization is present, never attach API key (enforce user session only)
-      if (!headers['Authorization']) {
-        // Only attach API key if authentication is disabled
-        try {
-          const sc = await getStartupConfigCached(2000)
-          const apiKey = sc?.apiKey
-          const rawAuth =
-            sc?.authenticationRequired ??
-            (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
-          const authEnabled =
-            typeof rawAuth === 'boolean'
-              ? rawAuth
-              : typeof rawAuth === 'string'
-                ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
-                : false
-          if (apiKey && !authEnabled) headers['X-Api-Key'] = apiKey
-        } catch {}
-      }
-
       logger.debug('[ApiService] fetching antiforgery token', {
         url: `${API_BASE_URL}/antiforgery/token`,
         headers,
@@ -2008,9 +1834,8 @@ class ApiService {
         tokenLength: token ? token.length : 0,
       })
       // Cache the token in memory for the current session
-      const sessionToken = sessionTokenManager.getToken() || null
       this.antiforgeryToken = token
-      this.antiforgeryTokenSession = sessionToken
+      this.antiforgeryTokenSession = sessionTokenManager.getToken() || null
       return token
     } catch {
       return null
@@ -2026,12 +1851,6 @@ class ApiService {
   ): Promise<void> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (csrfToken) headers['X-XSRF-TOKEN'] = csrfToken
-    // Include API key when present so login requests that bypass request() still send the token
-    try {
-      const sc = await getStartupConfigCached(2000)
-      const apiKey = sc?.apiKey
-      if (apiKey) headers['X-Api-Key'] = apiKey
-    } catch {}
 
     const resp = await fetch(`${API_BASE_URL}/account/login`, {
       method: 'POST',
@@ -2056,14 +1875,16 @@ class ApiService {
       throw err
     }
 
-    // Handle session token response (only expected when authentication is required)
+    // Handle login response. Browser auth now relies on the HttpOnly session
+    // cookie, while the local session manager only keeps a non-secret marker
+    // for cross-tab synchronization.
     const responseData = await resp.json()
-    if (responseData.sessionToken) {
-      // Clear antiforgery token cache BEFORE setting session token
+    if (responseData.authType === 'session') {
+      // Clear antiforgery token cache before storing the browser auth marker.
       this.antiforgeryToken = null
       this.antiforgeryTokenSession = null
-      sessionTokenManager.setToken(responseData.sessionToken, { persistent: rememberMe })
-      logger.debug('[ApiService] Session token received and stored')
+      sessionTokenManager.setAuthenticated({ persistent: rememberMe })
+      logger.debug('[ApiService] Session cookie received; auth marker stored')
       if (typeof window !== 'undefined') {
         try {
           window.localStorage.removeItem('listenarr_csrf_token')
@@ -2073,13 +1894,10 @@ class ApiService {
       this.tokenReadyPromise = (async () => {
         try {
           await new Promise((resolve) => setTimeout(resolve, 10))
-          const token = await this.fetchAntiforgeryToken({
-            Authorization: `Bearer ${responseData.sessionToken}`,
-          })
+          const token = await this.fetchAntiforgeryToken()
           logger.debug('[ApiService] Fetched antiforgery token after login', {
             tokenExists: !!token,
             tokenLength: token ? token.length : 0,
-            sessionToken: responseData.sessionToken,
           })
         } catch (e) {
           logger.debug('[ApiService] Failed to fetch antiforgery token after login', e)
@@ -2091,6 +1909,7 @@ class ApiService {
       sessionTokenManager.clearToken()
       this.antiforgeryToken = null
       this.antiforgeryTokenSession = null
+      this.tokenReadyPromise = null
       logger.debug('[ApiService] Authentication not required - no session token needed')
       this.tokenReadyPromise = (async () => {
         try {
@@ -2106,7 +1925,7 @@ class ApiService {
       await this.tokenReadyPromise
       this.tokenReadyPromise = null
     } else {
-      throw new Error('Login succeeded but expected session token or auth type not received')
+      throw new Error('Login succeeded but expected auth type was not received')
     }
 
     await this.refreshStartupConfigCache()
@@ -2140,11 +1959,12 @@ class ApiService {
       })
       throw error
     } finally {
-      // Always clear session token and antiforgery token on logout
+      // Always clear the browser auth marker and antiforgery token on logout.
       sessionTokenManager.clearToken()
       this.antiforgeryToken = null
       this.antiforgeryTokenSession = null
-      logger.debug('[ApiService] Session token cleared')
+      this.tokenReadyPromise = null
+      logger.debug('[ApiService] Browser auth marker cleared')
       await this.refreshStartupConfigCache()
       // Prefetch antiforgery token for anonymous principal after logout
       try {

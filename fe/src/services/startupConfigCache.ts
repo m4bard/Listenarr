@@ -19,55 +19,31 @@ import { apiService } from './api'
 import { logger } from '@/utils/logger'
 import { applyApiVersionFromStartupConfig } from './apiBase'
 
-type StartupConfig = import('@/types').StartupConfig
+type StartupConfigDto = import('@/types').StartupConfigDto
 
-let _cache: StartupConfig | null = null
+let _cache: StartupConfigDto | null = null
 let _cacheTs = 0
-let _inflight: Promise<StartupConfig | null> | null = null
+let _inflight: Promise<StartupConfigDto | null> | null = null
 // Expose a simple counter for diagnostics/tests
 export let fetchCount = 0
 
-export async function getStartupConfigCached(ttlMs = 5000): Promise<StartupConfig | null> {
+export async function getStartupConfigCached(ttlMs = 5000): Promise<StartupConfigDto | null> {
   const now = Date.now()
-  // If we have a cached value, check if it's a 401 fallback and use a longer TTL
-  const cacheObj = _cache as Record<string, unknown> | null
-  const isAuthRequired = !!(cacheObj && cacheObj.authenticationRequired === true)
-  const effectiveTtl = isAuthRequired ? 300000 : ttlMs // 5 minutes for 401, else normal TTL
-  if (_cacheTs !== 0 && now - _cacheTs <= effectiveTtl) return _cache
+  if (_cacheTs !== 0 && now - _cacheTs <= ttlMs) return _cache
 
   if (!_inflight) {
     fetchCount++
     _inflight = apiService
-      .getStartupConfig()
+      .getBootstrapConfig()
       .then((cfg) => {
-        const cfgForLog =
-          cfg && typeof cfg === 'object'
-            ? (() => {
-                const cloned = { ...(cfg as Record<string, unknown>) }
-                if (typeof cloned.apiKey === 'string' && cloned.apiKey.length > 0)
-                  cloned.apiKey = 'redacted'
-                if (typeof cloned.ApiKey === 'string' && cloned.ApiKey.length > 0)
-                  cloned.ApiKey = 'redacted'
-                return cloned
-              })()
-            : cfg
-        logger.debug('[startupConfigCache] Raw config response:', cfgForLog)
+        logger.debug('[startupConfigCache] Raw bootstrap response:', cfg)
         applyApiVersionFromStartupConfig(cfg)
         _cache = cfg
         _cacheTs = Date.now()
         return cfg
       })
       .catch((err) => {
-        logger.debug('[startupConfigCache] Error fetching config:', err)
-        // If 401 Unauthorized, treat as 'authentication required' for SPA logic
-        const status = (err as { status?: number } | null)?.status
-        if (status === 401) {
-          const fallback: Partial<StartupConfig> = { authenticationRequired: true }
-          _cache = fallback as StartupConfig
-          _cacheTs = Date.now()
-          return _cache
-        }
-        // On other errors, cache null result for the TTL
+        logger.debug('[startupConfigCache] Error fetching bootstrap config:', err)
         _cache = null
         _cacheTs = Date.now()
         return null
@@ -88,6 +64,6 @@ export function resetCache() {
 }
 
 // Synchronous access to the cached startup config (may be null)
-export function getCachedStartupConfig(): StartupConfig | null {
+export function getCachedStartupConfig(): StartupConfigDto | null {
   return _cache
 }

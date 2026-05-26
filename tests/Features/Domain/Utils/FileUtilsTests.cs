@@ -292,5 +292,80 @@ namespace Listenarr.Tests.Features.Domain.Utils
                 @"C:\Books\Files\Track 01.mp3",
                 normalized);
         }
+
+        [Theory]
+        [InlineData(" ", true)]
+        [InlineData("folder ", true)]
+        [InlineData("folder.", true)]
+        [InlineData("folder name", false)]
+        [InlineData("  folder", false)]
+        [InlineData(@"C:\Program Files\Listenarr", false)]
+        [InlineData(@"C:\media\folder \book.m4b", true)]
+        public void IsPathInvalidForOs_UsesWindowsWhitespaceRules(string path, bool expected)
+        {
+            Assert.Equal(expected, FileUtils.IsPathInvalidForOs(path, isWindows: true));
+        }
+
+        [Theory]
+        [InlineData(" ", false)]
+        [InlineData("folder ", false)]
+        [InlineData("folder.", false)]
+        [InlineData("folder name", false)]
+        [InlineData("  folder", false)]
+        [InlineData("/media/folder /book.m4b", false)]
+        public void IsPathInvalidForOs_AllowsLinuxWhitespacePaths(string path, bool expected)
+        {
+            Assert.Equal(expected, FileUtils.IsPathInvalidForOs(path, isWindows: false));
+        }
+
+        [Theory]
+        [InlineData(" ", true)]
+        [InlineData("folder ", true)]
+        [InlineData("folder name", false)]
+        public void IsPathInvalidForCurrentOs_UsesHostOsRules(string path, bool expectedOnWindows)
+        {
+            Assert.Equal(OperatingSystem.IsWindows() && expectedOnWindows, FileUtils.IsPathInvalidForCurrentOs(path));
+        }
+
+        [Fact]
+        public void CombineWithOptionalBase_PreservesPathWhitespace()
+        {
+            var result = FileUtils.CombineWithOptionalBase("root", "  folder  ");
+
+            Assert.Equal(
+                string.Join(Path.DirectorySeparatorChar, "root", "  folder  "),
+                result);
+        }
+
+        [Fact]
+        public void CombineRelativePath_JoinsRelativeSegmentsAndTrimsLeadingSeparators()
+        {
+            var result = FileUtils.CombineRelativePath(
+                "root",
+                "/config",
+                "\\cache",
+                "images");
+
+            Assert.Equal(
+                string.Join(Path.DirectorySeparatorChar, "root", "config", "cache", "images"),
+                result);
+        }
+
+        [Fact]
+        public void CombineRelativePath_ThrowsWhenBasePathMissing()
+        {
+            Assert.Throws<ArgumentException>(() => FileUtils.CombineRelativePath("", "config"));
+        }
+
+        [Fact]
+        public void CombineRelativePath_RejectsWindowsRootedSegments()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            Assert.Throws<ArgumentException>(() => FileUtils.CombineRelativePath("root", @"C:\escape"));
+        }
     }
 }

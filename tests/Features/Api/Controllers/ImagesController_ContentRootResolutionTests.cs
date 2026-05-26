@@ -16,84 +16,65 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Api.Controllers;
-using Microsoft.AspNetCore.Hosting;
+using Listenarr.Application.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Xunit;
 using System.Reflection;
-using Listenarr.Application.Interfaces.Repositories;
-using Listenarr.Application.Common;
-using Listenarr.Application.Interfaces;
-using Listenarr.Application.Metadata;
+using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
-    public class ImagesController_ContentRootResolutionTests
+    public class ImagesController_ContentRootResolutionTests : BaseTests
     {
-        [Fact]
-        public async Task GetImage_UsesRepoRoot_WhenEnvironmentContentRootPointsToBinOutput()
+        private string _tempRoot = string.Empty;
+        private readonly Mock<IImageCacheService> _imageCache = new();
+        private readonly Mock<IApplicationPathService> _mockPathService = new();
+
+        public override async Task InitializeAsync()
         {
-            var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-images-controller-tests", Guid.NewGuid().ToString("N"));
+            _tempRoot = FileService.GetTempDirectory("images-controller-content-root");
+            _mockPathService.SetupGet(p => p.ContentRootPath).Returns(_tempRoot);
+
+            _services.AddSingleton(_imageCache.Object);
+            _services.AddSingleton(_mockPathService.Object);
+            Init();
+
+            await base.InitializeAsync();
+        }
+
+        [Fact]
+        public async Task GetImage_UsesApplicationPathServiceContentRoot()
+        {
             const string identifier = "ZZTEST1234";
 
-            try
+            Directory.CreateDirectory(Path.Join(_tempRoot, "config", "cache", "images", "authors"));
+
+            var relativePath = $"config/cache/images/authors/{identifier}.jpg";
+            var expectedPath = Path.Join(_tempRoot, "config", "cache", "images", "authors", $"{identifier}.jpg");
+            await File.WriteAllBytesAsync(expectedPath, new byte[] { 1, 2, 3, 4 });
+
+            _imageCache
+                .Setup(service => service.GetCachedImagePathAsync(identifier))
+                .ReturnsAsync(relativePath);
+
+            var controller = _provider.GetRequiredService<ImagesController>();
+            controller.ControllerContext = new ControllerContext
             {
-                Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+                HttpContext = new DefaultHttpContext()
+            };
 
-                var repoApiRoot = Path.Join(tempRoot, "listenarr.api");
-                var binRoot = Path.Join(repoApiRoot, "bin", "Debug", "net8.0");
-                Directory.CreateDirectory(Path.Join(repoApiRoot, "config", "cache", "images", "authors"));
-                Directory.CreateDirectory(Path.Join(repoApiRoot, "wwwroot"));
-                Directory.CreateDirectory(binRoot);
-                File.WriteAllText(Path.Join(repoApiRoot, "listenarr.api.csproj"), "<Project />");
+            var effectiveRootField = typeof(ImagesController).GetField("_effectiveContentRootPath", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.NotNull(effectiveRootField);
+            Assert.Equal(_tempRoot, effectiveRootField!.GetValue(controller));
 
-                var relativePath = $"config/cache/images/authors/{identifier}.jpg";
-                var expectedPath = Path.Join(repoApiRoot, "config", "cache", "images", "authors", $"{identifier}.jpg");
-                await File.WriteAllBytesAsync(expectedPath, new byte[] { 1, 2, 3, 4 });
+            var result = await controller.GetImage(identifier);
 
-                var imageCache = new Mock<IImageCacheService>();
-                imageCache
-                    .Setup(service => service.GetCachedImagePathAsync(identifier))
-                    .ReturnsAsync(relativePath);
-
-                var env = new Mock<IWebHostEnvironment>();
-                env.SetupGet(environment => environment.ContentRootPath).Returns(binRoot);
-
-                using var httpClientForAudible = new System.Net.Http.HttpClient();
-                var controller = new ImagesController(
-                    imageCache.Object,
-                    Mock.Of<IAudiobookMetadataService>(),
-                    new Mock<AudibleService>(httpClientForAudible, Mock.Of<ILogger<AudibleService>>()) { CallBase = false }.Object,
-                    Mock.Of<IAudnexusService>(),
-                    Mock.Of<IAudiobookRepository>(),
-                    Mock.Of<ILogger<ImagesController>>(),
-                    env.Object);
-                controller.ControllerContext = new ControllerContext
-                {
-                    HttpContext = new DefaultHttpContext()
-                };
-
-                var effectiveRootField = typeof(ImagesController).GetField("_effectiveContentRootPath", BindingFlags.Instance | BindingFlags.NonPublic);
-                Assert.NotNull(effectiveRootField);
-                Assert.Equal(repoApiRoot, effectiveRootField!.GetValue(controller));
-
-                var result = await controller.GetImage(identifier);
-
-                var fileResult = Assert.IsType<PhysicalFileResult>(result);
-                var normalizedActualPath = fileResult.FileName.Replace('/', Path.DirectorySeparatorChar);
-                Assert.Equal(expectedPath, normalizedActualPath);
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
-                if (Directory.Exists(tempRoot))
-                {
-                    Directory.Delete(tempRoot, recursive: true);
-                }
-            }
+            var fileResult = Assert.IsType<PhysicalFileResult>(result);
+            var normalizedActualPath = fileResult.FileName.Replace('/', Path.DirectorySeparatorChar);
+            Assert.Equal(expectedPath, normalizedActualPath);
         }
     }
 }

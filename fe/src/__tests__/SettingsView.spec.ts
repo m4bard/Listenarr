@@ -26,7 +26,9 @@ import { apiService } from '@/services/api'
 
 vi.mock('@/services/api', () => ({
   apiService: {
+    getBootstrapConfig: vi.fn(async () => ({ AuthenticationRequired: 'Enabled' })),
     getStartupConfig: vi.fn(),
+    getApiKey: vi.fn(async () => ({ apiKey: 'abc' })),
     getApiConfigurations: vi.fn(async () => []),
     getDownloadClientConfigurations: vi.fn(async () => []),
     getApplicationSettings: vi.fn(async () => ({})),

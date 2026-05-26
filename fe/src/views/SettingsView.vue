@@ -229,9 +229,11 @@
         ref="generalSettingsRef"
         :settings="settings"
         :startupConfig="startupConfig"
+        :apiKey="apiKey"
         :authEnabled="authEnabled"
         @update:authEnabled="authEnabled = $event"
         @update:startupConfig="startupConfig = $event"
+        @update:apiKey="apiKey = $event"
         @update:settings="
           (v) => {
             settings = v
@@ -629,6 +631,7 @@ const apiForm = reactive({
 })
 const settings = ref<ApplicationSettings | null>(null)
 const startupConfig = ref<import('@/types').StartupConfig | null>(null)
+const apiKey = ref('')
 const authEnabled = ref(false)
 
 const adminUsers = ref<
@@ -1367,6 +1370,13 @@ onMounted(async () => {
           : false
   } catch {
     authEnabled.value = false
+  }
+
+  try {
+    const apiKeyResponse = await apiService.getApiKey()
+    apiKey.value = apiKeyResponse.apiKey ?? ''
+  } catch {
+    apiKey.value = ''
   }
 
   // Watch for tab changes and fetch content on-demand

@@ -18,29 +18,47 @@
 
 using AsyncKeyedLock;
 using Listenarr.Application.Security;
+using Listenarr.Application.Interfaces;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using System.Net;
 using System.Net.Sockets;
 
-namespace Listenarr.Application.Common
+namespace Listenarr.Infrastructure.Cache
 {
-    public interface IImageCacheService
-    {
-        Task<string?> DownloadAndCacheImageAsync(string imageUrl, string identifier);
-        Task<string?> MoveToLibraryStorageAsync(string identifier, string? imageUrl = null);
-        Task<string?> MoveToAuthorLibraryStorageAsync(string identifier, string? imageUrl = null, bool forceRefresh = false);
-        Task<string?> MoveToSeriesLibraryStorageAsync(string identifier, string? imageUrl = null, bool forceRefresh = false);
-        Task<string?> GetCachedImagePathAsync(string identifier);
-        Task ClearTempCacheAsync();
-    }
-
     public class ImageCacheService : IImageCacheService, IDisposable
     {
         private const int MaxImageRedirects = 5;
+        private const long MaxDownloadedImageBytes = 10L * 1024L * 1024L;
+        private static readonly HashSet<string> AllowedDownloadedImageMediaTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+        };
+
+        private static readonly HashSet<string> AllowedDownloadedImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp",
+            ".gif",
+        };
+
+        private static readonly IReadOnlyDictionary<string, string> ImageExtensionsByMediaType =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["image/jpeg"] = ".jpg",
+                ["image/png"] = ".png",
+                ["image/webp"] = ".webp",
+                ["image/gif"] = ".gif",
+            };
+
         private readonly ILogger<ImageCacheService> _logger;
         private readonly HttpClient _httpClient;
-        private readonly HttpClient _httpClientNoRedirect;
         private readonly string _tempCachePath;
         private readonly string _libraryImagePath;
         private readonly string _authorImagePath;
@@ -48,137 +66,23 @@ namespace Listenarr.Application.Common
         private readonly string _contentRootPath;
         private readonly AsyncKeyedLocker<string> _downloadLocks = new();
 
-        public ImageCacheService(ILogger<ImageCacheService> logger, IHttpClientFactory httpClientFactory, string contentRootPath)
+        public ImageCacheService(
+            ILogger<ImageCacheService> logger,
+            HttpClient httpClient,
+            IApplicationPathService applicationPathService)
         {
             _logger = logger;
-            _httpClient = httpClientFactory.CreateClient();
-            _httpClientNoRedirect = new HttpClient(new HttpClientHandler
-            {
-                AllowAutoRedirect = false
-            })
-            {
-                Timeout = _httpClient.Timeout
-            };
-            _contentRootPath = ResolveEffectiveContentRoot(contentRootPath);
+            _httpClient = httpClient;
+            _contentRootPath = applicationPathService.ContentRootPath;
+            _tempCachePath = applicationPathService.ResolveFromConfig("cache", "images", "temp");
+            _libraryImagePath = applicationPathService.ResolveFromConfig("cache", "images", "library");
+            _authorImagePath = applicationPathService.ResolveFromConfig("cache", "images", "authors");
+            _seriesImagePath = applicationPathService.ResolveFromConfig("cache", "images", "series");
 
-            // Set up cache directories relative to content root
-            var baseDir = CombineRelativePath(_contentRootPath, "config");
-            _tempCachePath = CombineRelativePath(baseDir, "cache", "images", "temp");
-            _libraryImagePath = CombineRelativePath(baseDir, "cache", "images", "library");
-            _authorImagePath = CombineRelativePath(baseDir, "cache", "images", "authors");
-            _seriesImagePath = CombineRelativePath(baseDir, "cache", "images", "series");
-
-            // Ensure directories exist
             Directory.CreateDirectory(_tempCachePath);
             Directory.CreateDirectory(_libraryImagePath);
             Directory.CreateDirectory(_authorImagePath);
             Directory.CreateDirectory(_seriesImagePath);
-        }
-
-        private string ResolveEffectiveContentRoot(string? contentRootPath)
-        {
-            var fallbackRoot = string.IsNullOrWhiteSpace(contentRootPath)
-                ? AppContext.BaseDirectory
-                : contentRootPath;
-
-            var resolvedRoot = TryResolveListenarrApiRoot(fallbackRoot);
-            if (!string.IsNullOrWhiteSpace(resolvedRoot) &&
-                !string.Equals(resolvedRoot, fallbackRoot, StringComparison.OrdinalIgnoreCase))
-            {
-                _logger.LogInformation(
-                    "Resolved image cache content root to repo path: {ResolvedRoot}",
-                    resolvedRoot);
-                return resolvedRoot;
-            }
-
-            return fallbackRoot;
-        }
-
-        private static string? TryResolveListenarrApiRoot(string? startingPath)
-        {
-            if (string.IsNullOrWhiteSpace(startingPath))
-            {
-                return null;
-            }
-
-            try
-            {
-                var dir = new DirectoryInfo(Path.GetFullPath(startingPath));
-                const int maxDepth = 8;
-                var depth = 0;
-
-                while (dir != null && depth++ < maxDepth)
-                {
-                    if (LooksLikeListenarrApiRoot(dir.FullName))
-                    {
-                        return dir.FullName;
-                    }
-
-                    var nestedApiRoot = CombineRelativePath(dir.FullName, "listenarr.api");
-                    if (LooksLikeListenarrApiRoot(nestedApiRoot))
-                    {
-                        return nestedApiRoot;
-                    }
-
-                    dir = dir.Parent;
-                }
-            }
-            catch (Exception ex) when (
-                ex is IOException or
-                UnauthorizedAccessException or
-                ArgumentException or
-                System.Security.SecurityException or
-                NotSupportedException or
-                PathTooLongException)
-            {
-                return null;
-            }
-
-            return null;
-        }
-
-        private static bool LooksLikeListenarrApiRoot(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
-            {
-                return false;
-            }
-
-            var hasConfigDirectory = Directory.Exists(CombineRelativePath(path, "config"));
-            var hasProjectMarkers =
-                File.Exists(CombineRelativePath(path, "listenarr.api.csproj")) ||
-                Directory.Exists(CombineRelativePath(path, "wwwroot"));
-
-            return hasConfigDirectory && hasProjectMarkers;
-        }
-
-        private static string CombineRelativePath(string basePath, params string[] segments)
-        {
-            if (string.IsNullOrWhiteSpace(basePath))
-            {
-                throw new ArgumentException("Base path is required.", nameof(basePath));
-            }
-
-            var combined = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            foreach (var segment in segments)
-            {
-                if (string.IsNullOrWhiteSpace(segment))
-                {
-                    continue;
-                }
-
-                var relativeSegment = segment.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                if (Path.IsPathRooted(relativeSegment))
-                {
-                    throw new ArgumentException("Path segments must be relative.", nameof(segments));
-                }
-
-                combined = string.IsNullOrEmpty(combined)
-                    ? relativeSegment
-                    : combined + Path.DirectorySeparatorChar + relativeSegment;
-            }
-
-            return combined;
         }
 
         /// <summary>
@@ -278,9 +182,31 @@ namespace Listenarr.Application.Common
                 var finalUri = download.FinalUri;
                 response.EnsureSuccessStatusCode();
 
-                // Read bytes first so we can reject tiny placeholder images (for example 1x1)
-                var imageBytes = await response.Content.ReadAsByteArrayAsync();
                 var mediaType = response.Content.Headers.ContentType?.MediaType;
+                if (!IsAllowedDownloadedImageContent(mediaType, finalUri))
+                {
+                    _logger.LogWarning(
+                        "Blocked image download for {Identifier} from {Url}: unsupported content type {ContentType}",
+                        LogRedaction.SanitizeText(identifier),
+                        LogRedaction.SanitizeText(finalUri.ToString()),
+                        LogRedaction.SanitizeText(mediaType ?? "(none)"));
+                    return null;
+                }
+
+                var contentLength = response.Content.Headers.ContentLength;
+                if (contentLength.HasValue && contentLength.Value > MaxDownloadedImageBytes)
+                {
+                    _logger.LogWarning(
+                        "Blocked image download for {Identifier} from {Url}: content length {ContentLength} exceeds {MaxBytes} bytes",
+                        LogRedaction.SanitizeText(identifier),
+                        LogRedaction.SanitizeText(finalUri.ToString()),
+                        contentLength.Value,
+                        MaxDownloadedImageBytes);
+                    return null;
+                }
+
+                // Read bytes first so we can reject tiny placeholder images (for example 1x1).
+                var imageBytes = await ReadContentWithLimitAsync(response.Content, MaxDownloadedImageBytes);
                 if (IsPlaceholderImage(imageBytes, mediaType))
                 {
                     _logger.LogInformation("Skipping placeholder/tiny image for {Identifier} from {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(imageUrl));
@@ -288,9 +214,9 @@ namespace Listenarr.Application.Common
                 }
 
                 // Determine file extension from content type or URL
-                var extension = GetImageExtension(finalUri.ToString(), response.Content.Headers.ContentType?.MediaType);
+                var extension = GetImageExtension(finalUri.ToString(), mediaType);
                 var fileName = NormalizeRelativeFileName($"{SanitizeFileName(identifier)}{extension}");
-                var filePath = CombineRelativePath(_tempCachePath, fileName);
+                var filePath = FileUtils.CombineRelativePath(_tempCachePath, fileName);
 
                 // Save to temp cache
                 await File.WriteAllBytesAsync(filePath, imageBytes);
@@ -591,7 +517,7 @@ namespace Listenarr.Application.Common
             // Special-case for built-in unavailable cover asset
             if (string.Equals(identifier, "cover-unavailable", StringComparison.OrdinalIgnoreCase))
             {
-                var staticPath = Path.Join(Directory.GetCurrentDirectory(), "wwwroot", "images", "cover-unavailable.svg");
+                var staticPath = Path.Join(_contentRootPath, "wwwroot", "images", "cover-unavailable.svg");
                 if (File.Exists(staticPath))
                     return Task.FromResult<string?>(GetRelativePath(staticPath));
             }
@@ -626,7 +552,7 @@ namespace Listenarr.Application.Common
 
             foreach (var ext in extensions)
             {
-                var path = CombineRelativePath(_tempCachePath, NormalizeRelativeFileName(sanitized + ext));
+                var path = FileUtils.CombineRelativePath(_tempCachePath, NormalizeRelativeFileName(sanitized + ext));
                 if (!File.Exists(path)) continue;
 
                 // Remove placeholder images (e.g. 1x1) from temp cache so fallback can continue.
@@ -683,13 +609,13 @@ namespace Listenarr.Application.Common
 
             foreach (var ext in extensions)
             {
-                var path = CombineRelativePath(basePath, NormalizeRelativeFileName(sanitized + ext));
+                var path = FileUtils.CombineRelativePath(basePath, NormalizeRelativeFileName(sanitized + ext));
                 if (File.Exists(path))
                     return path;
             }
 
             // Default to .jpg if not found
-            return CombineRelativePath(basePath, NormalizeRelativeFileName(sanitized + ".jpg"));
+            return FileUtils.CombineRelativePath(basePath, NormalizeRelativeFileName(sanitized + ".jpg"));
         }
 
         private string GetRelativePath(string fullPath)
@@ -710,25 +636,81 @@ namespace Listenarr.Application.Common
             return normalized.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
-        private string GetImageExtension(string url, string? contentType)
+        private static async Task<byte[]> ReadContentWithLimitAsync(HttpContent content, long maxBytes)
+        {
+            await using var contentStream = await content.ReadAsStreamAsync();
+            using var bufferStream = new MemoryStream();
+            var buffer = new byte[81920];
+            long totalBytes = 0;
+
+            while (true)
+            {
+                var read = await contentStream.ReadAsync(buffer.AsMemory(0, buffer.Length));
+                if (read == 0)
+                {
+                    break;
+                }
+
+                totalBytes += read;
+                if (totalBytes > maxBytes)
+                {
+                    throw new InvalidOperationException($"Downloaded image exceeds the {maxBytes} byte limit.");
+                }
+
+                bufferStream.Write(buffer, 0, read);
+            }
+
+            return bufferStream.ToArray();
+        }
+
+        private static bool IsAllowedDownloadedImageContent(string? mediaType, Uri finalUri)
+        {
+            if (!string.IsNullOrWhiteSpace(mediaType))
+            {
+                return AllowedDownloadedImageMediaTypes.Contains(mediaType.Trim());
+            }
+
+            var extension = GetUrlPathExtension(finalUri.ToString());
+            return AllowedDownloadedImageExtensions.Contains(extension);
+        }
+
+        private static string GetImageExtension(string url, string? contentType)
         {
             // Try to get extension from content type
             if (!string.IsNullOrEmpty(contentType))
             {
-                if (contentType.Contains("jpeg")) return ".jpg";
-                if (contentType.Contains("png")) return ".png";
-                if (contentType.Contains("webp")) return ".webp";
-                if (contentType.Contains("gif")) return ".gif";
-                if (contentType.Contains("svg+xml")) return ".svg";
+                if (ImageExtensionsByMediaType.TryGetValue(contentType, out var mappedExtension))
+                {
+                    return mappedExtension;
+                }
             }
 
             // Try to get extension from URL
-            var urlExtension = Path.GetExtension(url).ToLower();
-            if (!string.IsNullOrEmpty(urlExtension) && urlExtension.Length <= 5)
-                return urlExtension;
+            var urlExtension = GetUrlPathExtension(url);
+            if (AllowedDownloadedImageExtensions.Contains(urlExtension))
+            {
+                return urlExtension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ? ".jpg" : urlExtension.ToLowerInvariant();
+            }
 
             // Default to .jpg
             return ".jpg";
+        }
+
+        private static string GetUrlPathExtension(string url)
+        {
+            try
+            {
+                if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                {
+                    return Path.GetExtension(uri.AbsolutePath) ?? string.Empty;
+                }
+            }
+            catch (ArgumentException)
+            {
+                // Fall back to path parsing below.
+            }
+
+            return Path.GetExtension(url.Split('?', '#')[0]) ?? string.Empty;
         }
 
         private async Task<(HttpResponseMessage Response, Uri FinalUri)> DownloadWithValidatedRedirectsAsync(string imageUrl)
@@ -754,7 +736,7 @@ namespace Listenarr.Application.Common
 
                 response?.Dispose();
                 using var request = new HttpRequestMessage(HttpMethod.Get, currentUri);
-                response = await _httpClientNoRedirect.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+                response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
                 if (IsRedirectStatusCode(response.StatusCode))
                 {
@@ -1000,15 +982,6 @@ namespace Listenarr.Application.Common
         {
             try
             {
-                _httpClientNoRedirect.Dispose();
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                _logger.LogWarning(ex, "Failed disposing no-redirect HttpClient in ImageCacheService");
-            }
-
-            try
-            {
                 _httpClient.Dispose();
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -1018,5 +991,3 @@ namespace Listenarr.Application.Common
         }
     }
 }
-
-

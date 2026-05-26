@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Text.Json.Serialization;
+using Listenarr.Domain.Models.Configurations;
 
 namespace Listenarr.Domain.Models
 {
@@ -46,21 +47,21 @@ namespace Listenarr.Domain.Models
 
         // FFmpeg/ffprobe installer configuration
         public FfmpegConfig? Ffmpeg { get; set; }
-    }
 
-    public class FfmpegConfig
-    {
-        // Provider key: e.g., "johnvansickle", "gyan", "evermeet", or "github:<owner>/<repo>"
-        public string? Provider { get; set; }
+        public bool IsAuthenticationEnabled()
+        {
+            var value = AuthenticationRequired;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
 
-        // Optional explicit asset name or tag to pin a release, e.g., "ffmpeg-6.0.zip" or "6.0"
-        public string? ReleaseOverride { get; set; }
+            if (bool.TryParse(value, out var parsed))
+            {
+                return parsed;
+            }
 
-        // Optional URL template for checksum file discovery (e.g., GitHub releases assets or a SHA file)
-        public string? ChecksumUrl { get; set; }
-
-        // Optional architecture hint, e.g., "x86_64", "arm64"
-        public string? Arch { get; set; }
+            return value.Trim().ToLowerInvariant() is "enabled" or "true" or "yes" or "1";
+        }
     }
 }
-

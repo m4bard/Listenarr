@@ -17,69 +17,40 @@
  */
 using Xunit;
 using Moq;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
-using Listenarr.Api.Controllers;
-using Listenarr.Application.Interfaces.Repositories;
 using Microsoft.AspNetCore.Mvc;
+using Listenarr.Api.Controllers;
 using Listenarr.Application.Interfaces;
-using Listenarr.Domain.Models.Configurations;
-using Listenarr.Application.Common;
-using Listenarr.Application.Notification;
+using Listenarr.Tests.Builders;
+using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
-    public class LibraryController_DeleteImageSafetyTests
+    [Trait("Area", "LibraryApi")]
+    [Trait("Name", "LibraryController_DeleteImageSafetyTests")]
+    [Trait("Category", "LibraryController")]
+    public class LibraryController_DeleteImageSafetyTests : BaseTests
     {
         [Fact]
+        [Trait("Method", "DeleteAudiobook")]
+        [Trait("Scenario", "InvalidImageUrl_DoesNotCallImageCacheService")]
         public async Task DeleteAudiobook_InvalidImageUrl_DoesNotCallImageCacheService()
         {
-            // Arrange
-            var mockRepo = new Mock<IAudiobookRepository>();
+            // Given
             var mockImageCache = new Mock<IImageCacheService>();
-            var mockLogger = new Mock<ILogger<LibraryController>>();
 
-            var services = new ServiceCollection();
-            var mockConfig = new Mock<IConfigurationService>();
-            mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings { OutputPath = System.IO.Path.GetTempPath() });
-            services.AddSingleton<IConfigurationService>(mockConfig.Object);
+            Init(services => services.WithSingleton(mockImageCache.Object));
+            var controller = _provider.GetRequiredService<LibraryController>();
 
-            // Provide a mock signalR hub context (with Clients.All mocked) to avoid exceptions during broadcast
-            var mockHub = new Mock<Microsoft.AspNetCore.SignalR.IHubContext<DownloadHub>>();
-            var mockClients = new Mock<Microsoft.AspNetCore.SignalR.IHubClients>();
-            var mockClientProxy = new Mock<Microsoft.AspNetCore.SignalR.IClientProxy>();
-            mockClientProxy.Setup(m => m.SendCoreAsync(It.IsAny<string>(), It.IsAny<object[]>(), default)).Returns(System.Threading.Tasks.Task.CompletedTask);
-            mockClients.SetupGet(c => c.All).Returns(mockClientProxy.Object);
-            mockHub.SetupGet(h => h.Clients).Returns(mockClients.Object);
-            services.AddSingleton(typeof(Microsoft.AspNetCore.SignalR.IHubContext<DownloadHub>), mockHub.Object);
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithImageUrl("/config/cache/images/library/../evil/../../secret.txt")
+                .Build());
 
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
-            var fileNaming = new Mock<IFileNamingService>().Object;
-
-            var audiobook = new Listenarr.Domain.Models.Audiobook { Id = 123, Title = "Test", ImageUrl = "/config/cache/images/library/../evil/../../secret.txt" };
-            mockRepo.Setup(r => r.GetByIdAsync(It.IsAny<int>())).ReturnsAsync(audiobook);
-            mockRepo.Setup(r => r.DeleteByIdAsync(It.IsAny<int>())).ReturnsAsync(true);
-
-            var controller = new LibraryController(
-                mockRepo.Object,
-                mockImageCache.Object,
-                mockLogger.Object,
-                scopeFactory,
-                new Mock<IHistoryRepository>().Object,
-                new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                fileNaming,
-                scanQueueService: null,
-                moveQueueService: null,
-                notificationService: null);
-
-            // Act
+            // When
             var result = await controller.DeleteAudiobook(audiobook.Id);
 
-            // Assert
+            // Then
             // The identifier 'secret' should be extracted and validated; ensure we called into the image cache service
             mockImageCache.Verify(s => s.GetCachedImagePathAsync("secret"), Times.Once);
             Assert.IsType<OkObjectResult>(result);

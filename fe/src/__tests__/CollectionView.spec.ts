@@ -91,6 +91,7 @@ const {
 vi.mock('@/services/api', () => ({
   apiService: {
     getImageUrl: vi.fn((url: string) => url || 'https://via.placeholder.com/300x450?text=No+Image'),
+    getBootstrapConfig: vi.fn(async () => ({})),
     getLibrary: mockGetLibrary,
     getStartupConfig: vi.fn(async () => ({})),
     getApplicationSettings: mockGetApplicationSettings,

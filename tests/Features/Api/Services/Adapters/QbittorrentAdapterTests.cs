@@ -21,6 +21,7 @@ using System.Text;
 using System.Text.Json;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Common;
+using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -330,7 +331,7 @@ namespace Listenarr.Tests.Features.Api.Services.Adapters
                 DownloadClientId = client.Id
             };
 
-            var resolved = await adapter.GetImportItemAsync(client, new Download { Id = queueItem.Id }, queueItem);
+            var resolved = await adapter.GetImportItemAsync(client, new DownloadBuilder().WithId(queueItem.Id).Build(), queueItem);
 
             Assert.Equal(localPath, resolved.ContentPath);
         }

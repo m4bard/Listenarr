@@ -1,4 +1,5 @@
 using Listenarr.Application.Interfaces;
+using Listenarr.Domain.Common;
 using Listenarr.Domain.Models;
 
 namespace Listenarr.Tests.Mocks
@@ -11,6 +12,12 @@ namespace Listenarr.Tests.Mocks
         private readonly StartupConfig _cfg;
         public StartupConfigServiceMock(StartupConfig cfg) { _cfg = cfg; }
         public StartupConfig? GetConfig() => _cfg;
+        public bool IsAuthenticationRequired() => _cfg.IsAuthenticationEnabled();
+        public string GetEffectiveApiVersion(string? requestedApiVersion = null) => NormalizeApiVersion(_cfg.ApiVersion, requestedApiVersion);
+        public string NormalizeApiVersion(string? configuredApiVersion, string? requestedApiVersion = null)
+            => ApiVersionNormalizer.NormalizeApiVersionString(configuredApiVersion)
+               ?? ApiVersionNormalizer.NormalizeApiVersionString(requestedApiVersion)
+               ?? ApiVersionNormalizer.DefaultApiVersion;
         public Task ReloadAsync() => Task.CompletedTask;
         public Task SaveAsync(StartupConfig config) => Task.CompletedTask;
     }

@@ -25,7 +25,10 @@ namespace Listenarr.Api.Middleware
         private readonly IStartupConfigService _startupConfigService;
         private readonly ILogger<AuthenticationEnforcerMiddleware> _logger;
 
-        public AuthenticationEnforcerMiddleware(RequestDelegate next, IStartupConfigService startupConfigService, ILogger<AuthenticationEnforcerMiddleware> logger)
+        public AuthenticationEnforcerMiddleware(
+            RequestDelegate next,
+            IStartupConfigService startupConfigService,
+            ILogger<AuthenticationEnforcerMiddleware> logger)
         {
             _next = next;
             _startupConfigService = startupConfigService;
@@ -39,12 +42,7 @@ namespace Listenarr.Api.Middleware
             var normalizedApiPath = NormalizeApiVersionedPath(path);
             _logger?.LogDebug("AuthenticationEnforcer: incoming request {Method} {Path}", method, path);
 
-            var cfg = _startupConfigService.GetConfig();
-            var authRequired = false;
-            if (cfg != null && cfg.AuthenticationRequired != null)
-            {
-                authRequired = bool.TryParse(cfg.AuthenticationRequired, out var b) ? b : cfg.AuthenticationRequired.ToLower() == "enabled";
-            }
+            var authRequired = _startupConfigService.IsAuthenticationRequired();
 
             // Log logout requests specifically and include masked principal diagnostics
             if (normalizedApiPath.StartsWith("/api/account/logout", StringComparison.OrdinalIgnoreCase))
@@ -94,13 +92,6 @@ namespace Listenarr.Api.Middleware
                 return;
             }
 
-            // The startup config endpoint should only be public when authentication is not required
-            if (normalizedApiPath.StartsWith("/api/configuration/startupconfig", StringComparison.OrdinalIgnoreCase) && !authRequired)
-            {
-                await _next(context);
-                return;
-            }
-
             // Serve SPA assets and client-side routes anonymously: if the request is not for an API or SignalR hub,
             // let the static file middleware or SPA fallback handle it. This avoids returning 401 for '/'.
             // Keep API and hub routes protected.
@@ -139,4 +130,3 @@ namespace Listenarr.Api.Middleware
         }
     }
 }
-

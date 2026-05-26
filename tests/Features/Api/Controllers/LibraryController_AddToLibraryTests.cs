@@ -23,7 +23,7 @@ using Listenarr.Api.Controllers;
 using Listenarr.Domain.Models;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Builders;
-using Listenarr.Application.Common;
+using Listenarr.Application.Interfaces;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
@@ -38,9 +38,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
         {
             imageCacheServiceMock.Setup(m => m.MoveToLibraryStorageAsync(It.IsAny<string>(), imageUrl1)).ReturnsAsync("config/cache/images/library/B000TEST01.jpg");
             imageCacheServiceMock.Setup(m => m.MoveToLibraryStorageAsync(It.IsAny<string>(), imageUrl2)).ReturnsAsync("config/cache/images/library/derived.jpg");
-            _services.AddSingleton(imageCacheServiceMock.Object);
 
-            Init();
+            Init(services => services.WithSingleton(imageCacheServiceMock.Object));
             await InitDataAsync();
         }
 

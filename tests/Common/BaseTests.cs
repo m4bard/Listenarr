@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Models.Configurations;
@@ -28,6 +29,7 @@ namespace Listenarr.Tests.Common
         protected IQualityProfileRepository _qualityProfileRepository;
         protected IMoveJobRepository _moveJobRepository;
         protected IRootFolderRepository _rootFolderRepository;
+        protected IApplicationPathService _applicationPathService;
 
         public BaseTests()
         {
@@ -50,11 +52,16 @@ namespace Listenarr.Tests.Common
             nameof(_downloadHistoryRepository),
             nameof(_qualityProfileRepository),
             nameof(_moveJobRepository),
-            nameof(_rootFolderRepository)
+            nameof(_rootFolderRepository),
+            nameof(_applicationPathService)
         )]
-        public void Init()
+        public void Init(Action<ServiceCollectionBuilder>? configureBuilder = null)
         {
-            _services ??= new ServiceCollectionBuilder().Build();
+            var builder = new ServiceCollectionBuilder()
+                .WithContentRootPath(FileService.GetTempPath());
+
+            configureBuilder?.Invoke(builder);
+            _services = builder.Build(_services);
 
             _provider?.Dispose();
             _provider = _services.BuildServiceProvider();
@@ -72,6 +79,7 @@ namespace Listenarr.Tests.Common
             _qualityProfileRepository = _provider.GetRequiredService<IQualityProfileRepository>();
             _moveJobRepository = _provider.GetRequiredService<IMoveJobRepository>();
             _rootFolderRepository = _provider.GetRequiredService<IRootFolderRepository>();
+            _applicationPathService = _provider.GetRequiredService<IApplicationPathService>();
         }
 
         public virtual async Task InitializeAsync()

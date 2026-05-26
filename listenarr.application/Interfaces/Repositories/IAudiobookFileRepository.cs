@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Audiobooks;
 using Listenarr.Domain.Models;
 
 namespace Listenarr.Application.Interfaces.Repositories
@@ -32,5 +33,7 @@ namespace Listenarr.Application.Interfaces.Repositories
         Task<bool> IsPathUsedByOtherAsync(int audiobookId, string path, CancellationToken ct = default);
         Task<List<string>> GetAllFilePathsAsync(CancellationToken ct = default);
         Task<List<AudiobookFile>> GetAllAsync(CancellationToken ct = default);
+        Task<List<AudiobookFormatSummary>> GetFormatSummariesAsync(CancellationToken ct = default);
+        Task<Dictionary<int, int>> GetCountsByAudiobookIdAsync(CancellationToken ct = default);
     }
 }

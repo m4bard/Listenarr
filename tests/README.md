@@ -33,18 +33,19 @@ tests/                              # Backend tests
 [Trait("Category", "DownloadService")]
 ```
 * You can override `InitializeAsync` to define common setup for all test methods in your test class
-* You can override any service for dependency injection using:
+* You can override or remove services for dependency injection by calling `Init()` at the start of the test or test setup:
 ```
-_services.AddScoped(...)
-_services.AddSingleton(...)
-_services.AddTransient(...)
+Init(services => services.WithSingleton(myMock.Object));
+Init(services => services.Without<IServiceToRemove>());
+```
 
-# Dont forget to call Init() afterwards
+* If you need a custom service lifetime, use the matching method in the `Init()` builder
+```
+Init(services => services.WithScoped<IMyService, MyService>());
 ```
 * Take note of how the initial class was registered as it might not be obvious how some of them should be replaced to make sure the test actually uses it
-* If you override one or more service this way, you should call `Init()`
-    * You should add data to repository only after you have manually called `Init()` 
-    * If you did not alter any service, this is done for you in the test constructor already
+* You should add data to repositories only after you have called `Init()` with any custom service overrides
+* If you did not alter any service, `Init()` is done for you in the test constructor already
 
 The `Init()` method create the following things:
 * A `ServiceProvider` using the services you injected and default ones added for you. This provider is accessible using `_provider`

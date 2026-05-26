@@ -19,9 +19,11 @@
 using System.Net;
 using Asp.Versioning;
 using Asp.Versioning.ApiExplorer;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi;
 using Serilog;
 using Serilog.Events;
@@ -305,9 +307,6 @@ builder.Services.AddHttpClient<IAudnexusService, AudnexusService>()
         AutomaticDecompression = System.Net.DecompressionMethods.All
     });
 
-// Metadata routing across providers
-builder.Services.AddScoped<IAudiobookMetadataService, AudiobookMetadataService>();
-
 // Add metadata converters helper
 builder.Services.AddScoped<MetadataConverters>();
 builder.Services.AddScoped<MetadataMerger>();
@@ -542,7 +541,8 @@ builder.Services.AddListenarrAdapters(builder.Configuration);
 // Register infrastructure implementations (DB wiring + repositories live in the Infrastructure project)
 builder.Services.AddListenarrInfrastructure(options =>
     options.UseSqlite($"Data Source={sqliteDbPath}", sqliteOptions =>
-        sqliteOptions.MigrationsAssembly(typeof(QualityProfileRepository).Assembly.GetName().Name)));
+        sqliteOptions.MigrationsAssembly(typeof(QualityProfileRepository).Assembly.GetName().Name)),
+    builder.Environment.ContentRootPath);
 // Register application-level services (moved from Program.cs to keep startup focused)
 builder.Services.AddListenarrAppServices(builder.Configuration);
 // Register hosted/background services (moved from Program.cs). Allow tests to disable these.
@@ -623,14 +623,14 @@ builder.Services.AddSwaggerGen(options =>
         "",
         "Authentication quick start:",
         "1. Click `Authorize` and enter one credential (you do not need all schemes).",
-        "2. Session token flow:",
+        "2. Browser session flow:",
         "   - Call `POST /api/v{version}/account/login` with `{ \"username\": \"...\", \"password\": \"...\", \"rememberMe\": false }`.",
-        "   - Copy `sessionToken` from the 200 response when `authType` is `session`.",
-        "   - Use `SessionBearer` (`Bearer <sessionToken>`) or `SessionTokenHeader` (`<sessionToken>`).",
+        "   - The browser stores the `listenarr_session` HttpOnly cookie automatically when `authType` is `session`.",
+        "   - Subsequent browser requests authenticate with that cookie.",
         "3. API key flow:",
-        "   - Listenarr auto-generates an API key on first run.",
-        "   - Read the current key from `GET /api/v{version}/configuration/startupconfig` (trusted-network/auth redaction rules apply).",
-        "   - Rotate the key with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator required).",
+        "   - API keys are intended for non-browser clients such as scripts, bots, and integrations.",
+        "   - Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
+        "   - Rotate the key with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
         "   - `POST /api/v{version}/configuration/apikey/generate-initial` is localhost bootstrap only and typically returns 409 after setup.",
         "   - Use `ApiKeyHeader` (`<apiKey>`) or `ApiKeyAuthorization` (`ApiKey <apiKey>`)."
     });
@@ -642,30 +642,6 @@ builder.Services.AddSwaggerGen(options =>
         Description = swaggerDescription
     });
 
-    options.AddSecurityDefinition("SessionBearer", new OpenApiSecurityScheme
-    {
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "SessionToken",
-        Description = string.Join(Environment.NewLine, new[]
-        {
-            "Use `Authorization: Bearer <sessionToken>`.",
-            "Get `sessionToken` from `POST /api/v{version}/account/login` using username/password credentials."
-        })
-    });
-
-    options.AddSecurityDefinition("SessionTokenHeader", new OpenApiSecurityScheme
-    {
-        Type = SecuritySchemeType.ApiKey,
-        In = ParameterLocation.Header,
-        Name = "X-Session-Token",
-        Description = string.Join(Environment.NewLine, new[]
-        {
-            "Use `X-Session-Token: <sessionToken>`.",
-            "Get `sessionToken` from `POST /api/v{version}/account/login` using username/password credentials."
-        })
-    });
-
     options.AddSecurityDefinition("ApiKeyHeader", new OpenApiSecurityScheme
     {
         Type = SecuritySchemeType.ApiKey,
@@ -675,8 +651,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `X-Api-Key: <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/configuration/startupconfig` (trusted-network/auth redaction rules apply).",
-            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator required)."
+            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
+            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator session required when authentication is enabled; local/private-network access required when disabled)."
         })
     });
 
@@ -689,8 +665,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `Authorization: ApiKey <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/configuration/startupconfig` (trusted-network/auth redaction rules apply).",
-            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator required)."
+            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
+            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator session required when authentication is enabled; local/private-network access required when disabled)."
         })
     });
 
@@ -848,7 +824,30 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-// Use forwarded headers middleware (must be early in pipeline).
+app.UseExceptionHandler(exceptionApp =>
+{
+    exceptionApp.Run(async context =>
+    {
+        var exceptionFeature = context.Features.Get<IExceptionHandlerFeature>();
+        var exception = exceptionFeature?.Error;
+        Log.Logger.Error(exception, "Unhandled API exception for {Method} {Path}", context.Request.Method, context.Request.Path);
+
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/problem+json";
+
+        var problem = new ProblemDetails
+        {
+            Status = StatusCodes.Status500InternalServerError,
+            Title = "Internal server error",
+            Detail = app.Environment.IsDevelopment() ? exception?.Message : null,
+            Instance = context.Request.Path,
+        };
+
+        await context.Response.WriteAsJsonAsync(problem);
+    });
+});
+
+// Use forwarded headers middleware early in the pipeline.
 // Options are configured in DI to trust common private proxy networks.
 app.UseForwardedHeaders();
 

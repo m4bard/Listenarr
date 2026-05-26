@@ -26,6 +26,18 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public AudiobookFileBuilder WithSize(long value)
+        {
+            _audiobookFile.Size = value;
+            return this;
+        }
+
+        public AudiobookFileBuilder WithFormat(string value)
+        {
+            _audiobookFile.Format = value;
+            return this;
+        }
+
         public AudiobookFileBuilder WithCoded(string value)
         {
             _audiobookFile.Codec = value;

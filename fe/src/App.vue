@@ -102,13 +102,7 @@
                 <div style="display: flex; align-items: center; gap: 10px">
                   <img
                     v-if="s.imageUrl"
-                    :src="
-                      getProtectedImageSrc(
-                        s.imageUrl,
-                        `app-suggestion-${s.id}`,
-                        getPlaceholderUrl(),
-                      )
-                    "
+                    :src="getProtectedImageSrc(s.imageUrl, getPlaceholderUrl())"
                     @error="handleImageError"
                     alt="cover"
                     class="result-thumb"
@@ -233,35 +227,24 @@
         :class="{ open: mobileMenuOpen, 'auth-warning-visible': showSecurityWarningBanner }"
         ref="sidebarRef"
       >
-        <nav class="sidebar-nav">
+        <nav class="sidebar-nav" @click.capture="onNavCapture">
           <div class="nav-section">
             <RouterLink
               :to="{ path: '/audiobooks', query: { group: 'books' } }"
               class="nav-item"
               :class="{
-                'router-link-active': route.name === 'home' || route.name === 'audiobooks',
+                'router-link-active':
+                  route.name === 'home' ||
+                  route.name === 'audiobooks' ||
+                  pendingNavPath?.startsWith('/audiobooks') ||
+                  pendingNavPath === '/',
               }"
-              @mouseenter="
-                () => {
-                  preload('home')
-                  onNavMouseEnter('audiobooks')
-                }
-              "
+              @mouseenter="onPrimaryNavMouseEnter('home', 'audiobooks')"
               @mouseleave="onNavMouseLeave('audiobooks')"
-              @focus="
-                () => {
-                  preload('home')
-                  onNavFocus('audiobooks')
-                }
-              "
+              @focus="onPrimaryNavFocus('home', 'audiobooks')"
               @blur="onNavBlur('audiobooks')"
               @touchstart.passive="preload('home')"
-              @click="
-                () => {
-                  onNavClick('audiobooks')
-                  closeMobileMenu()
-                }
-              "
+              @click="onPrimaryNavClick('audiobooks')"
             >
               <PhBooks />
               <span>Audiobooks</span>
@@ -310,6 +293,7 @@
             <RouterLink
               to="/add-new"
               class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/add-new' }"
               @mouseenter="preload('add-new')"
               @focus="preload('add-new')"
               @touchstart.passive="preload('add-new')"
@@ -321,6 +305,7 @@
             <RouterLink
               to="/calendar"
               class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/calendar' }"
               @mouseenter="preload('calendar')"
               @focus="preload('calendar')"
               @touchstart.passive="preload('calendar')"
@@ -332,6 +317,7 @@
             <RouterLink
               to="/library-import"
               class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/library-import' }"
               @mouseenter="preload('library-import')"
               @focus="preload('library-import')"
               @touchstart.passive="preload('library-import')"
@@ -346,6 +332,7 @@
             <RouterLink
               to="/activity"
               class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/activity' }"
               @mouseenter="preload('activity')"
               @focus="preload('activity')"
               @touchstart.passive="preload('activity')"
@@ -358,6 +345,7 @@
             <RouterLink
               to="/wanted"
               class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/wanted' }"
               @mouseenter="preload('wanted')"
               @focus="preload('wanted')"
               @touchstart.passive="preload('wanted')"
@@ -373,27 +361,13 @@
             <RouterLink
               to="/settings"
               class="nav-item"
-              @mouseenter="
-                () => {
-                  preload('settings')
-                  onNavMouseEnter('settings')
-                }
-              "
+              :class="{ 'router-link-active': pendingNavPath === '/settings' }"
+              @mouseenter="onPrimaryNavMouseEnter('settings', 'settings')"
               @mouseleave="onNavMouseLeave('settings')"
-              @focus="
-                () => {
-                  preload('settings')
-                  onNavFocus('settings')
-                }
-              "
+              @focus="onPrimaryNavFocus('settings', 'settings')"
               @blur="onNavBlur('settings')"
               @touchstart.passive="preload('settings')"
-              @click="
-                () => {
-                  onNavClick('settings')
-                  closeMobileMenu()
-                }
-              "
+              @click="onPrimaryNavClick('settings')"
             >
               <PhGear />
               <span>Settings</span>
@@ -472,6 +446,7 @@
             <RouterLink
               to="/system"
               class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/system' }"
               @mouseenter="preload('system')"
               @focus="preload('system')"
               @touchstart.passive="preload('system')"
@@ -519,9 +494,11 @@
         <div v-if="hideLayout" class="fullpage-wrapper">
           <RouterView />
         </div>
-        <div v-else>
-          <RouterView />
-        </div>
+        <RouterView v-else v-slot="{ Component }">
+          <Transition name="page-fade">
+            <component :is="Component" :key="route.name as string" />
+          </Transition>
+        </RouterView>
       </main>
     </div>
 
@@ -617,11 +594,28 @@ const securityWarningPermanentlyHidden = ref(getSecurityWarningBannerHiddenPrefe
 // Hover and persistence state for sidebar subnavs
 const hoverNav = ref<string | null>(null)
 const persistentNav = ref<string | null>(null)
+// Optimistic active state: set immediately on click, cleared after navigation resolves
+const pendingNavPath = ref<string | null>(null)
 const hoverTimeout = ref<number | null>(null)
 const HOVER_CLOSE_DELAY = 200
 const sidebarRef = ref<HTMLElement | null>(null)
 const hoverSupported = ref(false)
 const isTouchDevice = ref(false)
+
+function onPrimaryNavMouseEnter(routeName: string, navName: string) {
+  preload(routeName)
+  onNavMouseEnter(navName)
+}
+
+function onPrimaryNavFocus(routeName: string, navName: string) {
+  preload(routeName)
+  onNavFocus(navName)
+}
+
+function onPrimaryNavClick(navName: string) {
+  onNavClick(navName)
+  closeMobileMenu()
+}
 
 onMounted(() => {
   try {
@@ -682,6 +676,15 @@ function onNavClick(name: string) {
   hoverNav.value = persistentNav.value || null
 }
 
+// Capture nav-item clicks at the nav level to set an optimistic active state immediately,
+// before the router guard (which may await async work) resolves.
+function onNavCapture(e: MouseEvent) {
+  const link = (e.target as HTMLElement).closest('a.nav-item') as HTMLAnchorElement | null
+  if (link) {
+    pendingNavPath.value = new URL(link.href, window.location.origin).pathname
+  }
+}
+
 // Close persistent nav when clicking outside sidebar
 useEventListener(document, 'click', (e: MouseEvent) => {
   const target = e.target as Node
@@ -694,6 +697,13 @@ useEventListener(document, 'click', (e: MouseEvent) => {
 
 // Version from API
 const version = ref('')
+
+function updateSidebarVersion(health: { version?: string } | null | undefined) {
+  const nextVersion = typeof health?.version === 'string' ? health.version.trim() : ''
+  if (nextVersion.length > 0) {
+    version.value = nextVersion
+  }
+}
 
 // Global confirm service (app-level modal)
 const confirm = useConfirmService()
@@ -935,6 +945,10 @@ const syncLibrarySnapshot = async () => {
 
 // --- Header search implementation ---
 const router = useRouter()
+// Clear the optimistic pending nav state once navigation fully resolves
+router.afterEach(() => {
+  pendingNavPath.value = null
+})
 const searchQuery = vueRef('')
 const suggestions = vueRef<
   Array<{ id: number; title: string; author?: string; imageUrl?: string }>
@@ -1068,14 +1082,9 @@ const refreshAuthPresentationFromStartupConfig = async (force: boolean = false) 
     // so we don't pin authEnabled=false for the whole session.
     if (!cfg) {
       try {
-        cfg = await apiService.getStartupConfig()
+        cfg = await apiService.getBootstrapConfig()
       } catch (err) {
-        const status = (err as { status?: number } | null)?.status
-        if (status === 401) {
-          cfg = { authenticationRequired: true } as Record<string, unknown>
-        } else {
-          throw err
-        }
+        throw err
       }
     }
     const obj = cfg as Record<string, unknown> | null
@@ -1114,6 +1123,7 @@ onMounted(async () => {
   try {
     // Check if we have valid session/authentication
     const sessionCheck = await apiService.getServiceHealth()
+    updateSidebarVersion(sessionCheck)
     logger.debug('Session verification successful:', sessionCheck)
   } catch (sessionError) {
     logger.warn('Session verification failed:', String(sessionError))
@@ -1286,12 +1296,15 @@ onMounted(async () => {
   logger.info('✅ Real-time updates enabled - Activity badge updates automatically via SignalR!')
   await refreshAuthPresentationFromStartupConfig(true)
 
-  // Fetch version from API
-  try {
-    const health = await apiService.getServiceHealth()
-    version.value = health.version
-  } catch (err) {
-    logger.warn('Failed to fetch version from API:', err)
+  // If the initial health check did not provide a version, fall back to one
+  // late fetch instead of making the sidebar wait on the entire bootstrap path.
+  if (!version.value) {
+    try {
+      const health = await apiService.getServiceHealth()
+      updateSidebarVersion(health)
+    } catch (err) {
+      logger.warn('Failed to fetch version from API:', err)
+    }
   }
 
   // Schedule idle-time prefetch for non-critical routes (low-priority)
@@ -1863,6 +1876,19 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   align-items: center;
   justify-content: center;
   z-index: 10;
+}
+
+/* Page transition: new view fades in; old view leaves instantly to avoid blank flash */
+.page-fade-enter-active {
+  transition: opacity 150ms ease;
+}
+.page-fade-enter-from {
+  opacity: 0;
+}
+.page-fade-leave-active {
+  position: absolute;
+  transition: none;
+  opacity: 0;
 }
 
 /* Main Content */

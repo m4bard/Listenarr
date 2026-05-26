@@ -68,7 +68,7 @@ describe('AuthenticationSection', () => {
     expect(settingsEvents2![settingsEvents2.length - 1][0].adminPassword).toBe('s3cret')
   })
 
-  it('emits update:startupConfig when ApiKeyControl emits update:apiKey', async () => {
+  it('emits update:apiKey when ApiKeyControl emits update:apiKey', async () => {
     const { default: AuthenticationSection } =
       await import('@/components/settings/AuthenticationSection.vue')
     const { default: ApiKeyControl } = await import('@/components/ui/ApiKeyControl.vue')
@@ -77,7 +77,7 @@ describe('AuthenticationSection', () => {
       props: {
         settings: { adminUsername: 'admin', adminPassword: '' },
         authEnabled: true,
-        startupConfig: { apiKey: 'OLD' },
+        apiKey: 'OLD',
       },
       global: { components: { ApiKeyControl } },
     })
@@ -85,7 +85,7 @@ describe('AuthenticationSection', () => {
     const api = wrapper.findComponent(ApiKeyControl)
     await (api.vm as ComponentPublicInstance).$emit('update:apiKey', 'NEW')
 
-    expect(wrapper.emitted()['update:startupConfig']).toBeTruthy()
-    expect(wrapper.emitted()['update:startupConfig']![0][0].apiKey).toBe('NEW')
+    expect(wrapper.emitted()['update:apiKey']).toBeTruthy()
+    expect(wrapper.emitted()['update:apiKey']![0]).toEqual(['NEW'])
   })
 })

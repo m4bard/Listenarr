@@ -16,11 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Api.Controllers;
-using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Metadata;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -72,8 +70,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var tempRoot = Path.Join(Path.GetTempPath(), "listenarr_test_contentroot_missing_placeholder");
             Directory.CreateDirectory(tempRoot);
 
-            var environment = new Mock<IWebHostEnvironment>();
-            environment.SetupGet(e => e.ContentRootPath).Returns(tempRoot);
+            var mockPathService = new Mock<IApplicationPathService>();
+            mockPathService.SetupGet(p => p.ContentRootPath).Returns(tempRoot);
 
             var controller = new ImagesController(
                 imageCache.Object,
@@ -82,7 +80,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 audnexus.Object,
                 repo.Object,
                 Mock.Of<ILogger<ImagesController>>(),
-                environment.Object);
+                mockPathService.Object);
 
             controller.ControllerContext = new ControllerContext
             {

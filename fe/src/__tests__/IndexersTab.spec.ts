@@ -23,6 +23,12 @@ import { createPinia, setActivePinia } from 'pinia'
 describe('IndexersTab', () => {
   beforeEach(() => {
     vi.resetModules()
+    // Mock signalR before any module imports to prevent the auto-connect at module
+    // load time (signalr.ts calls signalRService.connect() immediately), which
+    // attempts a real WebSocket connection and schedules retries that hang the test.
+    vi.doMock('@/services/signalr', () => ({
+      signalRService: { onIndexersUpdated: vi.fn(() => () => {}) },
+    }))
   })
 
   it('shows loading state while fetching indexers', async () => {
@@ -45,14 +51,6 @@ describe('IndexersTab', () => {
         }),
       }
     })
-
-    // ensure signalRService has the onIndexersUpdated helper (some test setup
-    // imports the module earlier so we patch the existing export)
-    const sr = await import('@/services/signalr')
-    // provide a no-op subscription function
-    if (!sr.signalRService || typeof sr.signalRService.onIndexersUpdated !== 'function') {
-      ;(sr as unknown).signalRService = { onIndexersUpdated: () => () => {} } as unknown
-    }
 
     const IndexersTab = (await import('@/views/settings/IndexersTab.vue')).default
 
@@ -90,11 +88,6 @@ describe('IndexersTab', () => {
         }),
       }
     })
-
-    const sr = await import('@/services/signalr')
-    if (!sr.signalRService || typeof sr.signalRService.onIndexersUpdated !== 'function') {
-      ;(sr as unknown).signalRService = { onIndexersUpdated: () => () => {} } as unknown
-    }
 
     const IndexersTab = (await import('@/views/settings/IndexersTab.vue')).default
 
@@ -146,11 +139,6 @@ describe('IndexersTab', () => {
       }
     })
 
-    const sr = await import('@/services/signalr')
-    if (!sr.signalRService || typeof sr.signalRService.onIndexersUpdated !== 'function') {
-      ;(sr as unknown).signalRService = { onIndexersUpdated: () => () => {} } as unknown
-    }
-
     const IndexersTab = (await import('@/views/settings/IndexersTab.vue')).default
 
     const wrapper = mount(IndexersTab, {
@@ -201,11 +189,6 @@ describe('IndexersTab', () => {
         importProwlarrIndexers,
       }
     })
-
-    const sr = await import('@/services/signalr')
-    if (!sr.signalRService || typeof sr.signalRService.onIndexersUpdated !== 'function') {
-      ;(sr as unknown).signalRService = { onIndexersUpdated: () => () => {} } as unknown
-    }
 
     const IndexersTab = (await import('@/views/settings/IndexersTab.vue')).default
 

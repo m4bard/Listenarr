@@ -85,11 +85,34 @@ export default defineComponent({
     const loading = ref<boolean>(false)
     const error = ref<string | null>(null)
     const retrySeconds = ref<number | null>(null)
+    const startupConfigChecked = ref(false)
     const router = useRouter()
 
     const auth = useAuthStore()
     // The logo is placed in `fe/public/logo.png` and served from the app root.
     const logoUrl = '/logo.png'
+
+    onMounted(async () => {
+      if (startupConfigChecked.value) return
+      try {
+        const sc = await apiService.getBootstrapConfig()
+        const rawAuth =
+          sc?.authenticationRequired ??
+          (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
+        const authEnabled =
+          typeof rawAuth === 'boolean'
+            ? rawAuth
+            : typeof rawAuth === 'string'
+              ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
+              : false
+        startupConfigChecked.value = true
+        if (!authEnabled) {
+          await router.replace({ name: 'home' })
+        }
+      } catch {
+        error.value = 'Failed to load configuration.'
+      }
+    })
 
     async function onSubmit() {
       error.value = null
@@ -111,33 +134,7 @@ export default defineComponent({
         const { normalizeRedirect } = await import('@/utils/redirect')
         let queryRedirect = normalizeRedirect(rawQueryRedirect)
 
-        const startupConfigChecked = ref(false)
         if (!queryRedirect || queryRedirect === '/') {
-          // On mount, fetch startup config ONCE and redirect if authentication is not required
-          onMounted(async () => {
-            if (startupConfigChecked.value) return
-            try {
-              const sc = await apiService.getStartupConfig()
-              // Accept both camelCase and PascalCase variants for compatibility
-              const rawAuth =
-                sc?.authenticationRequired ??
-                (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
-              const authEnabled =
-                typeof rawAuth === 'boolean'
-                  ? rawAuth
-                  : typeof rawAuth === 'string'
-                    ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
-                    : false
-              startupConfigChecked.value = true
-              if (!authEnabled) {
-                // Redirect to main app if authentication is not required
-                await router.replace({ name: 'home' })
-              }
-            } catch {
-              // If config fetch fails, show error (optional: could retry or show fallback UI)
-              error.value = 'Failed to load configuration.'
-            }
-          })
           try {
             const pending = sessionStorage.getItem('listenarr_pending_redirect') ?? undefined
             const normalizedPending = normalizeRedirect(pending)

@@ -17,11 +17,10 @@
  */
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.AspNetCore.Http;
 using Xunit;
 using System.Runtime.InteropServices;
+using Listenarr.Domain.Common;
 using Listenarr.Domain.Models;
 using Moq;
 using Listenarr.Application.Interfaces;
@@ -43,22 +42,21 @@ namespace Listenarr.Tests.Features.Api.Services
             private readonly StartupConfig _cfg;
             public FakeStartupConfigService(StartupConfig cfg) => _cfg = cfg;
             public StartupConfig? GetConfig() => _cfg;
+            public bool IsAuthenticationRequired() => _cfg.IsAuthenticationEnabled();
+            public string GetEffectiveApiVersion(string? requestedApiVersion = null) => NormalizeApiVersion(_cfg.ApiVersion, requestedApiVersion);
+            public string NormalizeApiVersion(string? configuredApiVersion, string? requestedApiVersion = null)
+                => ApiVersionNormalizer.NormalizeApiVersionString(configuredApiVersion)
+                   ?? ApiVersionNormalizer.NormalizeApiVersionString(requestedApiVersion)
+                   ?? ApiVersionNormalizer.DefaultApiVersion;
             public Task ReloadAsync() => Task.CompletedTask;
             public Task SaveAsync(StartupConfig config) { return Task.CompletedTask; }
-        }
-
-        // Minimal IHostEnvironment fake
-        private class FakeHostEnvironment : IHostEnvironment
-        {
-            public string EnvironmentName { get; set; } = "Development";
-            public string ApplicationName { get; set; } = "Listenarr.Tests";
-            public string ContentRootPath { get; set; } = string.Empty;
-            public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
         }
 
         // Fake IProcessRunner that returns a controllable long-running process
         private class FakeProcessRunner : IProcessRunner
         {
+            public ProcessStartInfo? LastStartedProcessStartInfo { get; private set; }
+
             public Task<ProcessResult> RunAsync(ProcessStartInfo startInfo, int timeoutMs = 60000, CancellationToken cancellationToken = default)
             {
                 // Simulate node --version preflight success
@@ -72,6 +70,8 @@ namespace Listenarr.Tests.Features.Api.Services
 
             public Process StartProcess(ProcessStartInfo startInfo)
             {
+                LastStartedProcessStartInfo = startInfo;
+
                 // Start a short-lived sleeper process so the service sees a running Process
                 var psi = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                     ? new ProcessStartInfo { FileName = "cmd.exe", Arguments = "/c ping -n 30 127.0.0.1 > nul", CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true }
@@ -102,19 +102,21 @@ namespace Listenarr.Tests.Features.Api.Services
             // Create a dummy index.js so DiscordBotService can find it
             File.WriteAllText(Path.Join(botDir, "index.js"), "console.log('dummy'); setTimeout(()=>{}, 100000);");
 
-            var hostEnv = new FakeHostEnvironment { ContentRootPath = tempRoot };
+            var pathService = new Mock<IApplicationPathService>();
+            pathService.SetupGet(service => service.ContentRootPath).Returns(tempRoot);
+            pathService.SetupGet(service => service.DiscordBotRootPath).Returns(botDir);
             var cfg = new StartupConfig { ApiKey = "test-api-key", EnableSsl = false, Port = 5000 };
             var startupService = new FakeStartupConfigService(cfg);
             var httpAccessor = new HttpContextAccessor();
             var logger = new Mock<ILogger<DiscordBotService>>().Object;
             var fakeRunner = new FakeProcessRunner();
 
-            var svc = new DiscordBotService(logger, startupService, hostEnv, httpAccessor, fakeRunner);
+            var svc = new DiscordBotService(logger, startupService, pathService.Object, httpAccessor, fakeRunner);
 
             try
             {
                 // Debug: ensure test setup is correct
-                _output.WriteLine($"[Test] ContentRootPath: {hostEnv.ContentRootPath}");
+                _output.WriteLine($"[Test] ContentRootPath: {tempRoot}");
                 _output.WriteLine($"[Test] Bot dir exists: {Directory.Exists(botDir)}");
                 _output.WriteLine($"[Test] index.js exists: {File.Exists(Path.Join(botDir, "index.js"))}");
 
@@ -125,6 +127,7 @@ namespace Listenarr.Tests.Features.Api.Services
                 Assert.True(started, "StartBotAsync should return true");
                 var isRunning = await svc.IsBotRunningAsync();
                 Assert.True(isRunning, "Bot should be running after StartBotAsync");
+                Assert.Equal(botDir, fakeRunner.LastStartedProcessStartInfo?.WorkingDirectory);
 
                 var status = await svc.GetBotStatusAsync();
                 Assert.NotNull(status);
@@ -145,4 +148,3 @@ namespace Listenarr.Tests.Features.Api.Services
         }
     }
 }
-

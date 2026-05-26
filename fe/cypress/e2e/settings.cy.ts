@@ -73,7 +73,7 @@ describe('Settings UI - e2e', () => {
 
     // Stub other startup endpoints the Settings page loads so Promise.all settles
     cy.intercept('GET', '/api/configuration/apis', { statusCode: 200, body: [] }).as('getApis')
-    cy.intercept('GET', '/api/configuration/download-clients', { statusCode: 200, body: [] }).as('getDownloadClients')
+    cy.intercept('GET', '/api/download-clients', { statusCode: 200, body: [] }).as('getDownloadClients')
     cy.intercept('GET', '/api/remotepath', { statusCode: 200, body: [] }).as('getRemotePathMappings')
     cy.intercept('GET', '/api/indexers', { statusCode: 200, body: [] }).as('getIndexers')
     cy.intercept('GET', '/api/qualityprofile', { statusCode: 200, body: [] }).as('getQualityProfiles')

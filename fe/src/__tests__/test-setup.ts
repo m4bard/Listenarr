@@ -155,6 +155,7 @@ vi.mock('@/services/api', () => {
       return { totalResults: 0, results: [] }
     },
     getImageUrl: vi.fn((url: string) => url || ''),
+    getBootstrapConfig: vi.fn(async () => ({})),
     getStartupConfig: vi.fn(async () => ({})),
     getApplicationSettings: vi.fn(async () => ({})),
     getLibrary: vi.fn(async () => []),
@@ -208,6 +209,7 @@ vi.mock('@/services/api', () => {
     getQualityProfiles: vi.fn(async () => []),
 
     // Keep the startup / app settings helpers available as named exports too
+    getBootstrapConfig: vi.fn(async () => ({})),
     getStartupConfig: vi.fn(async () => ({})),
     getApplicationSettings: vi.fn(async () => ({})),
 

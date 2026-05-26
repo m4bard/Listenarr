@@ -207,7 +207,6 @@ namespace Listenarr.Domain.Models
     }
 
     /// <summary>
-    /// <summary>
     /// Response wrapper for search operations that can contain different types of results
     /// </summary>
     public class SearchResponse

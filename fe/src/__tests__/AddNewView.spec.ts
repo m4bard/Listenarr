@@ -161,7 +161,7 @@ describe('AddNewView pagination', () => {
     expect(subtitleEl.text()).toBe('A Heroic Saga')
   })
 
-  it('sets data-src for lazy images on advanced search results', async () => {
+  it('renders direct image URLs on advanced search results', async () => {
     const apiModule = await import('@/services/api')
     const apiService = apiModule.apiService as unknown as { searchAudibleByTitleAndAuthor?: Mock }
     apiService.searchAudibleByTitleAndAuthor?.mockResolvedValue({
@@ -365,6 +365,103 @@ describe('AddNewView pagination', () => {
     expect(vm.titleResults.length).toBe(1)
     const tr = vm.titleResults[0] as unknown
     expect(tr.title).toBe('Dune Simple')
+  })
+
+  it('does not search automatically while typing in the unified search', async () => {
+    const apiModule = await import('@/services/api')
+    const advancedSearchSpy = vi.spyOn(apiModule.apiService, 'advancedSearch')
+
+    vi.useFakeTimers()
+    try {
+      const router = createTestRouter()
+      const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+      await flushPromises()
+
+      const input = wrapper.find('#unified-search-input')
+      await input.setValue('Dune')
+      await vi.advanceTimersByTimeAsync(1100)
+      await flushPromises()
+
+      const vm = wrapper.vm as unknown as { searchType?: string }
+      expect(vm.searchType).toBe('title')
+      expect(advancedSearchSpy).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+      advancedSearchSpy.mockRestore()
+    }
+  })
+
+  it('submits the unified search when pressing enter in the search field', async () => {
+    const apiModule = await import('@/services/api')
+    const advancedSearchSpy = vi.spyOn(apiModule.apiService, 'advancedSearch').mockResolvedValue([])
+
+    try {
+      const router = createTestRouter()
+      const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+      await flushPromises()
+
+      const input = wrapper.find('#unified-search-input')
+      await input.setValue('Dune')
+      await input.trigger('keydown.enter')
+      await flushPromises()
+
+      expect(advancedSearchSpy).toHaveBeenCalled()
+      expect(advancedSearchSpy.mock.calls.at(-1)?.[0]).toMatchObject({ title: 'Dune' })
+    } finally {
+      advancedSearchSpy.mockRestore()
+    }
+  })
+
+  it('keeps add-new search controls keyboard accessible', async () => {
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.find('label[for="unified-search-input"]').exists()).toBe(true)
+    expect(wrapper.find('form.unified-search-form[role="search"]').exists()).toBe(true)
+    expect(wrapper.find('form.unified-search-form button[type="submit"]').exists()).toBe(true)
+
+    await wrapper.find('button.advanced-btn').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('button.simple-search-button')).toHaveLength(1)
+    expect(wrapper.find('form.advanced-search-form[role="search"]').exists()).toBe(true)
+    for (const id of [
+      'adv-title',
+      'adv-author',
+      'adv-series',
+      'adv-isbn',
+      'adv-asin',
+      'adv-language',
+    ]) {
+      expect(wrapper.find(`label[for="${id}"]`).exists()).toBe(true)
+      expect(wrapper.find(`#${id}`).attributes('tabindex')).not.toBe('-1')
+    }
+    expect(wrapper.find('form.advanced-search-form button[type="submit"]').exists()).toBe(true)
+  })
+
+  it('submits advanced search when pressing enter in an advanced text field', async () => {
+    const apiModule = await import('@/services/api')
+    const advancedSearchSpy = vi.spyOn(apiModule.apiService, 'advancedSearch').mockResolvedValue([])
+
+    try {
+      const router = createTestRouter()
+      const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+      await flushPromises()
+
+      await wrapper.find('button.advanced-btn').trigger('click')
+      await wrapper.vm.$nextTick()
+
+      const titleInput = wrapper.find('#adv-title')
+      await titleInput.setValue('Dune')
+      await titleInput.trigger('keydown.enter')
+      await flushPromises()
+
+      expect(advancedSearchSpy).toHaveBeenCalled()
+      expect(advancedSearchSpy.mock.calls.at(-1)?.[0]).toMatchObject({ title: 'Dune' })
+    } finally {
+      advancedSearchSpy.mockRestore()
+    }
   })
 
   it('defaults to title search for simple unprefixed queries (advanced path)', async () => {

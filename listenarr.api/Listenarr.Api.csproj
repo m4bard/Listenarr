@@ -113,13 +113,6 @@
 
   
   <ItemGroup>
-    <Content Remove="config\config.json" />
-    <None Remove="config\config.json" />
-  </ItemGroup>
-
-  
-  
-  <ItemGroup>
     
     <Content Remove="tools\**" />
     <None Remove="tools\**" />

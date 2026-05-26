@@ -399,6 +399,13 @@ export interface StartupConfig {
   sslCertPassword?: string
 }
 
+export interface StartupConfigDto {
+  authenticationRequired?: string | boolean
+  AuthenticationRequired?: string | boolean
+  apiVersion?: string | number
+  ApiVersion?: string | number
+}
+
 export interface AudibleBookMetadata {
   title: string
   subtitle?: string

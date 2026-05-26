@@ -31,7 +31,15 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
         public async Task<List<Audiobook>> GetAllAsync()
         {
-            // Include Files so callers that fetch the full library will receive file records
+            // Omits Include(Files) — use when file data is fetched separately
+            return await _db.Audiobooks
+                .AsNoTracking()
+                .OrderBy(a => a.Title)
+                .ToListAsync();
+        }
+
+        public async Task<List<Audiobook>> GetLibraryAsync()
+        {
             return await _db.Audiobooks
                 .Include(a => a.Files)
                 .OrderBy(a => a.Title)

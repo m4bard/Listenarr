@@ -16,14 +16,19 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Net;
+using Listenarr.Api.Attributes;
 using Listenarr.Api.Controllers;
+using Listenarr.Api.Controllers.Configurations;
 using Listenarr.Application.Interfaces;
-using Listenarr.Application.Notification;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Models;
+using Listenarr.Tests.Mocks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -38,9 +43,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Arrange
             var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
             var downloadClientGateway = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
-            var logger = NullLogger<ConfigurationController>.Instance;
-            var userService = Mock.Of<IUserService>();
-            var settingsHub = Mock.Of<IHubContext<SettingsHub>>();
+            var logger = NullLogger<DownloadClientController>.Instance;
 
             var testedClient = new DownloadClientConfiguration
             {
@@ -63,16 +66,16 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 .Setup(x => x.TestConnectionAsync(It.IsAny<DownloadClientConfiguration>()))
                 .ReturnsAsync((true, "Connection successful"));
 
-            var controller = new ConfigurationController(
+            var controller = new DownloadClientController(
                 configurationService.Object,
-                logger,
-                userService,
-                settingsHub,
                 downloadClientGateway.Object,
-                null!);
+                logger);
 
             var httpContext = new DefaultHttpContext();
             httpContext.Connection.RemoteIpAddress = IPAddress.Parse("8.8.8.8");
+            httpContext.RequestServices = new ServiceCollection()
+                .AddSingleton<IStartupConfigService>(new StartupConfigServiceMock(new StartupConfig { AuthenticationRequired = "false" }))
+                .BuildServiceProvider();
             controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
 
             var request = new DownloadClientConfiguration
@@ -126,9 +129,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Arrange
             var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
             var downloadClientGateway = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
-            var logger = NullLogger<ConfigurationController>.Instance;
-            var userService = Mock.Of<IUserService>();
-            var settingsHub = Mock.Of<IHubContext<SettingsHub>>();
+            var logger = NullLogger<DownloadClientController>.Instance;
 
             var testedClient = new DownloadClientConfiguration
             {
@@ -151,13 +152,10 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 .Setup(x => x.TestConnectionAsync(It.IsAny<DownloadClientConfiguration>()))
                 .ReturnsAsync((true, "Connection successful"));
 
-            var controller = new ConfigurationController(
+            var controller = new DownloadClientController(
                 configurationService.Object,
-                logger,
-                userService,
-                settingsHub,
                 downloadClientGateway.Object,
-                null!);
+                logger);
 
             var httpContext = new DefaultHttpContext();
             // Simulate a trusted LAN/Synology-Docker caller.
@@ -205,6 +203,69 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 x => x.TestConnectionAsync(It.Is<DownloadClientConfiguration>(c =>
                     c.Host == "192.168.1.50" && c.Port == 6789)),
                 Times.Once);
+            configurationService.VerifyNoOtherCalls();
+        }
+
+        [Fact]
+        public async Task ApiKeyManagementFilter_RemoteCaller_WhenAuthenticationDisabled_ReturnsForbidden()
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Connection.RemoteIpAddress = IPAddress.Parse("8.8.8.8");
+            var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
+            var filterContext = new ActionExecutingContext(
+                actionContext,
+                new List<IFilterMetadata>(),
+                new Dictionary<string, object?>(),
+                controller: null);
+
+            var nextWasCalled = false;
+            var startupConfigService = Mock.Of<IStartupConfigService>(service =>
+                !service.IsAuthenticationRequired());
+
+            await new RequireApiKeyManagementAccessFilter(startupConfigService).OnActionExecutionAsync(
+                filterContext,
+                () =>
+                {
+                    nextWasCalled = true;
+                    return Task.FromResult(new ActionExecutedContext(actionContext, new List<IFilterMetadata>(), controller: null));
+                });
+
+            Assert.False(nextWasCalled);
+            var denied = Assert.IsType<ObjectResult>(filterContext.Result);
+            Assert.Equal(StatusCodes.Status403Forbidden, denied.StatusCode);
+        }
+
+        [Fact]
+        public async Task GetApiKey_PrivateNetworkCaller_WhenAuthenticationDisabled_ReturnsApiKey()
+        {
+            var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
+            var logger = NullLogger<ApiKeyController>.Instance;
+            var userService = Mock.Of<IUserService>();
+
+            configurationService
+                .Setup(x => x.GetStartupConfigAsync())
+                .ReturnsAsync(new StartupConfig { ApiKey = "server-api-key" });
+
+            var controller = new ApiKeyController(
+                configurationService.Object,
+                userService,
+                logger);
+
+            var httpContext = new DefaultHttpContext();
+            httpContext.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.23");
+            httpContext.RequestServices = new ServiceCollection()
+                .AddSingleton<IStartupConfigService>(new StartupConfigServiceMock(new StartupConfig { AuthenticationRequired = "false" }))
+                .BuildServiceProvider();
+            controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+            var actionResult = await controller.GetApiKey();
+
+            var ok = Assert.IsType<OkObjectResult>(actionResult.Result);
+            Assert.NotNull(ok.Value);
+            var apiKeyProp = ok.Value!.GetType().GetProperty("apiKey");
+            Assert.NotNull(apiKeyProp);
+            Assert.Equal("server-api-key", apiKeyProp!.GetValue(ok.Value)?.ToString());
+            configurationService.Verify(x => x.GetStartupConfigAsync(), Times.Once);
             configurationService.VerifyNoOtherCalls();
         }
     }

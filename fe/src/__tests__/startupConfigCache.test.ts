@@ -19,12 +19,12 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import * as cache from '@/services/startupConfigCache'
 import { apiService } from '@/services/api'
 
-// Mock apiService.getStartupConfig with a delayed resolver
+// Mock apiService.getBootstrapConfig with a delayed resolver
 let originalGet: unknown
 
 beforeEach(() => {
   cache.resetCache()
-  originalGet = (apiService as unknown as { getStartupConfig?: unknown }).getStartupConfig
+  originalGet = (apiService as unknown as { getBootstrapConfig?: unknown }).getBootstrapConfig
 })
 
 describe('startupConfigCache', () => {
@@ -33,7 +33,7 @@ describe('startupConfigCache', () => {
     const p = new Promise<unknown>((res) => {
       resolve = res
     })
-    ;(apiService as unknown as { getStartupConfig?: () => Promise<unknown> }).getStartupConfig =
+    ;(apiService as unknown as { getBootstrapConfig?: () => Promise<unknown> }).getBootstrapConfig =
       () => {
         return p
       }
@@ -58,5 +58,5 @@ describe('startupConfigCache', () => {
 // restore
 const restore = originalGet as unknown
 if (restore) {
-  ;(apiService as unknown as { getStartupConfig?: unknown }).getStartupConfig = restore
+  ;(apiService as unknown as { getBootstrapConfig?: unknown }).getBootstrapConfig = restore
 }

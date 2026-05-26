@@ -16,7 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Text.RegularExpressions;
+using Listenarr.Domain.Common;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Common
 {
@@ -24,28 +26,14 @@ namespace Listenarr.Application.Common
     /// Utility methods for building versioned API paths from request context.
     /// Falls back to v1 when no explicit version can be resolved.
     /// </summary>
-    public static class ApiVersionPathBuilder
+    public static class ApiVersionUtils
     {
-        private const string DefaultApiVersion = "1";
         private static readonly Regex ApiVersionFromPathRegex = new(@"^/api/v(?<version>\d+(?:\.\d+)?)(?:/|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex LeadingApiPrefixRegex = new(@"^/api(?:/v\d+(?:\.\d+)?)?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        public static string NormalizeApiVersionString(string? version)
+        public static string ResolveApiVersion(HttpContext? context, string? fallbackVersion = null, ILogger? logger = null)
         {
-            if (string.IsNullOrWhiteSpace(version)) return DefaultApiVersion;
-
-            var trimmed = version.Trim();
-            if (trimmed.StartsWith('v') || trimmed.StartsWith('V'))
-            {
-                trimmed = trimmed[1..];
-            }
-
-            return TryNormalizeNumericApiVersion(trimmed, out var normalized) ? normalized : DefaultApiVersion;
-        }
-
-        public static string ResolveApiVersion(HttpContext? context, string? fallbackVersion = null)
-        {
-            var fallback = NormalizeApiVersionString(fallbackVersion);
+            var fallback = ApiVersionNormalizer.NormalizeOrDefault(fallbackVersion);
 
             try
             {
@@ -54,13 +42,13 @@ namespace Listenarr.Application.Common
                     var routeVersion = routeVersionObj?.ToString();
                     if (!string.IsNullOrWhiteSpace(routeVersion))
                     {
-                        return NormalizeApiVersionString(routeVersion);
+                        return ApiVersionNormalizer.NormalizeOrDefault(routeVersion);
                     }
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                System.Diagnostics.Debug.WriteLine($"ApiVersionPathBuilder.ResolveApiVersion route parse failed: {ex.Message}");
+                logger?.LogWarning(ex, "API version route parse failed.");
             }
 
             try
@@ -74,14 +62,14 @@ namespace Listenarr.Application.Common
                         var parsed = match.Groups["version"].Value;
                         if (!string.IsNullOrWhiteSpace(parsed))
                         {
-                            return NormalizeApiVersionString(parsed);
+                            return ApiVersionNormalizer.NormalizeOrDefault(parsed);
                         }
                     }
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                System.Diagnostics.Debug.WriteLine($"ApiVersionPathBuilder.ResolveApiVersion path parse failed: {ex.Message}");
+                logger?.LogWarning(ex, "API version path parse failed.");
             }
 
             return fallback;
@@ -114,56 +102,5 @@ namespace Listenarr.Application.Common
             return normalized.StartsWith('/') ? normalized : "/" + normalized;
         }
 
-        private static bool TryNormalizeNumericApiVersion(string value, out string normalized)
-        {
-            normalized = string.Empty;
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return false;
-            }
-
-            var segments = new List<string>();
-            var segmentStart = 0;
-
-            for (var i = 0; i <= value.Length; i++)
-            {
-                if (i < value.Length && value[i] != '.')
-                {
-                    continue;
-                }
-
-                var segmentLength = i - segmentStart;
-                if (segmentLength <= 0)
-                {
-                    return false;
-                }
-
-                var segment = value.Substring(segmentStart, segmentLength);
-                for (var j = 0; j < segment.Length; j++)
-                {
-                    if (!char.IsDigit(segment[j]))
-                    {
-                        return false;
-                    }
-                }
-
-                var nonZeroIndex = 0;
-                while (nonZeroIndex < segment.Length - 1 && segment[nonZeroIndex] == '0')
-                {
-                    nonZeroIndex++;
-                }
-
-                segments.Add(segment[nonZeroIndex..]);
-                segmentStart = i + 1;
-            }
-
-            while (segments.Count > 1 && segments[^1] == "0")
-            {
-                segments.RemoveAt(segments.Count - 1);
-            }
-
-            normalized = string.Join('.', segments);
-            return !string.IsNullOrWhiteSpace(normalized);
-        }
     }
 }

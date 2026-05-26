@@ -60,11 +60,7 @@
         label="API Key (Server)"
         help="API key for authenticating external applications. Generate a new key if needed. Copy it to use with API clients."
       >
-        <ApiKeyControl
-          :apiKey="startupConfig?.apiKey"
-          :disabled="false"
-          @update:apiKey="onApiKeyUpdated"
-        />
+        <ApiKeyControl :apiKey="apiKey" :disabled="false" @update:apiKey="onApiKeyUpdated" />
       </FormRow>
     </div>
   </div>
@@ -72,7 +68,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import type { ApplicationSettings, StartupConfig } from '@/types'
+import type { ApplicationSettings } from '@/types'
 import { PhUserCircle } from '@phosphor-icons/vue'
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 import PasswordInput from '@/components/form/PasswordInput.vue'
@@ -85,13 +81,13 @@ import {
 
 const props = defineProps<{
   settings: Partial<ApplicationSettings>
-  startupConfig?: StartupConfig | null
+  apiKey?: string
   authEnabled: boolean
 }>()
 const emit = defineEmits<{
   'update:settings': [value: Partial<ApplicationSettings>]
   'update:authEnabled': [value: boolean]
-  'update:startupConfig': [value: StartupConfig]
+  'update:apiKey': [value: string]
 }>()
 
 const authEnabledComputed = computed({
@@ -115,7 +111,7 @@ function updateField(field: keyof ApplicationSettings, value: unknown) {
 }
 
 function onApiKeyUpdated(newKey: string) {
-  emit('update:startupConfig', { ...(props.startupConfig || {}), apiKey: newKey } as StartupConfig)
+  emit('update:apiKey', newKey)
 }
 </script>
 

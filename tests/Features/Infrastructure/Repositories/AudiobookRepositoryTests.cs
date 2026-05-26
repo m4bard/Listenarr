@@ -17,8 +17,8 @@
  */
 using Microsoft.EntityFrameworkCore;
 using Xunit;
-using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Persistence;
+using Listenarr.Tests.Builders;
 
 namespace Listenarr.Tests.Features.Infrastructure.Repositories
 {
@@ -34,15 +34,15 @@ namespace Listenarr.Tests.Features.Infrastructure.Repositories
             using var db = new ListenArrDbContext(options);
 
             // Monitored without files -> wanted = true
-            var wantedBook = new Audiobook { Title = "Wanted Book", Monitored = true };
+            var wantedBook = new AudiobookBuilder().WithTitle("Wanted Book").WithMonitored().Build();
             db.Audiobooks.Add(wantedBook);
 
             // Monitored with files -> wanted = false
-            var hasFileBook = new Audiobook { Title = "Has File", Monitored = true };
+            var hasFileBook = new AudiobookBuilder().WithTitle("Has File").WithMonitored().Build();
             db.Audiobooks.Add(hasFileBook);
             await db.SaveChangesAsync();
 
-            var file = new AudiobookFile { AudiobookId = hasFileBook.Id, Path = "C:\\temp\\f.m4b", Size = 1234, CreatedAt = DateTime.UtcNow };
+            var file = new AudiobookFileBuilder().WithAudiobook(hasFileBook).WithPath("C:\\temp\\f.m4b").WithSize(1234).Build();
             db.AudiobookFiles.Add(file);
             await db.SaveChangesAsync();
 
@@ -71,7 +71,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Repositories
 
             using var db = new ListenArrDbContext(options);
 
-            var book = new Audiobook { Title = "Single Book", Monitored = true };
+            var book = new AudiobookBuilder().WithTitle("Single Book").WithMonitored().Build();
             db.Audiobooks.Add(book);
             await db.SaveChangesAsync();
 
@@ -81,7 +81,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Repositories
             Assert.True(wanted);
 
             // Add file and re-evaluate
-            var file = new AudiobookFile { AudiobookId = book.Id, Path = "C:\\temp\\single.m4b", Size = 1024, CreatedAt = DateTime.UtcNow };
+            var file = new AudiobookFileBuilder().WithAudiobook(book).WithPath("C:\\temp\\single.m4b").WithSize(1024).Build();
             db.AudiobookFiles.Add(file);
             await db.SaveChangesAsync();
 

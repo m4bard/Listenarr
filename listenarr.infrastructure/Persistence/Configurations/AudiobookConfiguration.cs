@@ -26,7 +26,7 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
 {
     /// <summary>
     /// EF mapping for Audiobook entity extracted from ListenArrDbContext.
-    /// Keeps conversions / comparers and relationships colocated for easier testing & reuse.
+    /// Keeps conversions / comparers and relationships colocated for easier testing and reuse.
     /// </summary>
     public class AudiobookConfiguration : IEntityTypeConfiguration<Audiobook>
     {

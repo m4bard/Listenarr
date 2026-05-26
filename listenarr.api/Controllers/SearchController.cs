@@ -58,7 +58,7 @@ namespace Listenarr.Api.Controllers
         }
 
         private string BuildApiImagePath(string identifier, string? sourceUrl = null)
-            => ApiVersionPathBuilder.BuildImagePath(identifier, HttpContext, sourceUrl: sourceUrl);
+            => ApiVersionUtils.BuildImagePath(identifier, HttpContext, sourceUrl: sourceUrl);
 
         private static string? NormalizeStructuredAdvancedField(string? value, string prefix)
         {
@@ -1448,5 +1448,4 @@ namespace Listenarr.Api.Controllers
         }
     }
 }
-
 

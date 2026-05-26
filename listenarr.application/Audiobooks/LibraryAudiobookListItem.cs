@@ -15,9 +15,10 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-namespace Listenarr.Api.Dtos
+
+namespace Listenarr.Application.Audiobooks
 {
-    public class LibraryAudiobookListItemDto
+    public class LibraryAudiobookListItem
     {
         public int Id { get; set; }
         public string? Title { get; set; }
@@ -37,7 +38,6 @@ namespace Listenarr.Api.Dtos
         public string? ImageUrl { get; set; }
         public bool Monitored { get; set; }
         public string? BasePath { get; set; }
-        // Transitional legacy primary file summary retained for filters and upgrade compatibility.
         public string? FilePath { get; set; }
         public long? FileSize { get; set; }
         public int FileCount { get; set; }

@@ -27,6 +27,7 @@ vi.mock('@/services/api', () => ({
   apiService: {
     getQualityProfiles: vi.fn(async () => []),
     getImageUrl: vi.fn((url: string) => url || 'https://via.placeholder.com/300x450?text=No+Image'),
+    getBootstrapConfig: vi.fn(async () => ({})),
     getStartupConfig: vi.fn(async () => ({})),
     getApplicationSettings: vi.fn(async () => ({})),
   },
@@ -36,6 +37,8 @@ type AudiobooksVm = {
   setGroupBy?: (value: string) => Promise<void> | void
   groupedCollections?: Array<{ name: string; count: number; coverUrl?: string }>
   showItemDetails?: boolean
+  groupBy?: string
+  visibleRange?: { start: number; end: number }
 }
 
 const getVm = (wrapper: ReturnType<typeof mount>) => wrapper.vm as unknown as AudiobooksVm
@@ -576,6 +579,66 @@ describe('AudiobooksView Grouping', () => {
 
     // Expect the component to use the route query 'books' despite stored 'series'
     expect((wrapper.vm as unknown as { groupBy: string }).groupBy).toBe('books')
+  })
+
+  it('resets the virtual range when returning to books grouping', async () => {
+    if (
+      typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
+    ) {
+      ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
+        observe() {}
+        disconnect() {}
+      }
+    }
+    if (typeof (globalThis as unknown as { WebSocket?: unknown }).WebSocket === 'undefined') {
+      ;(globalThis as unknown as Record<string, unknown>).WebSocket = function () {
+        /* noop */
+      }
+    }
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+      ],
+    })
+    await router.push({ path: '/audiobooks', query: { group: 'authors' } })
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = Array.from({ length: 50 }, (_, index) => ({
+      id: index + 1,
+      title: `Book ${index + 1}`,
+      authors: [`Author ${index % 5}`],
+      imageUrl: `cover${index + 1}.jpg`,
+      files: [],
+    })) as unknown as import('@/types').Audiobook[]
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+    const wrapper = mount(AudiobooksView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'CustomSelect',
+        ],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const vm = getVm(wrapper)
+    vm.visibleRange = { start: 40, end: 50 }
+    await vm.setGroupBy?.('books')
+    await wrapper.vm.$nextTick()
+
+    expect(vm.groupBy).toBe('books')
+    expect(vm.visibleRange?.start).toBe(0)
   })
 
   it('clears selection when changing grouping mode', async () => {

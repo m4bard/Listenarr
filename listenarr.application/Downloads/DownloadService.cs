@@ -1771,6 +1771,12 @@ namespace Listenarr.Application.Downloads
         public async Task UpdateAsync(Download download)
         {
             var previous = await downloadRepository.GetByIdAsync(download.Id);
+            if (previous is null)
+            {
+                logger.LogWarning("Skipping update for unknown download {DownloadId}", LogRedaction.SanitizeText(download.Id));
+                return;
+            }
+
             await downloadRepository.UpdateAsync(download);
 
             switch (previous.Status, download.Status)

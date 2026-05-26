@@ -17,6 +17,7 @@
  */
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
+using Listenarr.Api.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
@@ -34,7 +35,12 @@ namespace Listenarr.Api.Controllers
         private readonly ILoginRateLimiter _rateLimiter;
         private readonly ISessionService _sessionService;
 
-        public AccountController(IStartupConfigService startupConfigService, ILogger<AccountController> logger, IUserService userService, ILoginRateLimiter rateLimiter, ISessionService sessionService)
+        public AccountController(
+            IStartupConfigService startupConfigService,
+            ILogger<AccountController> logger,
+            IUserService userService,
+            ILoginRateLimiter rateLimiter,
+            ISessionService sessionService)
         {
             _startupConfigService = startupConfigService;
             _logger = logger;
@@ -44,11 +50,11 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Authenticate a user and return a session token.
+        /// Authenticate a user and establish a browser session cookie.
         /// </summary>
         /// <param name="req">Login credentials and optional remember-me flag.</param>
-        /// <returns>Session token on success, or an error message.</returns>
-        /// <response code="200">Login succeeded. Returns session token and auth type.</response>
+        /// <returns>Authentication mode on success, or an error message.</returns>
+        /// <response code="200">Login succeeded. Returns auth type and sets a session cookie when authentication is enabled.</response>
         /// <response code="400">Username or password missing.</response>
         /// <response code="401">Invalid credentials.</response>
         /// <response code="429">Too many failed attempts. Retry after the indicated number of seconds.</response>
@@ -91,29 +97,29 @@ namespace Listenarr.Api.Controllers
             var user = await _userService.GetByUsernameAsync(req.Username);
             _rateLimiter.RecordSuccess(key);
 
-            // Try to create session token - this will fail if authentication is not enabled
-            try
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
-                var sessionToken = await _sessionService.CreateSessionAsync(req.Username, user?.IsAdmin == true, req.RememberMe);
-
-                // Set HttpOnly session cookie so browsers can authenticate resource
-                // requests (images, etc.) without JavaScript intervention.
-                Response.Cookies.Append("listenarr_session", sessionToken, new CookieOptions
-                {
-                    HttpOnly = true,
-                    Secure = HttpContext.Request.IsHttps,
-                    SameSite = SameSiteMode.Strict,
-                    Path = "/",
-                    MaxAge = req.RememberMe ? SessionService.RememberMeExpiration : SessionService.DefaultExpiration,
-                });
-
-                return Ok(new { message = "Logged in", sessionToken, authType = "session" });
-            }
-            catch (InvalidOperationException)
-            {
-                // Authentication not required - login succeeds but no session token
                 return Ok(new { message = "Logged in", authType = "none" });
             }
+
+            var sessionToken = await _sessionService.CreateSessionAsync(req.Username, user?.IsAdmin == true, req.RememberMe);
+
+            // Set HttpOnly session cookie so browsers can authenticate resource
+            // requests (images, etc.) without JavaScript intervention.
+            Response.Cookies.Append("listenarr_session", sessionToken, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = HttpContext.Request.IsHttps,
+                SameSite = SameSiteMode.Strict,
+                Path = "/",
+                MaxAge = req.RememberMe ? SessionService.RememberMeExpiration : SessionService.DefaultExpiration,
+            });
+
+            return Ok(new
+            {
+                message = "Logged in",
+                authType = "session",
+            });
         }
 
         /// <summary>
@@ -132,7 +138,7 @@ namespace Listenarr.Api.Controllers
 
             try
             {
-                // Extract session token from request headers directly
+                // Extract the current session token from the request.
                 var sessionToken = ExtractSessionToken(HttpContext);
 
                 // Handle session-based authentication logout
@@ -164,10 +170,7 @@ namespace Listenarr.Api.Controllers
                     }
                 }
 
-                // Determine response auth type based on configuration
-                var config = _startupConfigService.GetConfig();
-                var authEnabled = config?.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
-                var responseAuthType = authEnabled ? "session" : "none";
+                var responseAuthType = _startupConfigService.IsAuthenticationRequired() ? "session" : "none";
                 return Ok(new { message = "Logged out successfully", authType = responseAuthType });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -179,20 +182,6 @@ namespace Listenarr.Api.Controllers
 
         private static string? ExtractSessionToken(HttpContext context)
         {
-            // Try Authorization header first (Bearer token)
-            var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
-            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-            {
-                return authHeader[7..]; // Remove "Bearer " prefix
-            }
-
-            // Try X-Session-Token header
-            var sessionHeader = context.Request.Headers["X-Session-Token"].FirstOrDefault();
-            if (!string.IsNullOrEmpty(sessionHeader))
-            {
-                return sessionHeader;
-            }
-
             // Fall back to session cookie (set on login for browser resource requests)
             var cookieToken = context.Request.Cookies["listenarr_session"];
             if (!string.IsNullOrEmpty(cookieToken))
@@ -222,6 +211,7 @@ namespace Listenarr.Api.Controllers
         /// </summary>
         /// <returns>A collection of admin user summaries (id, username, email, creation date).</returns>
         [HttpGet("admins")]
+        [RequireAdminOrApiKey]
         public async Task<IActionResult> GetAdminUsers()
         {
             var admins = await _userService.GetAdminUsersAsync();
@@ -264,5 +254,3 @@ namespace Listenarr.Api.Controllers
     }
 
 }
-
-
