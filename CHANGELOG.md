@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.72]
+
+### Fixed
+- **NZBGet downloads never imported (#618):** `NzbgetAdapter.FetchDownloadsAsync` read the numeric `listgroups` fields `FileSizeMB` and `RemainingSizeMB` via `JsonElement.GetString()`, which throws `InvalidOperationException` for JSON Numbers and aborted queue polling — leaving downloads tracked-but-never-imported (NZBGet completed them, but Listenarr logged `Client NZBGet has 0 queue items` / `client may be temporarily unreachable` and never detected completion). A new `JsonExtensions.GetDoubleOrDefault` helper reads the JSON Number directly into a `double`, replacing the `.GetString()` call that threw on Number.
+
 ## [0.2.71] - 2026-04-17
 
 ### Added

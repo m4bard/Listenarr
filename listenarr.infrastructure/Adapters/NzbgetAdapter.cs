@@ -22,6 +22,7 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using Listenarr.Application.Downloads;
+using Listenarr.Application.Extensions;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Common;
@@ -1183,8 +1184,8 @@ namespace Listenarr.Infrastructure.Adapters
                                         var nzbId = group.TryGetProperty("NZBID", out var nzbIdProp) ? nzbIdProp.GetInt32() : 0;
                                         var nzbName = group.TryGetProperty("NZBName", out var nameProp) ? nameProp.GetString() ?? "" : "";
                                         var status = group.TryGetProperty("Status", out var statusProp) ? statusProp.GetString() ?? "" : "";
-                                        var fileSizeMB = group.TryGetProperty("FileSizeMB", out var sizeProp) ? sizeProp.GetString() ?? "" : "";
-                                        var remainingSizeMB = group.TryGetProperty("RemainingSizeMB", out var remainingSizeProp) ? remainingSizeProp.GetString() ?? "" : "";
+                                        var fileSizeMB = group.GetDoubleOrDefault("FileSizeMB");
+                                        var remainingSizeMB = group.GetDoubleOrDefault("RemainingSizeMB");
                                         // Find matching download by NZB ID
                                         var matchingDownload = downloads.FirstOrDefault(dl =>
                                         {
@@ -1198,12 +1199,10 @@ namespace Listenarr.Infrastructure.Adapters
                                             matchingDownload = downloads.FirstOrDefault(dl => TitleUtils.AreTitlesSimilar(dl.Title, nzbName));
                                         }
 
-                                        if (matchingDownload != null &&
-                                            double.TryParse(fileSizeMB, out var totalMB) &&
-                                            double.TryParse(remainingSizeMB, out var remainingMB))
+                                        if (matchingDownload != null && fileSizeMB > 0)
                                         {
-                                            var progress = totalMB > 0 ? (totalMB - remainingMB) / totalMB : 0.0;
-                                            var amountLeft = (long)(remainingMB * 1024 * 1024); // Convert MB to bytes
+                                            var progress = (fileSizeMB - remainingSizeMB) / fileSizeMB;
+                                            var amountLeft = (long)(remainingSizeMB * 1024 * 1024); // Convert MB to bytes
 
                                             AdapterUtils.MapDownloadProgress(matchingDownload, progress, amountLeft, status);
                                         }

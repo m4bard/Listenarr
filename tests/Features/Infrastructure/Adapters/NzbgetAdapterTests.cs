@@ -19,7 +19,9 @@ using System.Net;
 using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Adapters;
+using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
+using Listenarr.Tests.Mocks.Api;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -158,6 +160,44 @@ namespace Listenarr.Tests.Features.Infrastructure.Adapters
             Assert.Equal("192.168.50.111", capturedUri.Host);
             Assert.Equal(6789, capturedUri.Port);
             Assert.Equal("/xmlrpc", capturedUri.AbsolutePath);
+        }
+
+        // Issue #618 — NZBGet's JSON-RPC `listgroups` returns FileSizeMB / RemainingSizeMB
+        // as JSON Number; verify FetchDownloadsAsync maps progress onto the matching
+        // Download via AdapterUtils.MapDownloadProgress, instead of throwing
+        // InvalidOperationException at the Number-as-String access (the original bug).
+        [Fact]
+        public async Task FetchDownloadsAsync_UpdatesProgressForMatchingActiveGroup()
+        {
+            var apiMock = new NzbgetApiMock();
+            using var http = new HttpClient(apiMock);
+            var adapter = new NzbgetAdapter(
+                new TestHttpClientFactory(http),
+                Mock.Of<INzbUrlResolver>(),
+                NullLogger<NzbgetAdapter>.Instance);
+
+            var client = new DownloadClientConfigurationBuilder()
+                .WithType("nzbget")
+                .WithHost("localhost")
+                .WithPort(6789)
+                .Build();
+
+            var download = new DownloadBuilder()
+                .WithClientDownloadId(NzbgetApiMock.ACTIVE_DOWNLOAD_NZBID)
+                .Build();
+
+            var result = await adapter.FetchDownloadsAsync(
+                client,
+                new List<Download> { download },
+                CancellationToken.None);
+
+            Assert.NotNull(result);
+            Assert.Equal(DownloadStatus.Downloading, download.Status);
+            // (FILE_SIZE_MB − REMAINING_SIZE_MB) / FILE_SIZE_MB = (622 − 311) / 622 = 0.5
+            Assert.Equal(0.5M, download.Progress);
+            Assert.Equal("DOWNLOADING", download.Metadata["ClientState"]);
+            // REMAINING_SIZE_MB bytes converted to long: 311 × 1024 × 1024 = 326107136
+            Assert.Equal((long)NzbgetApiMock.REMAINING_SIZE_MB * 1024L * 1024L, download.Metadata["AmountLeft"]);
         }
     }
 }
