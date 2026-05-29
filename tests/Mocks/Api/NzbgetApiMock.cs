@@ -93,8 +93,6 @@ namespace Listenarr.Tests.Mocks.Api
                 return MockUtils.GetCannedResponse(listgroups);
             }
 
-            // Other methods (e.g. `status`): an empty result is sufficient for
-            // FetchDownloadsAsync to proceed into the listgroups call.
             return MockUtils.GetCannedResponse("""{"version":"1.1","result":{}}""");
         }
     }

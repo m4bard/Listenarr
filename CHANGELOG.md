@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.72]
 
 ### Fixed
-- **NZBGet downloads never imported (#618):** `NzbgetAdapter.FetchDownloadsAsync` read the numeric `listgroups` fields `FileSizeMB` and `RemainingSizeMB` via `JsonElement.GetString()`, which throws `InvalidOperationException` for JSON Numbers and aborted queue polling — leaving downloads tracked-but-never-imported (NZBGet completed them, but Listenarr logged `Client NZBGet has 0 queue items` / `client may be temporarily unreachable` and never detected completion). A new `JsonExtensions.GetDoubleOrDefault` helper reads the JSON Number directly into a `double`, replacing the `.GetString()` call that threw on Number.
+- **NZBGet downloads never imported (#618):** `NzbgetAdapter.FetchDownloadsAsync` read the numeric `listgroups` fields `FileSizeMB` and `RemainingSizeMB` via `JsonElement.GetString()`, which throws `InvalidOperationException` for JSON Numbers and aborted queue polling — leaving downloads tracked-but-never-imported (NZBGet completed them, but Listenarr logged `Client NZBGet has 0 queue items` / `client may be temporarily unreachable` and never detected completion). The fields are now read directly as `double` via the existing `JsonExtensions.GetPropertyOrDefault<double>` helper, replacing the `.GetString()` call that threw on Number.
 
 ## [0.2.71] - 2026-04-17
 

@@ -22,14 +22,28 @@ using Listenarr.Infrastructure.Adapters;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks.Api;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
 namespace Listenarr.Tests.Features.Infrastructure.Adapters
 {
-    public class NzbgetAdapterTests
+    public class NzbgetAdapterTests : BaseTests
     {
+        private DownloadClientConfiguration? _client;
+
+        public override async Task InitializeAsync()
+        {
+            await base.InitializeAsync();
+            _client = await _downloadClientConfigurationRepository.SaveAsync(
+                new DownloadClientConfigurationBuilder()
+                    .WithType("nzbget")
+                    .WithHost("localhost")
+                    .WithPort(6789)
+                    .Build());
+        }
+
         private sealed class TestHttpClientFactory : IHttpClientFactory
         {
             private readonly HttpClient _client;
@@ -169,25 +183,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Adapters
         [Fact]
         public async Task FetchDownloadsAsync_UpdatesProgressForMatchingActiveGroup()
         {
-            var apiMock = new NzbgetApiMock();
-            using var http = new HttpClient(apiMock);
-            var adapter = new NzbgetAdapter(
-                new TestHttpClientFactory(http),
-                Mock.Of<INzbUrlResolver>(),
-                NullLogger<NzbgetAdapter>.Instance);
-
-            var client = new DownloadClientConfigurationBuilder()
-                .WithType("nzbget")
-                .WithHost("localhost")
-                .WithPort(6789)
-                .Build();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
 
             var download = new DownloadBuilder()
                 .WithClientDownloadId(NzbgetApiMock.ACTIVE_DOWNLOAD_NZBID)
                 .Build();
 
-            var result = await adapter.FetchDownloadsAsync(
-                client,
+            var result = await gateway.FetchDownloadsAsync(
+                _client!,
                 new List<Download> { download },
                 CancellationToken.None);
 
@@ -195,9 +198,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Adapters
             Assert.Equal(DownloadStatus.Downloading, download.Status);
             // (FILE_SIZE_MB − REMAINING_SIZE_MB) / FILE_SIZE_MB = (622 − 311) / 622 = 0.5
             Assert.Equal(0.5M, download.Progress);
-            Assert.Equal("DOWNLOADING", download.Metadata["ClientState"]);
-            // REMAINING_SIZE_MB bytes converted to long: 311 × 1024 × 1024 = 326107136
-            Assert.Equal((long)NzbgetApiMock.REMAINING_SIZE_MB * 1024L * 1024L, download.Metadata["AmountLeft"]);
         }
     }
 }

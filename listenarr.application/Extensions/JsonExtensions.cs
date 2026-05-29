@@ -23,26 +23,5 @@ namespace Listenarr.Application.Extensions
             }
             return defaultValue;
         }
-
-        /// <summary>
-        /// Returns a property as <see cref="double"/> when its
-        /// <see cref="System.Text.Json.JsonValueKind"/> is
-        /// <see cref="System.Text.Json.JsonValueKind.Number"/>; otherwise returns
-        /// <paramref name="defaultValue"/>.
-        /// </summary>
-        /// <remarks>
-        /// Reads numeric fields directly into a <see cref="double"/> without going
-        /// through a string, so <see cref="System.Text.Json.JsonElement.GetString"/>
-        /// is never called on a Number (which throws by design and broke NZBGet
-        /// queue polling before issue #618 was fixed).
-        /// </remarks>
-        public static double GetDoubleOrDefault(this System.Text.Json.JsonElement element, string propertyName, double defaultValue = 0d)
-        {
-            if (!element.TryGetProperty(propertyName, out var prop) || prop.ValueKind != System.Text.Json.JsonValueKind.Number)
-            {
-                return defaultValue;
-            }
-            return prop.TryGetDouble(out var d) ? d : defaultValue;
-        }
     }
 }

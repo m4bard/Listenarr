@@ -1184,8 +1184,8 @@ namespace Listenarr.Infrastructure.Adapters
                                         var nzbId = group.TryGetProperty("NZBID", out var nzbIdProp) ? nzbIdProp.GetInt32() : 0;
                                         var nzbName = group.TryGetProperty("NZBName", out var nameProp) ? nameProp.GetString() ?? "" : "";
                                         var status = group.TryGetProperty("Status", out var statusProp) ? statusProp.GetString() ?? "" : "";
-                                        var fileSizeMB = group.GetDoubleOrDefault("FileSizeMB");
-                                        var remainingSizeMB = group.GetDoubleOrDefault("RemainingSizeMB");
+                                        var fileSizeMB = group.GetPropertyOrDefault("FileSizeMB", 0d);
+                                        var remainingSizeMB = group.GetPropertyOrDefault("RemainingSizeMB", 0d);
                                         // Find matching download by NZB ID
                                         var matchingDownload = downloads.FirstOrDefault(dl =>
                                         {
