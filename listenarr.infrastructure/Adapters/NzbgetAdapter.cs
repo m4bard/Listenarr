@@ -744,7 +744,7 @@ namespace Listenarr.Infrastructure.Adapters
             {
                 Id = id,
                 Title = title ?? string.Empty,
-                Quality = category ?? string.Empty,
+                Quality = string.Empty,
                 Status = status,
                 Progress = sizeMb > 0 ? Math.Clamp(downloadedMb / sizeMb * 100, 0, 100) : 0,
                 Size = sizeBytes,

@@ -189,9 +189,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Adapters
 
             Assert.Single(queue);
             Assert.Equal("Book One", queue[0].Title);
+            Assert.True(string.IsNullOrEmpty(queue[0].Quality));
 
             Assert.Single(items);
             Assert.Equal("Book One", items[0].Title);
+            Assert.Equal("audiobooks", items[0].Category);
         }
 
         private static string BuildNzbGetListGroupsResponse(params (string Id, string Name, string Category, string Status)[] groups)
