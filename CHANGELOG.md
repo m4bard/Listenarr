@@ -5,11 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.72]
-
-### Fixed
-- **NZBGet downloads never imported (#618):** `NzbgetAdapter.FetchDownloadsAsync` now reads numeric `listgroups` size fields as numbers, reports active queue progress on the 0-100 scale expected by `AdapterUtils.MapDownloadProgress`, and checks NZBGet history by `NZBID` so completed items that have left `listgroups` transition to `Completed` with a usable `DownloadPath` for import processing.
-
 ## [0.2.71] - 2026-04-17
 
 ### Added

@@ -56,28 +56,4 @@ As a security-aware developer, generate secure .NET code using ASP.NET Core that
 - Use provide/inject for deep component communication
 - Use async components for code-splitting
 
----
-
-## Changelog maintenance
-
-After completing any meaningful change (bug fix, new feature, improvement, or notable refactor), update `CHANGELOG.md` at the repo root.
-
-**Determine where to add the entry:**
-
-- **Unpublished branch** (not yet merged/released — e.g. a feature or bugfix branch): add to a next-version section at the very top of the changelog, directly below the header block. Determine the next version by incrementing the patch number of the topmost released version (e.g. if the latest is `[0.2.61]`, use `[0.2.62]`). Create that section if it does not already exist. Do not include a date — the release pipeline adds it on publish.
-- **Published branch** (changes are already in a released version tag or on the main/canary branch): add to the latest version block (the topmost `## [x.y.z]` entry).
-
-To check: run `git log --oneline origin/canary..HEAD` — if it returns commits, the branch is unpublished. If empty, the changes are already on canary/main (published).
-
-**Entry format** — match the existing style exactly:
-
-```
-### Fixed          ← or Added / Changed / Removed / Security / Deprecated
-- **Short descriptive title:** One-sentence explanation of what changed and why it matters to users or developers.
-```
-
-**Rules:**
-- One bullet per logical change; group related sub-changes under a single bullet rather than listing each file touched.
-- Use plain language — write for someone reading the changelog without code context.
-- Do not add a changelog entry for purely mechanical changes (e.g. bumping a lock file, fixing a typo in a comment, updating test fixtures with no behavior change).
 ````
