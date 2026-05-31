@@ -15,7 +15,9 @@ namespace Listenarr.Tests.Mocks.Api
         public const int REMAINING_SIZE_MB = 311;
 
         public bool IncludeActiveQueueGroup { get; set; } = true;
+        public bool FailHistoryRequests { get; set; }
         public string CompletedContentPath { get; set; } = FileUtils.GetAbsolutePath("nzbget", "completed", "Completed Book.m4b");
+        public int HistoryRequestCount { get; private set; }
 
         public NzbgetApiMock()
         {
@@ -25,6 +27,16 @@ namespace Listenarr.Tests.Mocks.Api
 
         private async Task<HttpResponseMessage> GetHistory(HttpRequestMessage request, CancellationToken ct)
         {
+            HistoryRequestCount++;
+
+            if (FailHistoryRequests)
+            {
+                return new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)
+                {
+                    Content = new StringContent("history unavailable")
+                };
+            }
+
             var response = """
             <?xml version="1.0"?>
             <methodResponse>

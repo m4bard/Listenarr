@@ -202,6 +202,48 @@ namespace Listenarr.Tests.Features.Infrastructure.Adapters
             Assert.NotNull(result);
             Assert.Equal(DownloadStatus.Downloading, download.Status);
             Assert.Equal(50M, download.Progress);
+            Assert.Equal(0, _nzbgetApiMock.HistoryRequestCount);
+        }
+
+        [Fact]
+        public async Task FetchDownloadsAsync_NoEligibleTrackedDownloads_SkipsHistoryLookup()
+        {
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+            _nzbgetApiMock.IncludeActiveQueueGroup = false;
+
+            var result = await gateway.FetchDownloadsAsync(
+                _client!,
+                [],
+                CancellationToken.None);
+
+            Assert.NotNull(result);
+            Assert.Empty(result);
+            Assert.Equal(0, _nzbgetApiMock.HistoryRequestCount);
+        }
+
+        [Fact]
+        public async Task FetchDownloadsAsync_HistoryFailure_ReturnsActiveQueueUpdates()
+        {
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+            _nzbgetApiMock.FailHistoryRequests = true;
+
+            var activeDownload = new DownloadBuilder()
+                .WithClientDownloadId(NzbgetApiMock.ACTIVE_DOWNLOAD_NZBID)
+                .Build();
+
+            var missingFromQueueDownload = new DownloadBuilder()
+                .WithClientDownloadId(NzbgetApiMock.COMPLETED_FILE_NZBGET)
+                .Build();
+
+            var result = await gateway.FetchDownloadsAsync(
+                _client!,
+                new List<Download> { activeDownload, missingFromQueueDownload },
+                CancellationToken.None);
+
+            Assert.NotNull(result);
+            Assert.Equal(DownloadStatus.Downloading, activeDownload.Status);
+            Assert.Equal(50M, activeDownload.Progress);
+            Assert.True(_nzbgetApiMock.HistoryRequestCount > 0);
         }
 
         [Fact]
