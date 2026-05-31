@@ -584,31 +584,24 @@ namespace Listenarr.Infrastructure.Adapters
                     return result;
                 }
 
-                // Find matching history entry by ID
-                foreach (var members in arrayData.Elements("value")
-                    .Select(valueElement => valueElement.Element("struct"))
-                    .Where(structElement => structElement != null)
-                    .Select(structElement => structElement!.Elements("member").ToDictionary(
-                        m => m.Element("name")?.Value ?? string.Empty,
-                        m => m.Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty)))
+                foreach (var members in EnumerateXmlRpcStructMembers(arrayData))
                 {
-                    var entryId = members.GetValueOrDefault("ID", string.Empty);
+                    var entryId = members.GetValueOrDefault("NZBID", string.Empty);
                     if (!string.Equals(entryId, item.DownloadId, StringComparison.OrdinalIgnoreCase)) continue;
 
-                    // Extract destination directory
-                    var destDir = members.GetValueOrDefault("DestDir", string.Empty);
-                    if (string.IsNullOrEmpty(destDir))
+                    var contentPath = ResolveHistoryContentPath(members);
+                    if (string.IsNullOrEmpty(contentPath))
                     {
-                        _logger.LogWarning("No DestDir found for NZBGet download {Id}", item.DownloadId);
+                        _logger.LogWarning("No FinalDir or DestDir found for NZBGet download {Id}", item.DownloadId);
                         return result;
                     }
 
-                    result.OutputPath = destDir;
+                    result.OutputPath = contentPath;
 
                     _logger.LogDebug(
                         "Resolved NZBGet content path for {Id}: {ContentPath}",
                         item.DownloadId,
-                        destDir);
+                        contentPath);
 
                     return result;
                 }
@@ -1015,6 +1008,117 @@ namespace Listenarr.Infrastructure.Adapters
             return null;
         }
 
+        private sealed record NzbgetHistoryItem(string NzbId, string Name, string Status, string ContentPath);
+
+        private static IEnumerable<IReadOnlyDictionary<string, string>> EnumerateXmlRpcStructMembers(XElement? arrayData)
+        {
+            if (arrayData == null)
+            {
+                yield break;
+            }
+
+            foreach (var structElement in arrayData.Elements("value")
+                .Select(valueElement => valueElement.Element("struct"))
+                .Where(structElement => structElement != null))
+            {
+                yield return structElement!.Elements("member").ToDictionary(
+                    m => m.Element("name")?.Value ?? string.Empty,
+                    m => m.Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty,
+                    StringComparer.Ordinal);
+            }
+        }
+
+        private static string ResolveHistoryContentPath(IReadOnlyDictionary<string, string> members)
+        {
+            var finalDir = members.GetValueOrDefault("FinalDir", string.Empty);
+            if (!string.IsNullOrWhiteSpace(finalDir))
+            {
+                return finalDir;
+            }
+
+            return members.GetValueOrDefault("DestDir", string.Empty);
+        }
+
+        private async Task<List<NzbgetHistoryItem>> FetchHistoryItemsAsync(DownloadClientConfiguration client)
+        {
+            var historyResult = await CallXmlRpcAsync(client, "history", false);
+            var arrayData = historyResult.Element("array")?.Element("data");
+            var historyItems = new List<NzbgetHistoryItem>();
+
+            foreach (var members in EnumerateXmlRpcStructMembers(arrayData))
+            {
+                var nzbId = members.GetValueOrDefault("NZBID", string.Empty);
+                if (string.IsNullOrWhiteSpace(nzbId))
+                {
+                    continue;
+                }
+
+                historyItems.Add(new NzbgetHistoryItem(
+                    nzbId,
+                    members.GetValueOrDefault("NZBName", string.Empty),
+                    members.GetValueOrDefault("Status", string.Empty),
+                    ResolveHistoryContentPath(members)));
+            }
+
+            return historyItems;
+        }
+
+        private static bool IsSuccessfulHistoryStatus(string status)
+        {
+            return status.StartsWith("SUCCESS", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsFailedHistoryStatus(string status)
+        {
+            return status.StartsWith("FAILURE", StringComparison.OrdinalIgnoreCase) ||
+                status.StartsWith("FAILED", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private async Task ApplyHistoryUpdatesAsync(
+            DownloadClientConfiguration client,
+            List<Download> downloads)
+        {
+            var historyItems = await FetchHistoryItemsAsync(client);
+
+            foreach (var download in downloads)
+            {
+                if (download.Status == DownloadStatus.Moved ||
+                    download.Status == DownloadStatus.Processing ||
+                    download.Status == DownloadStatus.ImportPending)
+                {
+                    continue;
+                }
+
+                var clientItemId = download.GetExternalId();
+                if (string.IsNullOrWhiteSpace(clientItemId))
+                {
+                    continue;
+                }
+
+                var historyItem = historyItems.FirstOrDefault(item =>
+                    string.Equals(item.NzbId, clientItemId, StringComparison.OrdinalIgnoreCase));
+
+                if (historyItem == null)
+                {
+                    continue;
+                }
+
+                if (IsSuccessfulHistoryStatus(historyItem.Status))
+                {
+                    if (!string.IsNullOrWhiteSpace(historyItem.ContentPath))
+                    {
+                        download.DownloadPath = historyItem.ContentPath;
+                    }
+
+                    AdapterUtils.MapDownloadProgress(download, 100.0, 0, "success");
+                }
+                else if (IsFailedHistoryStatus(historyItem.Status))
+                {
+                    AdapterUtils.MapDownloadProgress(download, (double)download.Progress, 0, "failure");
+                }
+            }
+        }
+
         /// <summary>
         /// Resolves the actual import item for a completed download.
         /// Queries NZBGet history for FinalDir or DestDir.
@@ -1048,22 +1152,13 @@ namespace Listenarr.Infrastructure.Adapters
                     return result;
                 }
 
-                // Find the history entry matching our download ID
-                foreach (var members in arrayData.Elements("value")
-                    .Select(valueElement => valueElement.Element("struct"))
-                    .Where(structElement => structElement != null)
-                    .Select(structElement => structElement!.Elements("member").ToDictionary(
-                        m => m.Element("name")?.Value ?? string.Empty,
-                        m => m.Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty)))
+                // Find the history entry matching the NZBID stored on the tracked download.
+                foreach (var members in EnumerateXmlRpcStructMembers(arrayData))
                 {
                     var entryId = members.GetValueOrDefault("NZBID", string.Empty);
                     if (entryId != queueItem.Id) continue;
 
-                    // Found matching entry - extract path
-                    // FinalDir is preferred (post-processing destination), fallback to DestDir
-                    var finalDir = members.GetValueOrDefault("FinalDir", string.Empty);
-                    var destDir = members.GetValueOrDefault("DestDir", string.Empty);
-                    var contentPath = !string.IsNullOrEmpty(finalDir) ? finalDir : destDir;
+                    var contentPath = ResolveHistoryContentPath(members);
 
                     if (string.IsNullOrEmpty(contentPath))
                     {
@@ -1201,8 +1296,8 @@ namespace Listenarr.Infrastructure.Adapters
 
                                         if (matchingDownload != null && fileSizeMB > 0)
                                         {
-                                            var progress = (fileSizeMB - remainingSizeMB) / fileSizeMB;
-                                            var amountLeft = (long)(remainingSizeMB * 1024 * 1024); // Convert MB to bytes
+                                            var progress = Math.Clamp((fileSizeMB - remainingSizeMB) / fileSizeMB * 100, 0, 100);
+                                            var amountLeft = (long)(Math.Max(remainingSizeMB, 0) * 1024 * 1024); // Convert MB to bytes
 
                                             AdapterUtils.MapDownloadProgress(matchingDownload, progress, amountLeft, status);
                                         }
@@ -1217,6 +1312,8 @@ namespace Listenarr.Infrastructure.Adapters
                     }
                 }
 
+                await ApplyHistoryUpdatesAsync(client, downloads);
+
                 return downloads;
             }
             catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
@@ -1226,4 +1323,3 @@ namespace Listenarr.Infrastructure.Adapters
         }
     }
 }
-

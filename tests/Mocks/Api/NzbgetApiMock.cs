@@ -7,12 +7,15 @@ namespace Listenarr.Tests.Mocks.Api
     {
         public static readonly string SINGLE_FILE_NZBGET = "101";
         public static readonly string MULTI_FILE_NZBGET = "202";
+        public static readonly string COMPLETED_FILE_NZBGET = "14054";
+        public static readonly string COMPLETED_FILE_HISTORY_ID = "9001";
 
-        // Constants for the JSON-RPC `listgroups` canned response — used by tests
-        // exercising FetchDownloadsAsync against an "active" queue group (issue #618).
         public const string ACTIVE_DOWNLOAD_NZBID = "14053";
         public const int FILE_SIZE_MB = 622;
         public const int REMAINING_SIZE_MB = 311;
+
+        public bool IncludeActiveQueueGroup { get; set; } = true;
+        public string CompletedContentPath { get; set; } = FileUtils.GetAbsolutePath("nzbget", "completed", "Completed Book.m4b");
 
         public NzbgetApiMock()
         {
@@ -34,7 +37,19 @@ namespace Listenarr.Tests.Mocks.Api
                                         <struct>
                                             <member>
                                                 <name>ID</name>
+                                                <value><string>1001</string></value>
+                                            </member>
+                                            <member>
+                                                <name>NZBID</name>
                                                 <value><string>{{SINGLE_FILE_NZBGET}}</string></value>
+                                            </member>
+                                            <member>
+                                                <name>NZBName</name>
+                                                <value><string>Book</string></value>
+                                            </member>
+                                            <member>
+                                                <name>Status</name>
+                                                <value><string>SUCCESS/HEALTH</string></value>
                                             </member>
                                             <member>
                                                 <name>DestDir</name>
@@ -46,11 +61,51 @@ namespace Listenarr.Tests.Mocks.Api
                                         <struct>
                                             <member>
                                                 <name>ID</name>
+                                                <value><string>1002</string></value>
+                                            </member>
+                                            <member>
+                                                <name>NZBID</name>
                                                 <value><string>{{MULTI_FILE_NZBGET}}</string></value>
+                                            </member>
+                                            <member>
+                                                <name>NZBName</name>
+                                                <value><string>Book Folder</string></value>
+                                            </member>
+                                            <member>
+                                                <name>Status</name>
+                                                <value><string>SUCCESS/HEALTH</string></value>
                                             </member>
                                             <member>
                                                 <name>DestDir</name>
                                                 <value><string>{{ARBITRARY_PATH_2}}</string></value>
+                                            </member>
+                                        </struct>
+                                    </value>
+                                    <value>
+                                        <struct>
+                                            <member>
+                                                <name>ID</name>
+                                                <value><string>{{COMPLETED_FILE_HISTORY_ID}}</string></value>
+                                            </member>
+                                            <member>
+                                                <name>NZBID</name>
+                                                <value><string>{{COMPLETED_FILE_NZBGET}}</string></value>
+                                            </member>
+                                            <member>
+                                                <name>NZBName</name>
+                                                <value><string>test.release</string></value>
+                                            </member>
+                                            <member>
+                                                <name>Status</name>
+                                                <value><string>SUCCESS/HEALTH</string></value>
+                                            </member>
+                                            <member>
+                                                <name>FinalDir</name>
+                                                <value><string>{{COMPLETED_CONTENT_PATH}}</string></value>
+                                            </member>
+                                            <member>
+                                                <name>DestDir</name>
+                                                <value><string>{{COMPLETED_DEST_DIR}}</string></value>
                                             </member>
                                         </struct>
                                     </value>
@@ -63,8 +118,12 @@ namespace Listenarr.Tests.Mocks.Api
             """;
             response = response.Replace("{{SINGLE_FILE_NZBGET}}", SINGLE_FILE_NZBGET);
             response = response.Replace("{{MULTI_FILE_NZBGET}}", MULTI_FILE_NZBGET);
+            response = response.Replace("{{COMPLETED_FILE_NZBGET}}", COMPLETED_FILE_NZBGET);
+            response = response.Replace("{{COMPLETED_FILE_HISTORY_ID}}", COMPLETED_FILE_HISTORY_ID);
             response = response.Replace("{{ARBITRARY_PATH_1}}", FileUtils.GetAbsolutePath("nzbget", "completed", "Book.m4b"));
             response = response.Replace("{{ARBITRARY_PATH_2}}", FileUtils.GetAbsolutePath("nzbget", "completed", "Book Folder"));
+            response = response.Replace("{{COMPLETED_CONTENT_PATH}}", CompletedContentPath);
+            response = response.Replace("{{COMPLETED_DEST_DIR}}", Path.GetDirectoryName(CompletedContentPath) ?? string.Empty);
             return MockUtils.GetCannedResponse(response, "text/xml");
         }
 
@@ -76,6 +135,11 @@ namespace Listenarr.Tests.Mocks.Api
 
             if (body.Contains("\"method\":\"listgroups\"", StringComparison.Ordinal))
             {
+                if (!IncludeActiveQueueGroup)
+                {
+                    return MockUtils.GetCannedResponse("""{"version":"1.1","result":[]}""");
+                }
+
                 var listgroups = $$"""
                 {
                   "version": "1.1",
