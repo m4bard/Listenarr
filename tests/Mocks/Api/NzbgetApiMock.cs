@@ -16,6 +16,7 @@ namespace Listenarr.Tests.Mocks.Api
 
         public bool IncludeActiveQueueGroup { get; set; } = true;
         public bool FailHistoryRequests { get; set; }
+        public bool ReturnActiveQueueSizesAsStrings { get; set; }
         public string CompletedContentPath { get; set; } = FileUtils.GetAbsolutePath("nzbget", "completed", "Completed Book.m4b");
         public int HistoryRequestCount { get; private set; }
 
@@ -152,6 +153,13 @@ namespace Listenarr.Tests.Mocks.Api
                     return MockUtils.GetCannedResponse("""{"version":"1.1","result":[]}""");
                 }
 
+                var fileSizeMb = ReturnActiveQueueSizesAsStrings
+                    ? $"\"{FILE_SIZE_MB}\""
+                    : FILE_SIZE_MB.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                var remainingSizeMb = ReturnActiveQueueSizesAsStrings
+                    ? $"\"{REMAINING_SIZE_MB}\""
+                    : REMAINING_SIZE_MB.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
                 var listgroups = $$"""
                 {
                   "version": "1.1",
@@ -160,8 +168,8 @@ namespace Listenarr.Tests.Mocks.Api
                       "NZBID": {{ACTIVE_DOWNLOAD_NZBID}},
                       "NZBName": "test.release",
                       "Status": "DOWNLOADING",
-                      "FileSizeMB": {{FILE_SIZE_MB}},
-                      "RemainingSizeMB": {{REMAINING_SIZE_MB}}
+                      "FileSizeMB": {{fileSizeMb}},
+                      "RemainingSizeMB": {{remainingSizeMb}}
                     }
                   ]
                 }

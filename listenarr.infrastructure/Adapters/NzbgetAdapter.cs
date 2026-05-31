@@ -22,7 +22,6 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using Listenarr.Application.Downloads;
-using Listenarr.Application.Extensions;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Common;
@@ -1097,6 +1096,35 @@ namespace Listenarr.Infrastructure.Adapters
                 status.StartsWith("FAILED", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static double GetJsonDoubleOrDefault(JsonElement element, string propertyName, double defaultValue = 0d)
+        {
+            if (!element.TryGetProperty(propertyName, out var property) ||
+                property.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                return defaultValue;
+            }
+
+            try
+            {
+                if (property.ValueKind == JsonValueKind.Number)
+                {
+                    return property.GetDouble();
+                }
+
+                if (property.ValueKind == JsonValueKind.String &&
+                    double.TryParse(property.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
+                {
+                    return value;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                return defaultValue;
+            }
+
+            return defaultValue;
+        }
+
         private async Task ApplyHistoryUpdatesAsync(
             DownloadClientConfiguration client,
             List<Download> downloads,
@@ -1309,8 +1337,8 @@ namespace Listenarr.Infrastructure.Adapters
 
                                         var nzbName = group.TryGetProperty("NZBName", out var nameProp) ? nameProp.GetString() ?? "" : "";
                                         var status = group.TryGetProperty("Status", out var statusProp) ? statusProp.GetString() ?? "" : "";
-                                        var fileSizeMB = group.GetPropertyOrDefault("FileSizeMB", 0d);
-                                        var remainingSizeMB = group.GetPropertyOrDefault("RemainingSizeMB", 0d);
+                                        var fileSizeMB = GetJsonDoubleOrDefault(group, "FileSizeMB");
+                                        var remainingSizeMB = GetJsonDoubleOrDefault(group, "RemainingSizeMB");
                                         // Find matching download by NZB ID
                                         var matchingDownload = downloads.FirstOrDefault(dl =>
                                         {

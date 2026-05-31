@@ -181,7 +181,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Adapters
             Assert.Equal("/xmlrpc", capturedUri.AbsolutePath);
         }
 
-        // Issue #618 — NZBGet's JSON-RPC `listgroups` returns FileSizeMB / RemainingSizeMB
+        // Issue #619 — NZBGet's JSON-RPC `listgroups` returns FileSizeMB / RemainingSizeMB
         // as JSON Number; verify FetchDownloadsAsync maps progress onto the matching
         // Download via AdapterUtils.MapDownloadProgress, instead of throwing
         // InvalidOperationException at the Number-as-String access (the original bug).
@@ -189,6 +189,27 @@ namespace Listenarr.Tests.Features.Infrastructure.Adapters
         public async Task FetchDownloadsAsync_UpdatesProgressForMatchingActiveGroup()
         {
             var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var download = new DownloadBuilder()
+                .WithClientDownloadId(NzbgetApiMock.ACTIVE_DOWNLOAD_NZBID)
+                .Build();
+
+            var result = await gateway.FetchDownloadsAsync(
+                _client!,
+                new List<Download> { download },
+                CancellationToken.None);
+
+            Assert.NotNull(result);
+            Assert.Equal(DownloadStatus.Downloading, download.Status);
+            Assert.Equal(50M, download.Progress);
+            Assert.Equal(0, _nzbgetApiMock.HistoryRequestCount);
+        }
+
+        [Fact]
+        public async Task FetchDownloadsAsync_UpdatesProgressWhenActiveGroupSizesAreStrings()
+        {
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+            _nzbgetApiMock.ReturnActiveQueueSizesAsStrings = true;
 
             var download = new DownloadBuilder()
                 .WithClientDownloadId(NzbgetApiMock.ACTIVE_DOWNLOAD_NZBID)
