@@ -145,7 +145,7 @@ chmod +x Listenarr.Api
 ```
 
 **Prerequisites:**
-- **Node.js 20.x or later** (required for Discord bot functionality)
+- **Node.js 24.x or later** (required for Discord bot functionality)
 - Set environment variable: `LISTENARR_PUBLIC_URL=https://your-domain.com`
 
 **Service will be available at:**
@@ -161,15 +161,15 @@ chmod +x Listenarr.Api
 For custom deployments or when you need to build from source:
 
 **Prerequisites:**
-- .NET 8.0 Runtime or later (for framework-dependent deployments)
-- Node.js 20.x or later (for Discord bot)
+- .NET 10.0 Runtime or later (for framework-dependent deployments)
+- Node.js 24.x or later (for Discord bot)
 - Set `LISTENARR_PUBLIC_URL` environment variable to your production domain
 
 **Option 1: Use Self-Contained Executables (Recommended)**
 ```bash
 # Build self-contained executable for your platform
 dotnet publish listenarr.api/Listenarr.Api.csproj -c Release -r win-x64 --self-contained
-cd ./bin/Release/net8.0/win-x64/publish
+cd ./bin/Release/net10.0/win-x64/publish
 ./Listenarr.Api.exe
 ```
 
@@ -177,7 +177,7 @@ cd ./bin/Release/net8.0/win-x64/publish
 ```bash
 # Requires .NET Runtime installed on target system
 dotnet publish listenarr.api/Listenarr.Api.csproj -c Release
-cd ./bin/Release/net8.0/publish
+cd ./bin/Release/net10.0/publish
 dotnet Listenarr.Api.dll
 ```
 
@@ -195,8 +195,8 @@ LISTENARR_URL=http://localhost:4545 node index.js
 If you prefer to run the services separately:
 
 **Prerequisites:**
-- .NET 8.0 SDK or later
-- Node.js 20.x or later
+- .NET 10.0 SDK or later
+- Node.js 24.x or later
 
 **Install dependencies:**
 ```bash
@@ -221,7 +221,7 @@ Listenarr includes a small reference Discord bot (in `tools/discord-bot`) that r
 
 Prerequisites:
 - A running Listenarr instance (see steps above)
-- Node.js 20+ and npm
+- Node.js 24+ and npm
 - A Discord application with a bot token and application ID
 
 Quick start (development):
@@ -321,7 +321,7 @@ Got a great idea? Throw it up on [Discussions](https://github.com/Listenarrs/Lis
 ### Backend
 - **ASP.NET Core** - Web API framework
 - **Entity Framework Core** - Database ORM with SQLite
-- **C# 12** with .NET 8.0+
+- **C#** with .NET 10.0+
 
 ### Frontend
 - **Vue 3** - Progressive JavaScript framework
@@ -335,18 +335,18 @@ Got a great idea? Throw it up on [Discussions](https://github.com/Listenarrs/Lis
 ```
 Listenarr/
 ├── listenarr.api/              # C# Backend API
-│   ├── config/                 # User configuration and data
-│   │   ├── appsettings/        # Application configuration files
-│   │   ├── cache/              # Image cache storage
-│   │   ├── database/           # SQLite database files
-│   │   ├── logs/               # Application log files
-│   │   └── temp/               # Temporary download storage
 │   ├── Controllers/            # API Endpoints
 │   ├── Models/                 # Data Models
 │   ├── Services/               # Business Logic
 │   ├── Dockerfile.runtime      # Runtime Docker image for combined API + frontend
 │   ├── Program.cs              # Entry Point
 │   └── ...
+├── .env/development/config/    # Development runtime data (generated, gitignored)
+│   ├── appsettings/            # Application configuration files
+│   ├── cache/                  # Image cache storage
+│   ├── database/               # SQLite database files
+│   ├── logs/                   # Application log files
+│   └── temp/                   # Temporary download storage
 ├── fe/                         # Vue.js Frontend
 │   ├── src/
 │   │   ├── components/         # Vue Components
@@ -374,10 +374,10 @@ Configure your search APIs in the Settings page:
 You can control the application logging level in three ways:
 
 - Environment variable (recommended for Docker): set LISTENARR_LOG_LEVEL to one of Verbose, Debug, Information, Warning, Error, Fatal (e.g., `LISTENARR_LOG_LEVEL=Debug`).
-- Configuration file: create or edit `appsettings.json` or `appsettings.Development.json` in the `listenarr.api` project (or the `config/appsettings` directory when running the container). Set either `Serilog:MinimumLevel:Default` or `Logging:LogLevel:Default` to the desired level.
+- Configuration file: create or edit `config/appsettings/appsettings.json` under the active content root. In local development this is `.env/development/config/appsettings/appsettings.json`; in Docker this is `/app/config/appsettings/appsettings.json`. Set either `Serilog:MinimumLevel:Default` or `Logging:LogLevel:Default` to the desired level.
 - Runtime args / orchestration: pass environment variables via `docker run -e LISTENARR_LOG_LEVEL=Debug` or `docker-compose` environment section.
 
-Docker users: the provided `docker-compose.yml` includes an example `LISTENARR_LOG_LEVEL` entry; for non-Docker users changing `appsettings.Development.json` before starting the app is the easiest way to set a custom default logging level.
+Docker users: the provided `docker-compose.yml` includes an example `LISTENARR_LOG_LEVEL` entry. For local development, edit `.env/development/config/appsettings/appsettings.json` after first startup; for a published non-Docker deployment, edit `config/appsettings/appsettings.json` under that deployment's content root.
 
 
 ### Download Clients
@@ -419,8 +419,8 @@ For complete API documentation, see our [API Reference](https://github.com/Liste
 
 ### Prerequisites
 
-- .NET 8.0 SDK or later
-- Node.js 20.x or later
+- .NET 10.0 SDK or later
+- Node.js 24.x or later
 - npm (comes with Node.js)
 
 ### Available Commands

@@ -1,18 +1,18 @@
 # Anthropic/Claude Instructions for Listenarr
 
 ## Overview
-Listenarr is a C# .NET 8.0 audiobook management system with Vue.js 3 frontend. See [copilot-instructions.md](copilot-instructions.md) for complete details.
+Listenarr is a C# .NET 10.0 audiobook management system with Vue.js 3 frontend. See [copilot-instructions.md](copilot-instructions.md) for complete details.
 
 ## Quick Start
 - **Run**: `npm run dev` from repository root
-- **Database**: `listenarr.api/config/database/listenarr.db`
-- **Logs**: `listenarr.api/config/logs/listenarr-YYYYMMDD.log`
+- **Development database**: `.env/development/config/database/listenarr.db`
+- **Development logs**: `.env/development/config/logs/listenarr-YYYYMMDD.log`
 - **Backend**: http://localhost:4545
 - **Frontend**: http://localhost:5173
 
 ## Critical Patterns
 
-### Backend (.NET 8.0)
+### Backend (.NET 10.0)
 1. **Download Status**: Always set `Status = DownloadStatus.Moved` after successful import
 2. **File Checks**: Verify `File.Exists(f.Path)` in wanted/library queries (3 locations)
 3. **Auth**: Transmission uses 409/session-id retry; qBittorrent uses cookies

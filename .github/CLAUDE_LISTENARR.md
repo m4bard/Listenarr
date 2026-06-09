@@ -4,10 +4,10 @@
 This file contains Claude-specific guidance for the Listenarr audiobook management system. For comprehensive secure coding practices, see [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md). For complete project details, see [copilot-instructions.md](copilot-instructions.md).
 
 ## Project Summary
-**Listenarr** is a C# .NET 8.0 Web API backend with Vue.js 3 frontend for automated audiobook downloading and processing via torrent/NZB clients (qBittorrent, Transmission, SABnzbd, NZBGet).
+**Listenarr** is a C# .NET 10.0 Web API backend with Vue.js 3 frontend for automated audiobook downloading and processing via torrent/NZB clients (qBittorrent, Transmission, SABnzbd, NZBGet).
 
 ## Key Technologies
-- **Backend**: ASP.NET Core (.NET 8), Entity Framework Core, SQLite
+- **Backend**: ASP.NET Core (.NET 10), Entity Framework Core, SQLite
 - **Frontend**: Vue 3, TypeScript, Pinia, Vite, SignalR
 - **Architecture**: Clean architecture (Domain, Application, Infrastructure layers)
 
@@ -32,8 +32,8 @@ This file contains Claude-specific guidance for the Listenarr audiobook manageme
 
 ## Development Workflow
 1. **Run from repository root**: `npm run dev` (starts both API and frontend)
-2. **Database**: SQLite at `listenarr.api/config/database/listenarr.db`
-3. **Logs**: Check `listenarr.api/config/logs/listenarr-YYYYMMDD.log` for diagnostics
+2. **Development database**: SQLite at `.env/development/config/database/listenarr.db`
+3. **Development logs**: Check `.env/development/config/logs/listenarr-YYYYMMDD.log` for diagnostics
 4. **Hot Reload**: Backend uses `dotnet watch`, frontend uses Vite HMR
 
 ## Common Issues & Solutions
@@ -52,7 +52,7 @@ This file contains Claude-specific guidance for the Listenarr audiobook manageme
 - **Backend**: `listenarr.api/`, `listenarr.application/`, `listenarr.domain/`, `listenarr.infrastructure/`
 - **Frontend**: `fe/src/`
 - **Tests**: `tests/`
-- **Config**: `listenarr.api/config/` (database, logs, cache)
+- **Development config**: `.env/development/config/` (database, logs, cache)
 
 ## When Making Changes
 1. Update tests when changing public APIs or DI constructors
