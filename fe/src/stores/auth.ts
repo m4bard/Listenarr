@@ -26,31 +26,49 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<{ authenticated: boolean; name?: string }>({ authenticated: false })
   // Whether we've attempted to load the current user at least once
   const loaded = ref<boolean>(false)
-  const redirectTo = ref<string | null>(null)
+  let currentUserLoadPromise: Promise<void> | null = null
 
   const loadCurrentUser = async () => {
-    console.log('[AuthStore] Loading current user...')
-    try {
-      const u = await apiService.getCurrentUser()
-      console.log('[AuthStore] Current user loaded:', u)
-      user.value = u
-      loaded.value = true
-    } catch (error) {
-      console.warn('[AuthStore] Failed to load current user:', error)
-      const status =
-        error && typeof error === 'object' && 'status' in error
-          ? ((error as unknown as { status?: number }).status ?? 0)
-          : 0
-      if (status === 401 || status === 403) {
-        console.log('[AuthStore] Authentication error - clearing session')
-        // Clear any stale tokens when we get auth errors
-        try {
-          sessionTokenManager.clearToken()
-        } catch {}
-      }
-      user.value = { authenticated: false }
-      loaded.value = true
+    if (currentUserLoadPromise) {
+      return currentUserLoadPromise
     }
+
+    currentUserLoadPromise = (async () => {
+      console.log('[AuthStore] Loading current user...')
+      try {
+        const u = await apiService.getCurrentUser()
+        console.log('[AuthStore] Current user loaded:', u)
+        user.value = u
+        loaded.value = true
+
+        if (!u.authenticated && sessionTokenManager.hasToken()) {
+          console.log(
+            '[AuthStore] Clearing stale browser auth marker after unauthenticated /account/me response',
+          )
+          sessionTokenManager.clearToken()
+        }
+      } catch (error) {
+        console.warn('[AuthStore] Failed to load current user:', error)
+        const status =
+          error && typeof error === 'object' && 'status' in error
+            ? ((error as unknown as { status?: number }).status ?? 0)
+            : 0
+        if (status === 401 || status === 403) {
+          console.log('[AuthStore] Authentication error - clearing session')
+          try {
+            if (sessionTokenManager.hasToken()) {
+              sessionTokenManager.clearToken()
+            }
+          } catch {}
+        }
+        user.value = { authenticated: false }
+        loaded.value = true
+      } finally {
+        currentUserLoadPromise = null
+      }
+    })()
+
+    return currentUserLoadPromise
   }
 
   const login = async (
@@ -63,32 +81,45 @@ export const useAuthStore = defineStore('auth', () => {
     await loadCurrentUser()
   }
 
-  // React to token changes from other tabs (cross-tab logout)
+  // React to token changes from other tabs (cross-tab login/logout).
   try {
+    let observedInitialTokenState = false
     sessionTokenManager.onTokenChange((token) => {
-      if (!token) {
-        console.log('[AuthStore] Session token removed in another tab - clearing auth state')
-        user.value = { authenticated: false }
-
-        // Attempt SPA navigation to login using the router if available.
-        // Use dynamic import to avoid circular dependency at module load time.
-        try {
-          const current = window.location.pathname + window.location.search + window.location.hash
-          if (!current.startsWith('/login')) {
-            try {
-              window.location.href = `/login?redirect=${encodeURIComponent(current)}`
-            } catch {
-              window.location.href = '/login'
-            }
-          }
-        } catch {
-          try {
-            window.location.href = '/login'
-          } catch {}
-        }
+      if (!observedInitialTokenState) {
+        observedInitialTokenState = true
+        return
       }
+
+      if (token) {
+        if (!user.value.authenticated) {
+          void loadCurrentUser()
+        }
+        return
+      }
+
+      console.log('[AuthStore] Auth marker removed in another tab - clearing auth state')
+      user.value = { authenticated: false }
+      loaded.value = true
     })
   } catch {}
+
+  const clearClientAuthState = () => {
+    try {
+      sessionTokenManager.clearToken()
+    } catch (e) {
+      console.warn('[AuthStore] Failed to clear sessionTokenManager:', e)
+    }
+
+    try {
+      // Comprehensive cleanup (removes any lingering storage keys)
+      clearAllAuthData()
+    } catch (e) {
+      console.warn('[AuthStore] Failed to run clearAllAuthData:', e)
+    }
+
+    user.value = { authenticated: false }
+    loaded.value = true
+  }
 
   const logout = async () => {
     try {
@@ -103,23 +134,10 @@ export const useAuthStore = defineStore('auth', () => {
       // Continue with local logout even if API call fails
     } finally {
       // Ensure all client-side auth data is cleared even if the API call failed
-      try {
-        sessionTokenManager.clearToken()
-      } catch (e) {
-        console.warn('[AuthStore] Failed to clear sessionTokenManager:', e)
-      }
-
-      try {
-        // Comprehensive cleanup (removes any lingering storage keys)
-        clearAllAuthData()
-      } catch (e) {
-        console.warn('[AuthStore] Failed to run clearAllAuthData:', e)
-      }
-
-      user.value = { authenticated: false }
+      clearClientAuthState()
       console.log('[AuthStore] Local user state cleared and auth data removed')
     }
   }
 
-  return { user, redirectTo, loadCurrentUser, login, logout, loaded }
+  return { user, loadCurrentUser, login, logout, loaded }
 })

@@ -27,7 +27,6 @@ import { flushAsync } from '@/test/utils/wait'
 
 const mockAuthStore = vi.hoisted(() => ({
   user: { authenticated: true },
-  redirectTo: null as string | null,
   loadCurrentUser: vi.fn(async () => undefined),
 }))
 
@@ -80,7 +79,6 @@ describe('SettingsView', () => {
   beforeEach(() => {
     ;(apiService.getStartupConfig as Mock).mockReset()
     mockAuthStore.user.authenticated = true
-    mockAuthStore.redirectTo = null
     mockAuthStore.loadCurrentUser.mockClear()
     // Provide a single Pinia instance for stores used by the component
     createTestPinia()

@@ -25,6 +25,9 @@ Rules:
 - Use `src/test/mocks/signalr` when a spec needs to inspect or emit SignalR
   callbacks from the global mock.
 - Keep test data in factories when the same shape appears in multiple specs.
+- Keep auth boundaries explicit: auth store specs cover state, API calls, and
+  browser auth markers without a real router; router, login view, and app-shell
+  specs own redirect behavior.
 - Run `npm run type-check:test` before changing shared helpers or fixture
   factories.
 - Run `npm run verify` before submitting frontend test infrastructure changes.

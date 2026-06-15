@@ -73,6 +73,8 @@ import Checkbox from '@/components/form/Checkbox.vue'
 import { apiService } from '@/services/api'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { parseAuthRequiredFromConfig } from '@/utils/authConfig'
+import { normalizeRedirect, redirectLocationFromPath } from '@/utils/redirect'
 // Vite static import for the logo so bundler resolves the asset reliably
 
 export default defineComponent({
@@ -85,59 +87,41 @@ export default defineComponent({
     const loading = ref<boolean>(false)
     const error = ref<string | null>(null)
     const retrySeconds = ref<number | null>(null)
+    const startupConfigChecked = ref(false)
     const router = useRouter()
 
     const auth = useAuthStore()
     // The logo is placed in `fe/public/logo.png` and served from the app root.
     const logoUrl = '/logo.png'
 
+    onMounted(async () => {
+      if (startupConfigChecked.value) return
+      try {
+        const sc = await apiService.getStartupConfig()
+        startupConfigChecked.value = true
+        if (!(parseAuthRequiredFromConfig(sc) ?? false)) {
+          await router.replace({ name: 'home' })
+        }
+      } catch {
+        error.value = 'Failed to load configuration.'
+      }
+    })
+
     async function onSubmit() {
       error.value = null
       retrySeconds.value = null
       loading.value = true
 
-      // Fetch CSRF token
-      const token = await apiService.fetchAntiforgeryToken()
-
       try {
+        // Fetch CSRF token
+        const token = await apiService.fetchAntiforgeryToken()
         await auth.login(username.value, password.value, rememberMe.value, token ?? undefined)
 
-        // On success, prefer query param redirect (survives reload); fallback to store, then home
-        // Prefer explicit query param redirect (survives reload). If missing, try the
-        // fallback stored in sessionStorage by the ApiService when it had to perform
-        // a full-page redirect. Always sanitize the redirect target.
         const rawQueryRedirect =
           (router.currentRoute.value.query?.redirect as string | undefined) ?? undefined
-        const { normalizeRedirect } = await import('@/utils/redirect')
         let queryRedirect = normalizeRedirect(rawQueryRedirect)
 
-        const startupConfigChecked = ref(false)
         if (!queryRedirect || queryRedirect === '/') {
-          // On mount, fetch startup config ONCE and redirect if authentication is not required
-          onMounted(async () => {
-            if (startupConfigChecked.value) return
-            try {
-              const sc = await apiService.getStartupConfig()
-              // Accept both camelCase and PascalCase variants for compatibility
-              const rawAuth =
-                sc?.authenticationRequired ??
-                (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
-              const authEnabled =
-                typeof rawAuth === 'boolean'
-                  ? rawAuth
-                  : typeof rawAuth === 'string'
-                    ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
-                    : false
-              startupConfigChecked.value = true
-              if (!authEnabled) {
-                // Redirect to main app if authentication is not required
-                await router.replace({ name: 'home' })
-              }
-            } catch {
-              // If config fetch fails, show error (optional: could retry or show fallback UI)
-              error.value = 'Failed to load configuration.'
-            }
-          })
           try {
             const pending = sessionStorage.getItem('listenarr_pending_redirect') ?? undefined
             const normalizedPending = normalizeRedirect(pending)
@@ -147,12 +131,7 @@ export default defineComponent({
           } catch {}
         }
 
-        const dest =
-          queryRedirect && queryRedirect !== '/'
-            ? { path: queryRedirect }
-            : (auth.redirectTo ?? { name: 'home' })
-        auth.redirectTo = null
-        await router.push(dest)
+        await router.push(redirectLocationFromPath(queryRedirect))
       } catch (err) {
         interface LoginError {
           status?: number

@@ -7,6 +7,9 @@ export default defineConfig((configEnv) =>
   mergeConfig(
     typeof viteConfig === 'function' ? viteConfig(configEnv) : viteConfig,
     {
+      oxc: {
+        tsconfig: false,
+      },
       resolve: {
         alias: {
           '@': fileURLToPath(new URL('./src', import.meta.url)),

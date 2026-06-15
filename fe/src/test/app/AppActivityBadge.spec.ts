@@ -15,11 +15,13 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { computed, ref } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
-import { delay } from '@/test/utils/wait'
+import { delay, flushAsync } from '@/test/utils/wait'
+
+enableAutoUnmount(afterEach)
 
 // Mock the downloads store so App.vue picks up the activeDownloads correctly
 vi.mock('@/stores/downloads', () => ({
@@ -51,6 +53,10 @@ vi.mock('@/services/signalr', () => ({
     onDownloadsList: vi.fn(() => () => undefined),
     onNotification: vi.fn(() => () => undefined),
   },
+}))
+
+vi.mock('@/router', () => ({
+  preloadRoute: vi.fn(async () => undefined),
 }))
 
 // Mock API calls used during mount - only return what tests need
@@ -347,5 +353,238 @@ describe('App.vue activity badge', () => {
     const vm = wrapper.vm as any as { wantedCount: number }
     expect(getLibrary).toHaveBeenCalledTimes(2)
     expect(vm.wantedCount).toBe(1)
+  })
+
+  it('hides app chrome on the login route', async () => {
+    vi.resetModules()
+    vi.doMock('@/services/startupConfigCache', () => ({
+      getStartupConfigCached: vi.fn(async () => ({ authenticationRequired: true })),
+    }))
+
+    const { default: AppComponent } = await import('@/App.vue')
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/',
+          name: 'home',
+          component: { template: '<div />' },
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/login',
+          name: 'login',
+          component: { template: '<div />' },
+          meta: { hideLayout: true },
+        },
+      ],
+    })
+    await router.push('/login')
+    await router.isReady().catch(() => {})
+
+    const wrapper = mount(AppComponent, {
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
+    })
+    await flushAsync()
+
+    expect(wrapper.find('header.top-nav').exists()).toBe(false)
+    expect(wrapper.find('main.main-content.full-page').exists()).toBe(true)
+  })
+
+  it('redirects from a protected route when auth state becomes unauthenticated', async () => {
+    vi.resetModules()
+    const { reactive } = await import('vue')
+    const authStore = {
+      user: reactive({ authenticated: true }),
+      loadCurrentUser: vi.fn(async () => undefined),
+      logout: vi.fn(async () => {
+        authStore.user.authenticated = false
+      }),
+    }
+
+    vi.doMock('@/stores/auth', () => ({
+      useAuthStore: () => authStore,
+    }))
+    vi.doMock('@/services/startupConfigCache', () => ({
+      getStartupConfigCached: vi.fn(async () => ({ authenticationRequired: true })),
+    }))
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        getQueue: async () => [],
+        getServiceHealth: async () => ({ version: '0.0.0' }),
+        getStartupConfig: async () => ({ authenticationRequired: true }),
+        getLibrary: async () => [],
+      },
+    }))
+
+    const { default: AppComponent } = await import('@/App.vue')
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/',
+          name: 'home',
+          component: { template: '<div />' },
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/settings',
+          name: 'settings',
+          component: { template: '<div />' },
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/login',
+          name: 'login',
+          component: { template: '<div />' },
+          meta: { hideLayout: true },
+        },
+      ],
+    })
+    await router.push('/settings')
+    await router.isReady().catch(() => {})
+
+    mount(AppComponent, {
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
+    })
+    await flushAsync()
+
+    authStore.user.authenticated = false
+    await flushAsync()
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect).toBe('/settings')
+  })
+
+  it('does not force login when auth is disabled and shows the disabled-auth banner', async () => {
+    vi.resetModules()
+    const { reactive } = await import('vue')
+    const authStore = {
+      user: reactive({ authenticated: true }),
+      loadCurrentUser: vi.fn(async () => undefined),
+      logout: vi.fn(async () => {
+        authStore.user.authenticated = false
+      }),
+    }
+
+    vi.doMock('@/stores/auth', () => ({
+      useAuthStore: () => authStore,
+    }))
+    vi.doMock('@/services/startupConfigCache', () => ({
+      getStartupConfigCached: vi.fn(async () => ({ authenticationRequired: false })),
+    }))
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        getQueue: async () => [],
+        getServiceHealth: async () => ({ version: '0.0.0' }),
+        getStartupConfig: async () => ({ authenticationRequired: false }),
+        getLibrary: async () => [],
+      },
+    }))
+
+    const { default: AppComponent } = await import('@/App.vue')
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/',
+          name: 'home',
+          component: { template: '<div />' },
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/settings',
+          name: 'settings',
+          component: { template: '<div />' },
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/login',
+          name: 'login',
+          component: { template: '<div />' },
+          meta: { hideLayout: true },
+        },
+      ],
+    })
+    await router.push('/settings')
+    await router.isReady().catch(() => {})
+
+    const wrapper = mount(AppComponent, {
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
+    })
+    await flushAsync()
+
+    authStore.user.authenticated = false
+    await flushAsync()
+
+    expect(router.currentRoute.value.name).toBe('settings')
+    expect(wrapper.find('.security-warning-banner').exists()).toBe(true)
+  })
+
+  it('logout button calls auth logout and uses app auth navigation', async () => {
+    vi.resetModules()
+    const { reactive } = await import('vue')
+    const authStore = {
+      user: reactive({ authenticated: true }),
+      loadCurrentUser: vi.fn(async () => undefined),
+      logout: vi.fn(async () => {
+        authStore.user.authenticated = false
+      }),
+    }
+
+    vi.doMock('@/stores/auth', () => ({
+      useAuthStore: () => authStore,
+    }))
+    vi.doMock('@/services/startupConfigCache', () => ({
+      getStartupConfigCached: vi.fn(async () => ({ authenticationRequired: true })),
+    }))
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        getQueue: async () => [],
+        getServiceHealth: async () => ({ version: '0.0.0' }),
+        getStartupConfig: async () => ({ authenticationRequired: true }),
+        getLibrary: async () => [],
+      },
+    }))
+
+    const { default: AppComponent } = await import('@/App.vue')
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/',
+          name: 'home',
+          component: { template: '<div />' },
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/settings',
+          name: 'settings',
+          component: { template: '<div />' },
+          meta: { requiresAuth: true },
+        },
+        {
+          path: '/login',
+          name: 'login',
+          component: { template: '<div />' },
+          meta: { hideLayout: true },
+        },
+      ],
+    })
+    await router.push('/settings')
+    await router.isReady().catch(() => {})
+
+    const wrapper = mount(AppComponent, {
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
+    })
+    await flushAsync()
+
+    await wrapper.find('.nav-user-btn').trigger('click')
+    await wrapper.find('.user-menu-item').trigger('click')
+    await flushAsync()
+
+    expect(authStore.logout).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect).toBe('/settings')
   })
 })
