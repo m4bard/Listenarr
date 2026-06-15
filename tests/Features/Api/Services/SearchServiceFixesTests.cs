@@ -22,7 +22,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Search;
-using Listenarr.Application.Common;
 using Listenarr.Application.Metadata;
 using Listenarr.Application.Notification;
 using Listenarr.Application.Search.Strategies;

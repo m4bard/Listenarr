@@ -63,6 +63,7 @@ describe('import checks', () => {
       apiService: {
         getQueue: async () => [],
         getServiceHealth: async () => ({ version: '0.0.0' }),
+        getBootstrapConfig: async () => ({ authenticationRequired: false }),
         getStartupConfig: async () => ({ authenticationRequired: false }),
         getLibrary: async () => [],
       },

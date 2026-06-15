@@ -16,82 +16,45 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using Listenarr.Api.Controllers;
-using Listenarr.Domain.Models;
-using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
-using Listenarr.Infrastructure.Persistence;
-using Listenarr.Application.Common;
-using Listenarr.Application.Notification;
+using Listenarr.Tests.Builders;
+using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
-    public class LibraryController_ScanPathConfigFailureTests
+    [Trait("Area", "LibraryApi")]
+    [Trait("Name", "LibraryController_ScanPathConfigFailureTests")]
+    [Trait("Category", "LibraryController")]
+    public class LibraryController_ScanPathConfigFailureTests : BaseTests
     {
         [Fact]
+        [Trait("Method", "ScanAudiobookFiles")]
+        [Trait("Scenario", "ConfigUnavailable_NoBasePath_Returns500")]
         public async Task ScanAudiobook_ConfigUnavailable_NoBasePath_Returns500()
         {
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
-
-            var dbContext = new ListenArrDbContext(options);
-            var mockRepo = new Mock<IAudiobookRepository>();
-            var mockImageCache = new Mock<IImageCacheService>();
-            var mockLogger = new Mock<ILogger<LibraryController>>();
-            var mockFileNaming = new Mock<IFileNamingService>();
-
-            var services = new ServiceCollection();
-            // Configuration service that throws to simulate inability to load settings
+            // Given
             var mockConfig = new Mock<IConfigurationService>();
             mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ThrowsAsync(new Exception("config failure"));
-            services.AddSingleton<IConfigurationService>(mockConfig.Object);
 
-            var mockHub = new Mock<Microsoft.AspNetCore.SignalR.IHubContext<DownloadHub>>();
-            var mockClients = new Mock<Microsoft.AspNetCore.SignalR.IHubClients>();
-            var mockClientProxy = new Mock<Microsoft.AspNetCore.SignalR.IClientProxy>();
-            mockClientProxy.Setup(m => m.SendCoreAsync(It.IsAny<string>(), It.IsAny<object[]>(), default)).Returns(Task.CompletedTask);
-            mockClients.SetupGet(c => c.All).Returns(mockClientProxy.Object);
-            mockHub.SetupGet(h => h.Clients).Returns(mockClients.Object);
-            services.AddSingleton(typeof(Microsoft.AspNetCore.SignalR.IHubContext<DownloadHub>), mockHub.Object);
+            Init(services => services
+                .WithSingleton(mockConfig.Object)
+                .Without<IScanQueueService>());
+            var controller = _provider.GetRequiredService<LibraryController>();
 
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
-
-            var ab = new Audiobook { Title = "Test", BasePath = null };
-            dbContext.Audiobooks.Add(ab);
-            await dbContext.SaveChangesAsync();
-
-            mockRepo.Setup(m => m.GetByIdAsync(It.IsAny<int>())).ReturnsAsync((int id) => dbContext.Audiobooks.Find(id));
-
-            var mockRootFolderSvc = new Mock<IRootFolderService>();
-            mockRootFolderSvc.Setup(r => r.GetAllAsync()).ReturnsAsync(new System.Collections.Generic.List<RootFolder>());
-
-            var controller = new LibraryController(
-                mockRepo.Object,
-                mockImageCache.Object,
-                mockLogger.Object,
-                scopeFactory,
-                new Mock<IHistoryRepository>().Object,
-                new Mock<IAudiobookFileRepository>().Object,
-                new Mock<IQualityProfileRepository>().Object,
-                new Mock<IDownloadRepository>().Object,
-                new Mock<IRootFolderRepository>().Object,
-                mockFileNaming.Object,
-                null,
-                null,
-                null,
-                mockRootFolderSvc.Object);
+            var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .Build());
 
             var request = new LibraryController.ScanRequest { Path = Path.Join(Path.GetTempPath(), "somepath") };
 
+            // When
             var result = await controller.ScanAudiobookFiles(ab.Id, request);
 
+            // Then
             var obj = Assert.IsType<ObjectResult>(result);
             Assert.Equal(500, obj.StatusCode);
             Assert.Contains("Failed to determine a safe scan path", obj.Value?.ToString() ?? string.Empty);

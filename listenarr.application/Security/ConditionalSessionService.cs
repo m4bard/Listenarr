@@ -36,15 +36,9 @@ namespace Listenarr.Application.Security
             _sessionService = sessionService;
         }
 
-        private bool IsAuthenticationEnabled()
-        {
-            var config = _startupConfigService.GetConfig();
-            return config?.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
-        }
-
         public Task<string> CreateSessionAsync(string username, bool isAdmin, bool rememberMe = false)
         {
-            if (!IsAuthenticationEnabled())
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
                 throw new InvalidOperationException("Authentication is not enabled. Set AuthenticationRequired to 'true' in configuration.");
             }
@@ -54,7 +48,7 @@ namespace Listenarr.Application.Security
 
         public Task<ClaimsPrincipal?> GetSessionUserAsync(string sessionToken)
         {
-            if (!IsAuthenticationEnabled())
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
                 return Task.FromResult<ClaimsPrincipal?>(null);
             }
@@ -64,7 +58,7 @@ namespace Listenarr.Application.Security
 
         public Task<bool> InvalidateSessionAsync(string sessionToken)
         {
-            if (!IsAuthenticationEnabled())
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
                 return Task.FromResult(false);
             }
@@ -74,7 +68,7 @@ namespace Listenarr.Application.Security
 
         public Task InvalidateAllSessionsForUserAsync(string username)
         {
-            if (!IsAuthenticationEnabled())
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
                 return Task.CompletedTask;
             }
@@ -84,7 +78,7 @@ namespace Listenarr.Application.Security
 
         public Task<int> GetActiveSessionCountAsync(string username)
         {
-            if (!IsAuthenticationEnabled())
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
                 return Task.FromResult(0);
             }

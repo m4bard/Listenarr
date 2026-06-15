@@ -1,5 +1,6 @@
 using Listenarr.Application.Downloads;
 using Listenarr.Application.Interfaces;
+using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
@@ -175,6 +176,34 @@ namespace Listenarr.Tests.Features.Application.Downloads
             gatewayMock.Verify(
                 g => g.AddAsync(It.IsAny<DownloadClientConfiguration>(), It.IsAny<SearchResult>(), It.IsAny<System.Threading.CancellationToken>()),
                 Times.Never);
+        }
+
+        [Fact]
+        public async Task UpdateAsync_WhenDownloadDoesNotExist_DoesNotPersistOrNotify()
+        {
+            var missingDownload = new DownloadBuilder()
+                .WithId("missing-download")
+                .WithStatus(DownloadStatus.Queued)
+                .Build();
+
+            var downloadRepository = new Mock<IDownloadRepository>(MockBehavior.Strict);
+            downloadRepository
+                .Setup(r => r.GetByIdAsync(missingDownload.Id))
+                .ReturnsAsync((Download?)null);
+
+            var notificationService = new Mock<INotificationService>(MockBehavior.Strict);
+
+            _services.AddSingleton(downloadRepository.Object);
+            _services.AddSingleton(notificationService.Object);
+            Init();
+
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+
+            await downloadService.UpdateAsync(missingDownload);
+
+            downloadRepository.Verify(r => r.GetByIdAsync(missingDownload.Id), Times.Once);
+            downloadRepository.Verify(r => r.UpdateAsync(It.IsAny<Download>()), Times.Never);
+            notificationService.VerifyNoOtherCalls();
         }
     }
 }

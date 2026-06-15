@@ -22,9 +22,9 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
+    /// <inheritdoc />
     [DbContext(typeof(ListenArrDbContext))]
     [Migration("20260204000000_AddFolderNamingPatternToApplicationSettings")]
-    /// <inheritdoc />
     public partial class AddFolderNamingPatternToApplicationSettings : Migration
     {
         /// <inheritdoc />

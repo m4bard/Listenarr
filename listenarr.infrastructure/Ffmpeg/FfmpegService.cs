@@ -26,6 +26,7 @@ using Listenarr.Application.Interfaces;
 using Microsoft.Extensions.Logging;
 using Listenarr.Domain.Models;
 using Listenarr.Application.Security;
+using Listenarr.Domain.Models.Exceptions;
 
 namespace Listenarr.Infrastructure.Ffmpeg
 {
@@ -37,11 +38,15 @@ namespace Listenarr.Infrastructure.Ffmpeg
         private readonly ILogger<FfmpegService> _logger;
         private readonly HttpClient _httpClient;
         private readonly IStartupConfigService _startupConfigService;
-        private readonly IProcessRunner? _processRunner;
+        private readonly IProcessRunner _processRunner;
         // Allow disabling auto-download via environment variable
         private readonly bool _autoInstall;
 
-        public FfmpegService(ILogger<FfmpegService> logger, IStartupConfigService startupConfigService, IProcessRunner? processRunner = null)
+        public FfmpegService(
+            ILogger<FfmpegService> logger,
+            IStartupConfigService startupConfigService,
+            IProcessRunner processRunner,
+            IApplicationPathService applicationPathService)
         {
             _logger = logger;
             _httpClient = new HttpClient();
@@ -60,7 +65,7 @@ namespace Listenarr.Infrastructure.Ffmpeg
             _startupConfigService = startupConfigService;
             _processRunner = processRunner;
 
-            _baseDir = Path.Join(AppContext.BaseDirectory, "config", "ffmpeg");
+            _baseDir = applicationPathService.FfmpegRootPath;
             _ffprobeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "ffprobe.exe" : "ffprobe";
             _ffprobePath = Path.Join(_baseDir, _ffprobeName);
         }
@@ -341,14 +346,7 @@ namespace Listenarr.Infrastructure.Ffmpeg
                                     CreateNoWindow = true
                                 };
 
-                                if (_processRunner != null)
-                                {
-                                    await _processRunner.RunAsync(psiCh, 3000);
-                                }
-                                else
-                                {
-                                    _logger.LogWarning("IProcessRunner is not available; skipping system 'chmod' fallback for {Candidate}", cand);
-                                }
+                                await _processRunner.RunAsync(psiCh, 3000);
                             }
                             catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException)
                             { /* best effort */
@@ -453,14 +451,7 @@ namespace Listenarr.Infrastructure.Ffmpeg
                                         CreateNoWindow = true
                                     };
 
-                                    if (_processRunner != null)
-                                    {
-                                        await _processRunner.RunAsync(psiCh, 3000);
-                                    }
-                                    else
-                                    {
-                                        _logger.LogWarning("IProcessRunner is not available; skipping system 'chmod' fallback for {Dest}", dest);
-                                    }
+                                    await _processRunner.RunAsync(psiCh, 3000);
                                 }
                                 catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException)
                                 { /* best effort */
@@ -689,11 +680,6 @@ namespace Listenarr.Infrastructure.Ffmpeg
                 startInfo.ArgumentList.Add("-show_streams");
                 startInfo.ArgumentList.Add(filePath);
 
-                if (_processRunner == null)
-                {
-                    throw new FfmpegException($"IProcessRunner is not available; cannot run ffprobe for {sanitizedFilePath}");
-                }
-
                 var pr = await _processRunner.RunAsync(startInfo, 10000);
                 _logger.LogInformation("ffprobe exit code {Code} for file {File}; stderr length={Len}", pr.ExitCode, sanitizedFilePath, pr.Stderr?.Length ?? 0);
 
@@ -902,5 +888,3 @@ namespace Listenarr.Infrastructure.Ffmpeg
         }
     }
 }
-
-

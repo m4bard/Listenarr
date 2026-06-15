@@ -22,9 +22,9 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
+    /// <inheritdoc />
     [DbContext(typeof(ListenArrDbContext))]
     [Migration("20260213000000_AddFailedDownloadHandlingToApplicationSettings")]
-    /// <inheritdoc />
     public partial class AddFailedDownloadHandlingToApplicationSettings : Migration
     {
         /// <inheritdoc />

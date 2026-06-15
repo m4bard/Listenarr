@@ -10,6 +10,7 @@ using Listenarr.Domain.Models.Configurations;
 using Listenarr.Domain.Models.Enumerations;
 using Listenarr.Infrastructure.Adapters;
 using Listenarr.Infrastructure.Search.Providers;
+using Listenarr.Infrastructure.Torrents;
 using Listenarr.Tests.Builders;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Memory;
@@ -25,6 +26,7 @@ namespace Listenarr.Tests.Common
         /// Returns a 200 HTTP reply with the given content
         /// </summary>
         /// <param name="content">Content to use as a response body</param>
+        /// <param name="mediaType">Content media type for the response body</param>
         /// <returns>HttpResponseMessage with status 200 and body</returns>
         public static HttpResponseMessage GetCannedResponse(string content, string mediaType = "application/json")
         {

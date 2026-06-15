@@ -28,7 +28,7 @@ describe('ApiService.downloadLogs', () => {
     vi.unstubAllGlobals()
   })
 
-  it('downloads logs through authenticated fetch when session auth is enabled', async () => {
+  it('downloads logs through cookie-authenticated fetch when session auth is enabled', async () => {
     vi.resetModules()
     const { apiService } = await import('@/services/api')
     const { sessionTokenManager } = await import('@/utils/sessionToken')
@@ -61,7 +61,7 @@ describe('ApiService.downloadLogs', () => {
         headers instanceof Headers ? headers.get('Authorization') : headers?.Authorization
 
       expect(init?.credentials).toBe('include')
-      expect(authHeader).toBe('Bearer session-token')
+      expect(authHeader ?? null).toBeNull()
 
       return new Response(
         new ReadableStream({
@@ -93,7 +93,5 @@ describe('ApiService.downloadLogs', () => {
     expect(appendSpy).toHaveBeenCalledTimes(1)
     expect(removeSpy).toHaveBeenCalledTimes(1)
     expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:listenarr-download')
-
-    sessionTokenManager.clearToken()
   })
 })

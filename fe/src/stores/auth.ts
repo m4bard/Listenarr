@@ -81,12 +81,10 @@ export const useAuthStore = defineStore('auth', () => {
     await loadCurrentUser()
   }
 
-  // React to token changes from other tabs (cross-tab login/logout).
+  // React to browser auth marker changes from other tabs (cross-tab login/logout).
   try {
-    let observedInitialTokenState = false
-    sessionTokenManager.onTokenChange((token) => {
-      if (!observedInitialTokenState) {
-        observedInitialTokenState = true
+    sessionTokenManager.onTokenChange((token, context) => {
+      if (context?.source === 'initial') {
         return
       }
 

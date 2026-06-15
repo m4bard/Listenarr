@@ -25,6 +25,12 @@ import { flushAsync } from '@/test/utils/wait'
 describe('IndexersTab', () => {
   beforeEach(() => {
     vi.resetModules()
+    // Mock signalR before any module imports to prevent the auto-connect at module
+    // load time (signalr.ts calls signalRService.connect() immediately), which
+    // attempts a real WebSocket connection and schedules retries that hang the test.
+    vi.doMock('@/services/signalr', () => ({
+      signalRService: { onIndexersUpdated: vi.fn(() => () => {}) },
+    }))
   })
 
   it('shows loading state while fetching indexers', async () => {

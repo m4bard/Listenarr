@@ -17,80 +17,43 @@
  */
 using System.Text.Json;
 using Listenarr.Api.Controllers;
-using Listenarr.Application.Common;
-using Listenarr.Application.Interfaces;
-using Listenarr.Application.Interfaces.Repositories;
-using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
 using Xunit;
+using Listenarr.Tests.Builders;
+using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
-    public class LibraryController_WantedFlagRegressionTests
+    [Trait("Area", "LibraryApi")]
+    [Trait("Name", "LibraryController_WantedFlagRegressionTests")]
+    [Trait("Category", "LibraryController")]
+    public class LibraryController_WantedFlagRegressionTests : BaseTests
     {
         [Fact]
+        [Trait("Method", "GetAll")]
+        [Trait("Scenario", "TreatsDbFileRecordAsNotWanted_EvenIfPathIsMissing")]
         public async Task GetAll_TreatsDbFileRecordAsNotWanted_EvenIfPathIsMissing()
         {
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
+            // Given
+            var book = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Controller Book")
+                .WithMonitored()
+                .Build());
 
-            using var db = new ListenArrDbContext(options);
+            await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
+                .WithAudiobook(book)
+                .WithPath($@"Z:\definitely-missing\{Guid.NewGuid():N}.m4b")
+                .WithSize(1024)
+                .Build());
 
-            var book = new Audiobook
-            {
-                Title = "Controller Book",
-                Monitored = true
-            };
-            db.Audiobooks.Add(book);
-            await db.SaveChangesAsync();
+            var controller = _provider.GetRequiredService<LibraryController>();
 
-            var audioFile = new AudiobookFile
-            {
-                AudiobookId = book.Id,
-                Path = $@"Z:\definitely-missing\{Guid.NewGuid():N}.m4b",
-                Size = 1024,
-                CreatedAt = DateTime.UtcNow
-            };
-            db.AudiobookFiles.Add(audioFile);
-            await db.SaveChangesAsync();
-
-            var allBooks = db.Audiobooks.ToList();
-            var allFiles = db.AudiobookFiles.ToList();
-            var allDownloads = new List<Download>();
-
-            var mockRepo = new Mock<IAudiobookRepository>();
-            mockRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allBooks);
-
-            var mockAudioFileRepo = new Mock<IAudiobookFileRepository>();
-            mockAudioFileRepo.Setup(r => r.GetAllAsync(default)).ReturnsAsync(allFiles);
-
-            var mockDownloadRepo = new Mock<IDownloadRepository>();
-            mockDownloadRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allDownloads);
-            mockDownloadRepo.Setup(r => r.GetActiveAudiobookIdsAsync(It.IsAny<IEnumerable<DownloadStatus>>()))
-                .ReturnsAsync(new List<int>());
-
-            using var provider = new ServiceCollection().BuildServiceProvider();
-            var controller = new LibraryController(
-                mockRepo.Object,
-                Mock.Of<IImageCacheService>(),
-                NullLogger<LibraryController>.Instance,
-                provider.GetRequiredService<IServiceScopeFactory>(),
-                Mock.Of<IHistoryRepository>(),
-                mockAudioFileRepo.Object,
-                Mock.Of<IQualityProfileRepository>(),
-                mockDownloadRepo.Object,
-                Mock.Of<IRootFolderRepository>(),
-                Mock.Of<IFileNamingService>());
-
+            // When
             var actionResult = await controller.GetAll();
             var ok = Assert.IsType<OkObjectResult>(actionResult);
 
+            // Then
             var json = JsonSerializer.Serialize(ok.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web));
             using var doc = JsonDocument.Parse(json);
             var wanted = doc.RootElement
@@ -103,53 +66,25 @@ namespace Listenarr.Tests.Features.Api.Controllers
         }
 
         [Fact]
+        [Trait("Method", "GetAll")]
+        [Trait("Scenario", "TreatsLegacyFilePathAsNotWanted_WhenNoFileRowsExist")]
         public async Task GetAll_TreatsLegacyFilePathAsNotWanted_WhenNoFileRowsExist()
         {
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
+            // Given
+            var book = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Legacy FilePath Book")
+                .WithMonitored()
+                .WithFilePath(@"C:\legacy\book.m4b")
+                .WithFileSize(2048)
+                .Build());
 
-            using var db = new ListenArrDbContext(options);
+            var controller = _provider.GetRequiredService<LibraryController>();
 
-            var book = new Audiobook
-            {
-                Title = "Legacy FilePath Book",
-                Monitored = true,
-                FilePath = @"C:\legacy\book.m4b",
-                FileSize = 2048
-            };
-            db.Audiobooks.Add(book);
-            await db.SaveChangesAsync();
-
-            var allBooks = db.Audiobooks.ToList();
-
-            var mockRepo = new Mock<IAudiobookRepository>();
-            mockRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allBooks);
-
-            var mockAudioFileRepo = new Mock<IAudiobookFileRepository>();
-            mockAudioFileRepo.Setup(r => r.GetAllAsync(default)).ReturnsAsync(new List<AudiobookFile>());
-
-            var mockDownloadRepo = new Mock<IDownloadRepository>();
-            mockDownloadRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(new List<Download>());
-            mockDownloadRepo.Setup(r => r.GetActiveAudiobookIdsAsync(It.IsAny<IEnumerable<DownloadStatus>>()))
-                .ReturnsAsync(new List<int>());
-
-            using var provider = new ServiceCollection().BuildServiceProvider();
-            var controller = new LibraryController(
-                mockRepo.Object,
-                Mock.Of<IImageCacheService>(),
-                NullLogger<LibraryController>.Instance,
-                provider.GetRequiredService<IServiceScopeFactory>(),
-                Mock.Of<IHistoryRepository>(),
-                mockAudioFileRepo.Object,
-                Mock.Of<IQualityProfileRepository>(),
-                mockDownloadRepo.Object,
-                Mock.Of<IRootFolderRepository>(),
-                Mock.Of<IFileNamingService>());
-
+            // When
             var actionResult = await controller.GetAll();
             var ok = Assert.IsType<OkObjectResult>(actionResult);
 
+            // Then
             var json = JsonSerializer.Serialize(ok.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web));
             using var doc = JsonDocument.Parse(json);
             var item = doc.RootElement

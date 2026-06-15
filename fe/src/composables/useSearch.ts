@@ -65,7 +65,6 @@ export function useSearch() {
   const isSearching = ref(false)
   const searchError = ref('')
   const searchStatus = ref('')
-  const searchDebounceTimer = ref<number | null>(null)
 
   // Abort controller for cancelling searches
   const searchAbortController = ref<AbortController | null>(null)
@@ -81,16 +80,6 @@ export function useSearch() {
     }
     return 'Search by ASIN, ISBN, or title'
   })
-
-  // Methods
-  const lastResults = ref<SearchResult[] | null>(null)
-
-  const clearPendingSearchDebounce = () => {
-    if (searchDebounceTimer.value) {
-      clearTimeout(searchDebounceTimer.value)
-      searchDebounceTimer.value = null
-    }
-  }
 
   const detectSearchType = (query: string): 'asin' | 'title' | 'isbn' => {
     const trimmed = query.trim().toUpperCase()
@@ -128,11 +117,6 @@ export function useSearch() {
     searchError.value = ''
     const query = searchQuery.value.trim()
 
-    // Clear existing timer
-    clearPendingSearchDebounce()
-
-    // If a search is currently running, cancel it immediately so new input
-    // will trigger a fresh search (prevents overlapping searches)
     if (isSearching.value) {
       try {
         cancelSearch()
@@ -143,21 +127,12 @@ export function useSearch() {
 
     if (query) {
       searchType.value = detectSearchType(query)
-
-      // Auto-search after 1 second of inactivity
-      searchDebounceTimer.value = setTimeout(() => {
-        performSearch()
-      }, 1000) as unknown as number
     } else {
       searchType.value = null
     }
   }
 
   const performSearch = async () => {
-    // Prevent a pending debounce timer from firing a duplicate search after
-    // the user triggers an explicit submit.
-    clearPendingSearchDebounce()
-
     if (isSearching.value) {
       logger.debug('performSearch ignored because a search is already running')
       return null
@@ -271,9 +246,6 @@ export function useSearch() {
       }
     }
 
-    try {
-      lastResults.value = results ?? null
-    } catch {}
     return results
   }
 
@@ -494,8 +466,5 @@ export function useSearch() {
     searchByTitle,
     searchByISBN,
     cancelSearch,
-
-    // Extras
-    lastResults,
   }
 }

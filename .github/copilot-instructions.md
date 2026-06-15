@@ -1,9 +1,9 @@
 # Listenarr Project Instructions
 
-This is a complete C# .NET Core Web API backend with Vue.js frontend for automated audiobook downloading and processing.
+This is a complete C# .NET Web API backend with Vue.js frontend for automated audiobook downloading and processing.
 
 ## Project Overview
-- **Backend**: ASP.NET Core Web API (.NET 8.0+ / net8.0) with modular service architecture
+- **Backend**: ASP.NET Core Web API (.NET 10.0+ / net10.0) with modular service architecture
 - **Frontend**: Vue.js 3 + TypeScript + Pinia + Vue Router + Vite
 - **Purpose**: Search multiple APIs for audiobook torrents/NZBs, manage downloads via clients (qBittorrent, Transmission, SABnzbd, NZBGet), and process files with metadata using Audnexus API
 - **Database**: SQLite with Entity Framework Core (ListenArrDbContext)
@@ -15,9 +15,8 @@ Listenarr/
 │   ├── Controllers/               # API endpoints
 │   ├── Models/                    # Data models (Audiobook, SearchResult, Download, etc.)
 │   ├── Services/                  # Business logic (Search, Metadata, DownloadMonitor, adapters)
-│   ├── tools/                    # Development utilities housed with API (discord-bot)
-│   ├── wwwroot/cache/            # Image cache directory (gitignored)
 │   └── Program.cs                # Application entry point
+├── .env/development/config/       # Development runtime data (database, logs, cache)
 ├── fe/                           # Frontend Vue application
 │   ├── src/
 │   │   ├── components/           # Vue components (AudiobookModal, FolderBrowser, etc.)
@@ -33,16 +32,14 @@ Listenarr/
 │   ├── BRANDING.md              # Logo and branding guidelines
 │   ├── logo-icon.png            # Brand icon (square format)
 │   └── logo-full.png            # Full logo with text (horizontal)
-├── start-dev.bat                 # Windows startup script
-├── start-dev.ps1                 # PowerShell startup script
-├── start-dev.sh                  # Linux/macOS startup script
 ├── package.json                  # Root package with concurrently scripts
 ├── docker-compose.yml            # Docker orchestration
 ├── listenarr.application/        # Application layer (services, interfaces)
 ├── listenarr.domain/             # Domain models and enums
 ├── listenarr.infrastructure/     # Persistence, adapters, EF Core configs
 ├── tests/                        # Unit and integration tests
-└── listenarr.sln                 # Visual Studio solution file
+├── tools/                        # Development utilities, including discord-bot
+└── listenarr.slnx                # Visual Studio solution file
 ```
 
 ## Branding
@@ -87,33 +84,16 @@ The Listenarr logo combines headphones and a book to represent audiobook listeni
 ## How to Run This Project
 
 ### Prerequisites
-- **.NET 8.0 SDK or later (net8.0)** - [Download](https://dotnet.microsoft.com/download)  
+- **.NET 10.0 SDK or later (net10.0)** - [Download](https://dotnet.microsoft.com/download)  
 
-**Note:** Build/test environments in this repo target net8.0. Running with a different SDK may create build/run inconsistencies.
-- **Node.js 20.x or later** - [Download](https://nodejs.org/)
+**Note:** Build/test environments in this repo target net10.0. Running with a different SDK may create build/run inconsistencies.
+- **Node.js 24.x or later** - [Download](https://nodejs.org/)
 - **npm** (comes with Node.js)
 
 ### Recommended: Single Command Start
 
-Use the provided startup scripts that handle everything automatically:
+Use the root npm scripts to run the development stack:
 
-**Windows (Command Prompt):**
-```bash
-start-dev.bat
-```
-
-**Windows (PowerShell):**
-```bash
-.\start-dev.ps1
-```
-
-**Linux/macOS:**
-```bash
-chmod +x start-dev.sh
-./start-dev.sh
-```
-
-**Cross-platform (npm):**
 ```bash
 npm install          # First time only: installs concurrently
 npm run dev          # Starts both API and Web with colored output
@@ -127,9 +107,9 @@ The scripts will:
 5. ✅ Display colored console output (blue=API, green=WEB)
 
 **Notes & troubleshooting:**
-- Run the commands from the repository root (not the compiled `bin` folder) to ensure the correct ContentRootPath and database file is used (`listenarr.api/config/database/listenarr.db`). Running from `bin/Debug` can create a second, empty DB and cause confusing behavior.
+- Run the commands from the repository root (not the compiled `bin` folder) to ensure the development content root and database file are used (`.env/development/config/database/listenarr.db`). Running from `bin/Debug` can create a second, empty DB and cause confusing behavior.
 - If code changes do not appear in a running instance, restart the API (`dotnet run` or stop/restart `npm run dev`) — hot-reload may not always pick up every change when files are locked.
-- Logs are written to `listenarr.api/config/logs/listenarr-YYYYMMDD.log`; check them when diagnosing background services or importer behavior.
+- Development logs are written to `.env/development/config/logs/listenarr-YYYYMMDD.log`; check them when diagnosing background services or importer behavior.
 
 **Default local URLs** (may vary if ports are in use):
 - **Backend API**: http://localhost:4545 (override with `--urls` on `dotnet run`)
@@ -163,7 +143,7 @@ npm run build        # Build both for production
 npm run build:api    # Build only API (Release configuration)
 npm run build:web    # Build only Web (production bundle)
 npm run install:all  # Install frontend dependencies
-npm test             # Run frontend unit tests
+npm test             # Run backend and frontend tests
 ```
 
 ### Docker Deployment
@@ -172,8 +152,8 @@ docker-compose up --build
 ```
 
 ## Troubleshooting & Debugging
-- **Database duplication**: If you see different databases (empty vs populated) verify you started the app from the repo root (run `npm run dev` from project root). The working DB is `listenarr.api/config/database/listenarr.db`.
-- **Logs**: Runtime logs are under `listenarr.api/config/logs/` (files like `listenarr-YYYYMMDD.log`). Tail them when diagnosing failures in background services (DownloadMonitorService, adapters).
+- **Database duplication**: If you see different databases (empty vs populated) verify you started the app from the repo root (run `npm run dev` from project root). The working development DB is `.env/development/config/database/listenarr.db`.
+- **Development logs**: Runtime logs are under `.env/development/config/logs/` (files like `listenarr-YYYYMMDD.log`). Tail them when diagnosing failures in background services (DownloadMonitorService, adapters).
 - **Import issues**: Transmission/qBittorrent import problems often surface in `DownloadMonitorService` logs. Check for candidate detection messages and stability window logs.
 - **Port conflicts**: Frontend (Vite) will auto-select another port if the default is in use; the console prints the chosen port.
 - **Build/Run**: If `dotnet build` complains about locked files, stop the running API, then rebuild and restart.
@@ -182,7 +162,7 @@ docker-compose up --build
 ⚠️ **Note**: The backend directory is **lowercase** `listenarr.api`, not `ListenArr.Api`
 - Backend: `listenarr.api/`
 - Frontend: `fe/`
-- Solution file references: Uses proper casing in `listenarr.sln`
+- Solution file references: Uses proper casing in `listenarr.slnx`
 
 ## API Endpoints
 
@@ -217,16 +197,16 @@ docker-compose up --build
 - **Caveats**: There are known local-development pitfalls (e.g., multiple database files when running from different directories, hot-reload inconsistencies, and intermittent background import issues). When encountering problems, check logs and ensure you're running from the repository root.
 - **Backend API**: Typically available at `http://localhost:4545` when running locally
 - **Frontend Web**: Typically available at `http://localhost:5173` (Vite may use alternate port if default is busy)
-- **Database**: SQLite at `listenarr.api/config/database/listenarr.db`
+- **Development database**: SQLite at `.env/development/config/database/listenarr.db`
 - **Docker**: Ready for containerized deployment
-- **Startup Scripts**: Automated development environment setup (use `npm run dev` to start both services)
+- **Root npm scripts**: Automated development environment setup (use `npm run dev` to start both services)
 
 ## Development Workflow
-1. Use `npm run dev` or startup scripts to run both services
+1. Use `npm run dev` to run both services
 2. Backend auto-restarts on C# file changes (with `dotnet watch`)
 3. Frontend hot-reloads on Vue/TS file changes (Vite HMR)
 4. Database migrations apply automatically on startup
-5. Image cache stored in `wwwroot/cache/images/` (gitignored)
+5. Development image cache stored in `.env/development/config/cache/images/` (gitignored)
 
 ## Future Enhancements
 - [ ] WebSocket for real-time download progress updates
@@ -246,8 +226,8 @@ docker-compose up --build
 - **Tests:** Update or add unit/integration tests under `tests/` when you change public behavior or DI signatures.
 - **Discord bot:** The dev/test Discord stub lives at `tools/discord-bot` — prefer updating the `README.md` there or the stub only when necessary; tests expect this stub to exist.
 - **Dev tools & scripts:** Misc scripts that are not API-specific may live under `tools/`, but major tooling is colocated with the API as shown above.
-- **Runtime notes:** Always run from the **repository root** (e.g., `npm run dev`) so the app uses the canonical DB at `listenarr.api/config/database/listenarr.db` and log paths under `listenarr.api/config/logs/`.
-- **Environment:** Project targets **.NET 8 (net8.0)** and Node.js **20.x+**. Use those versions for local dev and CI to avoid build/test inconsistencies.
+- **Runtime notes:** Always run from the **repository root** (e.g., `npm run dev`) so the app uses the development DB at `.env/development/config/database/listenarr.db` and log paths under `.env/development/config/logs/`.
+- **Environment:** Project targets **.NET 10 (net10.0)** and Node.js **24.x+**. Use those versions for local dev and CI to avoid build/test inconsistencies.
 - **Logging & debugging:** When adding diagnostics, prefer INFO-level logs for flow transitions and DEBUG for verbose data. Add clear early-return logs to background services (e.g., `DownloadMonitorService`) to make runtime behavior observable.
 
 > Quick tip: if a change affects DI constructors, update tests to include any newly required parameters (or adjust constructors to provide backward-compatible defaults) so builds stay green.
@@ -325,7 +305,7 @@ When showing download status in views:
 ### Common Troubleshooting Scenarios
 
 #### Downloads Not Importing
-1. Check logs in `listenarr.api/config/logs/listenarr-YYYYMMDD.log`
+1. Check logs in `.env/development/config/logs/listenarr-YYYYMMDD.log`
 2. Look for authentication errors (401, 409, Unauthorized)
 3. Verify DownloadMonitorService is running and detecting candidates
 4. Check stability window logs (30-second delay before import)
@@ -334,7 +314,7 @@ When showing download status in views:
 #### Multiple Database Files
 - Running from `bin/Debug` creates a second, empty database
 - **Always run from repository root** (`npm run dev`)
-- Canonical DB location: `listenarr.api/config/database/listenarr.db`
+- Development DB location: `.env/development/config/database/listenarr.db`
 
 #### Hot Reload Not Working
 - Backend: Stop and restart `dotnet run` if changes aren't reflected

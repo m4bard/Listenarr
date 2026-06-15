@@ -21,8 +21,6 @@
       <h1><PhPlusCircle /> Add New Audiobook</h1>
     </div>
 
-    <!-- Debug button removed -->
-
     <!-- Unified Search -->
     <div class="search-section">
       <div class="search-container">
@@ -41,7 +39,9 @@
               <PhFunnelSimple /> {{ showAdvancedSearch ? 'Hide' : 'Advanced' }}
             </button>
             <div v-if="!showAdvancedSearch" class="search-method">
-              <label class="search-method-label">Search for Audiobooks</label>
+              <label for="unified-search-input" class="search-method-label"
+                >Search for Audiobooks</label
+              >
               <p class="search-help">
                 Enter an ASIN (e.g., B08G9PRS1K) or search by title and author.<br />
               </p>
@@ -63,6 +63,7 @@
                 class="form-input search-input"
                 :class="{ error: searchError }"
                 @input="handleSearchInput"
+                @keydown.enter.prevent="onUnifiedSearchSubmit"
               />
 
               <div class="language-select-wrapper">
@@ -99,7 +100,6 @@
                 </span>
               </button>
             </form>
-            <!-- Audible search buttons removed -->
           </div>
 
           <!-- Inline Advanced Search Section -->
@@ -110,16 +110,6 @@
             class="advanced-search-section"
             aria-labelledby="advanced-search-label"
           >
-            <button
-              @click="toggleAdvancedSearch"
-              class="simple-search-button"
-              aria-label="Return to simple search"
-              aria-controls="advanced-search"
-              :aria-expanded="showAdvancedSearch"
-            >
-              <PhArrowLeft /> Simple Search
-            </button>
-
             <div class="advanced-search-header">
               <h3 id="advanced-search-label"><PhFunnelSimple /> Advanced Search</h3>
               <p class="help-text">
@@ -128,6 +118,7 @@
               </p>
             </div>
             <button
+              type="button"
               @click="toggleAdvancedSearch"
               class="simple-search-button"
               aria-label="Return to simple search"
@@ -152,6 +143,8 @@
                     type="text"
                     placeholder="e.g., Dune"
                     class="form-input"
+                    aria-describedby="hint-adv-title"
+                    @keydown.enter.prevent="performAdvancedSearch"
                   />
                   <div class="form-hint" id="hint-adv-title">
                     Use full or partial titles for best matches.
@@ -167,6 +160,7 @@
                     type="text"
                     placeholder="e.g., Frank Herbert"
                     class="form-input"
+                    @keydown.enter.prevent="performAdvancedSearch"
                   />
                 </div>
                 <div class="form-group">
@@ -178,6 +172,7 @@
                     type="text"
                     placeholder="e.g., The Empyrean"
                     class="form-input"
+                    @keydown.enter.prevent="performAdvancedSearch"
                   />
                 </div>
               </div>
@@ -192,6 +187,7 @@
                     type="text"
                     placeholder="e.g., 9780441172719"
                     class="form-input"
+                    @keydown.enter.prevent="performAdvancedSearch"
                   />
                   <div class="form-hint">
                     <div>Include hyphens or omit them — both work.</div>
@@ -210,6 +206,7 @@
                     type="text"
                     placeholder="e.g., B08G9PRS1K"
                     class="form-input"
+                    @keydown.enter.prevent="performAdvancedSearch"
                   />
                   <div class="form-hint">ASINs are case-insensitive; remove spaces.</div>
                 </div>
@@ -303,10 +300,6 @@
         </div>
       </div>
     </div>
-    <!-- Loading State -->
-
-    <!-- Debug block removed -->
-
     <!-- Loading State -->
     <div v-if="isSearching && !hasResults" class="loading-results">
       <div class="loading-spinner">
@@ -832,19 +825,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Load More Button -->
-        <div v-if="canLoadMore" class="load-more">
-          <button @click="loadMoreTitleResults" :disabled="isLoadingMore" class="btn btn-secondary">
-            <span v-if="isLoadingMore">
-              <PhSpinner class="ph-spin" />
-            </span>
-            <span v-else>
-              <PhArrowDown />
-            </span>
-            {{ isLoadingMore ? 'Loading...' : 'Load More' }}
-          </button>
-        </div>
       </div>
     </div>
 
@@ -858,15 +838,7 @@
         <PhMagnifyingGlass :size="48" />
       </template>
       <template #action>
-        <button
-          class="btn btn-primary"
-          @click="
-            () => {
-              searchQuery = ''
-              searchType = 'title'
-            }
-          "
-        >
+        <button class="btn btn-primary" @click="tryTitleSearch">
           <PhMagnifyingGlass />
           Try Title Search
         </button>
@@ -930,7 +902,6 @@ import {
   PhCheck,
   PhPlus,
   PhBook,
-  PhArrowDown,
   PhArrowLeft,
   PhArrowClockwise,
   PhCloud,
@@ -1082,9 +1053,8 @@ const {
   searchStatus,
   searchPlaceholder,
   handleSearchInput,
-  performSearch,
+  performSearch: runSearch,
   cancelSearch,
-  lastResults,
 } = useSearch()
 
 const { addedAsins, addedOpenLibraryIds, checkExistingInLibrary } = useLibraryCheck()
@@ -1103,6 +1073,11 @@ const {
 } = useAdvancedSearch()
 
 const advancedSearchError = ref('')
+
+function tryTitleSearch() {
+  searchQuery.value = ''
+  searchType.value = 'title'
+}
 
 // Audible pagination state for advanced searches
 const audiblePage = ref(1)
@@ -1123,38 +1098,6 @@ onMounted(() => {
   }
 })
 
-// React to composable results (handles auto-debounced searches)
-watch(
-  () => lastResults?.value,
-  async (newVal) => {
-    try {
-      if (newVal && Array.isArray(newVal)) {
-        if (newVal.length) {
-          await handleSimpleSearchResults(newVal)
-        } else {
-          // Show a friendly message when unified search returns no results
-          searchStatus.value = ''
-          searchError.value = ''
-          toast.info('No results found', 'Search')
-          try {
-            await nextTick()
-            // Scroll to the unified search input so the user can refine their query
-            const inputEl = document.querySelector('#unified-search-input') as HTMLElement | null
-            if (inputEl) {
-              const topNav = document.querySelector('.top-nav') as HTMLElement | null
-              const navOffset = topNav ? topNav.offsetHeight + 12 : 72
-              const top = window.scrollY + inputEl.getBoundingClientRect().top - navOffset
-              window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-            }
-          } catch {}
-        }
-      }
-    } catch (e) {
-      logger.debug('Error handling lastResults change', e)
-    }
-  },
-)
-
 // Library checking functions - now handled by useLibraryCheck composable
 
 // Unified Search - now handled by useSearch composable
@@ -1171,8 +1114,6 @@ const isbnResult = ref<ISBNBook | null>(null) // retained for potential enrichme
 const isbnLookupMessage = ref('')
 const isbnLookupWarning = ref(false)
 const totalTitleResultsCount = ref<number>(0)
-const isLoadingMore = ref(false)
-// const resultsPerPage = 10
 
 // Parsed search query components (for error messages)
 const asinQuery = ref('')
@@ -1418,10 +1359,6 @@ const hasError = computed(() => {
   return Boolean(errorMessage.value)
 })
 
-const canLoadMore = computed(() => {
-  return titleResults.value.length < totalTitleResultsCount.value
-})
-
 // Unified Search Methods - now handled by useSearch composable
 
 const getResultLanguageKey = (result: Partial<SearchResult> | LooseResult): string | undefined => {
@@ -1456,7 +1393,6 @@ const filterResultsBySelectedLanguage = <T extends Partial<SearchResult> | Loose
 }
 
 const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> | LooseResult>) => {
-  // Debug logging removed: avoid referencing undefined temporary variables
   const filteredResults = filterResultsBySelectedLanguage(results)
 
   // Convert search results to title results format
@@ -2016,19 +1952,40 @@ const changeAudiblePage = async (newPage: number) => {
   }
 }
 
-// toggleAdvancedSearch is now provided by the useAdvancedSearch composable
+const scrollUnifiedSearchInputIntoView = async () => {
+  try {
+    await nextTick()
+    const inputEl = document.querySelector('#unified-search-input') as HTMLElement | null
+    if (inputEl) {
+      const topNav = document.querySelector('.top-nav') as HTMLElement | null
+      const navOffset = topNav ? topNav.offsetHeight + 12 : 72
+      const top = window.scrollY + inputEl.getBoundingClientRect().top - navOffset
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    }
+  } catch {}
+}
 
-// Audible search functions removed
+const handleUnifiedSearchResults = async (results: SearchResult[] | null | undefined) => {
+  try {
+    if (!Array.isArray(results)) return
+    if (results.length) {
+      await handleSimpleSearchResults(results)
+      return
+    }
 
-// Lightweight raw fetch helper removed (debug helper)
+    searchStatus.value = ''
+    searchError.value = ''
+    toast.info('No results found', 'Search')
+    await scrollUnifiedSearchInputIntoView()
+  } catch (e) {
+    logger.debug('Error handling unified search results', e)
+  }
+}
 
-// searchByTitle helper removed in favor of `useSearch` composable implementation
-
-const loadMoreTitleResults = async () => {
-  // Since backend search returns all Amazon/Audible results at once,
-  // we don't need pagination like OpenLibrary. This function is now a no-op.
-  // Results are already loaded in searchByTitle()
-  logger.debug('Load more not needed - all Amazon/Audible results already loaded')
+const performSearch = async () => {
+  const results = await runSearch()
+  await handleUnifiedSearchResults(results)
+  return results
 }
 
 const onUnifiedSearchSubmit = async () => {
@@ -2040,20 +1997,12 @@ const onUnifiedSearchSubmit = async () => {
   await performSearch()
 }
 
-// const clearTitleError = () => {
-//   searchError.value = ''
-// }
-
 // Helper methods for Open Library results
 const getCoverUrl = (book: TitleSearchResult): string => {
   const key = book.key || JSON.stringify(book.title || '')
   // If we've already selected a best cover, return it (proxied)
   if (coverSelection.value[key]) {
-    return getProtectedImageSrc(
-      coverSelection.value[key],
-      `addnew-cover-${key}`,
-      getPlaceholderUrl(),
-    )
+    return getProtectedImageSrc(coverSelection.value[key], getPlaceholderUrl())
   }
 
   // Start background evaluation once per key (non-blocking).
@@ -2070,24 +2019,22 @@ const getCoverUrl = (book: TitleSearchResult): string => {
 
   // Immediate fallback: prefer explicit imageUrl, then searchResult image
   if (book.imageUrl) {
-    return getProtectedImageSrc(book.imageUrl, `addnew-cover-${key}`, getPlaceholderUrl())
+    return getProtectedImageSrc(book.imageUrl, getPlaceholderUrl())
   }
   const imageUrl = book.searchResult?.imageUrl || ''
-  return getProtectedImageSrc(imageUrl, `addnew-cover-${key}`, getPlaceholderUrl())
+  return getProtectedImageSrc(imageUrl, getPlaceholderUrl())
 }
 
 const getAudibleResultImageSrc = (): string => {
   const result = audibleResult.value
   if (!result?.imageUrl) return getPlaceholderUrl()
-  const key = result.asin || result.openLibraryId || result.title || 'result'
-  return getProtectedImageSrc(result.imageUrl, `addnew-asin-${key}`, getPlaceholderUrl())
+  return getProtectedImageSrc(result.imageUrl, getPlaceholderUrl())
 }
 
 const getSelectedBookImageSrc = (): string => {
   const book = selectedBookForLibrary.value
   if (!book?.imageUrl) return getPlaceholderUrl()
-  const key = book.asin || book.openLibraryId || book.title || 'none'
-  return getProtectedImageSrc(book.imageUrl, `addnew-selected-${key}`, getPlaceholderUrl())
+  return getProtectedImageSrc(book.imageUrl, getPlaceholderUrl())
 }
 
 // Try to pick the image whose aspect ratio is closest to 1:1 from available candidates
@@ -2140,10 +2087,9 @@ const pickBestCoverForBook = async (book: TitleSearchResult): Promise<void> => {
           // Avoid extra authenticated fetches for backend image URLs here.
           continue
         }
-        const { imageUrl, cleanup } = await resolveImageUrlForAspectRatio(url)
+        const imageUrl = apiService.getImageUrl(url)
         if (!imageUrl) continue
         const ratio = await measureImageAspectRatio(imageUrl, 3000)
-        cleanup()
         if (ratio && ratio > 0) {
           const score = Math.abs(ratio - 1)
           results.push({ url, score })
@@ -2206,32 +2152,6 @@ const measureImageAspectRatio = (url: string, timeoutMs = 3000): Promise<number 
 
     img.src = url
   })
-}
-
-const resolveImageUrlForAspectRatio = async (
-  rawImageUrl: string,
-): Promise<{ imageUrl: string; cleanup: () => void }> => {
-  if (!rawImageUrl) return { imageUrl: '', cleanup: () => {} }
-  const resolved = apiService.getImageUrl(rawImageUrl)
-  if (!resolved) return { imageUrl: '', cleanup: () => {} }
-  if (!isLikelyBackendImageUrl(resolved) || typeof apiService.fetchImageObjectUrl !== 'function') {
-    return { imageUrl: resolved, cleanup: () => {} }
-  }
-
-  const objectUrl = await apiService.fetchImageObjectUrl(rawImageUrl)
-  if (!objectUrl) return { imageUrl: '', cleanup: () => {} }
-  if (!objectUrl.startsWith('blob:')) {
-    return { imageUrl: objectUrl, cleanup: () => {} }
-  }
-
-  return {
-    imageUrl: objectUrl,
-    cleanup: () => {
-      try {
-        URL.revokeObjectURL(objectUrl)
-      } catch {}
-    },
-  }
 }
 
 const formatAuthors = (book: TitleSearchResult): string => {
@@ -3067,15 +2987,10 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
   }
 }
 
-// No external result listener required; performSearch returns results directly.
-
 const retrySearch = async () => {
   errorMessage.value = ''
   searchStatus.value = ''
-  const results = await performSearch()
-  if (results) {
-    await handleSimpleSearchResults(results)
-  }
+  await performSearch()
 }
 
 // Load application settings and API configurations on mount

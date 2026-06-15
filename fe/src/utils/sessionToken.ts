@@ -16,15 +16,23 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 /**
- * Session token management utilities
+ * Browser auth state utilities.
+ *
+ * The SPA no longer persists bearer credentials in browser storage. We keep
+ * a lightweight marker so tabs can synchronize login/logout state without
+ * storing a reusable secret client-side.
  */
 
 class SessionTokenManager {
   private static readonly STORAGE_KEY = 'listenarr_session_token'
   private static readonly PERSISTENCE_MODE_KEY = 'listenarr_session_token_persistence'
+  private static readonly EVENT_KEY = 'listenarr_session_event'
+  private static readonly AUTH_MARKER = 'cookie-session'
   private token: string | null = null
   private persistence: 'session' | 'local' = 'session'
-  private subscribers: Set<(token: string | null) => void> = new Set()
+  private subscribers: Set<
+    (token: string | null, context?: { source: 'initial' | 'local' | 'storage' }) => void
+  > = new Set()
 
   constructor() {
     this.loadFromStorage()
@@ -38,9 +46,12 @@ class SessionTokenManager {
     try {
       const sessionToken = sessionStorage.getItem(SessionTokenManager.STORAGE_KEY)
       if (sessionToken) {
-        this.token = sessionToken
+        this.token = SessionTokenManager.AUTH_MARKER
         this.persistence = 'session'
         try {
+          if (sessionToken !== SessionTokenManager.AUTH_MARKER) {
+            sessionStorage.setItem(SessionTokenManager.STORAGE_KEY, SessionTokenManager.AUTH_MARKER)
+          }
           localStorage.setItem(SessionTokenManager.PERSISTENCE_MODE_KEY, 'session')
         } catch {}
         return
@@ -48,9 +59,12 @@ class SessionTokenManager {
 
       const persistedToken = localStorage.getItem(SessionTokenManager.STORAGE_KEY)
       if (persistedToken) {
-        this.token = persistedToken
+        this.token = SessionTokenManager.AUTH_MARKER
         this.persistence = 'local'
         try {
+          if (persistedToken !== SessionTokenManager.AUTH_MARKER) {
+            localStorage.setItem(SessionTokenManager.STORAGE_KEY, SessionTokenManager.AUTH_MARKER)
+          }
           localStorage.setItem(SessionTokenManager.PERSISTENCE_MODE_KEY, 'local')
         } catch {}
         return
@@ -69,9 +83,10 @@ class SessionTokenManager {
   }
 
   setToken(token: string | null, options?: { persistent?: boolean }): void {
-    this.token = token
+    const marker = token ? SessionTokenManager.AUTH_MARKER : null
+    this.token = marker
     try {
-      if (token) {
+      if (marker) {
         const mode =
           options?.persistent === true
             ? 'local'
@@ -81,10 +96,10 @@ class SessionTokenManager {
 
         this.persistence = mode
         if (mode === 'local') {
-          localStorage.setItem(SessionTokenManager.STORAGE_KEY, token)
+          localStorage.setItem(SessionTokenManager.STORAGE_KEY, marker)
           sessionStorage.removeItem(SessionTokenManager.STORAGE_KEY)
         } else {
-          sessionStorage.setItem(SessionTokenManager.STORAGE_KEY, token)
+          sessionStorage.setItem(SessionTokenManager.STORAGE_KEY, marker)
           localStorage.removeItem(SessionTokenManager.STORAGE_KEY)
         }
         localStorage.setItem(SessionTokenManager.PERSISTENCE_MODE_KEY, mode)
@@ -94,13 +109,18 @@ class SessionTokenManager {
         localStorage.removeItem(SessionTokenManager.STORAGE_KEY)
         localStorage.removeItem(SessionTokenManager.PERSISTENCE_MODE_KEY)
       }
+      this.broadcastState(marker)
     } catch {
       // Storage might be unavailable
     }
     // Notify subscribers synchronously
     try {
-      for (const cb of Array.from(this.subscribers)) cb(this.token)
+      for (const cb of Array.from(this.subscribers)) cb(this.token, { source: 'local' })
     } catch {}
+  }
+
+  setAuthenticated(options?: { persistent?: boolean }): void {
+    this.setToken(SessionTokenManager.AUTH_MARKER, options)
   }
 
   clearToken(): void {
@@ -112,11 +132,13 @@ class SessionTokenManager {
   }
 
   // Subscribe to token changes.
-  onTokenChange(cb: (token: string | null) => void): () => void {
+  onTokenChange(
+    cb: (token: string | null, context?: { source: 'initial' | 'local' | 'storage' }) => void,
+  ): () => void {
     this.subscribers.add(cb)
     // Call immediately with current value so subscribers have initial state
     try {
-      cb(this.token)
+      cb(this.token, { source: 'initial' })
     } catch {}
     return () => {
       this.subscribers.delete(cb)
@@ -126,6 +148,24 @@ class SessionTokenManager {
   private handleStorageEvent = (ev: StorageEvent) => {
     try {
       if (!ev) return
+      if (ev.key === SessionTokenManager.EVENT_KEY) {
+        try {
+          const payload =
+            typeof ev.newValue === 'string' && ev.newValue.length > 0
+              ? (JSON.parse(ev.newValue) as { authenticated?: boolean })
+              : null
+          this.token = payload?.authenticated ? SessionTokenManager.AUTH_MARKER : null
+        } catch {
+          this.token = null
+        }
+
+        for (const cb of Array.from(this.subscribers)) {
+          try {
+            cb(this.token, { source: 'storage' })
+          } catch {}
+        }
+        return
+      }
       if (
         ev.key !== SessionTokenManager.STORAGE_KEY &&
         ev.key !== SessionTokenManager.PERSISTENCE_MODE_KEY
@@ -136,11 +176,18 @@ class SessionTokenManager {
       try {
         const localToken = localStorage.getItem(SessionTokenManager.STORAGE_KEY)
         if (localToken) {
-          this.token = localToken
+          this.token = SessionTokenManager.AUTH_MARKER
           this.persistence = 'local'
+          if (localToken !== SessionTokenManager.AUTH_MARKER) {
+            localStorage.setItem(SessionTokenManager.STORAGE_KEY, SessionTokenManager.AUTH_MARKER)
+          }
         } else {
-          this.token = sessionStorage.getItem(SessionTokenManager.STORAGE_KEY)
+          const sessionToken = sessionStorage.getItem(SessionTokenManager.STORAGE_KEY)
+          this.token = sessionToken ? SessionTokenManager.AUTH_MARKER : null
           this.persistence = 'session'
+          if (sessionToken && sessionToken !== SessionTokenManager.AUTH_MARKER) {
+            sessionStorage.setItem(SessionTokenManager.STORAGE_KEY, SessionTokenManager.AUTH_MARKER)
+          }
         }
       } catch {
         this.token = null
@@ -149,9 +196,21 @@ class SessionTokenManager {
 
       for (const cb of Array.from(this.subscribers)) {
         try {
-          cb(this.token)
+          cb(this.token, { source: 'storage' })
         } catch {}
       }
+    } catch {}
+  }
+
+  private broadcastState(marker: string | null): void {
+    try {
+      localStorage.setItem(
+        SessionTokenManager.EVENT_KEY,
+        JSON.stringify({
+          authenticated: !!marker,
+          at: Date.now(),
+        }),
+      )
     } catch {}
   }
 }

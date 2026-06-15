@@ -79,11 +79,10 @@ namespace Listenarr.Api.Middleware
                     return;
                 }
 
-                // Allow some public endpoints without antiforgery (startup config reads, token request itself, login/logout)
+                // Allow public token issuance and explicit machine-compat routes to bypass CSRF.
                 if (normalizedApiPath.StartsWith("/api/antiforgery", StringComparison.OrdinalIgnoreCase)
                     || normalizedApiPath.StartsWith("/api/account/login", StringComparison.OrdinalIgnoreCase)
                     || normalizedApiPath.StartsWith("/api/account/logout", StringComparison.OrdinalIgnoreCase)
-                    || normalizedApiPath.StartsWith("/api/configuration/startupconfig", StringComparison.OrdinalIgnoreCase)
                     || path.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase)
                     // Also allow Prowlarr-compatible indexer endpoints and system status
                     || IsVersionedIndexerOrSystemPath(path))

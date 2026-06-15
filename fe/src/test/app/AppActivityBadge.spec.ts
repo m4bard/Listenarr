@@ -64,6 +64,7 @@ vi.mock('@/services/api', () => ({
   apiService: {
     getQueue: vi.fn(async () => []),
     getServiceHealth: vi.fn(async () => ({ version: '0.0.0' })),
+    getBootstrapConfig: vi.fn(async () => ({ authenticationRequired: false })),
     getStartupConfig: vi.fn(async () => ({ authenticationRequired: false })),
     getLibrary: vi.fn(async () => []),
   },
@@ -120,6 +121,7 @@ describe('App.vue activity badge', () => {
       apiService: {
         getQueue: async () => [],
         getServiceHealth: async () => ({ version: '0.0.0' }),
+        getBootstrapConfig: async () => ({ authenticationRequired: false }),
         getStartupConfig: async () => ({ authenticationRequired: false }),
         getLibrary: async () => [],
       },
@@ -171,6 +173,7 @@ describe('App.vue activity badge', () => {
       apiService: {
         getQueue: async () => [],
         getServiceHealth: async () => ({ version: '0.0.0' }),
+        getBootstrapConfig: async () => ({ authenticationRequired: false }),
         getStartupConfig: async () => ({ authenticationRequired: false }),
         getLibrary: async () => [],
       },
@@ -208,6 +211,7 @@ describe('App.vue activity badge', () => {
           { id: 'q2', status: 'queued' },
         ],
         getServiceHealth: async () => ({ version: '0.0.0' }),
+        getBootstrapConfig: async () => ({ authenticationRequired: false }),
         getStartupConfig: async () => ({ authenticationRequired: false }),
         getLibrary: async () => [],
       },
@@ -267,6 +271,7 @@ describe('App.vue activity badge', () => {
       apiService: {
         getQueue: async () => [],
         getServiceHealth: async () => ({ version: '0.0.0' }),
+        getBootstrapConfig: async () => ({ authenticationRequired: false }),
         getStartupConfig: async () => ({ authenticationRequired: false }),
         getLibrary: async () => [
           { id: 1, title: 'Wanted Book', wanted: true },
@@ -308,6 +313,7 @@ describe('App.vue activity badge', () => {
       apiService: {
         getQueue: async () => [],
         getServiceHealth: async () => ({ version: '0.0.0' }),
+        getBootstrapConfig: async () => ({ authenticationRequired: false }),
         getStartupConfig: async () => ({ authenticationRequired: false }),
         getLibrary,
       },
@@ -412,6 +418,7 @@ describe('App.vue activity badge', () => {
       apiService: {
         getQueue: async () => [],
         getServiceHealth: async () => ({ version: '0.0.0' }),
+        getBootstrapConfig: async () => ({ authenticationRequired: true }),
         getStartupConfig: async () => ({ authenticationRequired: true }),
         getLibrary: async () => [],
       },
@@ -477,6 +484,7 @@ describe('App.vue activity badge', () => {
       apiService: {
         getQueue: async () => [],
         getServiceHealth: async () => ({ version: '0.0.0' }),
+        getBootstrapConfig: async () => ({ authenticationRequired: false }),
         getStartupConfig: async () => ({ authenticationRequired: false }),
         getLibrary: async () => [],
       },
@@ -542,6 +550,7 @@ describe('App.vue activity badge', () => {
       apiService: {
         getQueue: async () => [],
         getServiceHealth: async () => ({ version: '0.0.0' }),
+        getBootstrapConfig: async () => ({ authenticationRequired: true }),
         getStartupConfig: async () => ({ authenticationRequired: true }),
         getLibrary: async () => [],
       },

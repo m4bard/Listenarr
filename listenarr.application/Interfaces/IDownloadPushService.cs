@@ -15,9 +15,8 @@ namespace Listenarr.Application.Interfaces
         public Task HandlePushAsync(Download download, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Same as HandlePushAsync with a list of downloads
+        /// Accept pushed downloads, broadcast them to connected clients and record them in the recent cache.
         /// </summary>
-        /// <see cref="HandlePushAsync"/>
         public Task HandlePushAsync(List<Download> downloads, CancellationToken cancellationToken = default);
     }
 }

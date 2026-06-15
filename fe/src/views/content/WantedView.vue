@@ -81,7 +81,7 @@
             <div class="col-poster">
               <img
                 class="row-poster"
-                :src="getProtectedImageSrc(item.imageUrl, `wanted-${item.id}`, getPlaceholderUrl())"
+                :src="getProtectedImageSrc(item.imageUrl, getPlaceholderUrl())"
                 :alt="item.title"
                 loading="lazy"
                 decoding="async"
@@ -285,7 +285,7 @@ const getQualityProfileForAudiobook = (audiobook: Audiobook) => {
   return profile || null
 }
 
-const loading = ref(false)
+const loading = computed(() => libraryStore.loading)
 const searching = ref<Record<number, boolean>>({})
 const searchResults = ref<Record<number, string>>({})
 const showManualSearchModal = ref(false)
@@ -308,10 +308,10 @@ onMounted(async () => {
     window.addEventListener('resize', handleViewportResize, { passive: true })
   }
 
-  loading.value = true
-  await libraryStore.fetchLibrary()
+  if (libraryStore.audiobooks.length === 0) {
+    await libraryStore.fetchLibrary()
+  }
   await configurationStore.loadQualityProfiles()
-  loading.value = false
 
   await syncWantedLayout()
 })

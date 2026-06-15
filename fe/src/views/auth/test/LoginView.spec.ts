@@ -23,7 +23,7 @@ import { flushAsync } from '@/test/utils/wait'
 
 const apiService = vi.hoisted(() => ({
   fetchAntiforgeryToken: vi.fn(),
-  getStartupConfig: vi.fn(),
+  getBootstrapConfig: vi.fn(),
 }))
 
 const auth = vi.hoisted(() => ({
@@ -67,8 +67,8 @@ describe('LoginView auth redirects', () => {
   beforeEach(() => {
     apiService.fetchAntiforgeryToken.mockReset()
     apiService.fetchAntiforgeryToken.mockResolvedValue('csrf')
-    apiService.getStartupConfig.mockReset()
-    apiService.getStartupConfig.mockResolvedValue({ authenticationRequired: true })
+    apiService.getBootstrapConfig.mockReset()
+    apiService.getBootstrapConfig.mockResolvedValue({ authenticationRequired: true })
     auth.login.mockReset()
     auth.login.mockResolvedValue(undefined)
     sessionStorage.removeItem('listenarr_pending_redirect')
@@ -106,7 +106,7 @@ describe('LoginView auth redirects', () => {
   })
 
   it('redirects away from login when authentication is disabled', async () => {
-    apiService.getStartupConfig.mockResolvedValue({ authenticationRequired: false })
+    apiService.getBootstrapConfig.mockResolvedValue({ authenticationRequired: false })
 
     const { router } = await mountLogin('/login')
     await flushAsync()

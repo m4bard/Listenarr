@@ -97,7 +97,7 @@ export default defineComponent({
     onMounted(async () => {
       if (startupConfigChecked.value) return
       try {
-        const sc = await apiService.getStartupConfig()
+        const sc = await apiService.getBootstrapConfig()
         startupConfigChecked.value = true
         if (!(parseAuthRequiredFromConfig(sc) ?? false)) {
           await router.replace({ name: 'home' })

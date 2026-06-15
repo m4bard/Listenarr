@@ -42,8 +42,8 @@ vi.mock('@/utils/logger', () => ({
 
 async function loadRouter() {
   vi.resetModules()
-  const { default: router } = await import('@/router')
-  return router
+  const { createAppRouter } = await import('@/router')
+  return createAppRouter()
 }
 
 describe('router auth guards', () => {

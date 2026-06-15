@@ -399,6 +399,13 @@ export interface StartupConfig {
   sslCertPassword?: string
 }
 
+export interface StartupConfigDto {
+  authenticationRequired?: string | boolean
+  AuthenticationRequired?: string | boolean
+  apiVersion?: string | number
+  ApiVersion?: string | number
+}
+
 export interface AudibleBookMetadata {
   title: string
   subtitle?: string
@@ -731,6 +738,20 @@ export interface StorageInfo {
   totalFormatted: string
   freeFormatted: string
   driveName: string
+  status: string
+  disks: DiskStorageInfo[]
+}
+
+export interface DiskStorageInfo {
+  label: string
+  path: string
+  usedBytes: number
+  totalBytes: number
+  freeBytes: number
+  usedPercentage: number
+  usedFormatted: string
+  totalFormatted: string
+  freeFormatted: string
   status: string
 }
 

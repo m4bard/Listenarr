@@ -17,109 +17,62 @@
  */
 using System.Text.Json;
 using Listenarr.Api.Controllers;
-using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Common;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
 using Xunit;
-using Listenarr.Application.Interfaces;
-using Listenarr.Infrastructure.Persistence;
-using Listenarr.Application.Common;
+using Listenarr.Tests.Builders;
+using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
-    public class LibraryController_LibraryListSlimPayloadTests
+    [Trait("Area", "LibraryApi")]
+    [Trait("Name", "LibraryController_LibraryListSlimPayloadTests")]
+    [Trait("Category", "LibraryController")]
+    public class LibraryController_LibraryListSlimPayloadTests : BaseTests
     {
         [Fact]
+        [Trait("Method", "GetAll")]
+        [Trait("Scenario", "ReturnsSlimPayload_WithServerComputedStatus")]
         public async Task GetAll_ReturnsSlimPayload_WithServerComputedStatus()
         {
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
+            // Given
+            var book = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Slim Book")
+                .WithAuthor("Author One")
+                .WithGenre("Fantasy")
+                .WithGenre("Adventure")
+                .WithMonitored()
+                .WithDescription("Detail-only field")
+                .WithSubtitle("Detail Subtitle")
+                .WithBasePath(FileUtils.GetAbsolutePath("library", "Slim Book"))
+                .WithFilePath(FileUtils.GetAbsolutePath("library", "Slim Book", "book.m4b"))
+                .WithFileSize(12345)
+                .WithOpenLibraryId("OL123")
+                .WithAuthorAsin("AUTHORASIN1")
+                .Build());
 
-            using var db = new ListenArrDbContext(options);
+            await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
+                .WithAudiobook(book)
+                .WithPath(book.FilePath!)
+                .WithSize(book.FileSize ?? 0)
+                .WithFormat("m4b")
+                .Build());
 
-            var book = new Audiobook
-            {
-                Title = "Slim Book",
-                Authors = new System.Collections.Generic.List<string> { "Author One" },
-                Genres = new System.Collections.Generic.List<string> { "Fantasy", "Adventure" },
-                Monitored = true,
-                Description = "Detail-only field",
-                Subtitle = "Detail Subtitle",
-                BasePath = FileUtils.GetAbsolutePath("library", "Slim Book"),
-                FilePath = FileUtils.GetAbsolutePath("library", "Slim Book", "book.m4b"),
-                FileSize = 12345,
-                OpenLibraryId = "OL123",
-                AuthorAsins = new System.Collections.Generic.List<string> { "AUTHORASIN1" }
-            };
-            db.Audiobooks.Add(book);
-            await db.SaveChangesAsync();
+            await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithAudiobookId(book.Id)
+                .WithTitle(book.Title ?? string.Empty)
+                .WithArtist("Author One")
+                .WithStatus(DownloadStatus.Downloading)
+                .Build());
 
-            db.AudiobookFiles.Add(new AudiobookFile
-            {
-                AudiobookId = book.Id,
-                Path = book.FilePath,
-                Size = book.FileSize,
-                Format = "m4b",
-                CreatedAt = DateTime.UtcNow
-            });
-            db.Downloads.Add(new Download
-            {
-                AudiobookId = book.Id,
-                Title = book.Title ?? string.Empty,
-                Artist = "Author One",
-                Album = book.Title ?? string.Empty,
-                DownloadClientId = "TEST",
-                OriginalUrl = "https://example.invalid",
-                DownloadPath = FileUtils.GetAbsolutePath("downloads"),
-                FinalPath = book.FilePath ?? string.Empty,
-                StartedAt = DateTime.UtcNow,
-                Status = DownloadStatus.Downloading
-            });
-            await db.SaveChangesAsync();
+            var controller = _provider.GetRequiredService<LibraryController>();
 
-            var allBooks = db.Audiobooks.ToList();
-            var allFiles = db.AudiobookFiles.ToList();
-            var allDownloads = db.Downloads.ToList();
-
-            var mockRepo = new Mock<IAudiobookRepository>();
-            mockRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allBooks);
-
-            var mockAudioFileRepo = new Mock<IAudiobookFileRepository>();
-            mockAudioFileRepo.Setup(r => r.GetAllAsync(default)).ReturnsAsync(allFiles);
-
-            var mockDownloadRepo = new Mock<IDownloadRepository>();
-            mockDownloadRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allDownloads);
-            mockDownloadRepo.Setup(r => r.GetActiveAudiobookIdsAsync(It.IsAny<IEnumerable<DownloadStatus>>()))
-                .Returns((IEnumerable<DownloadStatus> statuses) =>
-                {
-                    var s = statuses.ToHashSet();
-                    return Task.FromResult(allDownloads
-                        .Where(d => d.AudiobookId.HasValue && s.Contains(d.Status))
-                        .Select(d => d.AudiobookId!.Value)
-                        .Distinct()
-                        .ToList());
-                });
-
-            using var provider = new ServiceCollection().BuildServiceProvider();
-            var controller = new LibraryController(
-                mockRepo.Object,
-                Mock.Of<IImageCacheService>(),
-                NullLogger<LibraryController>.Instance,
-                provider.GetRequiredService<IServiceScopeFactory>(),
-                Mock.Of<IHistoryRepository>(),
-                mockAudioFileRepo.Object,
-                Mock.Of<IQualityProfileRepository>(),
-                mockDownloadRepo.Object,
-                Mock.Of<IRootFolderRepository>(),
-                Mock.Of<IFileNamingService>());
-
+            // When
             var actionResult = await controller.GetAll();
+
+            // Then
             var ok = Assert.IsType<OkObjectResult>(actionResult);
 
             var json = JsonSerializer.Serialize(ok.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -143,6 +96,47 @@ namespace Listenarr.Tests.Features.Api.Controllers
             Assert.False(item.TryGetProperty("files", out _));
             Assert.False(item.TryGetProperty("description", out _));
             Assert.False(item.TryGetProperty("subtitle", out _));
+        }
+
+        [Fact]
+        [Trait("Method", "GetAll")]
+        [Trait("Scenario", "IncludesAllSeriesMemberships")]
+        public async Task GetAll_IncludesSeriesMemberships_ForMultiSeriesBook()
+        {
+            // Given a book that belongs to two series (e.g. publication + chronological order)
+            var book = new AudiobookBuilder()
+                .WithTitle("Multi Series Book")
+                .WithAuthor("Tom Clancy")
+                .WithSeries("Publication Order")
+                .WithSeriesNumber("1")
+                .Build();
+            book.SeriesMemberships = new List<AudiobookSeriesMembership>
+            {
+                new() { SeriesName = "Publication Order", SeriesNumber = "1", IsPrimary = true, SortOrder = 0 },
+                new() { SeriesName = "Chronological Order", SeriesNumber = "3", IsPrimary = false, SortOrder = 1 },
+            };
+            book = await _audiobookRepository.AddAsync(book);
+
+            var controller = _provider.GetRequiredService<LibraryController>();
+
+            // When
+            var actionResult = await controller.GetAll();
+
+            // Then both memberships are present in the slim list payload
+            var ok = Assert.IsType<OkObjectResult>(actionResult);
+            var json = JsonSerializer.Serialize(ok.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            using var doc = JsonDocument.Parse(json);
+            var item = doc.RootElement
+                .EnumerateArray()
+                .Single(element => element.GetProperty("id").GetInt32() == book.Id);
+
+            Assert.True(item.TryGetProperty("seriesMemberships", out var memberships));
+            Assert.Equal(2, memberships.GetArrayLength());
+            var names = memberships.EnumerateArray()
+                .Select(m => m.GetProperty("seriesName").GetString())
+                .ToList();
+            Assert.Contains("Publication Order", names);
+            Assert.Contains("Chronological Order", names);
         }
     }
 }

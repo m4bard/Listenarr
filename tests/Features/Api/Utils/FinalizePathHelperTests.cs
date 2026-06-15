@@ -15,11 +15,11 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Domain.Models;
 using Listenarr.Domain.Common;
 using Xunit;
 using Listenarr.Domain.Models.Configurations;
 using Listenarr.Application.Common;
+using Listenarr.Tests.Builders;
 
 namespace Listenarr.Tests.Features.Api.Utils
 {
@@ -30,7 +30,7 @@ namespace Listenarr.Tests.Features.Api.Utils
         {
             var outputPath = FileUtils.GetAbsolutePath("Library");
             var settings = new ApplicationSettings { OutputPath = outputPath };
-            var download = new Download { Title = "William Faulkner - The Sound and the Fury", Artist = null, Series = null };
+            var download = new DownloadBuilder().WithTitle("William Faulkner - The Sound and the Fury").Build();
 
             var dest = FinalizePathHelper.BuildMultiFileDestination(settings, download, "William Faulkner - The Sound and the Fury");
 
@@ -44,7 +44,7 @@ namespace Listenarr.Tests.Features.Api.Utils
         {
             var outputPath = FileUtils.GetAbsolutePath("Library");
             var settings = new ApplicationSettings { OutputPath = outputPath };
-            var download = new Download { Title = "The Sound and the Fury", Artist = "William Faulkner", Series = "Modern Classics" };
+            var download = new DownloadBuilder().WithTitle("The Sound and the Fury").WithArtist("William Faulkner").WithSeries("Modern Classics").Build();
 
             var dest = FinalizePathHelper.BuildMultiFileDestination(settings, download, "The Sound and the Fury");
 

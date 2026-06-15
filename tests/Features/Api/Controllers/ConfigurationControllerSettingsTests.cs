@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Api.Controllers;
+using Listenarr.Api.Controllers.Configurations;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Notification;
 using Listenarr.Domain.Models.Configurations;
@@ -44,13 +44,10 @@ namespace Listenarr.Tests.Features.Api.Controllers
                     ProwlarrTagFilter = "audiobooks"
                 });
 
-            var controller = new ConfigurationController(
+            var controller = new SettingsController(
                 configurationService.Object,
-                NullLogger<ConfigurationController>.Instance,
-                Mock.Of<IUserService>(),
-                Mock.Of<IHubContext<SettingsHub>>(),
-                Mock.Of<IDownloadClientGateway>(),
-                null!);
+                NullLogger<SettingsController>.Instance,
+                Mock.Of<IHubContext<SettingsHub>>());
 
             var result = await controller.GetApplicationSettings();
             var ok = Assert.IsType<OkObjectResult>(result.Result);

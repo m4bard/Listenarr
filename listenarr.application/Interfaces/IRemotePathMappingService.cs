@@ -60,9 +60,8 @@ public interface IRemotePathMappingService
     /// Translate a remote path from a download client to a local path for Listenarr.
     /// Finds the best matching path mapping for the given client and applies it.
     /// </summary>
-    /// <param name="downloadClientId">The ID of the download client reporting the path</param>
+    /// <param name="client">The download client reporting the path</param>
     /// <param name="remotePath">The path as reported by the download client</param>
     /// <returns>The translated local path, or the original path if no mapping matches</returns>
     Task<string> TranslatePathAsync(DownloadClientConfiguration client, string remotePath);
 }
-

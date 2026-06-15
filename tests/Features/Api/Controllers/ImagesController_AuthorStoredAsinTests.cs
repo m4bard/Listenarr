@@ -16,7 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Api.Controllers;
-using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Metadata;
@@ -61,10 +60,10 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var fullPath = Path.Join(tempRoot, relativePath);
             File.WriteAllText(fullPath, "fake author image");
 
-            var mockEnv = new Mock<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>();
-            mockEnv.SetupGet(e => e.ContentRootPath).Returns(tempRoot);
+            var mockPathService = new Mock<IApplicationPathService>();
+            mockPathService.SetupGet(p => p.ContentRootPath).Returns(tempRoot);
 
-            var controller = new ImagesController(mockImageCache.Object, Mock.Of<IAudiobookMetadataService>(), audibleMock.Object, audnexusMock.Object, mockRepo.Object, Mock.Of<ILogger<ImagesController>>(), mockEnv.Object);
+            var controller = new ImagesController(mockImageCache.Object, Mock.Of<IAudiobookMetadataService>(), audibleMock.Object, audnexusMock.Object, mockRepo.Object, Mock.Of<ILogger<ImagesController>>(), mockPathService.Object);
             controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act

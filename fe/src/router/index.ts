@@ -23,10 +23,6 @@ import type { StartupConfig } from '@/types'
 import { parseAuthRequiredFromConfig } from '@/utils/authConfig'
 import { normalizeRedirect, redirectLocationFromPath } from '@/utils/redirect'
 
-// Module-level cache/promise for startup config to avoid repeated requests during rapid navigation
-// Use a promise so concurrent navigations share the same inflight request instead of issuing many
-// Module-level cache moved to services/startupConfigCache
-
 const routes = [
   {
     path: '/',
@@ -114,11 +110,6 @@ const routes = [
   },
 ]
 
-const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
-  routes,
-})
-
 const redactStartupConfigForLog = (
   config: StartupConfig | null,
 ): StartupConfig | Record<string, unknown> | null => {
@@ -129,10 +120,7 @@ const redactStartupConfigForLog = (
   return cloned
 }
 
-// Preload helper: given a route name or path, trigger the route's lazy component import
-// without navigating. Returns the import promise or a resolved promise when not found.
 export function preloadRoute(nameOrPath: string) {
-  // try by name first
   const byName = routes.find((r) => r.name === nameOrPath)
   if (byName && typeof byName.component === 'function') {
     try {
@@ -141,7 +129,7 @@ export function preloadRoute(nameOrPath: string) {
       return Promise.resolve()
     }
   }
-  // try by path
+
   const byPath = routes.find(
     (r) =>
       r.path === nameOrPath ||
@@ -154,97 +142,86 @@ export function preloadRoute(nameOrPath: string) {
       return Promise.resolve()
     }
   }
+
   return Promise.resolve()
 }
 
 const getQueryString = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined
 
-// Navigation guard: protect routes requiring auth and preserve redirect targets in query params.
-
-router.beforeEach(async (to, from) => {
-  if (import.meta.env.CYPRESS) return true
-  const auth = useAuthStore()
-  const forceLogin =
-    to.name === 'login' &&
-    ((to.query.force as string | undefined) === '1' ||
-      (to.query.force as string | undefined) === 'true')
-
-  logger.log('router', 'Navigation:', {
-    from: from.fullPath,
-    to: to.fullPath,
-    authenticated: auth.user.authenticated,
-    loaded: auth.loaded,
+export function createAppRouter() {
+  const router = createRouter({
+    history: createWebHistory(import.meta.env.BASE_URL),
+    routes,
   })
 
-  // Load current user only once per app lifetime
-  if (!auth.loaded) {
-    try {
-      await auth.loadCurrentUser()
-    } catch {}
-  }
+  router.beforeEach(async (to, from) => {
+    if (import.meta.env.CYPRESS) return true
+    const auth = useAuthStore()
+    const forceLogin =
+      to.name === 'login' &&
+      ((to.query.force as string | undefined) === '1' ||
+        (to.query.force as string | undefined) === 'true')
 
-  // Always fetch the latest startup config (no cache)
-  const startupConfig = await getStartupConfigCached(0)
-  const startupConfigMissing = !startupConfig
-  logger.debug('[router] startupConfigMissing', startupConfigMissing)
-  logger.debug('[router] startupConfig', redactStartupConfigForLog(startupConfig))
-  const authRequiredConfig = startupConfigMissing
-    ? false
-    : (parseAuthRequiredFromConfig(startupConfig) ?? false)
-  logger.debug('[router] FINAL authRequiredConfig:', authRequiredConfig)
+    logger.log('router', 'Navigation:', {
+      from: from.fullPath,
+      to: to.fullPath,
+      authenticated: auth.user.authenticated,
+      loaded: auth.loaded,
+    })
 
-  // If authentication is disabled in startup config, prevent access to login page
-  if (!authRequiredConfig) {
-    // Authentication globally disabled: don't enforce requiresAuth.
-    // Still prevent navigating to the login page when auth is disabled.
-    if (to.name === 'login') {
-      // Allow explicitly forced login navigation (used right after enabling auth)
-      // to avoid race conditions where startup config propagation briefly reports
-      // authentication as disabled.
-      if (forceLogin && !auth.user.authenticated) {
-        logger.debug('[router] force login requested; allowing login route despite auth config')
-        return true
-      }
-      const redirectPath = normalizeRedirect(getQueryString(to.query.redirect))
-
-      if (redirectPath !== '/') {
-        const dest = redirectLocationFromPath(redirectPath)
-        logger.debug('[router] auth disabled, but redirect found in query, going to:', dest)
-        return dest
-      }
-
-      // No redirect - go to home
-      logger.debug('[router] auth disabled, no redirect found, going to home')
-      return { name: 'home' }
+    if (!auth.loaded) {
+      try {
+        await auth.loadCurrentUser()
+      } catch {}
     }
 
-    // Auth disabled: allow all other routes through without checking authentication.
-  } else {
-    // Authentication enabled: enforce protection on routes marked as requiresAuth
-    if ((to.meta as Record<string, unknown>)?.requiresAuth && !auth.user.authenticated) {
+    const startupConfig = await getStartupConfigCached(30_000)
+    const startupConfigMissing = !startupConfig
+    logger.debug('[router] startupConfigMissing', startupConfigMissing)
+    logger.debug('[router] startupConfig', redactStartupConfigForLog(startupConfig))
+    const authRequiredConfig = startupConfigMissing
+      ? false
+      : (parseAuthRequiredFromConfig(startupConfig) ?? false)
+    logger.debug('[router] FINAL authRequiredConfig:', authRequiredConfig)
+
+    if (!authRequiredConfig) {
+      if (to.name === 'login') {
+        if (forceLogin && !auth.user.authenticated) {
+          logger.debug('[router] force login requested; allowing login route despite auth config')
+          return true
+        }
+
+        const redirectPath = normalizeRedirect(getQueryString(to.query.redirect))
+        if (redirectPath !== '/') {
+          const dest = redirectLocationFromPath(redirectPath)
+          logger.debug('[router] auth disabled, but redirect found in query, going to:', dest)
+          return dest
+        }
+
+        logger.debug('[router] auth disabled, no redirect found, going to home')
+        return { name: 'home' }
+      }
+    } else if ((to.meta as Record<string, unknown>)?.requiresAuth && !auth.user.authenticated) {
       logger.debug('[router] requiresAuth and not authenticated, redirecting to login', {
         redirect: to.fullPath,
       })
       return { name: 'login', query: { redirect: to.fullPath } }
     }
-  }
 
-  // If already authenticated and going to login, redirect to saved destination
-  if (to.name === 'login' && auth.user.authenticated) {
-    const redirectPath = normalizeRedirect(getQueryString(to.query.redirect))
+    if (to.name === 'login' && auth.user.authenticated) {
+      const redirectPath = normalizeRedirect(getQueryString(to.query.redirect))
+      if (redirectPath !== '/') {
+        const dest = redirectLocationFromPath(redirectPath)
+        logger.debug('[router] authenticated user on login page, redirecting to:', dest)
+        return dest
+      }
 
-    if (redirectPath !== '/') {
-      const dest = redirectLocationFromPath(redirectPath)
-      logger.debug('[router] authenticated user on login page, redirecting to:', dest)
-      return dest
+      return { name: 'home' }
     }
 
-    // No redirect path - go to home
-    return { name: 'home' }
-  }
+    return true
+  })
 
-  return true
-})
-
-export default router
+  return router
+}

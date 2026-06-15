@@ -31,11 +31,35 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
         public async Task<List<Audiobook>> GetAllAsync()
         {
-            // Include Files so callers that fetch the full library will receive file records
+            // Omits Include(Files) — use when file data is fetched separately
+            return await _db.Audiobooks
+                .AsNoTracking()
+                .OrderBy(a => a.Title)
+                .ToListAsync();
+        }
+
+        public async Task<List<Audiobook>> GetLibraryAsync()
+        {
             return await _db.Audiobooks
                 .Include(a => a.Files)
                 .OrderBy(a => a.Title)
                 .ToListAsync();
+        }
+
+        public async Task<Dictionary<int, List<AudiobookSeriesMembership>>> GetAllSeriesMembershipsGroupedByAudiobookIdAsync(CancellationToken ct = default)
+        {
+            // Batch-load all memberships in one query (mirrors the file-summary batching in
+            // LibraryListService) so the library list can show a book under every series it
+            // belongs to without a per-row Include.
+            var memberships = await _db.AudiobookSeriesMemberships
+                .AsNoTracking()
+                .OrderByDescending(m => m.IsPrimary)
+                .ThenBy(m => m.SortOrder)
+                .ToListAsync(ct);
+
+            return memberships
+                .GroupBy(m => m.AudiobookId)
+                .ToDictionary(g => g.Key, g => g.ToList());
         }
 
         public async Task<Audiobook?> GetByAsinAsync(string asin)

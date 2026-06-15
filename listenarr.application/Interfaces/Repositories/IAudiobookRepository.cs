@@ -22,6 +22,8 @@ namespace Listenarr.Application.Interfaces.Repositories
     public interface IAudiobookRepository
     {
         Task<List<Audiobook>> GetAllAsync();
+        Task<List<Audiobook>> GetLibraryAsync();
+        Task<Dictionary<int, List<AudiobookSeriesMembership>>> GetAllSeriesMembershipsGroupedByAudiobookIdAsync(CancellationToken ct = default);
         Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, CancellationToken ct = default);
         Task<List<Audiobook>> GetMonitoredAudiobooksForSearchAsync(DateTime cutoff, CancellationToken ct = default);
         Task NormalizeJsonColumnsAsync(CancellationToken ct = default);

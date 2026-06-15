@@ -16,7 +16,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 /**
- * Session debugging utilities to help diagnose authentication and loading issues
+ * Session debugging utilities to help diagnose authentication and loading issues.
+ *
+ * Browser authentication is cookie-based; the local session manager only holds
+ * a lightweight marker so tabs can react to login/logout changes.
  */
 
 import { sessionTokenManager } from './sessionToken'
@@ -34,22 +37,20 @@ export const logSessionState = (context: string = 'Unknown') => {
   try {
     console.group(`[Session Debug] ${context}`)
 
-    // Check localStorage
+    // Check localStorage/sessionStorage for the cross-tab auth marker.
     const storedToken = localStorage.getItem('listenarr_session_token')
-    console.log(
-      'Stored session token:',
-      storedToken ? `${storedToken.substring(0, 10)}...` : 'None',
-    )
+    console.log('Stored auth marker:', storedToken ? `${storedToken.substring(0, 10)}...` : 'None')
 
     // Check sessionTokenManager
     const managerToken = sessionTokenManager.getToken()
     console.log(
-      'Session manager token:',
+      'Session manager marker:',
       managerToken ? `${managerToken.substring(0, 10)}...` : 'None',
     )
-    console.log('Has valid token:', sessionTokenManager.hasToken())
+    console.log('Has authenticated marker:', sessionTokenManager.hasToken())
 
-    // Note: Authentication uses Bearer tokens, not cookies (cookies only used for CSRF)
+    // Note: Authentication uses an HttpOnly session cookie, so JavaScript
+    // cannot inspect the real credential directly.
 
     // Check sessionStorage
     const sessionItems: string[] = []
@@ -78,12 +79,14 @@ export const clearAllAuthData = () => {
   try {
     console.log('[Session Debug] Clearing all authentication data...')
 
-    // Clear session token manager
+    // Clear the in-browser auth marker.
     sessionTokenManager.clearToken()
 
     // Clear localStorage
     try {
       localStorage.removeItem('listenarr_session_token')
+      localStorage.removeItem('listenarr_session_event')
+      localStorage.removeItem('listenarr_session_token_persistence')
       localStorage.removeItem('auth_token')
       console.log('[Session Debug] LocalStorage cleared')
     } catch (error) {
@@ -100,7 +103,8 @@ export const clearAllAuthData = () => {
       console.warn('[Session Debug] Could not clear sessionStorage:', error)
     }
 
-    // Note: Authentication uses Bearer tokens, not cookies (CSRF cookies will expire naturally)
+    // The real HttpOnly auth cookie is cleared by the logout endpoint; the
+    // antiforgery cookie will be rotated by the backend as needed.
 
     console.log('[Session Debug] All authentication data cleared')
   } catch (error) {

@@ -18,8 +18,6 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import * as signalR from '@microsoft/signalr'
 import type { LogEntry } from '@/types'
-import { sessionTokenManager } from '@/utils/sessionToken'
-import { getStartupConfigCached } from '@/services/startupConfigCache'
 import { logger } from '@/utils/logger'
 import { API_BASE_PATH, API_ORIGIN } from '@/services/apiBase'
 
@@ -43,49 +41,24 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
     isConnecting.value = true
 
     try {
-      // Get authentication token
-      let accessToken = sessionTokenManager.getToken()
-
-      // If no session token, try to get API key (for non-authenticated mode)
-      if (!accessToken) {
-        try {
-          const sc = await getStartupConfigCached(2000)
-          const apiKey = sc?.apiKey
-          const rawAuth =
-            sc?.authenticationRequired ??
-            (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
-          const authEnabled =
-            typeof rawAuth === 'boolean'
-              ? rawAuth
-              : typeof rawAuth === 'string'
-                ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
-                : false
-
-          if (apiKey && !authEnabled) {
-            accessToken = apiKey
-          }
-        } catch (e) {
-          logger.debug('[LogHub] Failed to get API key', e)
-        }
-      }
-
       const hubUrl = `${API_ORIGIN}/hubs/logs`
+      const signalrOptions: signalR.IHttpConnectionOptions = {
+        transport:
+          signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.ServerSentEvents,
+        skipNegotiation: false,
+        withCredentials: true,
+      }
 
       // Create SignalR connection
       connection.value = new signalR.HubConnectionBuilder()
-        .withUrl(hubUrl, {
-          transport:
-            signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.ServerSentEvents,
-          skipNegotiation: false,
-          accessTokenFactory: () => accessToken || '',
-        })
+        .withUrl(hubUrl, signalrOptions)
         .withAutomaticReconnect([0, 2000, 5000, 10000, 30000]) // Retry delays in ms
         .configureLogging(signalR.LogLevel.Information)
         .build()
 
       // Set up event handlers
       connection.value.on('ReceiveLog', (logEntry: LogEntry) => {
-        console.log('[LogHub] Received log:', logEntry)
+        logger.debug('[LogHub] Received log:', logEntry)
         // Add new log to the beginning of the array
         logs.value.unshift(logEntry)
 
@@ -97,28 +70,28 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
 
       connection.value.onreconnecting(() => {
         isConnected.value = false
-        console.log('[LogHub] Reconnecting...')
+        logger.info('[LogHub] Reconnecting...')
       })
 
       connection.value.onreconnected(() => {
         isConnected.value = true
-        console.log('[LogHub] Reconnected')
+        logger.info('[LogHub] Reconnected')
       })
 
       connection.value.onclose(() => {
         isConnected.value = false
-        console.log('[LogHub] Connection closed')
+        logger.info('[LogHub] Connection closed')
       })
 
       // Start the connection
       await connection.value.start()
       isConnected.value = true
-      console.log('[LogHub] Connected successfully')
+      logger.info('[LogHub] Connected successfully')
 
       // Load initial logs from API
       await loadInitialLogs()
     } catch (error) {
-      console.error('[LogHub] Connection error:', error)
+      logger.error('[LogHub] Connection error:', error)
       isConnected.value = false
     } finally {
       isConnecting.value = false
@@ -131,16 +104,18 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
         await connection.value.stop()
         connection.value = null
         isConnected.value = false
-        console.log('[LogHub] Disconnected')
+        logger.info('[LogHub] Disconnected')
       } catch (error) {
-        console.error('[LogHub] Disconnect error:', error)
+        logger.error('[LogHub] Disconnect error:', error)
       }
     }
   }
 
   const loadInitialLogs = async () => {
     try {
-      const response = await fetch(`${API_ORIGIN}${API_BASE_PATH}/system/logs?limit=100`)
+      const response = await fetch(`${API_ORIGIN}${API_BASE_PATH}/system/logs?limit=100`, {
+        credentials: 'include',
+      })
       if (response.ok) {
         const initialLogs = (await response.json()) as LogEntry[]
         // Sort by timestamp descending (newest first)
@@ -151,7 +126,7 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
         })
       }
     } catch (error) {
-      console.error('[LogHub] Failed to load initial logs:', error)
+      logger.error('[LogHub] Failed to load initial logs:', error)
     }
   }
 

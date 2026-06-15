@@ -18,32 +18,21 @@ namespace Listenarr.Tests.Features.Api.Services
         [Trait("Category", "Release")]
         public async Task EnsureFfprobeInstalledAsync()
         {
-            var ffmpegDirectory = Path.Join(AppContext.BaseDirectory, "config", "ffmpeg");
-
-            try
-            {
-                Directory.Delete(ffmpegDirectory, true);
-            }
-            catch (DirectoryNotFoundException)
-            {
-            }
+            var ffmpegDirectory = Path.Combine(FileService.GetTempPath(), "ffmpeg");
 
             Assert.False(Path.Exists(ffmpegDirectory));
 
             var ffmpegService = new FfmpegService(
                 new Mock<ILogger<FfmpegService>>().Object,
                 _provider.GetRequiredService<IStartupConfigService>(),
-                _provider.GetRequiredService<IProcessRunner>());
+                _provider.GetRequiredService<IProcessRunner>(),
+                Mock.Of<IApplicationPathService>(service => service.FfmpegRootPath == ffmpegDirectory));
 
             var ffprobePath = await ffmpegService.EnsureFfprobeInstalledAsync();
 
             Assert.NotNull(ffprobePath);
             Assert.True(Path.Exists(ffprobePath));
             Assert.True(Path.Exists(ffmpegDirectory));
-
-            // Cleanup
-            Directory.Delete(ffmpegDirectory, true);
-            Assert.False(Path.Exists(ffmpegDirectory));
         }
     }
 }

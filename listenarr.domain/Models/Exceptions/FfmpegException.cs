@@ -15,10 +15,12 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-
-public class FfmpegException : Exception
+namespace Listenarr.Domain.Models.Exceptions
 {
-    public FfmpegException(string message, Exception? innerException = null)
-        : base(message, innerException)
-    { }
+    public class FfmpegException : Exception
+    {
+        public FfmpegException(string message, Exception? innerException = null)
+            : base(message, innerException)
+        { }
+    }
 }

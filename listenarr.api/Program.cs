@@ -19,14 +19,14 @@
 using System.Net;
 using Asp.Versioning;
 using Asp.Versioning.ApiExplorer;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi;
 using Serilog;
 using Serilog.Events;
-using Polly;
-using Polly.Extensions.Http;
 using Listenarr.Infrastructure.Extensions;
 using Listenarr.Application.Interfaces;
 using Listenarr.Infrastructure.SignalR;
@@ -199,8 +199,18 @@ if (builder.Environment.IsEnvironment("Test"))
     Log.Logger = Serilog.Core.Logger.None;
 }
 
-// Configure URLs to listen on port 4545 (main Listenarr port) - can be overridden by --urls
-if (!args?.Any(arg => arg.StartsWith("--urls")) ?? true)
+// Configure URLs to listen on port 4545 by default, while allowing explicit
+// command-line/config/environment URL bindings to take precedence.
+var hasUrlsArg = args?.Any(arg =>
+    arg.Equals("--urls", StringComparison.OrdinalIgnoreCase) ||
+    arg.StartsWith("--urls=", StringComparison.OrdinalIgnoreCase)) ?? false;
+var hasUrlsConfig =
+    !string.IsNullOrWhiteSpace(builder.Configuration["urls"]) ||
+    !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")) ||
+    !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DOTNET_URLS")) ||
+    !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("URLS"));
+
+if (!hasUrlsArg && !hasUrlsConfig)
 {
     builder.WebHost.UseUrls("http://*:4545");
 }
@@ -305,9 +315,6 @@ builder.Services.AddHttpClient<IAudnexusService, AudnexusService>()
         AutomaticDecompression = System.Net.DecompressionMethods.All
     });
 
-// Metadata routing across providers
-builder.Services.AddScoped<IAudiobookMetadataService, AudiobookMetadataService>();
-
 // Add metadata converters helper
 builder.Services.AddScoped<MetadataConverters>();
 builder.Services.AddScoped<MetadataMerger>();
@@ -339,168 +346,8 @@ builder.Services.AddScoped<SearchResultScorerService>();
 // Add ASIN search handler
 builder.Services.AddScoped<AsinSearchHandler>();
 
-// Add default HTTP client for other services
-builder.Services.AddHttpClient();
-
-// Prevents socket exhaustion by reusing connections
-builder.Services.AddHttpClient("DownloadClient")
-    .ConfigureHttpClient(client =>
-    {
-        client.Timeout = TimeSpan.FromSeconds(30);
-    })
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
-    {
-        AutomaticDecompression = System.Net.DecompressionMethods.All,
-        UseCookies = false // Cookies handled per-request for multi-tenant scenarios
-    })
-    .AddPolicyHandler(HttpPolicyExtensions
-        .HandleTransientHttpError()
-        .CircuitBreakerAsync(
-            handledEventsAllowedBeforeBreaking: 3,
-            durationOfBreak: TimeSpan.FromSeconds(30),
-            onBreak: (outcome, duration) =>
-            {
-                Log.Logger.Warning("[CIRCUIT BREAKER] Download client circuit opened due to {Reason}. Breaking for {Seconds}s", outcome.Exception?.Message ?? "policy trigger", duration.TotalSeconds);
-            },
-            onReset: () =>
-            {
-                Log.Logger.Information("[CIRCUIT BREAKER] Download client circuit reset - service recovered");
-            }
-        ))
-    .AddPolicyHandler(HttpPolicyExtensions
-        .HandleTransientHttpError()
-        .WaitAndRetryAsync(
-            retryCount: 3,
-            sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
-            onRetry: (outcome, timespan, retryAttempt, context) =>
-            {
-                Log.Logger.Information("[RETRY] Download client retry attempt {Attempt} after {Delay}s delay", retryAttempt, timespan.TotalSeconds);
-            }
-        ));
-
 // Register named HttpClients for each adapter type so adapter implementations can request the appropriately-configured client.
-// qbittorrent
-builder.Services.AddHttpClient("qbittorrent")
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
-    {
-        AutomaticDecompression = System.Net.DecompressionMethods.All,
-        UseCookies = false
-    })
-    .SetHandlerLifetime(TimeSpan.FromMinutes(5))
-    .AddPolicyHandler(HttpPolicyExtensions
-        .HandleTransientHttpError()
-        .CircuitBreakerAsync(
-            handledEventsAllowedBeforeBreaking: 3,
-            durationOfBreak: TimeSpan.FromSeconds(30),
-            onBreak: (outcome, duration) =>
-            {
-                Log.Logger.Warning("[CIRCUIT BREAKER] qbittorrent client circuit opened due to {Reason}. Breaking for {Seconds}s", outcome.Exception?.Message ?? "policy trigger", duration.TotalSeconds);
-            },
-            onReset: () =>
-            {
-                Log.Logger.Information("[CIRCUIT BREAKER] qbittorrent client circuit reset - service recovered");
-            }
-        ))
-    .AddPolicyHandler(HttpPolicyExtensions
-        .HandleTransientHttpError()
-        .WaitAndRetryAsync(
-            retryCount: 3,
-            sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
-            onRetry: (outcome, timespan, retryAttempt, context) =>
-            {
-                Log.Logger.Information("[RETRY] qbittorrent client retry attempt {Attempt} after {Delay}s delay", retryAttempt, timespan.TotalSeconds);
-            }
-        ));
-
-// transmission
-builder.Services.AddHttpClient("transmission")
-    .ConfigureHttpClient(client =>
-    {
-        client.Timeout = TimeSpan.FromSeconds(30);
-    })
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
-    {
-        AutomaticDecompression = System.Net.DecompressionMethods.All,
-        UseCookies = false
-    })
-    .SetHandlerLifetime(TimeSpan.FromMinutes(5))
-    .AddPolicyHandler(HttpPolicyExtensions
-        .HandleTransientHttpError()
-        .CircuitBreakerAsync(3, TimeSpan.FromSeconds(30)))
-    .AddPolicyHandler(HttpPolicyExtensions.HandleTransientHttpError()
-        .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))));
-
-// sabnzbd
-builder.Services.AddHttpClient("sabnzbd")
-    .ConfigureHttpClient(client =>
-    {
-        client.Timeout = TimeSpan.FromSeconds(30);
-    })
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
-    {
-        AutomaticDecompression = System.Net.DecompressionMethods.All,
-        UseCookies = false
-    })
-    .SetHandlerLifetime(TimeSpan.FromMinutes(5))
-    .AddPolicyHandler(HttpPolicyExtensions
-        .HandleTransientHttpError()
-        .CircuitBreakerAsync(3, TimeSpan.FromSeconds(30)))
-    .AddPolicyHandler(HttpPolicyExtensions.HandleTransientHttpError()
-        .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))));
-
-// nzbget
-builder.Services.AddHttpClient("nzbget")
-    .ConfigureHttpClient(client =>
-    {
-        client.Timeout = TimeSpan.FromSeconds(30);
-    })
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
-    {
-        AutomaticDecompression = System.Net.DecompressionMethods.All,
-        UseCookies = false
-    })
-    .SetHandlerLifetime(TimeSpan.FromMinutes(5))
-    .AddPolicyHandler(HttpPolicyExtensions
-        .HandleTransientHttpError()
-        .CircuitBreakerAsync(3, TimeSpan.FromSeconds(30)))
-    .AddPolicyHandler(HttpPolicyExtensions.HandleTransientHttpError()
-        .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))));
-
-// Add named HttpClient for direct downloads (DDL)
-builder.Services.AddHttpClient("DirectDownload")
-    .ConfigureHttpClient(client =>
-    {
-
-
-        // Allow up to 2 hours for large file downloads
-        client.Timeout = TimeSpan.FromHours(2);
-    })
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
-    {
-        AutomaticDecompression = System.Net.DecompressionMethods.All
-    })
-    .AddPolicyHandler(HttpPolicyExtensions
-        .HandleTransientHttpError()
-        .Or<TaskCanceledException>()
-        .CircuitBreakerAsync(
-            handledEventsAllowedBeforeBreaking: 3,
-            durationOfBreak: TimeSpan.FromMinutes(1),
-            onBreak: (outcome, duration) =>
-            {
-                Log.Logger.Warning("[CIRCUIT BREAKER] Direct download circuit opened. Breaking for {Minutes}m", duration.TotalMinutes);
-            },
-            onReset: () =>
-            {
-                Log.Logger.Information("[CIRCUIT BREAKER] Direct download circuit reset");
-            }
-        ))
-    .AddPolicyHandler(HttpPolicyExtensions
-        .HandleTransientHttpError()
-        .Or<TaskCanceledException>()
-        .WaitAndRetryAsync(
-            retryCount: 2,
-            sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))
-        ));
+builder.Services.AddListenarrHttpClients(builder.Configuration);
 
 // Register our custom services
 // Compute an absolute path for the SQLite file based on the content root so
@@ -542,7 +389,8 @@ builder.Services.AddListenarrAdapters(builder.Configuration);
 // Register infrastructure implementations (DB wiring + repositories live in the Infrastructure project)
 builder.Services.AddListenarrInfrastructure(options =>
     options.UseSqlite($"Data Source={sqliteDbPath}", sqliteOptions =>
-        sqliteOptions.MigrationsAssembly(typeof(QualityProfileRepository).Assembly.GetName().Name)));
+        sqliteOptions.MigrationsAssembly(typeof(QualityProfileRepository).Assembly.GetName().Name)),
+    builder.Environment.ContentRootPath);
 // Register application-level services (moved from Program.cs to keep startup focused)
 builder.Services.AddListenarrAppServices(builder.Configuration);
 // Register hosted/background services (moved from Program.cs). Allow tests to disable these.
@@ -623,14 +471,14 @@ builder.Services.AddSwaggerGen(options =>
         "",
         "Authentication quick start:",
         "1. Click `Authorize` and enter one credential (you do not need all schemes).",
-        "2. Session token flow:",
+        "2. Browser session flow:",
         "   - Call `POST /api/v{version}/account/login` with `{ \"username\": \"...\", \"password\": \"...\", \"rememberMe\": false }`.",
-        "   - Copy `sessionToken` from the 200 response when `authType` is `session`.",
-        "   - Use `SessionBearer` (`Bearer <sessionToken>`) or `SessionTokenHeader` (`<sessionToken>`).",
+        "   - The browser stores the `listenarr_session` HttpOnly cookie automatically when `authType` is `session`.",
+        "   - Subsequent browser requests authenticate with that cookie.",
         "3. API key flow:",
-        "   - Listenarr auto-generates an API key on first run.",
-        "   - Read the current key from `GET /api/v{version}/configuration/startupconfig` (trusted-network/auth redaction rules apply).",
-        "   - Rotate the key with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator required).",
+        "   - API keys are intended for non-browser clients such as scripts, bots, and integrations.",
+        "   - Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
+        "   - Rotate the key with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
         "   - `POST /api/v{version}/configuration/apikey/generate-initial` is localhost bootstrap only and typically returns 409 after setup.",
         "   - Use `ApiKeyHeader` (`<apiKey>`) or `ApiKeyAuthorization` (`ApiKey <apiKey>`)."
     });
@@ -642,30 +490,6 @@ builder.Services.AddSwaggerGen(options =>
         Description = swaggerDescription
     });
 
-    options.AddSecurityDefinition("SessionBearer", new OpenApiSecurityScheme
-    {
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "SessionToken",
-        Description = string.Join(Environment.NewLine, new[]
-        {
-            "Use `Authorization: Bearer <sessionToken>`.",
-            "Get `sessionToken` from `POST /api/v{version}/account/login` using username/password credentials."
-        })
-    });
-
-    options.AddSecurityDefinition("SessionTokenHeader", new OpenApiSecurityScheme
-    {
-        Type = SecuritySchemeType.ApiKey,
-        In = ParameterLocation.Header,
-        Name = "X-Session-Token",
-        Description = string.Join(Environment.NewLine, new[]
-        {
-            "Use `X-Session-Token: <sessionToken>`.",
-            "Get `sessionToken` from `POST /api/v{version}/account/login` using username/password credentials."
-        })
-    });
-
     options.AddSecurityDefinition("ApiKeyHeader", new OpenApiSecurityScheme
     {
         Type = SecuritySchemeType.ApiKey,
@@ -675,8 +499,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `X-Api-Key: <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/configuration/startupconfig` (trusted-network/auth redaction rules apply).",
-            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator required)."
+            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
+            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator session required when authentication is enabled; local/private-network access required when disabled)."
         })
     });
 
@@ -689,8 +513,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `Authorization: ApiKey <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/configuration/startupconfig` (trusted-network/auth redaction rules apply).",
-            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator required)."
+            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
+            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator session required when authentication is enabled; local/private-network access required when disabled)."
         })
     });
 
@@ -848,7 +672,30 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-// Use forwarded headers middleware (must be early in pipeline).
+app.UseExceptionHandler(exceptionApp =>
+{
+    exceptionApp.Run(async context =>
+    {
+        var exceptionFeature = context.Features.Get<IExceptionHandlerFeature>();
+        var exception = exceptionFeature?.Error;
+        Log.Logger.Error(exception, "Unhandled API exception for {Method} {Path}", context.Request.Method, context.Request.Path);
+
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/problem+json";
+
+        var problem = new ProblemDetails
+        {
+            Status = StatusCodes.Status500InternalServerError,
+            Title = "Internal server error",
+            Detail = app.Environment.IsDevelopment() ? exception?.Message : null,
+            Instance = context.Request.Path,
+        };
+
+        await context.Response.WriteAsJsonAsync(problem);
+    });
+});
+
+// Use forwarded headers middleware early in the pipeline.
 // Options are configured in DI to trust common private proxy networks.
 app.UseForwardedHeaders();
 

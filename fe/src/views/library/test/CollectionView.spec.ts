@@ -92,6 +92,7 @@ const {
 vi.mock('@/services/api', () => ({
   apiService: {
     getImageUrl: vi.fn((url: string) => url || 'https://via.placeholder.com/300x450?text=No+Image'),
+    getBootstrapConfig: vi.fn(async () => ({})),
     getLibrary: mockGetLibrary,
     getStartupConfig: vi.fn(async () => ({})),
     getApplicationSettings: mockGetApplicationSettings,
@@ -664,6 +665,191 @@ describe('CollectionView', () => {
     expect(wrapper.findAll('.series-hero-cover-item.is-not-added')).toHaveLength(1)
     expect(wrapper.find('.top-nav').exists()).toBe(false)
     expect(mockGetSeriesLookup).toHaveBeenCalledWith('Mistborn', 'us', 'SERIES123', false)
+  })
+
+  it('sorts a series collection by position within owned, then within not-added (#626)', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    mockGetApplicationSettings.mockResolvedValue({
+      defaultSearchRegion: 'us',
+      defaultSearchLanguage: 'english',
+    })
+    mockGetSeriesLookup.mockResolvedValue({
+      asin: 'SERIES123',
+      name: 'Mistborn',
+      totalBooks: 4,
+    })
+    mockGetSeriesCatalog.mockResolvedValue({
+      series: { asin: 'SERIES123', name: 'Mistborn' },
+      totalBooks: 4,
+      books: [
+        {
+          asin: 'BOOK1',
+          title: 'The Final Empire',
+          authors: ['Brandon Sanderson'],
+          language: 'english',
+          metadataSource: 'Audible',
+          series: 'Mistborn',
+          seriesNumber: '1',
+        },
+        {
+          asin: 'BOOK2',
+          title: 'The Well of Ascension',
+          authors: ['Brandon Sanderson'],
+          language: 'english',
+          metadataSource: 'Audible',
+          series: 'Mistborn',
+          seriesNumber: '2',
+        },
+        {
+          asin: 'BOOK3',
+          title: 'Hero of Ages',
+          authors: ['Brandon Sanderson'],
+          language: 'english',
+          metadataSource: 'Audible',
+          series: 'Mistborn',
+          seriesNumber: '3',
+        },
+        {
+          asin: 'BOOK4',
+          title: 'The Alloy of Law',
+          authors: ['Brandon Sanderson'],
+          language: 'english',
+          metadataSource: 'Audible',
+          series: 'Mistborn',
+          seriesNumber: '4',
+        },
+      ],
+    })
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/collection/:type/:name', name: 'collection', component: CollectionView },
+      ],
+    })
+    await router.push('/collection/series/Mistborn')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    // Owns #1 and #3; expected order is owned-by-position (#1, #3) then not-added (#2, #4).
+    const localLibrary = [
+      {
+        id: 3,
+        title: 'Hero of Ages',
+        authors: ['Brandon Sanderson'],
+        series: 'Mistborn',
+        seriesNumber: '3',
+        asin: 'BOOK3',
+        files: [],
+      },
+      {
+        id: 1,
+        title: 'The Final Empire',
+        authors: ['Brandon Sanderson'],
+        series: 'Mistborn',
+        seriesNumber: '1',
+        asin: 'BOOK1',
+        files: [],
+      },
+    ] as unknown as import('@/types').Audiobook[]
+    store.audiobooks = localLibrary
+    mockGetLibrary.mockResolvedValue(localLibrary)
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(CollectionView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+      },
+    })
+    await flushPromises()
+
+    const sorted = (
+      wrapper.vm as unknown as {
+        audiobooks: Array<{ title: string; seriesNumber?: string; inLibrary?: boolean }>
+      }
+    ).audiobooks
+
+    expect(sorted.map((book) => book.title)).toEqual([
+      'The Final Empire', // #1, owned
+      'Hero of Ages', // #3, owned
+      'The Well of Ascension', // #2, not added
+      'The Alloy of Law', // #4, not added
+    ])
+    expect(sorted.map((book) => Boolean(book.inLibrary))).toEqual([true, true, false, false])
+  })
+
+  // Mounts a series collection of owned books (one group → pure position order) and returns
+  // the rendered order of titles from the component's sorted `audiobooks` list.
+  async function seriesPositionOrder(
+    collection: string,
+    books: Array<{ id: number; title: string; seriesNumber?: string }>,
+  ): Promise<string[]> {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/collection/:type/:name', name: 'collection', component: CollectionView },
+      ],
+    })
+    await router.push(`/collection/series/${encodeURIComponent(collection)}`)
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    const localLibrary = books.map((book) => ({
+      ...book,
+      authors: ['Brandon Sanderson'],
+      series: collection,
+      files: [],
+    })) as unknown as import('@/types').Audiobook[]
+    store.audiobooks = localLibrary
+    mockGetLibrary.mockResolvedValue(localLibrary)
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(CollectionView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+      },
+    })
+    await flushPromises()
+
+    return (wrapper.vm as unknown as { audiobooks: Array<{ title: string }> }).audiobooks.map(
+      (book) => book.title,
+    )
+  }
+
+  it('sorts books with no series position last (#660)', async () => {
+    const order = await seriesPositionOrder('Mistborn', [
+      { id: 1, title: 'Second', seriesNumber: '2' },
+      { id: 2, title: 'First', seriesNumber: '1' },
+      { id: 3, title: 'Unplaced' }, // no seriesNumber → must sort last, not first
+    ])
+    expect(order).toEqual(['First', 'Second', 'Unplaced'])
+  })
+
+  it('orders multi-digit series positions numerically, not lexically (#660)', async () => {
+    const order = await seriesPositionOrder('Mistborn', [
+      { id: 1, title: 'Tenth', seriesNumber: '10' },
+      { id: 2, title: 'Second', seriesNumber: '2' },
+    ])
+    expect(order).toEqual(['Second', 'Tenth'])
+  })
+
+  it('does not treat a non-numeric position like "1-2" as #1 (#660)', async () => {
+    const order = await seriesPositionOrder('Mistborn', [
+      { id: 1, title: 'Second', seriesNumber: '2' },
+      { id: 2, title: 'Combined', seriesNumber: '1-2' },
+      { id: 3, title: 'First', seriesNumber: '1' },
+    ])
+    // "1-2" must not collapse onto #1's key; it sorts after the numeric positions.
+    expect(order).toEqual(['First', 'Second', 'Combined'])
   })
 
   it('shows a loading state immediately when navigating to a similar author', async () => {
@@ -1281,5 +1467,54 @@ describe('CollectionView', () => {
       'Author metadata refreshed',
       'Updated the author image, description, related authors, and catalog.',
     )
+  })
+
+  it('renders the per-collection series position for a book matched via a non-primary membership', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/collection/:type/:name', name: 'collection', component: CollectionView },
+      ],
+    })
+    await router.push('/collection/series/Mistborn')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 1,
+        title: 'Shadows of Self',
+        authors: ['Brandon Sanderson'],
+        // Primary series (and number) point at a DIFFERENT series...
+        series: 'Other Series',
+        seriesNumber: '5',
+        // ...but the book also belongs to Mistborn at position 2.
+        seriesMemberships: [
+          { seriesName: 'Other Series', seriesNumber: '5', isPrimary: true },
+          { seriesName: 'Mistborn', seriesNumber: '2', isPrimary: false },
+        ],
+        imageUrl: 'c1.jpg',
+        files: [],
+      },
+    ] as unknown as import('@/types').Audiobook[]
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+    const wrapper = mount(CollectionView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+      },
+    })
+    await flushPromises()
+
+    const card = wrapper.find('.collection-card')
+    expect(card.exists()).toBe(true)
+    // Shows the Mistborn position (#2 from the membership), not the primary 'Other Series' #5.
+    expect(card.text()).toContain('#2')
+    expect(card.text()).not.toContain('#5')
   })
 })

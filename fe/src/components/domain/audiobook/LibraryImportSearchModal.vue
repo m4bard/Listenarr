@@ -56,13 +56,7 @@
           >
             <img
               v-if="result.imageUrl"
-              :src="
-                getProtectedImageSrc(
-                  result.imageUrl,
-                  `library-import-search-${result.asin ?? result.title}`,
-                  placeholderUrl,
-                )
-              "
+              :src="getProtectedImageSrc(result.imageUrl, placeholderUrl)"
               class="result-thumb"
               alt=""
             />

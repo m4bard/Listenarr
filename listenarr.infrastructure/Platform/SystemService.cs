@@ -17,7 +17,6 @@
  */
 
 using System.Diagnostics;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Listenarr.Application.Interfaces;
@@ -30,13 +29,27 @@ namespace Listenarr.Infrastructure.Platform
     {
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<SystemService> _logger;
+        private readonly IApplicationPathService _applicationPathService;
+        private readonly IApplicationVersionService _applicationVersionService;
+        private readonly IRootFolderService _rootFolderService;
+        private readonly IDiskSpaceProbe _diskSpaceProbe;
         private readonly DateTime _startTime;
         private static readonly Process _currentProcess = Process.GetCurrentProcess();
 
-        public SystemService(IConfigurationService configurationService, ILogger<SystemService> logger)
+        public SystemService(
+            IConfigurationService configurationService,
+            ILogger<SystemService> logger,
+            IApplicationPathService applicationPathService,
+            IApplicationVersionService applicationVersionService,
+            IRootFolderService rootFolderService,
+            IDiskSpaceProbe diskSpaceProbe)
         {
             _configurationService = configurationService;
             _logger = logger;
+            _applicationPathService = applicationPathService;
+            _applicationVersionService = applicationVersionService;
+            _rootFolderService = rootFolderService;
+            _diskSpaceProbe = diskSpaceProbe;
             _startTime = DateTime.UtcNow;
         }
 
@@ -57,8 +70,7 @@ namespace Listenarr.Infrastructure.Platform
         {
             try
             {
-                var assembly = Assembly.GetExecutingAssembly();
-                var version = assembly.GetName().Version?.ToString() ?? "1.0.0";
+                var version = _applicationVersionService.Resolve();
 
                 var uptime = DateTime.UtcNow - _startTime;
                 var uptimeFormatted = FormatUptime(uptime);
@@ -84,39 +96,61 @@ namespace Listenarr.Infrastructure.Platform
             }
         }
 
-        public StorageInfo GetStorageInfo()
+        public async Task<StorageInfo> GetStorageInfoAsync()
         {
             try
             {
-                // Get the drive where the application is running
-                var appPath = AppDomain.CurrentDomain.BaseDirectory;
-                var driveInfo = new DriveInfo(Path.GetPathRoot(appPath) ?? "C:\\");
+                // Compute the App Data disk first so the legacy top-level fields can mirror
+                // it (existing consumers of /system/storage keep working unchanged); the
+                // Disks list itself is ordered System -> App Data -> root folders below.
+                // Prefer the config root (database/logs/cache — the mounted volume in
+                // Docker) over the install dir, falling back when it has not been created yet.
+                var appDataPath = Directory.Exists(_applicationPathService.ConfigRootPath)
+                    ? _applicationPathService.ConfigRootPath
+                    : _applicationPathService.ContentRootPath;
+                var appDisk = MeasureDisk("App Data", appDataPath);
 
-                if (!driveInfo.IsReady)
+                var storageInfo = new StorageInfo
                 {
-                    return new StorageInfo
-                    {
-                        Status = "unavailable",
-                        DriveName = driveInfo.Name
-                    };
+                    UsedBytes = appDisk.UsedBytes,
+                    TotalBytes = appDisk.TotalBytes,
+                    FreeBytes = appDisk.FreeBytes,
+                    UsedPercentage = appDisk.UsedPercentage,
+                    UsedFormatted = appDisk.UsedFormatted,
+                    TotalFormatted = appDisk.TotalFormatted,
+                    FreeFormatted = appDisk.FreeFormatted,
+                    DriveName = appDisk.Path,
+                    Status = appDisk.Status
+                };
+                // System disk first: the filesystem hosting the application install itself —
+                // in Docker this is the container root (e.g. docker.img on Unraid),
+                // which is worth watching independently of the config volume.
+                var systemRoot = Path.GetPathRoot(_applicationPathService.ContentRootPath);
+                if (!string.IsNullOrEmpty(systemRoot))
+                {
+                    storageInfo.Disks.Add(MeasureDisk("System", systemRoot));
                 }
 
-                var totalBytes = driveInfo.TotalSize;
-                var freeBytes = driveInfo.AvailableFreeSpace;
-                var usedBytes = totalBytes - freeBytes;
-                var usedPercentage = (double)usedBytes / totalBytes * 100;
+                storageInfo.Disks.Add(appDisk);
 
-                return new StorageInfo
+                List<RootFolder> rootFolders;
+                try
                 {
-                    UsedBytes = usedBytes,
-                    TotalBytes = totalBytes,
-                    FreeBytes = freeBytes,
-                    UsedPercentage = Math.Round(usedPercentage, 2),
-                    UsedFormatted = FormatBytes(usedBytes),
-                    TotalFormatted = FormatBytes(totalBytes),
-                    FreeFormatted = FormatBytes(freeBytes),
-                    DriveName = driveInfo.Name
-                };
+                    rootFolders = await _rootFolderService.GetAllAsync();
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogWarning(ex, "Could not load root folders for storage info");
+                    rootFolders = new List<RootFolder>();
+                }
+
+                foreach (var folder in rootFolders)
+                {
+                    var label = string.IsNullOrWhiteSpace(folder.Name) ? folder.Path : folder.Name;
+                    storageInfo.Disks.Add(MeasureDisk(label, folder.Path));
+                }
+
+                return storageInfo;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -125,12 +159,47 @@ namespace Listenarr.Infrastructure.Platform
             }
         }
 
+        private DiskStorageInfo MeasureDisk(string label, string path)
+        {
+            // The probe owns the platform-specific measurement (Windows native call vs.
+            // DriveInfo) and returns false for anything it cannot read; here we only map
+            // its result into the labelled, formatted DiskStorageInfo.
+            if (_diskSpaceProbe.TryGetDiskSpace(path, out var totalBytes, out var freeBytes))
+            {
+                return BuildDiskInfo(label, path, totalBytes, freeBytes);
+            }
+
+            return new DiskStorageInfo { Label = label, Path = path, Status = "unavailable" };
+        }
+
+        private DiskStorageInfo BuildDiskInfo(string label, string path, long totalBytes, long freeBytes)
+        {
+            // Clamp defensively: some filesystems report free space that exceeds the
+            // total (reserved blocks, over-provisioning, compression/dedup on ZFS/Btrfs,
+            // or network shares), which would otherwise drive used bytes/percentage negative.
+            var usedBytes = Math.Clamp(totalBytes - freeBytes, 0, totalBytes);
+            var usedPercentage = totalBytes > 0 ? Math.Clamp((double)usedBytes / totalBytes * 100, 0, 100) : 0;
+
+            return new DiskStorageInfo
+            {
+                Label = label,
+                Path = path,
+                UsedBytes = usedBytes,
+                TotalBytes = totalBytes,
+                FreeBytes = freeBytes,
+                UsedPercentage = Math.Round(usedPercentage, 2),
+                UsedFormatted = FormatBytes(usedBytes),
+                TotalFormatted = FormatBytes(totalBytes),
+                FreeFormatted = FormatBytes(freeBytes),
+                Status = "available"
+            };
+        }
+
         public async Task<ServiceHealth> GetServiceHealthAsync()
         {
             try
             {
-                var assembly = Assembly.GetExecutingAssembly();
-                var version = assembly.GetName().Version?.ToString() ?? "1.0.0";
+                var version = _applicationVersionService.Resolve();
                 var uptime = DateTime.UtcNow - _startTime;
                 var uptimeFormatted = FormatUptime(uptime);
 
@@ -494,8 +563,9 @@ namespace Listenarr.Infrastructure.Platform
 
         public string GetLogFilePath()
         {
-            // Get the logs directory from the application base path
-            var logsDir = Path.Join(Directory.GetCurrentDirectory(), "config", "logs");
+            // Use the host content root so local development lands in
+            // listenarr.api/config/logs and production stays under the deployed root.
+            var logsDir = _applicationPathService.LogsRootPath;
 
             // Ensure the directory exists
             if (!Directory.Exists(logsDir))
@@ -587,6 +657,3 @@ namespace Listenarr.Infrastructure.Platform
         }
     }
 }
-
-
-

@@ -17,7 +17,9 @@
  */
 using System.Text.Json;
 using Listenarr.Application.Interfaces;
+using Listenarr.Domain.Common;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Models.Configurations;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Common
@@ -201,6 +203,17 @@ namespace Listenarr.Application.Common
 
         public StartupConfig? GetConfig() => _config;
 
+        public bool IsAuthenticationRequired()
+            => (_config ?? new StartupConfig()).IsAuthenticationEnabled();
+
+        public string GetEffectiveApiVersion(string? requestedApiVersion = null)
+            => NormalizeApiVersion(_config?.ApiVersion, requestedApiVersion);
+
+        public string NormalizeApiVersion(string? configuredApiVersion, string? requestedApiVersion = null)
+            => ApiVersionNormalizer.NormalizeApiVersionString(configuredApiVersion)
+               ?? ApiVersionNormalizer.NormalizeApiVersionString(requestedApiVersion)
+               ?? ApiVersionNormalizer.DefaultApiVersion;
+
         public Task ReloadAsync()
         {
             Load();
@@ -261,7 +274,7 @@ namespace Listenarr.Application.Common
                 BindAddress = "*",
                 ApiKey = apiKey, // Auto-generated on first run
                 // Authentication: Set to "true" to require login, "false" for open access
-                // When enabled, uses secure session-based authentication with Bearer tokens
+                // When enabled, browser clients authenticate via secure session cookies
                 AuthenticationRequired = "false",
                 UpdateMechanism = "BuiltIn",
                 LaunchBrowser = true,
@@ -337,6 +350,3 @@ namespace Listenarr.Application.Common
         }
     }
 }
-
-
-

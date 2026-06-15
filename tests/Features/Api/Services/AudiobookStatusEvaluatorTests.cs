@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Metadata;
+using Listenarr.Application.Audiobooks;
 using Listenarr.Domain.Models;
 using Xunit;
 
@@ -40,7 +41,7 @@ namespace Listenarr.Tests.Features.Api.Services
         public void ComputeStatus_ReturnsQualityMismatch_WhenNoFilesMatchPreferredFormats()
         {
             var profile = CreateProfile(cutoffQuality: "256kbps", preferredFormats: new List<string> { "m4b" });
-            var files = new List<AudiobookFileStatusInfo>
+            var files = new List<AudiobookFormatSummary>
             {
                 new() { Format = "mp3", Bitrate = 320000 }
             };
@@ -54,7 +55,7 @@ namespace Listenarr.Tests.Features.Api.Services
         public void ComputeStatus_ReturnsQualityMatch_WhenDerivedQualityMeetsCutoffBoundary()
         {
             var profile = CreateProfile(cutoffQuality: "256kbps", preferredFormats: new List<string> { "m4b" });
-            var files = new List<AudiobookFileStatusInfo>
+            var files = new List<AudiobookFormatSummary>
             {
                 new() { Format = "m4b", Bitrate = 256000 }
             };
@@ -68,7 +69,7 @@ namespace Listenarr.Tests.Features.Api.Services
         public void ComputeStatus_ReturnsQualityMismatch_WhenDerivedQualityIsBelowCutoff()
         {
             var profile = CreateProfile(cutoffQuality: "256kbps", preferredFormats: new List<string> { "m4b" });
-            var files = new List<AudiobookFileStatusInfo>
+            var files = new List<AudiobookFormatSummary>
             {
                 new() { Format = "m4b", Bitrate = 192000 }
             };
@@ -101,7 +102,7 @@ namespace Listenarr.Tests.Features.Api.Services
                     new() { Quality = "lossless", Priority = 0 }
                 }
             };
-            var files = new List<AudiobookFileStatusInfo>
+            var files = new List<AudiobookFormatSummary>
             {
                 new() { Format = "wv", Container = "wv" }
             };

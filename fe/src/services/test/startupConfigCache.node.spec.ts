@@ -15,25 +15,30 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-import { describe, it, expect, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import * as cache from '@/services/startupConfigCache'
 import { apiService } from '@/services/api'
 import { createDeferred } from '@/test/utils/wait'
 
-// Mock apiService.getStartupConfig with a delayed resolver
+// Mock apiService.getBootstrapConfig with a delayed resolver
 let originalGet: unknown
 
 beforeEach(() => {
   cache.resetCache()
-  originalGet = (apiService as any as { getStartupConfig?: unknown }).getStartupConfig
+  originalGet = (apiService as unknown as { getBootstrapConfig?: unknown }).getBootstrapConfig
+})
+
+afterEach(() => {
+  ;(apiService as unknown as { getBootstrapConfig?: unknown }).getBootstrapConfig = originalGet
 })
 
 describe('startupConfigCache', () => {
   it('deduplicates concurrent calls', async () => {
     const pendingConfig = createDeferred<unknown>()
-    ;(apiService as any as { getStartupConfig?: () => Promise<unknown> }).getStartupConfig = () => {
-      return pendingConfig.promise
-    }
+    ;(apiService as unknown as { getBootstrapConfig?: () => Promise<unknown> }).getBootstrapConfig =
+      () => {
+        return pendingConfig.promise
+      }
 
     // Start multiple concurrent callers
     const callers = Promise.all([
@@ -50,9 +55,3 @@ describe('startupConfigCache', () => {
     expect(cache.fetchCount).toBe(1)
   })
 })
-
-// restore
-const restore = originalGet as any
-if (restore) {
-  ;(apiService as any as { getStartupConfig?: unknown }).getStartupConfig = restore
-}

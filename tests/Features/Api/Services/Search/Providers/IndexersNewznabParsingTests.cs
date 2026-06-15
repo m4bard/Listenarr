@@ -25,7 +25,6 @@ using Moq;
 using Listenarr.Application.Interfaces;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Application.Metadata;
-using Listenarr.Application.Common;
 using Listenarr.Application.Search;
 using Listenarr.Application.Notification;
 using Listenarr.Application.Search.Filters;

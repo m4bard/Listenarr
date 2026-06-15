@@ -76,6 +76,25 @@ public static class SecurityRequestUtils
         return false;
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> if the request is authenticated exclusively via an API key
+    /// (i.e. the <c>AuthMethod</c> claim equals <c>"ApiKey"</c>).
+    /// Returns <see langword="false"/> for unauthenticated requests or session-authenticated requests.
+    /// </summary>
+    /// <param name="context">The current HTTP context, or <see langword="null"/> for non-HTTP callers.</param>
+    public static bool IsApiKeyAuthenticated(HttpContext? context)
+    {
+        var user = context?.User;
+        if (user?.Identity?.IsAuthenticated != true)
+        {
+            return false;
+        }
+
+        var authMethod = user.FindFirst("AuthMethod")?.Value;
+        return !string.IsNullOrWhiteSpace(authMethod) &&
+               string.Equals(authMethod, "ApiKey", StringComparison.Ordinal);
+    }
+
     public static bool ShouldRedactSecretsForCaller(HttpContext? context)
         // *Arr standard trust model:
         // - trusted local/private-network callers may receive non-redacted config payloads

@@ -18,6 +18,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Moq;
 
 namespace Listenarr.Tests.Builders
@@ -28,11 +29,113 @@ namespace Listenarr.Tests.Builders
     /// </summary>
     public class ServiceCollectionBuilder
     {
+        private string? _contentRootPath;
+        private readonly List<ServiceDescriptor> _serviceDescriptors = new();
+        private readonly List<Type> _serviceTypesToRemove = new();
+
         public ServiceCollectionBuilder()
         {
         }
 
-        public ServiceCollection Build()
+        public ServiceCollectionBuilder WithContentRootPath(string? contentRootPath)
+        {
+            _contentRootPath = contentRootPath;
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder WithMocks(params ServiceDescriptor[] serviceDescriptors)
+        {
+            return WithMocks((IEnumerable<ServiceDescriptor>)serviceDescriptors);
+        }
+
+        public ServiceCollectionBuilder WithMocks(IEnumerable<ServiceDescriptor> serviceDescriptors)
+        {
+            _serviceDescriptors.AddRange(serviceDescriptors);
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder WithSingleton<TService>(TService implementationInstance)
+            where TService : class
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Singleton(implementationInstance));
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder WithSingleton<TService, TImplementation>()
+            where TService : class
+            where TImplementation : class, TService
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Singleton<TService, TImplementation>());
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder WithSingleton<TService>(Func<IServiceProvider, TService> implementationFactory)
+            where TService : class
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Singleton(implementationFactory));
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder WithScoped<TService, TImplementation>()
+            where TService : class
+            where TImplementation : class, TService
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Scoped<TService, TImplementation>());
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder WithScoped<TService>(Func<IServiceProvider, TService> implementationFactory)
+            where TService : class
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Scoped(implementationFactory));
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder WithTransient<TService, TImplementation>()
+            where TService : class
+            where TImplementation : class, TService
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Transient<TService, TImplementation>());
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder WithTransient<TService>(Func<IServiceProvider, TService> implementationFactory)
+            where TService : class
+        {
+            _serviceDescriptors.Add(ServiceDescriptor.Transient(implementationFactory));
+
+            return this;
+        }
+
+        public ServiceCollectionBuilder Without<TService>()
+        {
+            return Without(typeof(TService));
+        }
+
+        public ServiceCollectionBuilder Without(params Type[] serviceTypes)
+        {
+            _serviceTypesToRemove.AddRange(serviceTypes);
+
+            return this;
+        }
+
+        public ServiceCollection Build(ServiceCollection? services = null)
+        {
+            services ??= BuildServices();
+            ApplyOverrides(services);
+
+            return services;
+        }
+
+        private ServiceCollection BuildServices()
         {
             var configuration = new ConfigurationManager();
 
@@ -42,11 +145,14 @@ namespace Listenarr.Tests.Builders
                 .Returns(new StartupConfig { AuthenticationRequired = "false" });
 
             var services = new ServiceCollection();
+            services.AddLogging();
             services.AddMemoryCache();
             services.AddListenarrAppServices(configuration);
             services.AddListenarrAdapters(configuration);
-            services.AddListenarrInfrastructure(options =>
-                options.UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()));
+            services.AddListenarrHttpClients(configuration);
+            services.AddListenarrInfrastructure(
+                options => options.UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()),
+                contentRootPath: _contentRootPath);
 
             var appMetricsServiceMock = new Mock<IAppMetricsService>();
             services.AddSingleton(appMetricsServiceMock);
@@ -86,6 +192,7 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<MoveBackgroundService>();
             services.AddSingleton<MoveQueueService>();
             services.AddSingleton<LibraryController>();
+            services.AddSingleton<ImagesController>();
             services.AddSingleton(new EphemeralDataProtectionProvider().CreateProtector("Listenarr.ConfigurationService.ProwlarrImport"));
 
             services.AddSingleton<AudibleApiMock>();
@@ -93,12 +200,14 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<TransmissionApiMock>();
             services.AddSingleton<SabnzbdApiMock>();
             services.AddSingleton<NzbgetApiMock>();
+            services.AddSingleton<QbittorrentApiMock>();
             services.AddSingleton<MyAnonamouseApiMock>();
 
             services.AddHttpClient<AudibleService>()
                 .ConfigurePrimaryHttpMessageHandler<AudibleApiMock>();
 
             // FIXME: All classes should rely on typed HttpClient instead of named ones
+            // TODO: Find a way to test real http client configurations (cookies, retry, security, ...)
             services.AddHttpClient("transmission")
                 .ConfigurePrimaryHttpMessageHandler<TransmissionApiMock>();
 
@@ -107,6 +216,9 @@ namespace Listenarr.Tests.Builders
 
             services.AddHttpClient("nzbget")
                 .ConfigurePrimaryHttpMessageHandler<NzbgetApiMock>();
+
+            services.AddHttpClient("qbittorrent")
+                .ConfigurePrimaryHttpMessageHandler<QbittorrentApiMock>();
 
             services.AddHttpClient<IAudnexusService, AudnexusService>()
                 .ConfigurePrimaryHttpMessageHandler<AudnexusServiceApiMock>();
@@ -118,6 +230,24 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<DownloadProcessingJobProcessor>();
 
             return services;
+        }
+
+        private void ApplyOverrides(ServiceCollection services)
+        {
+            foreach (var serviceDescriptor in _serviceDescriptors)
+            {
+                services.RemoveAll(serviceDescriptor.ServiceType);
+            }
+
+            foreach (var serviceType in _serviceTypesToRemove)
+            {
+                services.RemoveAll(serviceType);
+            }
+
+            foreach (var serviceDescriptor in _serviceDescriptors)
+            {
+                services.Add(serviceDescriptor);
+            }
         }
     }
 }

@@ -59,6 +59,21 @@ namespace Listenarr.Domain.Common
             return !string.IsNullOrEmpty(ext) && AudioExtensions.Contains(ext);
         }
 
+        public static bool IsPathInvalidForCurrentOs(string? path)
+        {
+            return IsPathInvalidForOs(path, OperatingSystem.IsWindows());
+        }
+
+        public static bool IsPathInvalidForOs(string? path, bool isWindows)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return false;
+            }
+
+            return isWindows && HasInvalidWindowsPathWhitespace(path);
+        }
+
         public static HashSet<string> NormalizeExtensions(IEnumerable<string>? extensions)
         {
             var normalized = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -86,10 +101,7 @@ namespace Listenarr.Domain.Common
 
         public static string NormalizeStoredPath(string? path, Func<string, string?>? longPathResolver = null)
         {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                path = string.Empty;
-            }
+            path ??= string.Empty;
 
             try
             {
@@ -664,6 +676,80 @@ namespace Listenarr.Domain.Common
         }
 
         /// <summary>
+        /// Joins relative path segments onto a base path without allowing rooted child segments.
+        /// Leading separators on child segments are treated as relative separators.
+        /// </summary>
+        public static string CombineRelativePath(string basePath, params string[] segments)
+        {
+            if (string.IsNullOrWhiteSpace(basePath))
+            {
+                throw new ArgumentException("Base path is required.", nameof(basePath));
+            }
+
+            var combined = TrimTrailingPathSeparators(basePath);
+            foreach (var segment in segments)
+            {
+                if (string.IsNullOrWhiteSpace(segment))
+                {
+                    continue;
+                }
+
+                var relativeSegment = NormalizePathSegmentForCombine(segment);
+                if (Path.IsPathRooted(relativeSegment))
+                {
+                    throw new ArgumentException("Path segments must be relative.", nameof(segments));
+                }
+
+                combined = string.IsNullOrEmpty(combined)
+                    ? relativeSegment
+                    : combined + Path.DirectorySeparatorChar + relativeSegment;
+            }
+
+            return combined;
+        }
+
+        private static string NormalizePathSegmentForCombine(string segment)
+        {
+            var normalized = TrimLeadingPathSeparators(segment);
+            return normalized
+                .Replace('/', Path.DirectorySeparatorChar)
+                .Replace('\\', Path.DirectorySeparatorChar);
+        }
+
+        private static string TrimLeadingPathSeparators(string path)
+            => path.TrimStart('/', '\\');
+
+        private static string TrimTrailingPathSeparators(string path)
+            => path.TrimEnd('/', '\\');
+
+        private static bool HasInvalidWindowsPathWhitespace(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return true;
+            }
+
+            var root = Path.GetPathRoot(path);
+            var pathWithoutRoot = !string.IsNullOrEmpty(root) && path.StartsWith(root, StringComparison.OrdinalIgnoreCase)
+                ? path[root.Length..]
+                : path;
+
+            return pathWithoutRoot
+                .Split(new[] { '\\', '/' }, StringSplitOptions.None)
+                .Any(IsInvalidWindowsPathSegmentWhitespace);
+        }
+
+        private static bool IsInvalidWindowsPathSegmentWhitespace(string segment)
+        {
+            if (string.IsNullOrEmpty(segment) || segment == "." || segment == "..")
+            {
+                return false;
+            }
+
+            return segment.EndsWith(' ') || segment.EndsWith('.');
+        }
+
+        /// <summary>
         /// Create a filesystem-safe name from arbitrary text by removing invalid path characters
         /// and normalizing whitespace. Keeps it conservative to avoid unexpected folder creation.
         /// </summary>
@@ -704,4 +790,3 @@ namespace Listenarr.Domain.Common
         }
     }
 }
-

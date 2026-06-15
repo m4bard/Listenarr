@@ -17,73 +17,64 @@
  */
 using System.Reflection;
 using Listenarr.Api.Controllers;
-using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
-using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
+using Listenarr.Tests.Builders;
+using Listenarr.Tests.Common;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Moq;
 using Xunit;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
-    public class LibraryController_QualityCutoffTests
+    [Trait("Area", "LibraryApi")]
+    [Trait("Name", "LibraryController_QualityCutoffTests")]
+    [Trait("Category", "LibraryController")]
+    public class LibraryController_QualityCutoffTests : BaseTests
     {
         [Fact]
-        [Trait("Scenario", "ImportPendingDownloadCountsAsActiveForQualityCutoff")]
+        [Trait("Method", "IsQualityCutoffMetAsync")]
+        [Trait("Scenario", "ImportPendingDownload_ReturnsTrue")]
         public async Task IsQualityCutoffMetAsync_ImportPendingDownload_ReturnsTrue()
         {
-            var testDownload = new Download
-            {
-                Id = "dl-1",
-                AudiobookId = 1,
-                Status = DownloadStatus.ImportPending,
-                Title = "Dune"
-            };
-
-            var downloadRepo = new Mock<IDownloadRepository>();
-            downloadRepo.Setup(r => r.GetByAudiobookIdAsync(1, default)).ReturnsAsync(new List<Download> { testDownload });
-
-            var audioFileRepo = new Mock<IAudiobookFileRepository>();
-            audioFileRepo.Setup(r => r.GetByAudiobookIdAsync(1, default)).ReturnsAsync(new List<AudiobookFile>());
-
-            var audiobook = new Audiobook
-            {
-                Id = 1,
-                Title = "Dune",
-                QualityProfile = new QualityProfile
+            // Given
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Dune")
+                .WithQualityProfile(new QualityProfile
                 {
                     CutoffQuality = "MP3",
                     Qualities = new List<QualityDefinition>
                     {
                         new() { Quality = "MP3", Priority = 1 }
                     }
-                }
-            };
+                })
+                .Build());
 
-            var controller = new LibraryController(
-                Mock.Of<IAudiobookRepository>(),
-                Mock.Of<IImageCacheService>(),
-                Mock.Of<ILogger<LibraryController>>(),
-                Mock.Of<IServiceScopeFactory>(),
-                Mock.Of<IHistoryRepository>(),
-                audioFileRepo.Object,
-                Mock.Of<IQualityProfileRepository>(),
-                downloadRepo.Object,
-                Mock.Of<IRootFolderRepository>(),
-                Mock.Of<IFileNamingService>());
+            await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithId("dl-1")
+                .WithAudiobookId(audiobook.Id)
+                .WithStatus(DownloadStatus.ImportPending)
+                .WithTitle("Dune")
+                .Build());
 
+            var controller = _provider.GetRequiredService<LibraryController>();
+
+            // When
             var method = typeof(LibraryController).GetMethod(
                 "IsQualityCutoffMetAsync",
                 BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.NotNull(method);
 
-            var task = (Task<bool>?)method!.Invoke(controller, new object[] { audiobook, Mock.Of<IQualityProfileService>(), downloadRepo.Object, audioFileRepo.Object });
+            var task = (Task<bool>?)method!.Invoke(controller, new object[]
+            {
+                audiobook,
+                _provider.GetRequiredService<IQualityProfileService>(),
+                _downloadRepository,
+                _audiobookFileRepository
+            });
             Assert.NotNull(task);
-
             var result = await task!;
 
+            // Then
             Assert.True(result);
         }
     }
