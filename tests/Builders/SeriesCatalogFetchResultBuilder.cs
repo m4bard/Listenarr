@@ -1,5 +1,3 @@
-using Listenarr.Application.Interfaces;
-using Listenarr.Application.Metadata;
 
 namespace Listenarr.Tests.Builders
 {

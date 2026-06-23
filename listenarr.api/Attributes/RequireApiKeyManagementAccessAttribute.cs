@@ -16,8 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using Listenarr.Application.Interfaces;
-using Listenarr.Application.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -56,7 +54,7 @@ namespace Listenarr.Api.Attributes
                 var user = httpContext.User;
                 if (user?.Identity?.IsAuthenticated == true &&
                     user.IsInRole("Administrator") &&
-                    !SecurityRequestUtils.IsApiKeyAuthenticated(httpContext))
+                    !HttpSecurityRequestUtils.IsApiKeyAuthenticated(httpContext))
                 {
                     await next();
                     return;
@@ -68,7 +66,7 @@ namespace Listenarr.Api.Attributes
                 return;
             }
 
-            if (SecurityRequestUtils.IsLocalOrPrivateRequest(httpContext))
+            if (HttpSecurityRequestUtils.IsLocalOrPrivateRequest(httpContext))
             {
                 await next();
                 return;

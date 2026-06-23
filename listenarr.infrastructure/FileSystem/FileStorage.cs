@@ -16,14 +16,24 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 // csharp
-using Listenarr.Application.Interfaces;
+using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.FileSystem
 {
     public class FileStorage : IFileStorage
     {
+        private readonly IApplicationPathService _applicationPathService;
+        private readonly ILogger<FileStorage> _logger;
+
+        public FileStorage(IApplicationPathService applicationPathService, ILogger<FileStorage> logger)
+        {
+            _applicationPathService = applicationPathService;
+            _logger = logger;
+        }
+
         public async Task WriteAllTextAsync(string path, string contents, CancellationToken cancellationToken = default)
         {
+            path = ValidateStorageMutation(path, "write file");
             var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             {
@@ -35,6 +45,8 @@ namespace Listenarr.Infrastructure.FileSystem
 
         public Task MoveAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
         {
+            sourcePath = ValidateStorageMutation(sourcePath, "move source");
+            destinationPath = ValidateStorageMutation(destinationPath, "move destination");
             // Ensure destination directory exists
             var destDir = Path.GetDirectoryName(destinationPath);
             if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
@@ -51,6 +63,7 @@ namespace Listenarr.Infrastructure.FileSystem
 
         public void CreateDirectory(string path)
         {
+            path = ValidateStorageMutation(path, "create directory");
             if (!Directory.Exists(path))
             {
                 Directory.CreateDirectory(path);
@@ -59,6 +72,7 @@ namespace Listenarr.Infrastructure.FileSystem
 
         public void DeleteFile(string path)
         {
+            path = ValidateStorageMutation(path, "delete file");
             if (File.Exists(path))
             {
                 File.Delete(path);
@@ -67,10 +81,32 @@ namespace Listenarr.Infrastructure.FileSystem
 
         public void DeleteDirectory(string path, bool recursive)
         {
+            path = ValidateStorageMutation(path, "delete directory");
             if (Directory.Exists(path))
             {
                 Directory.Delete(path, recursive);
             }
+        }
+
+        private string ValidateStorageMutation(string path, string action)
+        {
+            var roots = new[]
+            {
+                _applicationPathService.ContentRootPath,
+                _applicationPathService.ConfigRootPath
+            };
+
+            if (FileSystemSafety.TryValidateMutationTarget(path, roots, out var normalizedPath, out var reason))
+            {
+                return normalizedPath;
+            }
+
+            _logger.LogWarning(
+                "Blocked FileStorage {Action} for {Path}: {Reason}",
+                action,
+                LogRedaction.SanitizeFilePath(path),
+                LogRedaction.SanitizeText(reason));
+            throw new IOException($"Blocked FileStorage {action}: {reason}");
         }
     }
 }

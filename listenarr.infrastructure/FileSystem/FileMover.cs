@@ -17,18 +17,28 @@
  */
 using System.Security.Principal;
 using System.Runtime.InteropServices;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using Listenarr.Domain.Audiobooks.Enumerations;
 using Microsoft.Extensions.Options;
-using Listenarr.Application.Interfaces;
 using Microsoft.Extensions.Logging;
-using Listenarr.Domain.Common;
-using Listenarr.Domain.Models.Configurations;
-using Listenarr.Domain.Models.Enumerations;
-using Listenarr.Application.Security;
 
 namespace Listenarr.Infrastructure.FileSystem
 {
+    internal enum FileMutationOutcome
+    {
+        Success,
+        Skipped,
+        Blocked,
+        Failed
+    }
+
+    internal sealed record FileMutationResult(
+        FileMutationOutcome Outcome,
+        FileAction Action,
+        string SourcePath,
+        string? DestinationPath,
+        string? Reason = null);
+
     public partial class FileMover : IFileMover
     {
         // .NET has no managed BCL equivalent for hardlink creation.
@@ -65,6 +75,7 @@ namespace Listenarr.Infrastructure.FileSystem
                 try
                 {
                     Directory.Move(sourceDir, destDir);
+                    LogMutation(FileMutationOutcome.Success, FileAction.Move, sourceDir, destDir);
                     return true;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -111,6 +122,7 @@ namespace Listenarr.Infrastructure.FileSystem
                 {
                     _logger.LogDebug(deleteEx, "Failed deleting source directory after copy fallback for {Source}", sourceDir);
                 }
+                LogMutation(FileMutationOutcome.Success, FileAction.Move, sourceDir, destDir);
                 return true;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -159,11 +171,17 @@ namespace Listenarr.Infrastructure.FileSystem
             var attempt = 0;
             var delay = 1000;
 
+            if (await TryCompleteIdempotentFileMoveAsync(sourceFile, destFile))
+            {
+                return true;
+            }
+
             for (; attempt < _options.MaxRetries; attempt++)
             {
                 try
                 {
                     File.Move(sourceFile, destFile, true);
+                    LogMutation(FileMutationOutcome.Success, FileAction.Move, sourceFile, destFile);
                     return true;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -210,6 +228,7 @@ namespace Listenarr.Infrastructure.FileSystem
                 {
                     _logger.LogDebug(deleteEx, "Failed deleting source file after copy fallback for {Source}", sourceFile);
                 }
+                LogMutation(FileMutationOutcome.Success, FileAction.Move, sourceFile, destFile);
                 return true;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -257,214 +276,5 @@ namespace Listenarr.Infrastructure.FileSystem
             }
         }
 
-        public Task<bool> CopyDirectoryAsync(string sourceDir, string destDir)
-        {
-            try
-            {
-                CopyDirRecursive(sourceDir, destDir);
-                return Task.FromResult(true);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                _logger.LogError(ex, "Copy directory failed: {Source} -> {Dest}", sourceDir, destDir);
-                return Task.FromResult(false);
-            }
-        }
-
-        public async Task<bool> CopyFileAsync(string sourceFile, string destFile)
-        {
-            try
-            {
-                File.Copy(sourceFile, destFile, true);
-                return true;
-            }
-            catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
-            {
-                _logger.LogError(exception, $"Copy file failed: {sourceFile} -> {destFile}");
-                return false;
-            }
-        }
-
-        public Task<bool> HardlinkFileAsync(string sourceFile, string destFile)
-        {
-            try
-            {
-                // Ensure destination directory exists
-                var destDir = Path.GetDirectoryName(destFile) ?? string.Empty;
-                if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
-                {
-                    Directory.CreateDirectory(destDir);
-                }
-
-                // Safe ordering: hardlink/copy to a temp path first, then atomically rename
-                // onto the destination. This ensures the original destFile is never deleted
-                // until we have a confirmed replacement ready.
-                // Use Path.GetFileName to ensure the random name has no separators (satisfies static analysis).
-                // Use Path.Join (not Path.Combine) to prevent a rooted second arg from silently discarding destDir.
-                var tempDestName = Path.GetFileName(Path.GetRandomFileName()) + ".tmp";
-                var tempDest = Path.Join(destDir, tempDestName);
-                try
-                {
-                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    {
-                        if (!CreateHardLinkNative(tempDest, sourceFile, IntPtr.Zero))
-                        {
-                            var error = Marshal.GetLastWin32Error();
-                            throw new IOException($"CreateHardLink failed with error code {error}");
-                        }
-                    }
-                    else
-                    {
-                        // Unix/Linux/macOS
-                        var result = LinkNative(sourceFile, tempDest);
-                        if (result != 0)
-                        {
-                            var error = Marshal.GetLastWin32Error();
-                            throw new IOException($"link() failed with error code {error}");
-                        }
-                    }
-
-                    // Hardlink succeeded — atomically replace destination
-                    File.Move(tempDest, destFile, overwrite: true);
-                    _logger.LogInformation("Hardlinked file: {Source} -> {Dest}", sourceFile, destFile);
-                    return Task.FromResult(true);
-                }
-                catch (Exception linkEx) when (linkEx is not OperationCanceledException && linkEx is not OutOfMemoryException && linkEx is not StackOverflowException)
-                {
-                    // Clean up temp file if hardlink left one behind
-                    try { if (File.Exists(tempDest)) File.Delete(tempDest); }
-                    catch (Exception cleanupEx) when (cleanupEx is not OperationCanceledException
-                                                   && cleanupEx is not OutOfMemoryException
-                                                   && cleanupEx is not StackOverflowException)
-                    {
-                        /* best-effort temp cleanup */
-                    }
-
-                    // Hardlink failed (likely cross-volume or unsupported filesystem)
-                    var isCrossDevice = linkEx is IOException ioEx && ioEx.Message.Contains("error code 17");
-                    if (!isCrossDevice)
-                        isCrossDevice = linkEx is IOException ioEx2 && ioEx2.Message.Contains("error code 18"); // Unix EXDEV
-
-                    if (isCrossDevice)
-                        _logger.LogInformation("Hardlink not possible (source and destination are on different drives), falling back to copy: {Source} -> {Dest}", sourceFile, destFile);
-                    else
-                        _logger.LogWarning(linkEx, "Hardlink failed, falling back to copy: {Source} -> {Dest}", sourceFile, destFile);
-
-                    // Fallback to copy — copy to a temp file first, then atomically rename onto destination
-                    // so the existing file is never overwritten until a complete replacement is confirmed.
-                    // Use Path.GetFileName to strip any separators from GetRandomFileName (satisfies static analysis).
-                    // Use Path.Join (not Path.Combine) to prevent rooted second arg from silently discarding destDir.
-                    var tempCopyName = Path.GetFileName(Path.GetRandomFileName()) + ".tmp";
-                    var tempCopyPath = Path.Join(destDir, tempCopyName);
-                    try
-                    {
-                        File.Copy(sourceFile, tempCopyPath, overwrite: true);
-                        File.Move(tempCopyPath, destFile, overwrite: true);
-                        _logger.LogInformation("Copied file (hardlink fallback): {Source} -> {Dest}", sourceFile, destFile);
-                        return Task.FromResult(true);
-                    }
-                    finally
-                    {
-                        // Best-effort cleanup of temp copy if something went wrong before/after the move
-                        try { if (File.Exists(tempCopyPath)) File.Delete(tempCopyPath); }
-                        catch (Exception cleanupEx) when (cleanupEx is not OperationCanceledException
-                                                       && cleanupEx is not OutOfMemoryException
-                                                       && cleanupEx is not StackOverflowException)
-                        {
-                            // best-effort cleanup; ignore non-critical failures
-                        }
-                    }
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                _logger.LogError(ex, "Hardlink/Copy failed: {Source} -> {Dest}", sourceFile, destFile);
-                return Task.FromResult(false);
-            }
-        }
-
-        private void CopyDirRecursive(string src, string dst)
-        {
-            Directory.CreateDirectory(dst);
-            foreach (var dir in Directory.GetDirectories(src, "*", SearchOption.TopDirectoryOnly))
-            {
-                var sub = Path.Join(dst, Path.GetFileName(dir));
-                CopyDirRecursive(dir, sub);
-            }
-
-            foreach (var file in Directory.GetFiles(src, "*.*", SearchOption.TopDirectoryOnly))
-            {
-                var destFile = Path.Join(dst, Path.GetFileName(file));
-                File.Copy(file, destFile, true);
-            }
-        }
-
-        private static string Truncate(string? s, int max)
-        {
-            if (string.IsNullOrEmpty(s)) return string.Empty;
-            if (s.Length <= max) return s;
-            return s.Substring(0, max) + "...";
-        }
-
-        private static ProcessStartInfo CreateRobocopyStartInfo(params string[] arguments)
-        {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "robocopy",
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-
-            foreach (var argument in arguments.Where(argument => !string.IsNullOrWhiteSpace(argument)))
-            {
-                startInfo.ArgumentList.Add(argument);
-            }
-
-            return startInfo;
-        }
-
-        public async Task<bool> PerformActionOn(FileAction action, string source, string? destination = null)
-        {
-            if (action == FileAction.None || destination == null) return true;
-
-            // Ensure destination directory exists
-            var directory = Path.GetDirectoryName(destination);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            try
-            {
-                switch (action)
-                {
-                    case FileAction.Move:
-                        if (await MoveFileAsync(source, destination))
-                        {
-                            var sourceDirectory = Path.GetDirectoryName(source);
-                            if (sourceDirectory != null)
-                            {
-                                FileUtils.DeleteEmptyDirectories(sourceDirectory);
-                            }
-                            return true;
-                        }
-                        return false;
-                    case FileAction.HardlinkCopy:
-                        return await HardlinkFileAsync(source, destination);
-                    case FileAction.Copy:
-                        return await CopyFileAsync(source, destination);
-                }
-
-                // Unhandled action: We are unable to fulfill the request
-                return false;
-            }
-            catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
-            {
-                throw new InvalidOperationException($"Unable to perform {action} on {source} to {destination}", exception);
-            }
-        }
     }
 }
-

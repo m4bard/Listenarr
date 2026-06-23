@@ -19,7 +19,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System.Text.Json;
-using Listenarr.Domain.Models.Configurations;
 
 namespace Listenarr.Infrastructure.Persistence.Configurations
 {
@@ -45,6 +44,7 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
 
         public void Configure(EntityTypeBuilder<ApplicationSettings> builder)
         {
+            builder.Property(e => e.Version).IsConcurrencyToken();
             // AllowedFileExtensions stored as pipe-delimited list
             builder.Property(e => e.AllowedFileExtensions)
                 .HasConversion(

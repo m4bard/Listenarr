@@ -1,8 +1,5 @@
 using System.Runtime.CompilerServices;
 using Asp.Versioning.ApiExplorer;
-using Listenarr.Application.Interfaces.Repositories;
-using Listenarr.Domain.Models;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Listenarr.Tests.Common
 {
@@ -62,6 +59,28 @@ namespace Listenarr.Tests.Common
                          $"{Path.DirectorySeparatorChar}{dataDirectory}{Path.DirectorySeparatorChar}");
 
             return Path.Combine(folder, filename);
+        }
+
+        public static string GetTorrentDataPath(string filename)
+        {
+            var directory = new DirectoryInfo(AppContext.BaseDirectory);
+            while (directory != null)
+            {
+                if (File.Exists(Path.Join(directory.FullName, "listenarr.slnx")))
+                {
+                    return Path.Join(
+                        directory.FullName,
+                        "tests",
+                        "Data",
+                        "Infrastructure",
+                        "Torrents",
+                        filename);
+                }
+
+                directory = directory.Parent;
+            }
+
+            throw new DirectoryNotFoundException($"Unable to locate repository root from {AppContext.BaseDirectory}");
         }
     }
 }

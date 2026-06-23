@@ -16,8 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using Listenarr.Application.Interfaces;
-using Listenarr.Application.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -59,7 +57,7 @@ namespace Listenarr.Api.Attributes
             }
 
             if (!_startupConfigService.IsAuthenticationRequired() ||
-                SecurityRequestUtils.IsAuthenticatedAdminOrApiKey(context.HttpContext))
+                HttpSecurityRequestUtils.IsAuthenticatedAdminOrApiKey(context.HttpContext))
             {
                 await next();
                 return;

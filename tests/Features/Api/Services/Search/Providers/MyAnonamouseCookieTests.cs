@@ -15,16 +15,11 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Xunit;
-using Microsoft.Extensions.DependencyInjection;
-using System.Reflection;
 using System.Text;
-using Listenarr.Tests.Common;
-using Listenarr.Domain.Models;
+using Listenarr.Infrastructure.DependencyInjection.Downloads;
 using Listenarr.Tests.Builders;
+using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks.Api;
-using Listenarr.Application.Downloads;
-using Listenarr.Application.Common;
 
 namespace Listenarr.Tests.Features.Api.Services.Search.Providers
 {
@@ -33,6 +28,62 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
     public class MyAnonamouseCookieTests : BaseTests
     {
         private Indexer _indexer = new IndexerBuilder().Build();
+
+        // Redirects are application-visible through a dedicated client shared by primary/retry implementation and tests.
+        // Behavior: Register the production download clients -> resolve the dedicated MyAnonamouseTorrent handler -> automatic redirects are disabled.
+        // Primary failure mode: Automatic redirects bypass application redirect validation.
+        // Proof obligation: The production MyAnonamouseTorrent named client exposes redirects to application code by setting AllowAutoRedirect=false.
+        // Verification items:
+        // - Resolve the exact MyAnonamouseTorrent named handler from production registration.
+        // - Assert the primary transport does not follow redirects automatically.
+        [Fact]
+        public void DedicatedTorrentClient_DisablesAutomaticRedirects()
+        {
+            var services = new ServiceCollection();
+            services.AddDownloadHttpClients();
+            using var provider = services.BuildServiceProvider();
+
+            var handlerFactory = provider.GetRequiredService<IHttpMessageHandlerFactory>();
+            var handler = handlerFactory.CreateHandler(DownloadRegistrationExtensions.MyAnonamouseTorrentClientName);
+            var primaryHandler = GetPrimaryHandler(handler);
+
+            var allowAutoRedirect = primaryHandler switch
+            {
+                HttpClientHandler httpClientHandler => httpClientHandler.AllowAutoRedirect,
+                SocketsHttpHandler socketsHttpHandler => socketsHttpHandler.AllowAutoRedirect,
+                _ => throw new InvalidOperationException(
+                    $"Unexpected primary handler type: {primaryHandler.GetType().FullName}")
+            };
+
+            Assert.False(allowAutoRedirect);
+        }
+
+        // Redirects are application-visible through a dedicated client shared by primary/retry implementation and tests.
+        // Behavior: Build the shared test container -> send an unmatched request through MyAnonamouseTorrent -> the strict MyAnonamouseApiMock records and rejects it without network access.
+        // Primary failure mode: Tests resolve a different named client handler and an unmatched request reaches the real network.
+        // Proof obligation: The shared test container binds MyAnonamouseTorrent to the singleton MyAnonamouseApiMock with FailOnUnexpectedCalls behavior enabled.
+        // Verification items:
+        // - Resolve the named client and mock from the shared ServiceCollectionBuilder container.
+        // - Assert an unmatched request is recorded by MyAnonamouseApiMock and fails with its deterministic strict-boundary exception.
+        [Fact]
+        public async Task DedicatedTorrentClient_UsesStrictHermeticMockInSharedTestContainer()
+        {
+            var services = new ServiceCollectionBuilder().Build();
+            await using var provider = services.BuildServiceProvider();
+            var clientFactory = provider.GetRequiredService<IHttpClientFactory>();
+            var mock = provider.GetRequiredService<MyAnonamouseApiMock>();
+            using var client = clientFactory.CreateClient(DownloadRegistrationExtensions.MyAnonamouseTorrentClientName);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => client.GetAsync("https://www.myanonamouse.net/history/unexpected"));
+
+            Assert.Equal(
+                "Unexpected MyAnonamouse API request: GET https://www.myanonamouse.net/history/unexpected",
+                exception.Message);
+            Assert.Equal(
+                "https://www.myanonamouse.net/history/unexpected",
+                mock.GetLastRequest().RequestUri?.AbsoluteUri);
+        }
 
         public override async Task InitializeAsync()
         {
@@ -53,6 +104,17 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                 .WithInteractiveSearch()
                 .WithSetting("mam_id", "old_mam")
                 .Build());
+        }
+
+        private static HttpMessageHandler GetPrimaryHandler(HttpMessageHandler handler)
+        {
+            while (handler is DelegatingHandler delegatingHandler)
+            {
+                handler = delegatingHandler.InnerHandler
+                    ?? throw new InvalidOperationException("Delegating handler has no inner handler.");
+            }
+
+            return handler;
         }
 
         [Fact]
@@ -95,14 +157,8 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                 TorrentFileContent = null
             };
 
-            // Call the non-public TryPrepareMyAnonamouseTorrentAsync via reflection
-            var method = typeof(DownloadService)
-                .GetMethod("TryPrepareMyAnonamouseTorrentAsync", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.NotNull(method);
-
-            var downloadService = _provider.GetRequiredService<DownloadService>();
-            var task = (Task)method!.Invoke(downloadService, [searchResult, null])!;
-            await task;
+            await _provider.GetRequiredService<MyAnonamouseTorrentPreparationService>()
+                .PrepareAsync(searchResult);
 
             var handler = _provider.GetRequiredService<MyAnonamouseApiMock>();
             var capturedRequest = handler.GetLastRequest();
@@ -128,14 +184,8 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                 TorrentFileContent = null
             };
 
-            // Call the non-public TryPrepareMyAnonamouseTorrentAsync via reflection
-            var method = typeof(DownloadService)
-                .GetMethod("TryPrepareMyAnonamouseTorrentAsync", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.NotNull(method);
-
-            var downloadService = _provider.GetRequiredService<DownloadService>();
-            var task = (Task)method!.Invoke(downloadService, new object[] { sr, null })!;
-            await task;
+            await _provider.GetRequiredService<MyAnonamouseTorrentPreparationService>()
+                .PrepareAsync(sr);
 
             var handler = _provider.GetRequiredService<MyAnonamouseApiMock>();
             var capturedRequest = handler.GetLastRequest();
@@ -156,13 +206,8 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                 TorrentFileContent = null
             };
 
-            var method = typeof(DownloadService)
-                .GetMethod("TryPrepareMyAnonamouseTorrentAsync", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.NotNull(method);
-
-            var downloadService = _provider.GetRequiredService<DownloadService>();
-            var task = (Task)method!.Invoke(downloadService, new object[] { sr, null })!;
-            await task;
+            await _provider.GetRequiredService<MyAnonamouseTorrentPreparationService>()
+                .PrepareAsync(sr);
 
             var handler = _provider.GetRequiredService<MyAnonamouseApiMock>();
             var capturedRequest = handler.GetLastRequest();
@@ -190,13 +235,8 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                 TorrentFileContent = null
             };
 
-            var method = typeof(DownloadService)
-                .GetMethod("TryPrepareMyAnonamouseTorrentAsync", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.NotNull(method);
-
-            var downloadService = _provider.GetRequiredService<DownloadService>();
-            var task = (Task)method!.Invoke(downloadService, new object[] { sr, null })!;
-            await task;
+            await _provider.GetRequiredService<MyAnonamouseTorrentPreparationService>()
+                .PrepareAsync(sr);
 
             // Since the tracker returned an error HTML page, the torrent should not be cached/uploaded
             Assert.Null(sr.TorrentFileContent);
@@ -220,14 +260,9 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
 
             var downloadId = Guid.NewGuid().ToString();
 
-            // Call the non-public TryPrepareMyAnonamouseTorrentAsync with downloadId via reflection
-            var method = typeof(DownloadService)
-                .GetMethod("TryPrepareMyAnonamouseTorrentAsync", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.NotNull(method);
-
             var downloadService = _provider.GetRequiredService<DownloadService>();
-            var task = (Task)method!.Invoke(downloadService, [sr, downloadId])!;
-            await task;
+            await _provider.GetRequiredService<MyAnonamouseTorrentPreparationService>()
+                .PrepareAsync(sr, downloadId);
 
             // Now create a DownloadsController and request the cached torrent
             var downloadsController = MockUtils.CreateDownloadsController(_provider);
@@ -253,14 +288,9 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
 
             var downloadId = Guid.NewGuid().ToString();
 
-            // Call the non-public TryPrepareMyAnonamouseTorrentAsync with downloadId via reflection
-            var method = typeof(DownloadService)
-                .GetMethod("TryPrepareMyAnonamouseTorrentAsync", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.NotNull(method);
-
             var downloadService = _provider.GetRequiredService<DownloadService>();
-            var task = (Task)method!.Invoke(downloadService, new object[] { sr, downloadId })!;
-            await task;
+            await _provider.GetRequiredService<MyAnonamouseTorrentPreparationService>()
+                .PrepareAsync(sr, downloadId);
 
             // Now request announces from the sync DownloadsController helper
             var downloadsController = MockUtils.CreateDownloadsController(_provider);

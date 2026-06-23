@@ -15,8 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Application.Common;
-using Listenarr.Application.Interfaces;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 using SharpCompress.Archives;
 using SharpCompress.Common;
@@ -67,22 +66,7 @@ namespace Listenarr.Infrastructure.FileSystem
                             continue;
                         }
 
-                        var relativeEntryPath = entryPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                        if (Path.IsPathRooted(relativeEntryPath))
-                        {
-                            _logger.LogWarning(
-                                "ArchiveExtractor: skipping rooted entry path {Entry} in archive {Archive}",
-                                entry.Key,
-                                archivePath);
-                            continue;
-                        }
-
-                        var combinedPath = tmpRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                            + Path.DirectorySeparatorChar
-                            + relativeEntryPath;
-                        var destPath = Path.GetFullPath(combinedPath);
-                        if (!destPath.StartsWith(tmpRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-                            && !string.Equals(destPath, tmpRoot, StringComparison.OrdinalIgnoreCase))
+                        if (!FileUtils.TryResolveRelativePathWithinBase(tmpRoot, entryPath, out var destPath))
                         {
                             _logger.LogWarning(
                                 "ArchiveExtractor: skipping out-of-root entry {Entry} in archive {Archive}",
@@ -101,7 +85,15 @@ namespace Listenarr.Infrastructure.FileSystem
                     }
                 }
 
-                return await Task.FromResult(new TempDirectory(tmp));
+                return await Task.FromResult(new TempDirectory(
+                    tmp,
+                    path =>
+                    {
+                        if (Directory.Exists(path))
+                        {
+                            Directory.Delete(path, recursive: true);
+                        }
+                    }));
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -111,9 +103,6 @@ namespace Listenarr.Infrastructure.FileSystem
         }
     }
 }
-
-
-
 
 
 

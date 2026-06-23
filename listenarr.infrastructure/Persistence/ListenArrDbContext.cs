@@ -16,8 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Microsoft.EntityFrameworkCore;
-using Listenarr.Domain.Models;
-using Listenarr.Domain.Models.Configurations;
 using Listenarr.Infrastructure.Persistence.Configurations;
 
 namespace Listenarr.Infrastructure.Persistence
@@ -51,6 +49,41 @@ namespace Listenarr.Infrastructure.Persistence
         public ListenArrDbContext(DbContextOptions<ListenArrDbContext> options)
             : base(options)
         {
+        }
+
+        public override int SaveChanges()
+        {
+            try
+            {
+                return base.SaveChanges();
+            }
+            catch (DbUpdateException ex)
+            {
+                throw TranslatePersistenceException(ex);
+            }
+        }
+
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                return await base.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex)
+            {
+                throw TranslatePersistenceException(ex);
+            }
+        }
+
+        private static PersistenceException TranslatePersistenceException(DbUpdateException ex)
+        {
+            var message = ex.InnerException?.Message ?? ex.Message;
+            if (message.IndexOf("UNIQUE", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return new UniqueConstraintViolationException("A unique persistence constraint was violated.", ex);
+            }
+
+            return new PersistenceException("A persistence operation failed.", ex);
         }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
@@ -96,6 +129,12 @@ namespace Listenarr.Infrastructure.Persistence
             modelBuilder.Entity<SeriesCacheEntry>().HasIndex(s => new { s.SeriesAsin, s.Region });
 
             modelBuilder.Entity<History>().HasIndex(h => h.Timestamp);
+            modelBuilder.Entity<History>().HasIndex(h => h.EventType);
+            modelBuilder.Entity<History>().HasIndex(h => h.Outcome);
+            modelBuilder.Entity<History>().HasIndex(h => h.AudiobookExternalId);
+            modelBuilder.Entity<History>().HasIndex(h => h.DownloadId);
+            modelBuilder.Entity<History>().HasIndex(h => h.DownloadClientId);
+            modelBuilder.Entity<History>().HasIndex(h => h.CorrelationId);
 
             modelBuilder.Entity<MoveJob>().HasIndex(m => new { m.AudiobookId, m.Status });
 

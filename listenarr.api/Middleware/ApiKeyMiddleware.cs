@@ -16,8 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Security.Claims;
-using Listenarr.Application.Interfaces;
-using Listenarr.Application.Security;
 
 namespace Listenarr.Api.Middleware
 {
@@ -59,7 +57,7 @@ namespace Listenarr.Api.Middleware
                             provided = s.Substring("ApiKey ".Length).Trim();
                     }
 
-                    // If headers didn't supply the key, only accept query-string token for SignalR hub connections.
+                    // If headers didn't supply the key, only accept query-string token for realtime hub connections.
                     // Avoiding query-string auth for normal API routes prevents credential leakage via logs/referrers.
                     if (string.IsNullOrWhiteSpace(provided))
                     {

@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Application.Interfaces;
 
 namespace Listenarr.Api.Middleware
 {
@@ -92,7 +91,7 @@ namespace Listenarr.Api.Middleware
                 return;
             }
 
-            // Serve SPA assets and client-side routes anonymously: if the request is not for an API or SignalR hub,
+            // Serve SPA assets and client-side routes anonymously: if the request is not for an API or realtime hub,
             // let the static file middleware or SPA fallback handle it. This avoids returning 401 for '/'.
             // Keep API and hub routes protected.
             if (!path.StartsWith("/api") && !path.StartsWith("/hubs"))

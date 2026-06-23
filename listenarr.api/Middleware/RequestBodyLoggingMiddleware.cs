@@ -16,7 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Text.RegularExpressions;
-using Listenarr.Application.Security;
 
 namespace Listenarr.Api.Middleware
 {
@@ -96,7 +95,7 @@ namespace Listenarr.Api.Middleware
                 || path.Contains("/download-clients", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static string RedactSensitiveJsonFields(string input)
+        internal static string RedactSensitiveJsonFields(string input)
         {
             if (string.IsNullOrEmpty(input)) return input;
             var redacted = input;
@@ -115,8 +114,16 @@ namespace Listenarr.Api.Middleware
                 redacted = Regex.Replace(redacted, pattern, "$1\"<redacted>\"");
             }
 
+            redacted = Regex.Replace(
+                redacted,
+                "(?i)(\"(?:torrentUrl|nzbUrl|resultUrl|originalUrl|magnetLink)\"\\s*:\\s*)\"([^\"]*)\"",
+                match =>
+                {
+                    var sanitizedUrl = LogRedaction.SanitizeUrl(match.Groups[2].Value);
+                    return $"{match.Groups[1].Value}\"{sanitizedUrl}\"";
+                });
+
             return redacted;
         }
     }
 }
-

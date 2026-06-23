@@ -1,5 +1,4 @@
 using System.Web;
-using Listenarr.Domain.Common;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Mocks.Api
@@ -12,6 +11,7 @@ namespace Listenarr.Tests.Mocks.Api
         public static readonly string REMOTE_PATH = FileUtils.GetAbsolutePath("downloads", "completed");
 
         public string contentPath = FileUtils.GetAbsolutePath("completed", "Book.m4b");
+        public List<Uri> RemovalRequests { get; } = [];
 
         public SabnzbdApiMock()
         {
@@ -100,14 +100,23 @@ namespace Listenarr.Tests.Mocks.Api
             }
             else if (string.Equals("history", mode))
             {
+                if (string.Equals("delete", query["name"], StringComparison.Ordinal))
+                {
+                    RemovalRequests.Add(request.RequestUri!);
+                    return MockUtils.GetCannedResponse("""{"status": true}""");
+                }
                 return await GetHistory(request, ct);
             }
 
             else if (string.Equals("queue", mode))
             {
+                if (string.Equals("delete", query["name"], StringComparison.Ordinal))
+                {
+                    RemovalRequests.Add(request.RequestUri!);
+                    return MockUtils.GetCannedResponse("""{"status": true}""");
+                }
                 return await GetQueue(request, ct);
             }
-
             return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
         }
     }

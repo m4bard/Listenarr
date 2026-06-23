@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Listenarr.Domain.Common;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Mocks.Api
@@ -106,6 +105,16 @@ namespace Listenarr.Tests.Mocks.Api
                     {
                         "result": "success",
                         "arguments": {}
+                    }
+                    """);
+                }
+                else if (string.Equals("torrent-remove", method, StringComparison.OrdinalIgnoreCase))
+                {
+                    return MockUtils.GetCannedResponse("""
+                    {
+                        "result": "success",
+                        "arguments": {},
+                        "tag": 2
                     }
                     """);
                 }

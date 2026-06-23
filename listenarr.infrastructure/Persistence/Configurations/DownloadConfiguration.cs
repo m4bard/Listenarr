@@ -17,7 +17,6 @@
  */
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Persistence.Converters;
 
 namespace Listenarr.Infrastructure.Persistence.Configurations
@@ -27,6 +26,9 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
         public void Configure(EntityTypeBuilder<Download> builder)
         {
             builder.HasKey(d => d.Id);
+            builder.HasIndex(d => d.ActiveAudiobookDeduplicationKey)
+                .IsUnique()
+                .HasFilter("\"ActiveAudiobookDeduplicationKey\" IS NOT NULL");
 
             // Map Metadata dictionary to a JSON TEXT column with centralized converter + comparer.
             var converter = new JsonValueConverter<Dictionary<string, object>>();

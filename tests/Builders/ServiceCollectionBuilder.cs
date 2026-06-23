@@ -1,25 +1,15 @@
-using Listenarr.Api.Controllers;
-using Listenarr.Application.Audiobooks;
-using Listenarr.Application.Common;
-using Listenarr.Application.Downloads;
-using Listenarr.Application.Interfaces;
-using Listenarr.Application.Metadata;
-using Listenarr.Application.Notification;
-using Listenarr.Application.Search;
 using Listenarr.Application.Search.Filters;
 using Listenarr.Application.Search.Strategies;
-using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Extensions;
-using Listenarr.Infrastructure.FileSystem;
+using Listenarr.Infrastructure.DependencyInjection;
+using Listenarr.Infrastructure.DependencyInjection.Downloads;
+using Listenarr.Infrastructure.HostedServices;
 using Listenarr.Tests.Mocks;
 using Listenarr.Tests.Mocks.Api;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Moq;
 
 namespace Listenarr.Tests.Builders
 {
@@ -147,6 +137,8 @@ namespace Listenarr.Tests.Builders
             var services = new ServiceCollection();
             services.AddLogging();
             services.AddMemoryCache();
+            services.AddSingleton(TimeProvider.System);
+            services.AddSingleton<IWorkerCycleRunner, WorkerCycleRunner>();
             services.AddListenarrAppServices(configuration);
             services.AddListenarrAdapters(configuration);
             services.AddListenarrHttpClients(configuration);
@@ -176,19 +168,53 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton(new Mock<IDiscordBotService>().Object);
             services.AddSingleton<IFfmpegService, FfmpegServiceMock>();
             services.AddSingleton<IConfigurationService, ConfigurationService>();
+            services.AddSingleton<IAudiobookFilesystemDeleteService, AudiobookFilesystemDeleteService>();
             services.AddSingleton<IMoveQueueService, MoveQueueService>();
             services.AddSingleton<IScanQueueService, ScanQueueService>();
             services.AddSingleton<IRootFolderService, RootFolderService>();
             services.AddSingleton<MetadataConverters>();
             services.AddSingleton<MetadataMerger>();
             services.AddSingleton<SearchProgressReporter>();
+            services.AddSingleton<IndexerAdditionalSettingsParser>();
+            services.AddSingleton<IndexerSearchWorkflow>();
+            services.AddSingleton<MetadataSourceCatalog>();
             services.AddSingleton<SearchResultFilterPipeline>();
             services.AddSingleton<MetadataStrategyCoordinator>();
             services.AddSingleton<AsinCandidateCollector>();
             services.AddSingleton<AsinEnricher>();
             services.AddSingleton<SearchResultScorerService>();
+            services.AddSingleton<SearchResultSortingService>();
             services.AddSingleton<AsinSearchHandler>();
+            services.AddSingleton<DownloadTypeResolver>();
+            services.AddSingleton<DownloadClientSelector>();
+            services.AddSingleton<DownloadCachedTorrentStore>();
+            services.AddSingleton<LibraryMetadataRescanWorkflow>();
+            services.AddSingleton<LibraryScanPathResolver>();
+            services.AddSingleton<LibraryScanQueueWorkflow>();
+            services.AddSingleton<LibraryAddWorkflow>();
+            services.AddSingleton<LibraryManualScanWorkflow>();
+            services.AddSingleton<LibraryBulkEditWorkflow>();
+            services.AddSingleton<LibraryMoveWorkflow>();
+            services.AddSingleton<LibraryDeleteWorkflow>();
+            services.AddSingleton<LibraryUpdateWorkflow>();
+            services.AddSingleton<LibraryIdentifierWorkflow>();
+            services.AddSingleton<LibraryPreviewPathWorkflow>();
+            services.AddSingleton<LibraryQueryWorkflow>();
+            services.AddSingleton<LibraryRenameWorkflow>();
+            services.AddSingleton<SearchResponseMapper>();
+            services.AddSingleton<ImagePlaceholderResolver>();
+            services.AddSingleton<IndexerTestWorkflow>();
+            services.AddSingleton<ProwlarrIndexerUpsertWorkflow>();
+            services.AddSingleton<ManualImportPathPlanner>();
+            services.AddSingleton<ManualImportCompanionImporter>();
+            services.AddSingleton<AudibleAuthorPageCollector>();
+            services.AddSingleton<AudibleSimpleLookupWorkflow>();
+            services.AddSingleton<AudibleAuthorSearchWorkflow>();
             services.AddSingleton<DownloadService>();
+            services.AddSingleton<ScanJobProcessor>();
+            services.AddSingleton<IScanJobProcessor>(sp => sp.GetRequiredService<ScanJobProcessor>());
+            services.AddSingleton<MoveJobProcessor>();
+            services.AddSingleton<IMoveJobProcessor>(sp => sp.GetRequiredService<MoveJobProcessor>());
             services.AddSingleton<MoveBackgroundService>();
             services.AddSingleton<MoveQueueService>();
             services.AddSingleton<LibraryController>();
@@ -201,7 +227,10 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<SabnzbdApiMock>();
             services.AddSingleton<NzbgetApiMock>();
             services.AddSingleton<QbittorrentApiMock>();
-            services.AddSingleton<MyAnonamouseApiMock>();
+            services.AddSingleton(_ => new MyAnonamouseApiMock
+            {
+                FailOnUnexpectedCalls = true
+            });
 
             services.AddHttpClient<AudibleService>()
                 .ConfigurePrimaryHttpMessageHandler<AudibleApiMock>();
@@ -220,14 +249,20 @@ namespace Listenarr.Tests.Builders
             services.AddHttpClient("qbittorrent")
                 .ConfigurePrimaryHttpMessageHandler<QbittorrentApiMock>();
 
+            services.AddHttpClient(DownloadRegistrationExtensions.MyAnonamouseTorrentClientName)
+                .ConfigurePrimaryHttpMessageHandler<MyAnonamouseApiMock>();
+
             services.AddHttpClient<IAudnexusService, AudnexusService>()
                 .ConfigurePrimaryHttpMessageHandler<AudnexusServiceApiMock>();
 
             services.AddSingleton<IDownloadClientAdapter, DownloadCLientAdapterMock>();
 
             // Background services
-            services.AddSingleton<DownloadMonitorService>(); // FIXME: This should be a processor
+            services.AddSingleton<DownloadMonitorProcessor>();
+            services.AddSingleton<IDownloadMonitorProcessor>(sp => sp.GetRequiredService<DownloadMonitorProcessor>());
+            services.AddSingleton<DownloadMonitorService>();
             services.AddSingleton<DownloadProcessingJobProcessor>();
+            services.AddSingleton<IDownloadImportProcessor>(sp => sp.GetRequiredService<DownloadProcessingJobProcessor>());
 
             return services;
         }

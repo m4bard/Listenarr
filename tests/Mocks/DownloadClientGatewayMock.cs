@@ -15,9 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Application.Interfaces;
-using Listenarr.Domain.Models;
-
 namespace Listenarr.Tests.Mocks
 {
     /// <summary>
@@ -29,6 +26,8 @@ namespace Listenarr.Tests.Mocks
     public class DownloadClientGatewayMock : IDownloadClientGateway
     {
         public List<string> SourceFiles { get; set; } = [];
+        public bool RemoveResult { get; set; }
+        public bool MarkImportedResult { get; set; } = true;
         private readonly Dictionary<string, int> MethodCalls = [];
 
         public Task<(bool Success, string Message)> TestConnectionAsync(DownloadClientConfiguration client, CancellationToken ct = default)
@@ -38,18 +37,21 @@ namespace Listenarr.Tests.Mocks
             return Task.FromResult((true, "ok"));
         }
 
-        public Task<string?> AddAsync(DownloadClientConfiguration client, SearchResult result, CancellationToken ct = default)
+        public Task<DownloadClientSubmissionResult> AddAsync(
+            DownloadClientConfiguration client,
+            PreparedDownloadSubmission submission,
+            CancellationToken ct = default)
         {
             RegisterMethodCall(nameof(AddAsync));
 
-            return Task.FromResult<string?>(null);
+            return Task.FromResult(new DownloadClientSubmissionResult("mock-external-id"));
         }
 
         public Task<bool> RemoveAsync(DownloadClientConfiguration client, string id, bool deleteFiles = false, CancellationToken ct = default)
         {
             RegisterMethodCall(nameof(RemoveAsync));
 
-            return Task.FromResult(false);
+            return Task.FromResult(RemoveResult);
         }
 
         public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
@@ -70,7 +72,7 @@ namespace Listenarr.Tests.Mocks
         {
             RegisterMethodCall(nameof(MarkItemAsImportedAsync));
 
-            return Task.FromResult(true);
+            return Task.FromResult(MarkImportedResult);
         }
 
         public Task<QueueItem> GetQueueItemAsync(DownloadClientConfiguration client, Download download, QueueItem queueItem, CancellationToken ct = default)

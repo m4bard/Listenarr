@@ -15,8 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Application.Interfaces.Repositories;
-using Listenarr.Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -35,6 +33,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
         public async Task<Download> AddAsync(Download download)
         {
+            ApplyActiveDeduplicationKey(download);
             await using var ctx = await _dbFactory.CreateDbContextAsync();
             ctx.Downloads.Add(download);
             await ctx.SaveChangesAsync();
@@ -49,6 +48,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
         public async Task UpdateAsync(Download download)
         {
+            ApplyActiveDeduplicationKey(download);
             await using var ctx = await _dbFactory.CreateDbContextAsync();
             ctx.Downloads.Update(download);
             await ctx.SaveChangesAsync();
@@ -229,5 +229,22 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             value = raw.ToString() ?? string.Empty;
             return !string.IsNullOrWhiteSpace(value);
         }
+
+        private static void ApplyActiveDeduplicationKey(Download download)
+        {
+            download.ActiveAudiobookDeduplicationKey =
+                download.AudiobookId.HasValue && IsActive(download.Status)
+                    ? download.AudiobookId
+                    : null;
+        }
+
+        private static bool IsActive(DownloadStatus status) =>
+            status is DownloadStatus.Queued
+                or DownloadStatus.Downloading
+                or DownloadStatus.Paused
+                or DownloadStatus.Completed
+                or DownloadStatus.Processing
+                or DownloadStatus.Ready
+                or DownloadStatus.ImportPending;
     }
 }

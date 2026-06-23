@@ -17,14 +17,9 @@
  */
 using System.Net;
 using System.Text;
-using Listenarr.Api.Controllers;
 using Listenarr.Api.Dtos;
-using Listenarr.Application.Interfaces;
-using Listenarr.Domain.Models;
 using Listenarr.Tests.Common;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
-using Xunit;
 
 namespace Listenarr.Tests.Features.Api.Services.Search.Providers
 {
