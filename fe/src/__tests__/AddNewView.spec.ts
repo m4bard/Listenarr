@@ -23,6 +23,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import AddNewView from '@/views/content/AddNewView.vue'
 import { useLibraryStore } from '@/stores/library'
+import { useConfigurationStore } from '@/stores/configuration'
+import type { SearchResult } from '@/types'
 
 // apiService and signalR are mocked centrally in test-setup.ts
 
@@ -33,9 +35,16 @@ describe('AddNewView pagination', () => {
       routes: [{ path: '/', component: { template: '<div />' } }],
     })
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     window.localStorage.clear()
+    const apiModule = await import('@/services/api')
+    const apiService = apiModule.apiService as unknown as {
+      getApplicationSettings?: Mock
+      searchAudibleByTitleAndAuthor?: Mock
+    }
+    apiService.getApplicationSettings?.mockResolvedValue({})
+    apiService.searchAudibleByTitleAndAuthor?.mockResolvedValue({ totalResults: 0, results: [] })
     const pinia = createPinia()
     setActivePinia(pinia)
   })
@@ -113,6 +122,7 @@ describe('AddNewView pagination', () => {
       results: [
         {
           asin: 'B000123',
+          region: 'de',
           title: 'Dune',
           subtitle: 'A Heroic Saga',
           authors: [{ name: 'Frank Herbert' }],
@@ -152,7 +162,7 @@ describe('AddNewView pagination', () => {
     expect(tr.searchResult.series).toBe('Dune Series')
     expect(tr.publisher && tr.publisher[0]).toBe('Chilton')
     expect(tr.first_publish_year).toBe(1965)
-    expect(tr.searchResult.productUrl).toBe('https://www.audible.com/pd/B000123')
+    expect(tr.searchResult.productUrl).toBe('https://www.audible.de/pd/B000123')
 
     // Rendered subtitle should appear in the title-result card
     await wrapper.vm.$nextTick()
@@ -210,6 +220,9 @@ describe('AddNewView pagination', () => {
     const simpleOptions = simpleSelect.findAll('option').map((o) => o.text())
     expect(simpleOptions).toContain('All')
     expect(simpleOptions).toContain('English')
+    const simpleRegion = wrapper.find('select#region-select')
+    expect(simpleRegion.exists()).toBe(true)
+    expect((simpleRegion.element as HTMLSelectElement).value).toBe('us')
 
     // Advanced search select should be labeled Language and contain German
     await wrapper.vm.$nextTick()
@@ -222,9 +235,12 @@ describe('AddNewView pagination', () => {
     const advOptions = advSelect.findAll('option').map((o) => o.text())
     expect(advOptions).toContain('German')
     expect(wrapper.find('label[for="adv-language"]').text()).toBe('Language')
+    const advRegion = wrapper.find('select#adv-region')
+    expect(advRegion.exists()).toBe(true)
+    expect((advRegion.element as HTMLSelectElement).value).toBe('us')
   })
 
-  it('applies configured default region and language from application settings', async () => {
+  it('shows the configured region and preserves the configured default language', async () => {
     const apiModule = await import('@/services/api')
     const apiService = apiModule.apiService as unknown as { getApplicationSettings?: Mock }
     apiService.getApplicationSettings?.mockResolvedValue({
@@ -244,9 +260,72 @@ describe('AddNewView pagination', () => {
 
     expect(vm.searchLanguage).toBe('de')
     expect(vm.preferredSearchLanguage).toBe('polish')
+    expect((wrapper.find('select#region-select').element as HTMLSelectElement).value).toBe('de')
   })
 
-  it('omits language filtering when default language is set to all', async () => {
+  it('defaults language to the region primary language when no language is configured', async () => {
+    const apiModule = await import('@/services/api')
+    const apiService = apiModule.apiService as unknown as { getApplicationSettings?: Mock }
+    apiService.getApplicationSettings?.mockResolvedValue({
+      defaultSearchRegion: 'de',
+    })
+
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as {
+      searchLanguage?: string
+      preferredSearchLanguage?: string
+    }
+
+    expect(vm.searchLanguage).toBe('de')
+    expect(vm.preferredSearchLanguage).toBe('german')
+  })
+
+  it('allows ad-hoc region changes without overwriting saved settings and updates language', async () => {
+    const apiModule = await import('@/services/api')
+    const apiService = apiModule.apiService as unknown as { getApplicationSettings?: Mock }
+    apiService.getApplicationSettings?.mockResolvedValue({
+      defaultSearchRegion: 'de',
+      defaultSearchLanguage: 'german',
+    })
+    const advancedSearchSpy = vi.spyOn(apiModule.apiService, 'advancedSearch').mockResolvedValue([])
+
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const configStore = useConfigurationStore()
+    const vm = wrapper.vm as unknown as {
+      searchLanguage?: string
+      preferredSearchLanguage?: string
+      searchQuery?: string
+      performSearch?: () => Promise<void>
+    }
+
+    await wrapper.find('select.language-select').setValue('english')
+    await wrapper.vm.$nextTick()
+    expect(vm.preferredSearchLanguage).toBe('english')
+
+    await wrapper.find('select#region-select').setValue('fr')
+    await wrapper.vm.$nextTick()
+
+    expect(vm.searchLanguage).toBe('fr')
+    expect(vm.preferredSearchLanguage).toBe('french')
+    expect(configStore.applicationSettings?.defaultSearchRegion).toBe('de')
+
+    vm.searchQuery = 'Dune'
+    await vm.performSearch?.()
+    await flushPromises()
+
+    const lastCall = advancedSearchSpy.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined
+    expect(lastCall?.region).toBe('fr')
+    expect(lastCall?.language).toBe('french')
+    advancedSearchSpy.mockRestore()
+  })
+
+  it('preserves a saved all-language preference for the configured region', async () => {
     const apiModule = await import('@/services/api')
     const apiService = apiModule.apiService as unknown as { getApplicationSettings?: Mock }
     apiService.getApplicationSettings?.mockResolvedValue({
@@ -274,11 +353,11 @@ describe('AddNewView pagination', () => {
     expect(advancedSearchSpy).toHaveBeenCalled()
     const lastCall = advancedSearchSpy.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined
     expect(lastCall?.region).toBe('de')
-    expect(lastCall).not.toHaveProperty('language')
+    expect(lastCall?.language).toBeUndefined()
     advancedSearchSpy.mockRestore()
   })
 
-  it('filters mixed-language audible results using the selected language while keeping the default region', async () => {
+  it('filters mixed-language audible results using the saved language while keeping the default region', async () => {
     const apiModule = await import('@/services/api')
     const apiService = apiModule.apiService as unknown as { getApplicationSettings?: Mock }
     apiService.getApplicationSettings?.mockResolvedValue({
@@ -651,6 +730,7 @@ describe('AddNewView pagination', () => {
     vm.searchType = 'asin'
     ;(vm as unknown).audibleResult = {
       asin: 'BAUD1',
+      region: 'de',
       title: 'Title',
       authors: [{ name: 'Author Name' }],
       narrators: [{ name: 'Narrator Name' }],
@@ -667,14 +747,146 @@ describe('AddNewView pagination', () => {
     // Metadata badge should link to the Audible product page
     const metaLink = wrapper.find('.result-meta .metadata-source-link')
     expect(metaLink.exists()).toBe(true)
-    expect(metaLink.attributes('href')).toBe('https://www.audible.com/pd/BAUD1')
+    expect(metaLink.attributes('href')).toBe('https://www.audible.de/pd/BAUD1')
     expect(metaLink.text()).toContain('Audible')
 
     // Source link should prefer Audible product URL and show 'Audible'
     const sourceLink = wrapper.find('.result-meta .source-link')
     expect(sourceLink.exists()).toBe(true)
-    expect(sourceLink.attributes('href')).toBe('https://www.audible.com/pd/BAUD1')
+    expect(sourceLink.attributes('href')).toBe('https://www.audible.de/pd/BAUD1')
     expect(sourceLink.text()).toContain('Audible')
+    expect(wrapper.findAll('.result-meta a')).toHaveLength(1)
+    expect(sourceLink.classes()).toContain('metadata-source-link')
+    expect(sourceLink.findAll('svg')).toHaveLength(2)
+  })
+
+  it('shows Amazon metadata badge links for the selected result region', async () => {
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+    const vm = wrapper.vm as unknown as { searchType?: string; titleResults?: unknown[] }
+
+    vm.searchType = 'title'
+    vm.titleResults = [
+      {
+        key: 'BAMZ1',
+        title: 'Amazon Result',
+        author_name: ['Author Name'],
+        metadataSource: 'Amazon',
+        searchResult: {
+          asin: 'BAMZ1',
+          region: 'de',
+          artist: 'Author Name',
+          metadataSource: 'Amazon',
+        },
+      },
+    ]
+
+    await wrapper.vm.$nextTick()
+
+    const metaLink = wrapper.find('.title-results .metadata-source-link')
+    expect(metaLink.exists()).toBe(true)
+    expect(metaLink.attributes('href')).toBe('https://www.amazon.de/dp/BAMZ1')
+    expect(metaLink.text()).toContain('Metadata: Amazon')
+  })
+
+  it('shows metadata and source links for simple Audible-backed card results', async () => {
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+    const vm = wrapper.vm as unknown as {
+      handleSimpleSearchResults?: (results: SearchResult[]) => Promise<void>
+    }
+
+    await vm.handleSimpleSearchResults?.([
+      {
+        id: 'simple-audible-url',
+        title: 'Simple Audible Result',
+        artist: 'Author Name',
+        album: '',
+        category: '',
+        source: '',
+        sourceLink: '',
+        publishedDate: '',
+        format: '',
+        size: 0,
+        magnetLink: '',
+        torrentUrl: '',
+        nzbUrl: '',
+        downloadType: 'Torrent',
+        language: 'english',
+        publisher: 'Pottermore Publishing',
+        releaseDate: '2016-11-20',
+        link: 'https://www.audible.de/pd/B01M02FJ7A',
+      },
+    ])
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    const metaLink = wrapper.find('.title-results .metadata-source-link')
+    expect(metaLink.exists()).toBe(true)
+    expect(metaLink.attributes('data-source')).toBe('audible')
+    expect(metaLink.attributes('href')).toBe('https://www.audible.de/pd/B01M02FJ7A')
+    expect(metaLink.text()).toContain('Audible')
+
+    const sourceLink = wrapper.find('.title-results .source-link')
+    expect(sourceLink.exists()).toBe(true)
+    expect(sourceLink.attributes('href')).toBe('https://www.audible.de/pd/B01M02FJ7A')
+    expect(sourceLink.text()).toContain('Audible')
+    expect(wrapper.findAll('.title-results .result-meta a')).toHaveLength(1)
+    expect(sourceLink.classes()).toContain('metadata-source-link')
+    expect(sourceLink.findAll('svg')).toHaveLength(2)
+
+    const badgeText = wrapper
+      .findAll('.title-results .metadata-badges .metadata-badge')
+      .map((badge) => badge.text())
+    expect(badgeText).toContain('Pottermore Publishing')
+    expect(badgeText).toContain('2016')
+  })
+
+  it('shows metadata and source links for advanced Audible-backed results', async () => {
+    const apiModule = await import('@/services/api')
+    const advancedSearchSpy = vi.spyOn(apiModule.apiService, 'advancedSearch').mockResolvedValue([
+      {
+        asin: 'B01M02FJ7A',
+        region: 'de',
+        title: 'Advanced Audible Result',
+        author: 'Author Name',
+        language: 'english',
+        link: 'https://www.audible.de/pd/B01M02FJ7A',
+      },
+    ])
+
+    try {
+      const router = createTestRouter()
+      const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+      const vm = wrapper.vm as unknown as {
+        showAdvancedSearch?: boolean
+        advancedSearchParams?: Record<string, unknown>
+        performAdvancedSearch?: () => Promise<void>
+      }
+
+      vm.showAdvancedSearch = true
+      vm.advancedSearchParams = { title: 'Advanced Audible Result' }
+
+      await vm.performAdvancedSearch?.()
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const metaLink = wrapper.find('.title-results .metadata-source-link')
+      expect(metaLink.exists()).toBe(true)
+      expect(metaLink.attributes('data-source')).toBe('audible')
+      expect(metaLink.attributes('href')).toBe('https://www.audible.de/pd/B01M02FJ7A')
+      expect(metaLink.text()).toContain('Audible')
+
+      const sourceLink = wrapper.find('.title-results .source-link')
+      expect(sourceLink.exists()).toBe(true)
+      expect(sourceLink.attributes('href')).toBe('https://www.audible.de/pd/B01M02FJ7A')
+      expect(sourceLink.text()).toContain('Audible')
+      expect(wrapper.findAll('.title-results .result-meta a')).toHaveLength(1)
+      expect(sourceLink.classes()).toContain('metadata-source-link')
+      expect(sourceLink.findAll('svg')).toHaveLength(2)
+    } finally {
+      advancedSearchSpy.mockRestore()
+    }
   })
 
   it('does not label non-Audible URLs containing audible.com as Audible', async () => {
