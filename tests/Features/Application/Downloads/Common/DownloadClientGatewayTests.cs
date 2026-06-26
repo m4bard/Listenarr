@@ -59,6 +59,14 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
         [Trait("Scenario", "Make sure GetQueueAsync returns one item with path mapped")]
         public async Task GetQueueAsync()
         {
+            await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(client)
+                .WithExternalId("1")
+                .Build());
+            await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(client)
+                .WithExternalId("2")
+                .Build());
 
             var items = await downloadClientGateway.GetQueueAsync(client);
             Assert.NotEmpty(items);

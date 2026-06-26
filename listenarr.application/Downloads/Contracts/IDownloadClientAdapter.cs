@@ -34,7 +34,9 @@ namespace Listenarr.Application.Downloads.Contracts
     {
         string ClientType { get; }
 
-        List<DownloadProtocol> Protocols { get; }
+        DownloadProtocol Protocol { get; }
+
+        List<DownloadProtocol> Protocols => [Protocol];
 
         Task<(bool Success, string Message)> TestConnectionAsync(DownloadClientConfiguration client, CancellationToken ct = default);
 
@@ -60,6 +62,8 @@ namespace Listenarr.Application.Downloads.Contracts
         /// <param name="ct"></param>
         /// <returns>List of updated values for the given IDs</returns>
         Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, List<string> ids, CancellationToken ct = default);
+
+        Task<List<DownloadClientItem>> GetItemsAsync(DownloadClientConfiguration client, CancellationToken ct = default);
 
         /// <summary>
         /// Retrieves the information about a given download as a queue item

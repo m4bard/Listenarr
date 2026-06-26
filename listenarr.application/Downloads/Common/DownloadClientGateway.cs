@@ -91,6 +91,10 @@ namespace Listenarr.Application.Downloads.Common
         {
             var downloads = await downloadRepository.GetByClientAsync(client.Id);
             var ids = GetExternalIds(downloads);
+            if (ids.Count == 0)
+            {
+                return [];
+            }
 
             var adapter = ResolveAdapter(client);
             var items = await adapter.GetQueueAsync(client, ids, ct);
@@ -144,6 +148,10 @@ namespace Listenarr.Application.Downloads.Common
         public async Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken ct = default)
         {
             var ids = GetExternalIds(downloads);
+            if (ids.Count == 0)
+            {
+                return downloads;
+            }
 
             var adapter = ResolveAdapter(client);
             var items = await adapter.GetQueueAsync(client, ids!, ct);

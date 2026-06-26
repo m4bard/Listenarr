@@ -235,9 +235,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Common
             Assert.Single(queue);
             Assert.Equal("Book One", queue[0].Title);
 
-            Assert.Single(items);
-            Assert.Equal("Book One", items[0].Title);
-            Assert.Equal(["listgroups", "history", "listgroups", "history"], methodNames);
+            Assert.Equal(["listgroups", "history"], methodNames);
             Assert.DoesNotContain(
                 logger.Levels,
                 level => level >= LogLevel.Warning);

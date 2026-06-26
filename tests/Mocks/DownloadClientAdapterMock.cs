@@ -9,6 +9,8 @@ namespace Listenarr.Tests.Mocks
 
         public string ClientType => "mock";
 
+        public DownloadProtocol Protocol => DownloadProtocol.Torrent;
+
         public List<DownloadProtocol> Protocols => [
             DownloadProtocol.Torrent,
             DownloadProtocol.Usenet
@@ -82,6 +84,11 @@ namespace Listenarr.Tests.Mocks
             ];
 
             return results;
+        }
+
+        public Task<List<DownloadClientItem>> GetItemsAsync(DownloadClientConfiguration client, CancellationToken ct = default)
+        {
+            return Task.FromResult(new List<DownloadClientItem>());
         }
 
         public Task<bool> RemoveAsync(DownloadClientConfiguration client, string id, bool deleteFiles = false, CancellationToken ct = default)

@@ -187,10 +187,14 @@ namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd
             return await _removalWorkflow.RemoveAsync(client, id, deleteFiles, ct);
         }
 
-        public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
+        public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, List<string> ids, CancellationToken ct = default)
         {
-            return await _queueFetchWorkflow.GetQueueAsync(client, ct);
+            var items = await _queueFetchWorkflow.GetQueueAsync(client, ct);
+            return FilterByIds(items, ids);
         }
+
+        public Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
+            => GetQueueAsync(client, [], ct);
 
         public async Task<List<(string Id, string Name)>> GetRecentHistoryAsync(DownloadClientConfiguration client, int limit = 100, CancellationToken ct = default)
         {
@@ -342,6 +346,17 @@ namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd
             CancellationToken cancellationToken)
         {
             return await _downloadPollingWorkflow.FetchDownloadsAsync(client, downloads, cancellationToken);
+        }
+
+        private static List<QueueItem> FilterByIds(List<QueueItem> items, List<string> ids)
+        {
+            if (ids.Count == 0)
+            {
+                return items;
+            }
+
+            var idSet = ids.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return [.. items.Where(item => !string.IsNullOrWhiteSpace(item.Id) && idSet.Contains(item.Id))];
         }
     }
 }

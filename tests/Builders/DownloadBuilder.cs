@@ -145,6 +145,9 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public DownloadBuilder WithClientDownloadId(string value)
+            => WithExternalId(value);
+
         public Download Build()
         {
             return _download;
