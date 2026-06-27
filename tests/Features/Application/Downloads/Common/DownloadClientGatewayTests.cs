@@ -128,6 +128,24 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
 
         [Fact]
         [Trait("Method", "GetQueueItemAsync")]
+        [Trait("Scenario", "Check empty ContentPath is treated as missing instead of scanned")]
+        public async Task GetQueueItemAsync_EmptyContentPath_DoesNotScanFilesystem()
+        {
+            var downloadCLientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
+            downloadCLientAdapterMock.QueueItemMock = new QueueItemBuilder()
+                .WithContentPath(string.Empty)
+                .WithStatus("downloading")
+                .Build();
+
+            var item = await downloadClientGateway.GetQueueItemAsync(client, new DownloadBuilder().Build(), new QueueItem());
+
+            Assert.NotNull(item);
+            Assert.NotNull(item.SourceFiles);
+            Assert.Empty(item.SourceFiles);
+        }
+
+        [Fact]
+        [Trait("Method", "GetQueueItemAsync")]
         [Trait("Scenario", "Check SourceFiles is filled using content path file")]
         public async Task GetQueueItemAsync_UseContentPath_File()
         {

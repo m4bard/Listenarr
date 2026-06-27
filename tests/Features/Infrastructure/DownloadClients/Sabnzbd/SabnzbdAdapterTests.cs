@@ -178,6 +178,28 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Sabnzbd
         }
 
         [Fact]
+        public async Task GetImportItemAsync_QueueItemWithStaleContentPath_ResolvesFromHistoryStorage()
+        {
+            var source = FileService.GetTempDirectory("sabnzbd-history-storage");
+            var stalePath = Path.Join(FileService.GetTempDirectory("sabnzbd-stale-path"), "missing-folder");
+            sabnzbdApiMock.contentPath = source;
+
+            var adapter = MockUtils.CreateSabnzbdAdapter(_provider);
+            var original = new QueueItem
+            {
+                Id = SabnzbdApiMock.COMPLETED_FILE_SABNZBD,
+                Title = "hello",
+                Status = "completed",
+                ContentPath = stalePath
+            };
+
+            var resolved = await adapter.GetImportItemAsync(_client, new Download { Id = "download-1" }, original);
+
+            Assert.Equal(source, resolved.ContentPath);
+            Assert.Equal(stalePath, original.ContentPath);
+        }
+
+        [Fact]
         public async Task PollSABnzbd_SchedulesRetry_AndFinalizes_WhenFileArrives()
         {
             var sourceDirectory = FileService.GetTempDirectory("listenarr-test");
@@ -251,6 +273,64 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Sabnzbd
             });
         }
 
+        [Fact]
+        public void ActiveQueueItem_DoesNotInventImportContentPath_FromConfiguredDownloadPath()
+        {
+            _client.DownloadPath = FileUtils.GetAbsolutePath("sabnzbd-active-root");
+            using var document = System.Text.Json.JsonDocument.Parse(
+                """
+                {
+                  "nzo_id": "sab-active-1",
+                  "filename": "Book Folder",
+                  "status": "Downloading",
+                  "percentage": "50",
+                  "mb": "100",
+                  "mbleft": "50"
+                }
+                """);
+
+            var item = SabnzbdResponseMapper.MapQueueSlotToQueueItem(
+                _client,
+                document.RootElement,
+                string.Empty,
+                speed: 0);
+
+            Assert.NotNull(item);
+            Assert.Equal(_client.DownloadPath, item!.RemotePath);
+            Assert.Null(item.ContentPath);
+            Assert.NotNull(item.SourceFiles);
+            Assert.Empty(item.SourceFiles);
+        }
+
+        [Fact]
+        public void ActiveQueueItem_UsesExplicitStoragePath_WhenSabReportsOne()
+        {
+            _client.DownloadPath = FileUtils.GetAbsolutePath("sabnzbd-active-root");
+            var storagePath = FileUtils.GetAbsolutePath("sabnzbd-storage", "Book Folder");
+            using var document = System.Text.Json.JsonDocument.Parse(
+                $$"""
+                {
+                  "nzo_id": "sab-active-2",
+                  "filename": "Book Folder",
+                  "status": "Completed",
+                  "percentage": "100",
+                  "mb": "100",
+                  "mbleft": "0",
+                  "storage": "{{storagePath.Replace("\\", "\\\\")}}"
+                }
+                """);
+
+            var item = SabnzbdResponseMapper.MapQueueSlotToQueueItem(
+                _client,
+                document.RootElement,
+                string.Empty,
+                speed: 0);
+
+            Assert.NotNull(item);
+            Assert.Equal(storagePath, item!.RemotePath);
+            Assert.Equal(storagePath, item.ContentPath);
+        }
+
         [Theory]
         [InlineData("Completed", "completed")]
         [InlineData("Failed", "failed")]
@@ -267,6 +347,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Sabnzbd
 
             Assert.NotNull(item);
             Assert.Equal(expected, item!.Status);
+            Assert.Equal("/downloads/book", item.ContentPath);
         }
     }
 }

@@ -206,21 +206,22 @@ namespace Listenarr.Application.Downloads.Common
         /// <returns></returns>
         private async Task<QueueItem> TranslateQueueItemPathsAsync(DownloadClientConfiguration client, QueueItem item)
         {
-            if (item.RemotePath != null)
+            if (!string.IsNullOrWhiteSpace(item.RemotePath))
             {
                 item.LocalPath = await remotePathMappingService.TranslatePathAsync(client, item.RemotePath);
             }
 
-            if (item.ContentPath != null)
+            if (!string.IsNullOrWhiteSpace(item.ContentPath))
             {
                 item.ContentPath = await remotePathMappingService.TranslatePathAsync(client, item.ContentPath);
             }
 
             // FIXME: https://github.com/Listenarrs/Listenarr/issues/592
-            // We havent yet decided of the responsibility of download client adapter
-            // As a result, we cannot assume an empty sourceFiles means there are no source files downloaded
-            // and so, we try to populate it as if it was null
-            // When the issue is tackled, we might want to keep the empty list when the adapter gives an empty list
+            // Adapter ownership is still being clarified. Until that contract is tightened,
+            // the gateway treats null and empty SourceFiles as "unknown" and derives a
+            // file list only from a real ContentPath. Empty path strings are intentionally
+            // ignored because some clients, especially active SABnzbd queue entries, do not
+            // expose a completed storage path until history is available.
             if (item.SourceFiles != null && item.SourceFiles.Count > 0)
             {
                 List<string> sourceFiles = [];
@@ -230,17 +231,19 @@ namespace Listenarr.Application.Downloads.Common
                 }
                 item.SourceFiles = sourceFiles;
             }
-            else if (item.ContentPath != null)
+            else if (!string.IsNullOrWhiteSpace(item.ContentPath))
             {
-                // Scan content path: Some clients are not able to tell if they have a file or a directory downloaded
-                // So we make sure it's either one or the other and log if it's not
+                // Scan ContentPath only after the adapter has supplied a non-empty path.
+                // Active queue snapshots may not be import-ready, so adapters should leave
+                // ContentPath null until a reliable file or completed storage directory exists.
                 if (fileSystem.FileExists(item.ContentPath))
                 {
                     item.SourceFiles = [item.ContentPath];
                 }
                 else
                 {
-                    // We will try to scan for source files
+                    // Some clients can only report a directory. Expand it so import code can
+                    // operate on the specific files that belong to this download.
                     try
                     {
                         item.SourceFiles = [.. Directory
@@ -249,15 +252,18 @@ namespace Listenarr.Application.Downloads.Common
                     }
                     catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
                     {
-                        logger.LogWarning($"Download client {client.Id} reported no source files and content path scanning failed for item {item.Title} with path {item.ContentPath}");
-                        logger.LogDebug($"Reason: {exception.Message}");
+                        LogMissingSourceFiles(
+                            client,
+                            item,
+                            $"content path scanning failed with path {item.ContentPath}",
+                            exception);
                         item.SourceFiles = [];
                     }
                 }
             }
             else
             {
-                logger.LogWarning($"Download client {client.Id} reported no source files and no content path for item {item.Title}");
+                LogMissingSourceFiles(client, item, "no content path", null);
                 item.SourceFiles = [];
             }
 
@@ -265,6 +271,43 @@ namespace Listenarr.Application.Downloads.Common
             item.SourceFiles = new HashSet<string>(item.SourceFiles, StringComparer.OrdinalIgnoreCase).ToList();
 
             return item;
+        }
+
+        private void LogMissingSourceFiles(
+            DownloadClientConfiguration client,
+            QueueItem item,
+            string reason,
+            Exception? exception)
+        {
+            if (IsImportRelevantStatus(item.Status))
+            {
+                logger.LogWarning(
+                    exception,
+                    "Download client {ClientId} reported no source files and {Reason} for item {Title}",
+                    client.Id,
+                    reason,
+                    item.Title);
+            }
+            else
+            {
+                // Active queue entries often have progress/status but no stable filesystem path yet.
+                // Keep this visible at Debug for diagnostics without alarming operators during normal polling.
+                logger.LogDebug(
+                    exception,
+                    "Download client {ClientId} reported no source files and {Reason} for item {Title}",
+                    client.Id,
+                    reason,
+                    item.Title);
+            }
+        }
+
+        private static bool IsImportRelevantStatus(string? status)
+        {
+            return string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, "success", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, "processing", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, "importpending", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, "failed", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

@@ -18,7 +18,6 @@
 
 using System.Text.Json;
 using System.Globalization;
-using Listenarr.Domain.Common;
 
 namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd;
 
@@ -48,11 +47,16 @@ internal static class SabnzbdResponseMapper
             : 0;
 
         var mappedStatus = MapQueueStatus(status);
-        var remotePath = client.DownloadPath ?? "";
-        var contentPath = !string.IsNullOrEmpty(remotePath) && !string.IsNullOrEmpty(filename)
-            ? FileUtils.CombineWithOptionalBase(remotePath, filename)
-            : remotePath;
+        var storagePath = GetString(slot, "storage");
+        var explicitContentPath = string.IsNullOrWhiteSpace(storagePath) ? null : storagePath;
+        var remotePath = explicitContentPath ?? (string.IsNullOrWhiteSpace(client.DownloadPath)
+            ? null
+            : client.DownloadPath);
 
+        // Active SABnzbd queue slots do not reliably expose the completed storage path.
+        // Do not synthesize ContentPath from the configured download root and filename;
+        // only use a path when SAB itself reports an explicit storage value. Import
+        // resolution still uses completed history storage once SAB provides it.
         return new QueueItem
         {
             Id = nzoId,
@@ -72,7 +76,8 @@ internal static class SabnzbdResponseMapper
             CanRemove = true,
             RemotePath = remotePath,
             LocalPath = remotePath,
-            ContentPath = contentPath
+            ContentPath = explicitContentPath,
+            SourceFiles = []
         };
     }
 
@@ -100,7 +105,7 @@ internal static class SabnzbdResponseMapper
 
         var histBytes = slot.TryGetProperty("bytes", out var hb) && hb.TryGetInt64(out var hbl) ? hbl : 0L;
         var storagePath = GetString(slot, "storage");
-        var remotePath = !string.IsNullOrEmpty(storagePath) ? storagePath : (client.DownloadPath ?? "");
+        var remotePath = !string.IsNullOrWhiteSpace(storagePath) ? storagePath : null;
         DateTime? completedAt = null;
         if (slot.TryGetProperty("completed", out var compEpoch) && compEpoch.TryGetInt64(out var epoch))
         {
@@ -153,11 +158,12 @@ internal static class SabnzbdResponseMapper
             : 0;
 
         var mappedStatus = MapDownloadItemStatus(status);
-        var remotePath = client.DownloadPath ?? "";
-        var contentPath = !string.IsNullOrEmpty(remotePath) && !string.IsNullOrEmpty(filename)
-            ? FileUtils.CombineWithOptionalBase(remotePath, filename)
-            : remotePath;
+        var storagePath = GetString(slot, "storage");
+        var explicitOutputPath = string.IsNullOrWhiteSpace(storagePath) ? string.Empty : storagePath;
 
+        // As with QueueItem mapping, active SABnzbd items should not invent an import
+        // path. Use only an explicit SAB storage value; otherwise GetImportItemAsync
+        // resolves the final path from history storage.
         return new DownloadClientItem
         {
             DownloadId = nzoId.ToUpperInvariant(),
@@ -167,7 +173,7 @@ internal static class SabnzbdResponseMapper
             TotalSize = (long)(sizeMb * 1024 * 1024),
             RemainingSize = (long)(mbLeft * 1024 * 1024),
             RemainingTime = etaSeconds > 0 ? TimeSpan.FromSeconds(etaSeconds) : null,
-            OutputPath = contentPath,
+            OutputPath = explicitOutputPath,
             Message = status,
             Progress = percentage,
             DownloadSpeed = queueSpeed,
