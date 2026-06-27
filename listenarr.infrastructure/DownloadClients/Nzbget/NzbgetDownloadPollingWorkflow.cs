@@ -233,6 +233,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             {
                 var history = await historyReader.ReadAsync(client, cancellationToken);
                 historyCount = history.Count;
+                LogFailedHistoryEntries(client, history);
                 MergeHistory(
                     client,
                     history,
@@ -334,8 +335,11 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                 entry.TotalSizeBytes - entry.DownloadedSizeBytes,
                 0);
             AdapterUtils.MapDownloadProgress(download, progress, amountLeft, "failure");
-            download.ErrorMessage = entry.RawStatus;
+            download.ErrorMessage = NzbgetFailureMessageMapper.Map(entry);
             download.Metadata["ClientFailureReason"] = entry.RawStatus;
+            download.Metadata["ClientFailureFinalDir"] = entry.FinalDir;
+            download.Metadata["ClientFailureDestDir"] = entry.DestDir;
+            download.Metadata["ClientFailureTitle"] = entry.Title;
         }
         private void LogHistoryMeasurement(
             DownloadClientConfiguration client,
@@ -358,6 +362,24 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                     PollingSurface,
                     historyCount,
                     elapsedMilliseconds);
+            }
+        }
+        private void LogFailedHistoryEntries(
+            DownloadClientConfiguration client,
+            IReadOnlyList<NzbgetHistoryEntry> history)
+        {
+            var configuredCategory = DownloadClientCategoryFilter.GetConfiguredCategory(client);
+            foreach (var entry in history.Where(entry =>
+                entry.Outcome == NzbgetHistoryOutcome.Failed &&
+                DownloadClientCategoryFilter.Matches(configuredCategory, entry.Category)))
+            {
+                logger.LogWarning(
+                    "NZBGet history reported failure for {NzbId}: Status={Status}, FinalDir={FinalDir}, DestDir={DestDir}, Title={Title}",
+                    LogRedaction.SanitizeText(entry.CanonicalNzbId),
+                    LogRedaction.SanitizeText(entry.RawStatus),
+                    LogRedaction.SanitizeFilePath(entry.FinalDir),
+                    LogRedaction.SanitizeFilePath(entry.DestDir),
+                    LogRedaction.SanitizeText(entry.Title));
             }
         }
         private static Dictionary<string, Download> BuildIdLookup(
