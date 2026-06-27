@@ -126,6 +126,11 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                     continue;
                 }
 
+                if (entry.Outcome == NzbgetHistoryOutcome.Failed)
+                {
+                    LogFailedHistoryEntry(surface, entry);
+                }
+
                 append(entry);
             }
 
@@ -252,6 +257,20 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                 surface,
                 activeCount,
                 exception.GetType().Name);
+        }
+
+        private void LogFailedHistoryEntry(
+            string surface,
+            NzbgetHistoryEntry entry)
+        {
+            logger.LogWarning(
+                "NZBGet history reported failure for {NzbId}: Status={Status}, FinalDir={FinalDir}, DestDir={DestDir}, Title={Title}, Surface={Surface}",
+                LogRedaction.SanitizeText(entry.CanonicalNzbId),
+                LogRedaction.SanitizeText(entry.RawStatus),
+                LogRedaction.SanitizeFilePath(entry.FinalDir),
+                LogRedaction.SanitizeFilePath(entry.DestDir),
+                LogRedaction.SanitizeText(entry.Title),
+                surface);
         }
 
         private void LogUnmatchedTerminalActiveItems(
