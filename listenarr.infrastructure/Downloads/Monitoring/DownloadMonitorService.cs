@@ -73,14 +73,20 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
     public class DownloadMonitorProcessor(
         IServiceScopeFactory scopeFactory,
         IDownloadPushService downloadPushService,
+        TimeProvider timeProvider,
         ILogger<DownloadMonitorProcessor> logger) : IDownloadMonitorProcessor
     {
+        private static readonly TimeSpan OrphanCleanupInterval = TimeSpan.FromMinutes(10);
+        private static readonly TimeSpan OrphanCleanupQueueTimeout = TimeSpan.FromSeconds(15);
+        private static readonly TimeSpan OrphanCleanupStaleSnapshotMaxAge = TimeSpan.FromMinutes(3);
+
         private int _pollingInterval = 30;
         private DateTime _lastFullBroadcast = DateTime.MinValue;
 
         // Per-client polling controls to avoid overloading download clients
         internal readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _nextClientPoll = new();
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _clientFailureCounts = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _nextOrphanCleanup = new();
 
         public void ScheduleNextClientPoll(DownloadClientConfiguration client, double interval)
         {
@@ -119,6 +125,8 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
             var downloadRepository = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
             var configurationService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
             var downloadClientGateway = scope.ServiceProvider.GetRequiredService<IDownloadClientGateway>();
+            var clientQueuePoller = scope.ServiceProvider.GetRequiredService<DownloadClientQueuePoller>();
+            var orphanCleanupService = scope.ServiceProvider.GetRequiredService<DownloadOrphanCleanupService>();
 
             var appSettings = await configurationService.GetApplicationSettingsAsync();
             if (appSettings.PollingIntervalSeconds > 0)
@@ -204,6 +212,16 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
 
                         await TriggerCallbacks(client, download, previousDownload, cancellationToken);
                     }
+
+                    if (ShouldRunOrphanCleanup(client))
+                    {
+                        await CleanupOrphanedDownloadsAsync(
+                            client,
+                            clientDownloads,
+                            clientQueuePoller,
+                            orphanCleanupService);
+                        ScheduleNextOrphanCleanup(client);
+                    }
                 }
                 catch (DownloadClientAdapterPollingException exception)
                 {
@@ -219,6 +237,49 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 }
 
                 ScheduleNextClientPollOnSuccess(client);
+            }
+        }
+
+        private bool ShouldRunOrphanCleanup(DownloadClientConfiguration client)
+        {
+            return !_nextOrphanCleanup.TryGetValue(client.Id, out var nextCleanup) ||
+                timeProvider.GetUtcNow() >= nextCleanup;
+        }
+
+        private void ScheduleNextOrphanCleanup(DownloadClientConfiguration client)
+        {
+            var next = timeProvider.GetUtcNow().Add(OrphanCleanupInterval);
+            _nextOrphanCleanup.AddOrUpdate(client.Id, next, (_, __) => next);
+        }
+
+        private async Task CleanupOrphanedDownloadsAsync(
+            DownloadClientConfiguration client,
+            List<Download> clientDownloads,
+            DownloadClientQueuePoller clientQueuePoller,
+            DownloadOrphanCleanupService orphanCleanupService)
+        {
+            try
+            {
+                // Durable orphan removal belongs to the monitor worker, not the
+                // queue display path. Use the same full-snapshot poller safeguards
+                // as queue display so cached, unavailable, or suspiciously empty
+                // snapshots never drive destructive cleanup.
+                var queueResults = await clientQueuePoller.FetchAsync(
+                    [client],
+                    OrphanCleanupQueueTimeout,
+                    OrphanCleanupStaleSnapshotMaxAge,
+                    maxParallelClientPolls: 1);
+                var clientQueueResult = queueResults.Single();
+
+                await orphanCleanupService.RemoveOrphansAsync(
+                    client,
+                    clientQueueResult,
+                    clientQueueResult.QueueItems,
+                    clientDownloads);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogError(ex, "Error cleaning up orphaned downloads for client {ClientName}", client.Name);
             }
         }
 

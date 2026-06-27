@@ -1,6 +1,7 @@
 using System.Reflection;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
+using Listenarr.Tests.Mocks;
 
 namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
 {
@@ -131,6 +132,86 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
 
         [Fact]
         [Trait("Method", "MonitorDownloadsAsync")]
+        public async Task MonitorDownloadsAsync_LiveSnapshot_RemovesEligibleOrphanedDownload()
+        {
+            var orphan = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithId("orphaned-download")
+                .WithDownloading(0)
+                .WithExternalId("missing-client-id")
+                .WithStartDate(DateTime.UtcNow.AddMinutes(-10))
+                .WithDownloadClientConfiguration(client)
+                .Build());
+            var present = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithId("present-download")
+                .WithDownloading(0)
+                .WithExternalId("1")
+                .WithStartDate(DateTime.UtcNow.AddMinutes(-10))
+                .WithDownloadClientConfiguration(client)
+                .Build());
+
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+
+            Assert.Null(await _downloadRepository.GetByIdAsync(orphan.Id));
+            Assert.NotNull(await _downloadRepository.GetByIdAsync(present.Id));
+        }
+
+        [Fact]
+        [Trait("Method", "MonitorDownloadsAsync")]
+        public async Task MonitorDownloadsAsync_OrphanCleanup_DoesNotRunEveryCycle()
+        {
+            var adapter = _provider.GetServices<IDownloadClientAdapter>()
+                .OfType<DownloadCLientAdapterMock>()
+                .Single();
+            await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloading(0)
+                .WithExternalId("1")
+                .WithStartDate(DateTime.UtcNow.AddMinutes(-10))
+                .WithDownloadClientConfiguration(client)
+                .Build());
+
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+            downloadMonitorService.ScheduleNextClientPoll(client, -100);
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+
+            Assert.Equal(2, adapter.FilteredQueueRequestCount);
+            Assert.Equal(1, adapter.FullSnapshotQueueRequestCount);
+        }
+
+        [Fact]
+        [Trait("Method", "MonitorDownloadsAsync")]
+        public async Task MonitorDownloadsAsync_OrphanCleanup_RunsAgainAfterThrottleInterval()
+        {
+            var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+            Init(services => services.WithSingleton<TimeProvider>(timeProvider));
+            downloadMonitorService = _provider.GetRequiredService<DownloadMonitorService>();
+            client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithType("mock")
+                .WithName("Mock")
+                .Build());
+            var adapter = _provider.GetServices<IDownloadClientAdapter>()
+                .OfType<DownloadCLientAdapterMock>()
+                .Single();
+            await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloading(0)
+                .WithExternalId("1")
+                .WithStartDate(DateTime.UtcNow.AddMinutes(-10))
+                .WithDownloadClientConfiguration(client)
+                .Build());
+
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+            timeProvider.Advance(TimeSpan.FromMinutes(9));
+            downloadMonitorService.ScheduleNextClientPoll(client, -100);
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+            timeProvider.Advance(TimeSpan.FromMinutes(1).Add(TimeSpan.FromSeconds(1)));
+            downloadMonitorService.ScheduleNextClientPoll(client, -100);
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+
+            Assert.Equal(3, adapter.FilteredQueueRequestCount);
+            Assert.Equal(2, adapter.FullSnapshotQueueRequestCount);
+        }
+
+        [Fact]
+        [Trait("Method", "MonitorDownloadsAsync")]
         public async Task MonitorDownloadsAsync_RespectSchedulingInterval()
         {
             var download = await _downloadRepository.AddAsync(new DownloadBuilder()
@@ -201,6 +282,12 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             var downloadProcessingJobService = _provider.GetRequiredService<IDownloadProcessingJobService>();
             var job = await downloadProcessingJobService.GetNextJobAsync();
             Assert.Null(job);
+        }
+        private sealed class MutableTimeProvider(DateTimeOffset currentTime) : TimeProvider
+        {
+            public override DateTimeOffset GetUtcNow() => currentTime;
+
+            public void Advance(TimeSpan value) => currentTime = currentTime.Add(value);
         }
     }
 }

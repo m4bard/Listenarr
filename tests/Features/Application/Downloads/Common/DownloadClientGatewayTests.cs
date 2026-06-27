@@ -56,20 +56,22 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
 
         [Fact]
         [Trait("Method", "GetQueueAsync")]
-        [Trait("Scenario", "Make sure GetQueueAsync returns one item with path mapped")]
+        [Trait("Scenario", "Make sure GetQueueAsync returns the full queue snapshot with path mapped")]
         public async Task GetQueueAsync()
         {
             await _downloadRepository.AddAsync(new DownloadBuilder()
                 .WithDownloadClientConfiguration(client)
                 .WithExternalId("1")
                 .Build());
-            await _downloadRepository.AddAsync(new DownloadBuilder()
-                .WithDownloadClientConfiguration(client)
-                .WithExternalId("2")
-                .Build());
+
+            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
 
             var items = await downloadClientGateway.GetQueueAsync(client);
-            Assert.NotEmpty(items);
+            Assert.Equal(2, items.Count);
+            Assert.True(downloadClientAdapterMock.LastQueueRequestWasFullSnapshot);
+            Assert.Null(downloadClientAdapterMock.LastRequestedQueueIds);
+            Assert.Contains(items, item => item.Id == "1");
+            Assert.Contains(items, item => item.Id == "2");
 
             foreach (QueueItem item in items)
             {
@@ -89,16 +91,20 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
 
         [Fact]
         [Trait("Method", "FetchDownloadsAsync")]
-        [Trait("Scenario", "Check updated downloads path mapped correctly")]
+        [Trait("Scenario", "Check FetchDownloadsAsync requests only tracked IDs and path maps the matching download")]
         public async Task FetchDownloadsAsync()
         {
             var newDownload = await _downloadRepository.AddAsync(new DownloadBuilder()
                 .WithExternalId("1")
                 .Build());
+            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
 
             var downloads = await downloadClientGateway.FetchDownloadsAsync(client, [newDownload]);
             Assert.NotEmpty(downloads);
             Assert.Single(downloads);
+            Assert.False(downloadClientAdapterMock.LastQueueRequestWasFullSnapshot);
+            Assert.Equal(["1"], downloadClientAdapterMock.LastRequestedQueueIds);
+
             var download = downloads.First();
             Assert.NotNull(download);
             Assert.StartsWith(localPath, download.DownloadPath);

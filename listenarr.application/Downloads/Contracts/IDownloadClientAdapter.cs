@@ -22,7 +22,9 @@ namespace Listenarr.Application.Downloads.Contracts
     /// Encapsulates all download-client specific operations. Implement an adapter per client to keep
     /// protocol details isolated from the orchestration layer.
     /// Regarding QueueItem:
-    /// - Progress is the source of truth for completion and range from 0 to 100 by convention
+    /// - Progress is display telemetry in the range 0 to 100 by convention. Completion
+    ///   must come from an explicit terminal client state or reliable byte telemetry
+    ///   showing no data remains.
     /// - SourceFiles is the source of truth for downloaded files, if it cannot be determined,
     ///   ContentPath should be used instead (as a path either being a directory or a single file),
     ///   gateway will transform that as a SourceFiles list
@@ -53,6 +55,14 @@ namespace Listenarr.Application.Downloads.Contracts
             CancellationToken ct = default);
 
         Task<bool> RemoveAsync(DownloadClientConfiguration client, string id, bool deleteFiles = false, CancellationToken ct = default);
+
+        /// <summary>
+        /// Fetch the full live queue snapshot from the given client.
+        /// </summary>
+        /// <param name="client">Download client configuration</param>
+        /// <param name="ct"></param>
+        /// <returns>List of live queue items reported by the client</returns>
+        Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default);
 
         /// <summary>
         /// Given a list of IDs, fetch updates from the given client

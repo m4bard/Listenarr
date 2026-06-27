@@ -32,7 +32,6 @@ namespace Listenarr.Application.Downloads.Common
         IRemotePathMappingService remotePathMappingService,
         IDownloadClientAdapterFactory factory,
         IFileSystem fileSystem,
-        IDownloadRepository downloadRepository,
         ILogger<DownloadClientGateway> logger) : IDownloadClientGateway
     {
         internal IDownloadClientAdapter ResolveAdapter(DownloadClientConfiguration client)
@@ -89,15 +88,8 @@ namespace Listenarr.Application.Downloads.Common
 
         public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
-            var downloads = await downloadRepository.GetByClientAsync(client.Id);
-            var ids = GetExternalIds(downloads);
-            if (ids.Count == 0)
-            {
-                return [];
-            }
-
             var adapter = ResolveAdapter(client);
-            var items = await adapter.GetQueueAsync(client, ids, ct);
+            var items = await adapter.GetQueueAsync(client, ct);
             var tasks = items.Select(item => TranslateQueueItemPathsAsync(client, item));
             return [.. await Task.WhenAll(tasks)];
         }
@@ -168,8 +160,21 @@ namespace Listenarr.Application.Downloads.Common
 
                 logger.LogDebug($"Found matching qBittorrent torrent for {download.Id}: {item.Title} (Hash: {item.Id}, Status: {item.Status}, Progress: {item.Progress:P2}, LocalPath: {item.LocalPath}, ContentPath: {item.ContentPath})");
 
-                // DIAGNOSTIC: Log detailed completion check values
-                logger.LogInformation($"Completion diagnostic for {download.Id}: Progress={item.Progress:F4} (>= 1.0? {item.Progress >= 1.0}), AmountLeft={item.Size - item.Downloaded} (== 0? {item.Size - item.Downloaded <= 0}), Status={item.Status}");
+                var hasReliableSize = item.Size > 0 && item.Downloaded >= 0;
+                var amountLeft = hasReliableSize
+                    ? Math.Max(0, item.Size - item.Downloaded)
+                    : null as long?;
+                var normalizedState = (item.Status ?? string.Empty).ToLowerInvariant();
+                var isExplicitCompletedState = normalizedState is "completed" or "success";
+
+                logger.LogDebug(
+                    "Completion diagnostic for {DownloadId}: Progress={Progress:F4}, HasReliableSize={HasReliableSize}, AmountLeft={AmountLeft}, ExplicitCompletedState={ExplicitCompletedState}, Status={Status}",
+                    download.Id,
+                    item.Progress,
+                    hasReliableSize,
+                    amountLeft,
+                    isExplicitCompletedState,
+                    item.Status);
 
                 download = QueueItemConverter.UpdateFromQueueItem(download, item);
             }

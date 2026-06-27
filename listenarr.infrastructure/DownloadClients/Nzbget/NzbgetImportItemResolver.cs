@@ -68,9 +68,18 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
         {
             var result = queueItem.Clone();
 
-            if (!string.IsNullOrEmpty(result.ContentPath))
+            if (!string.IsNullOrEmpty(result.ContentPath) &&
+                (File.Exists(result.ContentPath) || Directory.Exists(result.ContentPath)))
             {
                 return result;
+            }
+
+            if (!string.IsNullOrEmpty(result.ContentPath))
+            {
+                logger.LogDebug(
+                    "NZBGet content path {ContentPath} for {NzbId} does not exist; resolving from history",
+                    result.ContentPath,
+                    queueItem.Id);
             }
 
             var members = await FindHistoryEntryAsync(

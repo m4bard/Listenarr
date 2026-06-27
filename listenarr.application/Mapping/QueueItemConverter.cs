@@ -17,8 +17,31 @@ namespace Listenarr.Application.Mapping
 
             download.SetMetadata("CanBeRemoved", item.CanRemove);
 
-            var amountLeft = item.Size - item.Downloaded;
-            download = MapDownloadProgress(download, item.Progress, amountLeft, item.Status);
+            // Contract gate: a live queue item can be valid even when some
+            // telemetry is incomplete. Treat size/downloaded bytes as trusted
+            // only when the client reports a positive total size and a non-negative
+            // downloaded value. Unknown byte telemetry must never look like
+            // "nothing left to download."
+            var hasReliableSize = item.Size > 0 && item.Downloaded >= 0;
+            var amountLeft = hasReliableSize
+                ? Math.Max(0, item.Size - item.Downloaded)
+                : null as long?;
+
+            // Contract gate: progress is display telemetry unless it is finite and
+            // in the expected client range. Invalid progress should not overwrite
+            // a previously known value or drive completion decisions.
+            var hasReliableProgress = double.IsFinite(item.Progress) &&
+                item.Progress >= 0 &&
+                item.Progress <= 100;
+
+            download = MapDownloadProgress(
+                download,
+                hasReliableProgress ? item.Progress : null,
+                amountLeft,
+                item.Status,
+                hasReliableSize ? item.Size : null,
+                hasReliableSize ? Math.Min(item.Downloaded, item.Size) : null,
+                hasReliableSize);
 
             // Skip finalization/progress logic for downloads that are already
             // being processed, awaiting import, or fully imported. Re-entering
@@ -38,7 +61,12 @@ namespace Listenarr.Application.Mapping
                 return download;
             }
 
-            if (item.Progress >= 100)
+            // Contract gate: completion requires an explicit terminal client state
+            // or reliable byte telemetry showing that no data remains. Progress by
+            // itself is not strong enough because clients can report partial or stale
+            // progress while size/downloaded bytes are unknown.
+            var isExplicitCompletedState = normalizedState is "completed" or "success";
+            if (isExplicitCompletedState || (hasReliableSize && amountLeft <= 0))
             {
                 download.Completed();
             }
@@ -54,8 +82,18 @@ namespace Listenarr.Application.Mapping
         /// <param name="progress"></param>
         /// <param name="amountLeft"></param>
         /// <param name="clientState"></param>
+        /// <param name="totalSize"></param>
+        /// <param name="downloadedSize"></param>
+        /// <param name="hasReliableSize"></param>
         /// <returns></returns>
-        private static Download MapDownloadProgress(Download download, double progress, long amountLeft, string clientState)
+        private static Download MapDownloadProgress(
+            Download download,
+            double? progress,
+            long? amountLeft,
+            string clientState,
+            long? totalSize,
+            long? downloadedSize,
+            bool hasReliableSize)
         {
             var normalizedState = (clientState ?? string.Empty).ToLowerInvariant();
 
@@ -93,12 +131,26 @@ namespace Listenarr.Application.Mapping
                 _ => DownloadStatus.Queued
             };
 
-            // Update download record
-            download.Progress = (decimal)progress;
-            download.DownloadedSize = download.TotalSize - amountLeft;
+            // Update trusted telemetry only. Unknown size/downloaded values are
+            // preserved instead of converted into completed byte counts.
+            if (progress.HasValue)
+            {
+                download.Progress = (decimal)progress.Value;
+            }
+
+            if (hasReliableSize && totalSize.HasValue && downloadedSize.HasValue && amountLeft.HasValue)
+            {
+                download.TotalSize = totalSize.Value;
+                download.DownloadedSize = downloadedSize.Value;
+            }
+
             download.Metadata ??= new Dictionary<string, object>();
             download.Metadata!["ClientState"] = clientState ?? "Unknown";
-            download.Metadata!["AmountLeft"] = amountLeft;
+
+            // AmountLeft remains numeric for legacy consumers. Callers must check
+            // HasReliableSize before treating AmountLeft == 0 as a completion signal.
+            download.Metadata!["AmountLeft"] = amountLeft ?? 0;
+            download.Metadata!["HasReliableSize"] = hasReliableSize;
 
             // Conservative guard: if the DB record is currently Failed, do not overwrite
             // the status to a non-failed value unless we have strong evidence (progress increased)
@@ -106,7 +158,7 @@ namespace Listenarr.Application.Mapping
             // from flipping the UI incorrectly.
             if (download.Status == DownloadStatus.Failed && mappedStatus != DownloadStatus.Failed)
             {
-                var incomingProgress = (decimal)progress;
+                var incomingProgress = progress.HasValue ? (decimal)progress.Value : download.Progress;
 
                 // Allow transition to Completed always (finalization or client reports complete)
                 if (mappedStatus == DownloadStatus.Completed)

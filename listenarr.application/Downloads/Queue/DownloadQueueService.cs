@@ -30,7 +30,6 @@ namespace Listenarr.Application.Downloads.Queue
         IDownloadRepository downloadRepository,
         DownloadQueueCandidateLoader candidateLoader,
         DownloadClientQueuePoller clientQueuePoller,
-        IAppMetricsService metrics,
         ILogger<DownloadQueueService> logger) : IDownloadQueueService
     {
         internal TimeSpan _clientQueueTimeout = TimeSpan.FromSeconds(15);
@@ -230,105 +229,6 @@ namespace Listenarr.Application.Downloads.Queue
 
                     logger.LogDebug("Client {ClientName}: showing {TotalItems} queue items", client.Name, mappedQueueItems.Count);
 
-                    try
-                    {
-                        var clientDownloads = listenarrDownloads.Where(d => d.DownloadClientId == client.Id).ToList();
-
-                        if (clientQueueResult.UsedCachedSnapshot)
-                        {
-                            logger.LogInformation(
-                                "Skipping orphan retention analysis for client {ClientName}: using cached queue snapshot",
-                                client.Name);
-                            continue;
-                        }
-
-                        if (clientQueueResult.IsUnavailable)
-                        {
-                            logger.LogWarning(
-                                "Skipping orphan retention analysis for client {ClientName}: no live queue snapshot was available",
-                                client.Name);
-                            continue;
-                        }
-
-                        if (clientQueue.Count == 0 && clientDownloads.Any())
-                        {
-                            logger.LogWarning(
-                                "Skipping orphan purge for client {ClientName}: client returned 0 queue items but {Count} downloads are tracked. Client may be temporarily unreachable.",
-                                client.Name,
-                                clientDownloads.Count);
-                            continue;
-                        }
-
-                        var allClientItemIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                        foreach (var mapped in mappedQueueItems)
-                        {
-                            allClientItemIds.Add(mapped.Id);
-                        }
-
-                        foreach (var itemId in clientQueue.Where(item => !string.IsNullOrWhiteSpace(item.Id)).Select(item => item.Id!))
-                        {
-                            allClientItemIds.Add(itemId!);
-                        }
-
-                        var orphanedDownloads = clientDownloads.Where(d =>
-                        {
-                            if (allClientItemIds.Contains(d.Id))
-                            {
-                                return false;
-                            }
-
-                            if (DownloadQueueMetadataMatcher.GetKnownClientItemIds(d.Metadata).Any(allClientItemIds.Contains))
-                            {
-                                return false;
-                            }
-
-                            if (d.Status == DownloadStatus.Completed ||
-                                d.Status == DownloadStatus.Moved ||
-                                d.Status == DownloadStatus.Failed)
-                            {
-                                return false;
-                            }
-
-                            if (d.Status == DownloadStatus.Downloading ||
-                                d.Status == DownloadStatus.Processing)
-                            {
-                                return false;
-                            }
-
-                            if ((DateTime.UtcNow - d.StartedAt).TotalMinutes < 5)
-                            {
-                                logger.LogDebug(
-                                    "Skipping purge for recent download {DownloadId} '{Title}' (age: {Age:F1} min)",
-                                    d.Id,
-                                    d.Title,
-                                    (DateTime.UtcNow - d.StartedAt).TotalMinutes);
-                                return false;
-                            }
-
-                            return true;
-                        }).ToList();
-
-                        if (orphanedDownloads.Any())
-                        {
-                            logger.LogInformation(
-                                "Detected {Count} tracked downloads missing from current {ClientName} queue snapshot; keeping records for resilient monitoring/import handling",
-                                orphanedDownloads.Count,
-                                client.Name);
-
-                            try
-                            {
-                                metrics.Increment("download.purge.skipped.tracked_orphan_retained", orphanedDownloads.Count);
-                            }
-                            catch (Exception caughtEx) when (caughtEx is not OperationCanceledException && caughtEx is not OutOfMemoryException && caughtEx is not StackOverflowException)
-                            {
-                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                            }
-                        }
-                    }
-                    catch (Exception purgeEx) when (purgeEx is not OperationCanceledException && purgeEx is not OutOfMemoryException && purgeEx is not StackOverflowException)
-                    {
-                        logger.LogError(purgeEx, "Error retaining orphaned downloads for client {ClientName}", client.Name);
-                    }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
@@ -411,6 +311,7 @@ namespace Listenarr.Application.Downloads.Queue
             var snapshot = await GetQueueSnapshotAsync();
             return snapshot.Items;
         }
+
 
         private async Task PersistDiscoveredClientIdentifiersAsync(
             Download matchedDownload,

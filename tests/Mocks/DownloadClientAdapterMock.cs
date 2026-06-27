@@ -17,6 +17,10 @@ namespace Listenarr.Tests.Mocks
         ];
 
         public QueueItem QueueItemMock { get; set; } = null;
+        public List<string>? LastRequestedQueueIds { get; private set; }
+        public bool LastQueueRequestWasFullSnapshot { get; private set; }
+        public int FullSnapshotQueueRequestCount { get; private set; }
+        public int FilteredQueueRequestCount { get; private set; }
         private int CurrentProgress = 0;
 
         public async Task<DownloadClientSubmissionResult> AddAsync(
@@ -50,15 +54,40 @@ namespace Listenarr.Tests.Mocks
                 .Build();
         }
 
-        public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, List<string> ids, CancellationToken ct = default)
+        public Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
+        {
+            LastRequestedQueueIds = null;
+            LastQueueRequestWasFullSnapshot = true;
+            FullSnapshotQueueRequestCount++;
+            return Task.FromResult(BuildQueueItems(advanceProgress: false));
+        }
+
+        public Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, List<string> ids, CancellationToken ct = default)
+        {
+            LastRequestedQueueIds = [.. ids];
+            LastQueueRequestWasFullSnapshot = false;
+            FilteredQueueRequestCount++;
+
+            var idSet = ids.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return Task.FromResult(BuildQueueItems(advanceProgress: true)
+                .Where(item => !string.IsNullOrWhiteSpace(item.Id) && idSet.Contains(item.Id))
+                .ToList());
+        }
+
+        private List<QueueItem> BuildQueueItems(bool advanceProgress)
         {
             var path1 = FileUtils.GetAbsolutePath(RemotePath, "random title");
             var path2 = FileUtils.GetAbsolutePath(RemotePath, "random title two");
 
-            // Simulate progress
-            CurrentProgress += 10;
+            // Simulate monitor progress only for targeted update polling. Full
+            // queue snapshots are display/reconciliation reads and should not
+            // advance the mock download lifecycle.
+            if (advanceProgress)
+            {
+                CurrentProgress += 10;
+            }
 
-            List<QueueItem> results = [
+            return [
                 new QueueItemBuilder()
                     .WithId("1")
                     .WithRemotePath(path1)
@@ -82,8 +111,6 @@ namespace Listenarr.Tests.Mocks
                     .WithStatus(CurrentProgress >= 100 ? "completed" : "downloading")
                     .Build()
             ];
-
-            return results;
         }
 
         public Task<List<DownloadClientItem>> GetItemsAsync(DownloadClientConfiguration client, CancellationToken ct = default)
