@@ -33,6 +33,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
         private readonly NzbgetRemovalWorkflow _removalWorkflow;
         private readonly NzbgetAddWorkflow _addWorkflow;
         private readonly NzbgetImportItemResolver _importItemResolver;
+        private readonly NzbgetConnectionTester _connectionTester;
 
         public NzbgetAdapter(
             IHttpClientFactory httpClientFactory,
@@ -70,75 +71,12 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             _removalWorkflow = new NzbgetRemovalWorkflow(_xmlRpcClient, _logger);
             _addWorkflow = new NzbgetAddWorkflow(_xmlRpcClient, _logger);
             _importItemResolver = new NzbgetImportItemResolver(_xmlRpcClient, _logger);
+            _connectionTester = new NzbgetConnectionTester(_xmlRpcClient, _logger);
         }
 
         public async Task<(bool Success, string Message)> TestConnectionAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
-            if (client == null)
-            {
-                return (false, "NZBGet: Configuration not provided");
-            }
-
-            if (!string.IsNullOrWhiteSpace(client.Username) && string.IsNullOrWhiteSpace(client.Password))
-            {
-                return (false, "NZBGet: Password is required when a username is specified");
-            }
-
-            try
-            {
-                // Test connection via XML-RPC
-                var versionResult = await _xmlRpcClient.CallAsync(
-                    new NzbgetXmlRpcRequest
-                    {
-                        Client = client,
-                        MethodName = "version"
-                    },
-                    ct);
-                var version = versionResult.Element("string")?.Value;
-
-                if (string.IsNullOrWhiteSpace(version))
-                {
-                    return (false, "NZBGet: Unable to retrieve version");
-                }
-
-                // NZBGet history is required for reliable import. Active queue rows
-                // are only progress telemetry; completed history provides final state
-                // and FinalDir/DestDir for import path resolution.
-                var configResult = await _xmlRpcClient.CallAsync(
-                    new NzbgetXmlRpcRequest
-                    {
-                        Client = client,
-                        MethodName = "config"
-                    },
-                    ct);
-                var keepHistoryValidation = NzbgetConfigValidator.ValidateKeepHistory(configResult);
-                if (!keepHistoryValidation.Success)
-                {
-                    return keepHistoryValidation;
-                }
-
-                return (true, "NZBGet: connected");
-            }
-            catch (HttpRequestException httpEx) when (httpEx.StatusCode == HttpStatusCode.Unauthorized || httpEx.StatusCode == HttpStatusCode.Forbidden)
-            {
-                _logger.LogDebug(httpEx, "NZBGet authentication failed for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
-                return (false, "NZBGet: Authentication failed (check username/password)");
-            }
-            catch (HttpRequestException httpEx)
-            {
-                _logger.LogDebug(httpEx, "NZBGet network error for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
-                return (false, $"NZBGet: network error ({httpEx.StatusCode?.ToString() ?? "unavailable"})");
-            }
-            catch (TaskCanceledException tce)
-            {
-                _logger.LogDebug(tce, "NZBGet test timed out for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
-                return (false, "NZBGet: connection timed out");
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                _logger.LogDebug(ex, "NZBGet test failed for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
-                return (false, "NZBGet: connection failed");
-            }
+            return await _connectionTester.TestConnectionAsync(client, ct);
         }
 
         public async Task<DownloadClientSubmissionResult> AddAsync(

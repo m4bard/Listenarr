@@ -1221,7 +1221,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         }
 
         [Fact]
-        public async Task TestConnectionAsync_CancellationDuringConfigCall_ReturnsTimedOut()
+        public async Task TestConnectionAsync_CancellationDuringConfigCall_ReturnsCanceled()
         {
             using var cancellationTokenSource = new CancellationTokenSource();
             var cancellationToken = cancellationTokenSource.Token;
@@ -1258,7 +1258,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var result = await adapter.TestConnectionAsync(CreateClient(), cancellationToken);
 
             Assert.False(result.Success);
-            Assert.Equal("NZBGet: connection timed out", result.Message);
+            Assert.Equal("NZBGet: connection canceled", result.Message);
             Assert.Equal(2, requestCount);
         }
 
