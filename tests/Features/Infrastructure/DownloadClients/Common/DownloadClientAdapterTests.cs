@@ -185,6 +185,46 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Common
         [Fact]
         [Trait("Third-Party", "Nzbget")]
         [Trait("Method", "GetImportItemAsync")]
+        public async Task Nzbget_GetImportItemAsync_DownloadClientItemWithStaleOutputPath_ResolvesFromHistory()
+        {
+            var apiMock = _provider.GetRequiredService<NzbgetApiMock>();
+            apiMock.ResetXmlRpcCapture();
+            var completedPath = FileUtils.GetAbsolutePath("nzbget", "completed", "Resolved Client Item");
+            var historyResponse = NzbgetApiMock.CreateHistoryResponse(
+                """
+                <value><struct>
+                  <member><name>ID</name><value><string>case-id</string></value></member>
+                  <member><name>FinalDir</name><value><string>{{COMPLETED_PATH}}</string></value></member>
+                  <member><name>DestDir</name><value><string>{{IGNORED_PATH}}</string></value></member>
+                </struct></value>
+                """
+                .Replace("{{COMPLETED_PATH}}", completedPath)
+                .Replace("{{IGNORED_PATH}}", FileUtils.GetAbsolutePath("nzbget", "ignored", "Intermediate Client Item")));
+            apiMock.QueueXmlRpcResponse("history", historyResponse);
+            var missingPath = Path.Combine(
+                Path.GetTempPath(),
+                $"listenarr-nzbget-output-missing-{Guid.NewGuid():N}");
+            var original = new DownloadClientItem
+            {
+                DownloadId = "CASE-ID",
+                OutputPath = missingPath,
+                Title = "Stale"
+            };
+            var adapter = MockUtils.CreateNzbgetAdapter(_provider);
+
+            var resolved = await adapter.GetImportItemAsync(_nzbgetClient, original);
+
+            Assert.False(File.Exists(missingPath));
+            Assert.False(Directory.Exists(missingPath));
+            Assert.NotSame(original, resolved);
+            Assert.Equal(completedPath, resolved.OutputPath);
+            Assert.Equal(missingPath, original.OutputPath);
+            AssertHistoryFalseCall(Assert.Single(apiMock.XmlRpcCalls));
+        }
+
+        [Fact]
+        [Trait("Third-Party", "Nzbget")]
+        [Trait("Method", "GetImportItemAsync")]
         public async Task Nzbget_GetImportItemAsync_QueueItemHistoryCompatibility_PreservesMethodParametersAndResponse()
         {
             var apiMock = _provider.GetRequiredService<NzbgetApiMock>();

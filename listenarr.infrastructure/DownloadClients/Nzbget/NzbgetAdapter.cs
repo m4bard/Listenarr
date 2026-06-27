@@ -87,12 +87,34 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             try
             {
                 // Test connection via XML-RPC
-                var versionResult = await _xmlRpcClient.CallAsync(client, "version");
-                var version = versionResult.Element("string")?.Value ?? "unknown";
+                var versionResult = await _xmlRpcClient.CallAsync(
+                    new NzbgetXmlRpcRequest
+                    {
+                        Client = client,
+                        MethodName = "version"
+                    },
+                    ct);
+                var version = versionResult.Element("string")?.Value;
 
                 if (string.IsNullOrWhiteSpace(version))
                 {
                     return (false, "NZBGet: Unable to retrieve version");
+                }
+
+                // NZBGet history is required for reliable import. Active queue rows
+                // are only progress telemetry; completed history provides final state
+                // and FinalDir/DestDir for import path resolution.
+                var configResult = await _xmlRpcClient.CallAsync(
+                    new NzbgetXmlRpcRequest
+                    {
+                        Client = client,
+                        MethodName = "config"
+                    },
+                    ct);
+                var keepHistoryValidation = NzbgetConfigValidator.ValidateKeepHistory(configResult);
+                if (!keepHistoryValidation.Success)
+                {
+                    return keepHistoryValidation;
                 }
 
                 return (true, "NZBGet: connected");
@@ -180,6 +202,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                             activeIdentities.Add(
                                 _historyEnrichmentWorkflow.ParseActiveIdentity(
                                     structElement,
+                                    queueItem.Id,
                                     queueItem.Title));
                         }
                     }
@@ -200,13 +223,14 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                 return items;
             }
 
+            await ApplyGlobalDownloadRateFallbackAsync(client, items, ct);
             await _historyEnrichmentWorkflow.EnrichQueueAsync(
                 client,
                 configuredCategory,
                 activeIdentities,
                 items,
                 ct);
-            return FilterByIds(items, ids);
+            return NzbgetQueueFilter.FilterByIds(items, ids, activeIdentities);
         }
 
         public Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
@@ -308,6 +332,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                             activeIdentities.Add(
                                 _historyEnrichmentWorkflow.ParseActiveIdentity(
                                     structElement,
+                                    downloadClientItem.DownloadId,
                                     downloadClientItem.Title));
                         }
                     }
@@ -323,6 +348,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                 return items;
             }
 
+            await ApplyGlobalDownloadRateFallbackAsync(client, items, ct);
             await _historyEnrichmentWorkflow.EnrichItemsAsync(
                 client,
                 configuredCategory,
@@ -367,15 +393,104 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             return await _downloadPollingWorkflow.FetchDownloadsAsync(client, downloads, cancellationToken);
         }
 
-        private static List<QueueItem> FilterByIds(List<QueueItem> items, List<string> ids)
+        private async Task ApplyGlobalDownloadRateFallbackAsync(
+            DownloadClientConfiguration client,
+            List<QueueItem> items,
+            CancellationToken ct)
         {
-            if (ids.Count == 0)
+            var candidates = items
+                .Where(item => item.Eta == null &&
+                    item.DownloadSpeed <= 0 &&
+                    IsActiveDownloadStatus(item.Status) &&
+                    item.Size > item.Downloaded)
+                .ToList();
+            if (candidates.Count != 1)
             {
-                return items;
+                return;
             }
 
-            var idSet = ids.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            return [.. items.Where(item => !string.IsNullOrWhiteSpace(item.Id) && idSet.Contains(item.Id))];
+            var downloadRate = await TryGetGlobalDownloadRateAsync(client, ct);
+            if (!downloadRate.HasValue || downloadRate.Value <= 0)
+            {
+                return;
+            }
+
+            var item = candidates[0];
+            var remainingBytes = Math.Max(0, item.Size - item.Downloaded);
+            item.DownloadSpeed = downloadRate.Value;
+            item.Eta = CalculateEtaSeconds(remainingBytes, downloadRate.Value);
         }
+
+        private async Task ApplyGlobalDownloadRateFallbackAsync(
+            DownloadClientConfiguration client,
+            List<DownloadClientItem> items,
+            CancellationToken ct)
+        {
+            var candidates = items
+                .Where(item => item.RemainingTime == null &&
+                    item.DownloadSpeed <= 0 &&
+                    item.Status == DownloadItemStatus.Downloading &&
+                    item.RemainingSize > 0)
+                .ToList();
+            if (candidates.Count != 1)
+            {
+                return;
+            }
+
+            var downloadRate = await TryGetGlobalDownloadRateAsync(client, ct);
+            if (!downloadRate.HasValue || downloadRate.Value <= 0)
+            {
+                return;
+            }
+
+            var item = candidates[0];
+            item.DownloadSpeed = downloadRate.Value;
+            var etaSeconds = CalculateEtaSeconds(item.RemainingSize, downloadRate.Value);
+            item.RemainingTime = etaSeconds.HasValue
+                ? TimeSpan.FromSeconds(etaSeconds.Value)
+                : null;
+        }
+
+        private async Task<long?> TryGetGlobalDownloadRateAsync(
+            DownloadClientConfiguration client,
+            CancellationToken ct)
+        {
+            try
+            {
+                var statusResult = await _xmlRpcClient.CallAsync(
+                    new NzbgetXmlRpcRequest
+                    {
+                        Client = client,
+                        MethodName = "status"
+                    },
+                    ct);
+                return NzbgetResponseMapper.MapStatusDownloadRate(statusResult);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(
+                    ex,
+                    "Unable to retrieve NZBGet global download rate for ETA fallback for client {ClientName}",
+                    LogRedaction.SanitizeText(client.Name ?? client.Id));
+                return null;
+            }
+        }
+
+        private static int? CalculateEtaSeconds(long remainingBytes, long downloadRate)
+        {
+            if (remainingBytes <= 0 || downloadRate <= 0)
+            {
+                return null;
+            }
+
+            var etaSeconds = (long)Math.Ceiling(remainingBytes / (double)downloadRate);
+            return etaSeconds > int.MaxValue ? int.MaxValue : (int)etaSeconds;
+        }
+
+        private static bool IsActiveDownloadStatus(string? status)
+        {
+            return string.Equals(status, "downloading", StringComparison.OrdinalIgnoreCase);
+        }
+
     }
 }
