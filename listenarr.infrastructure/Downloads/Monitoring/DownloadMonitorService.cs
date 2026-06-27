@@ -389,15 +389,26 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 return;
             }
 
-            // Remove from client queue/history when handling is enabled
             var clientItemId = download.GetExternalId();
-            if (!string.IsNullOrWhiteSpace(clientItemId))
+            // NZBGet history is part of failure diagnostics and final-path recovery.
+            // Do not remove failed NZBGet history here; successful imports remove client
+            // history through the post-import cleanup path.
+            if (!string.IsNullOrWhiteSpace(clientItemId) &&
+                ShouldRemoveFailedClientItem(client))
             {
                 await downloadClientGateway.RemoveAsync(client, clientItemId, deleteFiles: false, cancellationToken);
             }
 
             if (settings.FailedDownloadAutoSearch && download.AudiobookId.HasValue)
             {
+                if (ShouldSuppressFailedDownloadAutoSearch(client, download, errorMessage))
+                {
+                    logger.LogInformation(
+                        "Skipping immediate auto-search for failed NZBGet download {DownloadId}; client failure requires user action or manual retry",
+                        download.Id);
+                    return;
+                }
+
                 try
                 {
                     var audiobook = await audiobookRepository.GetByIdAsync(download.AudiobookId!.Value);
@@ -411,6 +422,25 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                     logger.LogDebug(ex, "Failed to auto-search after failed download {DownloadId}", download.Id);
                 }
             }
+        }
+
+        internal static bool ShouldRemoveFailedClientItem(DownloadClientConfiguration client)
+        {
+            return !string.Equals(client.Type, "nzbget", StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static bool ShouldSuppressFailedDownloadAutoSearch(
+            DownloadClientConfiguration client,
+            Download download,
+            string errorMessage)
+        {
+            if (!string.Equals(client.Type, "nzbget", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var clientFailureReason = download.GetMetadataString("ClientFailureReason") ?? errorMessage;
+            return NzbgetFailureMessageMapper.IsMoveOrPostProcessingFailure(clientFailureReason);
         }
     }
 }

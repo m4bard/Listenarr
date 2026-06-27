@@ -145,6 +145,24 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
         }
 
         [Fact]
+        public void TranslateQueueItemPaths_FailedItemWithoutContentPath_DoesNotLogMissingSourceWarning()
+        {
+            Assert.False(DownloadClientGateway.IsImportSourceExpectedStatus("failed"));
+        }
+
+        [Fact]
+        public void TranslateQueueItemPaths_CompletedItemWithoutContentPath_LogsMissingSourceWarning()
+        {
+            Assert.True(DownloadClientGateway.IsImportSourceExpectedStatus("completed"));
+        }
+
+        [Fact]
+        public void TranslateQueueItemPaths_DownloadingItemWithoutContentPath_DoesNotLogMissingSourceWarning()
+        {
+            Assert.False(DownloadClientGateway.IsImportSourceExpectedStatus("downloading"));
+        }
+
+        [Fact]
         [Trait("Method", "GetQueueItemAsync")]
         [Trait("Scenario", "Check SourceFiles is filled using content path file")]
         public async Task GetQueueItemAsync_UseContentPath_File()

@@ -72,6 +72,54 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Cleanup
         }
 
         [Fact]
+        public async Task MovedDownloadCleanup_Nzbget_RemovesClientHistoryOnlyForMovedDownloads()
+        {
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithType("nzbget")
+                .Build());
+            client.RemoveCompletedDownloads = "remove";
+            await _downloadClientConfigurationRepository.SaveAsync(client);
+            _gateway.RemoveResult = true;
+
+            var failedDownload = new DownloadBuilder()
+                .WithDownloadClientConfiguration(client)
+                .WithClientDownloadId("failed-history")
+                .Build();
+            failedDownload.Status = DownloadStatus.Failed;
+            failedDownload.Metadata["CanBeRemoved"] = true;
+            await _downloadRepository.AddAsync(failedDownload);
+            await _downloadProcessingJobRepository.AddAsync(new DownloadProcessingJobBuilder()
+                .WithDownload(failedDownload)
+                .WithCompleted(DateTime.UtcNow)
+                .Build());
+
+            await _provider.GetRequiredService<IMovedDownloadCleanupProcessor>()
+                .RunCycleAsync(CancellationToken.None);
+
+            Assert.NotNull(await _downloadRepository.GetByIdAsync(failedDownload.Id));
+            Assert.Equal(0, _gateway.GetCallCount(nameof(_gateway.RemoveAsync)));
+
+            var movedDownload = new DownloadBuilder()
+                .WithDownloadClientConfiguration(client)
+                .WithCompletedStatus(DateTime.UtcNow.AddMinutes(-5))
+                .WithClientDownloadId("moved-history")
+                .Build();
+            movedDownload.Status = DownloadStatus.Moved;
+            movedDownload.Metadata["CanBeRemoved"] = true;
+            await _downloadRepository.AddAsync(movedDownload);
+            await _downloadProcessingJobRepository.AddAsync(new DownloadProcessingJobBuilder()
+                .WithDownload(movedDownload)
+                .WithCompleted(DateTime.UtcNow)
+                .Build());
+
+            await _provider.GetRequiredService<IMovedDownloadCleanupProcessor>()
+                .RunCycleAsync(CancellationToken.None);
+
+            Assert.Null(await _downloadRepository.GetByIdAsync(movedDownload.Id));
+            Assert.Equal(1, _gateway.GetCallCount(nameof(_gateway.RemoveAsync)));
+        }
+
+        [Fact]
         public async Task RunCycleAsync_SuccessfulRemovalDeletesOperationalRecordButRetainsHistory()
         {
             var client = await CreateDownloadClientConfiguration();

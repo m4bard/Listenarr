@@ -204,6 +204,9 @@ internal static class NzbgetResponseMapper
         var completedPath = isCompleted && !string.IsNullOrWhiteSpace(entry.CompletedPath)
             ? entry.CompletedPath
             : null;
+        var diagnosticPath = isCompleted
+            ? null
+            : GetDiagnosticPath(entry);
 
         return new QueueItem
         {
@@ -220,12 +223,13 @@ internal static class NzbgetResponseMapper
             DownloadClientId = client.Id ?? string.Empty,
             DownloadClientType = "nzbget",
             AddedAt = DateTime.UtcNow,
-            ErrorMessage = isCompleted ? null : entry.RawStatus,
+            ErrorMessage = isCompleted ? null : NzbgetFailureMessageMapper.Map(entry),
             CanPause = false,
             CanRemove = true,
-            RemotePath = completedPath,
-            LocalPath = completedPath,
-            ContentPath = completedPath
+            RemotePath = isCompleted ? completedPath : diagnosticPath,
+            LocalPath = isCompleted ? completedPath : diagnosticPath,
+            ContentPath = completedPath,
+            SourceFiles = isCompleted ? null : []
         };
     }
 
@@ -267,6 +271,9 @@ internal static class NzbgetResponseMapper
                     0,
                     100)
                 : 0;
+        var outputPath = isCompleted && !string.IsNullOrWhiteSpace(entry.CompletedPath)
+            ? entry.CompletedPath
+            : string.Empty;
 
         return new DownloadClientItem
         {
@@ -279,9 +286,7 @@ internal static class NzbgetResponseMapper
             TotalSize = entry.TotalSizeBytes,
             RemainingSize = remainingBytes,
             RemainingTime = null,
-            OutputPath = isCompleted && !string.IsNullOrWhiteSpace(entry.CompletedPath)
-                ? entry.CompletedPath
-                : string.Empty,
+            OutputPath = outputPath,
             Message = entry.RawStatus,
             Progress = progress,
             DownloadSpeed = 0,
@@ -341,6 +346,18 @@ internal static class NzbgetResponseMapper
         return normalizedStatus.StartsWith("SUCCESS", StringComparison.Ordinal) ||
             normalizedStatus.StartsWith("FAILURE", StringComparison.Ordinal) ||
             normalizedStatus.StartsWith("FAILED", StringComparison.Ordinal);
+    }
+
+    private static string? GetDiagnosticPath(NzbgetHistoryEntry entry)
+    {
+        if (!string.IsNullOrWhiteSpace(entry.FinalDir))
+        {
+            return entry.FinalDir;
+        }
+
+        return !string.IsNullOrWhiteSpace(entry.DestDir)
+            ? entry.DestDir
+            : null;
     }
 
     private static long? ParseLoHiLong(

@@ -263,7 +263,11 @@ namespace Listenarr.Application.Downloads.Common
             }
             else
             {
-                LogMissingSourceFiles(client, item, "no content path", null);
+                if (IsImportSourceExpectedStatus(item.Status))
+                {
+                    LogMissingSourceFiles(client, item, "no content path", null);
+                }
+
                 item.SourceFiles = [];
             }
 
@@ -279,35 +283,25 @@ namespace Listenarr.Application.Downloads.Common
             string reason,
             Exception? exception)
         {
-            if (IsImportRelevantStatus(item.Status))
+            if (!IsImportSourceExpectedStatus(item.Status))
             {
-                logger.LogWarning(
-                    exception,
-                    "Download client {ClientId} reported no source files and {Reason} for item {Title}",
-                    client.Id,
-                    reason,
-                    item.Title);
+                return;
             }
-            else
-            {
-                // Active queue entries often have progress/status but no stable filesystem path yet.
-                // Keep this visible at Debug for diagnostics without alarming operators during normal polling.
-                logger.LogDebug(
-                    exception,
-                    "Download client {ClientId} reported no source files and {Reason} for item {Title}",
-                    client.Id,
-                    reason,
-                    item.Title);
-            }
+
+            logger.LogWarning(
+                exception,
+                "Download client {ClientId} reported no source files and {Reason} for item {Title}",
+                client.Id,
+                reason,
+                item.Title);
         }
 
-        private static bool IsImportRelevantStatus(string? status)
+        internal static bool IsImportSourceExpectedStatus(string? status)
         {
             return string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(status, "success", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(status, "processing", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(status, "importpending", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(status, "failed", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(status, "importpending", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

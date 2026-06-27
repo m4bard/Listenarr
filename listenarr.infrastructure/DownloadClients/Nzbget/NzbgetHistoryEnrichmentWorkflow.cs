@@ -126,6 +126,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                     continue;
                 }
 
+                LogFailedHistoryEntry(client, surface, entry);
                 append(entry);
             }
 
@@ -238,6 +239,28 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                     ItemSurface,
                     ex.GetType().Name);
             }
+        }
+
+        private void LogFailedHistoryEntry(
+            DownloadClientConfiguration client,
+            string surface,
+            NzbgetHistoryEntry entry)
+        {
+            if (entry.Outcome != NzbgetHistoryOutcome.Failed)
+            {
+                return;
+            }
+
+            logger.LogWarning(
+                "NZBGet history reported failure for {NzbId}: Status={Status}, FinalDir={FinalDir}, DestDir={DestDir}, Title={Title}, Category={Category}, ClientId={ClientId}, Surface={Surface}",
+                LogRedaction.SanitizeText(entry.CanonicalNzbId),
+                LogRedaction.SanitizeText(entry.RawStatus),
+                LogRedaction.SanitizeFilePath(entry.FinalDir),
+                LogRedaction.SanitizeFilePath(entry.DestDir),
+                LogRedaction.SanitizeText(entry.Title),
+                LogRedaction.SanitizeText(entry.Category),
+                LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type),
+                surface);
         }
 
         private void LogEnrichmentFailure(

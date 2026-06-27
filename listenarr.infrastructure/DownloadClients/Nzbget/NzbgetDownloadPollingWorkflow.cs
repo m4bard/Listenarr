@@ -334,7 +334,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                 entry.TotalSizeBytes - entry.DownloadedSizeBytes,
                 0);
             AdapterUtils.MapDownloadProgress(download, progress, amountLeft, "failure");
-            download.ErrorMessage = entry.RawStatus;
+            download.ErrorMessage = NzbgetFailureMessageMapper.Map(entry);
             download.Metadata["ClientFailureReason"] = entry.RawStatus;
         }
         private void LogHistoryMeasurement(

@@ -299,6 +299,65 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             var job = await downloadProcessingJobService.GetNextJobAsync();
             Assert.Null(job);
         }
+
+        [Fact]
+        public void OnDownloadFailed_Nzbget_DoesNotRemoveClientHistory_WhenFailedHandlingEnabled()
+        {
+            var client = new DownloadClientConfiguration
+            {
+                Id = "nzbget-1",
+                Type = "nzbget"
+            };
+
+            Assert.False(DownloadMonitorProcessor.ShouldRemoveFailedClientItem(client));
+        }
+
+        [Fact]
+        public void OnDownloadFailed_Qbittorrent_RemovesFailedClientItem_WhenFailedHandlingEnabled()
+        {
+            var client = new DownloadClientConfiguration
+            {
+                Id = "qbittorrent-1",
+                Type = "qbittorrent"
+            };
+
+            Assert.True(DownloadMonitorProcessor.ShouldRemoveFailedClientItem(client));
+        }
+
+        [Fact]
+        public void OnDownloadFailed_NzbgetMoveFailure_SuppressesImmediateAutoSearch()
+        {
+            var client = new DownloadClientConfiguration
+            {
+                Id = "nzbget-1",
+                Type = "nzbget"
+            };
+            var download = new DownloadBuilder().Build();
+            download.Metadata["ClientFailureReason"] = "FAILURE/MOVE";
+
+            Assert.True(DownloadMonitorProcessor.ShouldSuppressFailedDownloadAutoSearch(
+                client,
+                download,
+                "NZBGet failed during post-processing or final move."));
+        }
+
+        [Fact]
+        public void OnDownloadFailed_NzbgetUnpackFailure_AllowsImmediateAutoSearch()
+        {
+            var client = new DownloadClientConfiguration
+            {
+                Id = "nzbget-1",
+                Type = "nzbget"
+            };
+            var download = new DownloadBuilder().Build();
+            download.Metadata["ClientFailureReason"] = "FAILURE/UNPACK";
+
+            Assert.False(DownloadMonitorProcessor.ShouldSuppressFailedDownloadAutoSearch(
+                client,
+                download,
+                "NZBGet failed while unpacking."));
+        }
+
         private sealed class MutableTimeProvider(DateTimeOffset currentTime) : TimeProvider
         {
             public override DateTimeOffset GetUtcNow() => currentTime;

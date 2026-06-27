@@ -604,7 +604,9 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             Assert.Equal(25m, download.Progress);
             Assert.Equal(25L * 1024 * 1024, download.DownloadedSize);
             Assert.Equal(75L * 1024 * 1024, download.Metadata["AmountLeft"]);
-            Assert.Equal("FAILURE/UNPACK", download.ErrorMessage);
+            Assert.Equal(
+                "NZBGet failed while unpacking the download. The archive may be damaged, incomplete, password-protected, or missing parts.",
+                download.ErrorMessage);
             Assert.Equal("FAILURE/UNPACK", download.Metadata["ClientFailureReason"]);
             Assert.Equal("/existing/path", download.DownloadPath);
         }
@@ -1534,7 +1536,9 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             Assert.Equal(
                 ["/final/one", "/dest/two", string.Empty, "/duplicate/first"],
                 items.Skip(2).Select(entry => entry.OutputPath));
-            Assert.Equal("FAILURE/HEALTH", queue[4].ErrorMessage);
+            Assert.Equal(
+                "NZBGet marked the download failed because its health dropped below the required threshold.",
+                queue[4].ErrorMessage);
             Assert.Equal("FAILURE/HEALTH", items[4].Message);
             Assert.Equal(["9001", "9002"], queue.Take(2).Select(entry => entry.Id));
             Assert.Equal(["9001", "9002"], items.Take(2).Select(entry => entry.DownloadId));
@@ -2304,12 +2308,13 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                             DownloadClient = "Queue Client",
                             DownloadClientId = "queue-client",
                             DownloadClientType = "nzbget",
-                            ErrorMessage = "FAILURE/HEALTH",
+                            ErrorMessage = "NZBGet marked the download failed because its health dropped below the required threshold.",
                             CanPause = false,
                             CanRemove = true,
-                            RemotePath = null,
-                            LocalPath = null,
-                            ContentPath = null
+                            RemotePath = "/must/not/use",
+                            LocalPath = "/must/not/use",
+                            ContentPath = null,
+                            SourceFiles = []
                         },
                         failed);
                 });
@@ -2378,7 +2383,9 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                     Assert.Equal("202", distinctId.Id);
                     Assert.Equal("Shared Book", distinctId.Title);
                     Assert.Equal("failed", distinctId.Status);
-                    Assert.Equal("FAILURE/HEALTH", distinctId.ErrorMessage);
+                    Assert.Equal(
+                        "NZBGet marked the download failed because its health dropped below the required threshold.",
+                        distinctId.ErrorMessage);
                 },
                 history =>
                 {
@@ -2828,7 +2835,9 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var item = Assert.Single(queue);
             Assert.Equal("707", item.Id);
             Assert.Equal("failed", item.Status);
-            Assert.Equal("FAILURE/HEALTH", item.ErrorMessage);
+            Assert.Equal(
+                "NZBGet marked the download failed because its health dropped below the required threshold.",
+                item.ErrorMessage);
             Assert.Null(item.ContentPath);
             Assert.Equal(
                 ["listgroups", "history"],
@@ -3057,6 +3066,64 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             Assert.Equal("/downloads/completed/Book Folder", clientItem.OutputPath);
             Assert.Equal("/downloads/completed/Book Folder", queueItem.RemotePath);
             Assert.Equal("/downloads/completed/Book Folder", queueItem.ContentPath);
+        }
+
+        [Fact]
+        public void GetQueueAsync_FailedHistory_PreservesDiagnosticPathsButDoesNotSetContentPath()
+        {
+            var client = CreateClient();
+            var entry = new NzbgetHistoryEntry
+            {
+                CanonicalNzbId = "502",
+                Title = "Failed Book Folder",
+                RawStatus = "FAILURE/MOVE",
+                Outcome = NzbgetHistoryOutcome.Failed,
+                Category = "audiobooks",
+                FinalDir = "/downloads/completed/Failed Book Folder",
+                DestDir = "/downloads/incomplete/Failed Book Folder",
+                TotalSizeBytes = 100,
+                DownloadedSizeBytes = 100,
+                HistoryTimeUtc = DateTime.UtcNow
+            };
+
+            var clientItem = NzbgetResponseMapper.MapHistoryToDownloadClientItem(client, entry);
+            var queueItem = NzbgetResponseMapper.MapHistoryToQueueItem(client, entry);
+
+            Assert.Equal(string.Empty, clientItem.OutputPath);
+            Assert.Equal("/downloads/completed/Failed Book Folder", queueItem.RemotePath);
+            Assert.Equal("/downloads/completed/Failed Book Folder", queueItem.LocalPath);
+            Assert.Null(queueItem.ContentPath);
+            Assert.NotNull(queueItem.SourceFiles);
+            Assert.Empty(queueItem.SourceFiles);
+        }
+
+        [Theory]
+        [InlineData("FAILURE/MOVE", "NZBGet failed during post-processing or final move. Check the NZBGet completed folder for existing files, permissions, or path conflicts.")]
+        [InlineData("FAILURE/POSTPROCESS", "NZBGet failed during post-processing or final move. Check the NZBGet completed folder for existing files, permissions, or path conflicts.")]
+        [InlineData("FAILURE/UNPACK", "NZBGet failed while unpacking the download. The archive may be damaged, incomplete, password-protected, or missing parts.")]
+        [InlineData("FAILURE/PAR", "NZBGet failed while verifying or repairing the download. The release may be incomplete or damaged.")]
+        [InlineData("FAILURE/REPAIR", "NZBGet failed while verifying or repairing the download. The release may be incomplete or damaged.")]
+        [InlineData("FAILURE/HEALTH", "NZBGet marked the download failed because its health dropped below the required threshold.")]
+        [InlineData("FAILURE/OTHER", "NZBGet reported a failed download: FAILURE/OTHER")]
+        public void NzbgetFailureMessageMapper_ReturnsActionableFailureMessage(
+            string status,
+            string expectedMessage)
+        {
+            var entry = new NzbgetHistoryEntry
+            {
+                CanonicalNzbId = "503",
+                Title = "Failed Book",
+                RawStatus = status,
+                Outcome = NzbgetHistoryOutcome.Failed,
+                Category = "audiobooks",
+                FinalDir = string.Empty,
+                DestDir = string.Empty,
+                TotalSizeBytes = 100,
+                DownloadedSizeBytes = 10,
+                HistoryTimeUtc = DateTime.UtcNow
+            };
+
+            Assert.Equal(expectedMessage, NzbgetFailureMessageMapper.Map(entry));
         }
 
         [Theory]
