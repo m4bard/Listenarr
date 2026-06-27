@@ -43,7 +43,11 @@ namespace Listenarr.Application.Downloads.Contracts
         Task<(bool Success, string Message)> TestConnectionAsync(DownloadClientConfiguration client, CancellationToken ct = default);
 
         /// <summary>
-        /// Returns an identifier for the download
+        /// Submit a client-backed download and return the external client item ID.
+        /// A successful adapter submission without an external ID is invalid because
+        /// active client downloads must be monitorable and reconcilable against the
+        /// client queue/history. Direct downloads do not use this adapter contract;
+        /// they are internally tracked with DownloadClientId == "DDL".
         /// </summary>
         /// <param name="client"></param>
         /// <param name="submission"></param>

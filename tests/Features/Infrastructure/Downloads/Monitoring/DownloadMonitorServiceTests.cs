@@ -157,6 +157,22 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
 
         [Fact]
         [Trait("Method", "MonitorDownloadsAsync")]
+        public async Task MonitorDownloadsAsync_LiveSnapshot_RemovesOldActiveClientDownloadWithoutExternalId()
+        {
+            var unlinked = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithId("unlinked-download")
+                .WithDownloading(0)
+                .WithStartDate(DateTime.UtcNow.AddMinutes(-10))
+                .WithDownloadClientConfiguration(client)
+                .Build());
+
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+
+            Assert.Null(await _downloadRepository.GetByIdAsync(unlinked.Id));
+        }
+
+        [Fact]
+        [Trait("Method", "MonitorDownloadsAsync")]
         public async Task MonitorDownloadsAsync_OrphanCleanup_DoesNotRunEveryCycle()
         {
             var adapter = _provider.GetServices<IDownloadClientAdapter>()

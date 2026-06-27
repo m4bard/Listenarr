@@ -60,43 +60,70 @@ namespace Listenarr.Application.Downloads.Queue
 
             var liveClientItemIds = BuildLiveClientItemIds(clientQueue, mappedQueueItems);
             var now = DateTime.UtcNow;
-            var orphanedDownloads = clientDownloads
-                .Select(d => new
-                {
-                    Download = d,
-                    ExternalIds = DownloadQueueMetadataMatcher.GetKnownClientItemIds(d.Metadata)
+            var cleanupCandidates = clientDownloads
+                .Select(download => new OrphanCleanupCandidate(
+                    download,
+                    DownloadQueueMetadataMatcher.GetKnownClientItemIds(download.Metadata)
                         .Where(id => !string.IsNullOrWhiteSpace(id))
                         .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToList()
-                })
-                .Where(candidate => IsOrphanedActiveDownload(
+                        .ToList()))
+                .Select(candidate => new OrphanCleanupDecision(
                     candidate.Download,
                     candidate.ExternalIds,
-                    liveClientItemIds,
-                    now))
+                    GetCleanupReason(
+                        candidate.Download,
+                        candidate.ExternalIds,
+                        liveClientItemIds,
+                        now)))
+                .Where(decision => decision.Reason.HasValue)
                 .ToList();
 
-            if (!orphanedDownloads.Any())
+            if (!cleanupCandidates.Any())
             {
                 return;
             }
 
-            foreach (var orphan in orphanedDownloads)
+            foreach (var candidate in cleanupCandidates)
             {
-                var download = orphan.Download;
-                var externalId = orphan.ExternalIds.First();
+                var download = candidate.Download;
 
-                logger.LogInformation(
-                    "Removing orphaned download {DownloadId} '{Title}' for client {ClientName}: external id {ExternalId} was not found in live queue snapshot",
-                    download.Id,
-                    download.Title,
-                    client.Name,
-                    externalId);
+                // There are two cleanup paths and both are intentionally logged for
+                // debugging: a known client item disappeared from a trusted snapshot,
+                // or a legacy/corrupt non-DDL active record has no external client ID
+                // and therefore cannot ever be monitored or reconciled with a client.
+                if (candidate.Reason == OrphanCleanupReason.MissingExternalId)
+                {
+                    logger.LogInformation(
+                        "Removing unreconcilable active download {DownloadId} '{Title}' for client {ClientName}: no external client ID is stored, so it cannot be monitored or reconciled",
+                        download.Id,
+                        download.Title,
+                        client.Name);
+                }
+                else
+                {
+                    var externalId = candidate.ExternalIds.First();
+                    logger.LogInformation(
+                        "Removing orphaned download {DownloadId} '{Title}' for client {ClientName}: external id {ExternalId} was not found in live queue snapshot",
+                        download.Id,
+                        download.Title,
+                        client.Name,
+                        externalId);
+                }
 
                 await downloadRepository.RemoveAsync(download.Id);
             }
 
-            DownloadQueueDiagnostics.TryIncrementMetric(metrics, "download.orphan.removed", orphanedDownloads.Count);
+            var missingFromSnapshotCount = cleanupCandidates.Count(candidate => candidate.Reason == OrphanCleanupReason.MissingFromClientSnapshot);
+            var missingExternalIdCount = cleanupCandidates.Count(candidate => candidate.Reason == OrphanCleanupReason.MissingExternalId);
+            if (missingFromSnapshotCount > 0)
+            {
+                DownloadQueueDiagnostics.TryIncrementMetric(metrics, "download.orphan.removed", missingFromSnapshotCount);
+            }
+
+            if (missingExternalIdCount > 0)
+            {
+                DownloadQueueDiagnostics.TryIncrementMetric(metrics, "download.orphan.unlinked_removed", missingExternalIdCount);
+            }
         }
 
         private static HashSet<string> BuildLiveClientItemIds(
@@ -118,7 +145,7 @@ namespace Listenarr.Application.Downloads.Queue
             return liveClientItemIds;
         }
 
-        private bool IsOrphanedActiveDownload(
+        private OrphanCleanupReason? GetCleanupReason(
             Download download,
             List<string> externalIds,
             HashSet<string> liveClientItemIds,
@@ -126,17 +153,7 @@ namespace Listenarr.Application.Downloads.Queue
         {
             if (download.Status is not (DownloadStatus.Queued or DownloadStatus.Downloading or DownloadStatus.Paused))
             {
-                return false;
-            }
-
-            if (externalIds.Count == 0)
-            {
-                return false;
-            }
-
-            if (liveClientItemIds.Contains(download.Id) || externalIds.Any(liveClientItemIds.Contains))
-            {
-                return false;
+                return null;
             }
 
             var age = now - download.StartedAt;
@@ -147,10 +164,43 @@ namespace Listenarr.Application.Downloads.Queue
                     download.Id,
                     download.Title,
                     age.TotalMinutes);
-                return false;
+                return null;
             }
 
-            return true;
+            if (externalIds.Count == 0)
+            {
+                // Direct-download records are owned internally by Listenarr. They do
+                // not have a download-client queue item to reconcile against, so the
+                // absence of ClientDownloadId/TorrentHash is valid only for DDL.
+                if (string.Equals(download.DownloadClientId, "DDL", StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                return OrphanCleanupReason.MissingExternalId;
+            }
+
+            if (liveClientItemIds.Contains(download.Id) || externalIds.Any(liveClientItemIds.Contains))
+            {
+                return null;
+            }
+
+            return OrphanCleanupReason.MissingFromClientSnapshot;
         }
+
+        private enum OrphanCleanupReason
+        {
+            MissingExternalId,
+            MissingFromClientSnapshot
+        }
+
+        private sealed record OrphanCleanupCandidate(
+            Download Download,
+            List<string> ExternalIds);
+
+        private sealed record OrphanCleanupDecision(
+            Download Download,
+            List<string> ExternalIds,
+            OrphanCleanupReason? Reason);
     }
 }
