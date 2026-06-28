@@ -99,7 +99,7 @@ Background workers expose DI-facing processor contracts for deterministic cycle/
 
 The user-facing Activity queue should expose Listenarr-owned active downloads only. Each active external queue item must first match a Listenarr download by stored ID, client-specific ID, torrent hash, or a safe non-ambiguous title/artist fallback before it is shown. Unmatched active external items from shared clients such as Transmission, qBittorrent, SABnzbd, or NZBGet must be hidden from Activity so unrelated user transfers do not appear as Listenarr work.
 
-Unmatched completed external items are a separate opt-in display feature and may be shown only when `ShowCompletedExternalDownloads` is enabled. Do not use that setting to expose unmatched active external items.
+Unmatched completed external items are a separate opt-in display feature and may be shown only by the completed-external display path when `ShowCompletedExternalDownloads` is enabled. Do not use that setting to expose unmatched active external items.
 
 ## Download Client Adapter Slicing
 

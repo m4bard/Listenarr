@@ -1246,6 +1246,84 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             var result = await service.GetQueueAsync();
 
             Assert.Equal(expectedCount, result.Count);
+            if (showCompletedExternal)
+            {
+                Assert.Single(result);
+                Assert.Equal("completed", result[0].Status);
+                Assert.False(result[0].CanPause);
+                Assert.True(result[0].CanRemove);
+                Assert.Equal("tr-1", result[0].DownloadClientId);
+                Assert.NotNull(result[0].CompletionTime);
+            }
+        }
+
+        [Fact]
+        [Trait("Scenario", "HideUntrackedExternalActivity")]
+        public async Task GetQueueAsync_MatchedItemMetadataPersistenceError_StillShowsMatchedDownload()
+        {
+            var client = new DownloadClientConfiguration
+            {
+                Id = "tr-1",
+                Name = "Transmission",
+                Type = "transmission",
+                IsEnabled = true
+            };
+
+            var configMock = new Mock<IConfigurationService>();
+            configMock.Setup(c => c.GetDownloadClientConfigurationsAsync())
+                .ReturnsAsync(new List<DownloadClientConfiguration> { client });
+            configMock.Setup(c => c.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings { ShowCompletedExternalDownloads = false });
+
+            var trackedDownload = new Download
+            {
+                Id = "tracked-persistence-error",
+                DownloadClientId = "tr-1",
+                Title = "Artemis",
+                Artist = "Andy Weir",
+                Status = DownloadStatus.Downloading,
+                StartedAt = DateTime.UtcNow.AddMinutes(-20)
+            };
+
+            var downloadRepoMock = new Mock<IDownloadRepository>();
+            SetupQueueRepository(downloadRepoMock, new List<Download> { trackedDownload });
+            downloadRepoMock
+                .Setup(r => r.UpdateMetadataAsync("tracked-persistence-error", "ClientDownloadId", "HASH-PERSISTENCE-ERROR"))
+                .ThrowsAsync(new InvalidOperationException("metadata persistence failed"));
+
+            var processingJobRepoMock = new Mock<IDownloadProcessingJobRepository>();
+            processingJobRepoMock.Setup(r => r.GetPendingDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
+            processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
+
+            var gatewayMock = new Mock<IDownloadClientGateway>();
+            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<QueueItem>
+                {
+                    new QueueItem
+                    {
+                        Id = "HASH-PERSISTENCE-ERROR",
+                        Title = "Andy Weir - Artemis",
+                        Status = "downloading",
+                        DownloadClient = "Transmission",
+                        DownloadClientId = "tr-1",
+                        DownloadClientType = "transmission",
+                        AddedAt = DateTime.UtcNow
+                    }
+                });
+
+            var metricsMock = new Mock<IAppMetricsService>();
+
+            var service = CreateService(
+                configMock.Object,
+                downloadRepoMock.Object,
+                processingJobRepoMock.Object,
+                gatewayMock.Object,
+                metricsMock.Object);
+
+            var result = await service.GetQueueAsync();
+
+            Assert.Single(result);
+            Assert.Equal("tracked-persistence-error", result[0].Id);
         }
 
         [Fact]
