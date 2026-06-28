@@ -224,6 +224,7 @@ internal static class NzbgetResponseMapper
             DownloadClientType = "nzbget",
             AddedAt = DateTime.UtcNow,
             ErrorMessage = isCompleted ? null : NzbgetFailureMessageMapper.Map(entry),
+            ClientFailureReason = isCompleted ? null : entry.RawStatus,
             CanPause = false,
             CanRemove = true,
             RemotePath = isCompleted ? completedPath : diagnosticPath,

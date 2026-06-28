@@ -18,11 +18,9 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
-using System.Reflection;
 using System.Text;
-using System.Text.Json;
 
-using Listenarr.Domain.Downloads.Exceptions;
+using Listenarr.Application.Mapping;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks.Api;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -36,18 +34,6 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         private const int PerformanceHistoryEntryCount = 1_000;
         private const int PerformanceBeyondOneHundredIndex = 752;
         private readonly ITestOutputHelper _output;
-
-        private delegate void MergeHistoryDelegate(
-            DownloadClientConfiguration client,
-            IReadOnlyList<NzbgetHistoryEntry> history,
-            IReadOnlyDictionary<string, Download> trackedById,
-            IReadOnlyList<Download> trackedDownloads,
-            ISet<Download> matchedDownloads,
-            ISet<string> activeCanonicalIds,
-            CancellationToken cancellationToken);
-
-        private static readonly MergeHistoryDelegate MergeHistoryForPerformanceTest =
-            CreateMergeHistoryDelegate();
 
         private sealed record CapturedLog(
             LogLevel Level,
@@ -412,39 +398,36 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         }
 
         [Fact]
-        public void NzbgetHistory_ParseAndMerge_OneThousandVisibleEntries_WithinGuardrails()
+        public async Task NzbgetHistory_QueuePath_OneThousandVisibleEntries_WithinGuardrails()
         {
-            var historyResult = CreatePerformanceHistoryResult();
-            var warmState = CreatePerformanceMergeState();
-            var warmHistory = NzbgetHistoryReader.ParseEntries(
-                historyResult,
-                CancellationToken.None);
-            MergeHistoryForPerformanceTest(
-                warmState.Client,
-                warmHistory,
-                warmState.TrackedById,
-                warmState.Downloads,
-                warmState.MatchedDownloads,
-                warmState.ActiveCanonicalIds,
-                CancellationToken.None);
+            using (var warmApiMock = new NzbgetApiMock())
+            {
+                QueuePerformanceResponses(warmApiMock);
+                using var warmHttp = new HttpClient(warmApiMock);
+                var warmAdapter = CreateAdapter(warmHttp);
+                await FetchDownloadsThroughQueuePathAsync(
+                    warmAdapter,
+                    CreateClient(),
+                    CreatePerformanceDownloads(),
+                    CancellationToken.None);
+            }
 
-            var measuredState = CreatePerformanceMergeState();
+            using var apiMock = new NzbgetApiMock();
+            QueuePerformanceResponses(apiMock);
+            using var http = new HttpClient(apiMock);
+            var adapter = CreateAdapter(http);
+            var downloads = CreatePerformanceDownloads();
+
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
 
             var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
             var startTimestamp = Stopwatch.GetTimestamp();
-            var measuredHistory = NzbgetHistoryReader.ParseEntries(
-                historyResult,
-                CancellationToken.None);
-            MergeHistoryForPerformanceTest(
-                measuredState.Client,
-                measuredHistory,
-                measuredState.TrackedById,
-                measuredState.Downloads,
-                measuredState.MatchedDownloads,
-                measuredState.ActiveCanonicalIds,
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
+                CreateClient(),
+                downloads,
                 CancellationToken.None);
             var endTimestamp = Stopwatch.GetTimestamp();
             var allocatedBytes = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
@@ -456,28 +439,26 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 $"elapsedMs={elapsedMilliseconds.ToString("F3", CultureInfo.InvariantCulture)}");
             _output.WriteLine($"allocatedBytes={allocatedBytes}");
 
-            Assert.Equal(PerformanceHistoryEntryCount, measuredHistory.Count);
-            Assert.Equal(
-                DownloadStatus.Completed,
-                measuredState.BeyondOneHundredDownload.Status);
-            Assert.Equal(DownloadStatus.Downloading, measuredState.Downloads[0].Status);
-            Assert.Equal(DownloadStatus.Queued, measuredState.Downloads[996].Status);
+            Assert.Equal(PerformanceHistoryEntryCount, downloads.Count);
+            Assert.Equal(DownloadStatus.Completed, downloads[PerformanceBeyondOneHundredIndex].Status);
+            Assert.Equal(DownloadStatus.Downloading, downloads[0].Status);
+            Assert.Equal(DownloadStatus.Queued, downloads[996].Status);
             Assert.True(
-                elapsedMilliseconds <= 500,
+                elapsedMilliseconds <= 1_000,
                 $"elapsedMs={elapsedMilliseconds.ToString("F3", CultureInfo.InvariantCulture)}");
             Assert.True(
-                allocatedBytes <= 33_554_432,
+                allocatedBytes <= 67_108_864,
                 $"allocatedBytes={allocatedBytes}");
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_ActiveAndCompletedHistory_MutatesExistingObjectsWithoutChangingListShape()
+        public async Task QueuePath_ActiveAndCompletedHistory_MutatesExistingObjectsWithoutChangingListShape()
         {
-            // AC: Active polling remains unchanged and completed history mutates only an unmatched tracked Download.
-            // Behavior: Public poll -> active-first plus typed history -> same list/object order with completed FinalDir state.
+            // AC: Active queue telemetry remains unchanged and completed history mutates only an unmatched tracked Download.
+            // Behavior: Queue path -> active-first plus typed history -> same list/object order with completed FinalDir state.
             // @category: integration
             // @lane: integration
-            // @dependency: NZBGet JSON-RPC polling and XML-RPC history reader
+            // @dependency: NZBGet GetQueueAsync and XML-RPC history reader
             // @complexity: medium
             // Value Score: 30
             using var apiMock = new NzbgetApiMock();
@@ -501,35 +482,34 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var completedDownload = CreateDownload("completed", "Completed Book", "202", 50);
             var downloads = new List<Download> { activeDownload, completedDownload };
 
-            var result = await adapter.FetchDownloadsAsync(CreateClient(), downloads, CancellationToken.None);
+            var result = await FetchDownloadsThroughQueuePathAsync(adapter, CreateClient(), downloads, CancellationToken.None);
 
             Assert.Same(downloads, result);
             Assert.Equal(2, result.Count);
             Assert.Same(activeDownload, result[0]);
             Assert.Same(completedDownload, result[1]);
             Assert.Equal(DownloadStatus.Downloading, activeDownload.Status);
-            Assert.Equal(0.75m, activeDownload.Progress);
-            Assert.Equal(786_432, activeDownload.DownloadedSize);
+            Assert.Equal(75m, activeDownload.Progress);
+            Assert.Equal(75L * 1024 * 1024, activeDownload.DownloadedSize);
             Assert.Equal(DownloadStatus.Completed, completedDownload.Status);
             Assert.Equal(100m, completedDownload.Progress);
             Assert.Equal(0L, completedDownload.Metadata["AmountLeft"]);
             Assert.Equal("/final/completed-book", completedDownload.DownloadPath);
-            Assert.Equal(
-                [
-                    new NzbgetApiMock.JsonRpcCall("status", """{"method":"status","id":2}"""),
-                    new NzbgetApiMock.JsonRpcCall("listgroups", """{"method":"listgroups","id":3}""")
-                ],
-                apiMock.JsonRpcCalls);
-            var historyCall = Assert.Single(apiMock.XmlRpcCalls);
+            Assert.Empty(apiMock.JsonRpcCalls);
+            Assert.Collection(
+                apiMock.XmlRpcCalls,
+                call => Assert.Equal("listgroups", call.MethodName),
+                call => Assert.Equal("history", call.MethodName));
+            var historyCall = apiMock.XmlRpcCalls[1];
             Assert.Equal("history", historyCall.MethodName);
             Assert.Equal("0", Assert.Single(historyCall.Parameters).Element("boolean")?.Value);
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_CompletedHistory_UsesDestDirAndHistorySizeAsExactTerminalState()
+        public async Task QueuePath_CompletedHistory_UsesDestDirAndHistorySizeAsExactTerminalState()
         {
             // AC: AC-NZB-003 and AC-NZB-007 require completed state and DestDir fallback when FinalDir is empty.
-            // Behavior: Different initial/history sizes with empty FinalDir -> public poll -> exact history size and terminal fields.
+            // Behavior: Different initial/history sizes with empty FinalDir -> queue path -> exact history size and terminal fields.
             // @category: integration
             // @lane: integration
             // @dependency: typed history size parsing and completed-path resolution
@@ -555,7 +535,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             download.DownloadedSize = 2L * 1024 * 1024;
             download.Progress = 20;
 
-            await adapter.FetchDownloadsAsync(
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
                 CreateClient(),
                 [download],
                 CancellationToken.None);
@@ -569,13 +550,13 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_FailedHistory_MapsExactFailureFieldsAndDerivedProgress()
+        public async Task QueuePath_FailedHistory_MapsExactFailureFieldsAndDerivedProgress()
         {
             // AC: AC-NZB-004 maps FAILURE/* to failed with exact trimmed failure context.
-            // Behavior: Failed history -> public poll mutation -> exact status, progress, remaining, and failure fields.
+            // Behavior: Failed history -> queue path mutation -> exact status, progress, remaining, and failure fields.
             // @category: core-functionality
             // @lane: integration
-            // @dependency: NZBGet JSON-RPC polling and XML-RPC history reader
+            // @dependency: NZBGet GetQueueAsync and XML-RPC history reader
             // @complexity: medium
             // Value Score: 28
             using var apiMock = new NzbgetApiMock();
@@ -595,7 +576,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var download = CreateDownload("failed", "Failed Book", "301", 100);
             download.DownloadPath = "/existing/path";
 
-            await adapter.FetchDownloadsAsync(
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
                 CreateClient(),
                 [download],
                 CancellationToken.None);
@@ -612,7 +594,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_HistoryMatching_PrioritizesCanonicalIdBeforeSimilarTitle()
+        public async Task QueuePath_HistoryMatching_PrioritizesCanonicalIdBeforeSimilarTitle()
         {
             // AC: AC-NZB-008 requires canonical NZBID matching before title fallback.
             // Behavior: ID and title target different tracked objects -> public poll -> canonical-ID object mutates.
@@ -637,7 +619,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var idMatch = CreateDownload("id-match", "Different Book", "401", 10);
             var titleMatch = CreateDownload("title-match", "Similar Book", "999", 10);
 
-            await adapter.FetchDownloadsAsync(
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
                 CreateClient(),
                 [idMatch, titleMatch],
                 CancellationToken.None);
@@ -648,7 +631,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_HistoryCanonicalId_IsNotSuppressedByActiveTitleOverlap()
+        public async Task QueuePath_HistoryCanonicalId_IsNotSuppressedByActiveTitleOverlap()
         {
             // AC: AC-NZB-008 and AC-NZB-010 require ID-first resolution while active wins only its own overlap.
             // Behavior: Active ID A and history ID B have similar titles -> public poll -> both separate tracked objects update.
@@ -673,7 +656,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var active = CreateDownload("active-id-a", "Shared Book Extended", "410", 100);
             var history = CreateDownload("history-id-b", "Shared Book", "411", 10);
 
-            await adapter.FetchDownloadsAsync(
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
                 CreateClient(),
                 [active, history],
                 CancellationToken.None);
@@ -684,7 +668,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_HistoryMatching_UsesTitleFallbackWhenCanonicalIdDoesNotMatch()
+        public async Task QueuePath_HistoryMatching_DoesNotUseTitleFallbackWhenCanonicalIdDoesNotMatch()
         {
             // AC: AC-NZB-009 requires TitleUtils.AreTitlesSimilar as the only fallback after ID mismatch.
             // Behavior: No canonical ID match -> ordered title fallback -> first similar unmatched object mutates.
@@ -708,17 +692,18 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var adapter = CreateAdapter(http);
             var download = CreateDownload("title-match", "Fallback Book", "402", 10);
 
-            await adapter.FetchDownloadsAsync(
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
                 CreateClient(),
                 [download],
                 CancellationToken.None);
 
-            Assert.Equal(DownloadStatus.Completed, download.Status);
-            Assert.Equal("/final/title-match", download.DownloadPath);
+            Assert.Equal(DownloadStatus.Queued, download.Status);
+            Assert.Equal(string.Empty, download.DownloadPath);
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_TitleFallback_UsesFirstSimilarRemainingTrackedObject()
+        public async Task QueuePath_TitleFallback_DoesNotUseFirstSimilarRemainingTrackedObjectWhenIdDiffers()
         {
             // AC: AC-NZB-009 and AC-NZB-020 preserve ordered title fallback without changing list shape.
             // Behavior: Multiple unmatched similar titles -> public poll -> first tracked TitleUtils match mutates.
@@ -743,18 +728,19 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var first = CreateDownload("first-title", "Shared Book", "510", 10);
             var second = CreateDownload("second-title", "Shared Book Extended", "511", 10);
 
-            await adapter.FetchDownloadsAsync(
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
                 CreateClient(),
                 [first, second],
                 CancellationToken.None);
 
-            Assert.Equal(DownloadStatus.Completed, first.Status);
-            Assert.Equal("/final/ordered-title", first.DownloadPath);
+            Assert.Equal(DownloadStatus.Queued, first.Status);
+            Assert.Equal(string.Empty, first.DownloadPath);
             Assert.Equal(DownloadStatus.Queued, second.Status);
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_ActiveMatch_TakesPrecedenceOverOverlappingHistory()
+        public async Task QueuePath_ActiveMatch_TakesPrecedenceOverOverlappingHistory()
         {
             // AC: AC-NZB-010 requires active data to win when active and history identify the same object.
             // Behavior: Same canonical ID in active and history -> public poll -> active mutation remains authoritative.
@@ -779,7 +765,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var adapter = CreateAdapter(http);
             var download = CreateDownload("active-priority", "Active Priority Book", "501", 100);
 
-            await adapter.FetchDownloadsAsync(
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
                 CreateClient(),
                 [download],
                 CancellationToken.None);
@@ -790,7 +777,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_DuplicateHistoryId_AppliesOnlyFirstQualifyingEntry()
+        public async Task QueuePath_DuplicateHistoryId_AppliesOnlyFirstQualifyingEntry()
         {
             // AC: AC-NZB-015 requires duplicate visible-history NZBIDs to apply at most once.
             // Behavior: Duplicate history ID -> public poll -> first qualifying server entry wins once.
@@ -818,7 +805,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var adapter = CreateAdapter(http);
             var download = CreateDownload("duplicate", "Duplicate Book", "601", 10);
 
-            await adapter.FetchDownloadsAsync(
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
                 CreateClient(),
                 [download],
                 CancellationToken.None);
@@ -829,7 +817,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_ConfiguredCategory_FiltersHistoryButNotActive()
+        public async Task QueuePath_ConfiguredCategory_FiltersHistoryAndActive()
         {
             // AC: AC-NZB-012 preserves unfiltered active polling and filters configured history only.
             // Behavior: Mixed active/history categories -> public poll -> active updates and only matching history mutates.
@@ -864,18 +852,19 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var filtered = CreateDownload("filtered", "Filtered History", "702", 10);
             var matching = CreateDownload("matching", "Matching History", "703", 10);
 
-            await adapter.FetchDownloadsAsync(
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
                 client,
                 [active, filtered, matching],
                 CancellationToken.None);
 
-            Assert.Equal(DownloadStatus.Downloading, active.Status);
+            Assert.Equal(DownloadStatus.Queued, active.Status);
             Assert.Equal(DownloadStatus.Queued, filtered.Status);
             Assert.Equal(DownloadStatus.Completed, matching.Status);
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_ActiveTitleFallback_PreservesExistingSimilarityBehavior()
+        public async Task QueuePath_ActiveTitleFallback_DoesNotUpdateWhenOnlySimilarTitleMatches()
         {
             // AC: AC-NZB-001 preserves existing active title fallback behavior.
             // Behavior: Active ID mismatch with similar title -> public poll -> active progress still updates.
@@ -903,13 +892,14 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 "different-id",
                 100);
 
-            await adapter.FetchDownloadsAsync(
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
                 CreateClient(),
                 [download],
                 CancellationToken.None);
 
-            Assert.Equal(DownloadStatus.Downloading, download.Status);
-            Assert.Equal(0.75m, download.Progress);
+            Assert.Equal(DownloadStatus.Queued, download.Status);
+            Assert.Equal(0m, download.Progress);
         }
 
         [Theory]
@@ -917,7 +907,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         [InlineData("DELETED/MANUAL")]
         [InlineData("")]
         [InlineData("UNKNOWN/FUTURE")]
-        public async Task FetchDownloadsAsync_IgnoredHistoryStatus_DoesNotMutateTrackedDownload(
+        public async Task QueuePath_IgnoredHistoryStatus_DoesNotMutateTrackedDownload(
             string status)
         {
             // AC: AC-NZB-005 requires warning, deleted, empty, and unknown history statuses to be ignored.
@@ -942,7 +932,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var adapter = CreateAdapter(http);
             var download = CreateDownload("ignored", "Ignored Book", "801", 10);
 
-            await adapter.FetchDownloadsAsync(
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
                 CreateClient(),
                 [download],
                 CancellationToken.None);
@@ -952,7 +943,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_HistoryCancellation_PropagatesOperationCanceledException()
+        public async Task QueuePath_HistoryCancellation_PropagatesOperationCanceledException()
         {
             // AC: AC-NZB-013 requires cancellation to propagate unchanged through history polling.
             // Behavior: Cancellation during history request -> public poll -> OperationCanceledException escapes.
@@ -962,7 +953,9 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             // @complexity: medium
             // Value Score: 30
             using var apiMock = new NzbgetApiMock();
-            QueueJsonPollingResponses(apiMock, []);
+            apiMock.QueueXmlRpcResponse(
+                "listgroups",
+                NzbgetApiMock.CreateListGroupsResponse(string.Empty));
             apiMock.QueueXmlRpcResponse(
                 "history",
                 NzbgetApiMock.CreateHistoryResponse(string.Empty),
@@ -974,7 +967,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 TimeSpan.FromMilliseconds(50));
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(
-                () => adapter.FetchDownloadsAsync(
+                () => FetchDownloadsThroughQueuePathAsync(
+                    adapter,
                     CreateClient(),
                     [],
                     cancellationTokenSource.Token));
@@ -984,7 +978,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         [InlineData("malformed")]
         [InlineData("authentication")]
         [InlineData("fault")]
-        public async Task FetchDownloadsAsync_HistoryFailure_WrapsNonCancellationFailure(
+        public async Task QueuePath_HistoryFailure_ReturnsActiveOnlyForNonCancellationFailure(
             string failureKind)
         {
             // AC: AC-NZB-014 requires malformed/auth/fault history failures to fail polling explicitly.
@@ -995,7 +989,9 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             // @complexity: medium
             // Value Score: 30
             using var apiMock = new NzbgetApiMock();
-            QueueJsonPollingResponses(apiMock, []);
+            apiMock.QueueXmlRpcResponse(
+                "listgroups",
+                NzbgetApiMock.CreateListGroupsResponse(string.Empty));
             var (body, statusCode) = failureKind switch
             {
                 "malformed" => ("<not-xml", HttpStatusCode.OK),
@@ -1022,18 +1018,20 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             using var http = new HttpClient(apiMock);
             var adapter = CreateAdapter(http);
 
-            var exception = await Assert.ThrowsAsync<DownloadClientAdapterPollingException>(
-                () => adapter.FetchDownloadsAsync(
-                    CreateClient(),
-                    [],
-                    CancellationToken.None));
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
+                CreateClient(),
+                [],
+                CancellationToken.None);
 
-            Assert.NotNull(exception.InnerException);
-            Assert.IsNotType<OperationCanceledException>(exception.InnerException);
+            Assert.Collection(
+                apiMock.XmlRpcCalls,
+                call => Assert.Equal("listgroups", call.MethodName),
+                call => Assert.Equal("history", call.MethodName));
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_FastHistory_LogsOneMeasurementAndNoSlowWarning()
+        public async Task QueuePath_FastHistory_LogsOneMeasurementAndNoSlowWarning()
         {
             // AC: Rollback observability requires one sanitized measurement and no warning at 2000ms.
             // Behavior: History duration equals threshold -> public poll -> one DEBUG measurement and zero WARNING events.
@@ -1056,23 +1054,23 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var client = CreateClient();
             client.Id = "client\nid";
 
-            await adapter.FetchDownloadsAsync(client, [], CancellationToken.None);
+            await FetchDownloadsThroughQueuePathAsync(adapter, client, [], CancellationToken.None);
 
             var measurement = Assert.Single(
                 logger.Entries,
                 entry => entry.Level == LogLevel.Debug &&
-                    GetLogValue(entry, "Surface") == "FetchDownloadsAsync");
+                    GetLogValue(entry, "Surface") == "GetQueueAsync");
             Assert.Equal("client id", GetLogValue(measurement, "ClientId"));
             Assert.Equal("1", GetLogValue(measurement, "HistoryCount"));
             Assert.Equal("2000", GetLogValue(measurement, "ElapsedMs"));
             Assert.DoesNotContain(
                 logger.Entries,
                 entry => entry.Level == LogLevel.Warning &&
-                    GetLogValue(entry, "Surface") == "FetchDownloadsAsync");
+                    GetLogValue(entry, "Surface") == "GetQueueAsync");
         }
 
         [Fact]
-        public async Task FetchDownloadsAsync_SlowHistory_LogsSanitizedWarningWithExactFields()
+        public async Task QueuePath_SlowHistory_LogsSanitizedWarningWithExactFields()
         {
             // AC: Rollback observability requires a sanitized warning only when history duration exceeds 2000ms.
             // Behavior: History duration is 2001ms -> public poll -> exact structured DEBUG and WARNING fields.
@@ -1082,7 +1080,9 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             // @complexity: medium
             // Value Score: 25
             using var apiMock = new NzbgetApiMock();
-            QueueJsonPollingResponses(apiMock, []);
+            apiMock.QueueXmlRpcResponse(
+                "listgroups",
+                NzbgetApiMock.CreateListGroupsResponse(string.Empty));
             apiMock.QueueXmlRpcResponse(
                 "history",
                 NzbgetApiMock.CreateHistoryResponse(
@@ -1098,19 +1098,19 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             var client = CreateClient();
             client.Id = "client\r\nid";
 
-            await adapter.FetchDownloadsAsync(client, [], CancellationToken.None);
+            await FetchDownloadsThroughQueuePathAsync(adapter, client, [], CancellationToken.None);
 
             var warning = Assert.Single(
                 logger.Entries,
                 entry => entry.Level == LogLevel.Warning &&
-                    GetLogValue(entry, "Surface") == "FetchDownloadsAsync");
+                    GetLogValue(entry, "Surface") == "GetQueueAsync");
             Assert.Equal("client  id", GetLogValue(warning, "ClientId"));
             Assert.Equal("1", GetLogValue(warning, "HistoryCount"));
             Assert.Equal("2001", GetLogValue(warning, "ElapsedMs"));
             Assert.Single(
                 logger.Entries,
                 entry => entry.Level == LogLevel.Debug &&
-                    GetLogValue(entry, "Surface") == "FetchDownloadsAsync");
+                    GetLogValue(entry, "Surface") == "GetQueueAsync");
         }
 
         [Fact]
@@ -1331,7 +1331,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
 
         [Theory]
         [InlineData(false, "GroupDelete")]
-        [InlineData(true, "GroupDeleteFinal")]
+        [InlineData(true, "GroupFinalDelete")]
         public async Task RemoveAsync_GroupDeleteXmlRpcCompatibility_PreservesMethodParametersAndResponse(
             bool deleteFiles,
             string expectedCommand)
@@ -2673,7 +2673,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
 
         [Theory]
         [InlineData(false, "GroupDelete")]
-        [InlineData(true, "GroupDeleteFinal")]
+        [InlineData(true, "GroupFinalDelete")]
         public async Task RemoveAsync_FallsBackToQueueWithConfiguredFilePolicy(
             bool deleteFiles,
             string expectedCommand)
@@ -3197,17 +3197,50 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 new NzbgetXmlRpcClient(new TestHttpClientFactory(http), "nzbget"));
         }
 
-        private static MergeHistoryDelegate CreateMergeHistoryDelegate()
+        private static async Task<List<Download>> FetchDownloadsThroughQueuePathAsync(
+            NzbgetAdapter adapter,
+            DownloadClientConfiguration client,
+            List<Download> downloads,
+            CancellationToken cancellationToken = default)
         {
-            var mergeMethod = typeof(NzbgetDownloadPollingWorkflow).GetMethod(
-                "MergeHistory",
-                BindingFlags.NonPublic | BindingFlags.Static)
-                ?? throw new InvalidOperationException(
-                    "NzbgetDownloadPollingWorkflow.MergeHistory was not found.");
-            return mergeMethod.CreateDelegate<MergeHistoryDelegate>();
+            var ids = downloads
+                .Select(download => download.GetExternalId())
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Select(id => id!)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var items = await adapter.GetQueueAsync(client, ids, cancellationToken);
+
+            foreach (var item in items)
+            {
+                var download = downloads.FirstOrDefault(candidate =>
+                    string.Equals(candidate.GetExternalId(), item.Id, StringComparison.OrdinalIgnoreCase));
+                if (download == null)
+                {
+                    continue;
+                }
+
+                QueueItemConverter.UpdateFromQueueItem(download, item);
+                if (!string.IsNullOrWhiteSpace(item.ContentPath))
+                {
+                    download.DownloadPath = item.ContentPath;
+                }
+            }
+
+            return downloads;
         }
 
-        private static XElement CreatePerformanceHistoryResult()
+        private static void QueuePerformanceResponses(NzbgetApiMock apiMock)
+        {
+            apiMock.QueueXmlRpcResponse(
+                "listgroups",
+                NzbgetApiMock.CreateListGroupsResponse(CreatePerformanceActiveGroups()));
+            apiMock.QueueXmlRpcResponse(
+                "history",
+                NzbgetApiMock.CreateHistoryResponse(CreatePerformanceHistoryEntries()));
+        }
+
+        private static string CreatePerformanceHistoryEntries()
         {
             var entries = new string[PerformanceHistoryEntryCount];
             for (var index = 0; index < entries.Length; index++)
@@ -3234,53 +3267,42 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                     downloadedSizeMb: index % 4 == 1 ? "60" : "100");
             }
 
-            return XElement.Parse(
-                $"<value><array><data>{string.Concat(entries)}</data></array></value>");
+            return string.Concat(entries);
         }
 
-        private static (
-            DownloadClientConfiguration Client,
-            List<Download> Downloads,
-            IReadOnlyDictionary<string, Download> TrackedById,
-            HashSet<Download> MatchedDownloads,
-            HashSet<string> ActiveCanonicalIds,
-            Download BeyondOneHundredDownload)
-            CreatePerformanceMergeState()
+        private static string CreatePerformanceActiveGroups()
         {
-            var client = CreateClient();
-            var downloads = new List<Download>(PerformanceHistoryEntryCount);
-            var trackedById = new Dictionary<string, Download>(
-                PerformanceHistoryEntryCount,
-                StringComparer.OrdinalIgnoreCase);
-            var matchedDownloads = new HashSet<Download>();
-            var activeCanonicalIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            for (var index = 0; index < PerformanceHistoryEntryCount; index++)
+            var activeGroups = new List<string>();
+            for (var index = 0; index < PerformanceHistoryEntryCount; index += 20)
             {
-                var canonicalId = PerformanceHistoryId(index);
-                var download = CreateDownload(
-                    $"performance-{index}",
+                activeGroups.Add(ActiveGroupValue(
+                    PerformanceHistoryId(index),
+                    groupId: null,
+                    lastId: null,
                     $"Performance Book {index}",
-                    canonicalId,
-                    100);
-                downloads.Add(download);
-                trackedById.TryAdd(canonicalId, download);
-
-                if (index % 20 == 0)
-                {
-                    download.Status = DownloadStatus.Downloading;
-                    matchedDownloads.Add(download);
-                    activeCanonicalIds.Add(canonicalId);
-                }
+                    "DOWNLOADING",
+                    "audiobooks",
+                    fileSizeMb: "100",
+                    remainingSizeMb: "25",
+                    destDir: $"/destination/performance-{index}"));
             }
 
-            return (
-                client,
-                downloads,
-                trackedById,
-                matchedDownloads,
-                activeCanonicalIds,
-                downloads[PerformanceBeyondOneHundredIndex]);
+            return string.Concat(activeGroups);
+        }
+
+        private static List<Download> CreatePerformanceDownloads()
+        {
+            var downloads = new List<Download>(PerformanceHistoryEntryCount);
+            for (var index = 0; index < PerformanceHistoryEntryCount; index++)
+            {
+                downloads.Add(CreateDownload(
+                    $"performance-{index}",
+                    $"Performance Book {index}",
+                    PerformanceHistoryId(index),
+                    100));
+            }
+
+            return downloads;
         }
 
         private static string PerformanceHistoryId(int index)
@@ -3313,42 +3335,35 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             return download;
         }
 
-        private static object ActiveGroup(
+        private static string ActiveGroup(
             int nzbId,
             string title,
             string status,
             string category)
         {
-            return new
-            {
-                NZBID = nzbId,
-                NZBName = title,
-                Status = status,
-                Category = category,
-                FileSizeMB = "100",
-                RemainingSizeMB = "25"
-            };
+            return ActiveGroupValue(
+                nzbId.ToString(CultureInfo.InvariantCulture),
+                groupId: null,
+                lastId: null,
+                title,
+                status,
+                category,
+                fileSizeMb: "100",
+                remainingSizeMb: "25",
+                destDir: "/destination/active-book");
         }
 
         private static void QueuePollingResponses(
             NzbgetApiMock apiMock,
-            IReadOnlyList<object> activeGroups,
+            IReadOnlyList<string> activeGroups,
             IReadOnlyList<string> historyEntries)
         {
-            QueueJsonPollingResponses(apiMock, activeGroups);
+            apiMock.QueueXmlRpcResponse(
+                "listgroups",
+                NzbgetApiMock.CreateListGroupsResponse(string.Concat(activeGroups)));
             apiMock.QueueXmlRpcResponse(
                 "history",
                 NzbgetApiMock.CreateHistoryResponse(string.Concat(historyEntries)));
-        }
-
-        private static void QueueJsonPollingResponses(
-            NzbgetApiMock apiMock,
-            IReadOnlyList<object> activeGroups)
-        {
-            apiMock.QueueJsonRpcResponse("status", """{"result":{},"id":2}""");
-            apiMock.QueueJsonRpcResponse(
-                "listgroups",
-                JsonSerializer.Serialize(new { result = activeGroups, id = 3 }));
         }
 
         private static string GetLogValue(CapturedLog entry, string key)

@@ -55,10 +55,20 @@ namespace Listenarr.Application.Mapping
             }
 
             var normalizedState = (item.Status ?? string.Empty).ToLowerInvariant();
-            if (normalizedState == "error" || normalizedState == "missingfiles")
+            if (normalizedState is "error" or "failed" or "failure" or "missingfiles" or "missing_files")
             {
-                download.Failed($"qBittorrent state: {item.Status}");
+                download.Failed(item.ErrorMessage ?? $"Download client state: {item.Status}");
+                if (!string.IsNullOrWhiteSpace(item.ClientFailureReason))
+                {
+                    download.SetMetadata("ClientFailureReason", item.ClientFailureReason);
+                }
+
                 return download;
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.ClientFailureReason))
+            {
+                download.SetMetadata("ClientFailureReason", item.ClientFailureReason);
             }
 
             // Contract gate: completion requires an explicit terminal client state

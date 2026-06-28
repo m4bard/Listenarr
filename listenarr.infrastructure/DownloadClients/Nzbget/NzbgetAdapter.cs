@@ -29,7 +29,6 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
         private readonly ILogger<NzbgetAdapter> _logger;
         private readonly NzbgetXmlRpcClient _xmlRpcClient;
         private readonly NzbgetHistoryEnrichmentWorkflow _historyEnrichmentWorkflow;
-        private readonly NzbgetDownloadPollingWorkflow _downloadPollingWorkflow;
         private readonly NzbgetRemovalWorkflow _removalWorkflow;
         private readonly NzbgetAddWorkflow _addWorkflow;
         private readonly NzbgetImportItemResolver _importItemResolver;
@@ -61,13 +60,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             var historyReader = new NzbgetHistoryReader(_xmlRpcClient);
             _historyEnrichmentWorkflow = new NzbgetHistoryEnrichmentWorkflow(
                 historyReader,
-                _logger);
-            _downloadPollingWorkflow = new NzbgetDownloadPollingWorkflow(
-                httpClientFactory,
-                historyReader,
                 _logger,
-                timeProvider,
-                ClientType);
+                timeProvider);
             _removalWorkflow = new NzbgetRemovalWorkflow(_xmlRpcClient, _logger);
             _addWorkflow = new NzbgetAddWorkflow(_xmlRpcClient, _logger);
             _importItemResolver = new NzbgetImportItemResolver(_xmlRpcClient, _logger);
@@ -321,14 +315,6 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             CancellationToken ct = default)
         {
             return await _importItemResolver.GetImportItemAsync(client, queueItem);
-        }
-
-        public async Task<List<Download>> FetchDownloadsAsync(
-            DownloadClientConfiguration client,
-            List<Download> downloads,
-            CancellationToken cancellationToken)
-        {
-            return await _downloadPollingWorkflow.FetchDownloadsAsync(client, downloads, cancellationToken);
         }
 
         private async Task ApplyGlobalDownloadRateFallbackAsync(

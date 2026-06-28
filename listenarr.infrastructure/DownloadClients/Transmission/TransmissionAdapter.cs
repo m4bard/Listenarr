@@ -31,7 +31,6 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<TransmissionAdapter> _logger;
         private readonly TransmissionRpcClient _rpcClient;
-        private readonly TransmissionDownloadPollingWorkflow _downloadPollingWorkflow;
         private readonly TransmissionRemovalWorkflow _removalWorkflow;
         private readonly TransmissionImportItemResolver _importItemResolver;
 
@@ -41,7 +40,6 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
             _ = torrentFileDownloader ?? throw new ArgumentNullException(nameof(torrentFileDownloader));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _rpcClient = new TransmissionRpcClient(_httpClientFactory, ClientType, _logger);
-            _downloadPollingWorkflow = new TransmissionDownloadPollingWorkflow(_httpClientFactory, _logger, ClientType);
             _removalWorkflow = new TransmissionRemovalWorkflow(_rpcClient, _logger);
             _importItemResolver = new TransmissionImportItemResolver(_rpcClient, _logger);
         }
@@ -410,14 +408,6 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
 
             _logger.LogWarning("Pre-download exceeded maximum redirects (10) starting from {Url}", LogRedaction.SanitizeUrl(torrentUrl));
             return null;
-        }
-
-        public async Task<List<Download>> FetchDownloadsAsync(
-            DownloadClientConfiguration client,
-            List<Download> downloads,
-            CancellationToken cancellationToken)
-        {
-            return await _downloadPollingWorkflow.FetchDownloadsAsync(client, downloads, cancellationToken);
         }
 
         private static List<QueueItem> FilterByIds(List<QueueItem> items, List<string> ids)

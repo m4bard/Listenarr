@@ -35,7 +35,6 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
         private readonly ILogger<QbittorrentAdapter> _logger;
         private readonly QbittorrentAuthSession _authSession;
         private readonly QbittorrentConnectionTester _connectionTester;
-        private readonly QbittorrentDownloadPollingWorkflow _downloadPollingWorkflow;
         private readonly QbittorrentRemovalWorkflow _removalWorkflow;
         private readonly QbittorrentImportItemResolver _importItemResolver;
 
@@ -46,7 +45,6 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _authSession = new QbittorrentAuthSession(_logger);
             _connectionTester = new QbittorrentConnectionTester(_httpClientFactory, _logger, ClientType);
-            _downloadPollingWorkflow = new QbittorrentDownloadPollingWorkflow(_logger);
             _removalWorkflow = new QbittorrentRemovalWorkflow(_httpClientFactory, _logger, ClientType);
             _importItemResolver = new QbittorrentImportItemResolver(_logger);
         }
@@ -393,14 +391,6 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             List<Dictionary<string, JsonElement>> files)
         {
             return QbittorrentImportPathResolver.ResolveContentPath(savePath, files);
-        }
-
-        public async Task<List<Download>> FetchDownloadsAsync(
-            DownloadClientConfiguration client,
-            List<Download> downloads,
-            CancellationToken cancellationToken)
-        {
-            return await _downloadPollingWorkflow.FetchDownloadsAsync(client, downloads, cancellationToken);
         }
 
         private static List<QueueItem> FilterByIds(List<QueueItem> items, List<string> ids)

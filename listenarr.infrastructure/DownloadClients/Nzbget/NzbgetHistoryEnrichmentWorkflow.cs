@@ -23,8 +23,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
 {
     internal sealed class NzbgetHistoryEnrichmentWorkflow(
         NzbgetHistoryReader historyReader,
-        ILogger logger)
+        ILogger logger,
+        TimeProvider timeProvider)
     {
+        private const long SlowHistoryThresholdMilliseconds = 2_000;
         private const string QueueSurface = "GetQueueAsync";
         private const string ItemSurface = "GetItemsAsync";
 
@@ -60,7 +62,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
         {
             try
             {
-                var history = await historyReader.ReadAsync(client, cancellationToken);
+                var history = await ReadHistoryWithMeasurementAsync(client, QueueSurface, cancellationToken);
                 AppendHistory(
                     client,
                     QueueSurface,
@@ -85,7 +87,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
         {
             try
             {
-                var history = await historyReader.ReadAsync(client, cancellationToken);
+                var history = await ReadHistoryWithMeasurementAsync(client, ItemSurface, cancellationToken);
                 AppendHistory(
                     client,
                     ItemSurface,
@@ -98,6 +100,28 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 LogEnrichmentFailure(client, ItemSurface, items.Count, ex);
+            }
+        }
+
+        private async Task<IReadOnlyList<NzbgetHistoryEntry>> ReadHistoryWithMeasurementAsync(
+            DownloadClientConfiguration client,
+            string surface,
+            CancellationToken cancellationToken)
+        {
+            var startTimestamp = timeProvider.GetTimestamp();
+            var historyCount = 0;
+            try
+            {
+                var history = await historyReader.ReadAsync(client, cancellationToken);
+                historyCount = history.Count;
+                return history;
+            }
+            finally
+            {
+                var elapsedMilliseconds = (long)timeProvider
+                    .GetElapsedTime(startTimestamp)
+                    .TotalMilliseconds;
+                LogHistoryMeasurement(client, surface, historyCount, elapsedMilliseconds);
             }
         }
 
@@ -261,6 +285,31 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                 LogRedaction.SanitizeText(entry.Category),
                 LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type),
                 surface);
+        }
+
+        private void LogHistoryMeasurement(
+            DownloadClientConfiguration client,
+            string surface,
+            int historyCount,
+            long elapsedMilliseconds)
+        {
+            var clientId = LogRedaction.SanitizeText(
+                client.Id ?? client.Name ?? client.Type);
+            logger.LogDebug(
+                "NZBGet history polling measurement clientId={ClientId} surface={Surface} historyCount={HistoryCount} elapsedMs={ElapsedMs}",
+                clientId,
+                surface,
+                historyCount,
+                elapsedMilliseconds);
+            if (elapsedMilliseconds > SlowHistoryThresholdMilliseconds)
+            {
+                logger.LogWarning(
+                    "Slow NZBGet history polling clientId={ClientId} surface={Surface} historyCount={HistoryCount} elapsedMs={ElapsedMs}",
+                    clientId,
+                    surface,
+                    historyCount,
+                    elapsedMilliseconds);
+            }
         }
 
         private void LogEnrichmentFailure(

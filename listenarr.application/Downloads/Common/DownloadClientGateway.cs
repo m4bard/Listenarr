@@ -81,7 +81,8 @@ namespace Listenarr.Application.Downloads.Common
 
         public Task<bool> RemoveAsync(DownloadClientConfiguration client, string id, bool deleteFiles = false, CancellationToken ct = default)
         {
-            // FIXME: Responsability of removing the download from DB should be here
+            // Removes the item from the external download client only. Database
+            // removal belongs to the workflow that owns the durable state transition.
             var adapter = ResolveAdapter(client);
             return adapter.RemoveAsync(client, id, deleteFiles, ct);
         }
@@ -152,13 +153,22 @@ namespace Listenarr.Application.Downloads.Common
 
             foreach (QueueItem item in items)
             {
-                var download = downloads.FirstOrDefault(d => d.GetExternalId() == item.Id);
+                var download = downloads.FirstOrDefault(d =>
+                    string.Equals(d.GetExternalId(), item.Id, StringComparison.OrdinalIgnoreCase));
                 if (download == null)
                 {
                     continue;
                 }
 
-                logger.LogDebug($"Found matching qBittorrent torrent for {download.Id}: {item.Title} (Hash: {item.Id}, Status: {item.Status}, Progress: {item.Progress:P2}, LocalPath: {item.LocalPath}, ContentPath: {item.ContentPath})");
+                logger.LogDebug(
+                    "Found matching download client item for {DownloadId}: {Title} (ExternalId: {ExternalId}, Status: {Status}, Progress: {Progress:F2}, LocalPath: {LocalPath}, ContentPath: {ContentPath})",
+                    download.Id,
+                    item.Title,
+                    item.Id,
+                    item.Status,
+                    item.Progress,
+                    item.LocalPath,
+                    item.ContentPath);
 
                 var hasReliableSize = item.Size > 0 && item.Downloaded >= 0;
                 var amountLeft = hasReliableSize
@@ -246,7 +256,7 @@ namespace Listenarr.Application.Downloads.Common
                     // operate on the specific files that belong to this download.
                     try
                     {
-                        item.SourceFiles = [.. Directory
+                        item.SourceFiles = [.. fileSystem
                             .EnumerateFiles(item.ContentPath, "*.*", SearchOption.AllDirectories)
                             .Select(f => FileUtils.NormalizeStoredPath(f))];
                     }

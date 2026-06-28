@@ -135,7 +135,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             // Fall back to queue removal (for active downloads)
             try
             {
-                var command = deleteFiles ? "GroupDeleteFinal" : "GroupDelete";
+                var command = deleteFiles ? "GroupFinalDelete" : "GroupDelete";
                 var editResult = await _xmlRpcClient.CallAsync(client, "editqueue", command, 0, string.Empty, new[] { numericId.Value });
                 var success = editResult.Element("boolean")?.Value == "1";
 

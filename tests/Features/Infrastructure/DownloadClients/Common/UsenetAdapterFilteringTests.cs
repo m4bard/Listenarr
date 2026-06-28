@@ -138,8 +138,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Common
             var adapter = new SabnzbdAdapter(
                 new TestHttpClientFactory(httpClient),
                 Mock.Of<INzbUrlResolver>(),
-                NullLogger<SabnzbdAdapter>.Instance,
-                Mock.Of<IAppMetricsService>());
+                NullLogger<SabnzbdAdapter>.Instance);
 
             var client = new DownloadClientConfiguration
             {

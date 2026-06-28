@@ -388,6 +388,13 @@ namespace Listenarr.Domain.Downloads
         public DateTime? CompletionTime { get; set; }
 
         /// <summary>
+        /// Raw client failure reason used for retry policy decisions. This is hidden from
+        /// API consumers because ErrorMessage owns the user-facing text.
+        /// </summary>
+        [JsonIgnore]
+        public string? ClientFailureReason { get; set; }
+
+        /// <summary>
         /// Creates a shallow copy of this QueueItem.
         /// Used by GetImportItem to avoid modifying the original item.
         /// Matches DownloadClientItem.Clone() pattern.

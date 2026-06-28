@@ -17,6 +17,7 @@ namespace Listenarr.Tests.Mocks
         ];
 
         public QueueItem QueueItemMock { get; set; } = null;
+        public List<QueueItem>? QueueItemsMock { get; set; }
         public List<string>? LastRequestedQueueIds { get; private set; }
         public bool LastQueueRequestWasFullSnapshot { get; private set; }
         public int FullSnapshotQueueRequestCount { get; private set; }
@@ -85,6 +86,11 @@ namespace Listenarr.Tests.Mocks
             if (advanceProgress)
             {
                 CurrentProgress += 10;
+            }
+
+            if (QueueItemsMock != null)
+            {
+                return QueueItemsMock;
             }
 
             return [

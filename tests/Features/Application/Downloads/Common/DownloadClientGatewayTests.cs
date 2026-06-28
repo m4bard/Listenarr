@@ -111,6 +111,34 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
         }
 
         [Fact]
+        [Trait("Method", "FetchDownloadsAsync")]
+        [Trait("Scenario", "Check returned queue item IDs match tracked external IDs case-insensitively")]
+        public async Task FetchDownloadsAsync_MatchesReturnedQueueItemIdsCaseInsensitively()
+        {
+            var newDownload = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithExternalId("ABC123")
+                .Build());
+            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
+            var path = FileUtils.GetAbsolutePath(DownloadCLientAdapterMock.RemotePath, "case-insensitive-id");
+            downloadClientAdapterMock.QueueItemsMock =
+            [
+                new QueueItemBuilder()
+                    .WithId("abc123")
+                    .WithRemotePath(path)
+                    .WithContentPath(path)
+                    .WithSourceFile(Path.Join(path, "chapter1.mp3"))
+                    .WithStatus("downloading")
+                    .Build()
+            ];
+
+            var downloads = await downloadClientGateway.FetchDownloadsAsync(client, [newDownload]);
+
+            Assert.Single(downloads);
+            Assert.Equal(["ABC123"], downloadClientAdapterMock.LastRequestedQueueIds);
+            Assert.StartsWith(localPath, downloads[0].DownloadPath);
+        }
+
+        [Fact]
         [Trait("Method", "GetQueueItemAsync")]
         [Trait("Scenario", "Check SourceFiles is empty when adapter gives null for both source files and content path")]
         public async Task GetQueueItemAsync_EmptyResults()

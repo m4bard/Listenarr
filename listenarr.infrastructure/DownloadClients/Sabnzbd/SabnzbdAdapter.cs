@@ -31,9 +31,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd
         private readonly IHttpClientFactory _httpFactory;
         private readonly INzbUrlResolver _nzbUrlResolver;
         private readonly ILogger<SabnzbdAdapter> _logger;
-        private readonly IAppMetricsService _appMetricsService;
         private readonly SabnzbdRequestBuilder _requestBuilder;
-        private readonly SabnzbdDownloadPollingWorkflow _downloadPollingWorkflow;
         private readonly SabnzbdRemovalWorkflow _removalWorkflow;
         private readonly SabnzbdQueueFetchWorkflow _queueFetchWorkflow;
         private readonly SabnzbdImportItemResolver _importItemResolver;
@@ -41,15 +39,12 @@ namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd
         public SabnzbdAdapter(
             IHttpClientFactory httpFactory,
             INzbUrlResolver nzbUrlResolver,
-            ILogger<SabnzbdAdapter> logger,
-            IAppMetricsService appMetricsService)
+            ILogger<SabnzbdAdapter> logger)
         {
             _httpFactory = httpFactory ?? throw new ArgumentNullException(nameof(httpFactory));
             _nzbUrlResolver = nzbUrlResolver ?? throw new ArgumentNullException(nameof(nzbUrlResolver));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _appMetricsService = appMetricsService;
             _requestBuilder = new SabnzbdRequestBuilder();
-            _downloadPollingWorkflow = new SabnzbdDownloadPollingWorkflow(_httpFactory, _requestBuilder, _appMetricsService, _logger, ClientType);
             _removalWorkflow = new SabnzbdRemovalWorkflow(_httpFactory, _requestBuilder, _logger, ClientType);
             _queueFetchWorkflow = new SabnzbdQueueFetchWorkflow(_httpFactory, _requestBuilder, _logger, ClientType);
             _importItemResolver = new SabnzbdImportItemResolver(_httpFactory, _requestBuilder, _logger, ClientType);
@@ -338,14 +333,6 @@ namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd
             CancellationToken ct = default)
         {
             return await _importItemResolver.GetImportItemAsync(client, queueItem, ct);
-        }
-
-        public async Task<List<Download>> FetchDownloadsAsync(
-            DownloadClientConfiguration client,
-            List<Download> downloads,
-            CancellationToken cancellationToken)
-        {
-            return await _downloadPollingWorkflow.FetchDownloadsAsync(client, downloads, cancellationToken);
         }
 
         private static List<QueueItem> FilterByIds(List<QueueItem> items, List<string> ids)
