@@ -157,9 +157,26 @@ namespace Listenarr.Application.Downloads.Queue
                                     continue;
                                 }
 
-                                logger.LogDebug("Queue item {QueueId} '{Title}' not tracked in database - showing as untracked",
+                                // Activity is Listenarr's operational queue, not a mirror of every
+                                // transfer in a shared external client. Keep full snapshots for
+                                // reconciliation above, but hide unmatched active external items so
+                                // shared Transmission/qBittorrent/SAB/NZBGet clients do not leak
+                                // unrelated user transfers into Listenarr's Activity view.
+                                if (!ShouldExposeUnmatchedExternalQueueItem(queueItem, includeCompletedExternal))
+                                {
+                                    logger.LogDebug(
+                                        "Queue item {QueueId} '{Title}' from client {ClientName} is not tracked by Listenarr and will be hidden from Activity",
+                                        queueItem.Id,
+                                        queueItem.Title,
+                                        client.Name ?? client.Id);
+                                    continue;
+                                }
+
+                                logger.LogDebug(
+                                    "Queue item {QueueId} '{Title}' from client {ClientName} is completed, not tracked by Listenarr, and will be shown because completed external downloads are enabled",
                                     queueItem.Id,
-                                    queueItem.Title);
+                                    queueItem.Title,
+                                    client.Name ?? client.Id);
                             }
 
                             mappedQueueItems.Add(queueItem);
@@ -312,6 +329,16 @@ namespace Listenarr.Application.Downloads.Queue
             return snapshot.Items;
         }
 
+        private static bool ShouldExposeUnmatchedExternalQueueItem(
+            QueueItem queueItem,
+            bool includeCompletedExternal)
+        {
+            // Unmatched active queue items belong to the external client, not to
+            // Listenarr. The only unmatched client-owned items that may be exposed
+            // are completed items behind the explicit completed-external setting.
+            return includeCompletedExternal &&
+                string.Equals(queueItem.Status, "completed", StringComparison.OrdinalIgnoreCase);
+        }
 
         private async Task PersistDiscoveredClientIdentifiersAsync(
             Download matchedDownload,

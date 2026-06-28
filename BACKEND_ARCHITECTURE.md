@@ -93,6 +93,14 @@ Background workers expose DI-facing processor contracts for deterministic cycle/
 | `FfmpegInstallBackgroundService` | `FfmpegInstallProcessor` | Owns non-blocking ffprobe/ffmpeg availability checks and install attempts. | Must not block host startup or mutate unrelated settings. | Runs once outside request startup; failures are reported without stopping the host. | Rechecks installed binaries before downloading/installing. | `DownloadHub` receives `FfmpegInstallStatus`. |
 | `UnmatchedScanBackgroundService` | `UnmatchedScanProcessor` | Owns Library Import unmatched-file scan job status `Queued -> Processing -> Completed/Failed` and cached result replacement. | Must not import matched files or create audiobook records. | Queue-driven; failed/finished jobs can be superseded by a new explicit scan. | Groups files deterministically and clears stale unmatched results for the scanned root. | `SettingsHub` receives `UnmatchedScanComplete`. |
 
+## Download Queue Visibility
+
+`DownloadQueueService` fetches full live client queue snapshots for reconciliation, rebinding, stale-snapshot reporting, and completed-external display. That full snapshot is an internal input, not the user-visible Activity contract.
+
+The user-facing Activity queue should expose Listenarr-owned active downloads only. Each active external queue item must first match a Listenarr download by stored ID, client-specific ID, torrent hash, or a safe non-ambiguous title/artist fallback before it is shown. Unmatched active external items from shared clients such as Transmission, qBittorrent, SABnzbd, or NZBGet must be hidden from Activity so unrelated user transfers do not appear as Listenarr work.
+
+Unmatched completed external items are a separate opt-in display feature and may be shown only when `ShowCompletedExternalDownloads` is enabled. Do not use that setting to expose unmatched active external items.
+
 ## Download Client Adapter Slicing
 
 Each concrete download-client adapter should be a thin facade over client-specific workflows. This keeps the application-facing `IDownloadClientAdapter` contract stable while preventing one large adapter class from owning HTTP/XML-RPC calls, response parsing, monitor polling policy, import path resolution, and client cleanup at the same time.
