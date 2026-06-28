@@ -58,8 +58,24 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             string? configuredCategory,
             IReadOnlyList<ActiveHistoryIdentity> activeIdentities,
             List<QueueItem> items,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IReadOnlyCollection<string>? monitoredIds = null)
         {
+            var monitoredIdSet = BuildMonitoredIdSet(monitoredIds);
+            var isMonitorPoll = monitoredIdSet.Count > 0;
+            var historyRequired = IsHistoryRequired(activeIdentities, monitoredIdSet);
+
+            // History is authoritative for completed/failed NZBGet outcomes and import paths,
+            // but it is not needed for ordinary active listgroups rows. Skipping optional
+            // history here keeps active progress updates working when history is flaky.
+            if (!historyRequired)
+            {
+                logger.LogDebug(
+                    "Skipping NZBGet history enrichment for active monitored items on client {ClientName}",
+                    LogRedaction.SanitizeText(client.Name ?? client.Id));
+                return;
+            }
+
             try
             {
                 var history = await ReadHistoryWithMeasurementAsync(client, QueueSurface, cancellationToken);
@@ -75,6 +91,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 LogEnrichmentFailure(client, QueueSurface, items.Count, ex);
+                if (isMonitorPoll && historyRequired)
+                {
+                    throw new DownloadClientAdapterPollingException("Error polling NZBGet history.", ex);
+                }
             }
         }
 
@@ -388,6 +408,33 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             {
                 values.Add(value);
             }
+        }
+
+        private static HashSet<string> BuildMonitoredIdSet(IReadOnlyCollection<string>? monitoredIds)
+        {
+            return monitoredIds?
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
+        }
+
+        private static bool IsHistoryRequired(
+            IReadOnlyList<ActiveHistoryIdentity> activeIdentities,
+            ISet<string> monitoredIds)
+        {
+            if (monitoredIds.Count == 0)
+            {
+                return true;
+            }
+
+            var hasMissingTrackedId = monitoredIds.Any(id =>
+                !activeIdentities.Any(active => active.Matches(id)));
+            if (hasMissingTrackedId)
+            {
+                return true;
+            }
+
+            return activeIdentities.Any(active =>
+                active.HasTerminalClientStatus && active.MatchesAny(monitoredIds));
         }
 
         internal sealed record ActiveHistoryIdentity(

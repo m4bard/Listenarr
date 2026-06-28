@@ -1,3 +1,4 @@
+using Listenarr.Domain.Downloads.Exceptions;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks;
@@ -136,6 +137,46 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
             Assert.Single(downloads);
             Assert.Equal(["ABC123"], downloadClientAdapterMock.LastRequestedQueueIds);
             Assert.StartsWith(localPath, downloads[0].DownloadPath);
+        }
+
+        [Fact]
+        [Trait("Method", "FetchDownloadsAsync")]
+        [Trait("Scenario", "Check monitor polling exceptions are propagated for caller-owned backoff")]
+        public async Task FetchDownloadsAsync_PropagatesPollingException()
+        {
+            var newDownload = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithExternalId("1")
+                .Build());
+            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
+            var expected = new DownloadClientAdapterPollingException("client unavailable");
+            downloadClientAdapterMock.FilteredQueueException = expected;
+
+            var actual = await Assert.ThrowsAsync<DownloadClientAdapterPollingException>(
+                () => downloadClientGateway.FetchDownloadsAsync(client, [newDownload]));
+
+            Assert.Same(expected, actual);
+            Assert.False(downloadClientAdapterMock.LastQueueRequestWasFullSnapshot);
+            Assert.Equal(["1"], downloadClientAdapterMock.LastRequestedQueueIds);
+        }
+
+        [Fact]
+        [Trait("Method", "FetchDownloadsAsync")]
+        [Trait("Scenario", "Check unexpected adapter exceptions are normalized for monitor backoff")]
+        public async Task FetchDownloadsAsync_WrapsUnexpectedAdapterException()
+        {
+            var newDownload = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithExternalId("1")
+                .Build());
+            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
+            var expectedInner = new InvalidOperationException("unexpected adapter failure");
+            downloadClientAdapterMock.FilteredQueueException = expectedInner;
+
+            var actual = await Assert.ThrowsAsync<DownloadClientAdapterPollingException>(
+                () => downloadClientGateway.FetchDownloadsAsync(client, [newDownload]));
+
+            Assert.Same(expectedInner, actual.InnerException);
+            Assert.False(downloadClientAdapterMock.LastQueueRequestWasFullSnapshot);
+            Assert.Equal(["1"], downloadClientAdapterMock.LastRequestedQueueIds);
         }
 
         [Fact]

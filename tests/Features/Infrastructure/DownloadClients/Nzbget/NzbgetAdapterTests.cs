@@ -25,6 +25,7 @@ using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks.Api;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Xml.Linq;
+using Listenarr.Domain.Downloads.Exceptions;
 using Xunit.Abstractions;
 
 namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
@@ -1326,7 +1327,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
 
             Assert.True(result);
             var call = Assert.Single(apiMock.XmlRpcCalls);
-            AssertEditQueueCall(call, "HistoryDelete", 123);
+            AssertEditQueueCall(call, "HistoryFinalDelete", 123);
         }
 
         [Theory]
@@ -1344,10 +1345,12 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
 
             var result = await adapter.RemoveAsync(CreateClient(), "123", deleteFiles);
 
+            var expectedHistoryCommand = deleteFiles ? "HistoryFinalDelete" : "HistoryDelete";
+
             Assert.True(result);
             Assert.Collection(
                 apiMock.XmlRpcCalls,
-                call => AssertEditQueueCall(call, "HistoryDelete", 123),
+                call => AssertEditQueueCall(call, expectedHistoryCommand, 123),
                 call => AssertEditQueueCall(call, expectedCommand, 123));
         }
 
@@ -2706,11 +2709,84 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
 
             var result = await adapter.RemoveAsync(client, "123", deleteFiles);
 
+            var expectedHistoryCommand = deleteFiles ? "HistoryFinalDelete" : "HistoryDelete";
+
             Assert.True(result);
             Assert.Equal(2, requests.Count);
-            Assert.Contains("HistoryDelete", requests[0], StringComparison.Ordinal);
+            Assert.Contains(expectedHistoryCommand, requests[0], StringComparison.Ordinal);
             Assert.Contains(expectedCommand, requests[1], StringComparison.Ordinal);
             Assert.All(requests, body => Assert.Contains("<i4>123</i4>", body, StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_WithTrackedActiveNonTerminalItem_DoesNotCallHistory()
+        {
+            using var apiMock = new NzbgetApiMock();
+            apiMock.QueueXmlRpcResponse(
+                "listgroups",
+                NzbgetApiMock.CreateListGroupsResponse(
+                    ActiveGroupValue("501", "9501", null, "Active Only", "QUEUED", "audiobooks", "5", "5", "/active")));
+            using var http = new HttpClient(apiMock);
+            var adapter = CreateAdapter(http);
+
+            var queue = await adapter.GetQueueAsync(CreateClient(), ["9501"]);
+
+            var item = Assert.Single(queue);
+            Assert.Equal("9501", item.Id);
+            Assert.Equal(["listgroups"], apiMock.XmlRpcCalls.Select(call => call.MethodName));
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_WithMissingTrackedItem_Throws_WhenHistoryFails()
+        {
+            using var apiMock = new NzbgetApiMock();
+            apiMock.QueueXmlRpcResponse(
+                "listgroups",
+                NzbgetApiMock.CreateListGroupsResponse(string.Empty));
+            apiMock.QueueXmlRpcResponse("history", "<not-xml", HttpStatusCode.OK, TimeSpan.Zero);
+            using var http = new HttpClient(apiMock);
+            var adapter = CreateAdapter(http);
+
+            await Assert.ThrowsAsync<DownloadClientAdapterPollingException>(
+                () => adapter.GetQueueAsync(CreateClient(), ["missing-id"]));
+
+            Assert.Equal(["listgroups", "history"], apiMock.XmlRpcCalls.Select(call => call.MethodName));
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_WithTerminalTrackedActiveItem_Throws_WhenHistoryFails()
+        {
+            using var apiMock = new NzbgetApiMock();
+            apiMock.QueueXmlRpcResponse(
+                "listgroups",
+                NzbgetApiMock.CreateListGroupsResponse(
+                    ActiveGroupValue("703", "9703", null, "Terminal Active", "FAILURE", "audiobooks", "100", "0", "/active/terminal")));
+            apiMock.QueueXmlRpcResponse("history", "<not-xml", HttpStatusCode.OK, TimeSpan.Zero);
+            using var http = new HttpClient(apiMock);
+            var adapter = CreateAdapter(http);
+
+            await Assert.ThrowsAsync<DownloadClientAdapterPollingException>(
+                () => adapter.GetQueueAsync(CreateClient(), ["9703"]));
+
+            Assert.Equal(["listgroups", "history"], apiMock.XmlRpcCalls.Select(call => call.MethodName));
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_FullSnapshot_DoesNotThrow_WhenHistoryFails()
+        {
+            using var apiMock = new NzbgetApiMock();
+            apiMock.QueueXmlRpcResponse(
+                "listgroups",
+                NzbgetApiMock.CreateListGroupsResponse(
+                    ActiveGroupValue("501", "9501", null, "Active Only", "QUEUED", "audiobooks", "5", "5", "/active")));
+            apiMock.QueueXmlRpcResponse("history", "<not-xml", HttpStatusCode.OK, TimeSpan.Zero);
+            using var http = new HttpClient(apiMock);
+            var adapter = CreateAdapter(http);
+
+            var queue = await adapter.GetQueueAsync(CreateClient());
+
+            Assert.Single(queue);
+            Assert.Equal(["listgroups", "history"], apiMock.XmlRpcCalls.Select(call => call.MethodName));
         }
 
         [Fact]

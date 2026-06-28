@@ -189,26 +189,24 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             var items = new List<QueueItem>();
             if (client == null) return items;
 
+            var isMonitorPoll = ids.Count > 0;
             var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
             try
             {
-                using var httpClient = QbittorrentCookieSession.CreateClient();
-                using var loginData = QbittorrentCookieSession.CreateLoginContent(client);
-
-                using var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
-                if (loginResp.StatusCode == HttpStatusCode.Forbidden)
+                using var httpClient = _httpClientFactory.CreateClient(ClientType);
+                try
                 {
-                    using var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
-                    if (!testResp.IsSuccessStatusCode)
-                    {
-                        _logger.LogWarning("qBittorrent authentication appears to be enabled and credentials are invalid for client {ClientId}", LogRedaction.SanitizeText(client.Id));
-                        return items;
-                    }
+                    await _authSession.LoginAsync(httpClient, client, ct);
                 }
-                else if (!loginResp.IsSuccessStatusCode)
+                catch (QbittorrentException exception)
                 {
-                    _logger.LogWarning("qBittorrent login failed with status {Status} for client {ClientId}", loginResp.StatusCode, LogRedaction.SanitizeText(client.Id));
+                    var message = $"qBittorrent authentication failed for client {LogRedaction.SanitizeText(client.Id)}.";
+                    _logger.LogWarning(exception, "qBittorrent authentication failed for client {ClientId}", LogRedaction.SanitizeText(client.Id));
+                    if (isMonitorPoll)
+                    {
+                        throw new DownloadClientAdapterPollingException(message, exception);
+                    }
                     return items;
                 }
 
@@ -224,14 +222,48 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                     : null;
                 QBittorrentHelpers.LogCategoryFiltering(_logger, category);
 
-                using var torrentsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields={Uri.EscapeDataString(fields)}{categoryFilter}", ct);
-                if (!torrentsResp.IsSuccessStatusCode) return items;
+                // Display requests intentionally fetch a broad snapshot. ID-filtered monitor
+                // requests use qBittorrent's hashes parameter so large queues do not become
+                // unnecessary full snapshots.
+                var hashesFilter = ids.Count > 0
+                    ? $"&hashes={Uri.EscapeDataString(string.Join('|', ids.Select(id => id.ToLowerInvariant())))}"
+                    : string.Empty;
+
+                using var torrentsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields={Uri.EscapeDataString(fields)}{categoryFilter}{hashesFilter}", ct);
+                if (!torrentsResp.IsSuccessStatusCode)
+                {
+                    var message = $"qBittorrent queue request failed with status {torrentsResp.StatusCode} for client {LogRedaction.SanitizeText(client.Id)}.";
+                    _logger.LogWarning("qBittorrent queue request failed with status {Status} for client {ClientId}", torrentsResp.StatusCode, LogRedaction.SanitizeText(client.Id));
+                    if (isMonitorPoll)
+                    {
+                        throw new DownloadClientAdapterPollingException(message);
+                    }
+                    return items;
+                }
 
                 var json = await torrentsResp.Content.ReadAsStringAsync(ct);
-                if (string.IsNullOrWhiteSpace(json)) return items;
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    var message = $"qBittorrent returned an empty queue response for client {LogRedaction.SanitizeText(client.Id)}.";
+                    _logger.LogWarning("qBittorrent returned an empty queue response for client {ClientId}", LogRedaction.SanitizeText(client.Id));
+                    if (isMonitorPoll)
+                    {
+                        throw new DownloadClientAdapterPollingException(message);
+                    }
+                    return items;
+                }
 
                 var torrents = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(json);
-                if (torrents == null) return items;
+                if (torrents == null)
+                {
+                    var message = $"qBittorrent returned an invalid queue response for client {LogRedaction.SanitizeText(client.Id)}.";
+                    _logger.LogWarning("qBittorrent returned an invalid queue response for client {ClientId}", LogRedaction.SanitizeText(client.Id));
+                    if (isMonitorPoll)
+                    {
+                        throw new DownloadClientAdapterPollingException(message);
+                    }
+                    return items;
+                }
 
                 foreach (var torrent in torrents)
                 {
@@ -248,9 +280,17 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                     items.Add(QbittorrentResponseMapper.MapQueueItem(torrent, client, files));
                 }
             }
+            catch (DownloadClientAdapterPollingException)
+            {
+                throw;
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogWarning(ex, "Error getting qBittorrent queue - client may be unreachable");
+                if (isMonitorPoll)
+                {
+                    throw new DownloadClientAdapterPollingException("Error polling qBittorrent queue.", ex);
+                }
             }
 
             return FilterByIds(items, ids);

@@ -5,6 +5,17 @@ namespace Listenarr.Application.Mapping
     {
         public static Download UpdateFromQueueItem(Download download, QueueItem item)
         {
+            // Import-owned states are deliberately shielded from live client telemetry.
+            // The monitor still polls them so cleanup can learn whether the client item
+            // may be removed, but import/finalization workers own their status and path
+            // lifecycle. Replaying a stale client path/state here can make an import pick
+            // up the wrong source after import has already taken ownership.
+            if (download.Status is DownloadStatus.Moved or DownloadStatus.Processing or DownloadStatus.ImportPending)
+            {
+                UpdateImportOwnedMetadata(download, item);
+                return download;
+            }
+
             if (!string.IsNullOrEmpty(item.LocalPath))
             {
                 download.DownloadPath = item.LocalPath;
@@ -42,17 +53,6 @@ namespace Listenarr.Application.Mapping
                 hasReliableSize ? item.Size : null,
                 hasReliableSize ? Math.Min(item.Downloaded, item.Size) : null,
                 hasReliableSize);
-
-            // Skip finalization/progress logic for downloads that are already
-            // being processed, awaiting import, or fully imported. Re-entering
-            // finalization for these would cause duplicate notifications and
-            // potentially import the wrong files a second time.
-            if (download.Status == DownloadStatus.Moved ||
-                download.Status == DownloadStatus.Processing ||
-                download.Status == DownloadStatus.ImportPending)
-            {
-                return download;
-            }
 
             var normalizedState = (item.Status ?? string.Empty).ToLowerInvariant();
             if (normalizedState is "error" or "failed" or "failure" or "missingfiles" or "missing_files")
@@ -189,6 +189,16 @@ namespace Listenarr.Application.Mapping
             }
 
             return download;
+        }
+
+        private static void UpdateImportOwnedMetadata(Download download, QueueItem item)
+        {
+            if (!string.IsNullOrEmpty(item.ContentPath))
+            {
+                download.SetMetadata("ClientContentPath", item.ContentPath);
+            }
+
+            download.SetMetadata("CanBeRemoved", item.CanRemove);
         }
     }
 }

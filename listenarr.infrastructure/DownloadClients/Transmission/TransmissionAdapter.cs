@@ -166,9 +166,12 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
             var items = new List<QueueItem>();
             if (client == null) return items;
 
+            var isMonitorPoll = ids.Count > 0;
             var configuredCategory = DownloadClientCategoryFilter.GetConfiguredCategory(client);
 
-            // Use old format for compatibility with Transmission < 4.1.0
+            // Use old format for compatibility with Transmission < 4.1.0. We still
+            // filter monitor calls locally because Listenarr stores hash-shaped IDs
+            // and Transmission RPC id targeting varies by server/version behavior.
             var payload = new
             {
                 method = "torrent-get",
@@ -188,6 +191,12 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
                 var response = await _rpcClient.InvokeAsync(client, payload, ct);
                 if (!response.TryGetProperty("arguments", out var args) || !args.TryGetProperty("torrents", out var torrents) || torrents.ValueKind != JsonValueKind.Array)
                 {
+                    var message = $"Transmission returned an invalid queue response for client {LogRedaction.SanitizeText(client.Name ?? client.Id)}.";
+                    _logger.LogWarning("Transmission returned an invalid queue response for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
+                    if (isMonitorPoll)
+                    {
+                        throw new DownloadClientAdapterPollingException(message);
+                    }
                     return items;
                 }
 
@@ -210,9 +219,17 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
                     }
                 }
             }
+            catch (DownloadClientAdapterPollingException)
+            {
+                throw;
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogWarning(ex, "Failed to retrieve Transmission queue for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
+                if (isMonitorPoll)
+                {
+                    throw new DownloadClientAdapterPollingException("Error polling Transmission queue.", ex);
+                }
             }
 
             return FilterByIds(items, ids);

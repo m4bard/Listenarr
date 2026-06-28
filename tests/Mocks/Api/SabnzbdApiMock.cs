@@ -11,6 +11,8 @@ namespace Listenarr.Tests.Mocks.Api
         public static readonly string REMOTE_PATH = FileUtils.GetAbsolutePath("downloads", "completed");
 
         public string contentPath = FileUtils.GetAbsolutePath("completed", "Book.m4b");
+        public System.Net.HttpStatusCode HistoryStatusCode { get; set; } = System.Net.HttpStatusCode.OK;
+        public string? HistoryResponseOverride { get; set; }
         public List<Uri> RemovalRequests { get; } = [];
 
         public SabnzbdApiMock()
@@ -20,6 +22,16 @@ namespace Listenarr.Tests.Mocks.Api
 
         public async Task<HttpResponseMessage> GetHistory(HttpRequestMessage request, CancellationToken ct)
         {
+            if (HistoryStatusCode != System.Net.HttpStatusCode.OK)
+            {
+                return new HttpResponseMessage(HistoryStatusCode);
+            }
+
+            if (HistoryResponseOverride != null)
+            {
+                return MockUtils.GetCannedResponse(HistoryResponseOverride);
+            }
+
             var response = """
             {
                 "history" : {

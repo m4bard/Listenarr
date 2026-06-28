@@ -184,7 +184,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd
 
         public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, List<string> ids, CancellationToken ct = default)
         {
-            var items = await _queueFetchWorkflow.GetQueueAsync(client, ct);
+            var items = await _queueFetchWorkflow.GetQueueAsync(client, ids, ct);
             return FilterByIds(items, ids);
         }
 

@@ -118,7 +118,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             // Try to remove from history first (for completed downloads)
             try
             {
-                var historyDeleteResult = await _xmlRpcClient.CallAsync(client, "editqueue", "HistoryDelete", 0, string.Empty, new[] { numericId.Value });
+                var historyCommand = deleteFiles ? "HistoryFinalDelete" : "HistoryDelete";
+                var historyDeleteResult = await _xmlRpcClient.CallAsync(client, "editqueue", historyCommand, 0, string.Empty, new[] { numericId.Value });
                 var historySuccess = historyDeleteResult.Element("boolean")?.Value == "1";
 
                 if (historySuccess)

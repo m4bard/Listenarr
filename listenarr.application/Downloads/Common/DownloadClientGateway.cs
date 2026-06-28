@@ -18,6 +18,7 @@
 using Listenarr.Application.Common;
 using Listenarr.Application.Mapping;
 using Listenarr.Domain.Common;
+using Listenarr.Domain.Downloads.Exceptions;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Downloads.Common
@@ -147,7 +148,22 @@ namespace Listenarr.Application.Downloads.Common
             }
 
             var adapter = ResolveAdapter(client);
-            var items = await adapter.GetQueueAsync(client, ids!, ct);
+            List<QueueItem> items;
+            try
+            {
+                items = await adapter.GetQueueAsync(client, ids!, ct);
+            }
+            catch (DownloadClientAdapterPollingException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                throw new DownloadClientAdapterPollingException(
+                    $"Error polling download client {client.Name ?? client.Id ?? client.Type}.",
+                    ex);
+            }
+
             var tasks = items.Select(item => TranslateQueueItemPathsAsync(client, item));
             items = [.. await Task.WhenAll(tasks)];
 

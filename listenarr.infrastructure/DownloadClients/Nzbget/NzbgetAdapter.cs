@@ -93,6 +93,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             var items = new List<QueueItem>();
             if (client == null) return items;
 
+            var isMonitorPoll = ids.Count > 0;
             var configuredCategory = DownloadClientCategoryFilter.GetConfiguredCategory(client);
             var activeIdentities = new List<NzbgetHistoryEnrichmentWorkflow.ActiveHistoryIdentity>();
 
@@ -110,6 +111,12 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
 
                 if (arrayData == null)
                 {
+                    var message = $"NZBGet returned an invalid queue response for client {LogRedaction.SanitizeText(client.Name ?? client.Id)}.";
+                    _logger.LogWarning("NZBGet returned an invalid queue response for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
+                    if (isMonitorPoll)
+                    {
+                        throw new DownloadClientAdapterPollingException(message);
+                    }
                     return items;
                 }
 
@@ -144,14 +151,26 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                     }
                 }
             }
+            catch (DownloadClientAdapterPollingException)
+            {
+                throw;
+            }
             catch (HttpRequestException httpEx) when (httpEx.StatusCode == HttpStatusCode.Unauthorized || httpEx.StatusCode == HttpStatusCode.Forbidden)
             {
                 _logger.LogWarning("NZBGet authentication failed for client {ClientName} — check username/password", LogRedaction.SanitizeText(client.Name ?? client.Id));
+                if (isMonitorPoll)
+                {
+                    throw new DownloadClientAdapterPollingException("NZBGet authentication failed.", httpEx);
+                }
                 return items;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogWarning(ex, "Failed to retrieve NZBGet queue for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
+                if (isMonitorPoll)
+                {
+                    throw new DownloadClientAdapterPollingException("Error polling NZBGet queue.", ex);
+                }
                 return items;
             }
 
@@ -161,7 +180,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                 configuredCategory,
                 activeIdentities,
                 items,
-                ct);
+                ct,
+                monitoredIds: ids);
             return NzbgetQueueFilter.FilterByIds(items, ids, activeIdentities);
         }
 

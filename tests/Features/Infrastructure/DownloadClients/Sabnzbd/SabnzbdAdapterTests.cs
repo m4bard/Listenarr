@@ -15,6 +15,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using System.Net;
+using Listenarr.Domain.Downloads.Exceptions;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks.Api;
@@ -175,6 +177,76 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Sabnzbd
             Assert.False(string.IsNullOrEmpty(updated.DownloadPath),
                 "DownloadPath must be populated from SABnzbd history storage so the import processor can find the files");
             Assert.Equal(source, updated.DownloadPath);
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_WithTrackedActiveItem_DoesNotCallHistory()
+        {
+            sabnzbdApiMock.HistoryStatusCode = HttpStatusCode.InternalServerError;
+            sabnzbdApiMock.ResetRequestHistory();
+            var adapter = MockUtils.CreateSabnzbdAdapter(_provider);
+
+            var items = await adapter.GetQueueAsync(_client, ["SABnzbd_nzo_20f9svw_"]);
+
+            Assert.Single(items);
+            Assert.DoesNotContain(sabnzbdApiMock.RequestHistory,
+                request => request.RequestUri.Query.Contains("mode=history", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_WithMissingTrackedItem_Throws_WhenHistoryFails()
+        {
+            sabnzbdApiMock.HistoryStatusCode = HttpStatusCode.InternalServerError;
+            sabnzbdApiMock.ResetRequestHistory();
+            var adapter = MockUtils.CreateSabnzbdAdapter(_provider);
+
+            await Assert.ThrowsAsync<DownloadClientAdapterPollingException>(
+                () => adapter.GetQueueAsync(_client, ["missing-nzo-id"]));
+
+            Assert.Contains(sabnzbdApiMock.RequestHistory,
+                request => request.RequestUri.Query.Contains("mode=history", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_FullSnapshot_DoesNotThrow_WhenHistoryFails()
+        {
+            sabnzbdApiMock.HistoryStatusCode = HttpStatusCode.InternalServerError;
+            sabnzbdApiMock.ResetRequestHistory();
+            var adapter = MockUtils.CreateSabnzbdAdapter(_provider);
+
+            var items = await adapter.GetQueueAsync(_client);
+
+            Assert.NotEmpty(items);
+            Assert.Contains(sabnzbdApiMock.RequestHistory,
+                request => request.RequestUri.Query.Contains("mode=history", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_WithTrackedIds_UsesMonitorHistoryLimit()
+        {
+            sabnzbdApiMock.ResetRequestHistory();
+            var adapter = MockUtils.CreateSabnzbdAdapter(_provider);
+
+            var items = await adapter.GetQueueAsync(_client, [SabnzbdApiMock.COMPLETED_FILE_SABNZBD]);
+
+            Assert.Single(items);
+            var historyRequest = Assert.Single(sabnzbdApiMock.RequestHistory,
+                request => request.RequestUri.Query.Contains("mode=history", StringComparison.Ordinal));
+            Assert.Contains("limit=100", historyRequest.RequestUri.Query, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_FullSnapshot_UsesDisplayHistoryLimit()
+        {
+            sabnzbdApiMock.ResetRequestHistory();
+            var adapter = MockUtils.CreateSabnzbdAdapter(_provider);
+
+            var items = await adapter.GetQueueAsync(_client);
+
+            Assert.NotEmpty(items);
+            var historyRequest = Assert.Single(sabnzbdApiMock.RequestHistory,
+                request => request.RequestUri.Query.Contains("mode=history", StringComparison.Ordinal));
+            Assert.Contains("limit=30", historyRequest.RequestUri.Query, StringComparison.Ordinal);
         }
 
         [Fact]

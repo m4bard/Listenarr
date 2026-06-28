@@ -22,6 +22,7 @@ namespace Listenarr.Tests.Mocks
         public bool LastQueueRequestWasFullSnapshot { get; private set; }
         public int FullSnapshotQueueRequestCount { get; private set; }
         public int FilteredQueueRequestCount { get; private set; }
+        public Exception? FilteredQueueException { get; set; }
         private int CurrentProgress = 0;
 
         public async Task<DownloadClientSubmissionResult> AddAsync(
@@ -68,6 +69,11 @@ namespace Listenarr.Tests.Mocks
             LastRequestedQueueIds = [.. ids];
             LastQueueRequestWasFullSnapshot = false;
             FilteredQueueRequestCount++;
+
+            if (FilteredQueueException != null)
+            {
+                throw FilteredQueueException;
+            }
 
             var idSet = ids.ToHashSet(StringComparer.OrdinalIgnoreCase);
             return Task.FromResult(BuildQueueItems(advanceProgress: true)
