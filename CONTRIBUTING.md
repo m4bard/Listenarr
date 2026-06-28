@@ -135,6 +135,7 @@ This project follows a layered pattern: domain models in `listenarr.domain`, EF 
   - Register typed or named HttpClients directly in `listenarr.api/Program.cs`, or centralize them in `AddListenarrHttpClients` (`listenarr.infrastructure/Extensions/ServiceRegistrationExtensions.cs`).
   - Register adapter interfaces in the adapters module (see `listenarr.infrastructure/Extensions/ServiceRegistrationExtensions.cs`).
   - If adapter resolution by id/type is required, use `IDownloadClientAdapterFactory`.
+  - Keep concrete download-client adapters as thin facades. Put client-specific submission, queue polling, item listing, history lookup, removal, and import path behavior in dedicated workflows/resolvers under `listenarr.infrastructure/DownloadClients/<Client>`. This preserves unique client behavior while keeping adapter responsibilities uniform.
 
 - Testing tips:
   - Add unit tests for ValueConverters and ValueComparers to ensure JSON behavior is stable (null handling, empty JSON).
