@@ -1,11 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.DownloadClients.Nzbget
 {
     public class NzbgetAdapter : IDownloadClientAdapter
     {
-        public string ClientId => "nzbget";
-        public string ClientType => "nzbget";
+        public string ClientId => DownloadClientTypes.Nzbget;
+        public string ClientType => DownloadClientTypes.Nzbget;
         public DownloadProtocol Protocol => DownloadProtocol.Usenet;
 
         private readonly NzbgetConnectionTester _connectionTester;
@@ -16,7 +25,25 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
         private readonly NzbgetItemFetchWorkflow _itemFetchWorkflow;
         private readonly NzbgetImportItemResolver _importItemResolver;
 
-        public NzbgetAdapter(
+        internal NzbgetAdapter(
+            NzbgetConnectionTester connectionTester,
+            NzbgetAddWorkflow addWorkflow,
+            NzbgetRemovalWorkflow removalWorkflow,
+            NzbgetQueueFetchWorkflow queueFetchWorkflow,
+            NzbgetHistoryFetchWorkflow historyFetchWorkflow,
+            NzbgetItemFetchWorkflow itemFetchWorkflow,
+            NzbgetImportItemResolver importItemResolver)
+        {
+            _connectionTester = connectionTester ?? throw new ArgumentNullException(nameof(connectionTester));
+            _addWorkflow = addWorkflow ?? throw new ArgumentNullException(nameof(addWorkflow));
+            _removalWorkflow = removalWorkflow ?? throw new ArgumentNullException(nameof(removalWorkflow));
+            _queueFetchWorkflow = queueFetchWorkflow ?? throw new ArgumentNullException(nameof(queueFetchWorkflow));
+            _historyFetchWorkflow = historyFetchWorkflow ?? throw new ArgumentNullException(nameof(historyFetchWorkflow));
+            _itemFetchWorkflow = itemFetchWorkflow ?? throw new ArgumentNullException(nameof(itemFetchWorkflow));
+            _importItemResolver = importItemResolver ?? throw new ArgumentNullException(nameof(importItemResolver));
+        }
+
+        internal NzbgetAdapter(
             IHttpClientFactory httpClientFactory,
             INzbUrlResolver nzbUrlResolver,
             ILogger<NzbgetAdapter> logger)

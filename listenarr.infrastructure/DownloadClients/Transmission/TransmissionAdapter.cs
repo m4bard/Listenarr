@@ -19,8 +19,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
     /// </summary>
     public class TransmissionAdapter : IDownloadClientAdapter
     {
-        public string ClientId => "transmission";
-        public string ClientType => "transmission";
+        public string ClientId => DownloadClientTypes.Transmission;
+        public string ClientType => DownloadClientTypes.Transmission;
         public DownloadProtocol Protocol => DownloadProtocol.Torrent;
 
         private readonly TransmissionConnectionTester _connectionTester;
@@ -30,7 +30,23 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
         private readonly TransmissionItemFetchWorkflow _itemFetchWorkflow;
         private readonly TransmissionImportItemResolver _importItemResolver;
 
-        public TransmissionAdapter(IHttpClientFactory httpClientFactory, ITorrentFileDownloader torrentFileDownloader, ILogger<TransmissionAdapter> logger)
+        internal TransmissionAdapter(
+            TransmissionConnectionTester connectionTester,
+            TransmissionAddWorkflow addWorkflow,
+            TransmissionRemovalWorkflow removalWorkflow,
+            TransmissionQueueFetchWorkflow queueFetchWorkflow,
+            TransmissionItemFetchWorkflow itemFetchWorkflow,
+            TransmissionImportItemResolver importItemResolver)
+        {
+            _connectionTester = connectionTester ?? throw new ArgumentNullException(nameof(connectionTester));
+            _addWorkflow = addWorkflow ?? throw new ArgumentNullException(nameof(addWorkflow));
+            _removalWorkflow = removalWorkflow ?? throw new ArgumentNullException(nameof(removalWorkflow));
+            _queueFetchWorkflow = queueFetchWorkflow ?? throw new ArgumentNullException(nameof(queueFetchWorkflow));
+            _itemFetchWorkflow = itemFetchWorkflow ?? throw new ArgumentNullException(nameof(itemFetchWorkflow));
+            _importItemResolver = importItemResolver ?? throw new ArgumentNullException(nameof(importItemResolver));
+        }
+
+        internal TransmissionAdapter(IHttpClientFactory httpClientFactory, ITorrentFileDownloader torrentFileDownloader, ILogger<TransmissionAdapter> logger)
         {
             ArgumentNullException.ThrowIfNull(httpClientFactory);
             _ = torrentFileDownloader ?? throw new ArgumentNullException(nameof(torrentFileDownloader));

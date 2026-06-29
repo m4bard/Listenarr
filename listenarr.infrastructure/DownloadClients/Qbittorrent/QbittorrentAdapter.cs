@@ -28,8 +28,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
     /// </summary>
     public class QbittorrentAdapter : IDownloadClientAdapter
     {
-        public string ClientId => "qbittorrent";
-        public string ClientType => "qbittorrent";
+        public string ClientId => DownloadClientTypes.Qbittorrent;
+        public string ClientType => DownloadClientTypes.Qbittorrent;
         public DownloadProtocol Protocol => DownloadProtocol.Torrent;
 
         private readonly QbittorrentConnectionTester _connectionTester;
@@ -40,7 +40,25 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
         private readonly QbittorrentItemFetchWorkflow _itemFetchWorkflow;
         private readonly QbittorrentImportItemResolver _importItemResolver;
 
-        public QbittorrentAdapter(IHttpClientFactory httpFactory, ITorrentFileDownloader torrentFileDownloader, ILogger<QbittorrentAdapter> logger)
+        internal QbittorrentAdapter(
+            QbittorrentConnectionTester connectionTester,
+            QbittorrentAddWorkflow addWorkflow,
+            QbittorrentImportMarkerWorkflow importMarkerWorkflow,
+            QbittorrentRemovalWorkflow removalWorkflow,
+            QbittorrentQueueFetchWorkflow queueFetchWorkflow,
+            QbittorrentItemFetchWorkflow itemFetchWorkflow,
+            QbittorrentImportItemResolver importItemResolver)
+        {
+            _connectionTester = connectionTester ?? throw new ArgumentNullException(nameof(connectionTester));
+            _addWorkflow = addWorkflow ?? throw new ArgumentNullException(nameof(addWorkflow));
+            _importMarkerWorkflow = importMarkerWorkflow ?? throw new ArgumentNullException(nameof(importMarkerWorkflow));
+            _removalWorkflow = removalWorkflow ?? throw new ArgumentNullException(nameof(removalWorkflow));
+            _queueFetchWorkflow = queueFetchWorkflow ?? throw new ArgumentNullException(nameof(queueFetchWorkflow));
+            _itemFetchWorkflow = itemFetchWorkflow ?? throw new ArgumentNullException(nameof(itemFetchWorkflow));
+            _importItemResolver = importItemResolver ?? throw new ArgumentNullException(nameof(importItemResolver));
+        }
+
+        internal QbittorrentAdapter(IHttpClientFactory httpFactory, ITorrentFileDownloader torrentFileDownloader, ILogger<QbittorrentAdapter> logger)
         {
             ArgumentNullException.ThrowIfNull(httpFactory);
             _ = torrentFileDownloader ?? throw new ArgumentNullException(nameof(torrentFileDownloader));

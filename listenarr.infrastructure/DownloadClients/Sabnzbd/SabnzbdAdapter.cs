@@ -18,8 +18,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd
     /// </summary>
     public class SabnzbdAdapter : IDownloadClientAdapter
     {
-        public string ClientId => "sabnzbd";
-        public string ClientType => "sabnzbd";
+        public string ClientId => DownloadClientTypes.Sabnzbd;
+        public string ClientType => DownloadClientTypes.Sabnzbd;
         public DownloadProtocol Protocol => DownloadProtocol.Usenet;
 
         private readonly SabnzbdConnectionTester _connectionTester;
@@ -30,7 +30,25 @@ namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd
         private readonly SabnzbdItemFetchWorkflow _itemFetchWorkflow;
         private readonly SabnzbdImportItemResolver _importItemResolver;
 
-        public SabnzbdAdapter(
+        internal SabnzbdAdapter(
+            SabnzbdConnectionTester connectionTester,
+            SabnzbdAddWorkflow addWorkflow,
+            SabnzbdRemovalWorkflow removalWorkflow,
+            SabnzbdQueueFetchWorkflow queueFetchWorkflow,
+            SabnzbdHistoryFetchWorkflow historyFetchWorkflow,
+            SabnzbdItemFetchWorkflow itemFetchWorkflow,
+            SabnzbdImportItemResolver importItemResolver)
+        {
+            _connectionTester = connectionTester ?? throw new ArgumentNullException(nameof(connectionTester));
+            _addWorkflow = addWorkflow ?? throw new ArgumentNullException(nameof(addWorkflow));
+            _removalWorkflow = removalWorkflow ?? throw new ArgumentNullException(nameof(removalWorkflow));
+            _queueFetchWorkflow = queueFetchWorkflow ?? throw new ArgumentNullException(nameof(queueFetchWorkflow));
+            _historyFetchWorkflow = historyFetchWorkflow ?? throw new ArgumentNullException(nameof(historyFetchWorkflow));
+            _itemFetchWorkflow = itemFetchWorkflow ?? throw new ArgumentNullException(nameof(itemFetchWorkflow));
+            _importItemResolver = importItemResolver ?? throw new ArgumentNullException(nameof(importItemResolver));
+        }
+
+        internal SabnzbdAdapter(
             IHttpClientFactory httpFactory,
             INzbUrlResolver nzbUrlResolver,
             ILogger<SabnzbdAdapter> logger)

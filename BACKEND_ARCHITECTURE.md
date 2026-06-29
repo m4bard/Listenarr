@@ -107,7 +107,8 @@ Each concrete download-client adapter should be a thin facade over client-specif
 
 Use this shape for every supported client:
 
-- `<Client>Adapter` exposes `IDownloadClientAdapter`, `ClientId`, `ClientType`, and `Protocol`, then delegates.
+- `<Client>Adapter` exposes `IDownloadClientAdapter`, `ClientId`, `ClientType`, and `Protocol`, then delegates to constructor-injected workflows.
+- Infrastructure DI owns concrete workflow and protocol-helper composition. Keep workflows and helpers internal implementation details; register them explicitly in `DownloadClientRegistrationExtensions` rather than manually constructing them inside adapter facades.
 - `<Client>ConnectionTester` owns connection-test behavior and user-facing connection messages.
 - `<Client>AddWorkflow` owns submission behavior and client-specific add quirks.
 - `<Client>QueueFetchWorkflow` owns live queue polling, ID-filtered monitor polling, and monitor/display failure semantics.
