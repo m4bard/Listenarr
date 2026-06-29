@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 
+using System.Globalization;
 using System.Xml.Linq;
 
 using Listenarr.Tests.Mocks.Api;
@@ -124,7 +125,9 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         {
             Assert.Equal("editqueue", call.MethodName);
             Assert.Equal(expectedCommand, call.Parameters[0].Element("string")?.Value);
-            Assert.Equal(expectedId.ToString(), call.Parameters[3].Descendants("i4").Single().Value);
+            Assert.Equal(
+                expectedId.ToString(CultureInfo.InvariantCulture),
+                call.Parameters[3].Descendants("i4").Single().Value);
         }
 
         private static string XmlRpcValueResponse(string value)
