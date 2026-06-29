@@ -32,7 +32,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
         {
             if (client == null) throw new ArgumentNullException(nameof(client));
 
-            logger.LogInformation("Using NZBGet JSON-RPC append method");
+            logger.LogInformation("Using NZBGet XML-RPC append method");
             return await AddViaJsonRpcAsync(client, submission, ct);
         }
 
@@ -67,7 +67,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                     ppParams
                 );
 
-                var queueId = int.Parse(appendResult.Element("i4")?.Value ?? appendResult.Element("int")?.Value ?? "0");
+                var queueIdText = appendResult.Element("i4")?.Value ?? appendResult.Element("int")?.Value ?? "0";
+                var queueId = int.Parse(queueIdText, CultureInfo.InvariantCulture);
 
                 if (queueId <= 0)
                 {
