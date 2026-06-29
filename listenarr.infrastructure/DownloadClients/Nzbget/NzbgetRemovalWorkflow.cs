@@ -28,90 +28,14 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             if (client == null) throw new ArgumentNullException(nameof(client));
             if (string.IsNullOrWhiteSpace(id)) throw new ArgumentNullException(nameof(id));
 
-            // First try to parse as numeric NZBID (for queue removal)
             var numericId = NzbgetRequestPlanner.TryParseId(id);
-
-            // If it's not a numeric ID, it might be a droneId (GUID from Listenarr)
-            // Try to find it in history first
             if (!numericId.HasValue)
             {
-                _logger.LogInformation("ID {Id} is not numeric, searching NZBGet history for matching download", LogRedaction.SanitizeText(id));
-
-                try
-                {
-                    // Get history to find the NZBID by matching droneId
-                    var historyResult = await _xmlRpcClient.CallAsync(client, "history", false);
-                    var arrayData = historyResult.Element("array")?.Element("data");
-
-                    var historyCount = arrayData?.Elements("value").Count() ?? 0;
-                    _logger.LogInformation("NZBGet history contains {Count} entries", historyCount);
-
-                    if (arrayData != null)
-                    {
-                        foreach (var members in arrayData.Elements("value")
-                            .Select(valueElement => valueElement.Element("struct"))
-                            .Where(s => s != null)
-                            .Select(s => s!.Elements("member").ToDictionary(
-                                m => m.Element("name")?.Value ?? string.Empty,
-                                m => m.Element("value")?.Elements().FirstOrDefault()
-                            )))
-                        {
-
-                            // Log what fields this history entry has
-                            _logger.LogInformation("History entry has fields: {Fields}", string.Join(", ", members.Keys));
-
-                            // Check if this history entry has matching droneId in parameters
-                            if (members.TryGetValue("Parameters", out var paramsElement))
-                            {
-                                var paramsArray = paramsElement?.Element("array")?.Element("data");
-                                var paramCount = paramsArray?.Elements("value").Count() ?? 0;
-                                _logger.LogInformation("History entry has {Count} parameters", paramCount);
-
-                                if (paramsArray != null)
-                                {
-                                    foreach (var paramMembers in paramsArray.Elements("value")
-                                        .Select(paramValueElement => paramValueElement.Element("struct"))
-                                        .Where(ps => ps != null)
-                                        .Select(ps => ps!.Elements("member").ToDictionary(
-                                            m => m.Element("name")?.Value ?? string.Empty,
-                                            m => m.Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty
-                                        )))
-                                    {
-
-                                        // Log all parameters for debugging
-                                        foreach (var pm in paramMembers)
-                                        {
-                                            _logger.LogDebug("NZBGet History Parameter: Name={Name}, Value={Value}", pm.Key, LogRedaction.SanitizeText(pm.Value));
-                                        }
-
-                                        if (paramMembers.TryGetValue("Name", out var paramName) &&
-                                            paramMembers.TryGetValue("Value", out var paramValue) &&
-                                            paramName == "*drone" && paramValue == id &&
-                                            members.TryGetValue("ID", out var idElement) &&
-                                            int.TryParse(idElement?.Value, out var foundNumericId))
-                                        {
-                                            // Found matching droneId, get the NZBID
-                                            _logger.LogDebug("Found NZBID {NzbId} for droneId {DroneId} in history", foundNumericId, LogRedaction.SanitizeText(id));
-                                            numericId = foundNumericId;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (numericId.HasValue) break;
-                        }
-                    }
-                }
-                catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException)
-                {
-                    _logger.LogDebug(histEx, "Failed to search NZBGet history for download {Id}", LogRedaction.SanitizeText(id));
-                }
-            }
-
-            if (!numericId.HasValue)
-            {
-                _logger.LogWarning("Cannot remove NZB {Id} - not found in queue or history", LogRedaction.SanitizeText(id));
+                // Listenarr stores NZBGet's numeric queue/history ID. Legacy drone IDs are intentionally
+                // unsupported because the submission flow no longer emits or persists them.
+                _logger.LogWarning(
+                    "NZBGet removal skipped because item id {ItemId} is not a numeric NZBGet id",
+                    LogRedaction.SanitizeText(id));
                 return false;
             }
 
