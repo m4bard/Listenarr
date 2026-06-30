@@ -30,7 +30,6 @@ namespace Listenarr.Application.Downloads.Queue
         IDownloadRepository downloadRepository,
         DownloadQueueCandidateLoader candidateLoader,
         DownloadClientQueuePoller clientQueuePoller,
-        IAppMetricsService metrics,
         ILogger<DownloadQueueService> logger) : IDownloadQueueService
     {
         internal TimeSpan _clientQueueTimeout = TimeSpan.FromSeconds(15);
@@ -56,6 +55,14 @@ namespace Listenarr.Application.Downloads.Queue
             var listenarrDownloads = candidateSet.VisibleDownloads;
             var allDownloadsForMatching = candidateSet.MatchingDownloads;
             var allKnownClientItemIds = candidateSet.KnownClientItemIds;
+
+            // Direct downloads are internal work items, not rows reported by an
+            // external client queue. Add them from the DB before polling clients
+            // so DDL reservations, progress, completion, and import-pending work
+            // are visible in Activity.
+            queueItems.AddRange(listenarrDownloads
+                .Where(download => string.Equals(download.DownloadClientId, DirectDownloadMetadataKeys.ClientId, StringComparison.OrdinalIgnoreCase))
+                .Select(ToDirectDownloadQueueItem));
 
             ApplicationSettings? appSettings = await cache.GetOrCreateAsync("ApplicationSettings", async entry =>
             {
@@ -108,6 +115,7 @@ namespace Listenarr.Application.Downloads.Queue
                     var mappedQueueItems = new List<QueueItem>();
                     foreach (var queueItem in clientQueue)
                     {
+                        var ownershipEstablished = false;
                         try
                         {
                             if (queueItem.Status == "completed" && queueItem.CompletionTime == null)
@@ -119,9 +127,17 @@ namespace Listenarr.Application.Downloads.Queue
                             if (matchedDownload != null)
                             {
                                 var originalClientId = queueItem.Id;
+                                ownershipEstablished = true;
+
+                                // Establish user-visible Listenarr ownership before optional
+                                // metadata persistence. If rebinding persistence fails, the
+                                // catch below can still keep the matched Listenarr item visible
+                                // instead of leaking the raw external client row or hiding work
+                                // that we already proved belongs to Listenarr.
+                                queueItem.Id = matchedDownload.Id;
+
                                 await PersistDiscoveredClientIdentifiersAsync(matchedDownload, client, originalClientId, allKnownClientItemIds);
 
-                                queueItem.Id = matchedDownload.Id;
                                 if (!string.IsNullOrWhiteSpace(matchedDownload.Title))
                                 {
                                     queueItem.Title = matchedDownload.Title;
@@ -158,17 +174,49 @@ namespace Listenarr.Application.Downloads.Queue
                                     continue;
                                 }
 
-                                logger.LogDebug("Queue item {QueueId} '{Title}' not tracked in database - showing as untracked",
-                                    queueItem.Id,
-                                    queueItem.Title);
+                                // Activity is Listenarr's operational queue, not a mirror of every
+                                // transfer in a shared external client. Full snapshots are still
+                                // used for reconciliation above. Unmatched active items stay hidden
+                                // here; unmatched completed items are handled only by the explicit
+                                // completed-external display block below.
+                                if (includeCompletedExternal && IsUnmatchedCompletedExternalDisplayCandidate(queueItem))
+                                {
+                                    logger.LogDebug(
+                                        "Queue item {QueueId} '{Title}' from client {ClientName} is completed, not tracked by Listenarr, and will be handled by completed external display",
+                                        queueItem.Id,
+                                        queueItem.Title,
+                                        client.Name ?? client.Id);
+                                }
+                                else
+                                {
+                                    logger.LogDebug(
+                                        "Queue item {QueueId} '{Title}' from client {ClientName} is not tracked by Listenarr and will be hidden from Activity",
+                                        queueItem.Id,
+                                        queueItem.Title,
+                                        client.Name ?? client.Id);
+                                }
+
+                                continue;
                             }
 
                             mappedQueueItems.Add(queueItem);
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                         {
-                            logger.LogWarning(ex, "Error processing queue item {QueueId}, including anyway", queueItem.Id);
-                            mappedQueueItems.Add(queueItem);
+                            if (ownershipEstablished)
+                            {
+                                logger.LogWarning(
+                                    ex,
+                                    "Error enriching matched queue item {QueueId}; including matched Listenarr-owned item",
+                                    queueItem.Id);
+                                mappedQueueItems.Add(queueItem);
+                                continue;
+                            }
+
+                            logger.LogWarning(
+                                ex,
+                                "Error processing unmatched queue item {QueueId}; hiding it from Activity",
+                                queueItem.Id);
                         }
                     }
 
@@ -214,6 +262,7 @@ namespace Listenarr.Application.Downloads.Queue
                                 SnapshotFailureReason = uc.SnapshotFailureReason,
                                 SnapshotAgeSeconds = uc.SnapshotAgeSeconds,
                                 SnapshotRefreshedAt = uc.SnapshotRefreshedAt,
+                                CompletionTime = uc.CompletionTime,
                                 CanPause = false,
                                 CanRemove = true,
                                 RemotePath = uc.RemotePath,
@@ -230,105 +279,6 @@ namespace Listenarr.Application.Downloads.Queue
 
                     logger.LogDebug("Client {ClientName}: showing {TotalItems} queue items", client.Name, mappedQueueItems.Count);
 
-                    try
-                    {
-                        var clientDownloads = listenarrDownloads.Where(d => d.DownloadClientId == client.Id).ToList();
-
-                        if (clientQueueResult.UsedCachedSnapshot)
-                        {
-                            logger.LogInformation(
-                                "Skipping orphan retention analysis for client {ClientName}: using cached queue snapshot",
-                                client.Name);
-                            continue;
-                        }
-
-                        if (clientQueueResult.IsUnavailable)
-                        {
-                            logger.LogWarning(
-                                "Skipping orphan retention analysis for client {ClientName}: no live queue snapshot was available",
-                                client.Name);
-                            continue;
-                        }
-
-                        if (clientQueue.Count == 0 && clientDownloads.Any())
-                        {
-                            logger.LogWarning(
-                                "Skipping orphan purge for client {ClientName}: client returned 0 queue items but {Count} downloads are tracked. Client may be temporarily unreachable.",
-                                client.Name,
-                                clientDownloads.Count);
-                            continue;
-                        }
-
-                        var allClientItemIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                        foreach (var mapped in mappedQueueItems)
-                        {
-                            allClientItemIds.Add(mapped.Id);
-                        }
-
-                        foreach (var itemId in clientQueue.Where(item => !string.IsNullOrWhiteSpace(item.Id)).Select(item => item.Id!))
-                        {
-                            allClientItemIds.Add(itemId!);
-                        }
-
-                        var orphanedDownloads = clientDownloads.Where(d =>
-                        {
-                            if (allClientItemIds.Contains(d.Id))
-                            {
-                                return false;
-                            }
-
-                            if (DownloadQueueMetadataMatcher.GetKnownClientItemIds(d.Metadata).Any(allClientItemIds.Contains))
-                            {
-                                return false;
-                            }
-
-                            if (d.Status == DownloadStatus.Completed ||
-                                d.Status == DownloadStatus.Moved ||
-                                d.Status == DownloadStatus.Failed)
-                            {
-                                return false;
-                            }
-
-                            if (d.Status == DownloadStatus.Downloading ||
-                                d.Status == DownloadStatus.Processing)
-                            {
-                                return false;
-                            }
-
-                            if ((DateTime.UtcNow - d.StartedAt).TotalMinutes < 5)
-                            {
-                                logger.LogDebug(
-                                    "Skipping purge for recent download {DownloadId} '{Title}' (age: {Age:F1} min)",
-                                    d.Id,
-                                    d.Title,
-                                    (DateTime.UtcNow - d.StartedAt).TotalMinutes);
-                                return false;
-                            }
-
-                            return true;
-                        }).ToList();
-
-                        if (orphanedDownloads.Any())
-                        {
-                            logger.LogInformation(
-                                "Detected {Count} tracked downloads missing from current {ClientName} queue snapshot; keeping records for resilient monitoring/import handling",
-                                orphanedDownloads.Count,
-                                client.Name);
-
-                            try
-                            {
-                                metrics.Increment("download.purge.skipped.tracked_orphan_retained", orphanedDownloads.Count);
-                            }
-                            catch (Exception caughtEx) when (caughtEx is not OperationCanceledException && caughtEx is not OutOfMemoryException && caughtEx is not StackOverflowException)
-                            {
-                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                            }
-                        }
-                    }
-                    catch (Exception purgeEx) when (purgeEx is not OperationCanceledException && purgeEx is not OutOfMemoryException && purgeEx is not StackOverflowException)
-                    {
-                        logger.LogError(purgeEx, "Error retaining orphaned downloads for client {ClientName}", client.Name);
-                    }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
@@ -343,7 +293,7 @@ namespace Listenarr.Application.Downloads.Queue
                     var existingIds = queueItems.Select(q => q.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
                     var completedExternal = listenarrDownloads
-                        .Where(d => d.DownloadClientId != "DDL" && d.Status == DownloadStatus.Completed)
+                        .Where(d => !string.Equals(d.DownloadClientId, DirectDownloadMetadataKeys.ClientId, StringComparison.OrdinalIgnoreCase) && d.Status == DownloadStatus.Completed)
                         .ToList();
 
                     foreach (var download in completedExternal)
@@ -411,6 +361,60 @@ namespace Listenarr.Application.Downloads.Queue
             var snapshot = await GetQueueSnapshotAsync();
             return snapshot.Items;
         }
+
+        private static bool IsUnmatchedCompletedExternalDisplayCandidate(QueueItem queueItem)
+        {
+            return string.Equals(queueItem.Status, "completed", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static QueueItem ToDirectDownloadQueueItem(Download download)
+        {
+            var quality = download.Metadata != null && download.Metadata.TryGetValue("Quality", out var qualityObj)
+                ? qualityObj?.ToString() ?? "Unknown"
+                : "Unknown";
+
+            return new QueueItem
+            {
+                Id = download.Id,
+                Title = download.Title ?? "Unknown",
+                Author = download.Artist,
+                Quality = quality,
+                Language = download.Language,
+                Status = ToQueueStatus(download.Status),
+                Progress = (double)download.Progress,
+                Size = download.TotalSize,
+                Downloaded = download.DownloadedSize,
+                DownloadSpeed = 0,
+                Eta = null,
+                DownloadClient = "Direct Download",
+                DownloadClientId = DirectDownloadMetadataKeys.ClientId,
+                DownloadClientType = "ddl",
+                AddedAt = download.StartedAt,
+                CanPause = false,
+                CanRemove = true,
+                AudiobookId = download.AudiobookId,
+                RemotePath = download.OriginalUrl,
+                LocalPath = download.DownloadPath,
+                ContentPath = string.IsNullOrWhiteSpace(download.FinalPath)
+                    ? download.DownloadPath
+                    : download.FinalPath,
+                ErrorMessage = download.ErrorMessage
+            };
+        }
+
+        private static string ToQueueStatus(DownloadStatus status) => status switch
+        {
+            DownloadStatus.Queued => "queued",
+            DownloadStatus.Downloading => "downloading",
+            DownloadStatus.Paused => "paused",
+            DownloadStatus.Completed => "completed",
+            DownloadStatus.Processing => "processing",
+            DownloadStatus.ImportPending => "importpending",
+            DownloadStatus.ImportBlocked => "importblocked",
+            DownloadStatus.Failed => "failed",
+            DownloadStatus.Moved => "moved",
+            _ => status.ToString().ToLowerInvariant()
+        };
 
         private async Task PersistDiscoveredClientIdentifiersAsync(
             Download matchedDownload,

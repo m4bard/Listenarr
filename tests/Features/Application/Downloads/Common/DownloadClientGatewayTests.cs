@@ -1,3 +1,4 @@
+using Listenarr.Domain.Downloads.Exceptions;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks;
@@ -56,12 +57,22 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
 
         [Fact]
         [Trait("Method", "GetQueueAsync")]
-        [Trait("Scenario", "Make sure GetQueueAsync returns one item with path mapped")]
+        [Trait("Scenario", "Make sure GetQueueAsync returns the full queue snapshot with path mapped")]
         public async Task GetQueueAsync()
         {
+            await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(client)
+                .WithExternalId("1")
+                .Build());
+
+            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
 
             var items = await downloadClientGateway.GetQueueAsync(client);
-            Assert.NotEmpty(items);
+            Assert.Equal(2, items.Count);
+            Assert.True(downloadClientAdapterMock.LastQueueRequestWasFullSnapshot);
+            Assert.Null(downloadClientAdapterMock.LastRequestedQueueIds);
+            Assert.Contains(items, item => item.Id == "1");
+            Assert.Contains(items, item => item.Id == "2");
 
             foreach (QueueItem item in items)
             {
@@ -81,15 +92,91 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
 
         [Fact]
         [Trait("Method", "FetchDownloadsAsync")]
-        [Trait("Scenario", "Check updated downloads a path mapped correctly")]
+        [Trait("Scenario", "Check FetchDownloadsAsync requests only tracked IDs and path maps the matching download")]
         public async Task FetchDownloadsAsync()
         {
-            var downloads = await downloadClientGateway.FetchDownloadsAsync(client, []);
+            var newDownload = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithExternalId("1")
+                .Build());
+            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
+
+            var downloads = await downloadClientGateway.FetchDownloadsAsync(client, [newDownload]);
             Assert.NotEmpty(downloads);
-            foreach (Download download in downloads)
-            {
-                Assert.StartsWith(localPath, download.DownloadPath);
-            }
+            Assert.Single(downloads);
+            Assert.False(downloadClientAdapterMock.LastQueueRequestWasFullSnapshot);
+            Assert.Equal(["1"], downloadClientAdapterMock.LastRequestedQueueIds);
+
+            var download = downloads.First();
+            Assert.NotNull(download);
+            Assert.StartsWith(localPath, download.DownloadPath);
+        }
+
+        [Fact]
+        [Trait("Method", "FetchDownloadsAsync")]
+        [Trait("Scenario", "Check returned queue item IDs match tracked external IDs case-insensitively")]
+        public async Task FetchDownloadsAsync_MatchesReturnedQueueItemIdsCaseInsensitively()
+        {
+            var newDownload = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithExternalId("ABC123")
+                .Build());
+            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
+            var path = FileUtils.GetAbsolutePath(DownloadCLientAdapterMock.RemotePath, "case-insensitive-id");
+            downloadClientAdapterMock.QueueItemsMock =
+            [
+                new QueueItemBuilder()
+                    .WithId("abc123")
+                    .WithRemotePath(path)
+                    .WithContentPath(path)
+                    .WithSourceFile(Path.Join(path, "chapter1.mp3"))
+                    .WithStatus("downloading")
+                    .Build()
+            ];
+
+            var downloads = await downloadClientGateway.FetchDownloadsAsync(client, [newDownload]);
+
+            Assert.Single(downloads);
+            Assert.Equal(["ABC123"], downloadClientAdapterMock.LastRequestedQueueIds);
+            Assert.StartsWith(localPath, downloads[0].DownloadPath);
+        }
+
+        [Fact]
+        [Trait("Method", "FetchDownloadsAsync")]
+        [Trait("Scenario", "Check monitor polling exceptions are propagated for caller-owned backoff")]
+        public async Task FetchDownloadsAsync_PropagatesPollingException()
+        {
+            var newDownload = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithExternalId("1")
+                .Build());
+            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
+            var expected = new DownloadClientAdapterPollingException("client unavailable");
+            downloadClientAdapterMock.FilteredQueueException = expected;
+
+            var actual = await Assert.ThrowsAsync<DownloadClientAdapterPollingException>(
+                () => downloadClientGateway.FetchDownloadsAsync(client, [newDownload]));
+
+            Assert.Same(expected, actual);
+            Assert.False(downloadClientAdapterMock.LastQueueRequestWasFullSnapshot);
+            Assert.Equal(["1"], downloadClientAdapterMock.LastRequestedQueueIds);
+        }
+
+        [Fact]
+        [Trait("Method", "FetchDownloadsAsync")]
+        [Trait("Scenario", "Check unexpected adapter exceptions are normalized for monitor backoff")]
+        public async Task FetchDownloadsAsync_WrapsUnexpectedAdapterException()
+        {
+            var newDownload = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithExternalId("1")
+                .Build());
+            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
+            var expectedInner = new InvalidOperationException("unexpected adapter failure");
+            downloadClientAdapterMock.FilteredQueueException = expectedInner;
+
+            var actual = await Assert.ThrowsAsync<DownloadClientAdapterPollingException>(
+                () => downloadClientGateway.FetchDownloadsAsync(client, [newDownload]));
+
+            Assert.Same(expectedInner, actual.InnerException);
+            Assert.False(downloadClientAdapterMock.LastQueueRequestWasFullSnapshot);
+            Assert.Equal(["1"], downloadClientAdapterMock.LastRequestedQueueIds);
         }
 
         [Fact]
@@ -106,6 +193,42 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
             Assert.NotNull(item);
             Assert.NotNull(item.SourceFiles);
             Assert.Empty(item.SourceFiles);
+        }
+
+        [Fact]
+        [Trait("Method", "GetQueueItemAsync")]
+        [Trait("Scenario", "Check empty ContentPath is treated as missing instead of scanned")]
+        public async Task GetQueueItemAsync_EmptyContentPath_DoesNotScanFilesystem()
+        {
+            var downloadCLientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
+            downloadCLientAdapterMock.QueueItemMock = new QueueItemBuilder()
+                .WithContentPath(string.Empty)
+                .WithStatus("downloading")
+                .Build();
+
+            var item = await downloadClientGateway.GetQueueItemAsync(client, new DownloadBuilder().Build(), new QueueItem());
+
+            Assert.NotNull(item);
+            Assert.NotNull(item.SourceFiles);
+            Assert.Empty(item.SourceFiles);
+        }
+
+        [Fact]
+        public void TranslateQueueItemPaths_FailedItemWithoutContentPath_DoesNotLogMissingSourceWarning()
+        {
+            Assert.False(DownloadClientGateway.IsImportSourceExpectedStatus("failed"));
+        }
+
+        [Fact]
+        public void TranslateQueueItemPaths_CompletedItemWithoutContentPath_LogsMissingSourceWarning()
+        {
+            Assert.True(DownloadClientGateway.IsImportSourceExpectedStatus("completed"));
+        }
+
+        [Fact]
+        public void TranslateQueueItemPaths_DownloadingItemWithoutContentPath_DoesNotLogMissingSourceWarning()
+        {
+            Assert.False(DownloadClientGateway.IsImportSourceExpectedStatus("downloading"));
         }
 
         [Fact]

@@ -205,6 +205,46 @@ public sealed class BackendArchitectureTests
     }
 
     [Fact]
+    public void DirectDownloadProcessor_DoesNotContainSourceSpecificTrustRules()
+    {
+        var processorFile = Path.Join(
+            RepositoryRoot,
+            "listenarr.infrastructure",
+            "Downloads",
+            "DirectDownload",
+            "DirectDownloadProcessor.cs");
+        var source = File.ReadAllText(processorFile);
+        var forbiddenProviderLiterals = new[]
+        {
+            "archive.org",
+            "InternetArchive",
+            "AnnasArchive",
+            "annas"
+        };
+
+        Assert.DoesNotContain(forbiddenProviderLiterals, literal =>
+            source.Contains(literal, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ConcreteDownloadAdapters_DoNotExposeLegacyFetchDownloadsAsync()
+    {
+        var adapterRoot = Path.Join(RepositoryRoot, "listenarr.infrastructure", "DownloadClients");
+        var legacyPollingMethodPattern = new Regex(
+            @"\bpublic\s+(?:async\s+)?Task\s*<\s*List\s*<\s*Download\s*>\s*>\s+FetchDownloadsAsync\s*\(",
+            RegexOptions.Compiled);
+
+        var violations = Directory
+            .EnumerateFiles(adapterRoot, "*Adapter.cs", SearchOption.AllDirectories)
+            .Where(file => !IsBuildArtifact(file))
+            .Where(file => legacyPollingMethodPattern.IsMatch(File.ReadAllText(file)))
+            .Select(file => Normalize(Path.GetRelativePath(RepositoryRoot, file)))
+            .ToList();
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
     public void ApiFilesystemUsage_IsRestrictedToKnownLegacyFilesDuringMigration()
     {
         var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)

@@ -63,6 +63,11 @@ namespace Listenarr.Domain.Downloads
             get;
             set;
         } = DownloadStatus.Queued;
+
+        /// <summary>
+        /// Progress of the download.
+        /// From 0 to 100 by convention
+        /// </summary>
         public decimal Progress
         {
             get;
@@ -80,7 +85,7 @@ namespace Listenarr.Domain.Downloads
         public DateTime? CompletedAt { get; set; }
         public string? ErrorMessage { get; set; }
         public string DownloadClientId { get; set; } = string.Empty;
-        public Dictionary<string, object> Metadata { get; set; } = new();
+        public Dictionary<string, object> Metadata { get; set; } = [];
 
         /// <summary>
         /// Tracks why a download is ImportBlocked (error code for categorization)
@@ -111,6 +116,11 @@ namespace Listenarr.Domain.Downloads
         /// Links to DownloadHistory.Id for audit trail
         /// </summary>
         public int? HistoryId { get; set; }
+
+        public void SetMetadata(string key, object value)
+        {
+            Metadata[key] = value;
+        }
 
         public string? GetMetadataString(string key)
         {
@@ -376,6 +386,13 @@ namespace Listenarr.Domain.Downloads
         /// Used for stability window validation before import.
         /// </summary>
         public DateTime? CompletionTime { get; set; }
+
+        /// <summary>
+        /// Raw client failure reason used for retry policy decisions. This is hidden from
+        /// API consumers because ErrorMessage owns the user-facing text.
+        /// </summary>
+        [JsonIgnore]
+        public string? ClientFailureReason { get; set; }
 
         /// <summary>
         /// Creates a shallow copy of this QueueItem.

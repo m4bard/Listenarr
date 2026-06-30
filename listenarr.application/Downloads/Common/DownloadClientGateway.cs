@@ -16,13 +16,15 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Common;
+using Listenarr.Application.Mapping;
 using Listenarr.Domain.Common;
+using Listenarr.Domain.Downloads.Exceptions;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Downloads.Common
 {
     /// <summary>
-    /// Responsabilities:
+    /// Responsibilities:
     /// - Make sure any path reported by any download client adapter is mapped using adequate Remote Path Mapping
     /// - Single point of contact for any download client adapter, no download client adapter detail should be visible behind this
     /// - Persistence: Do not persist anything here, it's up to callers to know what they are doing
@@ -35,27 +37,16 @@ namespace Listenarr.Application.Downloads.Common
     {
         internal IDownloadClientAdapter ResolveAdapter(DownloadClientConfiguration client)
         {
-            if (client == null)
-            {
-                throw new ArgumentNullException(nameof(client));
-            }
+            ArgumentNullException.ThrowIfNull(client);
 
-            var attemptedKeys = new List<string?> { client.Id, client.Type };
-            foreach (var key in attemptedKeys)
+            if (!string.IsNullOrWhiteSpace(client.Type))
             {
-                if (string.IsNullOrWhiteSpace(key))
-                {
-                    continue;
-                }
-
                 try
                 {
-                    return factory.GetByIdOrType(key);
+                    return factory.GetByType(client.Type);
                 }
                 catch (InvalidOperationException)
                 {
-                    // Try the next key.
-                    continue;
                 }
             }
 
@@ -80,7 +71,7 @@ namespace Listenarr.Application.Downloads.Common
             CancellationToken ct = default)
         {
             var adapter = ResolveAdapter(client);
-            if (adapter.Protocol != submission.Protocol)
+            if (!adapter.Protocols.Contains(submission.Protocol))
             {
                 throw new DownloadClientSubmissionException(
                     $"Download client {client.Name ?? client.Type} does not support the prepared {submission.Protocol} submission.");
@@ -91,7 +82,8 @@ namespace Listenarr.Application.Downloads.Common
 
         public Task<bool> RemoveAsync(DownloadClientConfiguration client, string id, bool deleteFiles = false, CancellationToken ct = default)
         {
-            // FIXME: Responsability of removing the download from DB should be here
+            // Removes the item from the external download client only. Database
+            // removal belongs to the workflow that owns the durable state transition.
             var adapter = ResolveAdapter(client);
             return adapter.RemoveAsync(client, id, deleteFiles, ct);
         }
@@ -99,20 +91,9 @@ namespace Listenarr.Application.Downloads.Common
         public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
             var adapter = ResolveAdapter(client);
-            var results = await adapter.GetQueueAsync(client, ct);
-
-            List<QueueItem> translatedResults = [];
-            foreach (QueueItem result in results)
-            {
-                translatedResults.Add(await TranslateQueueItemPathsAsync(client, result));
-            }
-            return translatedResults;
-        }
-
-        public Task<List<(string Id, string Name)>> GetRecentHistoryAsync(DownloadClientConfiguration client, int limit = 100, CancellationToken ct = default)
-        {
-            var adapter = ResolveAdapter(client);
-            return adapter.GetRecentHistoryAsync(client, limit, ct);
+            var items = await adapter.GetQueueAsync(client, ct);
+            var tasks = items.Select(item => TranslateQueueItemPathsAsync(client, item));
+            return [.. await Task.WhenAll(tasks)];
         }
 
         public async Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, Download download, CancellationToken ct = default)
@@ -158,9 +139,92 @@ namespace Listenarr.Application.Downloads.Common
             return await TranslateQueueItemPathsAsync(client, item);
         }
 
+        public async Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken ct = default)
+        {
+            var ids = GetExternalIds(downloads);
+            if (ids.Count == 0)
+            {
+                return downloads;
+            }
+
+            var adapter = ResolveAdapter(client);
+            List<QueueItem> items;
+            try
+            {
+                items = await adapter.GetQueueAsync(client, ids!, ct);
+            }
+            catch (DownloadClientAdapterPollingException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                throw new DownloadClientAdapterPollingException(
+                    $"Error polling download client {client.Name ?? client.Id ?? client.Type}.",
+                    ex);
+            }
+
+            var tasks = items.Select(item => TranslateQueueItemPathsAsync(client, item));
+            items = [.. await Task.WhenAll(tasks)];
+
+            foreach (QueueItem item in items)
+            {
+                var download = downloads.FirstOrDefault(d =>
+                    string.Equals(d.GetExternalId(), item.Id, StringComparison.OrdinalIgnoreCase));
+                if (download == null)
+                {
+                    continue;
+                }
+
+                logger.LogDebug(
+                    "Found matching download client item for {DownloadId}: {Title} (ExternalId: {ExternalId}, Status: {Status}, Progress: {Progress:F2}, LocalPath: {LocalPath}, ContentPath: {ContentPath})",
+                    download.Id,
+                    item.Title,
+                    item.Id,
+                    item.Status,
+                    item.Progress,
+                    item.LocalPath,
+                    item.ContentPath);
+
+                var hasReliableSize = item.Size > 0 && item.Downloaded >= 0;
+                var amountLeft = hasReliableSize
+                    ? Math.Max(0, item.Size - item.Downloaded)
+                    : null as long?;
+                var normalizedState = (item.Status ?? string.Empty).ToLowerInvariant();
+                var isExplicitCompletedState = normalizedState is "completed" or "success";
+
+                logger.LogDebug(
+                    "Completion diagnostic for {DownloadId}: Progress={Progress:F4}, HasReliableSize={HasReliableSize}, AmountLeft={AmountLeft}, ExplicitCompletedState={ExplicitCompletedState}, Status={Status}",
+                    download.Id,
+                    item.Progress,
+                    hasReliableSize,
+                    amountLeft,
+                    isExplicitCompletedState,
+                    item.Status);
+
+                download = QueueItemConverter.UpdateFromQueueItem(download, item);
+            }
+
+            return downloads;
+        }
+
+        /// <summary>
+        /// Give the list of external IDs from a list of download
+        /// </summary>
+        /// <param name="downloads"></param>
+        /// <returns></returns>
+        private List<string> GetExternalIds(List<Download> downloads)
+        {
+            return downloads
+                .Select(d => d.GetExternalId())
+                .Where(id => id != null)
+                .ToHashSet()
+                .ToList()!;
+        }
+
         /// <summary>
         /// Handles path mapping of queue item
-        /// Make sure all path are localy accessible after processing and
+        /// Make sure all paths are locally accessible after processing and
         /// that a proper list of sanitized source files is produced
         /// </summary>
         /// <param name="client">Download client configuration to use for path mapping</param>
@@ -168,21 +232,22 @@ namespace Listenarr.Application.Downloads.Common
         /// <returns></returns>
         private async Task<QueueItem> TranslateQueueItemPathsAsync(DownloadClientConfiguration client, QueueItem item)
         {
-            if (item.RemotePath != null)
+            if (!string.IsNullOrWhiteSpace(item.RemotePath))
             {
                 item.LocalPath = await remotePathMappingService.TranslatePathAsync(client, item.RemotePath);
             }
 
-            if (item.ContentPath != null)
+            if (!string.IsNullOrWhiteSpace(item.ContentPath))
             {
                 item.ContentPath = await remotePathMappingService.TranslatePathAsync(client, item.ContentPath);
             }
 
             // FIXME: https://github.com/Listenarrs/Listenarr/issues/592
-            // We havent yet decided of the responsibility of download client adapter
-            // As a result, we cannot assume an empty sourceFiles means there are no source files downloaded
-            // and so, we try to populate it as if it was null
-            // When the issue is tackled, we might want to keep the empty list when the adapter gives an empty list
+            // Adapter ownership is still being clarified. Until that contract is tightened,
+            // the gateway treats null and empty SourceFiles as "unknown" and derives a
+            // file list only from a real ContentPath. Empty path strings are intentionally
+            // ignored because some clients, especially active SABnzbd queue entries, do not
+            // expose a completed storage path until history is available.
             if (item.SourceFiles != null && item.SourceFiles.Count > 0)
             {
                 List<string> sourceFiles = [];
@@ -192,34 +257,43 @@ namespace Listenarr.Application.Downloads.Common
                 }
                 item.SourceFiles = sourceFiles;
             }
-            else if (item.ContentPath != null)
+            else if (!string.IsNullOrWhiteSpace(item.ContentPath))
             {
-                // Scan content path: Some clients are not able to tell if they have a file or a directory downloaded
-                // So we make sure it's either one or the other and log if it's not
+                // Scan ContentPath only after the adapter has supplied a non-empty path.
+                // Active queue snapshots may not be import-ready, so adapters should leave
+                // ContentPath null until a reliable file or completed storage directory exists.
                 if (fileSystem.FileExists(item.ContentPath))
                 {
                     item.SourceFiles = [item.ContentPath];
                 }
                 else
                 {
-                    // We will try to scan for source files
+                    // Some clients can only report a directory. Expand it so import code can
+                    // operate on the specific files that belong to this download.
                     try
                     {
-                        item.SourceFiles = [.. Directory
+                        item.SourceFiles = [.. fileSystem
                             .EnumerateFiles(item.ContentPath, "*.*", SearchOption.AllDirectories)
                             .Select(f => FileUtils.NormalizeStoredPath(f))];
                     }
                     catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
                     {
-                        logger.LogWarning($"Download client {client.Id} reported no source files and content path scanning failed for item {item.Title} with path {item.ContentPath}");
-                        logger.LogDebug($"Reason: {exception.Message}");
+                        LogMissingSourceFiles(
+                            client,
+                            item,
+                            $"content path scanning failed with path {item.ContentPath}",
+                            exception);
                         item.SourceFiles = [];
                     }
                 }
             }
             else
             {
-                logger.LogWarning($"Download client {client.Id} reported no source files and no content path for item {item.Title}");
+                if (IsImportSourceExpectedStatus(item.Status))
+                {
+                    LogMissingSourceFiles(client, item, "no content path", null);
+                }
+
                 item.SourceFiles = [];
             }
 
@@ -229,15 +303,31 @@ namespace Listenarr.Application.Downloads.Common
             return item;
         }
 
-        public async Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken ct = default)
+        private void LogMissingSourceFiles(
+            DownloadClientConfiguration client,
+            QueueItem item,
+            string reason,
+            Exception? exception)
         {
-            var adapter = ResolveAdapter(client);
-            downloads = await adapter.FetchDownloadsAsync(client, downloads, ct);
-            foreach (Download download in downloads)
+            if (!IsImportSourceExpectedStatus(item.Status))
             {
-                download.DownloadPath = await remotePathMappingService.TranslatePathAsync(client, download.DownloadPath);
+                return;
             }
-            return downloads;
+
+            logger.LogWarning(
+                exception,
+                "Download client {ClientId} reported no source files and {Reason} for item {Title}",
+                client.Id,
+                reason,
+                item.Title);
+        }
+
+        internal static bool IsImportSourceExpectedStatus(string? status)
+        {
+            return string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, "success", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, "processing", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, "importpending", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

@@ -131,6 +131,45 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
         }
 
         [Fact]
+        public async Task SendToDownloadClientAsync_WhenClientReturnsBlankExternalId_RemovesProvisionalDownloadAndDoesNotRecordGrab()
+        {
+            var gatewayMock = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
+            gatewayMock
+                .Setup(g => g.AddAsync(
+                    It.Is<DownloadClientConfiguration>(client => client.Id == "qb-1"),
+                    It.IsAny<PreparedDownloadSubmission>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new DownloadClientSubmissionResult(string.Empty));
+
+            var historyMock = new Mock<IDownloadHistoryService>(MockBehavior.Strict);
+            var notificationMock = new Mock<INotificationService>(MockBehavior.Strict);
+            _services.AddSingleton(gatewayMock.Object);
+            _services.AddSingleton(historyMock.Object);
+            _services.AddSingleton(notificationMock.Object);
+
+            Init();
+            await InitData();
+            var initialDownloadCount = (await _downloadRepository.GetAllAsync()).Count;
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var searchResult = new SearchResult
+            {
+                Title = "Artemis",
+                Artist = "Andy Weir",
+                DownloadType = "Torrent",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                Size = 123456789
+            };
+
+            await Assert.ThrowsAsync<DownloadClientSubmissionException>(
+                () => downloadService.SendToDownloadClientAsync(searchResult, _client.Id));
+
+            Assert.Equal(initialDownloadCount, (await _downloadRepository.GetAllAsync()).Count);
+            gatewayMock.VerifyAll();
+            historyMock.VerifyNoOtherCalls();
+            notificationMock.VerifyNoOtherCalls();
+        }
+
+        [Fact]
         public async Task SendToDownloadClientAsync_DerivesTorrent_WhenRequestSpoofsDdl()
         {
             var gatewayMock = new Mock<IDownloadClientGateway>();

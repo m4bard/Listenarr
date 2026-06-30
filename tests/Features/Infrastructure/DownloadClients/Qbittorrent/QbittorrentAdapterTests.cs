@@ -15,7 +15,10 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using System.Net;
 using System.Text.Json;
+using System.Web;
+using Listenarr.Domain.Downloads.Exceptions;
 using Listenarr.Tests.Common;
 
 using Listenarr.Tests.Builders;
@@ -418,6 +421,78 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
                 PreparedSubmissionTestFactory.Torrent(searchResult));
 
             Assert.Equal("DD8255ECDC7CA55FB0BBF81323D87062DB1F6D1C", submissionResult.ExternalId);
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_WithIds_AddsHashesQuery()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = """
+            [
+                {
+                    "hash": "abcdef",
+                    "name": "Book",
+                    "progress": 0.5,
+                    "size": 1000,
+                    "downloaded": 500,
+                    "state": "downloading",
+                    "save_path": "/downloads/book"
+                }
+            ]
+            """;
+            apiMock.ResetRequestHistory();
+            var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
+            var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
+
+            var items = await adapter.GetQueueAsync(_client, ["ABCDEF", "123456"]);
+
+            Assert.NotEmpty(items);
+            var infoRequest = Assert.Single(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/info", StringComparison.Ordinal));
+            var query = HttpUtility.ParseQueryString(infoRequest.RequestUri.Query);
+            Assert.Equal("abcdef|123456", query["hashes"]);
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_WithoutIds_DoesNotAddHashesQuery()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.ResetRequestHistory();
+            var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
+            var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
+
+            var items = await adapter.GetQueueAsync(_client);
+
+            Assert.NotEmpty(items);
+            var infoRequest = Assert.Single(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/info", StringComparison.Ordinal));
+            var query = HttpUtility.ParseQueryString(infoRequest.RequestUri.Query);
+            Assert.Null(query["hashes"]);
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_WithIds_ThrowsPollingException_OnQueueRequestFailure()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoStatusCode = HttpStatusCode.InternalServerError;
+            var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
+            var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
+
+            await Assert.ThrowsAsync<DownloadClientAdapterPollingException>(
+                () => adapter.GetQueueAsync(_client, ["ABCDEF"]));
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_WithoutIds_ReturnsEmpty_OnQueueRequestFailure()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoStatusCode = HttpStatusCode.InternalServerError;
+            var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
+            var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
+
+            var items = await adapter.GetQueueAsync(_client);
+
+            Assert.Empty(items);
         }
 
         [Fact]
