@@ -45,6 +45,8 @@ namespace Listenarr.Domain.Common
                 allowFileSystemRoot,
                 rejectParentTraversal);
 
+        // The explicit OS parameter lets tests verify Windows and Unix validation rules
+        // from any host. Production callers should use TryNormalizeUserProvidedDirectoryPathForCurrentOs.
         public static bool TryNormalizeUserProvidedDirectoryPathForOs(
             string? path,
             bool isWindows,

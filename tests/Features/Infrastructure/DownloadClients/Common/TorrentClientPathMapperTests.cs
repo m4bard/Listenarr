@@ -114,6 +114,66 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Common
             Assert.True(FileUtils.IsPathSameOrInside(sourceFile, savePath));
         }
 
+        [Fact]
+        public void BuildQbittorrentSourceFiles_DropsParentTraversalChildPaths()
+        {
+            var savePath = FileUtils.GetAbsolutePath("downloads");
+            var parentSegment = new string('.', 2);
+            var files = ParseFiles(
+                $$"""
+                [
+                  { "name": "{{parentSegment}}/escape.m4b" },
+                  { "name": " Book Folder /chapter1.m4b" }
+                ]
+                """);
+
+            var sourceFiles = TorrentClientPathMapper.BuildQbittorrentSourceFiles(savePath, files);
+
+            var sourceFile = Assert.Single(sourceFiles);
+            Assert.Equal(Path.Join(savePath, " Book Folder ", "chapter1.m4b"), sourceFile);
+            Assert.True(FileUtils.IsPathSameOrInside(sourceFile, savePath));
+        }
+
+        [Fact]
+        public void BuildTransmissionSourceFiles_DropsParentTraversalChildPaths()
+        {
+            var downloadDir = FileUtils.GetAbsolutePath("downloads");
+            var parentSegment = new string('.', 2);
+            using var document = JsonDocument.Parse(
+                $$"""
+                [
+                  { "name": "Book/{{parentSegment}}/{{parentSegment}}/escape.m4b" },
+                  { "name": " Book Folder /chapter1.m4b" }
+                ]
+                """);
+
+            var sourceFiles = TorrentClientPathMapper.BuildTransmissionSourceFiles(downloadDir, document.RootElement);
+
+            var sourceFile = Assert.Single(sourceFiles);
+            Assert.Equal(FileUtils.CombineWithOptionalBase(downloadDir, " Book Folder /chapter1.m4b"), sourceFile);
+            Assert.True(FileUtils.IsPathSameOrInside(sourceFile, downloadDir));
+        }
+
+        [Fact]
+        public void ResolveQbittorrentContentPath_IgnoresParentTraversalTopLevelPath()
+        {
+            var savePath = FileUtils.GetAbsolutePath("downloads");
+            var parentSegment = new string('.', 2);
+            var files = ParseFiles(
+                $$"""
+                [
+                  { "name": "{{parentSegment}}/escape.m4b" },
+                  { "name": " Book Folder /chapter1.m4b" },
+                  { "name": " Book Folder /chapter2.m4b" }
+                ]
+                """);
+
+            var contentPath = TorrentClientPathMapper.ResolveQbittorrentContentPath(savePath, files);
+
+            Assert.Equal(Path.Join(savePath, " Book Folder "), contentPath);
+            Assert.True(FileUtils.IsPathSameOrInside(contentPath, savePath));
+        }
+
         private static List<Dictionary<string, JsonElement>> ParseFiles(string json)
         {
             using var document = JsonDocument.Parse(json);

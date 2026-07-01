@@ -39,6 +39,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
                 .Select(file => file.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty)
                 .Where(name => !string.IsNullOrEmpty(name))
                 .Select(name => CombineClientReportedPath(savePath, name.Replace('/', Path.DirectorySeparatorChar)))
+                .Where(path => !string.IsNullOrEmpty(path))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
@@ -64,7 +65,11 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
                     continue;
                 }
 
-                sourceFiles.Add(CombineClientReportedPath(downloadDir, relativePath));
+                var sourceFile = CombineClientReportedPath(downloadDir, relativePath);
+                if (!string.IsNullOrEmpty(sourceFile))
+                {
+                    sourceFiles.Add(sourceFile);
+                }
             }
 
             return sourceFiles;
@@ -82,6 +87,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
             var fileNames = files
                 .Select(f => f.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty)
                 .Where(name => !string.IsNullOrEmpty(name))
+                .Where(name => !ContainsParentDirectorySegment(name))
                 .ToList();
 
             if (fileNames.Count == 0)
@@ -137,7 +143,18 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
                     .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             }
 
+            if (ContainsParentDirectorySegment(relativePath))
+            {
+                return string.Empty;
+            }
+
             return FileUtils.CombineWithOptionalBase(basePath, relativePath);
+        }
+
+        private static bool ContainsParentDirectorySegment(string path)
+        {
+            return path.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries)
+                .Any(segment => segment.Length == 2 && segment[0] == '.' && segment[1] == '.');
         }
 
         private static bool HasDriveRootedPrefix(string path)

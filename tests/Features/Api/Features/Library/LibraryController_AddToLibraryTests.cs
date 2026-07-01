@@ -81,6 +81,33 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
+        public async Task AddToLibrary_WithGeneratedPathFromSanitizedMetadata_Succeeds()
+        {
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithFolderNamingPattern("{Author}/{Title}")
+                .WithFileNamingPattern("{Title}")
+                .Build());
+            var controller = _provider.GetRequiredService<LibraryController>();
+
+            var request = new LibraryController.AddToLibraryRequest
+            {
+                Metadata = new AudibleBookMetadata
+                {
+                    Title = "Book: The Ending.",
+                    Author = "CON"
+                },
+                Monitored = true
+            };
+
+            var actionResult = await controller.AddToLibrary(request);
+
+            Assert.IsType<OkObjectResult>(actionResult);
+            var stored = (await _audiobookRepository.GetAllAsync()).First();
+            Assert.NotNull(stored);
+            Assert.Equal(Path.Join(tempRoot, "CON_", "Book - The Ending"), stored.BasePath);
+        }
+
+        [Fact]
         public async Task AddToLibrary_PersistsEditableMetadataFields()
         {
             var controller = _provider.GetRequiredService<LibraryController>();

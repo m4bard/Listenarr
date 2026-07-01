@@ -646,6 +646,81 @@ namespace Listenarr.Tests.Features.Domain.Utils
         }
 
         [Fact]
+        public void TryNormalizeUserProvidedDirectoryPathForOs_RejectsRootFolderParentTraversal()
+        {
+            var separator = new string((char)92, 1);
+            var parentSegment = new string('.', 2);
+            var windowsTraversal = "C:" + separator + "Books" + separator + parentSegment + separator + "Other";
+
+            Assert.False(FileUtils.TryNormalizeUserProvidedDirectoryPathForOs(
+                windowsTraversal,
+                isWindows: true,
+                out _,
+                out var windowsReason,
+                allowFileSystemRoot: true,
+                rejectParentTraversal: true));
+            Assert.Contains("parent", windowsReason, StringComparison.OrdinalIgnoreCase);
+
+            var unixTraversal = string.Join('/', string.Empty, "media", parentSegment, "other");
+            Assert.False(FileUtils.TryNormalizeUserProvidedDirectoryPathForOs(
+                unixTraversal,
+                isWindows: false,
+                out _,
+                out var unixReason,
+                allowFileSystemRoot: true,
+                rejectParentTraversal: true));
+            Assert.Contains("parent", unixReason, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void TryNormalizeUserProvidedDirectoryPathForOs_AllowsRootsWhenExplicitlyRequestedAndTraversalRejected()
+        {
+            var separator = new string((char)92, 1);
+            var driveRoot = "C:" + separator;
+            var uncRoot = separator + separator + "server" + separator + "share";
+
+            Assert.True(FileUtils.TryNormalizeUserProvidedDirectoryPathForOs(
+                driveRoot,
+                isWindows: true,
+                out var normalizedDriveRoot,
+                out var driveRootReason,
+                allowFileSystemRoot: true,
+                rejectParentTraversal: true));
+            Assert.Equal(string.Empty, driveRootReason);
+            Assert.False(string.IsNullOrWhiteSpace(normalizedDriveRoot));
+
+            Assert.True(FileUtils.TryNormalizeUserProvidedDirectoryPathForOs(
+                separator,
+                isWindows: true,
+                out var normalizedCurrentDriveRoot,
+                out var currentDriveRootReason,
+                allowFileSystemRoot: true,
+                rejectParentTraversal: true));
+            Assert.Equal(string.Empty, currentDriveRootReason);
+            Assert.False(string.IsNullOrWhiteSpace(normalizedCurrentDriveRoot));
+
+            Assert.True(FileUtils.TryNormalizeUserProvidedDirectoryPathForOs(
+                uncRoot,
+                isWindows: true,
+                out var normalizedUncRoot,
+                out var uncRootReason,
+                allowFileSystemRoot: true,
+                rejectParentTraversal: true));
+            Assert.Equal(string.Empty, uncRootReason);
+            Assert.False(string.IsNullOrWhiteSpace(normalizedUncRoot));
+
+            Assert.True(FileUtils.TryNormalizeUserProvidedDirectoryPathForOs(
+                "/",
+                isWindows: false,
+                out var normalizedUnixRoot,
+                out var unixRootReason,
+                allowFileSystemRoot: true,
+                rejectParentTraversal: true));
+            Assert.Equal(string.Empty, unixRootReason);
+            Assert.Equal("/", normalizedUnixRoot);
+        }
+
+        [Fact]
         public void TryNormalizeUserProvidedDirectoryPathForOs_AllowsUnixRootWhenExplicitlyRequested()
         {
             Assert.True(FileUtils.TryNormalizeUserProvidedDirectoryPathForOs(

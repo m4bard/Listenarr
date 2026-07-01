@@ -153,11 +153,14 @@ namespace Listenarr.Application.Audiobooks.RootFolders
 
         private static string NormalizeRootFolderPathForStorage(string? path)
         {
+            // Root folders may be filesystem boundaries, but parent traversal is still
+            // rejected so the stored boundary is explicit rather than reached indirectly.
             if (!FileUtils.TryNormalizeUserProvidedDirectoryPathForCurrentOs(
                 path,
                 out var normalizedPath,
                 out var validationReason,
-                allowFileSystemRoot: true))
+                allowFileSystemRoot: true,
+                rejectParentTraversal: true))
             {
                 throw new ArgumentException($"Path is not valid for this operating system: {validationReason}");
             }

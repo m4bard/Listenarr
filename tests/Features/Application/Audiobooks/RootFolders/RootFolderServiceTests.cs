@@ -107,6 +107,24 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
         }
 
         [Fact]
+        public async Task Create_Throws_WhenRootFolderPathContainsParentTraversal()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var dbFactory = new TestDbFactory(options);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
+            var svc = new RootFolderService(repo, null!);
+            var parentSegment = new string('.', 2);
+            var traversingPath = Path.Join(rootPath, "Audiobooks", parentSegment, "Shared");
+
+            var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+                svc.CreateAsync(new RootFolder { Name = "Traversal Root", Path = traversingPath }));
+            Assert.Contains("parent", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
         public async Task Create_NormalizesPathBeforeStorage()
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
@@ -163,6 +181,30 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
             var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
                 svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = "relative-root" }));
             Assert.Contains("not valid", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task Update_Throws_WhenRootFolderPathContainsParentTraversal()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "R", Path = rootPath };
+            db.RootFolders.Add(root);
+            await db.SaveChangesAsync();
+
+            var dbFactory = new TestDbFactory(options);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
+            var logger = new TestLogger<RootFolderService>(_output);
+            var svc = new RootFolderService(repo, logger);
+            var parentSegment = new string('.', 2);
+            var traversingPath = Path.Join(rootPath, "Audiobooks", parentSegment, "Shared");
+
+            var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+                svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = traversingPath }));
+            Assert.Contains("parent", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
