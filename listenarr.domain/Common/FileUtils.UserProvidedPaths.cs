@@ -97,6 +97,31 @@ namespace Listenarr.Domain.Common
             normalizedPath = string.Empty;
             reason = string.Empty;
 
+            // Windows accepts \ or / as the current drive root. Root-folder configuration may
+            // intentionally use that boundary, but concrete destinations must still reject it.
+            if (IsWindowsCurrentDriveRoot(path))
+            {
+                if (!allowFileSystemRoot)
+                {
+                    reason = "Path cannot be the filesystem root.";
+                    return false;
+                }
+
+                try
+                {
+                    normalizedPath = OperatingSystem.IsWindows()
+                        ? Path.GetFullPath(path)
+                        : path.Replace('/', '\\');
+                    return true;
+                }
+                catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+                {
+                    normalizedPath = string.Empty;
+                    reason = "Path is not valid for this operating system.";
+                    return false;
+                }
+            }
+
             var rootLength = GetWindowsRootLength(path);
             if (rootLength <= 0)
             {
@@ -188,6 +213,11 @@ namespace Listenarr.Domain.Common
                 reason = "Path is not valid for this operating system.";
                 return false;
             }
+        }
+
+        private static bool IsWindowsCurrentDriveRoot(string path)
+        {
+            return path.Length == 1 && (path[0] is '\\' or '/');
         }
 
         private static int GetWindowsRootLength(string path)

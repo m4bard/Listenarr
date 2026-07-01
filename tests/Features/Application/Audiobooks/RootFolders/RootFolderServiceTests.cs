@@ -69,6 +69,28 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
         }
 
         [Fact]
+        public async Task Create_AllowsWindowsCurrentDriveRootPath()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var dbFactory = new TestDbFactory(options);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
+            var svc = new RootFolderService(repo, null!);
+            var currentDriveRoot = new string((char)92, 1);
+
+            var created = await svc.CreateAsync(new RootFolder { Name = "Current Drive Root", Path = currentDriveRoot });
+
+            Assert.Equal(Path.GetFullPath(currentDriveRoot), created.Path);
+        }
+
+        [Fact]
         public async Task Create_Throws_WhenPathInvalidForCurrentOs()
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
