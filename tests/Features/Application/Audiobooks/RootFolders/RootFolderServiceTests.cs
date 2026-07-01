@@ -51,6 +51,99 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
         }
 
         [Fact]
+        public async Task Create_AllowsFilesystemRootPath()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var dbFactory = new TestDbFactory(options);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
+            var svc = new RootFolderService(repo, null!);
+            var filesystemRoot = Path.GetPathRoot(FileUtils.GetAbsolutePath("root"));
+            Assert.False(string.IsNullOrWhiteSpace(filesystemRoot));
+
+            var created = await svc.CreateAsync(new RootFolder { Name = "Drive Root", Path = filesystemRoot! });
+
+            Assert.Equal(Path.GetFullPath(filesystemRoot!), created.Path);
+        }
+
+        [Fact]
+        public async Task Create_Throws_WhenPathInvalidForCurrentOs()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var dbFactory = new TestDbFactory(options);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
+            var svc = new RootFolderService(repo, null!);
+
+            var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+                svc.CreateAsync(new RootFolder { Name = "Invalid", Path = "relative-root" }));
+            Assert.Contains("not valid", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task Create_NormalizesPathBeforeStorage()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var dbFactory = new TestDbFactory(options);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
+            var svc = new RootFolderService(repo, null!);
+            var rawPath = Path.Join(rootPath, ".");
+
+            var created = await svc.CreateAsync(new RootFolder { Name = "Normalized", Path = rawPath });
+
+            Assert.Equal(Path.GetFullPath(rawPath), created.Path);
+        }
+
+        [Fact]
+        public async Task Create_Throws_WhenNormalizedPathDuplicate()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var normalizedPath = Path.GetFullPath(rootPath);
+            var db = new ListenArrDbContext(options);
+            db.RootFolders.Add(new RootFolder { Name = "A", Path = normalizedPath });
+            await db.SaveChangesAsync();
+
+            var dbFactory = new TestDbFactory(options);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
+            var svc = new RootFolderService(repo, null!);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                svc.CreateAsync(new RootFolder { Name = "B", Path = Path.Join(rootPath, ".") }));
+        }
+
+        [Fact]
+        public async Task Update_Throws_WhenPathInvalidForCurrentOs()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "R", Path = rootPath };
+            db.RootFolders.Add(root);
+            await db.SaveChangesAsync();
+
+            var dbFactory = new TestDbFactory(options);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
+            var logger = new TestLogger<RootFolderService>(_output);
+            var svc = new RootFolderService(repo, logger);
+
+            var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+                svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = "relative-root" }));
+            Assert.Contains("not valid", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
         public async Task Delete_Throws_WhenReferencedWithoutReassign()
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()

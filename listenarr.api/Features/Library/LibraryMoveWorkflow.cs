@@ -55,11 +55,6 @@ namespace Listenarr.Api.Features.Library
                 return new BadRequestObjectResult(new { message = "DestinationPath is required" });
             }
 
-            if (FileUtils.IsPathInvalidForCurrentOs(request.DestinationPath))
-            {
-                return new BadRequestObjectResult(new { message = "DestinationPath is not valid for this operating system" });
-            }
-
             try
             {
                 using var scope = _scopeFactory.CreateScope();
@@ -67,8 +62,15 @@ namespace Listenarr.Api.Features.Library
                 var settings = await configService.GetApplicationSettingsAsync();
 
                 var destinationIsRooted = Path.IsPathRooted(request.DestinationPath!);
-                var final = FileUtils.CombineWithOptionalBase(settings.OutputPath, request.DestinationPath!);
-                final = FileUtils.NormalizeStoredPath(final);
+                var destinationCandidate = FileUtils.CombineWithOptionalBase(settings.OutputPath, request.DestinationPath!);
+                if (!FileUtils.TryNormalizeUserProvidedDirectoryPathForCurrentOs(
+                    destinationCandidate,
+                    out var final,
+                    out var validationReason,
+                    rejectParentTraversal: true))
+                {
+                    return new BadRequestObjectResult(new { message = $"DestinationPath is not valid for this operating system: {validationReason}" });
+                }
                 if (!destinationIsRooted
                     && !string.IsNullOrWhiteSpace(settings.OutputPath)
                     && !_fileSystem.TryValidateMutationTarget(final, [settings.OutputPath], out final, out var finalReason))

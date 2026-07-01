@@ -67,6 +67,11 @@ namespace Listenarr.Api.Features.Library
                     HistoryMessage = $"Audiobook '{request.Metadata.Title}' added to library from Add New page"
                 });
 
+                if (result.ValidationFailed)
+                {
+                    return new BadRequestObjectResult(new { message = result.ValidationMessage ?? result.Message });
+                }
+
                 if (result.AlreadyExists)
                 {
                     return new ConflictObjectResult(new { message = result.Message, audiobook = result.Audiobook });
@@ -133,7 +138,16 @@ namespace Listenarr.Api.Features.Library
 
             if (!string.IsNullOrWhiteSpace(request.DestinationPath))
             {
-                audiobook.BasePath = FileUtils.NormalizeStoredPath(request.DestinationPath);
+                if (!FileUtils.TryNormalizeUserProvidedDirectoryPathForCurrentOs(
+                    request.DestinationPath,
+                    out var normalizedDestinationPath,
+                    out var validationReason,
+                    rejectParentTraversal: true))
+                {
+                    return new BadRequestObjectResult(new { message = $"DestinationPath is not valid for this operating system: {validationReason}" });
+                }
+
+                audiobook.BasePath = normalizedDestinationPath;
                 _logger.LogInformation("Using custom destination path for audiobook '{Title}': {BasePath}",
                     audiobook.Title, audiobook.BasePath);
             }

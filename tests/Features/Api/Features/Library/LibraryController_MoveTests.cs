@@ -152,6 +152,31 @@ namespace Listenarr.Tests.Features.Api.Features.Library
 
         [Fact]
         [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "RejectsInvalidDestinationPath")]
+        public async Task MoveAudiobook_RejectsInvalidDestinationPath()
+        {
+            var sourcePath = FileService.GetTempDirectory("listenarr-move-src");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(sourcePath)
+                .Build());
+
+            var controller = _provider.GetRequiredService<LibraryController>();
+            var request = new LibraryController.MoveRequest
+            {
+                DestinationPath = Path.Join(FileService.GetTempPath(), "bad\0target"),
+                MoveFiles = false
+            };
+
+            var result = await controller.EnqueueMove(audiobook.Id, request);
+
+            var badObj = Assert.IsAssignableFrom<ObjectResult>(result);
+            Assert.Equal(400, badObj.StatusCode);
+            Assert.Contains("DestinationPath", badObj.Value?.ToString() ?? string.Empty);
+        }
+
+        [Fact]
+        [Trait("Method", "EnqueueMove")]
         [Trait("Scenario", "RejectsRelativeDestinationOutsideOutputPath")]
         public async Task MoveAudiobook_RejectsRelativeDestinationOutsideOutputPath()
         {

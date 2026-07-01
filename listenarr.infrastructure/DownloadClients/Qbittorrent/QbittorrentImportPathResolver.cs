@@ -31,7 +31,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
         public static List<string> TranslateSourceFiles(IEnumerable<string> sourceFiles)
         {
             return sourceFiles
-                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Where(path => !string.IsNullOrEmpty(path))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }

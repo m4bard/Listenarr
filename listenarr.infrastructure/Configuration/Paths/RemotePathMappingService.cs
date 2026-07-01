@@ -116,7 +116,7 @@ namespace Listenarr.Infrastructure.Configuration.Paths
 
         public async Task<string> TranslatePathAsync(DownloadClientConfiguration client, string remotePath)
         {
-            if (string.IsNullOrWhiteSpace(remotePath))
+            if (string.IsNullOrEmpty(remotePath))
             {
                 return remotePath;
             }

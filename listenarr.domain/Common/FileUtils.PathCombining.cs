@@ -239,6 +239,11 @@ namespace Listenarr.Domain.Common
             return normalized.Length == 0 ? "unknown" : normalized;
         }
 
+        /// <summary>
+        /// Combines a relative candidate path with an optional base path without trimming
+        /// path-segment whitespace. Callers that must constrain rooted-looking child paths
+        /// should make those paths relative before calling this helper.
+        /// </summary>
         public static string CombineWithOptionalBase(string? basePath, string candidatePath)
         {
             if (string.IsNullOrEmpty(candidatePath))
@@ -246,7 +251,7 @@ namespace Listenarr.Domain.Common
                 return candidatePath;
             }
 
-            if (Path.IsPathRooted(candidatePath) || string.IsNullOrWhiteSpace(basePath))
+            if (Path.IsPathRooted(candidatePath) || string.IsNullOrEmpty(basePath))
             {
                 return candidatePath;
             }

@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Audiobooks.RootFolders
@@ -39,10 +40,9 @@ namespace Listenarr.Application.Audiobooks.RootFolders
 
         public async Task<RootFolder> CreateAsync(RootFolder root)
         {
-            root.Path = root.Path?.Trim() ?? string.Empty;
             root.Name = root.Name?.Trim() ?? string.Empty;
+            root.Path = NormalizeRootFolderPathForStorage(root.Path?.Trim());
 
-            if (string.IsNullOrWhiteSpace(root.Path)) throw new ArgumentException("Path is required");
             if (string.IsNullOrWhiteSpace(root.Name)) throw new ArgumentException("Name is required");
 
             var existingByPath = await _repo.GetByPathAsync(root.Path);
@@ -85,8 +85,10 @@ namespace Listenarr.Application.Audiobooks.RootFolders
         public async Task<RootFolder> UpdateAsync(RootFolder root, bool moveFiles = false, bool deleteEmptySource = true)
         {
             if (root == null) throw new ArgumentNullException(nameof(root));
-            root.Path = root.Path?.Trim() ?? string.Empty;
             root.Name = root.Name?.Trim() ?? string.Empty;
+            root.Path = NormalizeRootFolderPathForStorage(root.Path?.Trim());
+
+            if (string.IsNullOrWhiteSpace(root.Name)) throw new ArgumentException("Name is required");
 
             var existing = await _repo.GetByIdAsync(root.Id);
             if (existing == null) throw new KeyNotFoundException("Root folder not found");
@@ -147,6 +149,20 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             }
 
             return existing;
+        }
+
+        private static string NormalizeRootFolderPathForStorage(string? path)
+        {
+            if (!FileUtils.TryNormalizeUserProvidedDirectoryPathForCurrentOs(
+                path,
+                out var normalizedPath,
+                out var validationReason,
+                allowFileSystemRoot: true))
+            {
+                throw new ArgumentException($"Path is not valid for this operating system: {validationReason}");
+            }
+
+            return normalizedPath;
         }
     }
 }

@@ -17,6 +17,7 @@
  */
 using System.Security.Cryptography;
 using System.Text;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Audiobooks.Catalog
@@ -149,30 +150,38 @@ namespace Listenarr.Application.Audiobooks.Catalog
 
             var settings = await _configurationService.GetApplicationSettingsAsync();
 
-            // Check validity of given path
-            var baseDirectory = request.DestinationPath;
-            if (!string.IsNullOrWhiteSpace(baseDirectory))
+            var requestedBaseDirectory = request.DestinationPath;
+            if (!string.IsNullOrWhiteSpace(requestedBaseDirectory))
             {
-                try
+                if (!FileUtils.TryNormalizeUserProvidedDirectoryPathForCurrentOs(
+                    requestedBaseDirectory,
+                    out var normalizedRequestedBaseDirectory,
+                    out var validationReason,
+                    rejectParentTraversal: true))
                 {
-                    Path.GetFullPath(baseDirectory);
+                    return ValidationFailure($"DestinationPath is not valid for this operating system: {validationReason}");
                 }
-                catch (Exception)
-                {
-                    baseDirectory = string.Empty;
-                }
-            }
 
-            if (string.IsNullOrWhiteSpace(baseDirectory))
-            {
-                var rootFolder = await _rootFolderService.GetDefaultAsync();
-                baseDirectory = rootFolder != null ? rootFolder.Path : settings.OutputPath;
-
-                audiobook.BasePath = Path.Join(baseDirectory, _fileNamingService.ApplyNamingPattern(settings.FolderNamingPattern, metadata));
+                audiobook.BasePath = normalizedRequestedBaseDirectory;
             }
             else
             {
-                audiobook.BasePath = baseDirectory;
+                var rootFolder = await _rootFolderService.GetDefaultAsync();
+                var baseDirectory = rootFolder != null ? rootFolder.Path : settings.OutputPath;
+
+                // This validates the Listenarr-owned library destination. Do not use it for
+                // download-client source paths, which must preserve the client's exact path identity.
+                var generatedBasePath = Path.Join(baseDirectory, _fileNamingService.ApplyNamingPattern(settings.FolderNamingPattern, metadata));
+                if (!FileUtils.TryNormalizeUserProvidedDirectoryPathForCurrentOs(
+                    generatedBasePath,
+                    out var normalizedGeneratedBasePath,
+                    out var validationReason,
+                    rejectParentTraversal: true))
+                {
+                    return ValidationFailure($"Generated library destination is not valid for this operating system: {validationReason}");
+                }
+
+                audiobook.BasePath = normalizedGeneratedBasePath;
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -362,6 +371,13 @@ namespace Listenarr.Application.Audiobooks.Catalog
 
             await _historyRepository.AddAsync(historyEntry, cancellationToken);
         }
+
+        private static LibraryAddOperationResult ValidationFailure(string message) => new()
+        {
+            ValidationFailed = true,
+            Message = message,
+            ValidationMessage = message
+        };
 
         private static string? ToStringOrFirst(object? value)
         {

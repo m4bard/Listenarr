@@ -27,22 +27,25 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
             string savePath,
             List<Dictionary<string, JsonElement>> files)
         {
-            if (string.IsNullOrWhiteSpace(savePath) || files == null || files.Count == 0)
+            if (string.IsNullOrEmpty(savePath) || files == null || files.Count == 0)
             {
                 return new List<string>();
             }
 
+            // External client paths are filesystem identifiers, not user text. Do not trim
+            // whitespace from path segments; only strip separators when intentionally
+            // converting a rooted-looking child path into a relative child path.
             return files
                 .Select(file => file.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty)
-                .Where(name => !string.IsNullOrWhiteSpace(name))
-                .Select(name => CombineWithOptionalBase(savePath, name.Replace('/', Path.DirectorySeparatorChar)))
+                .Where(name => !string.IsNullOrEmpty(name))
+                .Select(name => CombineClientReportedPath(savePath, name.Replace('/', Path.DirectorySeparatorChar)))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
 
         public static List<string> BuildTransmissionSourceFiles(string? downloadDir, JsonElement filesElement)
         {
-            if (string.IsNullOrWhiteSpace(downloadDir) || filesElement.ValueKind != JsonValueKind.Array)
+            if (string.IsNullOrEmpty(downloadDir) || filesElement.ValueKind != JsonValueKind.Array)
             {
                 return new List<string>();
             }
@@ -56,12 +59,12 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
                 }
 
                 var relativePath = nameProp.GetString();
-                if (string.IsNullOrWhiteSpace(relativePath))
+                if (string.IsNullOrEmpty(relativePath))
                 {
                     continue;
                 }
 
-                sourceFiles.Add(FileUtils.CombineWithOptionalBase(downloadDir, relativePath));
+                sourceFiles.Add(CombineClientReportedPath(downloadDir, relativePath));
             }
 
             return sourceFiles;
@@ -71,14 +74,14 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
             string savePath,
             List<Dictionary<string, JsonElement>> files)
         {
-            if (string.IsNullOrWhiteSpace(savePath) || files == null || files.Count == 0)
+            if (string.IsNullOrEmpty(savePath) || files == null || files.Count == 0)
             {
                 return string.Empty;
             }
 
             var fileNames = files
                 .Select(f => f.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty)
-                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Where(name => !string.IsNullOrEmpty(name))
                 .ToList();
 
             if (fileNames.Count == 0)
@@ -93,8 +96,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
             if (fileNames.Count == 1)
             {
                 return hasNestedPath
-                    ? CombineWithOptionalBase(savePath, firstParts[0])
-                    : CombineWithOptionalBase(savePath, firstFile);
+                    ? CombineClientReportedPath(savePath, firstParts[0])
+                    : CombineClientReportedPath(savePath, firstFile);
             }
 
             if (!hasNestedPath)
@@ -110,34 +113,39 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
             });
 
             return allShareTopLevel
-                ? CombineWithOptionalBase(savePath, topLevel)
+                ? CombineClientReportedPath(savePath, topLevel)
                 : savePath;
         }
 
-        private static string CombineWithOptionalBase(string? basePath, string candidatePath)
+        private static string CombineClientReportedPath(string? basePath, string candidatePath)
         {
-            var normalizedPath = candidatePath.Trim();
-
-            if (string.IsNullOrEmpty(normalizedPath))
+            if (string.IsNullOrEmpty(candidatePath) || string.IsNullOrEmpty(basePath))
             {
-                return normalizedPath;
+                return candidatePath;
             }
 
-            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
-            {
-                return normalizedPath;
-            }
-
-            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var relativePath = candidatePath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             if (Path.IsPathRooted(relativePath))
             {
-                return relativePath;
+                var root = Path.GetPathRoot(relativePath) ?? string.Empty;
+                relativePath = relativePath[root.Length..]
+                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            else if (HasDriveRootedPrefix(relativePath))
+            {
+                relativePath = relativePath[2..]
+                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             }
 
-            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            return string.IsNullOrEmpty(normalizedBasePath)
-                ? relativePath
-                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+            return FileUtils.CombineWithOptionalBase(basePath, relativePath);
+        }
+
+        private static bool HasDriveRootedPrefix(string path)
+        {
+            return path.Length >= 2
+                && char.IsLetter(path[0])
+                && path[1] == ':'
+                && (path.Length == 2 || path[2] is '/' or '\\');
         }
     }
 }

@@ -230,7 +230,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         {
             var controller = _provider.GetRequiredService<LibraryController>();
 
-            var customPath = "/custom/audiobooks/Author/Series/Title";
+            var customPath = Path.Join(tempRoot, "custom", "audiobooks", "Author", "Series", "Title");
             var request = new LibraryController.AddToLibraryRequest
             {
                 Metadata = new AudibleBookMetadata
@@ -250,10 +250,33 @@ namespace Listenarr.Tests.Features.Api.Features.Library
 
             var stored = (await _audiobookRepository.GetAllAsync()).First();
             Assert.NotNull(stored);
-            // NormalizeStoredPath calls Path.GetFullPath which is platform-dependent:
-            // on Windows "/custom/..." becomes "C:\custom\...", on Linux it stays "/custom/..."
             var expectedPath = Path.GetFullPath(customPath);
             Assert.Equal(expectedPath, stored.BasePath);
+        }
+
+        [Fact]
+        public async Task AddToLibrary_RejectsCustomPathParentTraversal()
+        {
+            var controller = _provider.GetRequiredService<LibraryController>();
+
+            var parentSegment = new string('.', 2);
+            var customPath = Path.Join(tempRoot, "Books", parentSegment, "Other");
+            var request = new LibraryController.AddToLibraryRequest
+            {
+                Metadata = new AudibleBookMetadata
+                {
+                    Title = "Traversal Path Test",
+                    Author = "Custom Author"
+                },
+                Monitored = true,
+                DestinationPath = customPath
+            };
+
+            var actionResult = await controller.AddToLibrary(request);
+
+            var badRequest = Assert.IsType<BadRequestObjectResult>(actionResult);
+            Assert.Contains("DestinationPath", badRequest.Value.ToString(), StringComparison.OrdinalIgnoreCase);
+            Assert.Empty(await _audiobookRepository.GetAllAsync());
         }
 
         [Fact]
@@ -262,7 +285,6 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var controller = _provider.GetRequiredService<LibraryController>();
 
             var customPath = "/custom/* ?|<>\0/Author/Series/Title";
-            Assert.Throws<ArgumentException>(() => Path.GetFullPath(customPath));
 
             var request = new LibraryController.AddToLibraryRequest
             {
@@ -279,12 +301,9 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var actionResult = await controller.AddToLibrary(request);
 
             // Assert
-            Assert.IsType<OkObjectResult>(actionResult);
-
-            var stored = (await _audiobookRepository.GetAllAsync()).First();
-            Assert.NotNull(stored);
-            // Uses fallback logic with folder naming pattern
-            Assert.Equal(Path.Join(tempRoot, "Custom Author"), stored.BasePath);
+            var badRequest = Assert.IsType<BadRequestObjectResult>(actionResult);
+            Assert.Contains("DestinationPath", badRequest.Value.ToString(), StringComparison.OrdinalIgnoreCase);
+            Assert.Empty(await _audiobookRepository.GetAllAsync());
         }
     }
 }

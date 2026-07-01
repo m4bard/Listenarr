@@ -232,12 +232,12 @@ namespace Listenarr.Application.Downloads.Common
         /// <returns></returns>
         private async Task<QueueItem> TranslateQueueItemPathsAsync(DownloadClientConfiguration client, QueueItem item)
         {
-            if (!string.IsNullOrWhiteSpace(item.RemotePath))
+            if (!string.IsNullOrEmpty(item.RemotePath))
             {
                 item.LocalPath = await remotePathMappingService.TranslatePathAsync(client, item.RemotePath);
             }
 
-            if (!string.IsNullOrWhiteSpace(item.ContentPath))
+            if (!string.IsNullOrEmpty(item.ContentPath))
             {
                 item.ContentPath = await remotePathMappingService.TranslatePathAsync(client, item.ContentPath);
             }
@@ -257,7 +257,7 @@ namespace Listenarr.Application.Downloads.Common
                 }
                 item.SourceFiles = sourceFiles;
             }
-            else if (!string.IsNullOrWhiteSpace(item.ContentPath))
+            else if (!string.IsNullOrEmpty(item.ContentPath))
             {
                 // Scan ContentPath only after the adapter has supplied a non-empty path.
                 // Active queue snapshots may not be import-ready, so adapters should leave
