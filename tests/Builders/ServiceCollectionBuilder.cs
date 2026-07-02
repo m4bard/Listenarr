@@ -214,6 +214,7 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<DownloadService>();
             services.AddSingleton<ScanJobProcessor>();
             services.AddSingleton<IScanJobProcessor>(sp => sp.GetRequiredService<ScanJobProcessor>());
+            services.AddSingleton<AudiobookContentMoveService>();
             services.AddSingleton<MoveJobProcessor>();
             services.AddSingleton<IMoveJobProcessor>(sp => sp.GetRequiredService<MoveJobProcessor>());
             services.AddSingleton<MoveBackgroundService>();

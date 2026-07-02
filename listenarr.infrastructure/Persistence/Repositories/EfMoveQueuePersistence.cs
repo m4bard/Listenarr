@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Persistence.Repositories;
@@ -17,20 +18,34 @@ public sealed class EfMoveQueuePersistence(IDbContextFactory<ListenArrDbContext>
 {
     public async Task<MoveJob?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        return await db.MoveJobs.AsNoTracking().SingleOrDefaultAsync(job => job.Id == id, cancellationToken);
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+            return await db.MoveJobs.AsNoTracking().SingleOrDefaultAsync(job => job.Id == id, cancellationToken);
+        }
+        catch (DbException ex)
+        {
+            throw new PersistenceException("Failed to query move job persistence.", ex);
+        }
     }
 
     public async Task<MoveJob?> GetActiveByKeyAsync(
         string deduplicationKey,
         CancellationToken cancellationToken = default)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        return await db.MoveJobs
-            .AsNoTracking()
-            .SingleOrDefaultAsync(
-                job => job.ActiveDeduplicationKey == deduplicationKey,
-                cancellationToken);
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+            return await db.MoveJobs
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    job => job.ActiveDeduplicationKey == deduplicationKey,
+                    cancellationToken);
+        }
+        catch (DbException ex)
+        {
+            throw new PersistenceException("Failed to query move job persistence.", ex);
+        }
     }
 
     public async Task AddAsync(MoveJob job, CancellationToken cancellationToken = default)
@@ -47,18 +62,25 @@ public sealed class EfMoveQueuePersistence(IDbContextFactory<ListenArrDbContext>
         DateTimeOffset updatedAt,
         CancellationToken cancellationToken = default)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        var job = await db.MoveJobs.SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
-        if (job == null)
+        try
         {
-            return;
-        }
+            await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+            var job = await db.MoveJobs.SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+            if (job == null)
+            {
+                return;
+            }
 
-        job.Status = status;
-        job.Error = error;
-        job.UpdatedAt = updatedAt.UtcDateTime;
-        job.ActiveDeduplicationKey = IsActive(status) ? job.ActiveDeduplicationKey : null;
-        await db.SaveChangesAsync(cancellationToken);
+            job.Status = status;
+            job.Error = error;
+            job.UpdatedAt = updatedAt.UtcDateTime;
+            job.ActiveDeduplicationKey = IsActive(status) ? job.ActiveDeduplicationKey : null;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbException ex)
+        {
+            throw new PersistenceException("Failed to update move job persistence.", ex);
+        }
     }
 
     private static bool IsActive(string status) =>

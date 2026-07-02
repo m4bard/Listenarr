@@ -21,6 +21,17 @@ import {
   trimTrailingSlash,
   normalizeForCompare,
   isAbsolutePath,
+  hasRelativePathSegment,
+  hasParentTraversalSegment,
+  hasEmptyMiddlePathSegment,
+  hasControlCharacter,
+  hasOuterWhitespace,
+  hasPathSegmentOuterWhitespace,
+  hasWindowsTrailingSpaceOrPeriodSegment,
+  hasWindowsInvalidCharacter,
+  pathsOverlap,
+  hasWindowsReservedDeviceSegment,
+  validateLibraryDestinationPath,
   stripRootPrefix,
 } from '@/utils/path'
 
@@ -44,6 +55,115 @@ describe('path utils', () => {
     expect(isAbsolutePath('C:\\some\\path')).toBe(true)
     expect(isAbsolutePath('/unix/path')).toBe(true)
     expect(isAbsolutePath('relative/path')).toBe(false)
+  })
+
+  it('detects exact relative path segments without blocking periods in names', () => {
+    expect(hasRelativePathSegment('D:\\Books\\Title\\.')).toBe(true)
+    expect(hasRelativePathSegment('D:\\Books\\Title\\..')).toBe(true)
+    expect(hasRelativePathSegment('/books/./title')).toBe(true)
+    expect(hasRelativePathSegment('/books/../title')).toBe(true)
+    expect(hasRelativePathSegment('/books/Dr. Seuss')).toBe(false)
+    expect(hasRelativePathSegment('/books/.metadata')).toBe(false)
+    expect(hasRelativePathSegment('/books/title...')).toBe(false)
+  })
+
+  it('hasParentTraversalSegment detects parent directory traversal', () => {
+    expect(hasParentTraversalSegment('D:\\Books\\Title\\..')).toBe(true)
+    expect(hasParentTraversalSegment('/books/title/../other')).toBe(true)
+    expect(hasParentTraversalSegment('/books/title..')).toBe(false)
+    expect(hasParentTraversalSegment('/books/.../title')).toBe(false)
+    expect(hasParentTraversalSegment(null)).toBe(false)
+  })
+
+  it('detects empty middle path segments without rejecting roots', () => {
+    expect(hasEmptyMiddlePathSegment('D:\\Books\\\\Title')).toBe(true)
+    expect(hasEmptyMiddlePathSegment('/books//title')).toBe(true)
+    expect(hasEmptyMiddlePathSegment('D:\\Books\\Title')).toBe(false)
+    expect(hasEmptyMiddlePathSegment('/books/title')).toBe(false)
+    expect(hasEmptyMiddlePathSegment('D:\\')).toBe(false)
+    expect(hasEmptyMiddlePathSegment('\\\\server\\share\\Audiobooks')).toBe(false)
+    expect(hasEmptyMiddlePathSegment('\\\\server\\share\\\\Audiobooks')).toBe(true)
+  })
+
+  it('detects control characters and segment whitespace', () => {
+    expect(hasControlCharacter('D:\\Books\\Title\n')).toBe(true)
+    expect(hasControlCharacter('D:\\Books\\Title')).toBe(false)
+    expect(hasOuterWhitespace(' D:\\Books\\Title')).toBe(true)
+    expect(hasOuterWhitespace('D:\\Books\\Title ')).toBe(true)
+    expect(hasOuterWhitespace('D:\\Listenarr Test\\Title')).toBe(false)
+    expect(hasPathSegmentOuterWhitespace('D:\\Books\\test ')).toBe(true)
+    expect(hasPathSegmentOuterWhitespace('D:\\Books\\ test')).toBe(true)
+    expect(hasPathSegmentOuterWhitespace('D:\\Listenarr Test\\Title')).toBe(false)
+  })
+
+  it('detects Windows-only trailing space or period segments', () => {
+    expect(hasWindowsTrailingSpaceOrPeriodSegment('D:\\Books\\test ')).toBe(true)
+    expect(hasWindowsTrailingSpaceOrPeriodSegment('D:\\Books\\test.')).toBe(true)
+    expect(hasWindowsTrailingSpaceOrPeriodSegment('D:\\Books\\ test')).toBe(false)
+    expect(hasWindowsTrailingSpaceOrPeriodSegment('/books/test ')).toBe(false)
+    expect(hasWindowsTrailingSpaceOrPeriodSegment('/books/ test ')).toBe(false)
+  })
+
+  it('detects Windows invalid characters and reserved device names', () => {
+    expect(hasWindowsInvalidCharacter('D:\\Books\\Bad|Folder')).toBe(true)
+    expect(hasWindowsInvalidCharacter('D:\\Books\\Bad:Folder')).toBe(true)
+    expect(hasWindowsInvalidCharacter('D:\\Books\\Good Folder')).toBe(false)
+    expect(hasWindowsReservedDeviceSegment('D:\\Books\\CON')).toBe(true)
+    expect(hasWindowsReservedDeviceSegment('D:\\Books\\NUL.txt')).toBe(true)
+    expect(hasWindowsReservedDeviceSegment('D:\\Books\\COM1.folder')).toBe(true)
+    expect(hasWindowsReservedDeviceSegment('D:\\Books\\Concert')).toBe(false)
+  })
+
+  it('detects overlapping source and destination paths', () => {
+    expect(pathsOverlap('D:\\Books\\Title\\Child', 'D:\\Books\\Title', 'windows')).toBe(true)
+    expect(pathsOverlap('D:\\Books\\Title', 'D:\\Books\\Title\\Child', 'windows')).toBe(true)
+    expect(pathsOverlap('D:\\Books\\Title2', 'D:\\Books\\Title', 'windows')).toBe(false)
+    expect(pathsOverlap('/books/title/child', '/books/title', 'unix')).toBe(true)
+    expect(pathsOverlap('/books/title2', '/books/title', 'unix')).toBe(false)
+  })
+
+  it('validates library destination paths while allowing platform-valid whitespace', () => {
+    expect(validateLibraryDestinationPath('D:\\Books\\Title\\.')).toContain(
+      'Path traversal is not allowed',
+    )
+    expect(validateLibraryDestinationPath('D:\\Books\\Title\\..')).toContain(
+      'Path traversal is not allowed',
+    )
+    expect(validateLibraryDestinationPath('D:\\Books\\\\Title')).toContain('empty path segments')
+    expect(validateLibraryDestinationPath('D:\\Books\\Bad*Folder')).toContain('invalid on Windows')
+    expect(validateLibraryDestinationPath('D:\\Books\\CON.txt')).toContain('reserved Windows')
+    expect(validateLibraryDestinationPath('D:\\Books\\test ')).toContain(
+      'cannot end with a space or period',
+    )
+    expect(validateLibraryDestinationPath('D:\\Books\\test.')).toContain(
+      'cannot end with a space or period',
+    )
+    expect(validateLibraryDestinationPath('D:\\Books\\ test')).toBe(null)
+    expect(validateLibraryDestinationPath('/books/ test /')).toBe(null)
+    expect(validateLibraryDestinationPath('D:\\Books\\Dr. Seuss')).toBe(null)
+    expect(validateLibraryDestinationPath('D:\\Books\\.metadata')).toBe(null)
+    expect(validateLibraryDestinationPath('D:\\Books\\Title...')).toContain(
+      'cannot end with a space or period',
+    )
+    expect(validateLibraryDestinationPath('/books/Title...')).toBe(null)
+    expect(
+      validateLibraryDestinationPath('D:\\Books\\Title\\Child', {
+        pathKind: 'windows',
+        sourcePath: 'D:\\Books\\Title',
+      }),
+    ).toBe(null)
+    expect(
+      validateLibraryDestinationPath('/books/title/child', {
+        pathKind: 'unix',
+        sourcePath: '/books/title',
+      }),
+    ).toBe(null)
+    expect(
+      validateLibraryDestinationPath('D:\\Books', {
+        pathKind: 'windows',
+        sourcePath: 'D:\\Books\\Title',
+      }),
+    ).toBe(null)
   })
 
   it('stripRootPrefix removes root prefix when present', () => {

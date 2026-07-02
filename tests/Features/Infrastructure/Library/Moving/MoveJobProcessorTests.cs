@@ -34,6 +34,81 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
+        public async Task ProcessJobAsync_TargetInsideSource_MovesSourceContentsIntoTarget()
+        {
+            var src = FileService.GetTempDirectory("move-processor-nested-src");
+            await FileService.GetFileAsync(src, "book.m4b", "audio");
+            var extras = Path.Join(src, "extras");
+            Directory.CreateDirectory(extras);
+            await FileService.GetFileAsync(extras, "cover.jpg", "image");
+            var dst = Path.Join(src, " test");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook { Title = "Move Processor Nested", BasePath = src });
+            var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, dst, src);
+
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var updatedJob = await queue.GetJobAsync(job.Id);
+            Assert.NotNull(updatedJob);
+            Assert.Equal("Completed", updatedJob!.Status);
+            Assert.True(Directory.Exists(src));
+            Assert.True(Directory.Exists(dst));
+            Assert.False(File.Exists(Path.Join(src, "book.m4b")));
+            Assert.False(Directory.Exists(extras));
+            Assert.True(File.Exists(Path.Join(dst, "book.m4b")));
+            Assert.True(File.Exists(Path.Join(dst, "extras", "cover.jpg")));
+
+            using var verificationScope = _provider.CreateScope();
+            var verificationRepository = verificationScope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+            var updatedAudiobook = await verificationRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(updatedAudiobook);
+            Assert.Equal(dst, updatedAudiobook!.BasePath);
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_SourceInsideEmptyParent_DeletesEmptyParentAfterMove()
+        {
+            var sourceParent = FileService.GetTempDirectory("move-processor-empty-parent");
+            var src = Path.Join(sourceParent, " test");
+            Directory.CreateDirectory(src);
+            await FileService.GetFileAsync(src, "book.m4b", "audio");
+            var dst = Path.Join(FileService.GetTempPath(), "move-processor-cleaned-dst");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook { Title = "Move Processor Empty Parent", BasePath = src });
+            var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, dst, src);
+
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var updatedJob = await queue.GetJobAsync(job.Id);
+            Assert.NotNull(updatedJob);
+            Assert.Equal("Completed", updatedJob!.Status);
+            Assert.False(Directory.Exists(src));
+            Assert.False(Directory.Exists(sourceParent));
+            Assert.True(File.Exists(Path.Join(dst, "book.m4b")));
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_SourceInsideDestination_DoesNotDeleteDestinationAncestor()
+        {
+            var dst = FileService.GetTempDirectory("move-processor-parent-target");
+            var src = Path.Join(dst, " test");
+            Directory.CreateDirectory(src);
+            await FileService.GetFileAsync(src, "book.m4b", "audio");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook { Title = "Move Processor Parent Target", BasePath = src });
+            var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, dst, src);
+
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var updatedJob = await queue.GetJobAsync(job.Id);
+            Assert.NotNull(updatedJob);
+            Assert.Equal("Completed", updatedJob!.Status);
+            Assert.False(Directory.Exists(src));
+            Assert.True(Directory.Exists(dst));
+            Assert.True(File.Exists(Path.Join(dst, "book.m4b")));
+        }
+
+        [Fact]
         public async Task ProcessJobAsync_TargetContainsFiles_MarksJobFailed()
         {
             var src = FileService.GetTempDirectory("move-processor-fail-src");

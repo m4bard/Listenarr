@@ -504,8 +504,9 @@
                         type="button"
                         class="btn icon-btn btn-primary btn-sm"
                         @click="finishEditingDestination"
+                        :disabled="Boolean(destinationPathValidationError)"
                         aria-label="Save destination"
-                        title="Done"
+                        :title="destinationPathValidationError || 'Done'"
                       >
                         <PhCheck :size="16"></PhCheck>
                       </button>
@@ -524,6 +525,10 @@
                     organizing within the selected root.
                   </span>
                 </p>
+                <div v-if="destinationPathValidationError" class="path-validation-error">
+                  <PhWarning :size="16" />
+                  <span>{{ destinationPathValidationError }}</span>
+                </div>
                 <!-- Path length warning -->
                 <div v-if="destinationPathWarning" class="path-length-warning">
                   <PhWarning :size="16" />
@@ -735,8 +740,8 @@
         type="button"
         class="btn btn-primary"
         @click="handleSave"
-        :disabled="saving || !hasChanges"
-        :title="saving ? 'Saving...' : 'Save'"
+        :disabled="saving || !hasChanges || Boolean(destinationPathValidationError)"
+        :title="saving ? 'Saving...' : destinationPathValidationError || 'Save'"
         :aria-label="saving ? 'Saving' : 'Save'"
       >
         <span v-if="saving"><PhSpinner class="ph-spin"></PhSpinner> Saving...</span>
@@ -1480,6 +1485,9 @@ import {
   trimTrailingSlash,
   normalizeForCompare,
   isAbsolutePath,
+  validateLibraryDestinationPath,
+  detectPathKind,
+  type PathKind,
   stripRootPrefix,
 } from '@/utils/path'
 
@@ -1501,9 +1509,15 @@ function resolveSelectedRootPath(): string | null {
   return rootPath.value || null
 }
 
+function selectedDestinationPathKind(): PathKind {
+  const root =
+    resolveSelectedRootPath() || rootPath.value || baselineAudiobook.value?.basePath || ''
+  return detectPathKind(root)
+}
+
 function combinedBasePath(): string | null {
   const r = resolveSelectedRootPath() || ''
-  const rel = (formData.value.relativePath || '').trim()
+  const rel = formData.value.relativePath || ''
   if (!r && !rel) return null
   if (!r) return rel
 
@@ -1511,9 +1525,9 @@ function combinedBasePath(): string | null {
   // input as the exact destination where files should be stored. Do NOT
   // append the relative or naming pattern — return the custom root exactly.
   if (selectedRootId.value === 0) {
-    let out = toForward(r)
-    out = trimTrailingSlash(out)
-    return out
+    const pathKind = detectPathKind(r)
+    const normalized = pathKind === 'windows' ? toForward(r) : r
+    return trimTrailingSlash(normalized)
   }
 
   if (!rel) return r
@@ -1522,9 +1536,20 @@ function combinedBasePath(): string | null {
   return r + (needsSep ? sep : '') + rel
 }
 
-// Path-length warning for the destination path
+// Path-length warning and validation for the destination path
 const editDestinationPath = computed(() => combinedBasePath() || '')
 const { pathLengthWarning: destinationPathWarning } = usePathLengthCheck(editDestinationPath)
+const destinationPathValidationError = computed(() => {
+  const destination = editDestinationPath.value
+  const source = baselineAudiobook.value?.basePath || ''
+  const pathKind = selectedDestinationPathKind()
+  const basePathChanged = destination !== source
+
+  return validateLibraryDestinationPath(destination, {
+    pathKind,
+    sourcePath: basePathChanged ? source : null,
+  })
+})
 
 // Helper: derive relative path from full base and configured root (moved to module scope so it can be reused)
 function deriveRelativeFromBase(
@@ -1534,14 +1559,17 @@ function deriveRelativeFromBase(
   if (!base) return ''
   if (!root) return base
 
-  const normBase = toForward(base)
-  const normRoot = toForward(root)
+  const pathKind = detectPathKind(root)
+  const normBase = pathKind === 'windows' ? toForward(base) : base
+  const normRoot = pathKind === 'windows' ? toForward(root) : root
   const rootWithSlash = normRoot.endsWith('/') ? normRoot : normRoot + '/'
 
-  if (normalizeForCompare(normBase) === normalizeForCompare(normRoot)) return ''
-  if (normalizeForCompare(normBase).startsWith(normalizeForCompare(rootWithSlash))) {
+  if (normalizeForCompare(normBase, pathKind) === normalizeForCompare(normRoot, pathKind)) return ''
+  if (
+    normalizeForCompare(normBase, pathKind).startsWith(normalizeForCompare(rootWithSlash, pathKind))
+  ) {
     const rel = normBase.slice(rootWithSlash.length).replace(/^\/+/, '')
-    const useBackslash = root.includes('\\')
+    const useBackslash = pathKind === 'windows' && root.includes('\\')
     return useBackslash ? rel.replace(/\//g, '\\') : rel
   }
 
@@ -1582,9 +1610,14 @@ function startEditingDestination() {
  * an absolute/full path. This makes the UI stable when toggling edit mode.
  */
 function finishEditingDestination() {
+  if (destinationPathValidationError.value) {
+    toast.error('Invalid destination', destinationPathValidationError.value)
+    return
+  }
+
   try {
     const chosenRoot = resolveSelectedRootPath() || rootPath.value
-    const val = (formData.value.relativePath || '').trim()
+    const val = formData.value.relativePath || ''
 
     if (!chosenRoot) {
       // No root available — nothing to do
@@ -1614,7 +1647,10 @@ function finishEditingDestination() {
     const relOrVal = formData.value.relativePath || val || ''
     if (
       isAbsolute ||
-      (relOrVal && normalizeForCompare(relOrVal).startsWith(normalizeForCompare(chosenRoot || '')))
+      (relOrVal &&
+        normalizeForCompare(relOrVal, detectPathKind(chosenRoot)).startsWith(
+          normalizeForCompare(chosenRoot || '', detectPathKind(chosenRoot)),
+        ))
     ) {
       formData.value.relativePath = deriveRelativeFromBase(
         relOrVal || formData.value.basePath || '',
@@ -1637,9 +1673,32 @@ async function handleSave() {
   // If the base path (destination) changed, prompt the user with rich options
   const combined = combinedBasePath()
   const originalBase = audiobook.basePath || ''
+  const pathKind = selectedDestinationPathKind()
+  const basePathChanged = (combined || '') !== originalBase
+  const destinationValidationMessage = validateLibraryDestinationPath(combined, {
+    pathKind,
+    sourcePath: basePathChanged ? originalBase : null,
+  })
+  if (destinationValidationMessage) {
+    toast.error('Invalid destination', destinationValidationMessage)
+    return
+  }
+  if (
+    basePathChanged &&
+    combined &&
+    originalBase &&
+    normalizeForCompare(combined, pathKind) === normalizeForCompare(originalBase, pathKind)
+  ) {
+    toast.error(
+      'Invalid destination',
+      'Destination folder must be different from the current source folder.',
+    )
+    return
+  }
+
   let userWantsMove = true
   let userWantsDeleteEmpty = true
-  if ((combined || '') !== originalBase) {
+  if (basePathChanged) {
     const choice = await askMoveConfirmation(originalBase || '', combined || '')
     if (!choice || !choice.proceed) return
     userWantsMove = Boolean(choice.moveFiles)
@@ -1692,8 +1751,11 @@ async function handleSave() {
       updates.runtime = parsedRuntime
     }
 
-    // If user changed destination/base path, include the combined root+relative value in updates
-    if ((combined || '') !== (audiobook.basePath || '')) {
+    const shouldPersistBasePathImmediately = basePathChanged && !userWantsMove
+
+    // Physical moves are committed by the move worker after the filesystem operation succeeds.
+    // Pre-saving BasePath here can leave the library pointing at the destination when enqueue fails.
+    if (shouldPersistBasePathImmediately) {
       ;(updates as Partial<Audiobook>).basePath = combined ?? undefined
     }
 
@@ -1740,7 +1802,7 @@ async function handleSave() {
         JSON.stringify([...(audiobook.tags || [])].sort()) ||
       formData.value.abridged !== Boolean(audiobook.abridged) ||
       formData.value.explicit !== Boolean(audiobook.explicit) ||
-      (combined || '') !== (audiobook.basePath || '')
+      shouldPersistBasePathImmediately
 
     if (hasNonIdentifierChanges) {
       await apiService.updateAudiobook(audiobook.id, updates)
@@ -1755,7 +1817,7 @@ async function handleSave() {
     }
 
     // If base path changed, either update DB without moving or enqueue server-side move and show progress via SignalR
-    if ((combined || '') !== (audiobook.basePath || '')) {
+    if (basePathChanged) {
       if (!userWantsMove) {
         // User requested a DB-only change
         toast.info('Destination updated', 'Destination changed without moving files.')
@@ -1805,6 +1867,7 @@ async function handleSave() {
         } catch (moveErr) {
           console.error('Failed to enqueue move job:', moveErr)
           toast.error('Move failed', 'Failed to enqueue move job. Please try again.')
+          return
         }
       }
     }
@@ -2023,17 +2086,27 @@ function close() {
 <style scoped>
 /* Modal layout is provided by shared `modals.css` - keep component-specific scrollbars and spacing tweaks */
 
-.path-length-warning {
+.path-length-warning,
+.path-validation-error {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-top: 6px;
   padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+.path-length-warning {
   background: rgba(255, 152, 0, 0.12);
   border: 1px solid rgba(255, 152, 0, 0.3);
-  border-radius: 6px;
   color: #ffb74d;
-  font-size: 0.82rem;
+}
+
+.path-validation-error {
+  background: rgba(244, 67, 54, 0.12);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  color: #ef9a9a;
 }
 
 /* Use global modal body padding variants instead of redefining .modal-body here */

@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Common;
 using Listenarr.Domain.Common;
 using Microsoft.AspNetCore.Mvc;
 
@@ -204,10 +205,26 @@ namespace Listenarr.Api.Features.Library
 
                 return new AcceptedResult(string.Empty, new { message = "Move enqueued", jobId });
             }
+            catch (PersistenceException ex)
+            {
+                _logger.LogError(ex, "Move queue persistence failed while enqueueing move job for audiobook {AudiobookId}", id);
+                return new ObjectResult(new
+                {
+                    message = "Move queue persistence is unavailable. Check database migrations.",
+                    code = "move_queue_persistence_unavailable"
+                })
+                {
+                    StatusCode = StatusCodes.Status500InternalServerError
+                };
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Failed to enqueue move job for audiobook {AudiobookId}", id);
-                return new ObjectResult(new { message = "Failed to enqueue move job", error = ex.Message })
+                return new ObjectResult(new
+                {
+                    message = "Failed to enqueue move job",
+                    code = "move_enqueue_failed"
+                })
                 {
                     StatusCode = StatusCodes.Status500InternalServerError
                 };

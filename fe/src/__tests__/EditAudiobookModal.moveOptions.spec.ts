@@ -86,6 +86,10 @@ describe('EditAudiobookModal move options', () => {
 
     const { apiService } = await import('@/services/api')
     expect(apiService.updateAudiobook).toHaveBeenCalledTimes(1)
+    expect(apiService.updateAudiobook).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ basePath: 'C:/root/New Author/New Book' }),
+    )
     expect(apiService.moveAudiobook).toHaveBeenCalledTimes(0)
   })
 
@@ -117,12 +121,169 @@ describe('EditAudiobookModal move options', () => {
 
     const { apiService } = await import('@/services/api')
     expect(apiService.updateAudiobook).toHaveBeenCalledTimes(1)
-    expect(apiService.moveAudiobook).toHaveBeenCalledTimes(1)
-    expect(apiService.moveAudiobook).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      expect.objectContaining({ moveFiles: true, deleteEmptySource: true }),
+    expect(apiService.updateAudiobook).toHaveBeenCalledWith(
+      1,
+      expect.not.objectContaining({ basePath: expect.anything() }),
     )
+    expect(apiService.moveAudiobook).toHaveBeenCalledTimes(1)
+    expect(apiService.moveAudiobook).toHaveBeenCalledWith(1, 'C:/root/New Author/New Book', {
+      sourcePath: 'C:\\root\\Some Author\\Some Title',
+      moveFiles: true,
+      deleteEmptySource: true,
+    })
+  })
+
+  it('Destination with parent traversal should be invalid and not call save APIs', async () => {
+    const wrapper = mount(EditAudiobookModal, {
+      props: { isOpen: true, audiobook },
+      attachTo: document.body,
+      global: { plugins: [(await import('pinia')).createPinia()] },
+    })
+
+    await new Promise((r) => setTimeout(r, 200))
+    ;(wrapper.vm as unknown).selectedRootId = 0
+    ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\Some Author\\Some Title\\..'
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Path traversal is not allowed in the destination folder')
+    expect(
+      wrapper.find('button[aria-label="Save destination"]').attributes('disabled'),
+    ).toBeDefined()
+
+    await (wrapper.vm as unknown).handleSave()
+    await new Promise((r) => setTimeout(r, 50))
+
+    const { apiService } = await import('@/services/api')
+    expect(apiService.updateAudiobook).toHaveBeenCalledTimes(0)
+    expect(apiService.moveAudiobook).toHaveBeenCalledTimes(0)
+  })
+
+  it('Destination segment with trailing whitespace should be invalid and not call save APIs', async () => {
+    const wrapper = mount(EditAudiobookModal, {
+      props: { isOpen: true, audiobook },
+      attachTo: document.body,
+      global: { plugins: [(await import('pinia')).createPinia()] },
+    })
+
+    await new Promise((r) => setTimeout(r, 200))
+    ;(wrapper.vm as unknown).selectedRootId = 0
+    ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\Some Author\\Some Title\\test '
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain(
+      'Windows destination folder segments cannot end with a space or period',
+    )
+    expect(
+      wrapper.find('button[aria-label="Save destination"]').attributes('disabled'),
+    ).toBeDefined()
+
+    await (wrapper.vm as unknown).handleSave()
+    await new Promise((r) => setTimeout(r, 50))
+
+    const { apiService } = await import('@/services/api')
+    expect(apiService.updateAudiobook).toHaveBeenCalledTimes(0)
+    expect(apiService.moveAudiobook).toHaveBeenCalledTimes(0)
+  })
+
+  it('Destination inside current source should be allowed as a content move', async () => {
+    const wrapper = mount(EditAudiobookModal, {
+      props: { isOpen: true, audiobook },
+      attachTo: document.body,
+      global: { plugins: [(await import('pinia')).createPinia()] },
+    })
+
+    await new Promise((r) => setTimeout(r, 200))
+    ;(wrapper.vm as unknown).selectedRootId = 0
+    ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\Some Author\\Some Title\\ test'
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('Source and destination folders cannot overlap')
+    expect(
+      wrapper.find('button[aria-label="Save destination"]').attributes('disabled'),
+    ).toBeUndefined()
+
+    const savePromise = (wrapper.vm as unknown).handleSave()
+    await new Promise((r) => setTimeout(r, 10))
+    const resolver = (wrapper.vm as unknown).moveConfirmResolver
+    if (resolver) resolver({ proceed: true, moveFiles: true, deleteEmptySource: true })
+    await savePromise
+    await new Promise((r) => setTimeout(r, 50))
+
+    const { apiService } = await import('@/services/api')
+    expect(apiService.updateAudiobook).toHaveBeenCalledTimes(0)
+    expect(apiService.moveAudiobook).toHaveBeenCalledWith(
+      1,
+      'C:/root/Some Author/Some Title/ test',
+      {
+        sourcePath: 'C:\\root\\Some Author\\Some Title',
+        moveFiles: true,
+        deleteEmptySource: true,
+      },
+    )
+  })
+
+  it('Windows destination segment with leading whitespace outside source should be allowed', async () => {
+    const wrapper = mount(EditAudiobookModal, {
+      props: { isOpen: true, audiobook },
+      attachTo: document.body,
+      global: { plugins: [(await import('pinia')).createPinia()] },
+    })
+
+    await new Promise((r) => setTimeout(r, 200))
+    ;(wrapper.vm as unknown).selectedRootId = 0
+    ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\Some Author\\Other Title\\ test'
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('Windows destination folder segments cannot end')
+    expect(
+      wrapper.find('button[aria-label="Save destination"]').attributes('disabled'),
+    ).toBeUndefined()
+
+    const savePromise = (wrapper.vm as unknown).handleSave()
+    await new Promise((r) => setTimeout(r, 10))
+    const resolver = (wrapper.vm as unknown).moveConfirmResolver
+    if (resolver) resolver({ proceed: true, moveFiles: true, deleteEmptySource: true })
+    await savePromise
+    await new Promise((r) => setTimeout(r, 50))
+
+    const { apiService } = await import('@/services/api')
+    expect(apiService.moveAudiobook).toHaveBeenCalledWith(
+      1,
+      'C:/root/Some Author/Other Title/ test',
+      {
+        sourcePath: 'C:\\root\\Some Author\\Some Title',
+        moveFiles: true,
+        deleteEmptySource: true,
+      },
+    )
+  })
+
+  it('Move-only destination changes should enqueue move without pre-saving BasePath', async () => {
+    const wrapper = mount(EditAudiobookModal, {
+      props: { isOpen: true, audiobook },
+      attachTo: document.body,
+      global: { plugins: [(await import('pinia')).createPinia()] },
+    })
+
+    await new Promise((r) => setTimeout(r, 200))
+    ;(wrapper.vm as unknown).selectedRootId = 0
+    ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\New Author\\New Book'
+    await wrapper.vm.$nextTick()
+
+    const savePromise = (wrapper.vm as unknown).handleSave()
+    await new Promise((r) => setTimeout(r, 10))
+    const resolver = (wrapper.vm as unknown).moveConfirmResolver
+    if (resolver) resolver({ proceed: true, moveFiles: true, deleteEmptySource: true })
+    await savePromise
+    await new Promise((r) => setTimeout(r, 50))
+
+    const { apiService } = await import('@/services/api')
+    expect(apiService.updateAudiobook).toHaveBeenCalledTimes(0)
+    expect(apiService.moveAudiobook).toHaveBeenCalledWith(1, 'C:/root/New Author/New Book', {
+      sourcePath: 'C:\\root\\Some Author\\Some Title',
+      moveFiles: true,
+      deleteEmptySource: true,
+    })
   })
 
   it('Edition-only changes should persist through updateAudiobook', async () => {

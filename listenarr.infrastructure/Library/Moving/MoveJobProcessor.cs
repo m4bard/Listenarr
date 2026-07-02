@@ -16,16 +16,16 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Mapping;
-using Listenarr.Domain.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 namespace Listenarr.Infrastructure.Library.Moving
 {
-    public class MoveJobProcessor(
+    internal class MoveJobProcessor(
         IMoveQueueService moveQueueService,
         IToastService toastService,
         IScanQueueService scanQueueService,
         ILogger<MoveJobProcessor> logger,
+        AudiobookContentMoveService contentMoveService,
         IServiceScopeFactory scopeFactory,
         IHubContext<DownloadHub> hubContext,
         IAppMetricsService metrics) : IMoveJobProcessor
@@ -107,165 +107,13 @@ namespace Listenarr.Infrastructure.Library.Moving
                     return;
                 }
 
-                if (FileUtils.IsPathInsideOf(target, source) || FileUtils.IsPathInsideOf(source, target))
-                {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", "Source and target paths overlap", stoppingToken);
-                    metrics.Increment("worker.move.job.failed");
-                    logger.LogWarning(
-                        "Blocked overlapping move job {JobId}: {Source} -> {Target}",
-                        job.Id,
-                        LogRedaction.SanitizeFilePath(source),
-                        LogRedaction.SanitizeFilePath(target));
-                    return;
-                }
-
-                // Ensure target parent exists
-                var targetParent = Path.GetDirectoryName(target);
-                if (string.IsNullOrEmpty(targetParent))
-                {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", "Invalid target path", stoppingToken);
-                    metrics.Increment("worker.move.job.failed");
-                    return;
-                }
-
-                if (!Directory.Exists(targetParent)) Directory.CreateDirectory(targetParent);
-
-                // Check if target exists and has content - only fail if it has files/folders we'd overwrite
-                if (Directory.Exists(target))
-                {
-                    var targetHasContent = Directory.EnumerateFileSystemEntries(target).Any();
-                    if (targetHasContent)
-                    {
-                        await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", "Target directory already exists and contains files", stoppingToken);
-                        metrics.Increment("worker.move.job.failed");
-                        return;
-                    }
-                    // Target exists but is empty - safe to proceed (will use it instead of creating new)
-                    logger.LogInformation("Target directory {Target} exists but is empty; proceeding with move", LogRedaction.SanitizeFilePath(target));
-                }
-
-                // Create a temporary directory under the target parent
-                var tempName = Path.Join(targetParent, Path.GetFileName(target) + ".tmp-" + job.Id.ToString("N"));
-                if (!FileSystemSafety.TryValidateMutationTarget(tempName, [targetParent], out tempName, out var tempReason))
-                {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", tempReason, stoppingToken);
-                    metrics.Increment("worker.move.job.failed");
-                    logger.LogWarning("Blocked move temp path for job {JobId}: {Reason}", job.Id, tempReason);
-                    return;
-                }
-
-                // Copy recursively with retries per file
                 try
                 {
-                    // Only create tempName if target doesn't exist; otherwise copy directly into existing empty target
-                    var useTemp = !Directory.Exists(target);
-                    var copyDest = useTemp ? tempName : target;
-
-                    if (useTemp) Directory.CreateDirectory(tempName);
-
-                    var entries = Directory.EnumerateFileSystemEntries(source, "*", SearchOption.AllDirectories);
-                    foreach (var entry in entries)
-                    {
-                        var rel = Path.GetRelativePath(source, entry);
-                        if (!FileUtils.TryResolveRelativePathWithinBase(copyDest, rel, out var destPath))
-                        {
-                            throw new IOException($"Move entry destination escaped target root: {rel}");
-                        }
-
-                        if (Directory.Exists(entry))
-                        {
-                            if (!Directory.Exists(destPath)) Directory.CreateDirectory(destPath);
-                            continue;
-                        }
-
-                        // Ensure dest directory exists
-                        var ddir = Path.GetDirectoryName(destPath);
-                        if (!string.IsNullOrEmpty(ddir) && !Directory.Exists(ddir)) Directory.CreateDirectory(ddir);
-
-                        // Copy file with retry/backoff and preserve timestamps/attributes on success
-                        var succeeded = false;
-                        const int maxAttempts = 5;
-                        for (int attempt = 1; attempt <= maxAttempts; attempt++)
-                        {
-                            try
-                            {
-                                if (File.Exists(destPath) && await FileSystemSafety.FilesHaveSameContentAsync(entry, destPath, stoppingToken))
-                                {
-                                    logger.LogInformation(
-                                        "Skipping copy for move job {JobId}; destination already has identical content: {Dest}",
-                                        job.Id,
-                                        LogRedaction.SanitizeFilePath(destPath));
-                                    succeeded = true;
-                                    break;
-                                }
-
-                                File.Copy(entry, destPath, false);
-
-                                // Preserve file attributes and timestamps
-                                try
-                                {
-                                    var attrs = File.GetAttributes(entry);
-                                    File.SetAttributes(destPath, attrs);
-
-                                    var lastWrite = File.GetLastWriteTimeUtc(entry);
-                                    var creation = File.GetCreationTimeUtc(entry);
-                                    File.SetLastWriteTimeUtc(destPath, lastWrite);
-                                    File.SetCreationTimeUtc(destPath, creation);
-                                }
-                                catch (Exception attrEx) when (attrEx is not OperationCanceledException && attrEx is not OutOfMemoryException && attrEx is not StackOverflowException)
-                                {
-                                    logger.LogDebug(attrEx, "Non-fatal: failed to preserve attributes for {File}", LogRedaction.SanitizeFilePath(entry));
-                                }
-
-                                succeeded = true;
-                                break;
-                            }
-                            catch (IOException ioex)
-                            {
-                                logger.LogWarning(ioex, "IO error copying file {File} attempt {Attempt}", LogRedaction.SanitizeFilePath(entry), attempt);
-
-                                // exponential backoff
-                                var delay = TimeSpan.FromSeconds(Math.Min(8, Math.Pow(2, attempt - 1)));
-                                await Task.Delay(delay, stoppingToken);
-                            }
-                        }
-
-                        if (!succeeded)
-                        {
-                            // Increment attempt count for the DB job to surface retries
-                            try
-                            {
-                                var dbJob = await moveJobRepository.GetByIdAsync(job.Id, stoppingToken);
-                                if (dbJob != null)
-                                {
-                                    dbJob.AttemptCount += 1;
-                                    await moveJobRepository.UpdateAsync(dbJob, stoppingToken);
-                                }
-                            }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                            {
-                                logger.LogWarning(ex, "Failed to increment AttemptCount for job {JobId}", job.Id);
-                            }
-
-                            throw new Exception($"Failed to copy file after {maxAttempts} attempts: {entry}");
-                        }
-                    }
-
-                    // After successful copy, finalize the move
-                    if (useTemp)
-                    {
-                        // Move temp to final target (atomic on same volume)
-                        Directory.Move(tempName, target);
-                    }
-                    // If we copied directly to target, it's already in place
-
-                    // Delete source directory
-                    if (!Directory.Exists(source) || IsFilesystemRoot(source))
-                    {
-                        throw new IOException("Source path became invalid before cleanup.");
-                    }
-
-                    Directory.Delete(source, true);
+                    var moveResult = await contentMoveService.MoveContentsAsync(
+                        new AudiobookContentMoveRequest(source, target, job.Id),
+                        stoppingToken);
+                    source = moveResult.Source;
+                    target = moveResult.Target;
 
                     await MovedAudiobookPathRewriter.RewriteAsync(
                         audiobook,
@@ -273,6 +121,9 @@ namespace Listenarr.Infrastructure.Library.Moving
                         target,
                         audiobookRepository,
                         logger);
+
+                    audiobook.BasePath = target;
+                    await audiobookRepository.UpdateAsync(audiobook);
 
                     // Add history entry and send notifications for the move
                     try
@@ -390,20 +241,6 @@ namespace Listenarr.Infrastructure.Library.Moving
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
-                    // Cleanup any temp dir
-                    try
-                    {
-                        if (Directory.Exists(tempName)
-                            && FileSystemSafety.TryValidateMutationTarget(tempName, [targetParent], out var safeTempName, out _))
-                        {
-                            Directory.Delete(safeTempName, true);
-                        }
-                    }
-                    catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
-                    {
-                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                    }
-
                     // Increment attempt count for the job on failure
                     try
                     {
@@ -482,6 +319,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 metrics.Increment("worker.move.job.failed");
             }
         }
+
 
         private static bool IsFilesystemRoot(string path)
         {
