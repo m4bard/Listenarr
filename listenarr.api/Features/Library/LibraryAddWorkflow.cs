@@ -138,13 +138,20 @@ namespace Listenarr.Api.Features.Library
 
             if (!string.IsNullOrWhiteSpace(request.DestinationPath))
             {
+                // Preserve valid Unix path-segment whitespace, but reject values that only become
+                // absolute after trimming accidental leading whitespace.
+                if (FileUtils.HasLeadingWhitespaceBeforeRootedPath(request.DestinationPath))
+                {
+                    return new BadRequestObjectResult(new { message = "DestinationPath is invalid: leading whitespace before an absolute path is not allowed." });
+                }
+
                 if (!FileUtils.TryNormalizeUserProvidedDirectoryPathForCurrentOs(
                     request.DestinationPath,
                     out var normalizedDestinationPath,
                     out var validationReason,
                     rejectParentTraversal: true))
                 {
-                    return new BadRequestObjectResult(new { message = $"DestinationPath is not valid for this operating system: {validationReason}" });
+                    return new BadRequestObjectResult(new { message = $"DestinationPath is invalid: {validationReason}" });
                 }
 
                 audiobook.BasePath = normalizedDestinationPath;

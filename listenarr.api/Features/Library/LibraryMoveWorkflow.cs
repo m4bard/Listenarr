@@ -55,6 +55,14 @@ namespace Listenarr.Api.Features.Library
                 return new BadRequestObjectResult(new { message = "DestinationPath is required" });
             }
 
+            // Preserve valid Unix path-segment whitespace, but reject values that only become
+            // absolute after trimming accidental leading whitespace. Otherwise move would treat
+            // " /books/Title" as a relative child folder under the configured destination root.
+            if (FileUtils.HasLeadingWhitespaceBeforeRootedPath(request.DestinationPath))
+            {
+                return new BadRequestObjectResult(new { message = "DestinationPath is invalid: leading whitespace before an absolute path is not allowed." });
+            }
+
             try
             {
                 using var scope = _scopeFactory.CreateScope();
@@ -104,7 +112,7 @@ namespace Listenarr.Api.Features.Library
                     out var validationReason,
                     rejectParentTraversal: true))
                 {
-                    return new BadRequestObjectResult(new { message = $"DestinationPath is not valid for this operating system: {validationReason}" });
+                    return new BadRequestObjectResult(new { message = $"DestinationPath is invalid: {validationReason}" });
                 }
                 if (!_fileSystem.TryValidateMutationTarget(final, allowedMoveRoots, out final, out var finalReason))
                 {
@@ -174,7 +182,10 @@ namespace Listenarr.Api.Features.Library
                 {
                     var srcFull = Path.GetFullPath(sourcePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                     var tgtFull = Path.GetFullPath(final).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                    if (string.Equals(srcFull, tgtFull, StringComparison.OrdinalIgnoreCase))
+                    var pathComparison = OperatingSystem.IsWindows()
+                        ? StringComparison.OrdinalIgnoreCase
+                        : StringComparison.Ordinal;
+                    if (string.Equals(srcFull, tgtFull, pathComparison))
                     {
                         return new BadRequestObjectResult(new { message = "Source and target paths are identical; nothing to move." });
                     }

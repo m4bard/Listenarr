@@ -153,13 +153,20 @@ namespace Listenarr.Application.Audiobooks.Catalog
             var requestedBaseDirectory = request.DestinationPath;
             if (!string.IsNullOrWhiteSpace(requestedBaseDirectory))
             {
+                // Preserve valid Unix path-segment whitespace, but reject values that only become
+                // absolute after trimming accidental leading whitespace.
+                if (FileUtils.HasLeadingWhitespaceBeforeRootedPath(requestedBaseDirectory))
+                {
+                    return ValidationFailure("DestinationPath is invalid: leading whitespace before an absolute path is not allowed.");
+                }
+
                 if (!FileUtils.TryNormalizeUserProvidedDirectoryPathForCurrentOs(
                     requestedBaseDirectory,
                     out var normalizedRequestedBaseDirectory,
                     out var validationReason,
                     rejectParentTraversal: true))
                 {
-                    return ValidationFailure($"DestinationPath is not valid for this operating system: {validationReason}");
+                    return ValidationFailure($"DestinationPath is invalid: {validationReason}");
                 }
 
                 audiobook.BasePath = normalizedRequestedBaseDirectory;
@@ -178,7 +185,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     out var validationReason,
                     rejectParentTraversal: true))
                 {
-                    return ValidationFailure($"Generated library destination is not valid for this operating system: {validationReason}");
+                    return ValidationFailure($"Generated library destination is invalid: {validationReason}");
                 }
 
                 audiobook.BasePath = normalizedGeneratedBasePath;

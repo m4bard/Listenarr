@@ -217,6 +217,23 @@ namespace Listenarr.Domain.Common
             }
         }
 
+        /// <summary>
+        /// Detects values that visually look like absolute paths after accidental leading whitespace.
+        /// Do not trim user-provided paths before validation because Unix path-segment whitespace is valid.
+        /// </summary>
+        public static bool HasLeadingWhitespaceBeforeRootedPath(string? path)
+        {
+            if (string.IsNullOrEmpty(path) || !char.IsWhiteSpace(path[0]))
+            {
+                return false;
+            }
+
+            var trimmedStart = path.TrimStart();
+            return Path.IsPathRooted(trimmedStart)
+                || IsWindowsCurrentDriveRoot(trimmedStart)
+                || GetWindowsRootLength(trimmedStart) > 0;
+        }
+
         private static bool IsWindowsCurrentDriveRoot(string path)
         {
             return path.Length == 1 && (path[0] is '\\' or '/');

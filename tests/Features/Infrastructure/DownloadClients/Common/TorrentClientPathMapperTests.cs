@@ -81,6 +81,40 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Common
         }
 
         [Fact]
+        public void BuildQbittorrentSourceFiles_PreservesCaseDistinctSourceFiles()
+        {
+            var savePath = FileUtils.GetAbsolutePath("downloads");
+            var files = ParseFiles(
+                """
+                [
+                  { "name": "Book/chapter.m4b" },
+                  { "name": "Book/Chapter.m4b" }
+                ]
+                """);
+
+            var sourceFiles = TorrentClientPathMapper.BuildQbittorrentSourceFiles(savePath, files);
+
+            Assert.Equal(
+                [
+                    Path.Join(savePath, "Book", "chapter.m4b"),
+                    Path.Join(savePath, "Book", "Chapter.m4b")
+                ],
+                sourceFiles);
+        }
+
+        [Fact]
+        public void TranslateSourceFiles_PreservesCaseDistinctSourceFiles()
+        {
+            var savePath = FileUtils.GetAbsolutePath("downloads");
+            var lower = Path.Join(savePath, "Book", "chapter.m4b");
+            var upper = Path.Join(savePath, "Book", "Chapter.m4b");
+
+            var sourceFiles = QbittorrentImportPathResolver.TranslateSourceFiles([lower, upper]);
+
+            Assert.Equal([lower, upper], sourceFiles);
+        }
+
+        [Fact]
         public void ResolveQbittorrentContentPath_PreservesSharedTopLevelFolderWhitespace()
         {
             var savePath = FileUtils.GetAbsolutePath("downloads");

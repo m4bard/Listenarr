@@ -32,7 +32,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
         {
             return sourceFiles
                 .Where(path => !string.IsNullOrEmpty(path))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Distinct(StringComparer.Ordinal)
                 .ToList();
         }
 

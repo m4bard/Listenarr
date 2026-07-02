@@ -299,7 +299,11 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [InlineData("  folder", false)]
         [InlineData(@"C:\Program Files\Listenarr", false)]
         [InlineData(@"C:\media\folder \book.m4b", true)]
-        public void IsPathInvalidForOs_UsesWindowsWhitespaceRules(string path, bool expected)
+        [InlineData(@"C:\Books\NUL", true)]
+        [InlineData(@"C:\Books\COM1.txt", true)]
+        [InlineData(@"C:\Books\Bad|Name", true)]
+        [InlineData(@"C:\Books\..\Other", false)]
+        public void IsPathInvalidForOs_UsesSharedWindowsSegmentRules(string path, bool expected)
         {
             Assert.Equal(expected, FileUtils.IsPathInvalidForOs(path, isWindows: true));
         }
@@ -311,6 +315,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [InlineData("folder name", false)]
         [InlineData("  folder", false)]
         [InlineData("/media/folder /book.m4b", false)]
+        [InlineData("/media/NUL", false)]
         public void IsPathInvalidForOs_AllowsLinuxWhitespacePaths(string path, bool expected)
         {
             Assert.Equal(expected, FileUtils.IsPathInvalidForOs(path, isWindows: false));
@@ -735,6 +740,19 @@ namespace Listenarr.Tests.Features.Domain.Utils
         public void ContainsParentDirectorySegment_WithUnixSeparator_DoesNotTreatBackslashAsSeparator()
         {
             Assert.False(FileUtils.ContainsParentDirectorySegment("Book\\..\\Title", '/'));
+        }
+
+        [Theory]
+        [InlineData(" /media/Author", true)]
+        [InlineData("   /media/Author", true)]
+        [InlineData(@" C:\Books\Author", true)]
+        [InlineData(@" \\server\share\Books", true)]
+        [InlineData("  Relative Folder", false)]
+        [InlineData("/media/Author ", false)]
+        [InlineData("/media/ Author", false)]
+        public void HasLeadingWhitespaceBeforeRootedPath_DetectsOnlyAmbiguousRootedInputs(string path, bool expected)
+        {
+            Assert.Equal(expected, FileUtils.HasLeadingWhitespaceBeforeRootedPath(path));
         }
 
         [Fact]

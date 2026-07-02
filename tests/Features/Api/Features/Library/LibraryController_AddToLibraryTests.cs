@@ -282,6 +282,52 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
+        public async Task AddToLibrary_RejectsCustomPathWithLeadingWhitespaceBeforeAbsolutePath()
+        {
+            var controller = _provider.GetRequiredService<LibraryController>();
+            var customPath = " " + Path.Join(tempRoot, "custom", "audiobooks", "Author", "Title");
+            var request = new LibraryController.AddToLibraryRequest
+            {
+                Metadata = new AudibleBookMetadata
+                {
+                    Title = "Leading Space Path Test",
+                    Author = "Custom Author"
+                },
+                Monitored = true,
+                DestinationPath = customPath
+            };
+
+            var actionResult = await controller.AddToLibrary(request);
+
+            var badRequest = Assert.IsType<BadRequestObjectResult>(actionResult);
+            Assert.Contains("leading whitespace", badRequest.Value.ToString(), StringComparison.OrdinalIgnoreCase);
+            Assert.Empty(await _audiobookRepository.GetAllAsync());
+        }
+
+        [Fact]
+        public async Task LibraryAddService_RejectsDestinationPathWithLeadingWhitespaceBeforeAbsolutePath()
+        {
+            var service = _provider.GetRequiredService<ILibraryAddService>();
+            var customPath = " " + Path.Join(tempRoot, "custom", "audiobooks", "Author", "Title");
+            var request = new LibraryAddOperationRequest
+            {
+                Metadata = new AudibleBookMetadata
+                {
+                    Title = "Leading Space Service Path Test",
+                    Author = "Custom Author"
+                },
+                Monitored = true,
+                DestinationPath = customPath
+            };
+
+            var result = await service.AddToLibraryAsync(request);
+
+            Assert.True(result.ValidationFailed);
+            Assert.Contains("leading whitespace", result.ValidationMessage, StringComparison.OrdinalIgnoreCase);
+            Assert.Empty(await _audiobookRepository.GetAllAsync());
+        }
+
+        [Fact]
         public async Task AddToLibrary_RejectsCustomPathParentTraversal()
         {
             var controller = _provider.GetRequiredService<LibraryController>();

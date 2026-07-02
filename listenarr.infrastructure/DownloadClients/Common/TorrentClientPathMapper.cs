@@ -40,7 +40,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
                 .Where(name => !string.IsNullOrEmpty(name))
                 .Select(name => CombineClientReportedPath(savePath, name.Replace('/', Path.DirectorySeparatorChar)))
                 .Where(path => !string.IsNullOrEmpty(path))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Distinct(StringComparer.Ordinal)
                 .ToList();
         }
 

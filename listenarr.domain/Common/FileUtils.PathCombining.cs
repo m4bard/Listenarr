@@ -196,33 +196,6 @@ namespace Listenarr.Domain.Common
             return fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
-        private static bool HasInvalidWindowsPathWhitespace(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return true;
-            }
-
-            var root = Path.GetPathRoot(path);
-            var pathWithoutRoot = !string.IsNullOrEmpty(root) && path.StartsWith(root, StringComparison.OrdinalIgnoreCase)
-                ? path[root.Length..]
-                : path;
-
-            return pathWithoutRoot
-                .Split(new[] { '\\', '/' }, StringSplitOptions.None)
-                .Any(IsInvalidWindowsPathSegmentWhitespace);
-        }
-
-        private static bool IsInvalidWindowsPathSegmentWhitespace(string segment)
-        {
-            if (string.IsNullOrEmpty(segment) || segment == "." || segment == "..")
-            {
-                return false;
-            }
-
-            return segment.EndsWith(' ') || segment.EndsWith('.');
-        }
-
         /// <summary>
         /// Create a filesystem-safe name from arbitrary text by removing invalid path characters
         /// and normalizing whitespace. Keeps it conservative to avoid unexpected folder creation.

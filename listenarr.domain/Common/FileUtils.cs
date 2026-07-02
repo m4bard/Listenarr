@@ -63,12 +63,17 @@ namespace Listenarr.Domain.Common
 
         public static bool IsPathInvalidForOs(string? path, bool isWindows)
         {
-            if (string.IsNullOrEmpty(path))
+            if (string.IsNullOrEmpty(path) || !isWindows)
             {
                 return false;
             }
 
-            return isWindows && HasInvalidWindowsPathWhitespace(path);
+            var rootLength = GetWindowsRootLength(path);
+            var pathWithoutRoot = rootLength > 0 ? path[rootLength..] : path;
+            return !ValidateWindowsDirectorySegments(
+                pathWithoutRoot,
+                rejectParentTraversal: false,
+                out _);
         }
 
         public static HashSet<string> NormalizeExtensions(IEnumerable<string>? extensions)

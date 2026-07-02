@@ -322,6 +322,76 @@ namespace Listenarr.Tests.Features.Api.Features.Library
 
         [Fact]
         [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "RejectsDestinationPathWithLeadingWhitespaceBeforeAbsolutePath")]
+        public async Task MoveAudiobook_RejectsDestinationPathWithLeadingWhitespaceBeforeAbsolutePath()
+        {
+            var outputPath = FileService.GetTempDirectory("listenarr-move-output");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(outputPath)
+                .Build());
+
+            var sourcePath = FileService.GetTempDirectory("listenarr-move-src");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(sourcePath)
+                .Build());
+
+            var controller = _provider.GetRequiredService<LibraryController>();
+            var request = new LibraryController.MoveRequest
+            {
+                DestinationPath = " " + Path.Join(outputPath, "target"),
+                MoveFiles = false
+            };
+
+            var result = await controller.EnqueueMove(audiobook.Id, request);
+
+            var badObj = Assert.IsAssignableFrom<ObjectResult>(result);
+            Assert.Equal(400, badObj.StatusCode);
+            Assert.Contains("leading whitespace", badObj.Value?.ToString() ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "AllowsCaseOnlyDestinationDifference_OnCaseSensitiveHosts")]
+        public async Task MoveAudiobook_AllowsCaseOnlyDestinationDifference_OnCaseSensitiveHosts()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            var mockMoveQueue = new Mock<IMoveQueueService>();
+            var expectedId = Guid.NewGuid();
+            mockMoveQueue.Setup(m => m.EnqueueMoveAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(expectedId);
+
+            Init(services => services.WithSingleton(mockMoveQueue.Object));
+            var controller = _provider.GetRequiredService<LibraryController>();
+
+            var outputPath = FileService.GetTempDirectory("listenarr-move-output");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(outputPath)
+                .Build());
+
+            var sourcePath = Path.Join(outputPath, "CaseOnlyBook");
+            Directory.CreateDirectory(sourcePath);
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(sourcePath)
+                .Build());
+
+            var targetPath = Path.Join(outputPath, "caseonlybook");
+            var request = new LibraryController.MoveRequest { DestinationPath = targetPath };
+
+            var result = await controller.EnqueueMove(audiobook.Id, request);
+
+            var acceptedObj = Assert.IsAssignableFrom<ObjectResult>(result);
+            Assert.Equal(202, acceptedObj.StatusCode);
+            mockMoveQueue.Verify(m => m.EnqueueMoveAsync(audiobook.Id, FileUtils.NormalizeStoredPath(targetPath), sourcePath), Times.Once);
+        }
+
+        [Fact]
+        [Trait("Method", "EnqueueMove")]
         [Trait("Scenario", "RejectsRelativeDestinationOutsideOutputPath")]
         public async Task MoveAudiobook_RejectsRelativeDestinationOutsideOutputPath()
         {
