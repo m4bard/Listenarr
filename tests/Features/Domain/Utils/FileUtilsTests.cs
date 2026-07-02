@@ -560,7 +560,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void TryNormalizeUserProvidedDirectoryPathForOs_AllowsWindowsRootWhenExplicitlyRequested()
         {
-            var separator = "\\";
+            var separator = @"\";
             var driveRoot = "C:" + separator;
             var uncRoot = separator + separator + "server" + separator + "share";
             var currentDriveRoot = separator;
@@ -605,7 +605,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void TryNormalizeUserProvidedDirectoryPathForOs_RejectsWindowsRootByDefault()
         {
-            var separator = "\\";
+            var separator = @"\";
 
             Assert.False(FileUtils.TryNormalizeUserProvidedDirectoryPathForOs(
                 separator,
@@ -625,7 +625,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void TryNormalizeUserProvidedDirectoryPathForOs_RejectsParentTraversalForDestinations()
         {
-            var separator = "\\";
+            var separator = @"\";
             var windowsTraversal = "C:" + separator + "Books" + separator + ".." + separator + "Other";
 
             Assert.False(FileUtils.TryNormalizeUserProvidedDirectoryPathForOs(
@@ -648,7 +648,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void TryNormalizeUserProvidedDirectoryPathForOs_RejectsRootFolderParentTraversal()
         {
-            var separator = "\\";
+            var separator = @"\";
             var parentSegment = new string('.', 2);
             var windowsTraversal = "C:" + separator + "Books" + separator + parentSegment + separator + "Other";
 
@@ -675,7 +675,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void TryNormalizeUserProvidedDirectoryPathForOs_AllowsRootsWhenExplicitlyRequestedAndTraversalRejected()
         {
-            var separator = "\\";
+            var separator = @"\";
             var driveRoot = "C:" + separator;
             var uncRoot = separator + separator + "server" + separator + "share";
 

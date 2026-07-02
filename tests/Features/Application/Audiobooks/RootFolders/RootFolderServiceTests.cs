@@ -83,7 +83,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
             var dbFactory = new TestDbFactory(options);
             var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
             var svc = new RootFolderService(repo, null!);
-            var currentDriveRoot = "\\";
+            var currentDriveRoot = @"\";
 
             var created = await svc.CreateAsync(new RootFolder { Name = "Current Drive Root", Path = currentDriveRoot });
 
