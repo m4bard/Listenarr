@@ -62,20 +62,6 @@ public static class InfrastructureStartupCompositionExtensions
             var factory = migrateScope.ServiceProvider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
             using var ctx = factory.CreateDbContext();
             ctx.Database.Migrate();
-            if (MoveJobSchemaRepair.EnsureSourcePathColumn(ctx))
-            {
-                Log.Logger.Warning(
-                    "[Startup] Repaired SQLite schema drift by adding missing MoveJobs.SourcePath column");
-            }
-
-            var missingMoveJobColumns = MoveJobSchemaRepair.GetMissingMoveJobColumns(ctx);
-            if (missingMoveJobColumns.Count > 0)
-            {
-                Log.Logger.Error(
-                    "[Startup] MoveJobs schema is missing required column(s): {MissingColumns}",
-                    string.Join(", ", missingMoveJobColumns));
-            }
-
             Log.Logger.Information("[Startup] EF Core migrations applied successfully");
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
