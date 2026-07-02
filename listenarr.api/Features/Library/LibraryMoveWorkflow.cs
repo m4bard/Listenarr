@@ -59,10 +59,45 @@ namespace Listenarr.Api.Features.Library
             {
                 using var scope = _scopeFactory.CreateScope();
                 var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
+                var rootFolderService = scope.ServiceProvider.GetRequiredService<IRootFolderService>();
                 var settings = await configService.GetApplicationSettingsAsync();
+                var rootFolders = await rootFolderService.GetAllAsync();
+
+                var allowedMoveRoots = new List<string>();
+                var normalizedOutputPath = TryNormalizeMoveRoot(settings.OutputPath, "configured output path");
+                AddAllowedMoveRoot(allowedMoveRoots, normalizedOutputPath);
+
+                string? defaultRootPath = null;
+                foreach (var rootFolder in rootFolders)
+                {
+                    var normalizedRootPath = TryNormalizeMoveRoot(rootFolder.Path, $"root folder {rootFolder.Id}");
+                    if (normalizedRootPath == null)
+                    {
+                        continue;
+                    }
+
+                    AddAllowedMoveRoot(allowedMoveRoots, normalizedRootPath);
+                    if (rootFolder.IsDefault && defaultRootPath == null)
+                    {
+                        defaultRootPath = normalizedRootPath;
+                    }
+                }
+
+                if (allowedMoveRoots.Count == 0)
+                {
+                    return new BadRequestObjectResult(new { message = "DestinationPath must be inside a configured root folder or output path" });
+                }
 
                 var destinationIsRooted = Path.IsPathRooted(request.DestinationPath!);
-                var destinationCandidate = FileUtils.CombineWithOptionalBase(settings.OutputPath, request.DestinationPath!);
+                var relativeMoveBase = normalizedOutputPath ?? defaultRootPath ?? allowedMoveRoots.FirstOrDefault();
+                if (!destinationIsRooted && string.IsNullOrEmpty(relativeMoveBase))
+                {
+                    return new BadRequestObjectResult(new { message = "DestinationPath requires a configured root folder or output path" });
+                }
+
+                var destinationCandidate = destinationIsRooted
+                    ? request.DestinationPath!
+                    : FileUtils.CombineWithOptionalBase(relativeMoveBase, request.DestinationPath!);
                 if (!FileUtils.TryNormalizeUserProvidedDirectoryPathForCurrentOs(
                     destinationCandidate,
                     out var final,
@@ -71,16 +106,14 @@ namespace Listenarr.Api.Features.Library
                 {
                     return new BadRequestObjectResult(new { message = $"DestinationPath is not valid for this operating system: {validationReason}" });
                 }
-                if (!destinationIsRooted
-                    && !string.IsNullOrWhiteSpace(settings.OutputPath)
-                    && !_fileSystem.TryValidateMutationTarget(final, [settings.OutputPath], out final, out var finalReason))
+                if (!_fileSystem.TryValidateMutationTarget(final, allowedMoveRoots, out final, out var finalReason))
                 {
                     _logger.LogWarning(
                         "Blocked move destination for audiobook {AudiobookId}: {Destination}. Reason: {Reason}",
                         id,
                         final,
                         finalReason);
-                    return new BadRequestObjectResult(new { message = "DestinationPath must be inside the configured output path" });
+                    return new BadRequestObjectResult(new { message = "DestinationPath must be inside a configured root folder or output path" });
                 }
 
                 if (request.MoveFiles == false)
@@ -199,6 +232,48 @@ namespace Listenarr.Api.Features.Library
 
             await BroadcastQueuedAsync(newJobId.Value, audiobookId: null);
             return new AcceptedResult(string.Empty, new { message = "Requeued move job", jobId = newJobId });
+        }
+
+        private string? TryNormalizeMoveRoot(string? path, string description)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            if (FileUtils.TryNormalizeUserProvidedDirectoryPathForCurrentOs(
+                path,
+                out var normalizedPath,
+                out var validationReason,
+                allowFileSystemRoot: true,
+                rejectParentTraversal: true))
+            {
+                return normalizedPath;
+            }
+
+            _logger.LogWarning(
+                "Skipping invalid move boundary from {Description}: {Reason}",
+                description,
+                validationReason);
+            return null;
+        }
+
+        private static void AddAllowedMoveRoot(List<string> allowedRoots, string? normalizedRoot)
+        {
+            if (string.IsNullOrEmpty(normalizedRoot))
+            {
+                return;
+            }
+
+            var comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (allowedRoots.Any(root => string.Equals(root, normalizedRoot, comparison)))
+            {
+                return;
+            }
+
+            allowedRoots.Add(normalizedRoot);
         }
 
         private async Task BroadcastQueuedAsync(Guid jobId, int? audiobookId)

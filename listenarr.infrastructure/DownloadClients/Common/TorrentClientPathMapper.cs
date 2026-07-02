@@ -87,7 +87,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
             var fileNames = files
                 .Select(f => f.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty)
                 .Where(name => !string.IsNullOrEmpty(name))
-                .Where(name => !ContainsParentDirectorySegment(name))
+                .Where(name => !FileUtils.ContainsParentDirectorySegment(name, '/', '\\'))
                 .ToList();
 
             if (fileNames.Count == 0)
@@ -143,18 +143,12 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
                     .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             }
 
-            if (ContainsParentDirectorySegment(relativePath))
+            if (FileUtils.ContainsParentDirectorySegment(relativePath, '/', '\\'))
             {
                 return string.Empty;
             }
 
             return FileUtils.CombineWithOptionalBase(basePath, relativePath);
-        }
-
-        private static bool ContainsParentDirectorySegment(string path)
-        {
-            return path.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries)
-                .Any(segment => segment.Length == 2 && segment[0] == '.' && segment[1] == '.');
         }
 
         private static bool HasDriveRootedPrefix(string path)

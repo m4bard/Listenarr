@@ -300,8 +300,13 @@ namespace Listenarr.Domain.Common
             return character < 32 || character is '<' or '>' or ':' or '"' or '|' or '?' or '*';
         }
 
-        private static bool ContainsParentDirectorySegment(string path, params char[] separators)
+        public static bool ContainsParentDirectorySegment(string path, params char[] separators)
         {
+            if (string.IsNullOrEmpty(path) || separators.Length == 0)
+            {
+                return false;
+            }
+
             return path.Split(separators, StringSplitOptions.RemoveEmptyEntries)
                 .Any(segment => segment == "..");
         }

@@ -34,12 +34,17 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             // Given
             var controller = _provider.GetRequiredService<LibraryController>();
 
+            var outputPath = FileService.GetTempDirectory("listenarr-move-output");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(outputPath)
+                .Build());
+
             var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Test")
                 .WithBasePath(Path.Join(FileService.GetTempPath(), "nonexistent"))
                 .Build());
 
-            var request = new LibraryController.MoveRequest { DestinationPath = Path.Join(FileService.GetTempPath(), "target") };
+            var request = new LibraryController.MoveRequest { DestinationPath = Path.Join(outputPath, "target") };
 
             // When
             var result = await controller.EnqueueMove(ab.Id, request);
@@ -64,12 +69,17 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             Init(services => services.WithSingleton(mockMoveQueue.Object));
             var controller = _provider.GetRequiredService<LibraryController>();
 
+            var outputPath = FileService.GetTempDirectory("listenarr-move-output");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(outputPath)
+                .Build());
+
             var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Test")
                 .WithBasePath(FileService.GetTempDirectory("listenarr-move-src"))
                 .Build());
 
-            var target = Path.Join(FileService.GetTempPath(), "listenarr-move-dst");
+            var target = Path.Join(outputPath, "listenarr-move-dst");
             var request = new LibraryController.MoveRequest { DestinationPath = target };
 
             // When
@@ -92,12 +102,17 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             Init(services => services.WithSingleton(mockMoveQueue.Object));
             var controller = _provider.GetRequiredService<LibraryController>();
 
+            var outputPath = FileService.GetTempDirectory("listenarr-move-output");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(outputPath)
+                .Build());
+
             var ab = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Test")
                 .WithBasePath(Path.Join(FileService.GetTempPath(), "listenarr-move-src"))
                 .Build());
 
-            var target = Path.Join(FileService.GetTempPath(), "listenarr-move-dst");
+            var target = Path.Join(outputPath, "listenarr-move-dst");
             var request = new LibraryController.MoveRequest { DestinationPath = target, MoveFiles = false };
 
             // When
@@ -155,6 +170,11 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         [Trait("Scenario", "RejectsInvalidDestinationPath")]
         public async Task MoveAudiobook_RejectsInvalidDestinationPath()
         {
+            var outputPath = FileService.GetTempDirectory("listenarr-move-output");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(outputPath)
+                .Build());
+
             var sourcePath = FileService.GetTempDirectory("listenarr-move-src");
             var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle("Test")
@@ -173,6 +193,131 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var badObj = Assert.IsAssignableFrom<ObjectResult>(result);
             Assert.Equal(400, badObj.StatusCode);
             Assert.Contains("DestinationPath", badObj.Value?.ToString() ?? string.Empty);
+        }
+
+        [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "AllowsAbsoluteDestinationInsideConfiguredRootFolder")]
+        public async Task MoveAudiobook_AllowsAbsoluteDestinationInsideConfiguredRootFolder()
+        {
+            var rootPath = FileService.GetTempDirectory("listenarr-move-root");
+            await _rootFolderRepository.AddAsync(new RootFolderBuilder()
+                .WithName("Move Root")
+                .WithPath(rootPath)
+                .WithIsDefault()
+                .Build());
+
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(FileService.GetTempDirectory("listenarr-move-src"))
+                .Build());
+
+            var controller = _provider.GetRequiredService<LibraryController>();
+            var target = Path.Join(rootPath, "Author", "Title");
+            var request = new LibraryController.MoveRequest { DestinationPath = target, MoveFiles = false };
+
+            var result = await controller.EnqueueMove(audiobook.Id, request);
+
+            var okObj = Assert.IsAssignableFrom<ObjectResult>(result);
+            Assert.Equal(200, okObj.StatusCode);
+
+            var updated = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(updated);
+            Assert.Equal(FileUtils.NormalizeStoredPath(target), updated.BasePath);
+        }
+
+        [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "AllowsAbsoluteDestinationInsideConfiguredOutputPath")]
+        public async Task MoveAudiobook_AllowsAbsoluteDestinationInsideConfiguredOutputPath()
+        {
+            var outputPath = FileService.GetTempDirectory("listenarr-move-output");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(outputPath)
+                .Build());
+
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(FileService.GetTempDirectory("listenarr-move-src"))
+                .Build());
+
+            var controller = _provider.GetRequiredService<LibraryController>();
+            var target = Path.Join(outputPath, "Author", "Title");
+            var request = new LibraryController.MoveRequest { DestinationPath = target, MoveFiles = false };
+
+            var result = await controller.EnqueueMove(audiobook.Id, request);
+
+            var okObj = Assert.IsAssignableFrom<ObjectResult>(result);
+            Assert.Equal(200, okObj.StatusCode);
+
+            var updated = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(updated);
+            Assert.Equal(FileUtils.NormalizeStoredPath(target), updated.BasePath);
+        }
+
+        [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "RejectsAbsoluteDestinationOutsideConfiguredRoots")]
+        public async Task MoveAudiobook_RejectsAbsoluteDestinationOutsideConfiguredRoots()
+        {
+            var outputPath = FileService.GetTempDirectory("listenarr-move-output");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(outputPath)
+                .Build());
+
+            var originalBasePath = FileService.GetTempDirectory("listenarr-move-src");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(originalBasePath)
+                .Build());
+
+            var controller = _provider.GetRequiredService<LibraryController>();
+            var outsidePath = Path.Join(FileService.GetTempDirectory("listenarr-move-outside"), "Author", "Title");
+            var request = new LibraryController.MoveRequest { DestinationPath = outsidePath, MoveFiles = false };
+
+            var result = await controller.EnqueueMove(audiobook.Id, request);
+
+            var badObj = Assert.IsAssignableFrom<ObjectResult>(result);
+            Assert.Equal(400, badObj.StatusCode);
+            Assert.Contains("configured root folder or output path", badObj.Value?.ToString() ?? string.Empty);
+
+            var unchanged = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(unchanged);
+            Assert.Equal(originalBasePath, unchanged.BasePath);
+        }
+
+        [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "UsesDefaultRootFolderForRelativeDestination_WhenOutputPathEmpty")]
+        public async Task MoveAudiobook_UsesDefaultRootFolderForRelativeDestination_WhenOutputPathEmpty()
+        {
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(string.Empty)
+                .Build());
+            var rootPath = FileService.GetTempDirectory("listenarr-move-root");
+            await _rootFolderRepository.AddAsync(new RootFolderBuilder()
+                .WithName("Default Move Root")
+                .WithPath(rootPath)
+                .WithIsDefault()
+                .Build());
+
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(FileService.GetTempDirectory("listenarr-move-src"))
+                .Build());
+
+            var controller = _provider.GetRequiredService<LibraryController>();
+            var relativeTarget = Path.Join("Author", "Title");
+            var request = new LibraryController.MoveRequest { DestinationPath = relativeTarget, MoveFiles = false };
+
+            var result = await controller.EnqueueMove(audiobook.Id, request);
+
+            var okObj = Assert.IsAssignableFrom<ObjectResult>(result);
+            Assert.Equal(200, okObj.StatusCode);
+
+            var updated = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(updated);
+            Assert.Equal(FileUtils.NormalizeStoredPath(Path.Join(rootPath, relativeTarget)), updated.BasePath);
         }
 
         [Fact]

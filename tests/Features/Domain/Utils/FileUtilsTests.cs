@@ -560,7 +560,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void TryNormalizeUserProvidedDirectoryPathForOs_AllowsWindowsRootWhenExplicitlyRequested()
         {
-            var separator = new string((char)92, 1);
+            var separator = "\\";
             var driveRoot = "C:" + separator;
             var uncRoot = separator + separator + "server" + separator + "share";
             var currentDriveRoot = separator;
@@ -605,7 +605,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void TryNormalizeUserProvidedDirectoryPathForOs_RejectsWindowsRootByDefault()
         {
-            var separator = new string((char)92, 1);
+            var separator = "\\";
 
             Assert.False(FileUtils.TryNormalizeUserProvidedDirectoryPathForOs(
                 separator,
@@ -625,7 +625,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void TryNormalizeUserProvidedDirectoryPathForOs_RejectsParentTraversalForDestinations()
         {
-            var separator = new string((char)92, 1);
+            var separator = "\\";
             var windowsTraversal = "C:" + separator + "Books" + separator + ".." + separator + "Other";
 
             Assert.False(FileUtils.TryNormalizeUserProvidedDirectoryPathForOs(
@@ -648,7 +648,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void TryNormalizeUserProvidedDirectoryPathForOs_RejectsRootFolderParentTraversal()
         {
-            var separator = new string((char)92, 1);
+            var separator = "\\";
             var parentSegment = new string('.', 2);
             var windowsTraversal = "C:" + separator + "Books" + separator + parentSegment + separator + "Other";
 
@@ -675,7 +675,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void TryNormalizeUserProvidedDirectoryPathForOs_AllowsRootsWhenExplicitlyRequestedAndTraversalRejected()
         {
-            var separator = new string((char)92, 1);
+            var separator = "\\";
             var driveRoot = "C:" + separator;
             var uncRoot = separator + separator + "server" + separator + "share";
 
@@ -718,6 +718,23 @@ namespace Listenarr.Tests.Features.Domain.Utils
                 rejectParentTraversal: true));
             Assert.Equal(string.Empty, unixRootReason);
             Assert.Equal("/", normalizedUnixRoot);
+        }
+
+        [Theory]
+        [InlineData("../escape", true)]
+        [InlineData("Book/../../escape", true)]
+        [InlineData(".../Book", false)]
+        [InlineData("..hidden/Book", false)]
+        [InlineData("Book../Title", false)]
+        public void ContainsParentDirectorySegment_DetectsOnlyLiteralParentSegments(string path, bool expected)
+        {
+            Assert.Equal(expected, FileUtils.ContainsParentDirectorySegment(path, '/', '\\'));
+        }
+
+        [Fact]
+        public void ContainsParentDirectorySegment_WithUnixSeparator_DoesNotTreatBackslashAsSeparator()
+        {
+            Assert.False(FileUtils.ContainsParentDirectorySegment("Book\\..\\Title", '/'));
         }
 
         [Fact]
