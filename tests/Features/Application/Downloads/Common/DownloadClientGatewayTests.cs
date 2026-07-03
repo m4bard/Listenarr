@@ -301,8 +301,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
         {
             var remoteFile = FileUtils.GetAbsolutePath("downloads", " Book Folder ", "chapter1.m4b");
             var expectedLocalFile = Path.Join(localMapping, " Book Folder ", "chapter1.m4b");
-            var downloadCLientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
-            downloadCLientAdapterMock.QueueItemMock = new QueueItemBuilder()
+            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
+            downloadClientAdapterMock.QueueItemMock = new QueueItemBuilder()
                 .WithRemotePath(remoteFile)
                 .WithContentPath(remoteFile)
                 .WithSourceFile(remoteFile)
@@ -334,8 +334,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
 
             try
             {
-                var downloadCLientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
-                downloadCLientAdapterMock.QueueItemMock = new QueueItemBuilder()
+                var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
+                downloadClientAdapterMock.QueueItemMock = new QueueItemBuilder()
                     .WithContentPath(sourceDirectory)
                     .WithStatus("completed")
                     .Build();

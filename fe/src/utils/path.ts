@@ -80,7 +80,7 @@ export function pathsEqual(
 ): boolean {
   if (!first || !second) return false
 
-  const kind = pathKind === 'unknown' ? detectPathKind(first || second) : pathKind
+  const kind = pathKind === 'unknown' ? detectPathKind(first) : pathKind
   return normalizeForCompare(first, kind) === normalizeForCompare(second, kind)
 }
 
@@ -91,7 +91,7 @@ export function pathIsInside(
 ): boolean {
   if (!candidate || !root) return false
 
-  const kind = pathKind === 'unknown' ? detectPathKind(candidate || root) : pathKind
+  const kind = pathKind === 'unknown' ? detectPathKind(candidate) : pathKind
   const normalizedCandidate = normalizeForCompare(candidate, kind)
   const normalizedRoot = normalizeForCompare(root, kind)
   if (!normalizedCandidate || !normalizedRoot || normalizedCandidate === normalizedRoot)

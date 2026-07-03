@@ -148,7 +148,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
                 return string.Empty;
             }
 
-            return FileUtils.CombineWithOptionalBase(basePath, relativePath);
+            var combinedPath = FileUtils.CombineWithOptionalBase(basePath, relativePath);
+            return FileUtils.IsPathSameOrInside(combinedPath, basePath)
+                ? combinedPath
+                : string.Empty;
         }
 
         private static bool HasDriveRootedPrefix(string path)
