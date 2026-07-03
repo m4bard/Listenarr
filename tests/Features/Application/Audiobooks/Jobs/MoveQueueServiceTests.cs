@@ -128,6 +128,144 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
         }
 
         [Fact]
+        public async Task EnqueueMoveAsync_CaseDistinctDestinations_OnCaseSensitiveHost_CreateSeparateJobs()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            var jobs = new List<MoveJob>();
+            var persistence = CreateInMemoryPersistence(jobs);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System);
+
+            var firstId = await service.EnqueueMoveAsync(9, "/library/Title");
+            var secondId = await service.EnqueueMoveAsync(9, "/library/title");
+
+            Assert.NotEqual(firstId, secondId);
+            Assert.Equal(2, jobs.Count);
+        }
+
+        [Fact]
+        public async Task EnqueueMoveAsync_TrailingWhitespaceDestination_IsDistinctFromTrimmedPath()
+        {
+            var jobs = new List<MoveJob>();
+            var persistence = CreateInMemoryPersistence(jobs);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System);
+
+            var firstId = await service.EnqueueMoveAsync(9, "/library/Title ");
+            var secondId = await service.EnqueueMoveAsync(9, "/library/Title");
+
+            Assert.NotEqual(firstId, secondId);
+            Assert.Equal(2, jobs.Count);
+        }
+
+        [Fact]
+        public async Task EnqueueMoveAsync_DeleteEmptySourceFalse_PersistsCleanupChoice()
+        {
+            var jobs = new List<MoveJob>();
+            var persistence = CreateInMemoryPersistence(jobs);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System);
+
+            var jobId = await service.EnqueueMoveAsync(
+                9,
+                "/library/Title",
+                "/downloads/Title",
+                deleteEmptySource: false);
+
+            var job = Assert.Single(jobs, candidate => candidate.Id == jobId);
+            Assert.False(job.DeleteEmptySource);
+        }
+
+        [Fact]
+        public async Task EnqueueMoveAsync_PersistedActiveJob_SchedulesExistingJob()
+        {
+            var existingJob = new MoveJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 9,
+                RequestedPath = "/library/Title",
+                ActiveDeduplicationKey = "9:/library/Title",
+                Status = "Queued"
+            };
+            var persistence = new Mock<IMoveQueuePersistence>();
+            persistence.Setup(store => store.GetActiveByKeyAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(existingJob);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System);
+
+            var jobId = await service.EnqueueMoveAsync(9, "/library/Title");
+
+            Assert.Equal(existingJob.Id, jobId);
+            Assert.True(service.Reader.TryRead(out var scheduledJob));
+            Assert.Equal(existingJob.Id, scheduledJob.Id);
+        }
+
+        [Fact]
+        public async Task RequeueMoveAsync_FailedJob_ReusesRecoveryIdentity()
+        {
+            var jobs = new List<MoveJob>();
+            var persistence = CreateInMemoryPersistence(jobs);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System);
+            var jobId = await service.EnqueueMoveAsync(9, "/library/Title", "/downloads/Title");
+            Assert.True(service.Reader.TryRead(out _));
+            await service.UpdateJobStatusAsync(jobId, "Failed", "copy interrupted");
+
+            var requeuedJobId = await service.RequeueMoveAsync(jobId);
+
+            Assert.Equal(jobId, requeuedJobId);
+            Assert.True(service.Reader.TryRead(out var scheduledJob));
+            Assert.Equal(jobId, scheduledJob.Id);
+        }
+
+        [Fact]
+        public async Task RecoverActiveJobsAsync_SchedulesPersistedProcessingJob()
+        {
+            var persistedJob = new MoveJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 9,
+                RequestedPath = "/library/Title",
+                ActiveDeduplicationKey = "9:/library/Title",
+                Status = "Processing"
+            };
+            var persistence = new Mock<IMoveQueuePersistence>();
+            persistence.Setup(store => store.GetActiveAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync([persistedJob]);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System);
+
+            await service.RecoverActiveJobsAsync();
+
+            Assert.True(service.Reader.TryRead(out var scheduledJob));
+            Assert.Equal(persistedJob.Id, scheduledJob.Id);
+        }
+
+        [Fact]
         public async Task TerminalStatus_ReleasesDeduplicationKey_ForLaterMove()
         {
             var jobs = new List<MoveJob>();

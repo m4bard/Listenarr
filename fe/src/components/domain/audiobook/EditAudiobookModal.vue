@@ -1402,12 +1402,10 @@ async function initializeForm(audiobook: Audiobook) {
   if (audiobook.basePath && rootStore.folders.length > 0) {
     // Check if basePath starts with any configured root folder
     const matchingRoot = rootStore.folders.find((folder) => {
-      const normBase = toForward(audiobook.basePath!)
-      const normRoot = toForward(folder.path)
-      const rootWithSlash = normRoot.endsWith('/') ? normRoot : normRoot + '/'
+      const pathKind = detectPathKind(folder.path)
       return (
-        normBase.toLowerCase() === normRoot.toLowerCase() ||
-        normBase.toLowerCase().startsWith(rootWithSlash.toLowerCase())
+        pathsEqual(audiobook.basePath, folder.path, pathKind) ||
+        pathIsInside(audiobook.basePath, folder.path, pathKind)
       )
     })
 
@@ -1424,9 +1422,13 @@ async function initializeForm(audiobook: Audiobook) {
     // No configured named root folders. If the app has an outputPath and the audiobook's basePath
     // sits under that outputPath, treat it as relative to the outputPath and show the relative
     // input. Otherwise treat it as an explicit custom path.
-    const out = rootPath.value ? toForward(rootPath.value) : undefined
-    const base = toForward(audiobook.basePath)
-    if (out && base.toLowerCase().startsWith(out.toLowerCase())) {
+    const out = rootPath.value
+    const pathKind = detectPathKind(out)
+    if (
+      out &&
+      (pathsEqual(audiobook.basePath, out, pathKind) ||
+        pathIsInside(audiobook.basePath, out, pathKind))
+    ) {
       // Use configured output path as the chosen root and derive relative path later
       selectedRootId.value = null
       customRootPath.value = undefined
@@ -1487,6 +1489,8 @@ import {
   isAbsolutePath,
   validateLibraryDestinationPath,
   detectPathKind,
+  pathsEqual,
+  pathIsInside,
   type PathKind,
   stripRootPrefix,
 } from '@/utils/path'

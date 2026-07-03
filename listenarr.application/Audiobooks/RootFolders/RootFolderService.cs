@@ -41,7 +41,7 @@ namespace Listenarr.Application.Audiobooks.RootFolders
         public async Task<RootFolder> CreateAsync(RootFolder root)
         {
             root.Name = root.Name?.Trim() ?? string.Empty;
-            root.Path = NormalizeRootFolderPathForStorage(root.Path?.Trim());
+            root.Path = NormalizeRootFolderPathForStorage(root.Path);
 
             if (string.IsNullOrWhiteSpace(root.Name)) throw new ArgumentException("Name is required");
 
@@ -86,14 +86,17 @@ namespace Listenarr.Application.Audiobooks.RootFolders
         {
             if (root == null) throw new ArgumentNullException(nameof(root));
             root.Name = root.Name?.Trim() ?? string.Empty;
-            root.Path = NormalizeRootFolderPathForStorage(root.Path?.Trim());
+            root.Path = NormalizeRootFolderPathForStorage(root.Path);
 
             if (string.IsNullOrWhiteSpace(root.Name)) throw new ArgumentException("Name is required");
 
             var existing = await _repo.GetByIdAsync(root.Id);
             if (existing == null) throw new KeyNotFoundException("Root folder not found");
 
-            if (!string.Equals(existing.Path, root.Path, StringComparison.OrdinalIgnoreCase))
+            var pathComparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (!string.Equals(existing.Path, root.Path, pathComparison))
             {
                 var duplicate = await _repo.GetByPathAsync(root.Path);
                 if (duplicate != null && duplicate.Id != root.Id)
@@ -109,7 +112,7 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             var newPath = root.Path;
 
             List<(int audiobookId, string original, string target)> moves = new();
-            if (!string.Equals(oldPath, newPath, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(oldPath, newPath, pathComparison))
             {
                 moves = await _repo.MigrateAudiobookPathsAsync(oldPath, newPath);
 
@@ -139,11 +142,16 @@ namespace Listenarr.Application.Audiobooks.RootFolders
                 {
                     try
                     {
-                        _ = _moveQueue.EnqueueMoveAsync(m.audiobookId, m.target, m.original);
+                        await _moveQueue.EnqueueMoveAsync(
+                            m.audiobookId,
+                            m.target,
+                            m.original,
+                            deleteEmptySource);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         _logger?.LogWarning(ex, "Failed to enqueue move for audiobook {AudiobookId} during root rename", m.audiobookId);
+                        throw;
                     }
                 }
             }

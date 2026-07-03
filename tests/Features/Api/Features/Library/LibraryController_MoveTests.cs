@@ -63,7 +63,11 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             // Given
             var mockMoveQueue = new Mock<IMoveQueueService>();
             var expectedId = Guid.NewGuid();
-            mockMoveQueue.Setup(m => m.EnqueueMoveAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>()))
+            mockMoveQueue.Setup(m => m.EnqueueMoveAsync(
+                    It.IsAny<int>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
                 .ReturnsAsync(expectedId);
 
             Init(services => services.WithSingleton(mockMoveQueue.Object));
@@ -80,7 +84,11 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 .Build());
 
             var target = Path.Join(outputPath, "listenarr-move-dst");
-            var request = new LibraryController.MoveRequest { DestinationPath = target };
+            var request = new LibraryController.MoveRequest
+            {
+                DestinationPath = target,
+                DeleteEmptySource = false
+            };
 
             // When
             var result = await controller.EnqueueMove(ab.Id, request);
@@ -89,6 +97,11 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var acceptedObj = Assert.IsAssignableFrom<ObjectResult>(result);
             Assert.Equal(202, acceptedObj.StatusCode);
             Assert.NotNull(acceptedObj.Value);
+            mockMoveQueue.Verify(m => m.EnqueueMoveAsync(
+                ab.Id,
+                FileUtils.NormalizeStoredPath(target),
+                ab.BasePath,
+                false), Times.Once);
         }
 
         [Fact]
@@ -128,7 +141,11 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             Assert.Equal(FileUtils.NormalizeStoredPath(target), updated!.BasePath);
 
             // Ensure move queue was NOT enqueued
-            mockMoveQueue.Verify(m => m.EnqueueMoveAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            mockMoveQueue.Verify(m => m.EnqueueMoveAsync(
+                It.IsAny<int>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<bool>()), Times.Never);
         }
 
         [Fact]
@@ -362,7 +379,11 @@ namespace Listenarr.Tests.Features.Api.Features.Library
 
             var mockMoveQueue = new Mock<IMoveQueueService>();
             var expectedId = Guid.NewGuid();
-            mockMoveQueue.Setup(m => m.EnqueueMoveAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>()))
+            mockMoveQueue.Setup(m => m.EnqueueMoveAsync(
+                    It.IsAny<int>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
                 .ReturnsAsync(expectedId);
 
             Init(services => services.WithSingleton(mockMoveQueue.Object));
@@ -387,7 +408,11 @@ namespace Listenarr.Tests.Features.Api.Features.Library
 
             var acceptedObj = Assert.IsAssignableFrom<ObjectResult>(result);
             Assert.Equal(202, acceptedObj.StatusCode);
-            mockMoveQueue.Verify(m => m.EnqueueMoveAsync(audiobook.Id, FileUtils.NormalizeStoredPath(targetPath), sourcePath), Times.Once);
+            mockMoveQueue.Verify(m => m.EnqueueMoveAsync(
+                audiobook.Id,
+                FileUtils.NormalizeStoredPath(targetPath),
+                sourcePath,
+                true), Times.Once);
         }
 
         [Fact]

@@ -33,6 +33,7 @@ import {
   hasWindowsReservedDeviceSegment,
   validateLibraryDestinationPath,
   stripRootPrefix,
+  detectPathKind,
 } from '@/utils/path'
 
 describe('path utils', () => {
@@ -55,6 +56,11 @@ describe('path utils', () => {
     expect(isAbsolutePath('C:\\some\\path')).toBe(true)
     expect(isAbsolutePath('/unix/path')).toBe(true)
     expect(isAbsolutePath('relative/path')).toBe(false)
+  })
+
+  it('classifies absolute Unix paths with backslashes as Unix paths', () => {
+    expect(detectPathKind('/books/Author\\Name')).toBe('unix')
+    expect(normalizeForCompare('/books/Author\\Name')).toBe('/books/Author\\Name')
   })
 
   it('detects exact relative path segments without blocking periods in names', () => {
@@ -120,6 +126,7 @@ describe('path utils', () => {
     expect(pathsOverlap('D:\\Books\\Title2', 'D:\\Books\\Title', 'windows')).toBe(false)
     expect(pathsOverlap('/books/title/child', '/books/title', 'unix')).toBe(true)
     expect(pathsOverlap('/books/title2', '/books/title', 'unix')).toBe(false)
+    expect(pathsOverlap('/Books/title', '/books', 'unix')).toBe(false)
   })
 
   it('validates library destination paths while allowing platform-valid whitespace', () => {
@@ -186,6 +193,8 @@ describe('path utils', () => {
 
     // returns null when no match
     expect(stripRootPrefix('C:/root/other', full)).toBe(null)
+    expect(stripRootPrefix('C:/root/books', 'C:/root/bookshelf/Title')).toBe(null)
+    expect(stripRootPrefix('C:/root/books/Extra', 'C:/other/root/bookshelf/Title')).toBe(null)
 
     // matches using last segments
     const root3 = 'C:/temp/Isaac Asimov/Foundation/Extra'

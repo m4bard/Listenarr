@@ -188,6 +188,12 @@ namespace Listenarr.Domain.Common
                 return false;
             }
 
+            if (ContainsCurrentDirectorySegment(path, '/'))
+            {
+                reason = "Path cannot contain current directory segments.";
+                return false;
+            }
+
             if (rejectParentTraversal && ContainsParentDirectorySegment(path, '/'))
             {
                 reason = "Path cannot traverse to a parent directory.";
@@ -278,13 +284,19 @@ namespace Listenarr.Domain.Common
             var segments = pathWithoutRoot.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (var segment in segments)
             {
+                if (segment == ".")
+                {
+                    reason = "Path cannot contain current directory segments.";
+                    return false;
+                }
+
                 if (segment == ".." && rejectParentTraversal)
                 {
                     reason = "Path cannot traverse to a parent directory.";
                     return false;
                 }
 
-                if (segment is "." or "..")
+                if (segment == "..")
                 {
                     continue;
                 }
@@ -326,6 +338,17 @@ namespace Listenarr.Domain.Common
 
             return path.Split(separators, StringSplitOptions.RemoveEmptyEntries)
                 .Any(segment => segment == "..");
+        }
+
+        private static bool ContainsCurrentDirectorySegment(string path, params char[] separators)
+        {
+            if (string.IsNullOrEmpty(path) || separators.Length == 0)
+            {
+                return false;
+            }
+
+            return path.Split(separators, StringSplitOptions.RemoveEmptyEntries)
+                .Any(segment => segment == ".");
         }
 
         private static string NormalizeWindowsDirectoryPathSyntax(string path)

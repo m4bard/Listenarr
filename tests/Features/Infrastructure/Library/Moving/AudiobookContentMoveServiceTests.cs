@@ -49,6 +49,27 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
+        public async Task MoveContentsAsync_DirectCopyInterrupted_ResumesOwnedPartialTarget()
+        {
+            var source = FileService.GetTempDirectory("content-move-direct-retry-src");
+            await FileService.GetFileAsync(source, "book.m4b", "complete audio");
+            var target = FileService.GetTempDirectory("content-move-direct-retry-dst");
+            await FileService.GetFileAsync(target, "book.m4b", "partial");
+            var jobId = Guid.NewGuid();
+            await File.WriteAllTextAsync(
+                Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
+                "copy-started");
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            await service.MoveContentsAsync(
+                new AudiobookContentMoveRequest(source, target, jobId),
+                CancellationToken.None);
+
+            Assert.False(Directory.Exists(source));
+            Assert.Equal("complete audio", await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
+        }
+
+        [Fact]
         public async Task MoveContentsAsync_TargetInsideSource_MovesContentsIntoChildAndKeepsTarget()
         {
             var source = FileService.GetTempDirectory("content-move-child-src");
@@ -129,7 +150,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
-        public async Task MoveContentsAsync_SourceInsideEmptyParent_DeletesEmptyParentAfterMove()
+        public async Task MoveContentsAsync_SourceInsideEmptyParent_DoesNotDeleteParent()
         {
             var sourceParent = FileService.GetTempDirectory("content-move-empty-parent");
             var source = Path.Join(sourceParent, " test");
@@ -141,7 +162,24 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             await service.MoveContentsAsync(new AudiobookContentMoveRequest(source, target, Guid.NewGuid()), CancellationToken.None);
 
             Assert.False(Directory.Exists(source));
-            Assert.False(Directory.Exists(sourceParent));
+            Assert.True(Directory.Exists(sourceParent));
+            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        }
+
+        [Fact]
+        public async Task MoveContentsAsync_DeleteEmptySourceFalse_KeepsEmptySourceDirectory()
+        {
+            var source = FileService.GetTempDirectory("content-move-keep-source");
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(FileService.GetTempPath(), $"content-move-keep-source-dst-{Guid.NewGuid():N}");
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            await service.MoveContentsAsync(
+                new AudiobookContentMoveRequest(source, target, Guid.NewGuid(), DeleteEmptySource: false),
+                CancellationToken.None);
+
+            Assert.True(Directory.Exists(source));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(source));
             Assert.True(File.Exists(Path.Join(target, "book.m4b")));
         }
 
@@ -194,7 +232,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             Assert.True(Directory.Exists(target));
             Assert.False(Directory.Exists(source));
-            Assert.False(Directory.Exists(Path.Join(target, "nested")));
+            Assert.True(Directory.Exists(Path.Join(target, "nested")));
             Assert.True(File.Exists(Path.Join(target, "book.m4b")));
         }
 

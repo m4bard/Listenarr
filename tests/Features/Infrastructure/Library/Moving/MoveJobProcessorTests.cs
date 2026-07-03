@@ -66,7 +66,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
-        public async Task ProcessJobAsync_SourceInsideEmptyParent_DeletesEmptyParentAfterMove()
+        public async Task ProcessJobAsync_SourceInsideEmptyParent_DoesNotDeleteParentAfterMove()
         {
             var sourceParent = FileService.GetTempDirectory("move-processor-empty-parent");
             var src = Path.Join(sourceParent, " test");
@@ -83,7 +83,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Assert.NotNull(updatedJob);
             Assert.Equal("Completed", updatedJob!.Status);
             Assert.False(Directory.Exists(src));
-            Assert.False(Directory.Exists(sourceParent));
+            Assert.True(Directory.Exists(sourceParent));
             Assert.True(File.Exists(Path.Join(dst, "book.m4b")));
         }
 
@@ -105,6 +105,93 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Assert.Equal("Completed", updatedJob!.Status);
             Assert.False(Directory.Exists(src));
             Assert.True(Directory.Exists(dst));
+            Assert.True(File.Exists(Path.Join(dst, "book.m4b")));
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_CaseOnlyMove_OnCaseSensitiveHost_MovesFiles()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            var root = FileService.GetTempDirectory("move-processor-case-only-root");
+            var src = Path.Join(root, "Title");
+            Directory.CreateDirectory(src);
+            await FileService.GetFileAsync(src, "book.m4b", "audio");
+            var dst = Path.Join(root, "title");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook { Title = "Move Processor Case", BasePath = src });
+            var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, dst, src);
+
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var updatedJob = await queue.GetJobAsync(job.Id);
+            Assert.NotNull(updatedJob);
+            Assert.Equal("Completed", updatedJob!.Status);
+            Assert.False(Directory.Exists(src));
+            Assert.True(File.Exists(Path.Join(dst, "book.m4b")));
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_DeleteEmptySourceFalse_KeepsEmptySourceDirectory()
+        {
+            var src = FileService.GetTempDirectory("move-processor-keep-source");
+            await FileService.GetFileAsync(src, "book.m4b", "audio");
+            var dst = Path.Join(FileService.GetTempPath(), $"move-processor-keep-source-dst-{Guid.NewGuid():N}");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Move Processor Keep Source",
+                BasePath = src
+            });
+            var (queue, job) = await CreateQueuedMoveJobAsync(
+                audiobook,
+                dst,
+                src,
+                deleteEmptySource: false);
+
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var updatedJob = await queue.GetJobAsync(job.Id);
+            Assert.NotNull(updatedJob);
+            Assert.Equal("Completed", updatedJob!.Status);
+            Assert.True(Directory.Exists(src));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(src));
+            Assert.True(File.Exists(Path.Join(dst, "book.m4b")));
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_RequeuedCompletedMoveWithRetainedSource_RemainsCompleted()
+        {
+            var src = FileService.GetTempDirectory("move-processor-requeue-retained-source");
+            await FileService.GetFileAsync(src, "book.m4b", "audio");
+            var dst = Path.Join(FileService.GetTempPath(), $"move-processor-requeue-retained-dst-{Guid.NewGuid():N}");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Move Processor Requeue Retained",
+                BasePath = src
+            });
+            var (queue, job) = await CreateQueuedMoveJobAsync(
+                audiobook,
+                dst,
+                src,
+                deleteEmptySource: false);
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var requeuedJobId = await queue.RequeueMoveAsync(job.Id);
+            Assert.NotNull(requeuedJobId);
+            var requeuedJob = await queue.GetJobAsync(requeuedJobId!.Value);
+            Assert.NotNull(requeuedJob);
+            await processor.ProcessJobAsync(requeuedJob!, CancellationToken.None);
+
+            var completedRequeue = await queue.GetJobAsync(requeuedJob.Id);
+            Assert.NotNull(completedRequeue);
+            Assert.Equal("Completed", completedRequeue!.Status);
+            Assert.True(Directory.Exists(src));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(src));
             Assert.True(File.Exists(Path.Join(dst, "book.m4b")));
         }
 
@@ -165,13 +252,104 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Assert.True(File.Exists(Path.Join(src, "book.m4b")));
         }
 
+        [Fact]
+        public async Task ProcessJobAsync_FilesystemMoveAlreadyCompleted_FinalizesDatabaseState()
+        {
+            var src = FileService.GetTempDirectory("move-processor-recovery-src");
+            await FileService.GetFileAsync(src, "book.m4b", "audio");
+            var dst = Path.Join(FileService.GetTempPath(), $"move-processor-recovery-dst-{Guid.NewGuid():N}");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Move Processor Recovery",
+                BasePath = src
+            });
+            var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, dst, src);
+            var contentMoveService = _provider.GetRequiredService<AudiobookContentMoveService>();
+            await contentMoveService.MoveContentsAsync(
+                new AudiobookContentMoveRequest(src, dst, job.Id),
+                CancellationToken.None);
+
+            Assert.False(Directory.Exists(src));
+            Assert.Single(Directory.EnumerateFiles(dst, ".listenarr-move-*.pending"));
+            Directory.CreateDirectory(src);
+            await FileService.GetFileAsync(src, "new-content.txt", "do not delete");
+
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var updatedJob = await queue.GetJobAsync(job.Id);
+            Assert.NotNull(updatedJob);
+            Assert.Equal("Completed", updatedJob!.Status);
+
+            using var verificationScope = _provider.CreateScope();
+            var verificationRepository = verificationScope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+            var updatedAudiobook = await verificationRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(updatedAudiobook);
+            Assert.Equal(dst, updatedAudiobook!.BasePath);
+            Assert.True(File.Exists(Path.Join(dst, "book.m4b")));
+            Assert.Equal("do not delete", await File.ReadAllTextAsync(Path.Join(src, "new-content.txt")));
+            Assert.Empty(Directory.EnumerateFiles(dst, ".listenarr-move-*.pending"));
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_CopyCompletedMarker_ResumesSourceCleanup()
+        {
+            var src = FileService.GetTempDirectory("move-processor-copy-complete-src");
+            await FileService.GetFileAsync(src, "book.m4b", "audio");
+            var dst = FileService.GetTempDirectory("move-processor-copy-complete-dst");
+            await FileService.GetFileAsync(dst, "book.m4b", "audio");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Move Processor Copy Complete",
+                BasePath = src
+            });
+            var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, dst, src);
+            await File.WriteAllTextAsync(
+                Path.Join(dst, $".listenarr-move-{job.Id:N}.pending"),
+                "copy-complete");
+
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var completedJob = await queue.GetJobAsync(job.Id);
+            Assert.NotNull(completedJob);
+            Assert.Equal("Completed", completedJob!.Status);
+            Assert.False(Directory.Exists(src));
+            Assert.True(File.Exists(Path.Join(dst, "book.m4b")));
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_MissingSourceAndTarget_MarksJobFailed()
+        {
+            var src = Path.Join(FileService.GetTempPath(), $"move-processor-missing-src-{Guid.NewGuid():N}");
+            var dst = Path.Join(FileService.GetTempPath(), $"move-processor-missing-dst-{Guid.NewGuid():N}");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Move Processor Missing Paths",
+                BasePath = dst
+            });
+            var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, dst, src);
+
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var failedJob = await queue.GetJobAsync(job.Id);
+            Assert.NotNull(failedJob);
+            Assert.Equal("Failed", failedJob!.Status);
+        }
+
         private async Task<(IMoveQueueService Queue, MoveJob Job)> CreateQueuedMoveJobAsync(
             Audiobook audiobook,
             string requestedPath,
-            string sourcePath)
+            string sourcePath,
+            bool deleteEmptySource = true)
         {
             var queue = _provider.GetRequiredService<IMoveQueueService>();
-            var jobId = await queue.EnqueueMoveAsync(audiobook.Id, requestedPath, sourcePath);
+            var jobId = await queue.EnqueueMoveAsync(
+                audiobook.Id,
+                requestedPath,
+                sourcePath,
+                deleteEmptySource);
             var job = await queue.GetJobAsync(jobId);
             Assert.NotNull(job);
             return (queue, job!);

@@ -200,7 +200,11 @@ namespace Listenarr.Api.Features.Library
                     _logger.LogDebug(normalizeEx, "Unable to normalize move paths for audiobook {AudiobookId}", id);
                 }
 
-                var jobId = await _moveQueueService.EnqueueMoveAsync(id, final, sourcePath);
+                var jobId = await _moveQueueService.EnqueueMoveAsync(
+                    id,
+                    final,
+                    sourcePath,
+                    request.DeleteEmptySource ?? true);
                 await BroadcastQueuedAsync(jobId, id);
 
                 return new AcceptedResult(string.Empty, new { message = "Move enqueued", jobId });

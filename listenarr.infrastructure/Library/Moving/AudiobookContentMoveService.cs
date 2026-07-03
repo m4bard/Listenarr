@@ -15,15 +15,18 @@ namespace Listenarr.Infrastructure.Library.Moving;
 internal sealed record AudiobookContentMoveRequest(
     string Source,
     string Target,
-    Guid JobId);
+    Guid JobId,
+    bool DeleteEmptySource = true);
 
 internal sealed record AudiobookContentMoveResult(
     string Source,
     string Target,
     bool TargetInsideSource,
-    bool SourceInsideTarget);
+    bool SourceInsideTarget,
+    string RecoveryMarkerPath,
+    bool SourceCleanupCompleted);
 
-internal sealed class AudiobookContentMoveService(ILogger<AudiobookContentMoveService> logger)
+internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookContentMoveService> logger)
 {
     private const int MaxCopyAttempts = 5;
 
@@ -47,7 +50,10 @@ internal sealed class AudiobookContentMoveService(ILogger<AudiobookContentMoveSe
 
         if (!Directory.Exists(targetParent)) Directory.CreateDirectory(targetParent);
 
-        EnsureTargetCanReceiveContents(source, target, sourceInsideTarget);
+        var recoveryMarkerPath = GetRecoveryMarkerPath(target, request.JobId);
+        var recoveryStage = ReadRecoveryStage(recoveryMarkerPath);
+        var resumingDirectCopy = string.Equals(recoveryStage, CopyStartedStage, StringComparison.Ordinal);
+        EnsureTargetCanReceiveContents(source, target, sourceInsideTarget, resumingDirectCopy);
 
         var tempName = Path.Join(targetParent, Path.GetFileName(target) + ".tmp-" + request.JobId.ToString("N"));
         if (!FileSystemSafety.TryValidateMutationTarget(tempName, [targetParent], out tempName, out var tempReason))
@@ -66,6 +72,10 @@ internal sealed class AudiobookContentMoveService(ILogger<AudiobookContentMoveSe
 
             if (useTemp) Directory.CreateDirectory(tempName);
             if (!Directory.Exists(copyDestination)) Directory.CreateDirectory(copyDestination);
+            if (!useTemp && !resumingDirectCopy)
+            {
+                WriteRecoveryMarker(copyDestination, request.JobId, CopyStartedStage);
+            }
 
             await CopySourceContentsAsync(
                 source,
@@ -75,18 +85,23 @@ internal sealed class AudiobookContentMoveService(ILogger<AudiobookContentMoveSe
                 request.JobId,
                 cancellationToken);
 
+            WriteRecoveryMarker(copyDestination, request.JobId, CopyCompletedStage);
+
             if (useTemp)
             {
                 Directory.Move(tempName, target);
             }
 
-            DeleteOriginalSource(source, target, targetInsideSource);
+            DeleteOriginalSource(source, target, targetInsideSource, request.DeleteEmptySource);
+            WriteRecoveryMarker(target, request.JobId, SourceCleanupCompletedStage);
 
             return new AudiobookContentMoveResult(
                 source,
                 target,
                 targetInsideSource,
-                sourceInsideTarget);
+                sourceInsideTarget,
+                recoveryMarkerPath,
+                SourceCleanupCompleted: true);
         }
         catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
         {
@@ -95,12 +110,106 @@ internal sealed class AudiobookContentMoveService(ILogger<AudiobookContentMoveSe
         }
     }
 
+    public bool TryGetRecoverableMove(
+        AudiobookContentMoveRequest request,
+        out AudiobookContentMoveResult result)
+    {
+        var source = Path.GetFullPath(request.Source);
+        var target = Path.GetFullPath(request.Target);
+        var recoveryMarkerPath = GetRecoveryMarkerPath(target, request.JobId);
+        var recoveryStage = ReadRecoveryStage(recoveryMarkerPath);
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        if (IsFilesystemRoot(source)
+            || IsFilesystemRoot(target)
+            || string.Equals(source, target, comparison)
+            || !Directory.Exists(target)
+            || recoveryStage is not (CopyCompletedStage or SourceCleanupCompletedStage))
+        {
+            result = null!;
+            return false;
+        }
+
+        var targetInsideSource = FileUtils.IsPathInsideOf(target, source);
+        var sourceInsideTarget = FileUtils.IsPathInsideOf(source, target);
+        result = new AudiobookContentMoveResult(
+            source,
+            target,
+            targetInsideSource,
+            sourceInsideTarget,
+            recoveryMarkerPath,
+            string.Equals(recoveryStage, SourceCleanupCompletedStage, StringComparison.Ordinal));
+        return true;
+    }
+
+    public AudiobookContentMoveResult ResumeSourceCleanup(
+        AudiobookContentMoveRequest request,
+        AudiobookContentMoveResult result)
+    {
+        if (result.SourceCleanupCompleted)
+        {
+            return result;
+        }
+
+        DeleteOriginalSource(
+            result.Source,
+            result.Target,
+            result.TargetInsideSource,
+            request.DeleteEmptySource);
+        WriteRecoveryMarker(result.Target, request.JobId, SourceCleanupCompletedStage);
+        return result with { SourceCleanupCompleted = true };
+    }
+
+    public void CompleteMove(AudiobookContentMoveResult result)
+    {
+        try
+        {
+            if (File.Exists(result.RecoveryMarkerPath))
+            {
+                File.Delete(result.RecoveryMarkerPath);
+            }
+        }
+        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+        {
+            logger.LogWarning(
+                exception,
+                "Failed to remove move recovery marker {Marker}",
+                LogRedaction.SanitizeFilePath(result.RecoveryMarkerPath));
+        }
+    }
+
+    public bool IsSourceCleanupComplete(string? sourcePath, string targetPath)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            return true;
+        }
+
+        var source = Path.GetFullPath(sourcePath);
+        if (!Directory.Exists(source))
+        {
+            return true;
+        }
+
+        var target = Path.GetFullPath(targetPath);
+        if (!FileUtils.IsPathInsideOf(target, source))
+        {
+            return !Directory.EnumerateFileSystemEntries(source).Any();
+        }
+
+        return Directory
+            .EnumerateFileSystemEntries(source, "*", SearchOption.AllDirectories)
+            .All(entry => IsSameOrInside(entry, target) || IsSameOrInside(target, entry));
+    }
+
     private static void EnsureTargetCanReceiveContents(
         string source,
         string target,
-        bool sourceInsideTarget)
+        bool sourceInsideTarget,
+        bool resumingOwnedDirectCopy)
     {
-        if (!Directory.Exists(target))
+        if (!Directory.Exists(target) || resumingOwnedDirectCopy)
         {
             return;
         }
@@ -225,9 +334,18 @@ internal sealed class AudiobookContentMoveService(ILogger<AudiobookContentMoveSe
         }
     }
 
-    private static void DeleteOriginalSource(string source, string target, bool targetInsideSource)
+    private static void DeleteOriginalSource(
+        string source,
+        string target,
+        bool targetInsideSource,
+        bool deleteEmptySource)
     {
-        if (!Directory.Exists(source) || IsFilesystemRoot(source))
+        if (!Directory.Exists(source))
+        {
+            return;
+        }
+
+        if (IsFilesystemRoot(source))
         {
             throw new IOException("Source path became invalid before cleanup.");
         }
@@ -238,29 +356,41 @@ internal sealed class AudiobookContentMoveService(ILogger<AudiobookContentMoveSe
             return;
         }
 
-        Directory.Delete(source, true);
-        DeleteEmptySourceAncestors(source, target);
+        DeleteDirectoryContents(source);
+        if (deleteEmptySource && Directory.Exists(source))
+        {
+            Directory.Delete(source, false);
+        }
     }
 
-    private static void DeleteEmptySourceAncestors(string source, string target)
+    private static void DeleteDirectoryContents(string source)
     {
-        var candidate = Path.GetDirectoryName(source);
-        while (!string.IsNullOrWhiteSpace(candidate) && Directory.Exists(candidate) && !IsFilesystemRoot(candidate))
+        foreach (var entry in Directory.EnumerateFileSystemEntries(source).ToList())
         {
-            // Stop at the destination or any folder containing it, but allow empty wrapper
-            // folders inside the destination to be removed after source-to-parent moves.
-            if (IsSameOrInside(target, candidate))
+            if (Directory.Exists(entry))
             {
-                return;
+                Directory.Delete(entry, true);
             }
-
-            if (Directory.EnumerateFileSystemEntries(candidate).Any())
+            else
             {
-                return;
+                File.Delete(entry);
             }
+        }
+    }
 
-            Directory.Delete(candidate, false);
-            candidate = Path.GetDirectoryName(candidate);
+    private string? ReadRecoveryStage(string markerPath)
+    {
+        try
+        {
+            return File.Exists(markerPath) ? File.ReadAllText(markerPath) : null;
+        }
+        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+        {
+            logger.LogWarning(
+                exception,
+                "Failed to read move recovery marker {Marker}",
+                LogRedaction.SanitizeFilePath(markerPath));
+            return null;
         }
     }
 

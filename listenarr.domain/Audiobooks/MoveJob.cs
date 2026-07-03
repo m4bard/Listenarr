@@ -34,5 +34,6 @@ namespace Listenarr.Domain.Audiobooks
         // Optional source path snapshot provided at enqueue time. Persist this so jobs
         // remain durable and can be inspected / resumed across restarts.
         public string? SourcePath { get; set; }
+        public bool DeleteEmptySource { get; set; } = true;
     }
 }

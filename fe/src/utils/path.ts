@@ -43,9 +43,9 @@ export function trimTrailingSlash(s: string): string {
 export function detectPathKind(s: string | null | undefined): PathKind {
   const value = s || ''
   if (/^[a-zA-Z]:([\\/]|$)/.test(value)) return 'windows'
-  if (/^[\\/]{2}[^\\/]+[\\/][^\\/]+/.test(value) && value.includes('\\')) return 'windows'
-  if (value.includes('\\')) return 'windows'
+  if (/^\\\\[^\\/]+[\\/][^\\/]+/.test(value)) return 'windows'
   if (value.startsWith('/')) return 'unix'
+  if (value.includes('\\')) return 'windows'
   return 'unknown'
 }
 
@@ -274,24 +274,23 @@ export function stripRootPrefix(root: string, value: string): string | null {
     const rootKind = detectPathKind(root)
     const nroot = normalizeForCompare(root, rootKind)
     const nval = normalizeForCompare(value, rootKind)
+    const normalizedValue = rootKind === 'windows' ? value.replace(/\\/g, '/') : value
+    const useBackslash = rootKind === 'windows' && root.includes('\\')
 
-    if (nval.includes(nroot)) {
-      const idx = nval.indexOf(nroot)
-      const normalizedValue = rootKind === 'windows' ? value.replace(/\\/g, '/') : value
-      const rel = normalizedValue.slice(idx + nroot.length).replace(/^\/+/, '')
-      const useBackslash = rootKind === 'windows' && root.includes('\\')
+    const rootIndex = findPathSegmentMatch(nval, nroot)
+    if (rootIndex >= 0) {
+      const rel = normalizedValue.slice(rootIndex + nroot.length).replace(/^\/+/, '')
       return useBackslash ? rel.replace(/\//g, '\\') : rel
     }
 
     // fallback: try matching two-segment windows from the end toward the start
     const segs = splitPathSegments(nroot, rootKind)
-    for (let i = Math.max(0, segs.length - 2); i >= 0; i--) {
+    const fallbackStop = /^[a-zA-Z]:$/.test(segs[0] || '') || segs[0] === '' ? 1 : 0
+    for (let i = Math.max(fallbackStop, segs.length - 2); i >= fallbackStop; i--) {
       const two = segs.slice(i, i + 2).join('/')
-      if (two && nval.includes(two)) {
-        const idx = nval.indexOf(two)
-        const normalizedValue = rootKind === 'windows' ? value.replace(/\\/g, '/') : value
+      const idx = two ? findPathSegmentMatch(nval, two) : -1
+      if (idx >= 0) {
         const rel = normalizedValue.slice(idx + two.length).replace(/^\/+/, '')
-        const useBackslash = rootKind === 'windows' && root.includes('\\')
         return useBackslash ? rel.replace(/\//g, '\\') : rel
       }
     }
@@ -300,6 +299,23 @@ export function stripRootPrefix(root: string, value: string): string | null {
   }
 
   return null
+}
+
+function findPathSegmentMatch(value: string, pattern: string): number {
+  let fromIndex = 0
+  while (fromIndex <= value.length) {
+    const idx = value.indexOf(pattern, fromIndex)
+    if (idx < 0) return -1
+
+    const before = idx === 0 || value[idx - 1] === '/'
+    const afterIndex = idx + pattern.length
+    const after = afterIndex === value.length || value[afterIndex] === '/'
+    if (before && after) return idx
+
+    fromIndex = idx + 1
+  }
+
+  return -1
 }
 
 export function joinPaths(

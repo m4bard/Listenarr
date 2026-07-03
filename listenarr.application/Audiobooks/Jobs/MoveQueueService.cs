@@ -26,6 +26,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
     public class MoveQueueService : IMoveQueueService
     {
         private readonly ConcurrentDictionary<Guid, MoveJob> _jobs = new();
+        private readonly ConcurrentDictionary<Guid, byte> _scheduledJobs = new();
         private readonly Channel<MoveJob> _channel = Channel.CreateUnbounded<MoveJob>();
         private readonly ILogger<MoveQueueService> _logger;
         private readonly IMoveQueuePersistence _persistence;
@@ -46,14 +47,18 @@ namespace Listenarr.Application.Audiobooks.Jobs
 
         public ChannelReader<MoveJob> Reader => _channel.Reader;
 
-        public async Task<Guid> EnqueueMoveAsync(int audiobookId, string requestedPath, string? sourcePath = null)
+        public async Task<Guid> EnqueueMoveAsync(
+            int audiobookId,
+            string requestedPath,
+            string? sourcePath = null,
+            bool deleteEmptySource = true)
         {
             var deduplicationKey = BuildDeduplicationKey(audiobookId, requestedPath);
             var existingDb = await _persistence.GetActiveByKeyAsync(deduplicationKey);
 
             if (existingDb != null)
             {
-                _jobs[existingDb.Id] = existingDb;
+                await ScheduleAsync(existingDb);
                 _logger.LogInformation("Found active move job {JobId} for audiobook {AudiobookId} to {Path}; deduping and returning existing job id", existingDb.Id, audiobookId, LogRedaction.SanitizeFilePath(requestedPath));
                 return existingDb.Id;
             }
@@ -65,7 +70,8 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 ActiveDeduplicationKey = deduplicationKey,
                 EnqueuedAt = _timeProvider.GetUtcNow().UtcDateTime,
                 Status = "Queued",
-                SourcePath = sourcePath
+                SourcePath = sourcePath,
+                DeleteEmptySource = deleteEmptySource
             };
 
             try
@@ -77,17 +83,30 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 existingDb = await _persistence.GetActiveByKeyAsync(deduplicationKey);
                 if (existingDb != null)
                 {
-                    _jobs[existingDb.Id] = existingDb;
+                    await ScheduleAsync(existingDb);
                     return existingDb.Id;
                 }
 
                 throw;
             }
 
-            _jobs[job.Id] = job;
             _logger.LogInformation("Enqueueing move job {JobId} for audiobook {AudiobookId} to {Path}", job.Id, audiobookId, LogRedaction.SanitizeFilePath(requestedPath));
-            await _channel.Writer.WriteAsync(job);
+            await ScheduleAsync(job);
             return job.Id;
+        }
+
+        public async Task RecoverActiveJobsAsync(CancellationToken cancellationToken = default)
+        {
+            var activeJobs = await _persistence.GetActiveAsync(cancellationToken);
+            foreach (var activeJob in activeJobs)
+            {
+                await ScheduleAsync(activeJob, cancellationToken);
+            }
+
+            if (activeJobs.Count > 0)
+            {
+                _logger.LogInformation("Recovered {Count} active move jobs from persistence", activeJobs.Count);
+            }
         }
 
         public async Task<MoveJob?> GetJobAsync(Guid id, CancellationToken cancellationToken = default)
@@ -126,6 +145,10 @@ namespace Listenarr.Application.Audiobooks.Jobs
             {
                 var dbJob = await _persistence.GetByIdAsync(id, cancellationToken);
                 await _persistence.UpdateStatusAsync(id, status, error, updatedAt, cancellationToken);
+                if (!IsActive(status))
+                {
+                    _scheduledJobs.TryRemove(id, out _);
+                }
 
                 // Broadcast status update to realtime clients so UI can react to Processing/Failed/Completed
                 try
@@ -190,9 +213,48 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 return null;
             }
 
-            var newJobId = await EnqueueMoveAsync(job.AudiobookId, job.RequestedPath ?? string.Empty, job.SourcePath);
-            _logger.LogInformation("Requeueing move job {OldJobId} as job {NewJobId} for audiobook {AudiobookId}", jobId, newJobId, job.AudiobookId);
-            return newJobId;
+            if (string.Equals(job.Status, "Queued", StringComparison.OrdinalIgnoreCase))
+            {
+                await ScheduleAsync(job);
+                return job.Id;
+            }
+
+            var deduplicationKey = BuildDeduplicationKey(job.AudiobookId, job.RequestedPath);
+            var activeJob = await _persistence.GetActiveByKeyAsync(deduplicationKey);
+            if (activeJob != null && activeJob.Id != job.Id)
+            {
+                await ScheduleAsync(activeJob);
+                return activeJob.Id;
+            }
+
+            job.Status = "Queued";
+            job.Error = null;
+            job.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+            job.ActiveDeduplicationKey = deduplicationKey;
+            await _persistence.RequeueAsync(job);
+            _scheduledJobs.TryRemove(job.Id, out _);
+            await ScheduleAsync(job);
+            _logger.LogInformation("Requeued move job {JobId} for audiobook {AudiobookId}", jobId, job.AudiobookId);
+            return jobId;
+        }
+
+        private async Task ScheduleAsync(MoveJob job, CancellationToken cancellationToken = default)
+        {
+            _jobs[job.Id] = job;
+            if (!_scheduledJobs.TryAdd(job.Id, 0))
+            {
+                return;
+            }
+
+            try
+            {
+                await _channel.Writer.WriteAsync(job, cancellationToken);
+            }
+            catch
+            {
+                _scheduledJobs.TryRemove(job.Id, out _);
+                throw;
+            }
         }
 
         private static bool CanRequeueJobStatus(string status)
@@ -205,10 +267,11 @@ namespace Listenarr.Application.Audiobooks.Jobs
         private static string BuildDeduplicationKey(int audiobookId, string? requestedPath)
         {
             var normalizedPath = (requestedPath ?? string.Empty)
-                .Trim()
                 .Replace('\\', '/')
-                .TrimEnd('/')
-                .ToUpperInvariant();
+                .TrimEnd('/');
+            normalizedPath = OperatingSystem.IsWindows()
+                ? normalizedPath.ToUpperInvariant()
+                : normalizedPath;
             return $"{audiobookId}:{normalizedPath}";
         }
 

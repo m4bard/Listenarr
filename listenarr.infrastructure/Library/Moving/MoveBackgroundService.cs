@@ -29,6 +29,7 @@ namespace Listenarr.Infrastructure.Library.Moving
         {
             try
             {
+                await moveQueueService.RecoverActiveJobsAsync(stoppingToken);
                 await foreach (var job in moveQueueService.Reader.ReadAllAsync(stoppingToken))
                 {
                     if (stoppingToken.IsCancellationRequested)

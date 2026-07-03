@@ -535,6 +535,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
 
         [Theory]
         [InlineData(@"C:\Books\Author", true)]
+        [InlineData(@"C:\Books\.\Author", false)]
         [InlineData(@"C:\", false)]
         [InlineData(@"Books\Author", false)]
         [InlineData(@"C:\Books\Author ", false)]
@@ -771,7 +772,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
 
         [Theory]
         [InlineData("/media/Author", true)]
-        [InlineData("/media/./Author", true)]
+        [InlineData("/media/./Author", false)]
         [InlineData("/media/Author ", true)]
         [InlineData("/media/NUL", true)]
         [InlineData("/media/..", false)]

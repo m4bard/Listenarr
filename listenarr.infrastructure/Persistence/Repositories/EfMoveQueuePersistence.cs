@@ -48,10 +48,48 @@ public sealed class EfMoveQueuePersistence(IDbContextFactory<ListenArrDbContext>
         }
     }
 
+    public async Task<IReadOnlyList<MoveJob>> GetActiveAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+            return await db.MoveJobs
+                .AsNoTracking()
+                .Where(job => job.ActiveDeduplicationKey != null
+                    && (job.Status == "Queued" || job.Status == "Processing"))
+                .OrderBy(job => job.EnqueuedAt)
+                .ToListAsync(cancellationToken);
+        }
+        catch (DbException ex)
+        {
+            throw new PersistenceException("Failed to query active move job persistence.", ex);
+        }
+    }
+
     public async Task AddAsync(MoveJob job, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         db.MoveJobs.Add(job);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task RequeueAsync(MoveJob job, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var persistedJob = await db.MoveJobs.SingleOrDefaultAsync(
+            candidate => candidate.Id == job.Id,
+            cancellationToken);
+        if (persistedJob == null)
+        {
+            throw new PersistenceException(
+                $"Move job {job.Id} no longer exists.",
+                new InvalidOperationException("Move job not found."));
+        }
+
+        persistedJob.Status = job.Status;
+        persistedJob.Error = job.Error;
+        persistedJob.UpdatedAt = job.UpdatedAt;
+        persistedJob.ActiveDeduplicationKey = job.ActiveDeduplicationKey;
         await db.SaveChangesAsync(cancellationToken);
     }
 

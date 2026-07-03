@@ -16,7 +16,11 @@ public interface IMoveQueuePersistence
 
     Task<MoveJob?> GetActiveByKeyAsync(string deduplicationKey, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<MoveJob>> GetActiveAsync(CancellationToken cancellationToken = default);
+
     Task AddAsync(MoveJob job, CancellationToken cancellationToken = default);
+
+    Task RequeueAsync(MoveJob job, CancellationToken cancellationToken = default);
 
     Task UpdateStatusAsync(
         Guid id,

@@ -20,8 +20,13 @@ namespace Listenarr.Application.Audiobooks.Contracts
 {
     public interface IMoveQueueService
     {
-        Task<Guid> EnqueueMoveAsync(int audiobookId, string requestedPath, string? sourcePath = null);
+        Task<Guid> EnqueueMoveAsync(
+            int audiobookId,
+            string requestedPath,
+            string? sourcePath = null,
+            bool deleteEmptySource = true);
         Task<Guid?> RequeueMoveAsync(Guid jobId);
+        Task RecoverActiveJobsAsync(CancellationToken cancellationToken = default);
         Task<MoveJob?> GetJobAsync(Guid id, CancellationToken cancellationToken = default);
         Task UpdateJobStatusAsync(Guid id, string status, string? error = null, CancellationToken cancellationToken = default);
         System.Threading.Channels.ChannelReader<MoveJob> Reader { get; }

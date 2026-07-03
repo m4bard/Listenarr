@@ -125,7 +125,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
         }
 
         [Fact]
-        public async Task Create_NormalizesPathBeforeStorage()
+        public async Task Create_Throws_WhenPathContainsCurrentDirectorySegment()
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -136,9 +136,37 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
             var svc = new RootFolderService(repo, null!);
             var rawPath = Path.Join(rootPath, ".");
 
-            var created = await svc.CreateAsync(new RootFolder { Name = "Normalized", Path = rawPath });
+            var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+                svc.CreateAsync(new RootFolder { Name = "Current Directory Root", Path = rawPath }));
 
-            Assert.Equal(Path.GetFullPath(rawPath), created.Path);
+            Assert.Contains("current directory", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task Create_HandlesTrailingWhitespaceAccordingToCurrentOs()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var dbFactory = new TestDbFactory(options);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
+            var svc = new RootFolderService(repo, null!);
+            var pathWithTrailingWhitespace = rootPath + " ";
+
+            if (OperatingSystem.IsWindows())
+            {
+                var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+                    svc.CreateAsync(new RootFolder { Name = "Whitespace Root", Path = pathWithTrailingWhitespace }));
+                Assert.Contains("space or period", exception.Message, StringComparison.OrdinalIgnoreCase);
+                return;
+            }
+
+            var created = await svc.CreateAsync(new RootFolder
+            {
+                Name = "Whitespace Root",
+                Path = pathWithTrailingWhitespace
+            });
+            Assert.Equal(pathWithTrailingWhitespace, created.Path);
         }
 
         [Fact]
@@ -158,7 +186,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
             var svc = new RootFolderService(repo, null!);
 
             await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                svc.CreateAsync(new RootFolder { Name = "B", Path = Path.Join(rootPath, ".") }));
+                svc.CreateAsync(new RootFolder { Name = "B", Path = rootPath }));
         }
 
         [Fact]
@@ -290,7 +318,11 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
             var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
 
             var mockMove = new Moq.Mock<IMoveQueueService>();
-            mockMove.Setup(m => m.EnqueueMoveAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>()))
+            mockMove.Setup(m => m.EnqueueMoveAsync(
+                    It.IsAny<int>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
                 .ReturnsAsync(Guid.NewGuid());
 
             var logger = new TestLogger<RootFolderService>(_output);
@@ -302,7 +334,10 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                 _output.WriteLine("Before update (with move): " + dumpPre);
             }
 
-            await svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = newRootPath }, moveFiles: true);
+            await svc.UpdateAsync(
+                new RootFolder { Id = root.Id, Name = "R2", Path = newRootPath },
+                moveFiles: true,
+                deleteEmptySource: false);
 
             using (var verifyDb = new ListenArrDbContext(options))
             {
@@ -320,8 +355,81 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                 Assert.Equal(newRootPath, a2);
             }
 
-            mockMove.Verify(m => m.EnqueueMoveAsync(1, newRootAuthorTitlePath, rootAuthorTitlePath), Times.Once);
-            mockMove.Verify(m => m.EnqueueMoveAsync(2, newRootPath, rootPath), Times.Once);
+            mockMove.Verify(m => m.EnqueueMoveAsync(
+                1,
+                newRootAuthorTitlePath,
+                rootAuthorTitlePath,
+                false), Times.Once);
+            mockMove.Verify(m => m.EnqueueMoveAsync(
+                2,
+                newRootPath,
+                rootPath,
+                false), Times.Once);
+        }
+
+        [Fact]
+        public async Task Update_CaseOnlyRenameOnCaseSensitiveHost_MigratesAudiobookPaths()
+        {
+            if (OperatingSystem.IsWindows()) return;
+
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var oldRootPath = FileUtils.GetAbsolutePath("case-root");
+            var renamedRootPath = FileUtils.GetAbsolutePath("Case-Root");
+            var oldAudiobookPath = Path.Join(oldRootPath, "Author", "Title");
+            var expectedAudiobookPath = Path.Join(renamedRootPath, "Author", "Title");
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "R", Path = oldRootPath };
+            db.RootFolders.Add(root);
+            db.Audiobooks.Add(new Audiobook { Title = "A1", BasePath = oldAudiobookPath });
+            await db.SaveChangesAsync();
+            var repo = new EfRootFolderRepository(
+                new TestDbFactory(options),
+                Mock.Of<ILogger<EfRootFolderRepository>>());
+            var service = new RootFolderService(repo, null!);
+
+            await service.UpdateAsync(new RootFolder
+            {
+                Id = root.Id,
+                Name = "R",
+                Path = renamedRootPath
+            });
+
+            await using var verificationDb = new ListenArrDbContext(options);
+            var audiobook = await verificationDb.Audiobooks.SingleAsync();
+            Assert.Equal(expectedAudiobookPath, audiobook.BasePath);
+        }
+
+        [Fact]
+        public async Task Update_MoveEnqueueFailure_IsPropagated()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "R", Path = rootPath };
+            db.RootFolders.Add(root);
+            db.Audiobooks.Add(new Audiobook { Title = "A1", BasePath = rootAuthorTitlePath });
+            await db.SaveChangesAsync();
+            var repo = new EfRootFolderRepository(
+                new TestDbFactory(options),
+                Mock.Of<ILogger<EfRootFolderRepository>>());
+            var moveQueue = new Mock<IMoveQueueService>();
+            moveQueue.Setup(queue => queue.EnqueueMoveAsync(
+                    It.IsAny<int>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
+                .ThrowsAsync(new InvalidOperationException("queue unavailable"));
+            var service = new RootFolderService(repo, new TestLogger<RootFolderService>(_output), moveQueue.Object);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.UpdateAsync(
+                    new RootFolder { Id = root.Id, Name = "R", Path = newRootPath },
+                    moveFiles: true));
+
+            Assert.Equal("queue unavailable", exception.Message);
         }
 
         private class TestDbFactory : IDbContextFactory<ListenArrDbContext>

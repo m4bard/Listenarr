@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -109,28 +110,18 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             await using var ctx = await _dbFactory.CreateDbContextAsync();
             var all = await ctx.Audiobooks.Where(a => a.BasePath != null).ToListAsync(ct);
 
-            const char backslash = '\\';
-            const char slash = '/';
-            string NormalizeForCompare(string s) => (s ?? string.Empty).Replace(slash, backslash).TrimEnd(backslash).ToLowerInvariant();
-            var oldNorm = NormalizeForCompare(oldRootPath);
-
-            var affected = all.Where(a =>
-            {
-                var bpNorm = NormalizeForCompare(a.BasePath!);
-                return bpNorm == oldNorm || bpNorm.StartsWith(oldNorm + backslash);
-            }).ToList();
+            var affected = all
+                .Where(a => FileUtils.IsPathSameOrInside(a.BasePath!, oldRootPath))
+                .ToList();
 
             var moves = new List<(int audiobookId, string original, string target)>();
             foreach (var a in affected)
             {
                 var original = a.BasePath!;
-                char sepToUse = original.Contains(backslash) ? backslash : slash;
-                var suffix = original.Length > oldRootPath.Length
-                    ? original.Substring(oldRootPath.Length).TrimStart(backslash, slash)
-                    : string.Empty;
-                var target = string.IsNullOrEmpty(suffix)
+                var relativePath = Path.GetRelativePath(oldRootPath, original);
+                var target = relativePath == "."
                     ? newRootPath
-                    : newRootPath + sepToUse + suffix.Replace(backslash, sepToUse).Replace(slash, sepToUse);
+                    : Path.Join(newRootPath, relativePath);
                 moves.Add((a.Id, original, target));
                 a.BasePath = target;
             }

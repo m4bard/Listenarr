@@ -52,12 +52,61 @@ namespace Listenarr.Infrastructure.Library.Moving
                     return;
                 }
 
-                // Prefer an enqueued source path snapshot if provided, otherwise use the audiobook's BasePath
-                var source = job.SourcePath;
-                if (!string.IsNullOrWhiteSpace(source) && !Directory.Exists(source))
+                var requested = job.RequestedPath ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(requested))
                 {
-                    logger.LogWarning("Provided source path {Source} for job {JobId} does not exist; falling back to audiobook.BasePath", LogRedaction.SanitizeFilePath(source), job.Id);
-                    source = null;
+                    await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", "Target path not provided", stoppingToken);
+                    metrics.Increment("worker.move.job.failed");
+                    return;
+                }
+
+                var target = Path.GetFullPath(requested);
+                var pathComparison = OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal;
+                var source = job.SourcePath;
+                AudiobookContentMoveResult? recoveredMove = null;
+                if (!string.IsNullOrWhiteSpace(source))
+                {
+                    source = Path.GetFullPath(source);
+                    var recoveryRequest = new AudiobookContentMoveRequest(
+                        source,
+                        target,
+                        job.Id,
+                        job.DeleteEmptySource);
+                    if (contentMoveService.TryGetRecoverableMove(recoveryRequest, out var resumedMove))
+                    {
+                        recoveredMove = resumedMove;
+                        logger.LogInformation(
+                            "Resuming move job {JobId} after its filesystem phase completed",
+                            job.Id);
+                    }
+                    else if (!Directory.Exists(source))
+                    {
+                        logger.LogWarning(
+                            "Provided source path {Source} for job {JobId} does not exist; falling back to audiobook.BasePath",
+                            LogRedaction.SanitizeFilePath(source),
+                            job.Id);
+                        source = null;
+                    }
+                }
+
+                if (recoveredMove == null
+                    && !string.IsNullOrWhiteSpace(audiobook.BasePath)
+                    && Directory.Exists(target)
+                    && contentMoveService.IsSourceCleanupComplete(source, target)
+                    && string.Equals(
+                        Path.GetFullPath(audiobook.BasePath)
+                            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                        target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                        pathComparison))
+                {
+                    await moveQueueService.UpdateJobStatusAsync(
+                        job.Id,
+                        "Completed",
+                        cancellationToken: stoppingToken);
+                    metrics.Increment("worker.move.job.skipped");
+                    return;
                 }
 
                 if (string.IsNullOrWhiteSpace(source))
@@ -65,27 +114,14 @@ namespace Listenarr.Infrastructure.Library.Moving
                     source = audiobook.BasePath;
                 }
 
-                if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source))
+                if (recoveredMove == null && (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source)))
                 {
                     await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", "Source path invalid or does not exist", stoppingToken);
                     metrics.Increment("worker.move.job.failed");
                     return;
                 }
 
-                var requested = job.RequestedPath ?? string.Empty;
-
-                string target = requested;
-
-                if (string.IsNullOrWhiteSpace(target))
-                {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", "Target path not provided", stoppingToken);
-                    metrics.Increment("worker.move.job.failed");
-                    return;
-                }
-
-                // Normalize full paths
-                target = Path.GetFullPath(target);
-                source = Path.GetFullPath(source);
+                source = recoveredMove?.Source ?? Path.GetFullPath(source!);
 
                 if (IsFilesystemRoot(source) || IsFilesystemRoot(target))
                 {
@@ -99,8 +135,13 @@ namespace Listenarr.Infrastructure.Library.Moving
                     return;
                 }
 
-                // If source == target, nothing to do
-                if (string.Equals(source.TrimEnd(Path.DirectorySeparatorChar), target.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+                // If source == target, nothing to do. Match the host filesystem so
+                // case-only moves remain valid on Linux/macOS but no-op on Windows.
+                if (recoveredMove == null
+                    && string.Equals(
+                        source.TrimEnd(Path.DirectorySeparatorChar),
+                        target.TrimEnd(Path.DirectorySeparatorChar),
+                        pathComparison))
                 {
                     await moveQueueService.UpdateJobStatusAsync(job.Id, "Completed", cancellationToken: stoppingToken);
                     metrics.Increment("worker.move.job.skipped");
@@ -109,9 +150,15 @@ namespace Listenarr.Infrastructure.Library.Moving
 
                 try
                 {
-                    var moveResult = await contentMoveService.MoveContentsAsync(
-                        new AudiobookContentMoveRequest(source, target, job.Id),
+                    var moveRequest = new AudiobookContentMoveRequest(
+                        source,
+                        target,
+                        job.Id,
+                        job.DeleteEmptySource);
+                    var moveResult = recoveredMove ?? await contentMoveService.MoveContentsAsync(
+                        moveRequest,
                         stoppingToken);
+                    moveResult = contentMoveService.ResumeSourceCleanup(moveRequest, moveResult);
                     source = moveResult.Source;
                     target = moveResult.Target;
 
@@ -124,6 +171,7 @@ namespace Listenarr.Infrastructure.Library.Moving
 
                     audiobook.BasePath = target;
                     await audiobookRepository.UpdateAsync(audiobook);
+                    contentMoveService.CompleteMove(moveResult);
 
                     // Add history entry and send notifications for the move
                     try
