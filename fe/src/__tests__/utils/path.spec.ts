@@ -124,9 +124,15 @@ describe('path utils', () => {
 
   it('validates library destination paths while allowing platform-valid whitespace', () => {
     expect(validateLibraryDestinationPath('D:\\Books\\Title\\.')).toContain(
-      'Path traversal is not allowed',
+      'current-directory path segments',
+    )
+    expect(validateLibraryDestinationPath('/books/title/.')).toContain(
+      'current-directory path segments',
     )
     expect(validateLibraryDestinationPath('D:\\Books\\Title\\..')).toContain(
+      'Path traversal is not allowed',
+    )
+    expect(validateLibraryDestinationPath('/books/title/..')).toContain(
       'Path traversal is not allowed',
     )
     expect(validateLibraryDestinationPath('D:\\Books\\\\Title')).toContain('empty path segments')

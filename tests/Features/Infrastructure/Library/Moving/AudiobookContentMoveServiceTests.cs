@@ -29,6 +29,26 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
+        public async Task MoveContentsAsync_JobTempContainsPartialFile_ReplacesItOnRetry()
+        {
+            var source = FileService.GetTempDirectory("content-move-partial-src");
+            await FileService.GetFileAsync(source, "book.m4b", "complete audio");
+            var target = Path.Join(FileService.GetTempPath(), $"content-move-partial-dst-{Guid.NewGuid():N}");
+            var jobId = Guid.NewGuid();
+            var targetParent = Path.GetDirectoryName(target)!;
+            var tempName = Path.Join(targetParent, Path.GetFileName(target) + ".tmp-" + jobId.ToString("N"));
+            Directory.CreateDirectory(tempName);
+            await File.WriteAllTextAsync(Path.Join(tempName, "book.m4b"), "partial");
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            await service.MoveContentsAsync(new AudiobookContentMoveRequest(source, target, jobId), CancellationToken.None);
+
+            Assert.False(Directory.Exists(source));
+            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+            Assert.Equal("complete audio", await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
+        }
+
+        [Fact]
         public async Task MoveContentsAsync_TargetInsideSource_MovesContentsIntoChildAndKeepsTarget()
         {
             var source = FileService.GetTempDirectory("content-move-child-src");
@@ -52,6 +72,26 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
+        public async Task MoveContentsAsync_TargetDeepInsideSource_RemovesSiblingContentFromTargetAncestors()
+        {
+            var source = FileService.GetTempDirectory("content-move-deep-child-src");
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var targetAncestor = Path.Join(source, "container");
+            Directory.CreateDirectory(targetAncestor);
+            await FileService.GetFileAsync(targetAncestor, "stale-sibling.txt", "stale");
+            var target = Path.Join(targetAncestor, "target");
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            await service.MoveContentsAsync(new AudiobookContentMoveRequest(source, target, Guid.NewGuid()), CancellationToken.None);
+
+            Assert.True(Directory.Exists(source));
+            Assert.True(Directory.Exists(target));
+            Assert.False(File.Exists(Path.Join(source, "book.m4b")));
+            Assert.False(File.Exists(Path.Join(targetAncestor, "stale-sibling.txt")));
+            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        }
+
+        [Fact]
         public async Task MoveContentsAsync_SourceInsideTarget_MovesContentsUpAndDeletesOldChild()
         {
             var target = FileService.GetTempDirectory("content-move-parent-target");
@@ -67,6 +107,25 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Assert.True(Directory.Exists(target));
             Assert.False(Directory.Exists(source));
             Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        }
+
+        [Fact]
+        public async Task MoveContentsAsync_SourceInsideTarget_WithUnrelatedSibling_Fails()
+        {
+            var target = FileService.GetTempDirectory("content-move-parent-with-sibling-target");
+            var source = Path.Join(target, "Title");
+            Directory.CreateDirectory(source);
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var sibling = Path.Join(target, "OtherBook");
+            Directory.CreateDirectory(sibling);
+            await FileService.GetFileAsync(sibling, "other.m4b", "other");
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            var ex = await Assert.ThrowsAsync<IOException>(() => service.MoveContentsAsync(new AudiobookContentMoveRequest(source, target, Guid.NewGuid()), CancellationToken.None));
+
+            Assert.Contains("unrelated content", ex.Message);
+            Assert.True(File.Exists(Path.Join(source, "book.m4b")));
+            Assert.True(File.Exists(Path.Join(sibling, "other.m4b")));
         }
 
         [Fact]

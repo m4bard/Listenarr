@@ -1610,11 +1610,6 @@ function startEditingDestination() {
  * an absolute/full path. This makes the UI stable when toggling edit mode.
  */
 function finishEditingDestination() {
-  if (destinationPathValidationError.value) {
-    toast.error('Invalid destination', destinationPathValidationError.value)
-    return
-  }
-
   try {
     const chosenRoot = resolveSelectedRootPath() || rootPath.value
     const val = formData.value.relativePath || ''
@@ -1628,12 +1623,18 @@ function finishEditingDestination() {
     // If user is editing a Custom path, the custom input defines the exact destination
     // so clear the relative and exit early (do not normalize or append anything).
     if (selectedRootId.value === 0) {
+      if (destinationPathValidationError.value) {
+        toast.error('Invalid destination', destinationPathValidationError.value)
+        return
+      }
+
       formData.value.relativePath = ''
       editingDestination.value = false
       return
     }
 
-    // If the relative contains the root segments, attempt to strip them
+    // If the relative contains the root segments, attempt to strip them before validating.
+    // Pasted absolute paths can otherwise look invalid while still being normalizable.
     try {
       const stripped = stripRootPrefix(chosenRoot, val)
       if (stripped != null) formData.value.relativePath = stripped
@@ -1660,9 +1661,15 @@ function finishEditingDestination() {
       // Keep the value as-is (user provided a relative path)
       formData.value.relativePath = relOrVal
     }
+
+    if (destinationPathValidationError.value) {
+      toast.error('Invalid destination', destinationPathValidationError.value)
+      return
+    }
+
+    editingDestination.value = false
   } catch (err) {
     console.debug('Failed to normalize relative path on Done:', err)
-  } finally {
     editingDestination.value = false
   }
 }

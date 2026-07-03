@@ -112,7 +112,9 @@ internal sealed class AudiobookContentMoveService(ILogger<AudiobookContentMoveSe
             .Any(entry => !(sourceInsideTarget && IsTargetEntryAllowedBySourceSubtree(entry, source)));
         if (targetHasBlockingContent)
         {
-            throw new IOException("Target directory already exists and contains files");
+            throw new IOException(sourceInsideTarget
+                ? "Destination contains unrelated content outside the source subtree"
+                : "Target directory already exists and contains files");
         }
     }
 
@@ -166,14 +168,20 @@ internal sealed class AudiobookContentMoveService(ILogger<AudiobookContentMoveSe
         {
             try
             {
-                if (File.Exists(destinationFile)
-                    && await FileSystemSafety.FilesHaveSameContentAsync(sourceFile, destinationFile, cancellationToken))
+                if (File.Exists(destinationFile))
                 {
-                    logger.LogInformation(
-                        "Skipping copy for move job {JobId}; destination already has identical content: {Destination}",
-                        jobId,
-                        LogRedaction.SanitizeFilePath(destinationFile));
-                    return;
+                    if (await FileSystemSafety.FilesHaveSameContentAsync(sourceFile, destinationFile, cancellationToken))
+                    {
+                        logger.LogInformation(
+                            "Skipping copy for move job {JobId}; destination already has identical content: {Destination}",
+                            jobId,
+                            LogRedaction.SanitizeFilePath(destinationFile));
+                        return;
+                    }
+
+                    // A previous run of this same move job can leave a truncated file in the
+                    // job-scoped temp directory. Replace mismatched content so retries can heal.
+                    File.Delete(destinationFile);
                 }
 
                 File.Copy(sourceFile, destinationFile, false);
@@ -275,15 +283,31 @@ internal sealed class AudiobookContentMoveService(ILogger<AudiobookContentMoveSe
 
     private static void DeleteSourceContentsExceptTarget(string source, string target)
     {
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.TopDirectoryOnly))
+        foreach (var file in Directory
+            .EnumerateFiles(source, "*", SearchOption.AllDirectories)
+            .Where(file => !IsSameOrInside(file, target))
+            .ToList())
         {
             File.Delete(file);
         }
 
-        foreach (var directory in Directory.EnumerateDirectories(source, "*", SearchOption.TopDirectoryOnly))
+        foreach (var directory in Directory
+            .EnumerateDirectories(source, "*", SearchOption.AllDirectories)
+            .OrderByDescending(directory => directory.Length)
+            .ToList())
         {
-            if (IsSameOrInside(directory, target) || IsSameOrInside(target, directory))
+            if (!Directory.Exists(directory) || IsSameOrInside(directory, target))
             {
+                continue;
+            }
+
+            if (IsSameOrInside(target, directory))
+            {
+                if (!Directory.EnumerateFileSystemEntries(directory).Any())
+                {
+                    Directory.Delete(directory, false);
+                }
+
                 continue;
             }
 

@@ -233,8 +233,12 @@ export function validateLibraryDestinationPath(
     return 'Destination folder cannot contain control characters.'
   }
 
+  if (hasParentTraversalSegment(s, pathKind)) {
+    return 'Path traversal is not allowed in the destination folder. Remove parent directory segments and choose the actual target folder instead.'
+  }
+
   if (hasRelativePathSegment(s, pathKind)) {
-    return 'Path traversal is not allowed in the destination folder. Remove relative path segments and choose the actual target folder instead.'
+    return 'Destination folder cannot contain current-directory path segments. Choose the actual target folder instead.'
   }
 
   if (hasEmptyMiddlePathSegment(s, pathKind)) {
