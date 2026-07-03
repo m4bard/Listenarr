@@ -25,12 +25,21 @@ namespace Listenarr.Application.Audiobooks.RootFolders
         private readonly IRootFolderRepository _repo;
         private readonly ILogger<RootFolderService>? _logger;
         private readonly IMoveQueueService? _moveQueue;
+        private readonly IFileSystemSemanticsResolver? _semanticsResolver;
+        private readonly IRootFolderRelocationService? _relocationService;
 
-        public RootFolderService(IRootFolderRepository repo, ILogger<RootFolderService>? logger, IMoveQueueService? moveQueue = null)
+        public RootFolderService(
+            IRootFolderRepository repo,
+            ILogger<RootFolderService>? logger,
+            IMoveQueueService? moveQueue = null,
+            IFileSystemSemanticsResolver? semanticsResolver = null,
+            IRootFolderRelocationService? relocationService = null)
         {
             _repo = repo;
             _logger = logger;
             _moveQueue = moveQueue;
+            _semanticsResolver = semanticsResolver;
+            _relocationService = relocationService;
         }
 
         public async Task<RootFolder?> GetDefaultAsync()
@@ -45,7 +54,9 @@ namespace Listenarr.Application.Audiobooks.RootFolders
 
             if (string.IsNullOrWhiteSpace(root.Name)) throw new ArgumentException("Name is required");
 
-            var conflict = await FindConflictingRootFolderAsync(root.Path);
+            var resolution = await ResolveSemanticsAsync(root.Path, root.CaseSensitivityMode);
+            ApplyIdentity(root, resolution);
+            var conflict = await FindConflictingRootFolderAsync(root.Path, resolution.Semantics);
             if (conflict != null)
             {
                 throw new InvalidOperationException(BuildRootFolderConflictMessage(conflict));
@@ -65,6 +76,9 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             var root = await _repo.GetByIdAsync(id);
             if (root == null) throw new KeyNotFoundException("Root folder not found");
 
+            EnsureRootIdentityAvailable(root);
+            await EnsureNoActiveRelocationAsync(root.Id);
+
             await EnsureNoActiveMoveJobsTouchRootAsync(root.Path);
 
             var hasReferenced = await _repo.HasAudiobooksUnderPathAsync(root.Path);
@@ -77,6 +91,7 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             {
                 var newRoot = await _repo.GetByIdAsync(reassignRootId!.Value);
                 if (newRoot == null) throw new KeyNotFoundException("Reassign root not found");
+                EnsureRootIdentityAvailable(newRoot);
                 await EnsureNoActiveMoveJobsTouchRootAsync(newRoot.Path);
                 await _repo.MigrateAudiobookPathsAsync(root.Path, newRoot.Path);
             }
@@ -98,77 +113,39 @@ namespace Listenarr.Application.Audiobooks.RootFolders
 
             var existing = await _repo.GetByIdAsync(root.Id);
             if (existing == null) throw new KeyNotFoundException("Root folder not found");
+            await EnsureNoActiveRelocationAsync(existing.Id);
 
-            var pathChanged = !FileUtils.AreFilesystemPathsEquivalentForCurrentOs(existing.Path, root.Path);
-            if (pathChanged)
+            var existingResolution = await ResolveSemanticsAsync(
+                existing.Path,
+                existing.CaseSensitivityMode);
+            if (!FileSystemPathIdentity.AreEquivalent(
+                existing.Path,
+                root.Path,
+                existingResolution.Semantics))
             {
-                var conflict = await FindConflictingRootFolderAsync(root.Path, root.Id);
-                if (conflict != null)
-                {
-                    throw new InvalidOperationException(BuildRootFolderConflictMessage(conflict));
-                }
+                throw new InvalidOperationException(
+                    "Root paths cannot be changed by metadata updates; use the path-changes endpoint.");
             }
 
+            await EnsureNoActiveMoveJobsTouchRootAsync(existing.Path);
             if (root.IsDefault)
             {
                 await _repo.ClearDefaultExceptAsync(excludeId: root.Id);
             }
 
-            var oldPath = existing.Path;
-            var newPath = root.Path;
-
-            List<(int audiobookId, string original, string target)> moves = new();
-            if (pathChanged)
-            {
-                await EnsureNoActiveMoveJobsTouchRootAsync(oldPath);
-                await EnsureNoActiveMoveJobsTouchRootAsync(newPath);
-                moves = await _repo.MigrateAudiobookPathsAsync(oldPath, newPath);
-
-                try
-                {
-                    _logger?.LogInformation("Root rename from {OldPath} to {NewPath}: {Count} audiobooks affected", oldPath, newPath, moves.Count);
-                    foreach (var m in moves)
-                    {
-                        _logger?.LogInformation("Root rename move prep: AudiobookId={AudiobookId} Original={Original} Target={Target}", m.audiobookId, m.original, m.target);
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                {
-                    _logger?.LogDebug(ex, "Failed to emit diagnostics for root rename");
-                }
-            }
-
             existing.Name = root.Name;
-            existing.Path = root.Path;
             existing.IsDefault = root.IsDefault;
+            existing.CaseSensitivityMode = root.CaseSensitivityMode;
+            var resolution = await ResolveSemanticsAsync(existing.Path, root.CaseSensitivityMode);
+            ApplyIdentity(existing, resolution);
             existing.UpdatedAt = DateTime.UtcNow;
             await _repo.UpdateAsync(existing);
-
-            if (moveFiles && _moveQueue != null)
-            {
-                foreach (var m in moves)
-                {
-                    try
-                    {
-                        await _moveQueue.EnqueueMoveAsync(
-                            m.audiobookId,
-                            m.target,
-                            m.original,
-                            deleteEmptySource);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                    {
-                        _logger?.LogWarning(ex, "Failed to enqueue move for audiobook {AudiobookId} during root rename", m.audiobookId);
-                        throw;
-                    }
-                }
-            }
-
             return existing;
         }
 
         private async Task<RootFolderConflict?> FindConflictingRootFolderAsync(
             string normalizedPath,
+            FileSystemPathSemantics requestedSemantics,
             int? excludeId = null)
         {
             var roots = await _repo.GetAllAsync();
@@ -179,17 +156,22 @@ namespace Listenarr.Application.Audiobooks.RootFolders
                     continue;
                 }
 
-                if (FileUtils.AreFilesystemPathsEquivalentForCurrentOs(existingRoot.Path, normalizedPath))
+                var semantics = existingRoot.ResolvedCaseSensitivity == FileSystemCaseSensitivity.Unknown
+                    ? requestedSemantics
+                    : new FileSystemPathSemantics(
+                        requestedSemantics.Syntax,
+                        existingRoot.ResolvedCaseSensitivity);
+                if (FileSystemPathIdentity.AreEquivalent(existingRoot.Path, normalizedPath, semantics))
                 {
                     return new RootFolderConflict(existingRoot, RootFolderConflictType.Duplicate);
                 }
 
-                if (FileUtils.IsPathSameOrInside(normalizedPath, existingRoot.Path))
+                if (FileSystemPathIdentity.IsSameOrInside(normalizedPath, existingRoot.Path, semantics))
                 {
                     return new RootFolderConflict(existingRoot, RootFolderConflictType.RequestedRootIsNestedInsideExistingRoot);
                 }
 
-                if (FileUtils.IsPathSameOrInside(existingRoot.Path, normalizedPath))
+                if (FileSystemPathIdentity.IsSameOrInside(existingRoot.Path, normalizedPath, semantics))
                 {
                     return new RootFolderConflict(existingRoot, RootFolderConflictType.ExistingRootIsNestedInsideRequestedRoot);
                 }
@@ -212,7 +194,7 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             activeJobs ??= Array.Empty<MoveJob>();
 
             var conflictingJob = activeJobs.FirstOrDefault(job =>
-                IsActiveMoveJobStatus(job.Status) &&
+                job.Status.IsActive() &&
                 (IsMoveJobPathInsideRoot(job.SourcePath, rootPath) ||
                  IsMoveJobPathInsideRoot(job.RequestedPath, rootPath)));
 
@@ -232,13 +214,63 @@ namespace Listenarr.Application.Audiobooks.RootFolders
                 return false;
             }
 
-            return FileUtils.IsPathSameOrInside(path, rootPath);
+            return FileSystemPathIdentity.IsSameOrInside(
+                path,
+                rootPath,
+                FileSystemPathSemantics.CurrentHostDefault);
         }
 
-        private static bool IsActiveMoveJobStatus(string? status)
+        private async Task<FileSystemSemanticsResolution> ResolveSemanticsAsync(
+            string path,
+            FileSystemCaseSensitivityMode mode)
         {
-            return string.Equals(status, "Queued", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(status, "Processing", StringComparison.OrdinalIgnoreCase);
+            if (_semanticsResolver == null)
+            {
+                return new FileSystemSemanticsResolution(
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    PathIdentityState.Valid,
+                    Path.GetPathRoot(path) ?? path);
+            }
+
+            var resolution = await _semanticsResolver.ResolveAsync(path, mode);
+            if (resolution.State != PathIdentityState.Valid)
+            {
+                throw new InvalidOperationException(
+                    resolution.Reason ?? "Filesystem case sensitivity is unresolved; select an explicit override.");
+            }
+
+            return resolution;
+        }
+
+        private static void ApplyIdentity(
+            RootFolder root,
+            FileSystemSemanticsResolution resolution)
+        {
+            root.ResolvedCaseSensitivity = resolution.Semantics.CaseSensitivity;
+            root.PathIdentityState = resolution.State;
+            root.PathIdentityKey = FileSystemPathIdentity.CreateKey(
+                "root",
+                root.Path,
+                resolution.Semantics);
+        }
+
+        private void EnsureRootIdentityAvailable(RootFolder root)
+        {
+            if (_semanticsResolver != null && root.PathIdentityState != PathIdentityState.Valid)
+            {
+                throw new InvalidOperationException(
+                    "Root filesystem identity is unresolved or conflicted; select an explicit case-sensitivity override before destructive operations.");
+            }
+        }
+
+        private async Task EnsureNoActiveRelocationAsync(int rootFolderId)
+        {
+            if (_relocationService != null
+                && await _relocationService.GetActiveForRootAsync(rootFolderId) != null)
+            {
+                throw new InvalidOperationException(
+                    "Root folder metadata and deletion are locked while a relocation is active.");
+            }
         }
 
         private static string BuildRootFolderConflictMessage(RootFolderConflict conflict)

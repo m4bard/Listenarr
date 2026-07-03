@@ -52,6 +52,15 @@
                   <h4>{{ folder.name }}</h4>
                   <div class="folder-badges">
                     <Pill variant="success" v-if="folder.isDefault">Default</Pill>
+                    <Pill v-if="folder.pathIdentityState !== 'Valid'" variant="error">
+                      Identity {{ folder.pathIdentityState }}
+                    </Pill>
+                    <Pill v-else variant="subtle">
+                      {{ folder.resolvedCaseSensitivity }}
+                    </Pill>
+                    <Pill v-if="folder.activeRelocation" variant="warning">
+                      {{ folder.activeRelocation.status }}
+                    </Pill>
                   </div>
                 </div>
               </div>
@@ -69,6 +78,7 @@
                   @click="edit(folder)"
                   title="Edit"
                   data-cy="edit-root-folder"
+                  :disabled="!!folder.activeRelocation"
                 >
                   <PhPencil />
                 </button>
@@ -85,6 +95,7 @@
                   @click="confirmDelete(folder)"
                   title="Delete"
                   data-cy="delete-root-folder"
+                  :disabled="!!folder.activeRelocation"
                 >
                   <PhTrash />
                 </button>
@@ -93,6 +104,22 @@
             <div class="folder-path">
               <PhFolder />
               <code>{{ folder.path }}</code>
+            </div>
+            <div v-if="folder.activeRelocation" class="relocation-state">
+              <span>
+                Pending path: <code>{{ folder.activeRelocation.targetPath }}</code> ({{
+                  folder.activeRelocation.completedJobs
+                }}/{{ folder.activeRelocation.totalJobs }})
+              </span>
+              <button
+                v-if="folder.activeRelocation.status === 'NeedsAttention'"
+                type="button"
+                class="btn btn-secondary"
+                @click="retryRelocation(folder)"
+              >
+                Retry
+              </button>
+              <p v-if="folder.activeRelocation.error">{{ folder.activeRelocation.error }}</p>
             </div>
           </div>
         </div>
@@ -127,7 +154,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import RootFolderFormModal from '@/components/settings/RootFolderFormModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
@@ -145,6 +172,7 @@ import {
   PhMagnifyingGlass,
 } from '@phosphor-icons/vue'
 import type { RootFolder } from '@/types'
+import { signalRService } from '@/services/signalr'
 
 interface Props {
   hideHeader?: boolean
@@ -166,6 +194,14 @@ const toast = useToast()
 onMounted(async () => {
   await store.load()
 })
+
+const unsubscribeRelocation =
+  typeof signalRService.onRootFolderRelocationUpdate === 'function'
+    ? signalRService.onRootFolderRelocationUpdate(() => {
+        store.load().catch(() => {})
+      })
+    : () => {}
+onUnmounted(unsubscribeRelocation)
 
 function openAdd() {
   editing.value = null
@@ -215,6 +251,17 @@ const setDefaultFolder = async (folder: RootFolder) => {
       operation: 'setDefaultFolder',
     })
     toast.error('Set default failed', (e as Error)?.message || 'Failed to set default root folder')
+  }
+}
+
+const retryRelocation = async (folder: RootFolder) => {
+  const relocationId = folder.activeRelocation?.relocationId
+  if (!relocationId) return
+  try {
+    await store.retryRelocation(relocationId)
+    toast.success('Root relocation', 'Relocation queued for retry')
+  } catch (e: unknown) {
+    toast.error('Retry failed', (e as Error)?.message || 'Failed to retry relocation')
   }
 }
 

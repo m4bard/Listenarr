@@ -26,10 +26,13 @@ namespace Listenarr.Application.Audiobooks.Contracts
             string? sourcePath = null,
             bool deleteEmptySource = true);
         Task<Guid?> RequeueMoveAsync(Guid jobId);
+        Task<bool> TryClaimJobAsync(Guid jobId, string leaseOwner, CancellationToken cancellationToken = default);
+        Task HeartbeatJobAsync(Guid jobId, string leaseOwner, CancellationToken cancellationToken = default);
         Task RecoverActiveJobsAsync(CancellationToken cancellationToken = default);
         Task<IReadOnlyList<MoveJob>> GetActiveJobsAsync(CancellationToken cancellationToken = default);
+        Task<MoveQueueHealthSnapshot> GetQueueHealthAsync(CancellationToken cancellationToken = default);
         Task<MoveJob?> GetJobAsync(Guid id, CancellationToken cancellationToken = default);
-        Task UpdateJobStatusAsync(Guid id, string status, string? error = null, CancellationToken cancellationToken = default);
+        Task UpdateJobStatusAsync(Guid id, MoveJobStatus status, string? error = null, CancellationToken cancellationToken = default);
         System.Threading.Channels.ChannelReader<MoveJob> Reader { get; }
     }
 }

@@ -403,6 +403,36 @@ public sealed class BackendArchitectureTests
         Assert.Empty(violations);
     }
 
+    [Fact]
+    public void DurableMoveBoundary_RequiresExplicitFilesystemSemantics()
+    {
+        var files = new[]
+        {
+            "listenarr.application/Audiobooks/Jobs/MoveQueueService.cs",
+            "listenarr.application/Audiobooks/RootFolders/RootFolderService.cs",
+            "listenarr.infrastructure/Library/Moving/AudiobookContentMoveService.cs",
+            "listenarr.infrastructure/Library/Moving/AudiobookContentMoveService.Copy.cs",
+            "listenarr.infrastructure/Library/Moving/AudiobookContentMoveService.Manifest.cs",
+            "listenarr.infrastructure/Library/Moving/MoveJobProcessor.cs",
+            "listenarr.infrastructure/Library/Moving/RootFolderRelocationService.cs"
+        };
+        var forbidden = new[]
+        {
+            "FilesystemPathComparerForCurrentOs",
+            "AreFilesystemPathsEquivalentForCurrentOs",
+            "FileUtils.IsPathSameOrInside",
+            ".Replace('\\\\', '/')"
+        };
+
+        var violations = files
+            .SelectMany(file => forbidden
+                .Where(token => File.ReadAllText(Path.Join(RepositoryRoot, file)).Contains(token, StringComparison.Ordinal))
+                .Select(token => $"{file}: {token}"))
+            .ToList();
+
+        Assert.Empty(violations);
+    }
+
     private static void AssertProjectReferences(string relativeProject, IReadOnlyCollection<string> expected)
     {
         var document = XDocument.Load(Path.Join(RepositoryRoot, relativeProject));

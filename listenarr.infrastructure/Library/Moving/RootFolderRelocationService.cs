@@ -1,0 +1,477 @@
+using Listenarr.Domain.Common;
+using Listenarr.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+
+namespace Listenarr.Infrastructure.Library.Moving;
+
+public sealed class RootFolderRelocationService(
+    IDbContextFactory<ListenArrDbContext> dbContextFactory,
+    IFileSystemSemanticsResolver semanticsResolver,
+    IHubBroadcaster hubBroadcaster,
+    TimeProvider timeProvider) : IRootFolderRelocationService
+{
+    private readonly SemaphoreSlim _rootIdentityGate = new(1, 1);
+    private bool _rootIdentitiesReconciled;
+
+    public async Task<RootFolderPathChangeResult> StartAsync(
+        int rootFolderId,
+        RootFolderPathChangeCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        var targetPath = FileSystemPathIdentity.ResolveNativeAbsolutePath(command.TargetPath);
+        var targetResolution = await semanticsResolver.ResolveAsync(
+            targetPath,
+            command.TargetCaseSensitivityMode,
+            cancellationToken);
+        if (targetResolution.State != PathIdentityState.Valid)
+        {
+            throw new InvalidOperationException(
+                targetResolution.Reason ?? "Target filesystem semantics are unavailable; select an explicit override.");
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var root = await db.RootFolders.SingleOrDefaultAsync(
+            candidate => candidate.Id == rootFolderId,
+            cancellationToken)
+            ?? throw new KeyNotFoundException("Root folder not found");
+        if (await db.RootFolderRelocations.AnyAsync(
+            relocation => relocation.ActiveRootFolderId == rootFolderId,
+            cancellationToken))
+        {
+            throw new InvalidOperationException("The root folder already has an active relocation.");
+        }
+
+        var sourceResolution = await semanticsResolver.ResolveAsync(
+            root.Path,
+            root.CaseSensitivityMode,
+            cancellationToken);
+        if (sourceResolution.State != PathIdentityState.Valid)
+        {
+            throw new InvalidOperationException(
+                "The current root filesystem semantics are unavailable; select an explicit override before moving it.");
+        }
+
+        var targetIdentityKey = FileSystemPathIdentity.CreateKey(
+            "root",
+            targetPath,
+            targetResolution.Semantics);
+        var otherRoots = await db.RootFolders
+            .Where(candidate => candidate.Id != rootFolderId)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        var activeBoundaries = await db.RootFolderRelocations
+            .Where(relocation => relocation.ActiveRootFolderId != null)
+            .AsNoTracking()
+            .Select(relocation => new { relocation.SourcePath, relocation.TargetPath })
+            .ToListAsync(cancellationToken);
+        var targetConflict = otherRoots.Any(candidate =>
+                candidate.PathIdentityKey == targetIdentityKey
+                || FileSystemPathIdentity.IsSameOrInside(
+                    targetPath,
+                    candidate.Path,
+                    targetResolution.Semantics)
+                || FileSystemPathIdentity.IsSameOrInside(
+                    candidate.Path,
+                    targetPath,
+                    targetResolution.Semantics))
+            || activeBoundaries.Any(boundary =>
+                BoundariesOverlap(targetPath, boundary.SourcePath, targetResolution.Semantics)
+                || BoundariesOverlap(targetPath, boundary.TargetPath, targetResolution.Semantics));
+        if (targetConflict)
+        {
+            throw new InvalidOperationException("A root folder with that filesystem identity already exists.");
+        }
+
+        var audiobooks = await db.Audiobooks
+            .Where(audiobook => audiobook.BasePath != null)
+            .ToListAsync(cancellationToken);
+        var affected = audiobooks
+            .Where(audiobook => FileSystemPathIdentity.IsSameOrInside(
+                audiobook.BasePath!,
+                root.Path,
+                sourceResolution.Semantics))
+            .ToList();
+
+        if (command.Mode == RootFolderRelocationMode.MetadataOnly)
+        {
+            foreach (var audiobook in affected)
+            {
+                audiobook.BasePath = MapTargetPath(
+                    root.Path,
+                    targetPath,
+                    audiobook.BasePath!,
+                    sourceResolution.Semantics);
+            }
+
+            ApplyRootMetadata(root, command, targetPath, targetResolution, targetIdentityKey);
+            if (command.DesiredIsDefault)
+            {
+                await ClearOtherDefaultsAsync(db, rootFolderId, cancellationToken);
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new RootFolderPathChangeResult(
+                null,
+                root.Id,
+                root.Path,
+                targetPath,
+                RootFolderRelocationStatus.Completed,
+                affected.Count,
+                affected.Count,
+                null);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var relocation = new RootFolderRelocation
+        {
+            RootFolderId = root.Id,
+            ActiveRootFolderId = root.Id,
+            SourcePath = root.Path,
+            TargetPath = targetPath,
+            Mode = command.Mode,
+            Status = RootFolderRelocationStatus.Pending,
+            DeleteEmptySource = command.DeleteEmptySource,
+            DesiredName = command.DesiredName.Trim(),
+            DesiredIsDefault = command.DesiredIsDefault,
+            TargetCaseSensitivityMode = command.TargetCaseSensitivityMode,
+            TotalJobs = affected.Count,
+            CreatedAt = now
+        };
+        db.RootFolderRelocations.Add(relocation);
+
+        foreach (var audiobook in affected)
+        {
+            var requestedPath = MapTargetPath(
+                root.Path,
+                targetPath,
+                audiobook.BasePath!,
+                sourceResolution.Semantics);
+            db.MoveJobs.Add(new MoveJob
+            {
+                AudiobookId = audiobook.Id,
+                RequestedPath = requestedPath,
+                SourcePath = audiobook.BasePath,
+                DeleteEmptySource = command.DeleteEmptySource,
+                Status = MoveJobStatus.Queued,
+                Phase = MoveJobPhase.None,
+                EnqueuedAt = now,
+                RelocationId = relocation.Id,
+                IdentityKeyVersion = 2,
+                ActiveDeduplicationKey = FileSystemPathIdentity.CreateKey(
+                    $"move:{audiobook.Id}",
+                    requestedPath,
+                    targetResolution.Semantics)
+            });
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        if (affected.Count == 0)
+        {
+            ApplyRootMetadata(root, command, targetPath, targetResolution, targetIdentityKey);
+            relocation.Status = RootFolderRelocationStatus.Completed;
+            relocation.ActiveRootFolderId = null;
+            relocation.CompletedAt = now;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        var result = Map(relocation, root.Path);
+        await BroadcastAsync(result, cancellationToken);
+        return result;
+    }
+
+    public async Task<RootFolderPathChangeResult?> GetAsync(
+        Guid relocationId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var relocation = await db.RootFolderRelocations
+            .AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.Id == relocationId, cancellationToken);
+        if (relocation == null) return null;
+        var rootPath = await db.RootFolders
+            .Where(root => root.Id == relocation.RootFolderId)
+            .Select(root => root.Path)
+            .SingleAsync(cancellationToken);
+        return Map(relocation, rootPath);
+    }
+
+    public async Task<RootFolderRelocation?> GetActiveForRootAsync(
+        int rootFolderId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.RootFolderRelocations
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                relocation => relocation.ActiveRootFolderId == rootFolderId,
+                cancellationToken);
+    }
+
+    public async Task<RootFolderPathChangeResult> RetryAsync(
+        Guid relocationId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var relocation = await db.RootFolderRelocations
+            .Include(candidate => candidate.MoveJobs)
+            .SingleOrDefaultAsync(candidate => candidate.Id == relocationId, cancellationToken)
+            ?? throw new KeyNotFoundException("Root folder relocation not found");
+        if (relocation.Status != RootFolderRelocationStatus.NeedsAttention)
+        {
+            throw new InvalidOperationException("Only relocations needing attention can be retried.");
+        }
+
+        foreach (var job in relocation.MoveJobs.Where(job => job.Status is MoveJobStatus.NeedsAttention or MoveJobStatus.Failed))
+        {
+            job.Status = MoveJobStatus.Queued;
+            job.Error = null;
+            job.FailureKind = MoveFailureKind.None;
+            job.NextAttemptAt = null;
+            job.ActiveDeduplicationKey = FileSystemPathIdentity.CreateKey(
+                $"move:{job.AudiobookId}",
+                job.RequestedPath!,
+                FileSystemPathSemantics.CurrentHostDefault);
+        }
+
+        relocation.Status = RootFolderRelocationStatus.Running;
+        relocation.Error = null;
+        relocation.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        var rootPath = await db.RootFolders
+            .Where(root => root.Id == relocation.RootFolderId)
+            .Select(root => root.Path)
+            .SingleAsync(cancellationToken);
+        var result = Map(relocation, rootPath);
+        await BroadcastAsync(result, cancellationToken);
+        return result;
+    }
+
+    public async Task OnMoveJobStateChangedAsync(
+        Guid moveJobId,
+        MoveJobStatus status,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var job = await db.MoveJobs.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.Id == moveJobId,
+            cancellationToken);
+        if (job?.RelocationId == null) return;
+        var relocation = await db.RootFolderRelocations
+            .Include(candidate => candidate.MoveJobs)
+            .SingleAsync(candidate => candidate.Id == job.RelocationId, cancellationToken);
+        var root = await db.RootFolders.SingleAsync(
+            candidate => candidate.Id == relocation.RootFolderId,
+            cancellationToken);
+        relocation.CompletedJobs = relocation.MoveJobs.Count(candidate => candidate.Status == MoveJobStatus.Completed);
+        relocation.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
+
+        if (relocation.MoveJobs.Any(candidate => candidate.Status is MoveJobStatus.NeedsAttention or MoveJobStatus.Failed))
+        {
+            relocation.Status = RootFolderRelocationStatus.NeedsAttention;
+            relocation.Error = relocation.MoveJobs
+                .First(candidate => candidate.Status is MoveJobStatus.NeedsAttention or MoveJobStatus.Failed)
+                .Error;
+        }
+        else if (relocation.MoveJobs.All(candidate => candidate.Status == MoveJobStatus.Completed))
+        {
+            var resolution = await semanticsResolver.ResolveAsync(
+                relocation.TargetPath,
+                relocation.TargetCaseSensitivityMode,
+                cancellationToken);
+            if (resolution.State != PathIdentityState.Valid)
+            {
+                relocation.Status = RootFolderRelocationStatus.NeedsAttention;
+                relocation.Error = "Target filesystem identity became unavailable during finalization.";
+            }
+            else
+            {
+                var command = new RootFolderPathChangeCommand(
+                    relocation.TargetPath,
+                    relocation.Mode,
+                    relocation.DeleteEmptySource,
+                    relocation.DesiredName,
+                    relocation.DesiredIsDefault,
+                    relocation.TargetCaseSensitivityMode);
+                ApplyRootMetadata(
+                    root,
+                    command,
+                    relocation.TargetPath,
+                    resolution,
+                    FileSystemPathIdentity.CreateKey("root", relocation.TargetPath, resolution.Semantics));
+                if (relocation.DesiredIsDefault)
+                {
+                    await ClearOtherDefaultsAsync(db, root.Id, cancellationToken);
+                }
+
+                relocation.Status = RootFolderRelocationStatus.Completed;
+                relocation.ActiveRootFolderId = null;
+                relocation.CompletedAt = relocation.UpdatedAt;
+                relocation.Error = null;
+            }
+        }
+        else
+        {
+            relocation.Status = RootFolderRelocationStatus.Running;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        await BroadcastAsync(Map(relocation, root.Path), cancellationToken);
+    }
+
+    public async Task ReconcileActiveAsync(CancellationToken cancellationToken = default)
+    {
+        await ReconcileRootIdentitiesAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var activeRelocationIds = await db.RootFolderRelocations
+            .Where(relocation => relocation.ActiveRootFolderId != null)
+            .Select(relocation => relocation.Id)
+            .ToListAsync(cancellationToken);
+        var terminalJobs = await db.MoveJobs
+            .Where(job => job.RelocationId != null
+                && activeRelocationIds.Contains(job.RelocationId.Value))
+            .Where(job => job.Status == MoveJobStatus.Completed
+                || job.Status == MoveJobStatus.NeedsAttention
+                || job.Status == MoveJobStatus.Failed)
+            .OrderByDescending(job => job.UpdatedAt)
+            .ToListAsync(cancellationToken);
+        var terminalJobIds = terminalJobs
+            .GroupBy(job => job.RelocationId)
+            .Select(group => group.First().Id);
+        foreach (var jobId in terminalJobIds)
+        {
+            await OnMoveJobStateChangedAsync(jobId, MoveJobStatus.Completed, cancellationToken);
+        }
+    }
+
+    private async Task ReconcileRootIdentitiesAsync(CancellationToken cancellationToken)
+    {
+        if (_rootIdentitiesReconciled) return;
+        await _rootIdentityGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_rootIdentitiesReconciled) return;
+            await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            var roots = await db.RootFolders.ToListAsync(cancellationToken);
+            foreach (var root in roots) root.PathIdentityKey = null;
+            await db.SaveChangesAsync(cancellationToken);
+
+            var resolvedRoots = new List<(RootFolder Root, string Key)>();
+            foreach (var root in roots)
+            {
+                var resolution = await semanticsResolver.ResolveAsync(
+                    root.Path,
+                    root.CaseSensitivityMode,
+                    cancellationToken);
+                root.ResolvedCaseSensitivity = resolution.Semantics.CaseSensitivity;
+                root.PathIdentityState = resolution.State;
+                if (resolution.State == PathIdentityState.Valid)
+                {
+                    resolvedRoots.Add((
+                        root,
+                        FileSystemPathIdentity.CreateKey("root", root.Path, resolution.Semantics)));
+                }
+            }
+
+            foreach (var group in resolvedRoots.GroupBy(item => item.Key, StringComparer.Ordinal))
+            {
+                if (group.Count() == 1)
+                {
+                    var item = group.Single();
+                    item.Root.PathIdentityKey = item.Key;
+                    item.Root.PathIdentityState = PathIdentityState.Valid;
+                    continue;
+                }
+
+                foreach (var item in group)
+                {
+                    item.Root.PathIdentityState = PathIdentityState.Conflict;
+                    item.Root.PathIdentityKey = null;
+                }
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            _rootIdentitiesReconciled = true;
+        }
+        finally
+        {
+            _rootIdentityGate.Release();
+        }
+    }
+
+    private static string MapTargetPath(
+        string sourceRoot,
+        string targetRoot,
+        string sourcePath,
+        FileSystemPathSemantics semantics)
+    {
+        if (!FileSystemPathIdentity.TryResolveRelativePathWithinBase(
+            sourceRoot,
+            Path.GetRelativePath(sourceRoot, sourcePath),
+            semantics,
+            out _))
+        {
+            throw new InvalidOperationException("An audiobook path escaped its configured root.");
+        }
+
+        var relativePath = Path.GetRelativePath(sourceRoot, sourcePath);
+        return relativePath == "." ? targetRoot : Path.Join(targetRoot, relativePath);
+    }
+
+    private static bool BoundariesOverlap(
+        string first,
+        string second,
+        FileSystemPathSemantics semantics) =>
+        FileSystemPathIdentity.IsSameOrInside(first, second, semantics)
+        || FileSystemPathIdentity.IsSameOrInside(second, first, semantics);
+
+    private static void ApplyRootMetadata(
+        RootFolder root,
+        RootFolderPathChangeCommand command,
+        string targetPath,
+        FileSystemSemanticsResolution resolution,
+        string identityKey)
+    {
+        root.Path = targetPath;
+        root.Name = command.DesiredName.Trim();
+        root.IsDefault = command.DesiredIsDefault;
+        root.CaseSensitivityMode = command.TargetCaseSensitivityMode;
+        root.ResolvedCaseSensitivity = resolution.Semantics.CaseSensitivity;
+        root.PathIdentityState = resolution.State;
+        root.PathIdentityKey = identityKey;
+        root.UpdatedAt = DateTime.UtcNow;
+    }
+
+    private static async Task ClearOtherDefaultsAsync(
+        ListenArrDbContext db,
+        int rootFolderId,
+        CancellationToken cancellationToken)
+    {
+        var defaults = await db.RootFolders
+            .Where(root => root.Id != rootFolderId && root.IsDefault)
+            .ToListAsync(cancellationToken);
+        foreach (var root in defaults) root.IsDefault = false;
+    }
+
+    private static RootFolderPathChangeResult Map(RootFolderRelocation relocation, string currentPath) => new(
+        relocation.Id,
+        relocation.RootFolderId,
+        currentPath,
+        relocation.TargetPath,
+        relocation.Status,
+        relocation.TotalJobs,
+        relocation.CompletedJobs,
+        relocation.Error);
+
+    private Task BroadcastAsync(RootFolderPathChangeResult result, CancellationToken cancellationToken) =>
+        hubBroadcaster.BroadcastAsync("RootFolderRelocationUpdate", result, cancellationToken);
+}

@@ -35,6 +35,7 @@ export function toForward(s: string | null | undefined): string {
 }
 
 export function trimTrailingSlash(s: string): string {
+  if (s === '/' || /^[a-zA-Z]:[\\/]$/.test(s)) return s
   let out = s
   while (out.endsWith('/') || out.endsWith('\\')) out = out.slice(0, -1)
   return out
@@ -138,7 +139,7 @@ export function hasEmptyMiddlePathSegment(
   const value = s || ''
   const kind = pathKind === 'unknown' ? detectPathKind(value) : pathKind
   const normalized = trimTrailingSlash(kind === 'windows' ? value.replace(/\\/g, '/') : value)
-  if (!normalized) return false
+  if (!normalized || normalized === '/' || /^[a-zA-Z]:\/$/.test(normalized)) return false
 
   if (kind === 'windows' && normalized.startsWith('//')) {
     return normalized

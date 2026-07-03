@@ -289,8 +289,24 @@ export interface RootFolder {
   name: string
   path: string
   isDefault: boolean
-  createdAt: string
+  createdAt?: string
   updatedAt?: string
+  caseSensitivityMode?: 'Auto' | 'Sensitive' | 'Insensitive'
+  resolvedCaseSensitivity?: 'Unknown' | 'Sensitive' | 'Insensitive'
+  pathIdentityState?: 'Valid' | 'Conflict' | 'Unavailable'
+  pathIdentityKey?: string | null
+  activeRelocation?: RootFolderPathChangeResult | null
+}
+
+export interface RootFolderPathChangeResult {
+  relocationId?: string | null
+  rootFolderId: number
+  currentPath: string
+  targetPath: string
+  status: 'Pending' | 'Running' | 'NeedsAttention' | 'Completed' | 'Failed'
+  totalJobs: number
+  completedJobs: number
+  error?: string | null
 }
 
 export interface TranslatePathRequest {

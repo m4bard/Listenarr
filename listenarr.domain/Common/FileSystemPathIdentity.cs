@@ -1,0 +1,258 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace Listenarr.Domain.Common;
+
+public enum FileSystemPathSyntax
+{
+    Windows,
+    Unix
+}
+
+public enum FileSystemCaseSensitivity
+{
+    Unknown,
+    Sensitive,
+    Insensitive
+}
+
+public enum FileSystemCaseSensitivityMode
+{
+    Auto,
+    Sensitive,
+    Insensitive
+}
+
+public enum PathIdentityState
+{
+    Valid,
+    Conflict,
+    Unavailable
+}
+
+public readonly record struct FileSystemPathSemantics(
+    FileSystemPathSyntax Syntax,
+    FileSystemCaseSensitivity CaseSensitivity)
+{
+    public StringComparer Comparer => CaseSensitivity switch
+    {
+        FileSystemCaseSensitivity.Sensitive => StringComparer.Ordinal,
+        FileSystemCaseSensitivity.Insensitive => StringComparer.OrdinalIgnoreCase,
+        _ => throw new InvalidOperationException("Filesystem case sensitivity must be resolved first.")
+    };
+
+    public static FileSystemPathSemantics CurrentHostDefault => new(
+        OperatingSystem.IsWindows() ? FileSystemPathSyntax.Windows : FileSystemPathSyntax.Unix,
+        OperatingSystem.IsWindows()
+            ? FileSystemCaseSensitivity.Insensitive
+            : FileSystemCaseSensitivity.Sensitive);
+}
+
+public static partial class FileSystemPathIdentity
+{
+    private static readonly Regex WindowsDrivePattern = new(
+        "^[A-Za-z]:[\\\\/]",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    public static string ResolveNativeAbsolutePath(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (OperatingSystem.IsWindows()
+            && (path[0] is '/' or '\\')
+            && !(path.Length > 1 && path[1] is '/' or '\\'))
+        {
+            var currentRoot = Path.GetPathRoot(Environment.CurrentDirectory)
+                ?? throw new InvalidOperationException("The current filesystem root is unavailable.");
+            return currentRoot + path.TrimStart('/', '\\');
+        }
+
+        return Path.IsPathFullyQualified(path) ? path : Path.GetFullPath(path);
+    }
+
+    public static bool AreEquivalent(
+        string left,
+        string right,
+        FileSystemPathSemantics semantics)
+    {
+        var comparison = GetComparison(semantics);
+        return string.Equals(
+            Canonicalize(left, semantics.Syntax),
+            Canonicalize(right, semantics.Syntax),
+            comparison);
+    }
+
+    public static bool IsSameOrInside(
+        string candidate,
+        string root,
+        FileSystemPathSemantics semantics)
+    {
+        var normalizedCandidate = Canonicalize(candidate, semantics.Syntax);
+        var normalizedRoot = Canonicalize(root, semantics.Syntax);
+        var comparison = GetComparison(semantics);
+        if (string.Equals(normalizedCandidate, normalizedRoot, comparison))
+        {
+            return true;
+        }
+
+        var separator = semantics.Syntax == FileSystemPathSyntax.Windows ? '\\' : '/';
+        var rootBoundary = normalizedRoot.EndsWith(separator)
+            ? normalizedRoot
+            : normalizedRoot + separator;
+        return normalizedCandidate.StartsWith(rootBoundary, comparison);
+    }
+
+    public static string CreateKey(
+        string scope,
+        string path,
+        FileSystemPathSemantics semantics)
+    {
+        if (semantics.CaseSensitivity == FileSystemCaseSensitivity.Unknown)
+        {
+            throw new InvalidOperationException("Filesystem case sensitivity must be resolved before creating an identity key.");
+        }
+
+        var canonical = Canonicalize(path, semantics.Syntax);
+        if (semantics.CaseSensitivity == FileSystemCaseSensitivity.Insensitive)
+        {
+            canonical = canonical.ToUpperInvariant();
+        }
+
+        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        var sensitivity = semantics.CaseSensitivity == FileSystemCaseSensitivity.Sensitive ? "s" : "i";
+        return $"v2:{scope}:{sensitivity}:{digest}";
+    }
+
+    public static bool TryResolveRelativePathWithinBase(
+        string basePath,
+        string relativePath,
+        FileSystemPathSemantics semantics,
+        out string resolvedPath)
+    {
+        resolvedPath = string.Empty;
+        if (string.IsNullOrEmpty(relativePath) || IsRooted(relativePath, semantics.Syntax))
+        {
+            return false;
+        }
+
+        var separators = semantics.Syntax == FileSystemPathSyntax.Windows
+            ? new[] { '\\', '/' }
+            : new[] { '/' };
+        if (relativePath.Split(separators).Any(segment => segment is "." or ".."))
+        {
+            return false;
+        }
+
+        var separator = semantics.Syntax == FileSystemPathSyntax.Windows ? '\\' : '/';
+        var candidate = Canonicalize(
+            Canonicalize(basePath, semantics.Syntax) + separator + relativePath,
+            semantics.Syntax);
+        if (!IsSameOrInside(candidate, basePath, semantics))
+        {
+            return false;
+        }
+
+        resolvedPath = candidate;
+        return true;
+    }
+
+    public static string Canonicalize(string path, FileSystemPathSyntax syntax)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new ArgumentException("Path is required.", nameof(path));
+        }
+
+        return syntax == FileSystemPathSyntax.Windows
+            ? CanonicalizeWindows(path)
+            : CanonicalizeUnix(path);
+    }
+
+    private static StringComparison GetComparison(FileSystemPathSemantics semantics)
+    {
+        return semantics.CaseSensitivity switch
+        {
+            FileSystemCaseSensitivity.Sensitive => StringComparison.Ordinal,
+            FileSystemCaseSensitivity.Insensitive => StringComparison.OrdinalIgnoreCase,
+            _ => throw new InvalidOperationException(
+                "Filesystem case sensitivity must be resolved before comparing paths.")
+        };
+    }
+
+    private static bool IsRooted(string path, FileSystemPathSyntax syntax)
+    {
+        return syntax == FileSystemPathSyntax.Windows
+            ? WindowsDrivePattern.IsMatch(path) || path.StartsWith("\\\\", StringComparison.Ordinal)
+            : path.StartsWith("/", StringComparison.Ordinal);
+    }
+
+    private static string CanonicalizeUnix(string path)
+    {
+        if (!path.StartsWith("/", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Unix filesystem identity requires an absolute path.", nameof(path));
+        }
+
+        var segments = CollapseSegments(path.Split('/', StringSplitOptions.RemoveEmptyEntries));
+        return segments.Count == 0 ? "/" : "/" + string.Join('/', segments);
+    }
+
+    private static string CanonicalizeWindows(string path)
+    {
+        var normalized = path.Replace('/', '\\');
+        var (root, remaining) = SplitWindowsRoot(normalized);
+        var segments = CollapseSegments(remaining.Split('\\', StringSplitOptions.RemoveEmptyEntries));
+        return segments.Count == 0
+            ? root
+            : root.TrimEnd('\\') + "\\" + string.Join('\\', segments);
+    }
+
+    private static (string Root, string Remaining) SplitWindowsRoot(string path)
+    {
+        if (WindowsDrivePattern.IsMatch(path))
+        {
+            return (char.ToUpperInvariant(path[0]) + ":\\", path[3..]);
+        }
+
+        if (!path.StartsWith("\\\\", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Windows filesystem identity requires an absolute path.", nameof(path));
+        }
+
+        var parts = path[2..].Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+        {
+            throw new ArgumentException("UNC paths require a server and share.", nameof(path));
+        }
+
+        var root = $"\\\\{parts[0]}\\{parts[1]}";
+        var consumedLength = 2 + parts[0].Length + 1 + parts[1].Length;
+        return (root, path.Length > consumedLength ? path[consumedLength..] : string.Empty);
+    }
+
+    private static List<string> CollapseSegments(IEnumerable<string> source)
+    {
+        var segments = new List<string>();
+        foreach (var segment in source)
+        {
+            if (segment == ".")
+            {
+                continue;
+            }
+
+            if (segment == "..")
+            {
+                if (segments.Count > 0)
+                {
+                    segments.RemoveAt(segments.Count - 1);
+                }
+
+                continue;
+            }
+
+            segments.Add(segment);
+        }
+
+        return segments;
+    }
+}

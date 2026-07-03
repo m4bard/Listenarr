@@ -30,6 +30,7 @@ import {
   hasWindowsTrailingSpaceOrPeriodSegment,
   hasWindowsInvalidCharacter,
   pathsOverlap,
+  pathIsInside,
   hasWindowsReservedDeviceSegment,
   validateLibraryDestinationPath,
   stripRootPrefix,
@@ -46,6 +47,8 @@ describe('path utils', () => {
     expect(trimTrailingSlash('C:/path/')).toBe('C:/path')
     expect(trimTrailingSlash('C:\\path\\')).toBe('C:\\path')
     expect(trimTrailingSlash('no-slash')).toBe('no-slash')
+    expect(trimTrailingSlash('/')).toBe('/')
+    expect(trimTrailingSlash('C:\\')).toBe('C:\\')
   })
 
   it('normalizeForCompare lowercases and trims', () => {
@@ -127,6 +130,7 @@ describe('path utils', () => {
     expect(pathsOverlap('/books/title/child', '/books/title', 'unix')).toBe(true)
     expect(pathsOverlap('/books/title2', '/books/title', 'unix')).toBe(false)
     expect(pathsOverlap('/Books/title', '/books', 'unix')).toBe(false)
+    expect(pathIsInside('/Author/Title', '/', 'unix')).toBe(true)
   })
 
   it('validates library destination paths while allowing platform-valid whitespace', () => {

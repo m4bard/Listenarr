@@ -1,0 +1,40 @@
+namespace Listenarr.Tests.Features.Infrastructure.FileSystem;
+
+public sealed class FileSystemSemanticsResolverTests
+{
+    [Fact]
+    public async Task ExplicitOverride_ResolvesWithoutExistingPath()
+    {
+        var resolver = new FileSystemSemanticsResolver();
+        var missingPath = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "books");
+
+        var resolution = await resolver.ResolveAsync(
+            missingPath,
+            FileSystemCaseSensitivityMode.Sensitive);
+
+        Assert.Equal(FileSystemCaseSensitivity.Sensitive, resolution.Semantics.CaseSensitivity);
+        Assert.Equal(PathIdentityState.Valid, resolution.State);
+    }
+
+    [Fact]
+    public async Task AutoProbe_ResolvesAndRemovesProbeFile()
+    {
+        var root = Path.Join(Path.GetTempPath(), "filesystem-semantics-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var resolver = new FileSystemSemanticsResolver();
+        try
+        {
+            var resolution = await resolver.ResolveAsync(
+                Path.Join(root, "future", "books"),
+                FileSystemCaseSensitivityMode.Auto);
+
+            Assert.NotEqual(FileSystemCaseSensitivity.Unknown, resolution.Semantics.CaseSensitivity);
+            Assert.Equal(PathIdentityState.Valid, resolution.State);
+            Assert.Empty(Directory.EnumerateFiles(root, ".listenarr-case-probe-*"));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+}

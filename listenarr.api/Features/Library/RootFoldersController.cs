@@ -20,6 +20,36 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library
 {
+    public sealed record RootFolderDto(
+        int Id,
+        string Name,
+        string Path,
+        bool IsDefault,
+        string CaseSensitivityMode,
+        string ResolvedCaseSensitivity,
+        string PathIdentityState,
+        string? PathIdentityKey,
+        RootFolderPathChangeResult? ActiveRelocation);
+
+    public sealed record RootFolderMetadataUpdateRequest(
+        string Name,
+        bool IsDefault,
+        FileSystemCaseSensitivityMode CaseSensitivityMode);
+
+    public sealed record RootFolderCreateRequest(
+        string Name,
+        string Path,
+        bool IsDefault,
+        FileSystemCaseSensitivityMode CaseSensitivityMode);
+
+    public sealed record RootFolderPathChangeRequest(
+        string TargetPath,
+        string Mode,
+        bool DeleteEmptySource,
+        string DesiredName,
+        bool DesiredIsDefault,
+        FileSystemCaseSensitivityMode TargetCaseSensitivityMode);
+
     [ApiController]
     [Route("api/v{version:apiVersion}/rootfolders")]
     [Tags("Root Folders")]
@@ -30,19 +60,22 @@ namespace Listenarr.Api.Features.Library
         private readonly IAudiobookFileRepository _fileRepository;
         private readonly IAudiobookRepository _audiobookRepository;
         private readonly IFileSystem _fileSystem;
+        private readonly IRootFolderRelocationService? _relocationService;
 
         public RootFoldersController(
             IRootFolderService service,
             IUnmatchedScanQueueService unmatchedQueue,
             IAudiobookFileRepository fileRepository,
             IAudiobookRepository audiobookRepository,
-            IFileSystem fileSystem)
+            IFileSystem fileSystem,
+            IRootFolderRelocationService? relocationService = null)
         {
             _service = service;
             _unmatchedQueue = unmatchedQueue;
             _fileRepository = fileRepository;
             _audiobookRepository = audiobookRepository;
             _fileSystem = fileSystem;
+            _relocationService = relocationService;
         }
 
         /// <summary>
@@ -52,7 +85,13 @@ namespace Listenarr.Api.Features.Library
         public async Task<IActionResult> GetAll()
         {
             var all = await _service.GetAllAsync();
-            return Ok(all);
+            var response = new List<RootFolderDto>(all.Count);
+            foreach (var root in all)
+            {
+                response.Add(await MapAsync(root));
+            }
+
+            return Ok(response);
         }
 
         /// <summary>
@@ -64,7 +103,7 @@ namespace Listenarr.Api.Features.Library
         {
             var r = await _service.GetByIdAsync(id);
             if (r == null) return NotFound(new { message = "Root folder not found" });
-            return Ok(r);
+            return Ok(await MapAsync(r));
         }
 
         /// <summary>
@@ -73,12 +112,18 @@ namespace Listenarr.Api.Features.Library
         /// <param name="request">The root folder to create.</param>
         /// <returns>The newly created root folder.</returns>
         [HttpPost]
-        public async Task<IActionResult> Create([FromBody] RootFolder request)
+        public async Task<IActionResult> Create([FromBody] RootFolderCreateRequest request)
         {
             try
             {
-                var created = await _service.CreateAsync(request);
-                return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
+                var created = await _service.CreateAsync(new RootFolder
+                {
+                    Name = request.Name,
+                    Path = request.Path,
+                    IsDefault = request.IsDefault,
+                    CaseSensitivityMode = request.CaseSensitivityMode
+                });
+                return CreatedAtAction(nameof(Get), new { id = created.Id }, await MapAsync(created));
             }
             catch (ArgumentException ex)
             {
@@ -97,7 +142,7 @@ namespace Listenarr.Api.Features.Library
         /// <param name="request">Updated root folder data.</param>
         /// <param name="moveFiles">When true, physically move existing audiobook files to the new path.</param>
         /// <param name="deleteEmptySource">When true, delete the old root directory if it is empty after moving files.</param>
-        [HttpPut("{id}")]
+        [NonAction]
         public async Task<IActionResult> Update(int id, [FromBody] RootFolder request, [FromQuery] bool moveFiles = false, [FromQuery] bool deleteEmptySource = true)
         {
             if (id != request.Id) return BadRequest(new { message = "Id mismatch" });
@@ -113,6 +158,80 @@ namespace Listenarr.Api.Features.Library
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPatch("{id}")]
+        public async Task<IActionResult> Patch(
+            int id,
+            [FromBody] RootFolderMetadataUpdateRequest request)
+        {
+            var existing = await _service.GetByIdAsync(id);
+            if (existing == null) return NotFound(new { message = "Root folder not found" });
+            existing.Name = request.Name;
+            existing.IsDefault = request.IsDefault;
+            existing.CaseSensitivityMode = request.CaseSensitivityMode;
+            try
+            {
+                var updated = await _service.UpdateAsync(existing);
+                return Ok(await MapAsync(updated));
+            }
+            catch (ArgumentException exception)
+            {
+                return BadRequest(new { message = exception.Message });
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Conflict(new { message = exception.Message });
+            }
+        }
+
+        [HttpPost("{id}/path-changes")]
+        public async Task<IActionResult> ChangePath(
+            int id,
+            [FromBody] RootFolderPathChangeRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (_relocationService == null)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "Relocation service unavailable" });
+            }
+
+            if (!Enum.TryParse<RootFolderRelocationMode>(request.Mode, true, out var mode))
+            {
+                return BadRequest(new { message = "Mode must be 'relocate' or 'metadataOnly'." });
+            }
+
+            try
+            {
+                var result = await _relocationService.StartAsync(
+                    id,
+                    new RootFolderPathChangeCommand(
+                        request.TargetPath,
+                        mode,
+                        request.DeleteEmptySource,
+                        request.DesiredName,
+                        request.DesiredIsDefault,
+                        request.TargetCaseSensitivityMode),
+                    cancellationToken);
+                return mode == RootFolderRelocationMode.Relocate
+                    ? AcceptedAtRoute(
+                        "GetRootFolderRelocation",
+                        new { id = result.RelocationId },
+                        result)
+                    : Ok(result);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return NotFound(new { message = exception.Message });
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Conflict(new { message = exception.Message });
+            }
+            catch (ArgumentException exception)
+            {
+                return BadRequest(new { message = exception.Message });
             }
         }
 
@@ -205,6 +324,30 @@ namespace Listenarr.Api.Features.Library
             }
 
             return Ok(new { lastScannedAt = (DateTime?)null, items = new List<UnmatchedFileResult>() });
+        }
+
+        private async Task<RootFolderDto> MapAsync(RootFolder root)
+        {
+            RootFolderPathChangeResult? active = null;
+            if (_relocationService != null)
+            {
+                var relocation = await _relocationService.GetActiveForRootAsync(root.Id);
+                if (relocation != null)
+                {
+                    active = await _relocationService.GetAsync(relocation.Id);
+                }
+            }
+
+            return new RootFolderDto(
+                root.Id,
+                root.Name,
+                root.Path,
+                root.IsDefault,
+                root.CaseSensitivityMode.ToString(),
+                root.ResolvedCaseSensitivity.ToString(),
+                root.PathIdentityState.ToString(),
+                root.PathIdentityKey,
+                active);
         }
     }
 }

@@ -6,72 +6,111 @@
  * it under the terms of the GNU Affero General Public License as published
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
 using Microsoft.Extensions.Logging;
 
-namespace Listenarr.Infrastructure.Library.Moving
+namespace Listenarr.Infrastructure.Library.Moving;
+
+public sealed class MoveBackgroundService(
+    IMoveQueueService moveQueueService,
+    IMoveJobProcessor processor,
+    ILogger<MoveBackgroundService> logger,
+    IAppMetricsService? metrics = null) : BackgroundService
 {
-    public class MoveBackgroundService(
-        IMoveQueueService moveQueueService,
-        IMoveJobProcessor processor,
-        ILogger<MoveBackgroundService> logger) : BackgroundService
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        var leaseOwner = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
+        var retryDelay = TimeSpan.FromSeconds(1);
+
+        while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 await moveQueueService.RecoverActiveJobsAsync(stoppingToken);
-                await foreach (var job in moveQueueService.Reader.ReadAllAsync(stoppingToken))
+                if (metrics != null)
                 {
-                    if (stoppingToken.IsCancellationRequested)
+                    var health = await moveQueueService.GetQueueHealthAsync(stoppingToken);
+                    metrics.Gauge("worker.move.queue.depth", health.QueueDepth);
+                    metrics.Gauge("worker.move.queue.oldest_age_seconds", health.OldestQueuedAgeSeconds);
+                    metrics.Gauge("worker.move.queue.retries", health.RetryCount);
+                    metrics.Gauge("worker.move.queue.expired_leases", health.ExpiredLeaseCount);
+                    metrics.Gauge("worker.move.queue.needs_attention", health.NeedsAttentionCount);
+                }
+                while (moveQueueService.Reader.TryRead(out var job))
+                {
+                    if (!await moveQueueService.TryClaimJobAsync(job.Id, leaseOwner, stoppingToken))
                     {
-                        break;
+                        continue;
                     }
 
                     try
                     {
-                        await processor.ProcessJobAsync(job, stoppingToken);
+                        using var heartbeatCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                        var heartbeatTask = RunHeartbeatAsync(
+                            job.Id,
+                            leaseOwner,
+                            heartbeatCancellation.Token);
+                        try
+                        {
+                            await processor.ProcessJobAsync(job, stoppingToken);
+                        }
+                        finally
+                        {
+                            await heartbeatCancellation.CancelAsync();
+                            try
+                            {
+                                await heartbeatTask;
+                            }
+                            catch (OperationCanceledException) when (heartbeatCancellation.IsCancellationRequested)
+                            {
+                            }
+                        }
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {
-                        break;
+                        return;
                     }
-                    catch (OperationCanceledException ex)
+                    catch (Exception exception) when (exception is not OutOfMemoryException and not StackOverflowException)
                     {
-                        logger.LogWarning(ex, "Move job {JobId} canceled/timed out", job.Id);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                    {
-                        logger.LogError(ex, "Unexpected error processing move job {JobId}", job.Id);
-                        try { await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", ex.Message, stoppingToken); }
-                        catch (Exception caughtEx) when (caughtEx is not OperationCanceledException && caughtEx is not OutOfMemoryException && caughtEx is not StackOverflowException)
-                        {
-                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                        }
+                        logger.LogError(exception, "Unexpected error processing move job {JobId}", job.Id);
+                        await moveQueueService.UpdateJobStatusAsync(
+                            job.Id,
+                            MoveJobStatus.Failed,
+                            exception.Message,
+                            stoppingToken);
                     }
                 }
+
+                retryDelay = TimeSpan.FromSeconds(1);
+                await Task.Delay(PollInterval, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                logger.LogInformation("MoveBackgroundService stopping due to host shutdown");
+                break;
             }
-            catch (OperationCanceledException ex)
+            catch (Exception exception) when (exception is not OutOfMemoryException and not StackOverflowException)
             {
-                logger.LogWarning(ex, "MoveBackgroundService channel stream canceled/timed out");
+                logger.LogError(exception, "Move queue poll failed; the worker will retry");
+                await Task.Delay(retryDelay, stoppingToken);
+                retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, 30));
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                logger.LogError(ex, "Unhandled error in MoveBackgroundService channel loop");
-            }
+        }
+
+        logger.LogInformation("MoveBackgroundService stopping due to host shutdown");
+    }
+
+    private async Task RunHeartbeatAsync(
+        Guid jobId,
+        string leaseOwner,
+        CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        while (await timer.WaitForNextTickAsync(cancellationToken))
+        {
+            await moveQueueService.HeartbeatJobAsync(jobId, leaseOwner, cancellationToken);
         }
     }
 }

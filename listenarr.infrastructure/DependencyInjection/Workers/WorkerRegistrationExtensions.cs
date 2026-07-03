@@ -27,6 +27,7 @@ internal static class WorkerRegistrationExtensions
         AddProcessor<ScanJobProcessor, IScanJobProcessor>(services);
         services.AddHostedService<ScanBackgroundService>();
 
+        services.AddSingleton<IRootFolderRelocationService, RootFolderRelocationService>();
         services.AddSingleton<IMoveQueueService, MoveQueueService>();
         services.AddSingleton<AudiobookContentMoveService>();
         AddProcessor<MoveJobProcessor, IMoveJobProcessor>(services);

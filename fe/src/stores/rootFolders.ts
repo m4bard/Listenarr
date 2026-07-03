@@ -44,7 +44,12 @@ export const useRootFoldersStore = defineStore('rootFolders', () => {
     }
   }
 
-  async function create(payload: { name: string; path: string; isDefault?: boolean }) {
+  async function create(payload: {
+    name: string
+    path: string
+    isDefault?: boolean
+    caseSensitivityMode?: 'Auto' | 'Sensitive' | 'Insensitive'
+  }) {
     const r = await apiService.createRootFolder(payload)
     await load()
     return r
@@ -52,12 +57,37 @@ export const useRootFoldersStore = defineStore('rootFolders', () => {
 
   async function update(
     id: number,
-    payload: { id: number; name: string; path: string; isDefault?: boolean },
+    payload: {
+      id: number
+      name: string
+      path: string
+      isDefault?: boolean
+      caseSensitivityMode?: 'Auto' | 'Sensitive' | 'Insensitive'
+    },
     opts?: { moveFiles?: boolean; deleteEmptySource?: boolean },
   ) {
-    const r = await apiService.updateRootFolder(id, payload, opts)
+    const current = folders.value.find((folder) => folder.id === id)
+    if (current && current.path !== payload.path) {
+      await apiService.changeRootFolderPath(id, {
+        targetPath: payload.path,
+        mode: opts?.moveFiles === false ? 'metadataOnly' : 'relocate',
+        deleteEmptySource: opts?.deleteEmptySource !== false,
+        desiredName: payload.name,
+        desiredIsDefault: payload.isDefault === true,
+        targetCaseSensitivityMode:
+          payload.caseSensitivityMode ?? current.caseSensitivityMode ?? 'Auto',
+      })
+    } else {
+      await apiService.updateRootFolder(id, payload)
+    }
     await load()
-    return r
+    return folders.value.find((folder) => folder.id === id) ?? current!
+  }
+
+  async function retryRelocation(relocationId: string) {
+    const result = await apiService.retryRootFolderRelocation(relocationId)
+    await load()
+    return result
   }
 
   async function remove(id: number, reassignTo?: number) {
@@ -66,5 +96,5 @@ export const useRootFoldersStore = defineStore('rootFolders', () => {
     return r
   }
 
-  return { folders, loading, defaultFolder, load, create, update, remove }
+  return { folders, loading, defaultFolder, load, create, update, retryRelocation, remove }
 })

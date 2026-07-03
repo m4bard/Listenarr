@@ -10,6 +10,13 @@
 
 namespace Listenarr.Application.Audiobooks.Contracts;
 
+public sealed record MoveQueueHealthSnapshot(
+    int QueueDepth,
+    double OldestQueuedAgeSeconds,
+    int RetryCount,
+    int ExpiredLeaseCount,
+    int NeedsAttentionCount);
+
 public interface IMoveQueuePersistence
 {
     Task<MoveJob?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
@@ -18,14 +25,35 @@ public interface IMoveQueuePersistence
 
     Task<IReadOnlyList<MoveJob>> GetActiveAsync(CancellationToken cancellationToken = default);
 
+    Task ReconcileIdentityKeysAsync(CancellationToken cancellationToken = default);
+
+    Task<MoveQueueHealthSnapshot> GetHealthAsync(
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(MoveJob job, CancellationToken cancellationToken = default);
 
     Task RequeueAsync(MoveJob job, CancellationToken cancellationToken = default);
 
     Task UpdateStatusAsync(
         Guid id,
-        string status,
+        MoveJobStatus status,
+        MoveJobPhase phase,
         string? error,
+        MoveFailureKind failureKind,
         DateTimeOffset updatedAt,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> TryClaimAsync(
+        Guid id,
+        string leaseOwner,
+        DateTimeOffset now,
+        DateTimeOffset leaseExpiresAt,
+        CancellationToken cancellationToken = default);
+
+    Task HeartbeatAsync(
+        Guid id,
+        string leaseOwner,
+        DateTimeOffset leaseExpiresAt,
         CancellationToken cancellationToken = default);
 }

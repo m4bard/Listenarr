@@ -27,6 +27,7 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<AudiobookExternalIdentifier> AudiobookExternalIdentifiers { get; set; } = null!;
         public DbSet<AudiobookFile> AudiobookFiles { get; set; } = null!;
         public DbSet<MoveJob> MoveJobs { get; set; } = null!;
+        public DbSet<MoveJobEntry> MoveJobEntries { get; set; } = null!;
         public DbSet<ApplicationSettings> ApplicationSettings { get; set; } = null!;
         public DbSet<History> History { get; set; } = null!;
         public DbSet<Indexer> Indexers { get; set; } = null!;
@@ -40,6 +41,7 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<RemotePathMapping> RemotePathMappings { get; set; } = null!;
         public DbSet<ProcessExecutionLog> ProcessExecutionLogs { get; set; } = null!;
         public DbSet<RootFolder> RootFolders { get; set; } = null!;
+        public DbSet<RootFolderRelocation> RootFolderRelocations { get; set; } = null!;
         public DbSet<MonitoredAuthor> MonitoredAuthors { get; set; } = null!;
         public DbSet<MonitoredSeries> MonitoredSeries { get; set; } = null!;
         public DbSet<AuthorCacheEntry> AuthorCacheEntries { get; set; } = null!;

@@ -104,7 +104,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
 
             var res = await controller.GetAll();
             var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(res);
-            var list = Assert.IsAssignableFrom<List<RootFolder>>(ok.Value);
+            var list = Assert.IsAssignableFrom<List<RootFolderDto>>(ok.Value);
             Assert.Equal(2, list.Count);
         }
 
@@ -128,7 +128,11 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var _db = CreateDb();
             var controller = new RootFoldersController(svc, _fakeQueue, new EfAudiobookFileRepository(_db), new AudiobookRepository(_db), new LocalFileSystem());
 
-            var req = new RootFolder { Name = "New", Path = FileUtils.GetAbsolutePath("dup") };
+            var req = new RootFolderCreateRequest(
+                "New",
+                FileUtils.GetAbsolutePath("dup"),
+                false,
+                FileSystemCaseSensitivityMode.Auto);
             var res = await controller.Create(req);
 
             var bad = Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(res);

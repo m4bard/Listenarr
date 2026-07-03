@@ -19,6 +19,68 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Listenarr.Domain.Audiobooks
 {
+    public enum MoveJobStatus
+    {
+        Queued,
+        Running,
+        RetryScheduled,
+        NeedsAttention,
+        Completed,
+        Failed,
+        Superseded
+    }
+
+    public enum MoveJobPhase
+    {
+        None,
+        Planned,
+        Copying,
+        Published,
+        CleaningSource,
+        Finalizing
+    }
+
+    public enum MoveFailureKind
+    {
+        None,
+        Transient,
+        SourceDrift,
+        Verification,
+        UnsupportedEntry,
+        Persistence,
+        Unknown
+    }
+
+    public enum MoveJobEntryType
+    {
+        File,
+        Directory
+    }
+
+    public enum MoveJobEntryCopyState
+    {
+        Pending,
+        Staged,
+        Published,
+        Verified
+    }
+
+    public enum MoveJobEntryCleanupState
+    {
+        Pending,
+        Quarantined,
+        Deleted,
+        Retained
+    }
+
+    public static class MoveJobStatusExtensions
+    {
+        public static bool IsActive(this MoveJobStatus status) => status is
+            MoveJobStatus.Queued or
+            MoveJobStatus.Running or
+            MoveJobStatus.RetryScheduled;
+    }
+
     public class MoveJob
     {
         [Key]
@@ -26,14 +88,39 @@ namespace Listenarr.Domain.Audiobooks
         public int AudiobookId { get; set; }
         public string? RequestedPath { get; set; }
         public DateTime EnqueuedAt { get; set; } = DateTime.UtcNow;
-        public string Status { get; set; } = "Queued";
+        public MoveJobStatus Status { get; set; } = MoveJobStatus.Queued;
+        public MoveJobPhase Phase { get; set; } = MoveJobPhase.None;
         public string? Error { get; set; }
+        public MoveFailureKind FailureKind { get; set; } = MoveFailureKind.None;
         public int AttemptCount { get; set; } = 0;
         public DateTime? UpdatedAt { get; set; }
         public string? ActiveDeduplicationKey { get; set; }
+        public int IdentityKeyVersion { get; set; } = 2;
+        public string? LeaseOwner { get; set; }
+        public DateTime? LeaseExpiresAt { get; set; }
+        public DateTime? NextAttemptAt { get; set; }
+        public Guid? RelocationId { get; set; }
+        public RootFolderRelocation? Relocation { get; set; }
         // Optional source path snapshot provided at enqueue time. Persist this so jobs
         // remain durable and can be inspected / resumed across restarts.
         public string? SourcePath { get; set; }
         public bool DeleteEmptySource { get; set; } = true;
+        public ICollection<MoveJobEntry> Entries { get; set; } = new List<MoveJobEntry>();
+    }
+
+    public class MoveJobEntry
+    {
+        public long Id { get; set; }
+        public Guid MoveJobId { get; set; }
+        public MoveJob MoveJob { get; set; } = null!;
+        [Required, MaxLength(2000)]
+        public string RelativePath { get; set; } = string.Empty;
+        public MoveJobEntryType EntryType { get; set; }
+        public long Length { get; set; }
+        public DateTime LastWriteTimeUtc { get; set; }
+        [MaxLength(64)]
+        public string? Sha256 { get; set; }
+        public MoveJobEntryCopyState CopyState { get; set; }
+        public MoveJobEntryCleanupState CleanupState { get; set; }
     }
 }

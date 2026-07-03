@@ -53,19 +53,77 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
 
         await persistence.UpdateStatusAsync(
             first.Id,
-            "Completed",
+            MoveJobStatus.Completed,
+            MoveJobPhase.Finalizing,
             null,
+            MoveFailureKind.None,
             DateTimeOffset.UtcNow);
         await persistence.AddAsync(duplicate);
 
         Assert.Equal(duplicate.Id, (await persistence.GetActiveByKeyAsync("42:/LIBRARY/BOOK"))?.Id);
     }
 
+    [Fact]
+    public async Task ReconcileIdentityKeys_SelectsMostAdvancedLegacyDuplicate()
+    {
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            db.MoveJobs.AddRange(
+                new MoveJob
+                {
+                    AudiobookId = 42,
+                    RequestedPath = "/library/book",
+                    Status = MoveJobStatus.Queued,
+                    Phase = MoveJobPhase.Planned,
+                    IdentityKeyVersion = 1,
+                    ActiveDeduplicationKey = "legacy:first"
+                },
+                new MoveJob
+                {
+                    AudiobookId = 42,
+                    RequestedPath = "/library/book",
+                    Status = MoveJobStatus.Running,
+                    Phase = MoveJobPhase.Published,
+                    IdentityKeyVersion = 1,
+                    ActiveDeduplicationKey = "legacy:second"
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var persistence = new EfMoveQueuePersistence(_factory);
+        await persistence.ReconcileIdentityKeysAsync();
+
+        await using var verification = await _factory.CreateDbContextAsync();
+        var jobs = await verification.MoveJobs.OrderBy(job => job.Phase).ToListAsync();
+        Assert.Equal(MoveJobStatus.Superseded, jobs[0].Status);
+        Assert.Null(jobs[0].ActiveDeduplicationKey);
+        Assert.Equal(MoveJobStatus.Running, jobs[1].Status);
+        Assert.StartsWith("v2:move:42:", jobs[1].ActiveDeduplicationKey);
+    }
+
+    [Fact]
+    public async Task TryClaimAsync_ConcurrentWorkers_OnlyOneAcquiresLease()
+    {
+        var persistence = new EfMoveQueuePersistence(_factory);
+        var job = CreateJob("v2:move:42:s:claim");
+        await persistence.AddAsync(job);
+        var now = DateTimeOffset.UtcNow;
+
+        var claims = await Task.WhenAll(
+            persistence.TryClaimAsync(job.Id, "worker-a", now, now.AddMinutes(2)),
+            persistence.TryClaimAsync(job.Id, "worker-b", now, now.AddMinutes(2)));
+
+        Assert.Single(claims, claimed => claimed);
+        var claimedJob = await persistence.GetByIdAsync(job.Id);
+        Assert.Equal(MoveJobStatus.Running, claimedJob!.Status);
+        Assert.Contains(claimedJob.LeaseOwner, new[] { "worker-a", "worker-b" });
+    }
+
     private static MoveJob CreateJob(string key) => new()
     {
         AudiobookId = 42,
         RequestedPath = "/library/book",
-        Status = "Queued",
+        Status = MoveJobStatus.Queued,
         ActiveDeduplicationKey = key
     };
 

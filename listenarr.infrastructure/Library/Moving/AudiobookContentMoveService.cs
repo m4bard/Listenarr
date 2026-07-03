@@ -8,6 +8,8 @@
  * (at your option) any later version.
  */
 using Listenarr.Domain.Common;
+using Listenarr.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Library.Moving;
@@ -16,7 +18,8 @@ internal sealed record AudiobookContentMoveRequest(
     string Source,
     string Target,
     Guid JobId,
-    bool DeleteEmptySource = true);
+    bool DeleteEmptySource = true,
+    FileSystemPathSemantics? Semantics = null);
 
 internal sealed record AudiobookContentMoveResult(
     string Source,
@@ -26,7 +29,17 @@ internal sealed record AudiobookContentMoveResult(
     string RecoveryMarkerPath,
     bool SourceCleanupCompleted);
 
-internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookContentMoveService> logger)
+internal sealed class MoveNeedsAttentionException(string message) : IOException(message);
+
+internal interface IMoveFaultInjector
+{
+    Task AfterPublishedAsync(Guid jobId, CancellationToken cancellationToken);
+}
+
+internal sealed partial class AudiobookContentMoveService(
+    ILogger<AudiobookContentMoveService> logger,
+    IDbContextFactory<ListenArrDbContext> dbContextFactory,
+    IMoveFaultInjector? faultInjector = null)
 {
     private const int MaxCopyAttempts = 5;
 
@@ -39,8 +52,9 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
 
         var source = Path.GetFullPath(request.Source);
         var target = Path.GetFullPath(request.Target);
-        var targetInsideSource = FileUtils.IsPathInsideOf(target, source);
-        var sourceInsideTarget = FileUtils.IsPathInsideOf(source, target);
+        var semantics = request.Semantics ?? FileSystemPathSemantics.CurrentHostDefault;
+        var targetInsideSource = IsSameOrInside(target, source, semantics);
+        var sourceInsideTarget = IsSameOrInside(source, target, semantics);
 
         var targetParent = Path.GetDirectoryName(target);
         if (string.IsNullOrEmpty(targetParent))
@@ -52,8 +66,15 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
 
         var recoveryMarkerPath = GetRecoveryMarkerPath(target, request.JobId);
         var recoveryStage = ReadRecoveryStage(recoveryMarkerPath);
+        if (string.Equals(recoveryStage, CopyCompletedStage, StringComparison.Ordinal)
+            && LoadManifest(request.JobId).Count == 0)
+        {
+            throw new MoveNeedsAttentionException(
+                "A legacy copy-complete marker has no byte-verified manifest; source cleanup is blocked.");
+        }
+
         var resumingDirectCopy = string.Equals(recoveryStage, CopyStartedStage, StringComparison.Ordinal);
-        EnsureTargetCanReceiveContents(source, target, sourceInsideTarget, resumingDirectCopy);
+        EnsureTargetCanReceiveContents(source, target, sourceInsideTarget, resumingDirectCopy, semantics);
 
         var tempName = Path.Join(targetParent, Path.GetFileName(target) + ".tmp-" + request.JobId.ToString("N"));
         if (!FileSystemSafety.TryValidateMutationTarget(tempName, [targetParent], out tempName, out var tempReason))
@@ -64,6 +85,41 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
 
         try
         {
+            if (!targetInsideSource
+                && !sourceInsideTarget
+                && faultInjector == null
+                && request.DeleteEmptySource
+                && !Directory.Exists(target)
+                && !Directory.Exists(tempName)
+                && recoveryStage == null)
+            {
+                try
+                {
+                    Directory.Move(source, target);
+                    await UpdateJobPhaseAsync(request.JobId, MoveJobPhase.Finalizing, cancellationToken);
+                    return new AudiobookContentMoveResult(
+                        source,
+                        target,
+                        false,
+                        false,
+                        recoveryMarkerPath,
+                        SourceCleanupCompleted: true);
+                }
+                catch (IOException)
+                {
+                    // Cross-device and unsupported atomic renames use the verified copy path.
+                }
+            }
+
+            var manifest = await LoadOrCreateManifestAsync(
+                request.JobId,
+                source,
+                target,
+                targetInsideSource,
+                semantics,
+                cancellationToken);
+            await UpdateJobPhaseAsync(request.JobId, MoveJobPhase.Planned, cancellationToken);
+
             // The move operation relocates the contents of the audiobook BasePath, not the
             // BasePath directory itself. Child destinations must copy directly and skip their
             // own subtree to avoid recursively copying the destination into itself.
@@ -77,13 +133,17 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
                 WriteRecoveryMarker(copyDestination, request.JobId, CopyStartedStage);
             }
 
+            await UpdateJobPhaseAsync(request.JobId, MoveJobPhase.Copying, cancellationToken);
             await CopySourceContentsAsync(
                 source,
-                target,
                 copyDestination,
-                targetInsideSource,
+                manifest,
                 request.JobId,
+                semantics,
                 cancellationToken);
+
+            await VerifyPublishedManifestAsync(copyDestination, manifest, semantics, cancellationToken);
+            await UpdateCopyStateAsync(request.JobId, cancellationToken);
 
             WriteRecoveryMarker(copyDestination, request.JobId, CopyCompletedStage);
 
@@ -92,7 +152,24 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
                 Directory.Move(tempName, target);
             }
 
-            DeleteOriginalSource(source, target, targetInsideSource, request.DeleteEmptySource);
+            await UpdateJobPhaseAsync(request.JobId, MoveJobPhase.Published, cancellationToken);
+
+            if (faultInjector != null)
+            {
+                await faultInjector.AfterPublishedAsync(request.JobId, cancellationToken);
+            }
+
+            await UpdateJobPhaseAsync(request.JobId, MoveJobPhase.CleaningSource, cancellationToken);
+            await DeleteOriginalSourceAsync(
+                source,
+                target,
+                targetInsideSource,
+                request.DeleteEmptySource,
+                request.JobId,
+                manifest,
+                semantics,
+                cancellationToken);
+            await UpdateJobPhaseAsync(request.JobId, MoveJobPhase.Finalizing, cancellationToken);
             WriteRecoveryMarker(target, request.JobId, SourceCleanupCompletedStage);
 
             return new AudiobookContentMoveResult(
@@ -118,28 +195,49 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
         var target = Path.GetFullPath(request.Target);
         var recoveryMarkerPath = GetRecoveryMarkerPath(target, request.JobId);
         var recoveryStage = ReadRecoveryStage(recoveryMarkerPath);
-        var comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-        if (IsFilesystemRoot(source)
-            || IsFilesystemRoot(target)
-            || string.Equals(source, target, comparison)
+        var semantics = request.Semantics ?? FileSystemPathSemantics.CurrentHostDefault;
+        var manifest = LoadManifest(request.JobId);
+        var atomicRenameCompleted = manifest.Count == 0
+            && recoveryStage == null
+            && LoadMoveJobPhase(request.JobId) == MoveJobPhase.Finalizing;
+        if (IsFilesystemRoot(source, semantics)
+            || IsFilesystemRoot(target, semantics)
+            || FileSystemPathIdentity.AreEquivalent(source, target, semantics)
             || !Directory.Exists(target)
-            || recoveryStage is not (CopyCompletedStage or SourceCleanupCompletedStage))
+            || (!atomicRenameCompleted && manifest.Count == 0)
+            || (!atomicRenameCompleted
+                && recoveryStage is not (CopyCompletedStage or SourceCleanupCompletedStage)))
         {
             result = null!;
             return false;
         }
 
-        var targetInsideSource = FileUtils.IsPathInsideOf(target, source);
-        var sourceInsideTarget = FileUtils.IsPathInsideOf(source, target);
+        try
+        {
+            if (!atomicRenameCompleted)
+            {
+                VerifyPublishedManifestAsync(target, manifest, semantics, CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+            }
+        }
+        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+        {
+            logger.LogWarning(exception, "Rejected unverifiable recovery marker for move job {JobId}", request.JobId);
+            result = null!;
+            return false;
+        }
+
+        var targetInsideSource = IsSameOrInside(target, source, semantics);
+        var sourceInsideTarget = IsSameOrInside(source, target, semantics);
         result = new AudiobookContentMoveResult(
             source,
             target,
             targetInsideSource,
             sourceInsideTarget,
             recoveryMarkerPath,
-            string.Equals(recoveryStage, SourceCleanupCompletedStage, StringComparison.Ordinal));
+            atomicRenameCompleted
+                || string.Equals(recoveryStage, SourceCleanupCompletedStage, StringComparison.Ordinal));
         return true;
     }
 
@@ -152,11 +250,22 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
             return result;
         }
 
-        DeleteOriginalSource(
+        var manifest = LoadManifest(request.JobId);
+        if (manifest.Count == 0)
+        {
+            throw new MoveNeedsAttentionException(
+                "Source cleanup is blocked because no persisted move manifest is available.");
+        }
+
+        DeleteOriginalSourceAsync(
             result.Source,
             result.Target,
             result.TargetInsideSource,
-            request.DeleteEmptySource);
+            request.DeleteEmptySource,
+            request.JobId,
+            manifest,
+            request.Semantics ?? FileSystemPathSemantics.CurrentHostDefault,
+            CancellationToken.None).GetAwaiter().GetResult();
         WriteRecoveryMarker(result.Target, request.JobId, SourceCleanupCompletedStage);
         return result with { SourceCleanupCompleted = true };
     }
@@ -179,7 +288,10 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
         }
     }
 
-    public bool IsSourceCleanupComplete(string? sourcePath, string targetPath)
+    public bool IsSourceCleanupComplete(
+        string? sourcePath,
+        string targetPath,
+        FileSystemPathSemantics? resolvedSemantics = null)
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
         {
@@ -193,21 +305,23 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
         }
 
         var target = Path.GetFullPath(targetPath);
-        if (!FileUtils.IsPathInsideOf(target, source))
+        var semantics = resolvedSemantics ?? FileSystemPathSemantics.CurrentHostDefault;
+        if (!IsSameOrInside(target, source, semantics))
         {
             return !Directory.EnumerateFileSystemEntries(source).Any();
         }
 
         return Directory
             .EnumerateFileSystemEntries(source, "*", SearchOption.AllDirectories)
-            .All(entry => IsSameOrInside(entry, target) || IsSameOrInside(target, entry));
+            .All(entry => IsSameOrInside(entry, target, semantics) || IsSameOrInside(target, entry, semantics));
     }
 
     private static void EnsureTargetCanReceiveContents(
         string source,
         string target,
         bool sourceInsideTarget,
-        bool resumingOwnedDirectCopy)
+        bool resumingOwnedDirectCopy,
+        FileSystemPathSemantics semantics)
     {
         if (!Directory.Exists(target) || resumingOwnedDirectCopy)
         {
@@ -218,7 +332,7 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
         // the source subtree. That subtree is not a collision because it is the content being moved.
         var targetHasBlockingContent = Directory
             .EnumerateFileSystemEntries(target)
-            .Any(entry => !(sourceInsideTarget && IsTargetEntryAllowedBySourceSubtree(entry, source)));
+            .Any(entry => !(sourceInsideTarget && IsTargetEntryAllowedBySourceSubtree(entry, source, semantics)));
         if (targetHasBlockingContent)
         {
             throw new IOException(sourceInsideTarget
@@ -227,156 +341,6 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
         }
     }
 
-    private async Task CopySourceContentsAsync(
-        string source,
-        string target,
-        string copyDestination,
-        bool targetInsideSource,
-        Guid jobId,
-        CancellationToken cancellationToken)
-    {
-        var entries = Directory.EnumerateFileSystemEntries(source, "*", SearchOption.AllDirectories);
-        foreach (var entry in entries)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (targetInsideSource && IsSameOrInside(entry, target))
-            {
-                continue;
-            }
-
-            var relativePath = Path.GetRelativePath(source, entry);
-            if (!FileUtils.TryResolveRelativePathWithinBase(copyDestination, relativePath, out var destinationPath))
-            {
-                throw new IOException($"Move entry destination escaped target root: {relativePath}");
-            }
-
-            if (Directory.Exists(entry))
-            {
-                if (!Directory.Exists(destinationPath)) Directory.CreateDirectory(destinationPath);
-                continue;
-            }
-
-            await CopyFileWithRetryAsync(entry, destinationPath, jobId, cancellationToken);
-        }
-    }
-
-    private async Task CopyFileWithRetryAsync(
-        string sourceFile,
-        string destinationFile,
-        Guid jobId,
-        CancellationToken cancellationToken)
-    {
-        var destinationDirectory = Path.GetDirectoryName(destinationFile);
-        if (!string.IsNullOrEmpty(destinationDirectory) && !Directory.Exists(destinationDirectory))
-        {
-            Directory.CreateDirectory(destinationDirectory);
-        }
-
-        for (var attempt = 1; attempt <= MaxCopyAttempts; attempt++)
-        {
-            try
-            {
-                if (File.Exists(destinationFile))
-                {
-                    if (await FileSystemSafety.FilesHaveSameContentAsync(sourceFile, destinationFile, cancellationToken))
-                    {
-                        logger.LogInformation(
-                            "Skipping copy for move job {JobId}; destination already has identical content: {Destination}",
-                            jobId,
-                            LogRedaction.SanitizeFilePath(destinationFile));
-                        return;
-                    }
-
-                    // A previous run of this same move job can leave a truncated file in the
-                    // job-scoped temp directory. Replace mismatched content so retries can heal.
-                    File.Delete(destinationFile);
-                }
-
-                File.Copy(sourceFile, destinationFile, false);
-                PreserveFileMetadata(sourceFile, destinationFile);
-                return;
-            }
-            catch (IOException exception) when (attempt < MaxCopyAttempts)
-            {
-                logger.LogWarning(
-                    exception,
-                    "IO error copying file {File} attempt {Attempt}",
-                    LogRedaction.SanitizeFilePath(sourceFile),
-                    attempt);
-
-                var delay = TimeSpan.FromSeconds(Math.Min(8, Math.Pow(2, attempt - 1)));
-                await Task.Delay(delay, cancellationToken);
-            }
-        }
-
-        throw new IOException($"Failed to copy file after {MaxCopyAttempts} attempts: {sourceFile}");
-    }
-
-    private void PreserveFileMetadata(string sourceFile, string destinationFile)
-    {
-        try
-        {
-            var attributes = File.GetAttributes(sourceFile);
-            File.SetAttributes(destinationFile, attributes);
-
-            var lastWrite = File.GetLastWriteTimeUtc(sourceFile);
-            var creation = File.GetCreationTimeUtc(sourceFile);
-            File.SetLastWriteTimeUtc(destinationFile, lastWrite);
-            File.SetCreationTimeUtc(destinationFile, creation);
-        }
-        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
-        {
-            logger.LogDebug(
-                exception,
-                "Non-fatal: failed to preserve attributes for {File}",
-                LogRedaction.SanitizeFilePath(sourceFile));
-        }
-    }
-
-    private static void DeleteOriginalSource(
-        string source,
-        string target,
-        bool targetInsideSource,
-        bool deleteEmptySource)
-    {
-        if (!Directory.Exists(source))
-        {
-            return;
-        }
-
-        if (IsFilesystemRoot(source))
-        {
-            throw new IOException("Source path became invalid before cleanup.");
-        }
-
-        if (targetInsideSource)
-        {
-            DeleteSourceContentsExceptTarget(source, target);
-            return;
-        }
-
-        DeleteDirectoryContents(source);
-        if (deleteEmptySource && Directory.Exists(source))
-        {
-            Directory.Delete(source, false);
-        }
-    }
-
-    private static void DeleteDirectoryContents(string source)
-    {
-        foreach (var entry in Directory.EnumerateFileSystemEntries(source).ToList())
-        {
-            if (Directory.Exists(entry))
-            {
-                Directory.Delete(entry, true);
-            }
-            else
-            {
-                File.Delete(entry);
-            }
-        }
-    }
 
     private string? ReadRecoveryStage(string markerPath)
     {
@@ -394,55 +358,24 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
         }
     }
 
-    private static bool IsTargetEntryAllowedBySourceSubtree(string entry, string source)
+    private static bool IsTargetEntryAllowedBySourceSubtree(
+        string entry,
+        string source,
+        FileSystemPathSemantics semantics)
     {
-        if (IsSameOrInside(entry, source))
+        if (IsSameOrInside(entry, source, semantics))
         {
             return true;
         }
 
-        if (!Directory.Exists(entry) || !IsSameOrInside(source, entry))
+        if (!Directory.Exists(entry) || !IsSameOrInside(source, entry, semantics))
         {
             return false;
         }
 
         return Directory
             .EnumerateFileSystemEntries(entry, "*", SearchOption.AllDirectories)
-            .All(child => IsSameOrInside(child, source) || IsSameOrInside(source, child));
-    }
-
-    private static void DeleteSourceContentsExceptTarget(string source, string target)
-    {
-        foreach (var file in Directory
-            .EnumerateFiles(source, "*", SearchOption.AllDirectories)
-            .Where(file => !IsSameOrInside(file, target))
-            .ToList())
-        {
-            File.Delete(file);
-        }
-
-        foreach (var directory in Directory
-            .EnumerateDirectories(source, "*", SearchOption.AllDirectories)
-            .OrderByDescending(directory => directory.Length)
-            .ToList())
-        {
-            if (!Directory.Exists(directory) || IsSameOrInside(directory, target))
-            {
-                continue;
-            }
-
-            if (IsSameOrInside(target, directory))
-            {
-                if (!Directory.EnumerateFileSystemEntries(directory).Any())
-                {
-                    Directory.Delete(directory, false);
-                }
-
-                continue;
-            }
-
-            Directory.Delete(directory, true);
-        }
+            .All(child => IsSameOrInside(child, source, semantics) || IsSameOrInside(source, child, semantics));
     }
 
     private static void TryDeleteTempDirectory(string tempName, string targetParent)
@@ -461,7 +394,10 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
         }
     }
 
-    private static bool IsSameOrInside(string candidate, string root)
+    private static bool IsSameOrInside(
+        string candidate,
+        string root,
+        FileSystemPathSemantics semantics)
     {
         if (string.IsNullOrWhiteSpace(candidate) || string.IsNullOrWhiteSpace(root))
         {
@@ -471,11 +407,15 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
         var normalizedCandidate = Path.GetFullPath(candidate);
         var normalizedRoot = Path.GetFullPath(root);
 
-        return FileUtils.AreFilesystemPathsEquivalentForCurrentOs(normalizedCandidate, normalizedRoot)
-            || FileUtils.IsPathInsideOf(normalizedCandidate, normalizedRoot);
+        return FileSystemPathIdentity.IsSameOrInside(
+            normalizedCandidate,
+            normalizedRoot,
+            semantics);
     }
 
-    private static bool IsFilesystemRoot(string path)
+    private static bool IsFilesystemRoot(
+        string path,
+        FileSystemPathSemantics? resolvedSemantics = null)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -485,6 +425,9 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
         var fullPath = Path.GetFullPath(path);
         var root = Path.GetPathRoot(fullPath);
         return !string.IsNullOrWhiteSpace(root)
-            && FileUtils.AreFilesystemPathsEquivalentForCurrentOs(fullPath, root);
+            && FileSystemPathIdentity.AreEquivalent(
+                fullPath,
+                root,
+                resolvedSemantics ?? FileSystemPathSemantics.CurrentHostDefault);
     }
 }

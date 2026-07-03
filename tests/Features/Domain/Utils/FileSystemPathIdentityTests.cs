@@ -1,0 +1,101 @@
+namespace Listenarr.Tests.Features.Domain.Utils;
+
+public sealed class FileSystemPathIdentityTests
+{
+    [Fact]
+    public void UnixIdentity_PreservesLiteralBackslash()
+    {
+        var semantics = new FileSystemPathSemantics(
+            FileSystemPathSyntax.Unix,
+            FileSystemCaseSensitivity.Sensitive);
+
+        Assert.False(FileSystemPathIdentity.AreEquivalent(
+            "/books/Author\\Title",
+            "/books/Author/Title",
+            semantics));
+    }
+
+    [Fact]
+    public void UnixRoot_ContainsAbsoluteChild()
+    {
+        var semantics = new FileSystemPathSemantics(
+            FileSystemPathSyntax.Unix,
+            FileSystemCaseSensitivity.Sensitive);
+
+        Assert.True(FileSystemPathIdentity.IsSameOrInside("/Author/Title", "/", semantics));
+    }
+
+    [Fact]
+    public void InsensitiveUnixVolume_UsesFilesystemSemantics()
+    {
+        var semantics = new FileSystemPathSemantics(
+            FileSystemPathSyntax.Unix,
+            FileSystemCaseSensitivity.Insensitive);
+
+        Assert.True(FileSystemPathIdentity.AreEquivalent(
+            "/Volumes/Books/Title",
+            "/volumes/books/title/",
+            semantics));
+    }
+
+    [Fact]
+    public void WindowsIdentity_NormalizesSeparatorsAndCase()
+    {
+        var semantics = new FileSystemPathSemantics(
+            FileSystemPathSyntax.Windows,
+            FileSystemCaseSensitivity.Insensitive);
+
+        Assert.True(FileSystemPathIdentity.AreEquivalent(
+            @"C:\Books\Author\Title",
+            "c:/books/author/title/",
+            semantics));
+    }
+
+    [Fact]
+    public void ResolveRelativePath_UnixBackslashRemainsInFilename()
+    {
+        var semantics = new FileSystemPathSemantics(
+            FileSystemPathSyntax.Unix,
+            FileSystemCaseSensitivity.Sensitive);
+
+        var resolved = FileSystemPathIdentity.TryResolveRelativePathWithinBase(
+            "/target",
+            "Author\\Title/book.m4b",
+            semantics,
+            out var path);
+
+        Assert.True(resolved);
+        Assert.Equal("/target/Author\\Title/book.m4b", path);
+    }
+
+    [Fact]
+    public void IdentityKey_IsVersionedAndStableForEquivalentPaths()
+    {
+        var semantics = new FileSystemPathSemantics(
+            FileSystemPathSyntax.Windows,
+            FileSystemCaseSensitivity.Insensitive);
+
+        var first = FileSystemPathIdentity.CreateKey(
+            "move:7",
+            @"C:\Books\Title",
+            semantics);
+        var second = FileSystemPathIdentity.CreateKey(
+            "move:7",
+            "c:/books/title/",
+            semantics);
+
+        Assert.StartsWith("v2:move:7:i:", first, StringComparison.Ordinal);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void UnknownSensitivity_CannotCreateIdentityKey()
+    {
+        var semantics = new FileSystemPathSemantics(
+            FileSystemPathSyntax.Unix,
+            FileSystemCaseSensitivity.Unknown);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            FileSystemPathIdentity.CreateKey("root", "/books", semantics));
+    }
+}

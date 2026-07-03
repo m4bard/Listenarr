@@ -29,7 +29,8 @@ namespace Listenarr.Infrastructure.Library.Moving
         AudiobookContentMoveService contentMoveService,
         IServiceScopeFactory scopeFactory,
         IHubContext<DownloadHub> hubContext,
-        IAppMetricsService metrics) : IMoveJobProcessor
+        IAppMetricsService metrics,
+        IFileSystemSemanticsResolver semanticsResolver) : IMoveJobProcessor
     {
         public async Task ProcessJobAsync(MoveJob job, CancellationToken stoppingToken)
         {
@@ -39,7 +40,7 @@ namespace Listenarr.Infrastructure.Library.Moving
             try
             {
                 logger.LogInformation("Processing move job {JobId} for audiobook {AudiobookId} to {Path}", job.Id, job.AudiobookId, LogRedaction.SanitizeFilePath(job.RequestedPath));
-                await moveQueueService.UpdateJobStatusAsync(job.Id, "Processing", cancellationToken: stoppingToken);
+                await moveQueueService.UpdateJobStatusAsync(job.Id, MoveJobStatus.Running, cancellationToken: stoppingToken);
 
                 using var scope = scopeFactory.CreateScope();
                 var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
@@ -48,7 +49,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 var audiobook = await audiobookRepository.GetByIdAsync(job.AudiobookId);
                 if (audiobook == null)
                 {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", "Audiobook not found", stoppingToken);
+                    await moveQueueService.UpdateJobStatusAsync(job.Id, MoveJobStatus.Failed, "Audiobook not found", stoppingToken);
                     metrics.Increment("worker.move.job.failed");
                     return;
                 }
@@ -56,15 +57,25 @@ namespace Listenarr.Infrastructure.Library.Moving
                 var requested = job.RequestedPath ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(requested))
                 {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", "Target path not provided", stoppingToken);
+                    await moveQueueService.UpdateJobStatusAsync(job.Id, MoveJobStatus.Failed, "Target path not provided", stoppingToken);
                     metrics.Increment("worker.move.job.failed");
                     return;
                 }
 
                 var target = Path.GetFullPath(requested);
-                var pathComparison = OperatingSystem.IsWindows()
-                    ? StringComparison.OrdinalIgnoreCase
-                    : StringComparison.Ordinal;
+                var targetResolution = await semanticsResolver.ResolveAsync(
+                    target,
+                    cancellationToken: stoppingToken);
+                if (targetResolution.State != PathIdentityState.Valid)
+                {
+                    await moveQueueService.UpdateJobStatusAsync(
+                        job.Id,
+                        MoveJobStatus.NeedsAttention,
+                        targetResolution.Reason ?? "Target filesystem identity is unavailable.",
+                        stoppingToken);
+                    return;
+                }
+
                 var source = job.SourcePath;
                 AudiobookContentMoveResult? recoveredMove = null;
                 if (!string.IsNullOrWhiteSpace(source))
@@ -74,7 +85,8 @@ namespace Listenarr.Infrastructure.Library.Moving
                         source,
                         target,
                         job.Id,
-                        job.DeleteEmptySource);
+                        job.DeleteEmptySource,
+                        targetResolution.Semantics);
                     if (contentMoveService.TryGetRecoverableMove(recoveryRequest, out var resumedMove))
                     {
                         recoveredMove = resumedMove;
@@ -95,16 +107,19 @@ namespace Listenarr.Infrastructure.Library.Moving
                 if (recoveredMove == null
                     && !string.IsNullOrWhiteSpace(audiobook.BasePath)
                     && Directory.Exists(target)
-                    && contentMoveService.IsSourceCleanupComplete(source, target)
-                    && string.Equals(
+                    && contentMoveService.IsSourceCleanupComplete(
+                        source,
+                        target,
+                        targetResolution.Semantics)
+                    && FileSystemPathIdentity.AreEquivalent(
                         Path.GetFullPath(audiobook.BasePath)
                             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
                         target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-                        pathComparison))
+                        targetResolution.Semantics))
                 {
                     await moveQueueService.UpdateJobStatusAsync(
                         job.Id,
-                        "Completed",
+                        MoveJobStatus.Completed,
                         cancellationToken: stoppingToken);
                     metrics.Increment("worker.move.job.skipped");
                     return;
@@ -117,16 +132,29 @@ namespace Listenarr.Infrastructure.Library.Moving
 
                 if (recoveredMove == null && (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source)))
                 {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", "Source path invalid or does not exist", stoppingToken);
+                    await moveQueueService.UpdateJobStatusAsync(job.Id, MoveJobStatus.Failed, "Source path invalid or does not exist", stoppingToken);
                     metrics.Increment("worker.move.job.failed");
                     return;
                 }
 
                 source = recoveredMove?.Source ?? Path.GetFullPath(source!);
-
-                if (IsFilesystemRoot(source) || IsFilesystemRoot(target))
+                var sourceResolution = await semanticsResolver.ResolveAsync(
+                    source,
+                    cancellationToken: stoppingToken);
+                if (sourceResolution.State != PathIdentityState.Valid)
                 {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", "Refused to move a filesystem root", stoppingToken);
+                    await moveQueueService.UpdateJobStatusAsync(
+                        job.Id,
+                        MoveJobStatus.NeedsAttention,
+                        sourceResolution.Reason ?? "Source filesystem identity is unavailable.",
+                        stoppingToken);
+                    return;
+                }
+
+                if (IsFilesystemRoot(source, sourceResolution.Semantics)
+                    || IsFilesystemRoot(target, targetResolution.Semantics))
+                {
+                    await moveQueueService.UpdateJobStatusAsync(job.Id, MoveJobStatus.Failed, "Refused to move a filesystem root", stoppingToken);
                     metrics.Increment("worker.move.job.failed");
                     logger.LogWarning(
                         "Blocked move job {JobId}: source or target is a filesystem root. Source={Source}, Target={Target}",
@@ -139,12 +167,12 @@ namespace Listenarr.Infrastructure.Library.Moving
                 // If source == target, nothing to do. Match the host filesystem so
                 // case-only moves remain valid on Linux/macOS but no-op on Windows.
                 if (recoveredMove == null
-                    && string.Equals(
+                    && FileSystemPathIdentity.AreEquivalent(
                         source.TrimEnd(Path.DirectorySeparatorChar),
                         target.TrimEnd(Path.DirectorySeparatorChar),
-                        pathComparison))
+                        sourceResolution.Semantics))
                 {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, "Completed", cancellationToken: stoppingToken);
+                    await moveQueueService.UpdateJobStatusAsync(job.Id, MoveJobStatus.Completed, cancellationToken: stoppingToken);
                     metrics.Increment("worker.move.job.skipped");
                     return;
                 }
@@ -155,7 +183,8 @@ namespace Listenarr.Infrastructure.Library.Moving
                         source,
                         target,
                         job.Id,
-                        job.DeleteEmptySource);
+                        job.DeleteEmptySource,
+                        sourceResolution.Semantics);
                     var moveResult = recoveredMove ?? await contentMoveService.MoveContentsAsync(
                         moveRequest,
                         stoppingToken);
@@ -283,10 +312,20 @@ namespace Listenarr.Infrastructure.Library.Moving
                         logger.LogWarning(historyEx, "Failed to add history entry or send notifications for move job {JobId}", job.Id);
                     }
 
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, "Completed", cancellationToken: stoppingToken);
+                    await moveQueueService.UpdateJobStatusAsync(job.Id, MoveJobStatus.Completed, cancellationToken: stoppingToken);
                     metrics.Increment("worker.move.job.completed");
                     logger.LogInformation("Move job {JobId} completed: {Source} -> {Target}", job.Id, LogRedaction.SanitizeFilePath(source), LogRedaction.SanitizeFilePath(target));
                     // Completed move job — status updated and broadcasted where configured
+                }
+                catch (MoveNeedsAttentionException ex)
+                {
+                    await moveQueueService.UpdateJobStatusAsync(
+                        job.Id,
+                        MoveJobStatus.NeedsAttention,
+                        ex.Message,
+                        stoppingToken);
+                    metrics.Increment("worker.move.job.needs_attention");
+                    logger.LogWarning(ex, "Move job {JobId} requires operator attention", job.Id);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
@@ -343,7 +382,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         logger.LogWarning(historyEx, "Failed to add history entry for failed move job {JobId}", job.Id);
                     }
 
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", ex.Message, stoppingToken);
+                    await moveQueueService.UpdateJobStatusAsync(job.Id, MoveJobStatus.Failed, ex.Message, stoppingToken);
                     metrics.Increment("worker.move.job.failed");
                     logger.LogError(ex, "Move job {JobId} failed", job.Id);
                     // Failure during move job — attempt counts updated and history recorded where configured
@@ -360,7 +399,7 @@ namespace Listenarr.Infrastructure.Library.Moving
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 logger.LogError(ex, "Unexpected error processing move job {JobId}", job.Id);
-                try { await moveQueueService.UpdateJobStatusAsync(job.Id, "Failed", ex.Message, stoppingToken); }
+                try { await moveQueueService.UpdateJobStatusAsync(job.Id, MoveJobStatus.Failed, ex.Message, stoppingToken); }
                 catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
                 {
                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
@@ -370,7 +409,7 @@ namespace Listenarr.Infrastructure.Library.Moving
         }
 
 
-        private static bool IsFilesystemRoot(string path)
+        private static bool IsFilesystemRoot(string path, FileSystemPathSemantics semantics)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -380,7 +419,7 @@ namespace Listenarr.Infrastructure.Library.Moving
             var fullPath = Path.GetFullPath(path);
             var root = Path.GetPathRoot(fullPath);
             return !string.IsNullOrWhiteSpace(root)
-                && FileUtils.AreFilesystemPathsEquivalentForCurrentOs(fullPath, root);
+                && FileSystemPathIdentity.AreEquivalent(fullPath, root, semantics);
         }
     }
 }

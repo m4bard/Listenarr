@@ -887,22 +887,55 @@ class ApiService {
     name: string
     path: string
     isDefault?: boolean
+    caseSensitivityMode?: 'Auto' | 'Sensitive' | 'Insensitive'
   }): Promise<RootFolder> {
     return this.request<RootFolder>('/rootfolders', { method: 'POST', body: JSON.stringify(root) })
   }
 
   async updateRootFolder(
     id: number,
-    root: { id: number; name: string; path: string; isDefault?: boolean },
-    opts?: { moveFiles?: boolean; deleteEmptySource?: boolean },
+    root: {
+      id: number
+      name: string
+      path: string
+      isDefault?: boolean
+      caseSensitivityMode?: 'Auto' | 'Sensitive' | 'Insensitive'
+    },
   ): Promise<RootFolder> {
-    const qs = opts
-      ? `?moveFiles=${opts.moveFiles === true}&deleteEmptySource=${opts.deleteEmptySource !== false}`
-      : ''
-    return this.request<RootFolder>(`/rootfolders/${id}${qs}`, {
-      method: 'PUT',
-      body: JSON.stringify(root),
+    return this.request<RootFolder>(`/rootfolders/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: root.name,
+        isDefault: root.isDefault === true,
+        caseSensitivityMode: root.caseSensitivityMode ?? 'Auto',
+      }),
     })
+  }
+
+  async changeRootFolderPath(
+    id: number,
+    request: {
+      targetPath: string
+      mode: 'relocate' | 'metadataOnly'
+      deleteEmptySource: boolean
+      desiredName: string
+      desiredIsDefault: boolean
+      targetCaseSensitivityMode: 'Auto' | 'Sensitive' | 'Insensitive'
+    },
+  ): Promise<import('@/types').RootFolderPathChangeResult> {
+    return this.request<import('@/types').RootFolderPathChangeResult>(
+      `/rootfolders/${id}/path-changes`,
+      { method: 'POST', body: JSON.stringify(request) },
+    )
+  }
+
+  async retryRootFolderRelocation(
+    relocationId: string,
+  ): Promise<import('@/types').RootFolderPathChangeResult> {
+    return this.request<import('@/types').RootFolderPathChangeResult>(
+      `/rootfolder-relocations/${relocationId}/retry`,
+      { method: 'POST' },
+    )
   }
 
   async deleteRootFolder(id: number, reassignTo?: number): Promise<{ message?: string }> {

@@ -32,6 +32,12 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             builder.Property(r => r.Name).HasMaxLength(200).IsRequired();
             builder.Property(r => r.Path).HasMaxLength(1000).IsRequired();
             builder.Property(r => r.IsDefault).HasDefaultValue(false);
+            builder.Property(r => r.CaseSensitivityMode).HasConversion<string>().HasMaxLength(16);
+            builder.Property(r => r.ResolvedCaseSensitivity).HasConversion<string>().HasMaxLength(16);
+            builder.Property(r => r.PathIdentityState).HasConversion<string>().HasMaxLength(16);
+            builder.HasIndex(r => r.PathIdentityKey)
+                .IsUnique()
+                .HasFilter("\"PathIdentityKey\" IS NOT NULL");
 
             builder.Property(r => r.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
         }

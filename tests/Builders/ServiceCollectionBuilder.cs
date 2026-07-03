@@ -170,6 +170,7 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<IFfmpegService, FfmpegServiceMock>();
             services.AddSingleton<IConfigurationService, ConfigurationService>();
             services.AddSingleton<IAudiobookFilesystemDeleteService, AudiobookFilesystemDeleteService>();
+            services.AddSingleton<IFileSystemSemanticsResolver, FileSystemSemanticsResolver>();
             services.AddSingleton<IMoveQueueService, MoveQueueService>();
             services.AddSingleton<IScanQueueService, ScanQueueService>();
             services.AddSingleton<IRootFolderService, RootFolderService>();

@@ -46,7 +46,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             for (int i = 0; i < 60; i++)
             {
                 var job = await moveQueue.GetJobAsync(jobId);
-                if (job != null && string.Equals(job.Status, "Failed", StringComparison.OrdinalIgnoreCase))
+                if (job?.Status == MoveJobStatus.Failed)
                 {
                     failed = true; break;
                 }

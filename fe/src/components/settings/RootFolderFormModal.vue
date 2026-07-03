@@ -35,6 +35,18 @@
           />
         </FormRow>
 
+        <FormRow label="Filesystem case sensitivity" labelFor="root-case-sensitivity">
+          <select id="root-case-sensitivity" v-model="form.caseSensitivityMode" class="form-input">
+            <option value="Auto">Auto-detect</option>
+            <option value="Sensitive">Case-sensitive</option>
+            <option value="Insensitive">Case-insensitive</option>
+          </select>
+          <small v-if="root" class="semantics-help">
+            Detected: {{ root.resolvedCaseSensitivity ?? 'Unknown' }} · Identity:
+            {{ root.pathIdentityState ?? 'Unavailable' }}
+          </small>
+        </FormRow>
+
         <FormRow label="Path" labelFor="root-path">
           <div class="path-input-row">
             <input
@@ -113,7 +125,12 @@ const emit = defineEmits<{
 const store = useRootFoldersStore()
 const toast = useToast()
 
-const form = ref({ name: root?.name || '', path: root?.path || '', isDefault: !!root?.isDefault })
+const form = ref({
+  name: root?.name || '',
+  path: root?.path || '',
+  isDefault: !!root?.isDefault,
+  caseSensitivityMode: root?.caseSensitivityMode ?? ('Auto' as const),
+})
 
 const showConfirm = ref(false)
 const modalMoveFiles = ref(true)
@@ -150,6 +167,7 @@ async function save() {
         name: form.value.name,
         path: form.value.path,
         isDefault: form.value.isDefault,
+        caseSensitivityMode: form.value.caseSensitivityMode,
       })
       toast.success('Success', 'Root folder updated')
     } else {
@@ -157,6 +175,7 @@ async function save() {
         name: form.value.name,
         path: form.value.path,
         isDefault: form.value.isDefault,
+        caseSensitivityMode: form.value.caseSensitivityMode,
       })
       toast.success('Success', 'Root folder created')
     }
@@ -170,13 +189,14 @@ async function save() {
 async function confirmChange(moveFiles: boolean) {
   showConfirm.value = false
   try {
-    await store.update(
+    const updated = await store.update(
       root!.id,
       {
         id: root!.id,
         name: form.value.name,
         path: form.value.path,
         isDefault: form.value.isDefault,
+        caseSensitivityMode: form.value.caseSensitivityMode,
       },
       { moveFiles: moveFiles, deleteEmptySource: modalDeleteEmpty.value },
     )
@@ -184,7 +204,7 @@ async function confirmChange(moveFiles: boolean) {
       'Success',
       moveFiles ? 'Root renamed and move jobs queued' : 'Root renamed (files unchanged)',
     )
-    emit('saved', root!)
+    emit('saved', updated)
   } catch (e: unknown) {
     const error = e as Error
     toast.error('Error', error?.message || 'Failed to save root folder')

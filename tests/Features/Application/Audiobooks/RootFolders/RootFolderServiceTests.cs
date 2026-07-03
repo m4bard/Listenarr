@@ -315,7 +315,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                     Path = Path.Join(newRootPath, "Nested")
                 }));
 
-            Assert.Contains("nested", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("path-changes", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
@@ -336,7 +336,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 service.UpdateAsync(new RootFolder { Id = root.Id, Name = "R", Path = newRootPath }));
 
-            Assert.Contains("contain", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("path-changes", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
@@ -452,7 +452,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                     {
                         SourcePath = Path.Join(rootPath, "Author", "Title"),
                         RequestedPath = Path.Join(newRootPath, "Author", "Title"),
-                        Status = "Queued"
+                        Status = MoveJobStatus.Queued
                     }
                 ]);
             var service = new RootFolderService(repo, null!, moveQueue.Object);
@@ -480,7 +480,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                     {
                         SourcePath = Path.Join(newRootPath, "Author", "Title"),
                         RequestedPath = Path.Join(rootPath, "Author", "Title"),
-                        Status = "Processing"
+                        Status = MoveJobStatus.Running
                     }
                 ]);
             var service = new RootFolderService(repo, null!, moveQueue.Object);
@@ -508,7 +508,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                     {
                         SourcePath = Path.Join(rootPath, "Author", "Title"),
                         RequestedPath = Path.Join(newRootPath, "Author", "Title"),
-                        Status = "Completed"
+                        Status = MoveJobStatus.Completed
                     }
                 ]);
             var service = new RootFolderService(repo, null!, moveQueue.Object);
@@ -537,7 +537,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                     {
                         SourcePath = Path.Join(rootPath, "Author", "Title"),
                         RequestedPath = Path.Join(FileUtils.GetAbsolutePath("elsewhere"), "Author", "Title"),
-                        Status = "Queued"
+                        Status = MoveJobStatus.Queued
                     }
                 ]);
             var service = new RootFolderService(repo, null!, moveQueue.Object);
@@ -545,7 +545,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 service.UpdateAsync(new RootFolder { Id = root.Id, Name = "R", Path = newRootPath }));
 
-            Assert.Contains("active move job", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("path-changes", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
@@ -566,7 +566,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                     {
                         SourcePath = Path.Join(FileUtils.GetAbsolutePath("elsewhere"), "Author", "Title"),
                         RequestedPath = Path.Join(newRootPath, "Author", "Title"),
-                        Status = "Processing"
+                        Status = MoveJobStatus.Running
                     }
                 ]);
             var service = new RootFolderService(repo, null!, moveQueue.Object);
@@ -574,7 +574,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 service.UpdateAsync(new RootFolder { Id = root.Id, Name = "R", Path = newRootPath }));
 
-            Assert.Contains("active move job", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("path-changes", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
@@ -602,7 +602,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                 _output.WriteLine("Before update: " + dumpPre);
             }
 
-            await svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = newRootPath }, moveFiles: false);
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = newRootPath }, moveFiles: false));
+            Assert.Contains("path-changes", exception.Message, StringComparison.OrdinalIgnoreCase);
 
             using (var verifyDb = new ListenArrDbContext(options))
             {
@@ -611,13 +613,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
 
                 var a1 = verifyDb.Audiobooks.First(a => a.Title == "A1").BasePath;
                 var a2 = verifyDb.Audiobooks.First(a => a.Title == "A2").BasePath;
-                if (a1 != newRootAuthorTitlePath || a2 != newRootPath)
-                {
-                    var dump = string.Join("; ", verifyDb.Audiobooks.Select(a => $"{a.Title} => {a.BasePath}"));
-                    throw new Xunit.Sdk.XunitException($"Unexpected audiobook base paths after root update. Dump: {dump}");
-                }
-                Assert.Equal(newRootAuthorTitlePath, a1);
-                Assert.Equal(newRootPath, a2);
+                Assert.Equal(rootAuthorTitlePath, a1);
+                Assert.Equal(rootPath, a2);
             }
         }
 
@@ -656,10 +653,11 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                 _output.WriteLine("Before update (with move): " + dumpPre);
             }
 
-            await svc.UpdateAsync(
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => svc.UpdateAsync(
                 new RootFolder { Id = root.Id, Name = "R2", Path = newRootPath },
                 moveFiles: true,
-                deleteEmptySource: false);
+                deleteEmptySource: false));
+            Assert.Contains("path-changes", exception.Message, StringComparison.OrdinalIgnoreCase);
 
             using (var verifyDb = new ListenArrDbContext(options))
             {
@@ -668,25 +666,20 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
 
                 var a1 = verifyDb.Audiobooks.First(a => a.Title == "A1").BasePath;
                 var a2 = verifyDb.Audiobooks.First(a => a.Title == "A2").BasePath;
-                if (a1 != newRootAuthorTitlePath || a2 != newRootPath)
-                {
-                    var dump = string.Join("; ", verifyDb.Audiobooks.Select(a => $"{a.Title} => {a.BasePath}"));
-                    throw new Xunit.Sdk.XunitException($"Unexpected audiobook base paths after root update (with move). Dump: {dump}");
-                }
-                Assert.Equal(newRootAuthorTitlePath, a1);
-                Assert.Equal(newRootPath, a2);
+                Assert.Equal(rootAuthorTitlePath, a1);
+                Assert.Equal(rootPath, a2);
             }
 
             mockMove.Verify(m => m.EnqueueMoveAsync(
                 1,
                 newRootAuthorTitlePath,
                 rootAuthorTitlePath,
-                false), Times.Once);
+                false), Times.Never);
             mockMove.Verify(m => m.EnqueueMoveAsync(
                 2,
                 newRootPath,
                 rootPath,
-                false), Times.Once);
+                false), Times.Never);
         }
 
         [Fact]
@@ -700,7 +693,6 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
             var oldRootPath = FileUtils.GetAbsolutePath("case-root");
             var renamedRootPath = FileUtils.GetAbsolutePath("Case-Root");
             var oldAudiobookPath = Path.Join(oldRootPath, "Author", "Title");
-            var expectedAudiobookPath = Path.Join(renamedRootPath, "Author", "Title");
             var db = new ListenArrDbContext(options);
             var root = new RootFolder { Name = "R", Path = oldRootPath };
             db.RootFolders.Add(root);
@@ -711,16 +703,18 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                 Mock.Of<ILogger<EfRootFolderRepository>>());
             var service = new RootFolderService(repo, null!);
 
-            await service.UpdateAsync(new RootFolder
-            {
-                Id = root.Id,
-                Name = "R",
-                Path = renamedRootPath
-            });
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.UpdateAsync(new RootFolder
+                {
+                    Id = root.Id,
+                    Name = "R",
+                    Path = renamedRootPath
+                }));
+            Assert.Contains("path-changes", exception.Message, StringComparison.OrdinalIgnoreCase);
 
             await using var verificationDb = new ListenArrDbContext(options);
             var audiobook = await verificationDb.Audiobooks.SingleAsync();
-            Assert.Equal(expectedAudiobookPath, audiobook.BasePath);
+            Assert.Equal(oldAudiobookPath, audiobook.BasePath);
         }
 
         [Fact]
@@ -751,7 +745,12 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                     new RootFolder { Id = root.Id, Name = "R", Path = newRootPath },
                     moveFiles: true));
 
-            Assert.Equal("queue unavailable", exception.Message);
+            Assert.Contains("path-changes", exception.Message, StringComparison.OrdinalIgnoreCase);
+            moveQueue.Verify(queue => queue.EnqueueMoveAsync(
+                It.IsAny<int>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<bool>()), Times.Never);
         }
 
         private class TestDbFactory : IDbContextFactory<ListenArrDbContext>

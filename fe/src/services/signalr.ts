@@ -15,7 +15,13 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-import type { Download, QueueSnapshot, QueueUpdatePayload, Audiobook } from '@/types'
+import type {
+  Download,
+  QueueSnapshot,
+  QueueUpdatePayload,
+  Audiobook,
+  RootFolderPathChangeResult,
+} from '@/types'
 import { sessionTokenManager } from '@/utils/sessionToken'
 import { setConnected, setLastError, setReconnectAttempts } from './signalrEvents'
 import { logger } from '@/utils/logger'
@@ -199,6 +205,8 @@ class SignalRService {
       error?: string
     }) => void
   > = new Set()
+  private rootFolderRelocationCallbacks: Set<(update: RootFolderPathChangeResult) => void> =
+    new Set()
   private filesRemovedCallbacks: Set<
     (payload: { audiobookId: number; removed: Array<{ id: number; path: string }> }) => void
   > = new Set()
@@ -436,6 +444,12 @@ class SignalRService {
             error?: string
           }
           this.moveJobCallbacks.forEach((cb) => cb(job))
+        }
+        break
+      case 'RootFolderRelocationUpdate':
+        if (args && args[0]) {
+          const update = args[0] as RootFolderPathChangeResult
+          this.rootFolderRelocationCallbacks.forEach((cb) => cb(update))
         }
         break
       case 'FilesRemoved':
@@ -742,6 +756,13 @@ class SignalRService {
     this.moveJobCallbacks.add(callback)
     return () => {
       this.moveJobCallbacks.delete(callback)
+    }
+  }
+
+  onRootFolderRelocationUpdate(callback: (update: RootFolderPathChangeResult) => void): () => void {
+    this.rootFolderRelocationCallbacks.add(callback)
+    return () => {
+      this.rootFolderRelocationCallbacks.delete(callback)
     }
   }
 
