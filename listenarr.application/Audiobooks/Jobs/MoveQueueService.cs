@@ -109,6 +109,11 @@ namespace Listenarr.Application.Audiobooks.Jobs
             }
         }
 
+        public async Task<IReadOnlyList<MoveJob>> GetActiveJobsAsync(CancellationToken cancellationToken = default)
+        {
+            return await _persistence.GetActiveAsync(cancellationToken);
+        }
+
         public async Task<MoveJob?> GetJobAsync(Guid id, CancellationToken cancellationToken = default)
         {
             if (_jobs.TryGetValue(id, out var job)) return job;

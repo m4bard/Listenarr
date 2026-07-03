@@ -190,6 +190,64 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
         }
 
         [Fact]
+        public async Task Create_Throws_WhenNestedInsideExistingRoot()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var db = new ListenArrDbContext(options);
+            db.RootFolders.Add(new RootFolder { Name = "Library", Path = rootPath });
+            await db.SaveChangesAsync();
+            var repo = new EfRootFolderRepository(new TestDbFactory(options), Mock.Of<ILogger<EfRootFolderRepository>>());
+            var service = new RootFolderService(repo, null!);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.CreateAsync(new RootFolder { Name = "Nested", Path = Path.Join(rootPath, "Audiobooks") }));
+
+            Assert.Contains("nested", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task Create_Throws_WhenRequestedRootContainsExistingRoot()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var nestedRoot = Path.Join(rootPath, "Audiobooks");
+            var db = new ListenArrDbContext(options);
+            db.RootFolders.Add(new RootFolder { Name = "Nested", Path = nestedRoot });
+            await db.SaveChangesAsync();
+            var repo = new EfRootFolderRepository(new TestDbFactory(options), Mock.Of<ILogger<EfRootFolderRepository>>());
+            var service = new RootFolderService(repo, null!);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.CreateAsync(new RootFolder { Name = "Parent", Path = rootPath }));
+
+            Assert.Contains("contain", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task Create_Throws_WhenWindowsCaseOnlyDuplicate()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var db = new ListenArrDbContext(options);
+            db.RootFolders.Add(new RootFolder { Name = "A", Path = rootPath.ToUpperInvariant() });
+            await db.SaveChangesAsync();
+            var repo = new EfRootFolderRepository(new TestDbFactory(options), Mock.Of<ILogger<EfRootFolderRepository>>());
+            var service = new RootFolderService(repo, null!);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.CreateAsync(new RootFolder { Name = "B", Path = rootPath.ToLowerInvariant() }));
+        }
+
+        [Fact]
         public async Task Update_Throws_WhenPathInvalidForCurrentOs()
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
@@ -236,6 +294,127 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
         }
 
         [Fact]
+        public async Task Update_Throws_WhenPathNestedInsideAnotherRoot()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "R", Path = rootPath };
+            db.RootFolders.Add(root);
+            db.RootFolders.Add(new RootFolder { Name = "Other", Path = newRootPath });
+            await db.SaveChangesAsync();
+            var repo = new EfRootFolderRepository(new TestDbFactory(options), Mock.Of<ILogger<EfRootFolderRepository>>());
+            var service = new RootFolderService(repo, null!);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.UpdateAsync(new RootFolder
+                {
+                    Id = root.Id,
+                    Name = "R",
+                    Path = Path.Join(newRootPath, "Nested")
+                }));
+
+            Assert.Contains("nested", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task Update_Throws_WhenRequestedRootContainsAnotherRoot()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var nestedRoot = Path.Join(newRootPath, "Nested");
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "R", Path = rootPath };
+            db.RootFolders.Add(root);
+            db.RootFolders.Add(new RootFolder { Name = "Nested", Path = nestedRoot });
+            await db.SaveChangesAsync();
+            var repo = new EfRootFolderRepository(new TestDbFactory(options), Mock.Of<ILogger<EfRootFolderRepository>>());
+            var service = new RootFolderService(repo, null!);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.UpdateAsync(new RootFolder { Id = root.Id, Name = "R", Path = newRootPath }));
+
+            Assert.Contains("contain", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task Update_AllowsOwnNormalizedEquivalentPath()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "R", Path = Path.GetFullPath(rootPath) };
+            db.RootFolders.Add(root);
+            await db.SaveChangesAsync();
+            var repo = new EfRootFolderRepository(new TestDbFactory(options), Mock.Of<ILogger<EfRootFolderRepository>>());
+            var service = new RootFolderService(repo, null!);
+
+            var updated = await service.UpdateAsync(new RootFolder
+            {
+                Id = root.Id,
+                Name = "Renamed",
+                Path = rootPath
+            });
+
+            Assert.Equal("Renamed", updated.Name);
+            Assert.True(FileUtils.AreFilesystemPathsEquivalentForCurrentOs(rootPath, updated.Path));
+        }
+
+        [Fact]
+        public async Task Delete_Throws_WhenFilesystemRootHasChildAudiobookWithoutReassign()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var filesystemRoot = Path.GetPathRoot(FileUtils.GetAbsolutePath("root"));
+            Assert.False(string.IsNullOrWhiteSpace(filesystemRoot));
+            var childAudiobookPath = Path.Join(filesystemRoot!, "Author", "Title");
+
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "Filesystem Root", Path = Path.GetFullPath(filesystemRoot!) };
+            db.RootFolders.Add(root);
+            db.Audiobooks.Add(new Audiobook { Title = "T", BasePath = childAudiobookPath });
+            await db.SaveChangesAsync();
+
+            var repo = new EfRootFolderRepository(new TestDbFactory(options), Mock.Of<ILogger<EfRootFolderRepository>>());
+            var service = new RootFolderService(repo, null!);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteAsync(root.Id));
+        }
+
+        [Fact]
+        public async Task Delete_ReassignsFilesystemRootChildAudiobookPreservingRelativePath()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var filesystemRoot = Path.GetPathRoot(FileUtils.GetAbsolutePath("root"));
+            Assert.False(string.IsNullOrWhiteSpace(filesystemRoot));
+            var childAudiobookPath = Path.Join(filesystemRoot!, "Author", "Title");
+            var expectedPath = Path.Join(newRootPath, "Author", "Title");
+
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "Filesystem Root", Path = Path.GetFullPath(filesystemRoot!) };
+            var reassignRoot = new RootFolder { Name = "New Root", Path = newRootPath };
+            db.RootFolders.AddRange(root, reassignRoot);
+            db.Audiobooks.Add(new Audiobook { Title = "T", BasePath = childAudiobookPath });
+            await db.SaveChangesAsync();
+
+            var repo = new EfRootFolderRepository(new TestDbFactory(options), Mock.Of<ILogger<EfRootFolderRepository>>());
+            var service = new RootFolderService(repo, null!);
+
+            await service.DeleteAsync(root.Id, reassignRoot.Id);
+
+            await using var verifyDb = new ListenArrDbContext(options);
+            var audiobook = await verifyDb.Audiobooks.SingleAsync();
+            Assert.Equal(expectedPath, audiobook.BasePath);
+            Assert.DoesNotContain(verifyDb.RootFolders, r => r.Id == root.Id);
+        }
+
+        [Fact]
         public async Task Delete_Throws_WhenReferencedWithoutReassign()
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
@@ -253,6 +432,149 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
             var svc = new RootFolderService(repo, null!);
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => svc.DeleteAsync(root.Id));
+        }
+
+        [Fact]
+        public async Task Delete_Throws_WhenActiveMoveJobTouchesSourcePathInsideRoot()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "R", Path = rootPath };
+            db.RootFolders.Add(root);
+            await db.SaveChangesAsync();
+            var repo = new EfRootFolderRepository(new TestDbFactory(options), Mock.Of<ILogger<EfRootFolderRepository>>());
+            var moveQueue = new Mock<IMoveQueueService>();
+            moveQueue.Setup(queue => queue.GetActiveJobsAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync([
+                    new MoveJob
+                    {
+                        SourcePath = Path.Join(rootPath, "Author", "Title"),
+                        RequestedPath = Path.Join(newRootPath, "Author", "Title"),
+                        Status = "Queued"
+                    }
+                ]);
+            var service = new RootFolderService(repo, null!, moveQueue.Object);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteAsync(root.Id));
+
+            Assert.Contains("active move job", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task Delete_Throws_WhenActiveMoveJobTouchesDestinationPathInsideRoot()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "R", Path = rootPath };
+            db.RootFolders.Add(root);
+            await db.SaveChangesAsync();
+            var repo = new EfRootFolderRepository(new TestDbFactory(options), Mock.Of<ILogger<EfRootFolderRepository>>());
+            var moveQueue = new Mock<IMoveQueueService>();
+            moveQueue.Setup(queue => queue.GetActiveJobsAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync([
+                    new MoveJob
+                    {
+                        SourcePath = Path.Join(newRootPath, "Author", "Title"),
+                        RequestedPath = Path.Join(rootPath, "Author", "Title"),
+                        Status = "Processing"
+                    }
+                ]);
+            var service = new RootFolderService(repo, null!, moveQueue.Object);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteAsync(root.Id));
+
+            Assert.Contains("active move job", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task Delete_AllowsCompletedMoveJobTouchingRoot()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "R", Path = rootPath };
+            db.RootFolders.Add(root);
+            await db.SaveChangesAsync();
+            var repo = new EfRootFolderRepository(new TestDbFactory(options), Mock.Of<ILogger<EfRootFolderRepository>>());
+            var moveQueue = new Mock<IMoveQueueService>();
+            moveQueue.Setup(queue => queue.GetActiveJobsAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync([
+                    new MoveJob
+                    {
+                        SourcePath = Path.Join(rootPath, "Author", "Title"),
+                        RequestedPath = Path.Join(newRootPath, "Author", "Title"),
+                        Status = "Completed"
+                    }
+                ]);
+            var service = new RootFolderService(repo, null!, moveQueue.Object);
+
+            await service.DeleteAsync(root.Id);
+
+            await using var verifyDb = new ListenArrDbContext(options);
+            Assert.Empty(verifyDb.RootFolders);
+        }
+
+        [Fact]
+        public async Task Update_Throws_WhenActiveMoveJobTouchesOldRoot()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "R", Path = rootPath };
+            db.RootFolders.Add(root);
+            await db.SaveChangesAsync();
+            var repo = new EfRootFolderRepository(new TestDbFactory(options), Mock.Of<ILogger<EfRootFolderRepository>>());
+            var moveQueue = new Mock<IMoveQueueService>();
+            moveQueue.Setup(queue => queue.GetActiveJobsAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync([
+                    new MoveJob
+                    {
+                        SourcePath = Path.Join(rootPath, "Author", "Title"),
+                        RequestedPath = Path.Join(FileUtils.GetAbsolutePath("elsewhere"), "Author", "Title"),
+                        Status = "Queued"
+                    }
+                ]);
+            var service = new RootFolderService(repo, null!, moveQueue.Object);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.UpdateAsync(new RootFolder { Id = root.Id, Name = "R", Path = newRootPath }));
+
+            Assert.Contains("active move job", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task Update_Throws_WhenActiveMoveJobTouchesNewRoot()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var db = new ListenArrDbContext(options);
+            var root = new RootFolder { Name = "R", Path = rootPath };
+            db.RootFolders.Add(root);
+            await db.SaveChangesAsync();
+            var repo = new EfRootFolderRepository(new TestDbFactory(options), Mock.Of<ILogger<EfRootFolderRepository>>());
+            var moveQueue = new Mock<IMoveQueueService>();
+            moveQueue.Setup(queue => queue.GetActiveJobsAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync([
+                    new MoveJob
+                    {
+                        SourcePath = Path.Join(FileUtils.GetAbsolutePath("elsewhere"), "Author", "Title"),
+                        RequestedPath = Path.Join(newRootPath, "Author", "Title"),
+                        Status = "Processing"
+                    }
+                ]);
+            var service = new RootFolderService(repo, null!, moveQueue.Object);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.UpdateAsync(new RootFolder { Id = root.Id, Name = "R", Path = newRootPath }));
+
+            Assert.Contains("active move job", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]

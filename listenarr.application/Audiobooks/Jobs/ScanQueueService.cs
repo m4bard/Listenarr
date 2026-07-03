@@ -17,6 +17,7 @@
  */
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Audiobooks.Jobs
@@ -46,7 +47,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 {
                     if (j.AudiobookId != audiobook.Id) return false;
                     bool bothNull = j.Path == null && path == null;
-                    bool bothMatch = j.Path != null && path != null && string.Equals(j.Path, path, StringComparison.OrdinalIgnoreCase);
+                    bool bothMatch = j.Path != null && path != null && FileUtils.AreFilesystemPathsEquivalentForCurrentOs(j.Path, path);
                     return bothNull || bothMatch;
                 });
 

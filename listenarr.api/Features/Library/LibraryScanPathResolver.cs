@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Common;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library
@@ -143,12 +144,9 @@ namespace Listenarr.Api.Features.Library
 
         private static bool IsPathUnderRoot(string requestedPath, string allowedRoot)
         {
-            var trimmedDirectoryRoot = allowedRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            var trimmedAltRoot = allowedRoot.TrimEnd(Path.AltDirectorySeparatorChar) + Path.AltDirectorySeparatorChar;
-
-            return string.Equals(requestedPath, allowedRoot, StringComparison.OrdinalIgnoreCase)
-                   || requestedPath.StartsWith(trimmedDirectoryRoot, StringComparison.OrdinalIgnoreCase)
-                   || requestedPath.StartsWith(trimmedAltRoot, StringComparison.OrdinalIgnoreCase);
+            // Use the shared containment helper instead of raw string prefixes so
+            // filesystem-root and UNC roots keep correct segment-boundary behavior.
+            return FileUtils.IsPathSameOrInside(requestedPath, allowedRoot);
         }
     }
 

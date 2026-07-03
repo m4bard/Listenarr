@@ -36,10 +36,10 @@ internal static class MovedAudiobookPathRewriter
             }
 
             var looksLikeFileSystemPath = Path.IsPathRooted(imageUrl)
-                || imageUrl.StartsWith(source, StringComparison.OrdinalIgnoreCase)
-                || imageUrl.StartsWith(
-                    source.Replace(Path.DirectorySeparatorChar, '/'),
-                    StringComparison.OrdinalIgnoreCase);
+                || FileUtils.IsPathSameOrInside(imageUrl, source)
+                || FileUtils.IsPathSameOrInside(
+                    imageUrl.Replace('/', Path.DirectorySeparatorChar),
+                    source);
             if (!looksLikeFileSystemPath)
             {
                 return;

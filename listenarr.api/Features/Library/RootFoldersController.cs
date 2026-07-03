@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library
@@ -190,7 +191,7 @@ namespace Listenarr.Api.Features.Library
                     .ToList();
                 var tracked = new HashSet<string>(
                     trackedFromFiles.Concat(trackedFromAudiobooks),
-                    StringComparer.OrdinalIgnoreCase);
+                    FileUtils.FilesystemPathComparerForCurrentOs);
 
                 var filtered = (job.Results ?? new List<UnmatchedFileResult>())
                     .Where(r => !tracked.Contains(r.FullPath) && _fileSystem.FileExists(r.FullPath))

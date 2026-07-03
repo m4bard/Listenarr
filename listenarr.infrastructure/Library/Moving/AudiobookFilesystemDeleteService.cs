@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Library.Moving
@@ -81,7 +82,7 @@ namespace Listenarr.Infrastructure.Library.Moving
 
         private static IReadOnlyList<string> CollectTrackedFilePaths(Audiobook audiobook)
         {
-            var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var paths = new HashSet<string>(FileUtils.FilesystemPathComparerForCurrentOs);
 
             if (!string.IsNullOrWhiteSpace(audiobook.FilePath))
             {

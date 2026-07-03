@@ -365,6 +365,59 @@ namespace Listenarr.Tests.Features.Domain.Utils
         }
 
         [Fact]
+        public void CombineWithOptionalBase_PreservesCurrentFilesystemRootBase()
+        {
+            var root = Path.GetPathRoot(Path.GetTempPath());
+            Assert.False(string.IsNullOrWhiteSpace(root));
+            var candidate = Path.Join(" Author ", " Title .m4b");
+
+            var result = FileUtils.CombineWithOptionalBase(root!, candidate);
+
+            Assert.Equal(Path.Join(root!, candidate), result);
+            Assert.Contains(" Author ", result);
+            Assert.Contains(" Title .m4b", result);
+        }
+
+        [Fact]
+        public void CombineWithOptionalBase_PreservesUnixFilesystemRootBase()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            var result = FileUtils.CombineWithOptionalBase("/", "Author/Book.m4b");
+
+            Assert.Equal("/Author/Book.m4b", result);
+        }
+
+        [Fact]
+        public void CombineWithOptionalBase_PreservesWindowsDriveRootBase()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            var result = FileUtils.CombineWithOptionalBase(@"C:\", @"Books\Title.m4b");
+
+            Assert.Equal(@"C:\Books\Title.m4b", result);
+        }
+
+        [Fact]
+        public void CombineWithOptionalBase_PreservesUncShareRootBase()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            var result = FileUtils.CombineWithOptionalBase(@"\\server\share", @"Books\Title.m4b");
+
+            Assert.Equal(@"\\server\share\Books\Title.m4b", result);
+        }
+
+        [Fact]
         public void NormalizeStoredPath_DoesNotTrimPathWhitespace_OnNonWindows()
         {
             if (OperatingSystem.IsWindows())
@@ -818,6 +871,95 @@ namespace Listenarr.Tests.Features.Domain.Utils
             Assert.True(FileUtils.TryNormalizeUserProvidedDirectoryPathForCurrentOs(path, out var normalizedPath, out var reason));
             Assert.Equal(Path.GetFullPath(path), normalizedPath);
             Assert.Equal(string.Empty, reason);
+        }
+
+        [Theory]
+        [InlineData("/books/title", "/", false, true)]
+        [InlineData("/books/title", "/books", false, true)]
+        [InlineData("/books", "/books/", false, true)]
+        [InlineData("/bookshelf/title", "/books", false, false)]
+        [InlineData("/Books/title", "/books", false, false)]
+        [InlineData(@"C:\Books\Title", @"C:\", true, true)]
+        [InlineData(@"C:\Books\Title", @"C:\Books", true, true)]
+        [InlineData(@"C:\Books", @"C:\Books\", true, true)]
+        [InlineData(@"C:\Bookshelf\Title", @"C:\Books", true, false)]
+        [InlineData(@"\\server\share\Books\Title", @"\\server\share", true, true)]
+        [InlineData(@"\\server\share-other\Books", @"\\server\share", true, false)]
+        public void IsPathSameOrInsideForOs_RespectsFilesystemBoundaries(
+            string candidatePath,
+            string rootPath,
+            bool isWindows,
+            bool expected)
+        {
+            Assert.Equal(expected, FileUtils.IsPathSameOrInsideForOs(candidatePath, rootPath, isWindows));
+        }
+
+        [Theory]
+        [InlineData(@"C:\Books", @"c:\books\", true, true)]
+        [InlineData(@"\\server\share\Books", @"\\SERVER\SHARE\books\", true, true)]
+        [InlineData("/media/Books", "/media/books", false, false)]
+        [InlineData("/media/Books", "/media/Books/", false, true)]
+        public void AreFilesystemPathsEquivalentForOs_UsesHostStyleCaseRules(
+            string left,
+            string right,
+            bool isWindows,
+            bool expected)
+        {
+            Assert.Equal(expected, FileUtils.AreFilesystemPathsEquivalentForOs(left, right, isWindows));
+        }
+
+        [Fact]
+        public void FilesystemPathComparerForCurrentOs_UsesHostCaseRules()
+        {
+            var root = Path.Join(Path.GetTempPath(), "listenarr-path-case-" + Guid.NewGuid().ToString("N"));
+            var paths = new HashSet<string>(FileUtils.FilesystemPathComparerForCurrentOs)
+            {
+                Path.Join(root, "Track01.m4b"),
+                Path.Join(root, "track01.m4b")
+            };
+
+            Assert.Equal(OperatingSystem.IsWindows() ? 1 : 2, paths.Count);
+        }
+
+        [Fact]
+        public void CombineWithOptionalBase_PreservesPathSegmentWhitespace()
+        {
+            var basePath = Path.Join(Path.GetTempPath(), "listenarr-path-space-" + Guid.NewGuid().ToString("N"));
+            var candidatePath = Path.Join(" Author With Space ", " Title With Space ", " Chapter 01 .m4b");
+
+            var combined = FileUtils.CombineWithOptionalBase(basePath, candidatePath);
+
+            Assert.Equal(Path.Join(basePath, candidatePath), combined);
+        }
+
+        [Fact]
+        public void GetCommonPathForDirectories_UsesHostFilesystemCaseRules()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Assert.Equal(@"C:\Books", FileUtils.GetCommonPathForDirectories([
+                    @"C:\Books\AuthorA",
+                    @"c:\Books\AuthorB"
+                ]));
+                return;
+            }
+
+            Assert.Equal("/", FileUtils.GetCommonPathForDirectories([
+                "/books/AuthorA",
+                "/Books/AuthorB"
+            ]));
+        }
+
+        [Fact]
+        public void GetCommonPathForDirectories_RespectsPathSegmentBoundaries()
+        {
+            var root = Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var common = FileUtils.GetCommonPathForDirectories([
+                Path.Join(root, "books", "A"),
+                Path.Join(root, "bookshelf", "B")
+            ]);
+
+            Assert.True(FileUtils.AreFilesystemPathsEquivalentForCurrentOs(root, common ?? string.Empty));
         }
 
         [Fact]

@@ -73,18 +73,18 @@ namespace Listenarr.Application.Downloads.Import
                 var folderPattern = settings.FolderNamingPattern;
                 var sourceFiles = files
                     .Where(file => !FileUtils.IsBlacklistedFile(file, settings.ImportBlacklistExtensions))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
                     .ToList();
                 var plannedAudioFiles = MultiFileImportPlanner.BuildPlans(
                     sourceFiles
                         .Where(FileUtils.IsAudioFile)
                         .Select(f => (f, (string?)null)));
-                var planByPath = plannedAudioFiles.ToDictionary(p => p.FullPath, StringComparer.OrdinalIgnoreCase);
+                var planByPath = plannedAudioFiles.ToDictionary(p => p.FullPath, FileUtils.FilesystemPathComparerForCurrentOs);
                 var diskNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plannedAudioFiles, p => p.DiskNumberHint);
                 var chapterNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plannedAudioFiles, p => p.ChapterNumberHint);
                 var isMultiFileBatch = plannedAudioFiles.Count > 1;
                 var sourceRootPath = FileUtils.GetCommonDirectory(sourceFiles);
-                var usedDestinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var usedDestinations = new HashSet<string>(FileUtils.FilesystemPathComparerForCurrentOs);
 
                 // Order audio files before companion files
                 var orderedFiles = plannedAudioFiles.Select(p => p.FullPath)

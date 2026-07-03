@@ -170,8 +170,35 @@ namespace Listenarr.Domain.Common
         private static string TrimTrailingPathSeparators(string path)
             => path.TrimEnd('/', '\\');
 
+        // Use only for filesystem path identity. Windows paths are case-insensitive;
+        // Linux/Docker paths are case-sensitive. Keep metadata keys, URLs, statuses,
+        // extensions, and provider/source names on their own explicit comparers.
+        public static StringComparer FilesystemPathComparerForCurrentOs => GetPathStringComparer();
+
+        public static bool AreFilesystemPathsEquivalentForCurrentOs(string left, string right)
+            => AreFilesystemPathsEquivalentForOs(left, right, OperatingSystem.IsWindows());
+
+        public static bool AreFilesystemPathsEquivalentForOs(string left, string right, bool isWindows)
+        {
+            if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+            {
+                return false;
+            }
+
+            return string.Equals(
+                NormalizeFullPathForBoundary(left, isWindows),
+                NormalizeFullPathForBoundary(right, isWindows),
+                GetPathComparison(isWindows));
+        }
+
+        public static bool IsPathSameOrInsideForOs(string candidatePath, string basePath, bool isWindows)
+            => IsPathSameOrInside(candidatePath, basePath, isWindows);
+
         private static StringComparison GetPathComparison()
-            => OperatingSystem.IsWindows()
+            => GetPathComparison(OperatingSystem.IsWindows());
+
+        private static StringComparison GetPathComparison(bool isWindows)
+            => isWindows
                 ? StringComparison.OrdinalIgnoreCase
                 : StringComparison.Ordinal;
 
@@ -181,20 +208,56 @@ namespace Listenarr.Domain.Common
                 : StringComparer.Ordinal;
 
         private static string NormalizeFullPathForBoundary(string path)
+            => NormalizeFullPathForBoundary(path, OperatingSystem.IsWindows());
+
+        private static string NormalizeFullPathForBoundary(string path, bool isWindows)
         {
-            var fullPath = Path.GetFullPath(path);
-            var root = Path.GetPathRoot(fullPath);
-            if (!string.IsNullOrEmpty(root)
-                && string.Equals(
-                    fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-                    root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-                    GetPathComparison()))
+            return isWindows
+                ? NormalizeWindowsPathForBoundary(path)
+                : NormalizeUnixPathForBoundary(path);
+        }
+
+        private static string NormalizeUnixPathForBoundary(string path)
+        {
+            var fullPath = OperatingSystem.IsWindows()
+                ? NormalizeUnixDirectoryPathSyntax(path)
+                : Path.GetFullPath(path);
+
+            return IsUnixRootOnly(fullPath)
+                ? "/"
+                : fullPath.TrimEnd('/');
+        }
+
+        private static string NormalizeWindowsPathForBoundary(string path)
+        {
+            var normalizedPath = NormalizeWindowsDirectoryPathSyntax(path);
+            var rootLength = GetWindowsRootLength(normalizedPath);
+            if (rootLength <= 0)
+            {
+                if (IsWindowsCurrentDriveRoot(normalizedPath))
+                {
+                    return normalizedPath.Replace('/', '\\');
+                }
+
+                return OperatingSystem.IsWindows()
+                    ? Path.GetFullPath(normalizedPath).TrimEnd('\\', '/')
+                    : normalizedPath.Replace('/', '\\').TrimEnd('\\');
+            }
+
+            var root = NormalizeWindowsRootForStorage(normalizedPath[..rootLength]);
+            var remainingPath = normalizedPath[rootLength..].Trim('\\', '/');
+            if (string.IsNullOrEmpty(remainingPath))
             {
                 return root;
             }
 
-            return fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return root.TrimEnd('\\') + "\\" + remainingPath;
         }
+
+        private static bool EndsWithDirectorySeparatorForOs(string path, bool isWindows)
+            => isWindows
+                ? path.EndsWith('\\') || path.EndsWith('/')
+                : path.EndsWith('/');
 
         /// <summary>
         /// Create a filesystem-safe name from arbitrary text by removing invalid path characters
@@ -214,8 +277,8 @@ namespace Listenarr.Domain.Common
 
         /// <summary>
         /// Combines a relative candidate path with an optional base path without trimming
-        /// path-segment whitespace. Callers that must constrain rooted-looking child paths
-        /// should make those paths relative before calling this helper.
+        /// path-segment whitespace. The base path may be a filesystem root (/, C:\, or
+        /// \\server\share), so do not trim separators from the base before joining.
         /// </summary>
         public static string CombineWithOptionalBase(string? basePath, string candidatePath)
         {
@@ -235,10 +298,7 @@ namespace Listenarr.Domain.Common
                 return relativePath;
             }
 
-            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            return string.IsNullOrEmpty(normalizedBasePath)
-                ? relativePath
-                : Path.Join(normalizedBasePath, relativePath);
+            return Path.Join(basePath, relativePath);
         }
     }
 }

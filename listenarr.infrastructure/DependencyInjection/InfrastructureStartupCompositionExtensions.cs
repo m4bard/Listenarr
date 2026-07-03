@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Common;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Infrastructure.Configuration;
@@ -118,7 +119,7 @@ public static class InfrastructureStartupCompositionExtensions
         {
             var repoDbPath = Path.GetFullPath(Path.Join(environment.ContentRootPath, "config", "database", "listenarr.db"));
             var resolvedSqlitePath = Path.GetFullPath(sqliteDbPath);
-            if (string.Equals(resolvedSqlitePath, repoDbPath, StringComparison.OrdinalIgnoreCase))
+            if (FileUtils.AreFilesystemPathsEquivalentForCurrentOs(resolvedSqlitePath, repoDbPath))
             {
                 sqliteDbPath = Path.Join(Path.GetTempPath(), "listenarr-tests", "program-main", $"listenarr-{Guid.NewGuid():N}.db");
                 Log.Logger.Warning("[Startup] Test environment attempted to use repo sqlite path; forcing isolated test DB path: {SqliteDbPath}", sqliteDbPath);

@@ -17,6 +17,7 @@
  */
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Listenarr.Domain.Common;
 
 namespace Listenarr.Infrastructure.Metadata.Parsing
 {
@@ -58,14 +59,12 @@ namespace Listenarr.Infrastructure.Metadata.Parsing
             var result = new PathParsedMetadata();
 
             var normalizedFile = Path.GetFullPath(filePath);
-            var normalizedRoot = Path.GetFullPath(rootFolderPath)
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var normalizedRootWithSep = normalizedRoot + Path.DirectorySeparatorChar;
+            var normalizedRoot = Path.GetFullPath(rootFolderPath);
 
-            if (!normalizedFile.StartsWith(normalizedRootWithSep, StringComparison.OrdinalIgnoreCase))
+            if (!FileUtils.IsPathSameOrInside(normalizedFile, normalizedRoot))
                 return result;
 
-            var relative = normalizedFile[(normalizedRoot.Length)..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var relative = Path.GetRelativePath(normalizedRoot, normalizedFile);
             var parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
 
             // parts[^1] is the filename; everything before is folder levels

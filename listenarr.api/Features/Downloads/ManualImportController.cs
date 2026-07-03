@@ -149,8 +149,9 @@ public class ManualImportController : ControllerBase
         }
 
         var results = new List<ManualImportResultDto>();
-        // Track destination paths used within this batch so we avoid collisions between items
-        var usedDestinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Track destination paths using host filesystem identity: Linux/Docker paths are
+        // case-sensitive while Windows paths are not.
+        var usedDestinations = new HashSet<string>(FileUtils.FilesystemPathComparerForCurrentOs);
 
         try
         {

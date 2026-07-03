@@ -318,6 +318,54 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
 
         [Fact]
         [Trait("Method", "GetQueueItemAsync")]
+        [Trait("Scenario", "Exact duplicate source files are deduped")]
+        public async Task GetQueueItemAsync_DedupesExactDuplicateSourceFiles()
+        {
+            var sourceFile = Path.Join(localPath, "chapter1.m4b");
+            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
+            downloadClientAdapterMock.QueueItemMock = new QueueItemBuilder()
+                .WithSourceFile(sourceFile)
+                .WithSourceFile(sourceFile)
+                .WithStatus("completed")
+                .Build();
+
+            var item = await downloadClientGateway.GetQueueItemAsync(client, new DownloadBuilder().Build(), new QueueItem());
+
+            var actual = Assert.Single(item.SourceFiles);
+            Assert.Equal(sourceFile, actual);
+        }
+
+        [Fact]
+        [Trait("Method", "GetQueueItemAsync")]
+        [Trait("Scenario", "Case-only source file dedupe follows the host filesystem")]
+        public async Task GetQueueItemAsync_DedupesCaseOnlySourceFilesUsingHostFilesystemRules()
+        {
+            var firstSourceFile = Path.Join(localPath, "chapter1.m4b");
+            var secondSourceFile = Path.Join(localPath, "Chapter1.m4b");
+            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
+            downloadClientAdapterMock.QueueItemMock = new QueueItemBuilder()
+                .WithSourceFile(firstSourceFile)
+                .WithSourceFile(secondSourceFile)
+                .WithStatus("completed")
+                .Build();
+
+            var item = await downloadClientGateway.GetQueueItemAsync(client, new DownloadBuilder().Build(), new QueueItem());
+
+            if (OperatingSystem.IsWindows())
+            {
+                var actual = Assert.Single(item.SourceFiles);
+                Assert.Equal(firstSourceFile, actual);
+            }
+            else
+            {
+                Assert.Equal(2, item.SourceFiles.Count);
+                Assert.Contains(firstSourceFile, item.SourceFiles);
+                Assert.Contains(secondSourceFile, item.SourceFiles);
+            }
+        }
+
+        [Fact]
+        [Trait("Method", "GetQueueItemAsync")]
         [Trait("Scenario", "Directory expansion preserves whitespace-bearing filesystem paths")]
         public async Task GetQueueItemAsync_ExpandsWhitespaceBearingDirectoryIntoExactSourceFiles()
         {

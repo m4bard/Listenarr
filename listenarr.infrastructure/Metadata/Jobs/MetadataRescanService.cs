@@ -83,7 +83,7 @@ namespace Listenarr.Infrastructure.Metadata.Jobs
                         if (!FileUtils.IsAudioFile(file.Path ?? string.Empty))
                         {
                             var audiobook = await taskAudiobookRepository.GetByIdAsync(file.AudiobookId);
-                            if (audiobook != null && string.Equals(audiobook.FilePath, file.Path, StringComparison.OrdinalIgnoreCase))
+                            if (audiobook != null && FileUtils.AreFilesystemPathsEquivalentForCurrentOs(audiobook.FilePath ?? string.Empty, file.Path ?? string.Empty))
                             {
                                 audiobook.FilePath = null;
                                 audiobook.FileSize = null;

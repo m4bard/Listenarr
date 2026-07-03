@@ -80,10 +80,10 @@ namespace Listenarr.Application.Audiobooks.Files
                             && !string.IsNullOrEmpty(candidateDir)
                             && !string.IsNullOrEmpty(candidateFull))
                         {
-                            var isInExistingDir = candidateDir.Equals(existingDir, StringComparison.OrdinalIgnoreCase) ||
+                            var isInExistingDir = FileUtils.AreFilesystemPathsEquivalentForCurrentOs(candidateDir, existingDir) ||
                                                   FileUtils.IsPathInsideOf(candidateDir, existingDir);
                             var isInBasePath = !string.IsNullOrWhiteSpace(normalizedBasePath) &&
-                                               (candidateDir.Equals(normalizedBasePath, StringComparison.OrdinalIgnoreCase)
+                                               (FileUtils.AreFilesystemPathsEquivalentForCurrentOs(candidateDir, normalizedBasePath)
                                                 || FileUtils.IsPathInsideOf(candidateFull, normalizedBasePath));
 
                             if (!isInExistingDir && !isInBasePath)

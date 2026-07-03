@@ -297,8 +297,10 @@ namespace Listenarr.Application.Downloads.Common
                 item.SourceFiles = [];
             }
 
-            // Remove duplicates if any
-            item.SourceFiles = new HashSet<string>(item.SourceFiles, StringComparer.OrdinalIgnoreCase).ToList();
+            // Source files represent local filesystem identities after remote-path mapping.
+            // Use host filesystem semantics so Docker/Linux can preserve case-distinct files
+            // while Windows still collapses paths that refer to the same file.
+            item.SourceFiles = new HashSet<string>(item.SourceFiles, FileUtils.FilesystemPathComparerForCurrentOs).ToList();
 
             return item;
         }

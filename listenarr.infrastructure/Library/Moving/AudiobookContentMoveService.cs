@@ -468,13 +468,10 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
             return false;
         }
 
-        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        var normalizedCandidate = Path.GetFullPath(candidate)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var normalizedRoot = Path.GetFullPath(root)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalizedCandidate = Path.GetFullPath(candidate);
+        var normalizedRoot = Path.GetFullPath(root);
 
-        return string.Equals(normalizedCandidate, normalizedRoot, comparison)
+        return FileUtils.AreFilesystemPathsEquivalentForCurrentOs(normalizedCandidate, normalizedRoot)
             || FileUtils.IsPathInsideOf(normalizedCandidate, normalizedRoot);
     }
 
@@ -485,10 +482,9 @@ internal sealed partial class AudiobookContentMoveService(ILogger<AudiobookConte
             return false;
         }
 
-        var fullPath = Path.GetFullPath(path)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var root = Path.GetPathRoot(fullPath)?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var fullPath = Path.GetFullPath(path);
+        var root = Path.GetPathRoot(fullPath);
         return !string.IsNullOrWhiteSpace(root)
-            && string.Equals(fullPath, root, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+            && FileUtils.AreFilesystemPathsEquivalentForCurrentOs(fullPath, root);
     }
 }

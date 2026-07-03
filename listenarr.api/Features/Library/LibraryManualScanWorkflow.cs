@@ -266,7 +266,7 @@ namespace Listenarr.Api.Features.Library
             {
                 var allExistingFiles = await audioFileRepository.GetByAudiobookIdAsync(audiobook.Id);
 
-                var foundSet = new HashSet<string>(foundFiles.Select(f => Path.GetRelativePath(basePath, f)), StringComparer.OrdinalIgnoreCase);
+                var foundSet = new HashSet<string>(foundFiles.Select(f => Path.GetRelativePath(basePath, f)), FileUtils.FilesystemPathComparerForCurrentOs);
                 var toRemove = allExistingFiles
                     .Where(f => f.Path != null && FileUtils.IsAudioFile(f.Path) && !foundSet.Contains(f.Path))
                     .ToList();

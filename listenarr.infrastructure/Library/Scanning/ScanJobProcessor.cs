@@ -218,7 +218,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
                 var basePath = ScanPathPlanner.CalculateBasePath(foundFiles);
                 if (!string.IsNullOrEmpty(basePath))
                 {
-                    var basePathChanged = !string.Equals(audiobook.BasePath, basePath, StringComparison.OrdinalIgnoreCase);
+                    var basePathChanged = !FileUtils.AreFilesystemPathsEquivalentForCurrentOs(audiobook.BasePath ?? string.Empty, basePath);
                     audiobook.BasePath = basePath;
                     _logger.LogInformation("Set base path for audiobook '{Title}' (ID: {AudiobookId}): {BasePath}", LogRedaction.SanitizeText(audiobook.Title), audiobook.Id, LogRedaction.SanitizeFilePath(basePath));
 
@@ -256,7 +256,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
                     var existingFiles = await fileRepository.GetByAudiobookIdAsync(audiobook.Id);
 
                     // Create set of found files (absolute paths)
-                    var foundSet = new HashSet<string>(foundFiles, StringComparer.OrdinalIgnoreCase);
+                    var foundSet = new HashSet<string>(foundFiles, FileUtils.FilesystemPathComparerForCurrentOs);
 
                     // Check which existing files still exist
                     var toRemove = new List<AudiobookFile>();

@@ -92,17 +92,26 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
         public async Task<bool> HasAudiobooksUnderPathAsync(string rootPath, CancellationToken ct = default)
         {
             await using var ctx = await _dbFactory.CreateDbContextAsync();
-            return await ctx.Audiobooks.AnyAsync(a =>
-                a.BasePath != null && (a.BasePath == rootPath || a.BasePath.StartsWith(rootPath + Path.DirectorySeparatorChar)),
-                ct);
+            var basePaths = await ctx.Audiobooks
+                .Where(a => a.BasePath != null)
+                .Select(a => a.BasePath!)
+                .ToListAsync(ct);
+
+            // Keep path containment in memory. EF string-prefix translation cannot model
+            // filesystem boundaries correctly for roots like /, C:\, or \\server\share.
+            return basePaths.Any(path => FileUtils.IsPathSameOrInside(path, rootPath));
         }
 
         public async Task<List<Audiobook>> GetAudiobooksUnderPathAsync(string rootPath, CancellationToken ct = default)
         {
             await using var ctx = await _dbFactory.CreateDbContextAsync();
-            return await ctx.Audiobooks
-                .Where(a => a.BasePath != null && (a.BasePath == rootPath || a.BasePath.StartsWith(rootPath + Path.DirectorySeparatorChar)))
+            var audiobooks = await ctx.Audiobooks
+                .Where(a => a.BasePath != null)
                 .ToListAsync(ct);
+
+            return audiobooks
+                .Where(a => FileUtils.IsPathSameOrInside(a.BasePath!, rootPath))
+                .ToList();
         }
 
         public async Task<List<(int audiobookId, string original, string target)>> MigrateAudiobookPathsAsync(string oldRootPath, string newRootPath, CancellationToken ct = default)

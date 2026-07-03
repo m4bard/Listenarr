@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Text.RegularExpressions;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Common
@@ -71,7 +72,7 @@ namespace Listenarr.Application.Common
                 {
                     var requestedRoot = Path.GetFullPath(outputPath);
                     var configuredRoot = Path.GetFullPath(settings.OutputPath);
-                    if (!string.Equals(requestedRoot, configuredRoot, StringComparison.OrdinalIgnoreCase))
+                    if (!FileUtils.AreFilesystemPathsEquivalentForCurrentOs(requestedRoot, configuredRoot))
                     {
                         // Caller provided a custom base path (e.g., audiobook BasePath) -> skip folder pattern
                         effectiveFolderPattern = string.Empty;

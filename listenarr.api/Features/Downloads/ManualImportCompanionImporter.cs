@@ -36,7 +36,7 @@ public sealed class ManualImportCompanionImporter
     {
         return (await Task.WhenAll(filePaths
                 .Where(path => !string.IsNullOrWhiteSpace(path))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
                 .Select(BuildAudioMatchProfileAsync)))
             .Where(profile => profile != null)
             .Cast<FileUtils.AudioMatchProfile>()
@@ -78,12 +78,12 @@ public sealed class ManualImportCompanionImporter
             orderedItems
                 .Where(item => !string.IsNullOrWhiteSpace(item.FullPath))
                 .Select(item => Path.GetFullPath(item.FullPath!)),
-            StringComparer.OrdinalIgnoreCase);
+            FileUtils.FilesystemPathComparerForCurrentOs);
 
         var selectedDirectories = selectedSourceFiles
             .Select(Path.GetDirectoryName)
             .Where(d => !string.IsNullOrWhiteSpace(d))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
             .ToList();
 
         var companionFiles = selectedDirectories
@@ -92,7 +92,7 @@ public sealed class ManualImportCompanionImporter
             .Where(file => !FileUtils.IsBlacklistedFile(file, importBlacklist))
             .Select(Path.GetFullPath)
             .Where(file => !selectedSourceFiles.Contains(file))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
             .ToList();
 
         var importedCount = 0;

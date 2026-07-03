@@ -41,7 +41,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
             audiobook.BasePath = !string.IsNullOrWhiteSpace(requestedBasePath) ? NormalizePath(requestedBasePath) : ComputeCommonBasePath(filePaths);
             if (filePaths.Count == 0) return;
 
-            var primary = filePaths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).First();
+            var primary = filePaths.OrderBy(p => p, FileUtils.FilesystemPathComparerForCurrentOs).First();
             audiobook.FilePath = primary;
             if (audiobook.Files != null)
             {
@@ -55,7 +55,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
             var entries = new List<PreviewFileEntry>();
             if (audiobook.Files != null && audiobook.Files.Count > 0)
             {
-                var ordered = audiobook.Files.Where(f => !string.IsNullOrWhiteSpace(f.Path)).OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase).ToList();
+                var ordered = audiobook.Files.Where(f => !string.IsNullOrWhiteSpace(f.Path)).OrderBy(f => f.Path, FileUtils.FilesystemPathComparerForCurrentOs).ToList();
                 for (var i = 0; i < ordered.Count; i++)
                 {
                     var file = ordered[i];
@@ -165,7 +165,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
 
         private static IReadOnlyCollection<string> BuildAllowedRoots(ApplicationSettings settings, List<RootFolder> rootFolders, string? currentBasePath)
         {
-            var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var roots = new HashSet<string>(FileUtils.FilesystemPathComparerForCurrentOs);
             if (!string.IsNullOrWhiteSpace(settings.OutputPath)) roots.Add(NormalizePath(settings.OutputPath));
             foreach (var root in rootFolders.Where(r => !string.IsNullOrWhiteSpace(r.Path))) roots.Add(NormalizePath(root.Path));
             if (!string.IsNullOrWhiteSpace(currentBasePath)) roots.Add(NormalizePath(currentBasePath));
@@ -235,7 +235,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
 
         private static bool PathsEqual(string? left, string? right)
             => !string.IsNullOrWhiteSpace(left) && !string.IsNullOrWhiteSpace(right)
-                && string.Equals(NormalizePath(left), NormalizePath(right), StringComparison.OrdinalIgnoreCase);
+                && FileUtils.AreFilesystemPathsEquivalentForCurrentOs(NormalizePath(left), NormalizePath(right));
 
         private static bool IsSamePathOrWithin(string childPath, string rootPath)
             => PathsEqual(childPath, rootPath) || FileUtils.IsPathInsideOf(childPath, rootPath);

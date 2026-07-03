@@ -17,7 +17,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
         {
             var allFiles = files
                 .Where(f => !string.IsNullOrWhiteSpace(f))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
                 .ToList();
 
             if (allFiles.Count <= 1)
@@ -73,7 +73,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
 
             var attachedFiles = new HashSet<string>(
                 metadataGroups.SelectMany(group => group).Select(candidate => candidate.FilePath),
-                StringComparer.OrdinalIgnoreCase);
+                FileUtils.FilesystemPathComparerForCurrentOs);
 
             foreach (var candidate in candidates.Where(candidate => !attachedFiles.Contains(candidate.FilePath)))
             {
@@ -97,7 +97,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
                 .ToList();
 
             var grouped = metadataGroups
-                .Select(group => group.Select(candidate => candidate.FilePath).Distinct(StringComparer.OrdinalIgnoreCase).ToList())
+                .Select(group => group.Select(candidate => candidate.FilePath).Distinct(FileUtils.FilesystemPathComparerForCurrentOs).ToList())
                 .ToList();
 
             if (leftovers.Count > 0)
@@ -175,7 +175,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
             string ffprobePath,
             CancellationToken ct)
         {
-            var result = new Dictionary<string, PathParsedMetadata>(StringComparer.OrdinalIgnoreCase);
+            var result = new Dictionary<string, PathParsedMetadata>(FileUtils.FilesystemPathComparerForCurrentOs);
             foreach (var file in files)
             {
                 result[file] = await PathMetadataParser.ReadEmbeddedTagsAsync(file, ffprobePath, ct);
@@ -230,8 +230,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
                             continue;
                         }
                         var resolvedSub = Path.GetFullPath(sub);
-                        var rootWithSep = normalizedRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-                        if (!resolvedSub.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase))
+                        if (!FileUtils.IsPathSameOrInside(resolvedSub, normalizedRoot))
                         {
                             _logger.LogWarning("Skipping {Dir}: resolves outside configured root {Root}", sub, normalizedRoot);
                             continue;

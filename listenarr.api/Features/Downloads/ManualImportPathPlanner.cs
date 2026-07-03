@@ -110,28 +110,7 @@ public sealed class ManualImportPathPlanner
 
     public static string CombineWithOptionalBase(string? basePath, string candidatePath)
     {
-        var normalizedPath = candidatePath.Trim();
-
-        if (string.IsNullOrEmpty(normalizedPath))
-        {
-            return normalizedPath;
-        }
-
-        if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
-        {
-            return normalizedPath;
-        }
-
-        var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        if (Path.IsPathRooted(relativePath))
-        {
-            return relativePath;
-        }
-
-        var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return string.IsNullOrEmpty(normalizedBasePath)
-            ? relativePath
-            : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+        return FileUtils.CombineWithOptionalBase(basePath, candidatePath);
     }
 
     public static List<ManualImportItemDto> BuildOrderedItems(IEnumerable<ManualImportItemDto> items)
@@ -146,7 +125,7 @@ public sealed class ManualImportPathPlanner
             }
 
             var plans = MultiFileImportPlanner.BuildPlans(validItems.Select(i => (i.FullPath!, string.IsNullOrWhiteSpace(i.RelativePath) ? null : i.RelativePath)));
-            var itemLookup = validItems.ToDictionary(i => i.FullPath!, StringComparer.OrdinalIgnoreCase);
+            var itemLookup = validItems.ToDictionary(i => i.FullPath!, FileUtils.FilesystemPathComparerForCurrentOs);
             var diskNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plans, p => p.DiskNumberHint);
             var chapterNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plans, p => p.ChapterNumberHint);
 
@@ -186,13 +165,13 @@ public sealed class ManualImportPathPlanner
 
             var baseFull = FileUtils.NormalizeStoredPath(basePath);
             var configuredFull = string.IsNullOrWhiteSpace(configuredOutput) ? string.Empty : Path.GetFullPath(configuredOutput);
-            var isCustomBasePath = !string.Equals(baseFull, configuredFull, StringComparison.OrdinalIgnoreCase);
+            var isCustomBasePath = !FileUtils.AreFilesystemPathsEquivalentForCurrentOs(baseFull, configuredFull);
 
             if (isCustomBasePath)
             {
                 var isRootFolder = rootFolders.Any(r =>
                 {
-                    try { return string.Equals(FileUtils.NormalizeStoredPath(r.Path), baseFull, StringComparison.OrdinalIgnoreCase); }
+                    try { return FileUtils.AreFilesystemPathsEquivalentForCurrentOs(FileUtils.NormalizeStoredPath(r.Path), baseFull); }
                     catch (ArgumentException) { return false; }
                     catch (NotSupportedException) { return false; }
                     catch (PathTooLongException) { return false; }
@@ -205,7 +184,7 @@ public sealed class ManualImportPathPlanner
         catch (Exception caughtEx) when (caughtEx is not OperationCanceledException && caughtEx is not OutOfMemoryException && caughtEx is not StackOverflowException)
         {
             return !string.IsNullOrWhiteSpace(basePath) && !string.IsNullOrWhiteSpace(configuredOutput)
-                && !string.Equals(basePath, configuredOutput, StringComparison.OrdinalIgnoreCase);
+                && !FileUtils.AreFilesystemPathsEquivalentForCurrentOs(basePath, configuredOutput);
         }
     }
 

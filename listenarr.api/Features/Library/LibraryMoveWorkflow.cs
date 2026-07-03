@@ -181,12 +181,9 @@ namespace Listenarr.Api.Features.Library
 
                 try
                 {
-                    var srcFull = Path.GetFullPath(sourcePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                    var tgtFull = Path.GetFullPath(final).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                    var pathComparison = OperatingSystem.IsWindows()
-                        ? StringComparison.OrdinalIgnoreCase
-                        : StringComparison.Ordinal;
-                    if (string.Equals(srcFull, tgtFull, pathComparison))
+                    var srcFull = Path.GetFullPath(sourcePath);
+                    var tgtFull = Path.GetFullPath(final);
+                    if (FileUtils.AreFilesystemPathsEquivalentForCurrentOs(srcFull, tgtFull))
                     {
                         return new BadRequestObjectResult(new { message = "Source and target paths are identical; nothing to move." });
                     }
@@ -297,10 +294,7 @@ namespace Listenarr.Api.Features.Library
                 return;
             }
 
-            var comparison = OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal;
-            if (allowedRoots.Any(root => string.Equals(root, normalizedRoot, comparison)))
+            if (allowedRoots.Any(root => FileUtils.AreFilesystemPathsEquivalentForCurrentOs(root, normalizedRoot)))
             {
                 return;
             }

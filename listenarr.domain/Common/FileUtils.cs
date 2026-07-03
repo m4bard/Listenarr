@@ -279,25 +279,31 @@ namespace Listenarr.Domain.Common
         }
 
         public static bool IsPathSameOrInside(string candidatePath, string basePath)
+            => IsPathSameOrInside(candidatePath, basePath, OperatingSystem.IsWindows());
+
+        private static bool IsPathSameOrInside(string candidatePath, string basePath, bool isWindows)
         {
             if (string.IsNullOrWhiteSpace(candidatePath) || string.IsNullOrWhiteSpace(basePath))
             {
                 return false;
             }
 
-            var comparison = GetPathComparison();
-            var normalizedCandidate = NormalizeFullPathForBoundary(candidatePath);
-            var normalizedBase = NormalizeFullPathForBoundary(basePath);
+            var comparison = GetPathComparison(isWindows);
+            var normalizedCandidate = NormalizeFullPathForBoundary(candidatePath, isWindows);
+            var normalizedBase = NormalizeFullPathForBoundary(basePath, isWindows);
 
             if (string.Equals(normalizedCandidate, normalizedBase, comparison))
             {
                 return true;
             }
 
-            var baseWithSeparator = normalizedBase.EndsWith(Path.DirectorySeparatorChar)
-                || normalizedBase.EndsWith(Path.AltDirectorySeparatorChar)
-                    ? normalizedBase
-                    : normalizedBase + Path.DirectorySeparatorChar;
+            // Containment must compare a complete path segment boundary. This keeps
+            // filesystem roots valid (/, C:\, \\server\share) without treating
+            // siblings such as /bookshelf or C:\Bookshelf as children.
+            var directorySeparator = isWindows ? '\\' : '/';
+            var baseWithSeparator = EndsWithDirectorySeparatorForOs(normalizedBase, isWindows)
+                ? normalizedBase
+                : normalizedBase + directorySeparator;
 
             return normalizedCandidate.StartsWith(baseWithSeparator, comparison);
         }
@@ -313,7 +319,7 @@ namespace Listenarr.Domain.Common
                         var fullPath = NormalizeStoredPath(path);
                         return Path.GetDirectoryName(fullPath) ?? fullPath;
                     })
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Distinct(FilesystemPathComparerForCurrentOs)
                     .ToList();
 
                 if (directories.Count == 0)
@@ -321,21 +327,7 @@ namespace Listenarr.Domain.Common
                     return null;
                 }
 
-                if (directories.Count == 1)
-                {
-                    return directories[0];
-                }
-
-                var commonPath = directories[0];
-                foreach (var directory in directories.Skip(1))
-                {
-                    commonPath = GetCommonPath(commonPath, directory);
-                    if (string.IsNullOrWhiteSpace(commonPath))
-                    {
-                        break;
-                    }
-                }
-
+                var commonPath = GetCommonPathForDirectories(directories);
                 return string.IsNullOrWhiteSpace(commonPath) ? directories[0] : commonPath;
             }
             catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException)
@@ -344,40 +336,112 @@ namespace Listenarr.Domain.Common
             }
         }
 
-        private static string GetCommonPath(string firstPath, string secondPath)
+        public static string? GetCommonPathForDirectories(IEnumerable<string> directories)
         {
-            var normalizedFirst = NormalizeStoredPath(firstPath);
-            var normalizedSecond = NormalizeStoredPath(secondPath);
-            var minLength = Math.Min(normalizedFirst.Length, normalizedSecond.Length);
-            var commonLength = 0;
-
-            for (var i = 0; i < minLength; i++)
+            try
             {
-                if (normalizedFirst[i] != normalizedSecond[i])
+                var normalizedDirectories = directories
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+                    .Select(NormalizeFullPathForBoundary)
+                    .Distinct(FilesystemPathComparerForCurrentOs)
+                    .ToList();
+
+                if (normalizedDirectories.Count == 0)
                 {
-                    break;
+                    return null;
                 }
 
-                commonLength++;
-            }
+                if (normalizedDirectories.Count == 1)
+                {
+                    return normalizedDirectories[0];
+                }
 
-            if (commonLength == 0)
+                var commonPath = normalizedDirectories[0];
+                foreach (var directory in normalizedDirectories.Skip(1))
+                {
+                    commonPath = GetCommonPath(commonPath, directory);
+                    if (string.IsNullOrWhiteSpace(commonPath))
+                    {
+                        break;
+                    }
+                }
+
+                return string.IsNullOrWhiteSpace(commonPath) ? null : commonPath;
+            }
+            catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+            {
+                return null;
+            }
+        }
+
+        private static string GetCommonPath(string firstPath, string secondPath)
+        {
+            var first = DecomposePathForCommonPath(firstPath);
+            var second = DecomposePathForCommonPath(secondPath);
+            var comparison = GetPathComparison();
+
+            if (!string.Equals(first.Root, second.Root, comparison))
             {
                 return string.Empty;
             }
 
-            if (commonLength < normalizedFirst.Length)
+            var commonSegments = new List<string>();
+            var segmentCount = Math.Min(first.Segments.Count, second.Segments.Count);
+            for (var index = 0; index < segmentCount; index++)
             {
-                var lastSeparator = normalizedFirst.LastIndexOfAny(
-                    new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
-                    Math.Max(0, commonLength - 1));
-                commonLength = lastSeparator >= 0 ? lastSeparator + 1 : 0;
+                if (!string.Equals(first.Segments[index], second.Segments[index], comparison))
+                {
+                    break;
+                }
+
+                commonSegments.Add(first.Segments[index]);
             }
 
-            var commonPath = normalizedFirst.Substring(0, commonLength)
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return BuildPathFromRootAndSegments(first.Root, commonSegments);
+        }
 
-            return commonPath;
+        private static (string Root, IReadOnlyList<string> Segments) DecomposePathForCommonPath(string path)
+        {
+            var normalizedPath = NormalizeFullPathForBoundary(path);
+            string root;
+            string remainingPath;
+            if (OperatingSystem.IsWindows())
+            {
+                var rootLength = GetWindowsRootLength(normalizedPath);
+                root = rootLength > 0
+                    ? NormalizeWindowsRootForStorage(normalizedPath[..rootLength])
+                    : string.Empty;
+                remainingPath = rootLength > 0 ? normalizedPath[rootLength..] : normalizedPath;
+            }
+            else
+            {
+                root = normalizedPath.StartsWith(Path.DirectorySeparatorChar)
+                    ? Path.DirectorySeparatorChar.ToString()
+                    : string.Empty;
+                remainingPath = root.Length > 0 ? normalizedPath[root.Length..] : normalizedPath;
+            }
+
+            var segments = remainingPath
+                .Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries)
+                .ToList();
+            return (root, segments);
+        }
+
+        private static string BuildPathFromRootAndSegments(string root, IReadOnlyList<string> segments)
+        {
+            if (segments.Count == 0)
+            {
+                return root;
+            }
+
+            if (string.IsNullOrEmpty(root))
+            {
+                return Path.Join(segments.ToArray());
+            }
+
+            return root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar
+                + Path.Join(segments.ToArray());
         }
 
         private static bool IsGenericTrackLabel(string? value)

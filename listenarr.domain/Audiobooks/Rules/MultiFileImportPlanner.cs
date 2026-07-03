@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Text.RegularExpressions;
+using Listenarr.Domain.Common;
 
 namespace Listenarr.Domain.Audiobooks.Rules
 {
@@ -37,7 +38,7 @@ namespace Listenarr.Domain.Audiobooks.Rules
 
         public static List<PlannedImportFile> BuildPlans(IEnumerable<(string FullPath, string? RelativePath)> inputs)
         {
-            var distinct = new Dictionary<string, (string FullPath, string? RelativePath)>(StringComparer.OrdinalIgnoreCase);
+            var distinct = new Dictionary<string, (string FullPath, string? RelativePath)>(FileUtils.FilesystemPathComparerForCurrentOs);
             foreach (var input in inputs)
             {
                 if (string.IsNullOrWhiteSpace(input.FullPath))
@@ -53,8 +54,8 @@ namespace Listenarr.Domain.Audiobooks.Rules
 
             var ordered = distinct.Values
                 .OrderBy(i => ToNaturalSortKey(GetComparablePath(i.RelativePath, i.FullPath)), StringComparer.Ordinal)
-                .ThenBy(i => GetComparablePath(i.RelativePath, i.FullPath), StringComparer.OrdinalIgnoreCase)
-                .ThenBy(i => i.FullPath, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(i => GetComparablePath(i.RelativePath, i.FullPath), FileUtils.FilesystemPathComparerForCurrentOs)
+                .ThenBy(i => i.FullPath, StringComparer.Ordinal)
                 .ToList();
 
             var plans = new List<PlannedImportFile>(ordered.Count);
@@ -104,7 +105,7 @@ namespace Listenarr.Domain.Audiobooks.Rules
                 && rawValues.All(v => v.HasValue)
                 && AreStrictlyIncreasing(rawValues.Select(v => v!.Value));
 
-            var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var result = new Dictionary<string, int>(FileUtils.FilesystemPathComparerForCurrentOs);
             for (var i = 0; i < orderedPlans.Count; i++)
             {
                 result[orderedPlans[i].FullPath] = canUseRawValues

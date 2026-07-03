@@ -183,7 +183,7 @@ namespace Listenarr.Infrastructure.Library.Moving
 
         private async Task<HashSet<string>> GetProtectedRootPathsAsync()
         {
-            var protectedRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var protectedRoots = new HashSet<string>(FileUtils.FilesystemPathComparerForCurrentOs);
 
             try
             {
@@ -289,7 +289,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 .Select(p => NormalizePath(Path.GetDirectoryName(p)))
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .Cast<string>()
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
                 .ToList();
 
             if (directories.Count == 0)
@@ -340,7 +340,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 return false;
             }
 
-            return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+            return FileUtils.AreFilesystemPathsEquivalentForCurrentOs(left, right);
         }
 
         private static bool IsSamePathOrWithin(string path, string rootPath)

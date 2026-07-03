@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Mapping;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 namespace Listenarr.Infrastructure.Library.Moving
@@ -376,11 +377,10 @@ namespace Listenarr.Infrastructure.Library.Moving
                 return false;
             }
 
-            var fullPath = Path.GetFullPath(path)
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var root = Path.GetPathRoot(fullPath)?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var fullPath = Path.GetFullPath(path);
+            var root = Path.GetPathRoot(fullPath);
             return !string.IsNullOrWhiteSpace(root)
-                && string.Equals(fullPath, root, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+                && FileUtils.AreFilesystemPathsEquivalentForCurrentOs(fullPath, root);
         }
     }
 }

@@ -45,8 +45,11 @@ namespace Listenarr.Application.Audiobooks.RootFolders
 
             if (string.IsNullOrWhiteSpace(root.Name)) throw new ArgumentException("Name is required");
 
-            var existingByPath = await _repo.GetByPathAsync(root.Path);
-            if (existingByPath != null) throw new InvalidOperationException("A root folder with that path already exists.");
+            var conflict = await FindConflictingRootFolderAsync(root.Path);
+            if (conflict != null)
+            {
+                throw new InvalidOperationException(BuildRootFolderConflictMessage(conflict));
+            }
 
             if (root.IsDefault)
             {
@@ -62,6 +65,8 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             var root = await _repo.GetByIdAsync(id);
             if (root == null) throw new KeyNotFoundException("Root folder not found");
 
+            await EnsureNoActiveMoveJobsTouchRootAsync(root.Path);
+
             var hasReferenced = await _repo.HasAudiobooksUnderPathAsync(root.Path);
             if (hasReferenced && !reassignRootId.HasValue)
             {
@@ -72,6 +77,7 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             {
                 var newRoot = await _repo.GetByIdAsync(reassignRootId!.Value);
                 if (newRoot == null) throw new KeyNotFoundException("Reassign root not found");
+                await EnsureNoActiveMoveJobsTouchRootAsync(newRoot.Path);
                 await _repo.MigrateAudiobookPathsAsync(root.Path, newRoot.Path);
             }
 
@@ -93,14 +99,14 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             var existing = await _repo.GetByIdAsync(root.Id);
             if (existing == null) throw new KeyNotFoundException("Root folder not found");
 
-            var pathComparison = OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal;
-            if (!string.Equals(existing.Path, root.Path, pathComparison))
+            var pathChanged = !FileUtils.AreFilesystemPathsEquivalentForCurrentOs(existing.Path, root.Path);
+            if (pathChanged)
             {
-                var duplicate = await _repo.GetByPathAsync(root.Path);
-                if (duplicate != null && duplicate.Id != root.Id)
-                    throw new InvalidOperationException("Another root folder with that path already exists.");
+                var conflict = await FindConflictingRootFolderAsync(root.Path, root.Id);
+                if (conflict != null)
+                {
+                    throw new InvalidOperationException(BuildRootFolderConflictMessage(conflict));
+                }
             }
 
             if (root.IsDefault)
@@ -112,8 +118,10 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             var newPath = root.Path;
 
             List<(int audiobookId, string original, string target)> moves = new();
-            if (!string.Equals(oldPath, newPath, pathComparison))
+            if (pathChanged)
             {
+                await EnsureNoActiveMoveJobsTouchRootAsync(oldPath);
+                await EnsureNoActiveMoveJobsTouchRootAsync(newPath);
                 moves = await _repo.MigrateAudiobookPathsAsync(oldPath, newPath);
 
                 try
@@ -159,10 +167,98 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             return existing;
         }
 
+        private async Task<RootFolderConflict?> FindConflictingRootFolderAsync(
+            string normalizedPath,
+            int? excludeId = null)
+        {
+            var roots = await _repo.GetAllAsync();
+            foreach (var existingRoot in roots)
+            {
+                if (excludeId.HasValue && existingRoot.Id == excludeId.Value)
+                {
+                    continue;
+                }
+
+                if (FileUtils.AreFilesystemPathsEquivalentForCurrentOs(existingRoot.Path, normalizedPath))
+                {
+                    return new RootFolderConflict(existingRoot, RootFolderConflictType.Duplicate);
+                }
+
+                if (FileUtils.IsPathSameOrInside(normalizedPath, existingRoot.Path))
+                {
+                    return new RootFolderConflict(existingRoot, RootFolderConflictType.RequestedRootIsNestedInsideExistingRoot);
+                }
+
+                if (FileUtils.IsPathSameOrInside(existingRoot.Path, normalizedPath))
+                {
+                    return new RootFolderConflict(existingRoot, RootFolderConflictType.ExistingRootIsNestedInsideRequestedRoot);
+                }
+            }
+
+            return null;
+        }
+
+        private async Task EnsureNoActiveMoveJobsTouchRootAsync(string rootPath)
+        {
+            if (_moveQueue == null)
+            {
+                return;
+            }
+
+            var activeJobsTask = _moveQueue.GetActiveJobsAsync();
+            IReadOnlyList<MoveJob>? activeJobs = activeJobsTask == null
+                ? Array.Empty<MoveJob>()
+                : await activeJobsTask;
+            activeJobs ??= Array.Empty<MoveJob>();
+
+            var conflictingJob = activeJobs.FirstOrDefault(job =>
+                IsActiveMoveJobStatus(job.Status) &&
+                (IsMoveJobPathInsideRoot(job.SourcePath, rootPath) ||
+                 IsMoveJobPathInsideRoot(job.RequestedPath, rootPath)));
+
+            if (conflictingJob == null)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                $"Root folder has active move job {conflictingJob.Id}; wait for queued or processing moves touching this root to finish before deleting or reassigning it.");
+        }
+
+        private static bool IsMoveJobPathInsideRoot(string? path, string rootPath)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            return FileUtils.IsPathSameOrInside(path, rootPath);
+        }
+
+        private static bool IsActiveMoveJobStatus(string? status)
+        {
+            return string.Equals(status, "Queued", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(status, "Processing", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string BuildRootFolderConflictMessage(RootFolderConflict conflict)
+        {
+            return conflict.Type switch
+            {
+                RootFolderConflictType.Duplicate => "A root folder with that path already exists.",
+                RootFolderConflictType.RequestedRootIsNestedInsideExistingRoot =>
+                    $"Root folder cannot be nested inside existing root '{conflict.Root.Name}'.",
+                RootFolderConflictType.ExistingRootIsNestedInsideRequestedRoot =>
+                    $"Root folder cannot contain existing root '{conflict.Root.Name}'.",
+                _ => "Root folder path conflicts with an existing root folder."
+            };
+        }
+
         private static string NormalizeRootFolderPathForStorage(string? path)
         {
-            // Root folders may be filesystem boundaries, but parent traversal is still
-            // rejected so the stored boundary is explicit rather than reached indirectly.
+            // Root folders may be filesystem boundaries, including UNC shares, but parent
+            // traversal is still rejected so the stored boundary is explicit rather than
+            // reached indirectly through ../ segments.
             if (!FileUtils.TryNormalizeUserProvidedDirectoryPathForCurrentOs(
                 path,
                 out var normalizedPath,
@@ -174,6 +270,15 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             }
 
             return normalizedPath;
+        }
+
+        private sealed record RootFolderConflict(RootFolder Root, RootFolderConflictType Type);
+
+        private enum RootFolderConflictType
+        {
+            Duplicate,
+            RequestedRootIsNestedInsideExistingRoot,
+            ExistingRootIsNestedInsideRequestedRoot
         }
     }
 }

@@ -25,11 +25,11 @@ internal static class ScanFileDiscovery
         var authorToken = audiobook.Authors?.FirstOrDefault() ?? string.Empty;
         if (string.IsNullOrEmpty(titleToken) && string.IsNullOrEmpty(authorToken))
         {
-            return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            return candidates.Distinct(FileUtils.FilesystemPathComparerForCurrentOs).ToList();
         }
 
         var foundFiles = new List<string>();
-        var unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var unique = new HashSet<string>(FileUtils.FilesystemPathComparerForCurrentOs);
         foreach (var group in candidates.GroupBy(file => Path.GetDirectoryName(file) ?? string.Empty))
         {
             var directoryName = Path.GetFileName(group.Key) ?? string.Empty;

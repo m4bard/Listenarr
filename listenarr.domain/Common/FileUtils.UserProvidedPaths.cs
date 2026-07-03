@@ -379,9 +379,26 @@ namespace Listenarr.Domain.Common
                 segments.Add(segment);
             }
 
+            var normalizedRoot = NormalizeWindowsRootForStorage(root);
             return segments.Count == 0
-                ? root.TrimEnd('\\')
-                : root.TrimEnd('\\') + "\\" + string.Join("\\", segments);
+                ? normalizedRoot
+                : normalizedRoot.TrimEnd('\\') + "\\" + string.Join("\\", segments);
+        }
+
+        private static string NormalizeWindowsRootForStorage(string root)
+        {
+            var normalizedRoot = root.Replace('/', '\\');
+            if (Regex.IsMatch(normalizedRoot, "^[A-Za-z]:$"))
+            {
+                return normalizedRoot + "\\";
+            }
+
+            if (Regex.IsMatch(normalizedRoot, "^[A-Za-z]:\\\\$"))
+            {
+                return normalizedRoot;
+            }
+
+            return normalizedRoot.TrimEnd('\\');
         }
 
         private static bool IsWindowsRootOnly(string path)

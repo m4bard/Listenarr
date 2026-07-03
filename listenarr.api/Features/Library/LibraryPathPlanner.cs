@@ -95,7 +95,7 @@ namespace Listenarr.Api.Features.Library
             var directories = filePaths
                 .Select(p => FileUtils.NormalizeStoredPath(Path.GetDirectoryName(p) ?? p))
                 .Where(p => !string.IsNullOrWhiteSpace(p))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
                 .ToList();
 
             if (directories.Count == 1)
@@ -103,7 +103,7 @@ namespace Listenarr.Api.Features.Library
                 return directories[0];
             }
 
-            var commonPath = GetCommonPath(directories, fileSystem);
+            var commonPath = FileUtils.GetCommonPathForDirectories(directories) ?? directories[0];
             var currentPath = commonPath;
             while (!string.IsNullOrEmpty(currentPath))
             {
@@ -148,47 +148,6 @@ namespace Listenarr.Api.Features.Library
 
             name = name.Replace(":", "_").Replace("*", "_").Replace("?", "_").Replace("\"", "_").Replace("<", "_").Replace(">", "_").Replace("|", "_");
             return name.Trim();
-        }
-
-        private static string GetCommonPath(List<string> paths, IFileSystem fileSystem)
-        {
-            if (!paths.Any())
-                return string.Empty;
-
-            var firstPath = FileUtils.NormalizeStoredPath(paths[0]);
-            var commonPath = firstPath;
-
-            foreach (var path in paths.Skip(1).Select(rawPath => FileUtils.NormalizeStoredPath(rawPath)))
-            {
-                var minLength = Math.Min(commonPath.Length, path.Length);
-                var commonLength = 0;
-
-                for (int i = 0; i < minLength; i++)
-                {
-                    if (commonPath[i] == path[i])
-                        commonLength++;
-                    else
-                        break;
-                }
-
-                if (commonLength < commonPath.Length)
-                    commonLength = commonPath.LastIndexOf(Path.DirectorySeparatorChar, commonLength - 1) is var lastSep && lastSep >= 0
-                        ? lastSep + 1
-                        : 0;
-
-                commonPath = commonPath.Substring(0, commonLength);
-
-                if (string.IsNullOrEmpty(commonPath))
-                    break;
-            }
-
-            if (!string.IsNullOrEmpty(commonPath) && !fileSystem.DirectoryExists(commonPath))
-            {
-                var parent = fileSystem.GetParentDirectory(commonPath);
-                return parent ?? commonPath;
-            }
-
-            return commonPath;
         }
 
         private static string CleanDirectoryPattern(string pattern)

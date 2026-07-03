@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Domain.Common;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library;
@@ -42,10 +43,13 @@ public sealed class LibraryPreviewPathWorkflow(
                 fileNamingService);
             var relativePath = fullPath;
             if (!string.IsNullOrEmpty(root) &&
-                fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                FileUtils.IsPathSameOrInside(fullPath, root))
             {
-                relativePath = fullPath[root.Length..]
-                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                relativePath = Path.GetRelativePath(root, fullPath);
+                if (relativePath == ".")
+                {
+                    relativePath = string.Empty;
+                }
             }
 
             return new OkObjectResult(new { fullPath, relativePath, root });

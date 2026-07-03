@@ -17,6 +17,7 @@
  */
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Audiobooks.Jobs
@@ -66,7 +67,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
         private static readonly TimeSpan JobTtl = TimeSpan.FromHours(1);
 
         private readonly ConcurrentDictionary<Guid, UnmatchedScanJob> _jobs = new();
-        private readonly ConcurrentDictionary<string, Guid> _lastJobByPath = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, Guid> _lastJobByPath = new(FileUtils.FilesystemPathComparerForCurrentOs);
         private readonly Channel<UnmatchedScanJob> _channel = Channel.CreateUnbounded<UnmatchedScanJob>();
         private readonly ILogger<UnmatchedScanQueueService> _logger;
 
@@ -97,7 +98,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
             PurgeExpired();
             // Dedupe: if a queued/processing job exists for the same path, return it
             var existing = _jobs.Values.FirstOrDefault(j =>
-                string.Equals(j.RootFolderPath, rootFolderPath, StringComparison.OrdinalIgnoreCase) &&
+                FileUtils.AreFilesystemPathsEquivalentForCurrentOs(j.RootFolderPath, rootFolderPath) &&
                 (j.Status == "Queued" || j.Status == "Processing"));
 
             if (existing != null)
