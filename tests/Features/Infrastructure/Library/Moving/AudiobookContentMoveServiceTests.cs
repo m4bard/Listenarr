@@ -298,6 +298,30 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
+        public async Task AtomicRenameMarker_RecoversBeforePhasePersistence()
+        {
+            var source = FileService.GetTempDirectory("content-move-atomic-recovery-src");
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(
+                FileService.GetTempPath(),
+                $"content-move-atomic-recovery-dst-{Guid.NewGuid():N}");
+            var jobId = Guid.NewGuid();
+            await File.WriteAllTextAsync(
+                Path.Join(source, $".listenarr-move-{jobId:N}.pending"),
+                "atomic-rename-complete");
+            Directory.Move(source, target);
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            var recoverable = service.TryGetRecoverableMove(
+                new AudiobookContentMoveRequest(source, target, jobId),
+                out var result);
+
+            Assert.True(recoverable);
+            Assert.True(result.SourceCleanupCompleted);
+            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        }
+
+        [Fact]
         public async Task ResumeSourceCleanup_VerifiedQuarantine_ConvergesAfterCrash()
         {
             var source = FileService.GetTempDirectory("content-move-quarantine-src");
@@ -356,6 +380,118 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Assert.Equal(
                 MoveJobEntryCleanupState.Deleted,
                 (await verification.MoveJobEntries.SingleAsync()).CleanupState);
+        }
+
+        [Fact]
+        public async Task ResumeSourceCleanup_DeletedQuarantine_ConvergesAfterCrash()
+        {
+            var source = FileService.GetTempDirectory("content-move-deleted-quarantine-src");
+            var target = FileService.GetTempDirectory("content-move-deleted-quarantine-dst");
+            var jobId = Guid.NewGuid();
+            var destination = Path.Join(target, "book.m4b");
+            await File.WriteAllTextAsync(destination, "verified audio");
+            var hash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(destination)));
+            var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
+            await using (var db = await factory.CreateDbContextAsync())
+            {
+                db.MoveJobs.Add(new MoveJob
+                {
+                    Id = jobId,
+                    AudiobookId = 1,
+                    RequestedPath = target,
+                    SourcePath = source,
+                    Status = MoveJobStatus.Running,
+                    ActiveDeduplicationKey = $"test:{jobId:N}"
+                });
+                db.MoveJobEntries.Add(new MoveJobEntry
+                {
+                    MoveJobId = jobId,
+                    RelativePath = "book.m4b",
+                    EntryType = MoveJobEntryType.File,
+                    Length = new FileInfo(destination).Length,
+                    Sha256 = hash,
+                    CopyState = MoveJobEntryCopyState.Verified,
+                    CleanupState = MoveJobEntryCleanupState.Quarantined
+                });
+                await db.SaveChangesAsync();
+            }
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            var resumed = service.ResumeSourceCleanup(
+                new AudiobookContentMoveRequest(source, target, jobId),
+                new AudiobookContentMoveResult(
+                    source,
+                    target,
+                    false,
+                    false,
+                    Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
+                    false));
+
+            Assert.True(resumed.SourceCleanupCompleted);
+            Assert.False(Directory.Exists(source));
+            await using var verification = await factory.CreateDbContextAsync();
+            Assert.Equal(
+                MoveJobEntryCleanupState.Deleted,
+                (await verification.MoveJobEntries.SingleAsync()).CleanupState);
+        }
+
+        [Fact]
+        public async Task ResumeSourceCleanup_SourceAndQuarantineBothExist_BlocksCleanup()
+        {
+            var source = FileService.GetTempDirectory("content-move-ambiguous-quarantine-src");
+            var target = FileService.GetTempDirectory("content-move-ambiguous-quarantine-dst");
+            var jobId = Guid.NewGuid();
+            var quarantineRoot = Path.Join(
+                Path.GetDirectoryName(source)!,
+                $".listenarr-quarantine-{jobId:N}");
+            Directory.CreateDirectory(quarantineRoot);
+            var sourceFile = Path.Join(source, "book.m4b");
+            var destination = Path.Join(target, "book.m4b");
+            var quarantineFile = Path.Join(quarantineRoot, "book.m4b");
+            await File.WriteAllTextAsync(sourceFile, "verified audio");
+            await File.WriteAllTextAsync(destination, "verified audio");
+            await File.WriteAllTextAsync(quarantineFile, "verified audio");
+            var hash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(destination)));
+            var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
+            await using (var db = await factory.CreateDbContextAsync())
+            {
+                db.MoveJobs.Add(new MoveJob
+                {
+                    Id = jobId,
+                    AudiobookId = 1,
+                    RequestedPath = target,
+                    SourcePath = source,
+                    Status = MoveJobStatus.Running,
+                    ActiveDeduplicationKey = $"test:{jobId:N}"
+                });
+                db.MoveJobEntries.Add(new MoveJobEntry
+                {
+                    MoveJobId = jobId,
+                    RelativePath = "book.m4b",
+                    EntryType = MoveJobEntryType.File,
+                    Length = new FileInfo(destination).Length,
+                    Sha256 = hash,
+                    CopyState = MoveJobEntryCopyState.Verified,
+                    CleanupState = MoveJobEntryCleanupState.Quarantined
+                });
+                await db.SaveChangesAsync();
+            }
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            Assert.Throws<MoveNeedsAttentionException>(() => service.ResumeSourceCleanup(
+                new AudiobookContentMoveRequest(source, target, jobId),
+                new AudiobookContentMoveResult(
+                    source,
+                    target,
+                    false,
+                    false,
+                    Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
+                    false)));
+
+            Assert.True(File.Exists(sourceFile));
+            Assert.True(File.Exists(quarantineFile));
         }
 
         private sealed class AddSourceFileAfterPublish(string source) : IMoveFaultInjector

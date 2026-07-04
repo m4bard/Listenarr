@@ -69,6 +69,23 @@ public sealed class FileSystemPathIdentityTests
     }
 
     [Fact]
+    public void GetRelativePath_UsesResolvedCaseSemantics()
+    {
+        var semantics = new FileSystemPathSemantics(
+            FileSystemPathSyntax.Unix,
+            FileSystemCaseSensitivity.Insensitive);
+
+        var resolved = FileSystemPathIdentity.TryGetRelativePathWithinBase(
+            "/books",
+            "/Books/Author/Title",
+            semantics,
+            out var relativePath);
+
+        Assert.True(resolved);
+        Assert.Equal("Author/Title", relativePath);
+    }
+
+    [Fact]
     public void IdentityKey_IsVersionedAndStableForEquivalentPaths()
     {
         var semantics = new FileSystemPathSemantics(

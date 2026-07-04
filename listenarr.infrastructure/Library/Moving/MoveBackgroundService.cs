@@ -110,7 +110,21 @@ public sealed class MoveBackgroundService(
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
         while (await timer.WaitForNextTickAsync(cancellationToken))
         {
-            await moveQueueService.HeartbeatJobAsync(jobId, leaseOwner, cancellationToken);
+            try
+            {
+                await moveQueueService.HeartbeatJobAsync(jobId, leaseOwner, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException and not StackOverflowException)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Failed to renew the lease for move job {JobId}; heartbeat will retry",
+                    jobId);
+            }
         }
     }
 }

@@ -56,6 +56,13 @@ namespace Listenarr.Application.Audiobooks.RootFolders
 
             var resolution = await ResolveSemanticsAsync(root.Path, root.CaseSensitivityMode);
             ApplyIdentity(root, resolution);
+            if (_relocationService != null
+                && await _relocationService.IsBoundaryProtectedAsync(root.Path, resolution.Semantics))
+            {
+                throw new InvalidOperationException(
+                    "Root folder path overlaps an active relocation boundary.");
+            }
+
             var conflict = await FindConflictingRootFolderAsync(root.Path, resolution.Semantics);
             if (conflict != null)
             {
@@ -79,9 +86,9 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             EnsureRootIdentityAvailable(root);
             await EnsureNoActiveRelocationAsync(root.Id);
 
-            await EnsureNoActiveMoveJobsTouchRootAsync(root.Path);
-
-            var hasReferenced = await _repo.HasAudiobooksUnderPathAsync(root.Path);
+            var sourceSemantics = await ResolveSemanticsAsync(root.Path, root.CaseSensitivityMode);
+            await EnsureNoActiveMoveJobsTouchRootAsync(root.Path, sourceSemantics.Semantics);
+            var hasReferenced = await _repo.HasAudiobooksUnderPathAsync(root.Path, sourceSemantics.Semantics);
             if (hasReferenced && !reassignRootId.HasValue)
             {
                 throw new InvalidOperationException("Root folder is in use by audiobooks; reassign before deletion or provide reassignRootId.");
@@ -92,8 +99,13 @@ namespace Listenarr.Application.Audiobooks.RootFolders
                 var newRoot = await _repo.GetByIdAsync(reassignRootId!.Value);
                 if (newRoot == null) throw new KeyNotFoundException("Reassign root not found");
                 EnsureRootIdentityAvailable(newRoot);
-                await EnsureNoActiveMoveJobsTouchRootAsync(newRoot.Path);
-                await _repo.MigrateAudiobookPathsAsync(root.Path, newRoot.Path);
+                var targetSemantics = await ResolveSemanticsAsync(newRoot.Path, newRoot.CaseSensitivityMode);
+                await EnsureNoActiveMoveJobsTouchRootAsync(newRoot.Path, targetSemantics.Semantics);
+                await _repo.MigrateAudiobookPathsAsync(
+                    root.Path,
+                    newRoot.Path,
+                    sourceSemantics.Semantics,
+                    targetSemantics.Semantics);
             }
 
             await _repo.RemoveAsync(id);
@@ -127,16 +139,25 @@ namespace Listenarr.Application.Audiobooks.RootFolders
                     "Root paths cannot be changed by metadata updates; use the path-changes endpoint.");
             }
 
-            await EnsureNoActiveMoveJobsTouchRootAsync(existing.Path);
+            await EnsureNoActiveMoveJobsTouchRootAsync(existing.Path, existingResolution.Semantics);
+            existing.Name = root.Name;
+            existing.IsDefault = root.IsDefault;
+            existing.CaseSensitivityMode = root.CaseSensitivityMode;
+            var resolution = await ResolveSemanticsAsync(existing.Path, root.CaseSensitivityMode);
+            var conflict = await FindConflictingRootFolderAsync(
+                existing.Path,
+                resolution.Semantics,
+                existing.Id);
+            if (conflict != null)
+            {
+                throw new InvalidOperationException(BuildRootFolderConflictMessage(conflict));
+            }
+
             if (root.IsDefault)
             {
                 await _repo.ClearDefaultExceptAsync(excludeId: root.Id);
             }
 
-            existing.Name = root.Name;
-            existing.IsDefault = root.IsDefault;
-            existing.CaseSensitivityMode = root.CaseSensitivityMode;
-            var resolution = await ResolveSemanticsAsync(existing.Path, root.CaseSensitivityMode);
             ApplyIdentity(existing, resolution);
             existing.UpdatedAt = DateTime.UtcNow;
             await _repo.UpdateAsync(existing);
@@ -180,7 +201,9 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             return null;
         }
 
-        private async Task EnsureNoActiveMoveJobsTouchRootAsync(string rootPath)
+        private async Task EnsureNoActiveMoveJobsTouchRootAsync(
+            string rootPath,
+            FileSystemPathSemantics semantics)
         {
             if (_moveQueue == null)
             {
@@ -195,8 +218,8 @@ namespace Listenarr.Application.Audiobooks.RootFolders
 
             var conflictingJob = activeJobs.FirstOrDefault(job =>
                 job.Status.IsActive() &&
-                (IsMoveJobPathInsideRoot(job.SourcePath, rootPath) ||
-                 IsMoveJobPathInsideRoot(job.RequestedPath, rootPath)));
+                (IsMoveJobPathInsideRoot(job.SourcePath, rootPath, semantics) ||
+                 IsMoveJobPathInsideRoot(job.RequestedPath, rootPath, semantics)));
 
             if (conflictingJob == null)
             {
@@ -207,7 +230,10 @@ namespace Listenarr.Application.Audiobooks.RootFolders
                 $"Root folder has active move job {conflictingJob.Id}; wait for queued or processing moves touching this root to finish before deleting or reassigning it.");
         }
 
-        private static bool IsMoveJobPathInsideRoot(string? path, string rootPath)
+        private static bool IsMoveJobPathInsideRoot(
+            string? path,
+            string rootPath,
+            FileSystemPathSemantics semantics)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -217,7 +243,7 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             return FileSystemPathIdentity.IsSameOrInside(
                 path,
                 rootPath,
-                FileSystemPathSemantics.CurrentHostDefault);
+                semantics);
         }
 
         private async Task<FileSystemSemanticsResolution> ResolveSemanticsAsync(

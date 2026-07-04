@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using Listenarr.Domain.Common;
-using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Library.Moving;
 
@@ -30,7 +29,6 @@ internal sealed partial class AudiobookContentMoveService
         await PersistManifestAsync(jobId, manifest, cancellationToken);
         return manifest;
     }
-
     private async Task<List<MoveJobEntry>> SnapshotSourceAsync(
         Guid jobId,
         string source,
@@ -94,54 +92,6 @@ internal sealed partial class AudiobookContentMoveService
 
         return entries;
     }
-
-    private async Task PersistManifestAsync(
-        Guid jobId,
-        IReadOnlyCollection<MoveJobEntry> manifest,
-        CancellationToken cancellationToken)
-    {
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        if (!await db.MoveJobs.AnyAsync(job => job.Id == jobId, cancellationToken))
-        {
-            return;
-        }
-
-        db.MoveJobEntries.AddRange(manifest);
-        await db.SaveChangesAsync(cancellationToken);
-    }
-
-    private List<MoveJobEntry> LoadManifest(Guid jobId)
-    {
-        using var db = dbContextFactory.CreateDbContext();
-        return db.MoveJobEntries
-            .AsNoTracking()
-            .Where(entry => entry.MoveJobId == jobId)
-            .OrderBy(entry => entry.Id)
-            .ToList();
-    }
-
-    private MoveJobPhase? LoadMoveJobPhase(Guid jobId)
-    {
-        using var db = dbContextFactory.CreateDbContext();
-        return db.MoveJobs
-            .AsNoTracking()
-            .Where(job => job.Id == jobId)
-            .Select(job => (MoveJobPhase?)job.Phase)
-            .SingleOrDefault();
-    }
-
-    private async Task<List<MoveJobEntry>> LoadManifestAsync(
-        Guid jobId,
-        CancellationToken cancellationToken)
-    {
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        return await db.MoveJobEntries
-            .AsNoTracking()
-            .Where(entry => entry.MoveJobId == jobId)
-            .OrderBy(entry => entry.Id)
-            .ToListAsync(cancellationToken);
-    }
-
     private static async Task VerifyPublishedManifestAsync(
         string destinationRoot,
         IReadOnlyCollection<MoveJobEntry> manifest,
@@ -229,7 +179,28 @@ internal sealed partial class AudiobookContentMoveService
             ResolveCleanupPaths(source, quarantineRoot, entry.RelativePath, semantics, out var sourceFile, out var quarantineFile);
             if (File.Exists(sourceFile))
             {
+                if (File.Exists(quarantineFile))
+                {
+                    throw new MoveNeedsAttentionException(
+                        $"Both source and quarantine copies exist; cleanup is ambiguous: {entry.RelativePath}");
+                }
+
                 expectedAtSource.Add(entry);
+                continue;
+            }
+
+            if (entry.CleanupState == MoveJobEntryCleanupState.Quarantined
+                && !File.Exists(quarantineFile))
+            {
+                // Quarantined is persisted only after the bytes have been verified.
+                // A missing quarantine file therefore means the delete completed and
+                // the process stopped before the final state update.
+                await UpdateCleanupStateAsync(
+                    jobId,
+                    entry.RelativePath,
+                    MoveJobEntryCleanupState.Deleted,
+                    cancellationToken);
+                entry.CleanupState = MoveJobEntryCleanupState.Deleted;
                 continue;
             }
 
@@ -292,6 +263,7 @@ internal sealed partial class AudiobookContentMoveService
                     $"Quarantined source bytes changed before cleanup: {entry.RelativePath}");
             }
 
+            await VerifyPublishedManifestAsync(target, [entry], semantics, cancellationToken);
             await UpdateCleanupStateAsync(
                 jobId,
                 entry.RelativePath,
@@ -332,25 +304,6 @@ internal sealed partial class AudiobookContentMoveService
         RemoveEmptyDirectoryTree(quarantineRoot, sourceParent, semantics);
     }
 
-    private async Task UpdateCleanupStateAsync(
-        Guid jobId,
-        string relativePath,
-        MoveJobEntryCleanupState cleanupState,
-        CancellationToken cancellationToken)
-    {
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var persistedEntry = await db.MoveJobEntries.SingleOrDefaultAsync(
-            entry => entry.MoveJobId == jobId && entry.RelativePath == relativePath,
-            cancellationToken);
-        if (persistedEntry == null)
-        {
-            return;
-        }
-
-        persistedEntry.CleanupState = cleanupState;
-        await db.SaveChangesAsync(cancellationToken);
-    }
-
     private static void ResolveCleanupPaths(
         string source,
         string quarantineRoot,
@@ -372,42 +325,6 @@ internal sealed partial class AudiobookContentMoveService
         {
             throw new MoveNeedsAttentionException("A manifest entry escaped its cleanup boundary.");
         }
-    }
-
-    private async Task UpdateCopyStateAsync(Guid jobId, CancellationToken cancellationToken)
-    {
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var entries = await db.MoveJobEntries
-            .Where(entry => entry.MoveJobId == jobId)
-            .ToListAsync(cancellationToken);
-        foreach (var entry in entries)
-        {
-            entry.CopyState = MoveJobEntryCopyState.Verified;
-        }
-
-        if (entries.Count > 0)
-        {
-            await db.SaveChangesAsync(cancellationToken);
-        }
-    }
-
-    private async Task UpdateJobPhaseAsync(
-        Guid jobId,
-        MoveJobPhase phase,
-        CancellationToken cancellationToken)
-    {
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var job = await db.MoveJobs.SingleOrDefaultAsync(
-            candidate => candidate.Id == jobId,
-            cancellationToken);
-        if (job == null)
-        {
-            return;
-        }
-
-        job.Phase = phase;
-        job.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
     }
 
     private static bool ManifestMatches(

@@ -14,6 +14,7 @@ internal sealed partial class AudiobookContentMoveService
 {
     private const string CopyStartedStage = "copy-started";
     private const string CopyCompletedStage = "copy-complete";
+    private const string AtomicRenameCompletedStage = "atomic-rename-complete";
     private const string SourceCleanupCompletedStage = "source-cleanup-complete";
 
     private static void WriteRecoveryMarker(string target, Guid jobId, string stage)

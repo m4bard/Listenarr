@@ -51,6 +51,55 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
         }
 
         [Fact]
+        public async Task Update_InsensitiveOverrideRejectsCaseVariantIdentityConflict()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var firstPath = FileUtils.GetAbsolutePath("CaseVariantRoot");
+            var secondPath = FileUtils.GetAbsolutePath("casevariantroot");
+            await using (var db = new ListenArrDbContext(options))
+            {
+                db.RootFolders.AddRange(
+                    new RootFolder { Id = 1, Name = "First", Path = firstPath },
+                    new RootFolder { Id = 2, Name = "Second", Path = secondPath });
+                await db.SaveChangesAsync();
+            }
+
+            var resolver = new Mock<IFileSystemSemanticsResolver>();
+            resolver.Setup(candidate => candidate.ResolveAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<FileSystemCaseSensitivityMode>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns((string path, FileSystemCaseSensitivityMode mode, CancellationToken _) =>
+                    ValueTask.FromResult(new FileSystemSemanticsResolution(
+                        new FileSystemPathSemantics(
+                            FileSystemPathSemantics.CurrentHostDefault.Syntax,
+                            mode == FileSystemCaseSensitivityMode.Insensitive
+                                ? FileSystemCaseSensitivity.Insensitive
+                                : FileSystemCaseSensitivity.Sensitive),
+                        PathIdentityState.Valid,
+                        Path.GetPathRoot(path) ?? path)));
+            var service = new RootFolderService(
+                new EfRootFolderRepository(
+                    new TestDbFactory(options),
+                    Mock.Of<ILogger<EfRootFolderRepository>>()),
+                null,
+                semanticsResolver: resolver.Object);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.UpdateAsync(new RootFolder
+                {
+                    Id = 1,
+                    Name = "First",
+                    Path = firstPath,
+                    CaseSensitivityMode = FileSystemCaseSensitivityMode.Insensitive
+                }));
+
+            Assert.Contains("already", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
         public async Task Create_AllowsFilesystemRootPath()
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()

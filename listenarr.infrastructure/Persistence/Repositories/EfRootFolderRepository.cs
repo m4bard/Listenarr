@@ -89,7 +89,10 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             if (others.Count > 0) await ctx.SaveChangesAsync(ct);
         }
 
-        public async Task<bool> HasAudiobooksUnderPathAsync(string rootPath, CancellationToken ct = default)
+        public async Task<bool> HasAudiobooksUnderPathAsync(
+            string rootPath,
+            FileSystemPathSemantics semantics,
+            CancellationToken ct = default)
         {
             await using var ctx = await _dbFactory.CreateDbContextAsync();
             var basePaths = await ctx.Audiobooks
@@ -99,10 +102,13 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
             // Keep path containment in memory. EF string-prefix translation cannot model
             // filesystem boundaries correctly for roots like /, C:\, or \\server\share.
-            return basePaths.Any(path => FileUtils.IsPathSameOrInside(path, rootPath));
+            return basePaths.Any(path => FileSystemPathIdentity.IsSameOrInside(path, rootPath, semantics));
         }
 
-        public async Task<List<Audiobook>> GetAudiobooksUnderPathAsync(string rootPath, CancellationToken ct = default)
+        public async Task<List<Audiobook>> GetAudiobooksUnderPathAsync(
+            string rootPath,
+            FileSystemPathSemantics semantics,
+            CancellationToken ct = default)
         {
             await using var ctx = await _dbFactory.CreateDbContextAsync();
             var audiobooks = await ctx.Audiobooks
@@ -110,27 +116,48 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 .ToListAsync(ct);
 
             return audiobooks
-                .Where(a => FileUtils.IsPathSameOrInside(a.BasePath!, rootPath))
+                .Where(a => FileSystemPathIdentity.IsSameOrInside(a.BasePath!, rootPath, semantics))
                 .ToList();
         }
 
-        public async Task<List<(int audiobookId, string original, string target)>> MigrateAudiobookPathsAsync(string oldRootPath, string newRootPath, CancellationToken ct = default)
+        public async Task<List<(int audiobookId, string original, string target)>> MigrateAudiobookPathsAsync(
+            string oldRootPath,
+            string newRootPath,
+            FileSystemPathSemantics sourceSemantics,
+            FileSystemPathSemantics targetSemantics,
+            CancellationToken ct = default)
         {
             await using var ctx = await _dbFactory.CreateDbContextAsync();
             var all = await ctx.Audiobooks.Where(a => a.BasePath != null).ToListAsync(ct);
 
             var affected = all
-                .Where(a => FileUtils.IsPathSameOrInside(a.BasePath!, oldRootPath))
+                .Where(a => FileSystemPathIdentity.IsSameOrInside(a.BasePath!, oldRootPath, sourceSemantics))
                 .ToList();
 
             var moves = new List<(int audiobookId, string original, string target)>();
             foreach (var a in affected)
             {
                 var original = a.BasePath!;
-                var relativePath = Path.GetRelativePath(oldRootPath, original);
-                var target = relativePath == "."
-                    ? newRootPath
-                    : Path.Join(newRootPath, relativePath);
+                if (!FileSystemPathIdentity.TryGetRelativePathWithinBase(
+                    oldRootPath,
+                    original,
+                    sourceSemantics,
+                    out var relativePath))
+                {
+                    throw new InvalidOperationException("An audiobook path escaped its source root during reassignment.");
+                }
+
+                var target = newRootPath;
+                if (relativePath.Length > 0
+                    && !FileSystemPathIdentity.TryResolveRelativePathWithinBase(
+                        newRootPath,
+                        relativePath,
+                        targetSemantics,
+                        out target))
+                {
+                    throw new InvalidOperationException("An audiobook relative path is invalid for the target root.");
+                }
+
                 moves.Add((a.Id, original, target));
                 a.BasePath = target;
             }

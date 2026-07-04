@@ -270,7 +270,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 CancellationToken.None);
 
             Assert.False(Directory.Exists(src));
-            Assert.Empty(Directory.EnumerateFiles(dst, ".listenarr-move-*.pending"));
+            Assert.Single(Directory.EnumerateFiles(dst, ".listenarr-move-*.pending"));
             Directory.CreateDirectory(src);
             await FileService.GetFileAsync(src, "new-content.txt", "do not delete");
 

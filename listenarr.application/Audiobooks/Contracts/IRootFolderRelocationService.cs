@@ -35,6 +35,11 @@ public interface IRootFolderRelocationService
         int rootFolderId,
         CancellationToken cancellationToken = default);
 
+    Task<bool> IsBoundaryProtectedAsync(
+        string path,
+        FileSystemPathSemantics semantics,
+        CancellationToken cancellationToken = default);
+
     Task<RootFolderPathChangeResult> RetryAsync(
         Guid relocationId,
         CancellationToken cancellationToken = default);

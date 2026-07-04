@@ -308,9 +308,14 @@ namespace Listenarr.Api.Features.Library
                     .Where(a => a.FilePath != null)
                     .Select(a => a.FilePath!)
                     .ToList();
+                var trackedPathSemantics = new FileSystemPathSemantics(
+                    FileSystemPathSemantics.CurrentHostDefault.Syntax,
+                    folder.ResolvedCaseSensitivity == FileSystemCaseSensitivity.Unknown
+                        ? FileSystemPathSemantics.CurrentHostDefault.CaseSensitivity
+                        : folder.ResolvedCaseSensitivity);
                 var tracked = new HashSet<string>(
                     trackedFromFiles.Concat(trackedFromAudiobooks),
-                    FileUtils.FilesystemPathComparerForCurrentOs);
+                    trackedPathSemantics.Comparer);
 
                 var filtered = (job.Results ?? new List<UnmatchedFileResult>())
                     .Where(r => !tracked.Contains(r.FullPath) && _fileSystem.FileExists(r.FullPath))

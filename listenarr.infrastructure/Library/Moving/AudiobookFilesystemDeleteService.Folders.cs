@@ -23,24 +23,33 @@ namespace Listenarr.Infrastructure.Library.Moving
                 return null;
             }
 
-            if (protectedRoots.Any(root => PathsEqual(root, folderPath)))
+            var resolution = await _semanticsResolver.ResolveAsync(folderPath);
+            if (resolution.State != PathIdentityState.Valid)
+            {
+                result.Warnings.Add(
+                    "Filesystem case sensitivity could not be resolved, so folder deletion was blocked.");
+                return null;
+            }
+
+            var semantics = resolution.Semantics;
+            if (protectedRoots.Any(root => PathsEqual(root, folderPath, semantics)))
             {
                 var fallbackFolderPath = ResolveTrackedFolderPath(trackedFilePaths);
                 if (!string.IsNullOrWhiteSpace(fallbackFolderPath)
-                    && !protectedRoots.Any(root => PathsEqual(root, fallbackFolderPath))
-                    && IsSamePathOrWithin(fallbackFolderPath, folderPath))
+                    && !protectedRoots.Any(root => PathsEqual(root, fallbackFolderPath, semantics))
+                    && IsSamePathOrWithin(fallbackFolderPath, folderPath, semantics))
                 {
                     folderPath = fallbackFolderPath;
                 }
             }
 
-            if (IsFilesystemRoot(folderPath))
+            if (IsFilesystemRoot(folderPath, semantics))
             {
                 result.Warnings.Add("Refused to delete all files in a filesystem root folder.");
                 return null;
             }
 
-            if (protectedRoots.Any(root => PathsEqual(root, folderPath)))
+            if (protectedRoots.Any(root => PathsEqual(root, folderPath, semantics)))
             {
                 result.Warnings.Add("Refused to delete all files in a configured library root folder.");
                 return null;
@@ -59,7 +68,7 @@ namespace Listenarr.Infrastructure.Library.Moving
 
             if (otherFilePaths
                 .Select(NormalizePath)
-                .Any(p => !string.IsNullOrWhiteSpace(p) && IsSamePathOrWithin(p!, folderPath)))
+                .Any(p => !string.IsNullOrWhiteSpace(p) && IsSamePathOrWithin(p!, folderPath, semantics)))
             {
                 result.Warnings.Add("Refused to delete all files in the audiobook folder because other audiobook files are inside it.");
                 return null;
@@ -75,14 +84,16 @@ namespace Listenarr.Infrastructure.Library.Moving
             {
                 var otherBasePath = NormalizePath(otherPath.BasePath);
                 if (!string.IsNullOrWhiteSpace(otherBasePath)
-                    && (IsSamePathOrWithin(otherBasePath, folderPath) || IsSamePathOrWithin(folderPath, otherBasePath)))
+                    && (IsSamePathOrWithin(otherBasePath, folderPath, semantics)
+                        || IsSamePathOrWithin(folderPath, otherBasePath, semantics)))
                 {
                     result.Warnings.Add("Refused to delete all files in the audiobook folder because another audiobook references that location.");
                     return null;
                 }
 
                 var otherFilePath = NormalizePath(otherPath.FilePath);
-                if (!string.IsNullOrWhiteSpace(otherFilePath) && IsSamePathOrWithin(otherFilePath, folderPath))
+                if (!string.IsNullOrWhiteSpace(otherFilePath)
+                    && IsSamePathOrWithin(otherFilePath, folderPath, semantics))
                 {
                     result.Warnings.Add("Refused to delete all files in the audiobook folder because another audiobook file is inside it.");
                     return null;
@@ -92,7 +103,8 @@ namespace Listenarr.Infrastructure.Library.Moving
             return new DeleteFolderTarget
             {
                 FolderPath = folderPath,
-                ProtectedRoots = protectedRoots
+                ProtectedRoots = protectedRoots,
+                Semantics = semantics
             };
         }
 
@@ -105,10 +117,17 @@ namespace Listenarr.Infrastructure.Library.Moving
 
             try
             {
-                Directory.Delete(deleteTarget.FolderPath, recursive: true);
+                // Contents were enumerated and deleted individually above. Refuse to
+                // remove anything that appeared concurrently after that snapshot.
+                Directory.Delete(deleteTarget.FolderPath, recursive: false);
                 result.DeletedFolder = true;
                 _logger.LogInformation("Deleted audiobook folder {FolderPath}", LogRedaction.SanitizeFilePath(deleteTarget.FolderPath));
-                await TryDeleteEmptyAuthorFolderAsync(audiobook, deleteTarget.FolderPath, deleteTarget.ProtectedRoots, result);
+                await TryDeleteEmptyAuthorFolderAsync(
+                    audiobook,
+                    deleteTarget.FolderPath,
+                    deleteTarget.ProtectedRoots,
+                    deleteTarget.Semantics,
+                    result);
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
@@ -121,12 +140,13 @@ namespace Listenarr.Infrastructure.Library.Moving
             Audiobook audiobook,
             string deletedFolderPath,
             IReadOnlyCollection<string> protectedRoots,
+            FileSystemPathSemantics semantics,
             AudiobookFilesystemDeleteResult result)
         {
             var parentFolder = NormalizePath(Path.GetDirectoryName(deletedFolderPath));
             if (string.IsNullOrWhiteSpace(parentFolder)
-                || IsFilesystemRoot(parentFolder)
-                || protectedRoots.Any(root => PathsEqual(root, parentFolder))
+                || IsFilesystemRoot(parentFolder, semantics)
+                || protectedRoots.Any(root => PathsEqual(root, parentFolder, semantics))
                 || !Directory.Exists(parentFolder)
                 || !IsAuthorFolder(parentFolder, audiobook.Authors?.FirstOrDefault()))
             {
@@ -156,13 +176,15 @@ namespace Listenarr.Infrastructure.Library.Moving
             {
                 var otherBasePath = NormalizePath(otherPath.BasePath);
                 if (!string.IsNullOrWhiteSpace(otherBasePath)
-                    && (IsSamePathOrWithin(otherBasePath, parentFolder) || IsSamePathOrWithin(parentFolder, otherBasePath)))
+                    && (IsSamePathOrWithin(otherBasePath, parentFolder, semantics)
+                        || IsSamePathOrWithin(parentFolder, otherBasePath, semantics)))
                 {
                     return;
                 }
 
                 var otherFilePath = NormalizePath(otherPath.FilePath);
-                if (!string.IsNullOrWhiteSpace(otherFilePath) && IsSamePathOrWithin(otherFilePath, parentFolder))
+                if (!string.IsNullOrWhiteSpace(otherFilePath)
+                    && IsSamePathOrWithin(otherFilePath, parentFolder, semantics))
                 {
                     return;
                 }
@@ -343,8 +365,24 @@ namespace Listenarr.Infrastructure.Library.Moving
             return FileUtils.AreFilesystemPathsEquivalentForCurrentOs(left, right);
         }
 
+        private static bool PathsEqual(
+            string? left,
+            string? right,
+            FileSystemPathSemantics semantics)
+        {
+            return !string.IsNullOrWhiteSpace(left)
+                && !string.IsNullOrWhiteSpace(right)
+                && FileSystemPathIdentity.AreEquivalent(left, right, semantics);
+        }
+
         private static bool IsSamePathOrWithin(string path, string rootPath)
             => FileUtils.IsPathSameOrInside(path, rootPath);
+
+        private static bool IsSamePathOrWithin(
+            string path,
+            string rootPath,
+            FileSystemPathSemantics semantics) =>
+            FileSystemPathIdentity.IsSameOrInside(path, rootPath, semantics);
 
         private static bool IsFilesystemRoot(string? path)
         {
@@ -355,6 +393,21 @@ namespace Listenarr.Infrastructure.Library.Moving
 
             var root = NormalizePath(Path.GetPathRoot(path));
             return !string.IsNullOrWhiteSpace(root) && PathsEqual(root, path);
+        }
+
+        private static bool IsFilesystemRoot(
+            string? path,
+            FileSystemPathSemantics semantics)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            var fullPath = Path.GetFullPath(path);
+            var root = Path.GetPathRoot(fullPath);
+            return !string.IsNullOrWhiteSpace(root)
+                && FileSystemPathIdentity.AreEquivalent(root, fullPath, semantics);
         }
 
         private static bool IsAuthorFolder(string folderPath, string? authorName)

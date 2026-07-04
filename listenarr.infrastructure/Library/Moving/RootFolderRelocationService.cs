@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Library.Moving;
 
-public sealed class RootFolderRelocationService(
+public sealed partial class RootFolderRelocationService(
     IDbContextFactory<ListenArrDbContext> dbContextFactory,
     IFileSystemSemanticsResolver semanticsResolver,
     IHubBroadcaster hubBroadcaster,
@@ -12,13 +12,17 @@ public sealed class RootFolderRelocationService(
 {
     private readonly SemaphoreSlim _rootIdentityGate = new(1, 1);
     private bool _rootIdentitiesReconciled;
-
     public async Task<RootFolderPathChangeResult> StartAsync(
         int rootFolderId,
         RootFolderPathChangeCommand command,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
+        if (string.IsNullOrWhiteSpace(command.DesiredName))
+        {
+            throw new ArgumentException("Root folder name is required.", nameof(command));
+        }
+
         var targetPath = FileSystemPathIdentity.ResolveNativeAbsolutePath(command.TargetPath);
         var targetResolution = await semanticsResolver.ResolveAsync(
             targetPath,
@@ -102,7 +106,8 @@ public sealed class RootFolderRelocationService(
                     root.Path,
                     targetPath,
                     audiobook.BasePath!,
-                    sourceResolution.Semantics);
+                    sourceResolution.Semantics,
+                    targetResolution.Semantics);
             }
 
             ApplyRootMetadata(root, command, targetPath, targetResolution, targetIdentityKey);
@@ -148,7 +153,8 @@ public sealed class RootFolderRelocationService(
                 root.Path,
                 targetPath,
                 audiobook.BasePath!,
-                sourceResolution.Semantics);
+                sourceResolution.Semantics,
+                targetResolution.Semantics);
             db.MoveJobs.Add(new MoveJob
             {
                 AudiobookId = audiobook.Id,
@@ -182,7 +188,6 @@ public sealed class RootFolderRelocationService(
         await BroadcastAsync(result, cancellationToken);
         return result;
     }
-
     public async Task<RootFolderPathChangeResult?> GetAsync(
         Guid relocationId,
         CancellationToken cancellationToken = default)
@@ -198,7 +203,6 @@ public sealed class RootFolderRelocationService(
             .SingleAsync(cancellationToken);
         return Map(relocation, rootPath);
     }
-
     public async Task<RootFolderRelocation?> GetActiveForRootAsync(
         int rootFolderId,
         CancellationToken cancellationToken = default)
@@ -209,6 +213,22 @@ public sealed class RootFolderRelocationService(
             .SingleOrDefaultAsync(
                 relocation => relocation.ActiveRootFolderId == rootFolderId,
                 cancellationToken);
+    }
+
+    public async Task<bool> IsBoundaryProtectedAsync(
+        string path,
+        FileSystemPathSemantics semantics,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var boundaries = await db.RootFolderRelocations
+            .Where(relocation => relocation.ActiveRootFolderId != null)
+            .AsNoTracking()
+            .Select(relocation => new { relocation.SourcePath, relocation.TargetPath })
+            .ToListAsync(cancellationToken);
+        return boundaries.Any(boundary =>
+            BoundariesOverlap(path, boundary.SourcePath, semantics)
+            || BoundariesOverlap(path, boundary.TargetPath, semantics));
     }
 
     public async Task<RootFolderPathChangeResult> RetryAsync(
@@ -226,7 +246,18 @@ public sealed class RootFolderRelocationService(
             throw new InvalidOperationException("Only relocations needing attention can be retried.");
         }
 
-        foreach (var job in relocation.MoveJobs.Where(job => job.Status is MoveJobStatus.NeedsAttention or MoveJobStatus.Failed))
+        var targetResolution = await semanticsResolver.ResolveAsync(
+            relocation.TargetPath,
+            relocation.TargetCaseSensitivityMode,
+            cancellationToken);
+        if (targetResolution.State != PathIdentityState.Valid)
+        {
+            throw new InvalidOperationException(
+                targetResolution.Reason ?? "Target filesystem identity is unavailable.");
+        }
+
+        foreach (var job in relocation.MoveJobs.Where(job => job.Status is
+            MoveJobStatus.NeedsAttention or MoveJobStatus.Failed or MoveJobStatus.Superseded))
         {
             job.Status = MoveJobStatus.Queued;
             job.Error = null;
@@ -235,7 +266,7 @@ public sealed class RootFolderRelocationService(
             job.ActiveDeduplicationKey = FileSystemPathIdentity.CreateKey(
                 $"move:{job.AudiobookId}",
                 job.RequestedPath!,
-                FileSystemPathSemantics.CurrentHostDefault);
+                targetResolution.Semantics);
         }
 
         relocation.Status = RootFolderRelocationStatus.Running;
@@ -272,12 +303,15 @@ public sealed class RootFolderRelocationService(
         relocation.CompletedJobs = relocation.MoveJobs.Count(candidate => candidate.Status == MoveJobStatus.Completed);
         relocation.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
-        if (relocation.MoveJobs.Any(candidate => candidate.Status is MoveJobStatus.NeedsAttention or MoveJobStatus.Failed))
+        if (relocation.MoveJobs.Any(candidate => candidate.Status is
+            MoveJobStatus.NeedsAttention or MoveJobStatus.Failed or MoveJobStatus.Superseded))
         {
             relocation.Status = RootFolderRelocationStatus.NeedsAttention;
             relocation.Error = relocation.MoveJobs
-                .First(candidate => candidate.Status is MoveJobStatus.NeedsAttention or MoveJobStatus.Failed)
-                .Error;
+                .First(candidate => candidate.Status is
+                    MoveJobStatus.NeedsAttention or MoveJobStatus.Failed or MoveJobStatus.Superseded)
+                .Error
+                ?? "A relocation move job was superseded during queue reconciliation.";
         }
         else if (relocation.MoveJobs.All(candidate => candidate.Status == MoveJobStatus.Completed))
         {
@@ -339,7 +373,8 @@ public sealed class RootFolderRelocationService(
                 && activeRelocationIds.Contains(job.RelocationId.Value))
             .Where(job => job.Status == MoveJobStatus.Completed
                 || job.Status == MoveJobStatus.NeedsAttention
-                || job.Status == MoveJobStatus.Failed)
+                || job.Status == MoveJobStatus.Failed
+                || job.Status == MoveJobStatus.Superseded)
             .OrderByDescending(job => job.UpdatedAt)
             .ToListAsync(cancellationToken);
         var terminalJobIds = terminalJobs
@@ -408,70 +443,4 @@ public sealed class RootFolderRelocationService(
         }
     }
 
-    private static string MapTargetPath(
-        string sourceRoot,
-        string targetRoot,
-        string sourcePath,
-        FileSystemPathSemantics semantics)
-    {
-        if (!FileSystemPathIdentity.TryResolveRelativePathWithinBase(
-            sourceRoot,
-            Path.GetRelativePath(sourceRoot, sourcePath),
-            semantics,
-            out _))
-        {
-            throw new InvalidOperationException("An audiobook path escaped its configured root.");
-        }
-
-        var relativePath = Path.GetRelativePath(sourceRoot, sourcePath);
-        return relativePath == "." ? targetRoot : Path.Join(targetRoot, relativePath);
-    }
-
-    private static bool BoundariesOverlap(
-        string first,
-        string second,
-        FileSystemPathSemantics semantics) =>
-        FileSystemPathIdentity.IsSameOrInside(first, second, semantics)
-        || FileSystemPathIdentity.IsSameOrInside(second, first, semantics);
-
-    private static void ApplyRootMetadata(
-        RootFolder root,
-        RootFolderPathChangeCommand command,
-        string targetPath,
-        FileSystemSemanticsResolution resolution,
-        string identityKey)
-    {
-        root.Path = targetPath;
-        root.Name = command.DesiredName.Trim();
-        root.IsDefault = command.DesiredIsDefault;
-        root.CaseSensitivityMode = command.TargetCaseSensitivityMode;
-        root.ResolvedCaseSensitivity = resolution.Semantics.CaseSensitivity;
-        root.PathIdentityState = resolution.State;
-        root.PathIdentityKey = identityKey;
-        root.UpdatedAt = DateTime.UtcNow;
-    }
-
-    private static async Task ClearOtherDefaultsAsync(
-        ListenArrDbContext db,
-        int rootFolderId,
-        CancellationToken cancellationToken)
-    {
-        var defaults = await db.RootFolders
-            .Where(root => root.Id != rootFolderId && root.IsDefault)
-            .ToListAsync(cancellationToken);
-        foreach (var root in defaults) root.IsDefault = false;
-    }
-
-    private static RootFolderPathChangeResult Map(RootFolderRelocation relocation, string currentPath) => new(
-        relocation.Id,
-        relocation.RootFolderId,
-        currentPath,
-        relocation.TargetPath,
-        relocation.Status,
-        relocation.TotalJobs,
-        relocation.CompletedJobs,
-        relocation.Error);
-
-    private Task BroadcastAsync(RootFolderPathChangeResult result, CancellationToken cancellationToken) =>
-        hubBroadcaster.BroadcastAsync("RootFolderRelocationUpdate", result, cancellationToken);
 }

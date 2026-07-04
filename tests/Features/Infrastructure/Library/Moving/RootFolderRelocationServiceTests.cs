@@ -73,6 +73,12 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
         Assert.Equal(rootId, relocation.ActiveRootFolderId);
         Assert.Equal(relocation.Id, job.RelocationId);
         Assert.Equal(RootFolderRelocationStatus.Pending, result.Status);
+        Assert.True(await service.IsBoundaryProtectedAsync(
+            target,
+            FileSystemPathSemantics.CurrentHostDefault));
+        Assert.True(await service.IsBoundaryProtectedAsync(
+            source,
+            FileSystemPathSemantics.CurrentHostDefault));
     }
 
     [Fact]
@@ -157,6 +163,89 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
         Assert.Null(relocationAfter.ActiveRootFolderId);
     }
 
+    [Fact]
+    public async Task SupersededJob_ReconciliationRequiresAttentionAndCanRetry()
+    {
+        var source = Path.Join(Path.GetTempPath(), $"superseded-source-{Guid.NewGuid():N}");
+        var target = Path.Join(Path.GetTempPath(), $"superseded-target-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(source);
+        int rootId;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var root = new RootFolder { Name = "Library", Path = source };
+            db.RootFolders.Add(root);
+            db.Audiobooks.Add(new Audiobook { Title = "Title", BasePath = Path.Join(source, "Title") });
+            await db.SaveChangesAsync();
+            rootId = root.Id;
+        }
+
+        var service = CreateService();
+        var started = await service.StartAsync(
+            rootId,
+            new RootFolderPathChangeCommand(
+                target,
+                RootFolderRelocationMode.Relocate,
+                true,
+                "Library",
+                false,
+                FileSystemCaseSensitivityMode.Auto));
+        Guid jobId;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var job = await db.MoveJobs.SingleAsync();
+            job.Status = MoveJobStatus.Superseded;
+            job.ActiveDeduplicationKey = null;
+            await db.SaveChangesAsync();
+            jobId = job.Id;
+        }
+
+        await service.ReconcileActiveAsync();
+        var needsAttention = await service.GetAsync(started.RelocationId!.Value);
+        Assert.Equal(RootFolderRelocationStatus.NeedsAttention, needsAttention!.Status);
+
+        await service.RetryAsync(started.RelocationId.Value);
+        await using var verification = await _factory.CreateDbContextAsync();
+        Assert.Equal(MoveJobStatus.Queued, (await verification.MoveJobs.SingleAsync()).Status);
+        Assert.Equal(jobId, (await verification.MoveJobs.SingleAsync()).Id);
+    }
+
+    [Fact]
+    public async Task StartRelocation_BroadcastFailureDoesNotUndoCommittedSaga()
+    {
+        var source = Path.Join(Path.GetTempPath(), $"broadcast-source-{Guid.NewGuid():N}");
+        var target = Path.Join(Path.GetTempPath(), $"broadcast-target-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(source);
+        int rootId;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var root = new RootFolder { Name = "Library", Path = source };
+            db.RootFolders.Add(root);
+            db.Audiobooks.Add(new Audiobook { Title = "Title", BasePath = Path.Join(source, "Title") });
+            await db.SaveChangesAsync();
+            rootId = root.Id;
+        }
+
+        var service = new RootFolderRelocationService(
+            _factory,
+            new FileSystemSemanticsResolver(),
+            new ThrowingHubBroadcaster(),
+            TimeProvider.System);
+        var result = await service.StartAsync(
+            rootId,
+            new RootFolderPathChangeCommand(
+                target,
+                RootFolderRelocationMode.Relocate,
+                true,
+                "Library",
+                false,
+                FileSystemCaseSensitivityMode.Auto));
+
+        Assert.NotNull(result.RelocationId);
+        await using var verification = await _factory.CreateDbContextAsync();
+        Assert.Single(await verification.RootFolderRelocations.ToListAsync());
+        Assert.Single(await verification.MoveJobs.ToListAsync());
+    }
+
     private RootFolderRelocationService CreateService() => new(
         _factory,
         new FileSystemSemanticsResolver(),
@@ -169,5 +258,23 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
         public ListenArrDbContext CreateDbContext() => new(options);
         public Task<ListenArrDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(CreateDbContext());
+    }
+
+    private sealed class ThrowingHubBroadcaster : IHubBroadcaster
+    {
+        public Task BroadcastQueueUpdateAsync(QueueSnapshot queueSnapshot) => Task.CompletedTask;
+
+        public Task BroadcastAsync(
+            string method,
+            object payload,
+            CancellationToken cancellationToken = default) =>
+            throw new IOException("SignalR unavailable");
+
+        public Task BroadcastAsync(
+            RealtimeHubTarget target,
+            string method,
+            object payload,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 }

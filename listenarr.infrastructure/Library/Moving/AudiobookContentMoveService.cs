@@ -93,9 +93,30 @@ internal sealed partial class AudiobookContentMoveService(
                 && !Directory.Exists(tempName)
                 && recoveryStage == null)
             {
+                var atomicMarkerPath = GetRecoveryMarkerPath(source, request.JobId);
+                WriteRecoveryMarker(source, request.JobId, AtomicRenameCompletedStage);
+                var renamed = false;
                 try
                 {
                     Directory.Move(source, target);
+                    renamed = true;
+                }
+                catch (IOException)
+                {
+                    // Cross-device and unsupported atomic renames use the verified copy path.
+                    try
+                    {
+                        File.Delete(atomicMarkerPath);
+                    }
+                    catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+                    {
+                        throw new MoveNeedsAttentionException(
+                            $"Atomic rename failed and its recovery marker could not be removed: {exception.Message}");
+                    }
+                }
+
+                if (renamed)
+                {
                     await UpdateJobPhaseAsync(request.JobId, MoveJobPhase.Finalizing, cancellationToken);
                     return new AudiobookContentMoveResult(
                         source,
@@ -104,10 +125,6 @@ internal sealed partial class AudiobookContentMoveService(
                         false,
                         recoveryMarkerPath,
                         SourceCleanupCompleted: true);
-                }
-                catch (IOException)
-                {
-                    // Cross-device and unsupported atomic renames use the verified copy path.
                 }
             }
 
@@ -198,8 +215,7 @@ internal sealed partial class AudiobookContentMoveService(
         var semantics = request.Semantics ?? FileSystemPathSemantics.CurrentHostDefault;
         var manifest = LoadManifest(request.JobId);
         var atomicRenameCompleted = manifest.Count == 0
-            && recoveryStage == null
-            && LoadMoveJobPhase(request.JobId) == MoveJobPhase.Finalizing;
+            && string.Equals(recoveryStage, AtomicRenameCompletedStage, StringComparison.Ordinal);
         if (IsFilesystemRoot(source, semantics)
             || IsFilesystemRoot(target, semantics)
             || FileSystemPathIdentity.AreEquivalent(source, target, semantics)

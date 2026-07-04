@@ -27,6 +27,7 @@ namespace Listenarr.Infrastructure.Library.Moving
         private readonly IAudiobookFileRepository _audioFileRepository;
         private readonly IRootFolderService _rootFolderService;
         private readonly IConfigurationService _configurationService;
+        private readonly IFileSystemSemanticsResolver _semanticsResolver;
         private readonly ILogger<AudiobookFilesystemDeleteService> _logger;
 
         public AudiobookFilesystemDeleteService(
@@ -34,12 +35,14 @@ namespace Listenarr.Infrastructure.Library.Moving
             IAudiobookFileRepository audioFileRepository,
             IRootFolderService rootFolderService,
             IConfigurationService configurationService,
+            IFileSystemSemanticsResolver semanticsResolver,
             ILogger<AudiobookFilesystemDeleteService> logger)
         {
             _audiobookRepository = audiobookRepository;
             _audioFileRepository = audioFileRepository;
             _rootFolderService = rootFolderService;
             _configurationService = configurationService;
+            _semanticsResolver = semanticsResolver;
             _logger = logger;
         }
 
@@ -47,6 +50,22 @@ namespace Listenarr.Infrastructure.Library.Moving
         {
             var result = new AudiobookFilesystemDeleteResult();
             var trackedFilePaths = CollectTrackedFilePaths(audiobook);
+            var boundaryPath = !string.IsNullOrWhiteSpace(audiobook.BasePath)
+                ? audiobook.BasePath
+                : !string.IsNullOrWhiteSpace(audiobook.FilePath)
+                    ? audiobook.FilePath
+                    : trackedFilePaths.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(boundaryPath))
+            {
+                var resolution = await _semanticsResolver.ResolveAsync(boundaryPath);
+                if (resolution.State != PathIdentityState.Valid)
+                {
+                    result.Warnings.Add(
+                        "Filesystem case sensitivity could not be resolved, so deletion was blocked.");
+                    return result;
+                }
+            }
+
             var deleteTarget = await ResolveDeleteFolderTargetAsync(audiobook, trackedFilePaths, result);
 
             if (deleteTarget != null)
@@ -78,6 +97,7 @@ namespace Listenarr.Infrastructure.Library.Moving
         {
             public required string FolderPath { get; init; }
             public required IReadOnlyCollection<string> ProtectedRoots { get; init; }
+            public required FileSystemPathSemantics Semantics { get; init; }
         }
 
         private static IReadOnlyList<string> CollectTrackedFilePaths(Audiobook audiobook)

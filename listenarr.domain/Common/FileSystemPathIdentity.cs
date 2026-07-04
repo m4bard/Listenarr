@@ -156,6 +156,34 @@ public static partial class FileSystemPathIdentity
         return true;
     }
 
+    public static bool TryGetRelativePathWithinBase(
+        string basePath,
+        string candidatePath,
+        FileSystemPathSemantics semantics,
+        out string relativePath)
+    {
+        relativePath = string.Empty;
+        var canonicalBase = Canonicalize(basePath, semantics.Syntax);
+        var canonicalCandidate = Canonicalize(candidatePath, semantics.Syntax);
+        var comparison = GetComparison(semantics);
+        if (string.Equals(canonicalBase, canonicalCandidate, comparison))
+        {
+            return true;
+        }
+
+        var separator = semantics.Syntax == FileSystemPathSyntax.Windows ? '\\' : '/';
+        var baseBoundary = canonicalBase.EndsWith(separator)
+            ? canonicalBase
+            : canonicalBase + separator;
+        if (!canonicalCandidate.StartsWith(baseBoundary, comparison))
+        {
+            return false;
+        }
+
+        relativePath = canonicalCandidate[baseBoundary.Length..];
+        return true;
+    }
+
     public static string Canonicalize(string path, FileSystemPathSyntax syntax)
     {
         if (string.IsNullOrWhiteSpace(path))
