@@ -22,9 +22,11 @@
  */
 
 export type PathKind = 'windows' | 'unix' | 'unknown'
+export type PathCaseSensitivity = 'Unknown' | 'Sensitive' | 'Insensitive'
 
 export interface DestinationPathValidationOptions {
   pathKind?: PathKind
+  caseSensitivity?: PathCaseSensitivity
   sourcePath?: string | null
 }
 
@@ -67,34 +69,42 @@ export function splitPathSegments(
 export function normalizeForCompare(
   s: string | null | undefined,
   pathKind: PathKind = 'unknown',
+  caseSensitivity: PathCaseSensitivity = 'Unknown',
 ): string {
   const value = trimTrailingSlash(s || '')
   const kind = pathKind === 'unknown' ? detectPathKind(value) : pathKind
   const normalized = kind === 'windows' ? value.replace(/\\/g, '/') : value
-  return kind === 'windows' ? normalized.toLowerCase() : normalized
+  const caseInsensitive =
+    caseSensitivity === 'Insensitive' || (caseSensitivity === 'Unknown' && kind === 'windows')
+  return caseInsensitive ? normalized.toLowerCase() : normalized
 }
 
 export function pathsEqual(
   first: string | null | undefined,
   second: string | null | undefined,
   pathKind: PathKind = 'unknown',
+  caseSensitivity: PathCaseSensitivity = 'Unknown',
 ): boolean {
   if (!first || !second) return false
 
   const kind = pathKind === 'unknown' ? detectPathKind(first) : pathKind
-  return normalizeForCompare(first, kind) === normalizeForCompare(second, kind)
+  return (
+    normalizeForCompare(first, kind, caseSensitivity) ===
+    normalizeForCompare(second, kind, caseSensitivity)
+  )
 }
 
 export function pathIsInside(
   candidate: string | null | undefined,
   root: string | null | undefined,
   pathKind: PathKind = 'unknown',
+  caseSensitivity: PathCaseSensitivity = 'Unknown',
 ): boolean {
   if (!candidate || !root) return false
 
   const kind = pathKind === 'unknown' ? detectPathKind(candidate) : pathKind
-  const normalizedCandidate = normalizeForCompare(candidate, kind)
-  const normalizedRoot = normalizeForCompare(root, kind)
+  const normalizedCandidate = normalizeForCompare(candidate, kind, caseSensitivity)
+  const normalizedRoot = normalizeForCompare(root, kind, caseSensitivity)
   if (!normalizedCandidate || !normalizedRoot || normalizedCandidate === normalizedRoot)
     return false
 
@@ -106,11 +116,12 @@ export function pathsOverlap(
   first: string | null | undefined,
   second: string | null | undefined,
   pathKind: PathKind = 'unknown',
+  caseSensitivity: PathCaseSensitivity = 'Unknown',
 ): boolean {
   return (
-    pathsEqual(first, second, pathKind) ||
-    pathIsInside(first, second, pathKind) ||
-    pathIsInside(second, first, pathKind)
+    pathsEqual(first, second, pathKind, caseSensitivity) ||
+    pathIsInside(first, second, pathKind, caseSensitivity) ||
+    pathIsInside(second, first, pathKind, caseSensitivity)
   )
 }
 
@@ -258,7 +269,10 @@ export function validateLibraryDestinationPath(
     return 'Destination folder contains a reserved Windows device name.'
   }
 
-  if (options.sourcePath && pathsEqual(s, options.sourcePath, pathKind)) {
+  if (
+    options.sourcePath &&
+    pathsEqual(s, options.sourcePath, pathKind, options.caseSensitivity ?? 'Unknown')
+  ) {
     return 'Destination folder must be different from the current source folder.'
   }
 

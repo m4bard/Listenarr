@@ -1403,9 +1403,10 @@ async function initializeForm(audiobook: Audiobook) {
     // Check if basePath starts with any configured root folder
     const matchingRoot = rootStore.folders.find((folder) => {
       const pathKind = detectPathKind(folder.path)
+      const caseSensitivity = folder.resolvedCaseSensitivity ?? 'Unknown'
       return (
-        pathsEqual(audiobook.basePath, folder.path, pathKind) ||
-        pathIsInside(audiobook.basePath, folder.path, pathKind)
+        pathsEqual(audiobook.basePath, folder.path, pathKind, caseSensitivity) ||
+        pathIsInside(audiobook.basePath, folder.path, pathKind, caseSensitivity)
       )
     })
 
@@ -1458,7 +1459,11 @@ async function initializeForm(audiobook: Audiobook) {
     }
 
     if (formData.value.basePath && chosenRoot) {
-      formData.value.relativePath = deriveRelativeFromBase(formData.value.basePath, chosenRoot)
+      formData.value.relativePath = deriveRelativeFromBase(
+        formData.value.basePath,
+        chosenRoot,
+        selectedDestinationCaseSensitivity(),
+      )
     } else if (formData.value.basePath && !chosenRoot) {
       // No configured root — show the full base path so user can edit it
       formData.value.relativePath = formData.value.basePath || null
@@ -1492,6 +1497,7 @@ import {
   pathsEqual,
   pathIsInside,
   type PathKind,
+  type PathCaseSensitivity,
   stripRootPrefix,
 } from '@/utils/path'
 
@@ -1517,6 +1523,17 @@ function selectedDestinationPathKind(): PathKind {
   const root =
     resolveSelectedRootPath() || rootPath.value || baselineAudiobook.value?.basePath || ''
   return detectPathKind(root)
+}
+
+function selectedDestinationCaseSensitivity() {
+  if (selectedRootId.value && selectedRootId.value > 0) {
+    return (
+      rootStore.folders.find((folder) => folder.id === selectedRootId.value)
+        ?.resolvedCaseSensitivity ?? 'Unknown'
+    )
+  }
+
+  return 'Unknown' as const
 }
 
 function combinedBasePath(): string | null {
@@ -1551,6 +1568,7 @@ const destinationPathValidationError = computed(() => {
 
   return validateLibraryDestinationPath(destination, {
     pathKind,
+    caseSensitivity: selectedDestinationCaseSensitivity(),
     sourcePath: basePathChanged ? source : null,
   })
 })
@@ -1559,6 +1577,7 @@ const destinationPathValidationError = computed(() => {
 function deriveRelativeFromBase(
   base: string | null | undefined,
   root: string | null | undefined,
+  caseSensitivity: PathCaseSensitivity = 'Unknown',
 ): string {
   if (!base) return ''
   if (!root) return base
@@ -1568,9 +1587,15 @@ function deriveRelativeFromBase(
   const normRoot = pathKind === 'windows' ? toForward(root) : root
   const rootWithSlash = normRoot.endsWith('/') ? normRoot : normRoot + '/'
 
-  if (normalizeForCompare(normBase, pathKind) === normalizeForCompare(normRoot, pathKind)) return ''
   if (
-    normalizeForCompare(normBase, pathKind).startsWith(normalizeForCompare(rootWithSlash, pathKind))
+    normalizeForCompare(normBase, pathKind, caseSensitivity) ===
+    normalizeForCompare(normRoot, pathKind, caseSensitivity)
+  )
+    return ''
+  if (
+    normalizeForCompare(normBase, pathKind, caseSensitivity).startsWith(
+      normalizeForCompare(rootWithSlash, pathKind, caseSensitivity),
+    )
   ) {
     const rel = normBase.slice(rootWithSlash.length).replace(/^\/+/, '')
     const useBackslash = pathKind === 'windows' && root.includes('\\')
@@ -1586,7 +1611,11 @@ function previewPath() {
     const chosenRoot = resolveSelectedRootPath() || rootPath.value
 
     if (formData.value.basePath && chosenRoot) {
-      formData.value.relativePath = deriveRelativeFromBase(formData.value.basePath, chosenRoot)
+      formData.value.relativePath = deriveRelativeFromBase(
+        formData.value.basePath,
+        chosenRoot,
+        selectedDestinationCaseSensitivity(),
+      )
     } else if (formData.value.basePath && !chosenRoot) {
       formData.value.relativePath = formData.value.basePath || ''
     } else {
@@ -1653,13 +1682,22 @@ function finishEditingDestination() {
     if (
       isAbsolute ||
       (relOrVal &&
-        normalizeForCompare(relOrVal, detectPathKind(chosenRoot)).startsWith(
-          normalizeForCompare(chosenRoot || '', detectPathKind(chosenRoot)),
+        normalizeForCompare(
+          relOrVal,
+          detectPathKind(chosenRoot),
+          selectedDestinationCaseSensitivity(),
+        ).startsWith(
+          normalizeForCompare(
+            chosenRoot || '',
+            detectPathKind(chosenRoot),
+            selectedDestinationCaseSensitivity(),
+          ),
         ))
     ) {
       formData.value.relativePath = deriveRelativeFromBase(
         relOrVal || formData.value.basePath || '',
         chosenRoot,
+        selectedDestinationCaseSensitivity(),
       )
     } else {
       // Keep the value as-is (user provided a relative path)
@@ -1688,6 +1726,7 @@ async function handleSave() {
   const basePathChanged = (combined || '') !== originalBase
   const destinationValidationMessage = validateLibraryDestinationPath(combined, {
     pathKind,
+    caseSensitivity: selectedDestinationCaseSensitivity(),
     sourcePath: basePathChanged ? originalBase : null,
   })
   if (destinationValidationMessage) {
@@ -1698,7 +1737,8 @@ async function handleSave() {
     basePathChanged &&
     combined &&
     originalBase &&
-    normalizeForCompare(combined, pathKind) === normalizeForCompare(originalBase, pathKind)
+    normalizeForCompare(combined, pathKind, selectedDestinationCaseSensitivity()) ===
+      normalizeForCompare(originalBase, pathKind, selectedDestinationCaseSensitivity())
   ) {
     toast.error(
       'Invalid destination',

@@ -121,44 +121,61 @@ namespace Listenarr.Infrastructure.Configuration.Paths
                 return remotePath;
             }
 
-            remotePath = FileUtils.NormalizeStoredPath(remotePath);
-
-            // We cannot make sure the given path is a file or a directory as it is possibly unnaccessible in its current form
-            // thus we try the mapping on the unmodified given path and then we try to map as if it were a directory
-            string[] tryingRemotePaths = [
-                remotePath,
-                FileUtils.EnsureTrailingSeparator(remotePath)
-            ];
-
-            foreach (var currentRemotePath in tryingRemotePaths)
+            var mappings = await GetPathMappingByClientAsync(client);
+            foreach (var mapping in mappings)
             {
-                var mappings = await GetPathMappingByClientAsync(client);
-                foreach (var mapping in mappings)
+                var remoteSemantics = GetRemoteSemantics(mapping.RemotePath);
+                if (!FileSystemPathIdentity.TryGetRelativePathWithinBase(
+                    mapping.RemotePath,
+                    remotePath,
+                    remoteSemantics,
+                    out var relativePath))
                 {
-                    if (!FileUtils.IsPathSameOrInside(currentRemotePath, mapping.RemotePath))
-                    {
-                        continue;
-                    }
-
-                    var relativePath = Path.GetRelativePath(mapping.RemotePath, currentRemotePath);
-                    if (string.Equals(relativePath, ".", StringComparison.Ordinal))
-                    {
-                        return FileUtils.NormalizeStoredPath(mapping.LocalPath);
-                    }
-
-                    if (FileUtils.TryResolveRelativePathWithinBase(mapping.LocalPath, relativePath, out var mappedPath))
-                    {
-                        return mappedPath;
-                    }
-
-                    logger.LogWarning(
-                        "Remote path mapping {MappingId} produced an unsafe mapped path for client {ClientId}",
-                        mapping.Id,
-                        client.Id);
+                    continue;
                 }
+
+                if (string.IsNullOrEmpty(relativePath))
+                {
+                    return FileUtils.NormalizeStoredPath(mapping.LocalPath);
+                }
+
+                var remoteSeparators = remoteSemantics.Syntax == FileSystemPathSyntax.Windows
+                    ? new[] { '\\', '/' }
+                    : new[] { '/' };
+                var localRelativePath = string.Join(
+                    Path.DirectorySeparatorChar,
+                    relativePath.Split(remoteSeparators, StringSplitOptions.RemoveEmptyEntries));
+                if (FileSystemPathIdentity.TryResolveRelativePathWithinBase(
+                    mapping.LocalPath,
+                    localRelativePath,
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    out var mappedPath))
+                {
+                    return mappedPath;
+                }
+
+                logger.LogWarning(
+                    "Remote path mapping {MappingId} produced an unsafe mapped path for client {ClientId}",
+                    mapping.Id,
+                    client.Id);
             }
 
             return remotePath;
+        }
+
+        private static FileSystemPathSemantics GetRemoteSemantics(string remotePath)
+        {
+            var windowsSyntax = remotePath.Length >= 3
+                && char.IsLetter(remotePath[0])
+                && remotePath[1] == ':'
+                && remotePath[2] is '/' or '\\'
+                || remotePath.StartsWith("\\\\", StringComparison.Ordinal)
+                || remotePath.StartsWith("//", StringComparison.Ordinal);
+            return new FileSystemPathSemantics(
+                windowsSyntax ? FileSystemPathSyntax.Windows : FileSystemPathSyntax.Unix,
+                windowsSyntax
+                    ? FileSystemCaseSensitivity.Insensitive
+                    : FileSystemCaseSensitivity.Sensitive);
         }
     }
 }

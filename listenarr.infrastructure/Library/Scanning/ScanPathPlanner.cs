@@ -21,7 +21,9 @@ namespace Listenarr.Infrastructure.Library.Scanning
 {
     internal static class ScanPathPlanner
     {
-        public static string CalculateBasePath(List<string> filePaths)
+        public static string CalculateBasePath(
+            List<string> filePaths,
+            FileSystemPathSemantics semantics)
         {
             if (!filePaths.Any())
                 return string.Empty;
@@ -29,7 +31,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
             var directories = filePaths
                 .Select(p => FileUtils.NormalizeStoredPath(Path.GetDirectoryName(p) ?? p))
                 .Where(p => !string.IsNullOrWhiteSpace(p))
-                .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
+                .Distinct(semantics.Comparer)
                 .ToList();
 
             if (directories.Count == 1)
@@ -37,7 +39,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
                 return directories[0];
             }
 
-            var commonPath = FileUtils.GetCommonPathForDirectories(directories) ?? directories[0];
+            var commonPath = FileUtils.GetCommonPathForDirectories(directories, semantics) ?? directories[0];
             var currentPath = commonPath;
             while (!string.IsNullOrEmpty(currentPath))
             {

@@ -7,6 +7,7 @@ internal sealed partial class AudiobookContentMoveService
 {
     private async Task<IReadOnlyList<MoveJobEntry>> LoadOrCreateManifestAsync(
         Guid jobId,
+        int leaseGeneration,
         string source,
         string target,
         bool targetInsideSource,
@@ -26,7 +27,7 @@ internal sealed partial class AudiobookContentMoveService
             targetInsideSource,
             semantics,
             cancellationToken);
-        await PersistManifestAsync(jobId, manifest, cancellationToken);
+        await PersistManifestAsync(jobId, leaseGeneration, manifest, cancellationToken);
         return manifest;
     }
     private async Task<List<MoveJobEntry>> SnapshotSourceAsync(
@@ -137,6 +138,7 @@ internal sealed partial class AudiobookContentMoveService
         bool targetInsideSource,
         bool deleteEmptySource,
         Guid jobId,
+        int leaseGeneration,
         IReadOnlyList<MoveJobEntry> manifest,
         FileSystemPathSemantics semantics,
         CancellationToken cancellationToken)
@@ -197,6 +199,7 @@ internal sealed partial class AudiobookContentMoveService
                 // the process stopped before the final state update.
                 await UpdateCleanupStateAsync(
                     jobId,
+                    leaseGeneration,
                     entry.RelativePath,
                     MoveJobEntryCleanupState.Deleted,
                     cancellationToken);
@@ -266,12 +269,14 @@ internal sealed partial class AudiobookContentMoveService
             await VerifyPublishedManifestAsync(target, [entry], semantics, cancellationToken);
             await UpdateCleanupStateAsync(
                 jobId,
+                leaseGeneration,
                 entry.RelativePath,
                 MoveJobEntryCleanupState.Quarantined,
                 cancellationToken);
             File.Delete(quarantineFile);
             await UpdateCleanupStateAsync(
                 jobId,
+                leaseGeneration,
                 entry.RelativePath,
                 MoveJobEntryCleanupState.Deleted,
                 cancellationToken);

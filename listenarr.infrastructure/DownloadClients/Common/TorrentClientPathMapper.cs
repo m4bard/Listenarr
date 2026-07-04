@@ -38,7 +38,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
             return files
                 .Select(file => file.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty)
                 .Where(name => !string.IsNullOrEmpty(name))
-                .Select(name => CombineClientReportedPath(savePath, name.Replace('/', Path.DirectorySeparatorChar)))
+                .Select(name => CombineClientReportedPath(savePath, name))
                 .Where(path => !string.IsNullOrEmpty(path))
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
@@ -130,28 +130,41 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
                 return candidatePath;
             }
 
-            var relativePath = candidatePath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            if (Path.IsPathRooted(relativePath))
-            {
-                var root = Path.GetPathRoot(relativePath) ?? string.Empty;
-                relativePath = relativePath[root.Length..]
-                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            }
-            else if (HasDriveRootedPrefix(relativePath))
+            var semantics = GetClientPathSemantics(basePath);
+            var separators = semantics.Syntax == FileSystemPathSyntax.Windows
+                ? new[] { '\\', '/' }
+                : new[] { '/' };
+            var relativePath = candidatePath.TrimStart(separators);
+            if (HasDriveRootedPrefix(relativePath))
             {
                 relativePath = relativePath[2..]
-                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    .TrimStart(separators);
             }
 
-            if (FileUtils.ContainsParentDirectorySegment(relativePath, '/', '\\'))
+            if (relativePath.Split(separators).Any(segment => segment is "." or ".."))
             {
                 return string.Empty;
             }
 
-            var combinedPath = FileUtils.CombineWithOptionalBase(basePath, relativePath);
-            return FileUtils.IsPathSameOrInside(combinedPath, basePath)
-                ? combinedPath
-                : string.Empty;
+            return FileSystemPathIdentity.TryResolveRelativePathWithinBase(
+                basePath,
+                relativePath,
+                semantics,
+                out var combinedPath)
+                    ? combinedPath
+                    : string.Empty;
+        }
+
+        private static FileSystemPathSemantics GetClientPathSemantics(string path)
+        {
+            var windowsSyntax = HasDriveRootedPrefix(path)
+                || path.StartsWith("\\\\", StringComparison.Ordinal)
+                || path.StartsWith("//", StringComparison.Ordinal);
+            return new FileSystemPathSemantics(
+                windowsSyntax ? FileSystemPathSyntax.Windows : FileSystemPathSyntax.Unix,
+                windowsSyntax
+                    ? FileSystemCaseSensitivity.Insensitive
+                    : FileSystemCaseSensitivity.Sensitive);
         }
 
         private static bool HasDriveRootedPrefix(string path)

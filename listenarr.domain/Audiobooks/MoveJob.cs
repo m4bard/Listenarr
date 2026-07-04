@@ -98,6 +98,7 @@ namespace Listenarr.Domain.Audiobooks
         public int IdentityKeyVersion { get; set; } = 2;
         public string? LeaseOwner { get; set; }
         public DateTime? LeaseExpiresAt { get; set; }
+        public int LeaseGeneration { get; set; }
         public DateTime? NextAttemptAt { get; set; }
         public Guid? RelocationId { get; set; }
         public RootFolderRelocation? Relocation { get; set; }

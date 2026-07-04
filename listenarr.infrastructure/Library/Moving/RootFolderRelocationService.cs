@@ -1,6 +1,7 @@
 using Listenarr.Domain.Common;
 using Listenarr.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Listenarr.Application.Common.Exceptions;
 
 namespace Listenarr.Infrastructure.Library.Moving;
 
@@ -256,21 +257,44 @@ public sealed partial class RootFolderRelocationService(
                 targetResolution.Reason ?? "Target filesystem identity is unavailable.");
         }
 
+        var skippedSupersededJobs = 0;
         foreach (var job in relocation.MoveJobs.Where(job => job.Status is
             MoveJobStatus.NeedsAttention or MoveJobStatus.Failed or MoveJobStatus.Superseded))
         {
+            var deduplicationKey = FileSystemPathIdentity.CreateKey(
+                $"move:{job.AudiobookId}",
+                job.RequestedPath!,
+                targetResolution.Semantics);
+            var conflictingJob = await db.MoveJobs.AsNoTracking().FirstOrDefaultAsync(
+                candidate => candidate.Id != job.Id
+                    && candidate.ActiveDeduplicationKey == deduplicationKey,
+                cancellationToken);
+            if (conflictingJob != null)
+            {
+                if (job.Status == MoveJobStatus.Superseded)
+                {
+                    skippedSupersededJobs++;
+                    continue;
+                }
+
+                throw new ApplicationConflictException(
+                    "move_job_retry_conflict",
+                    "A newer move for this audiobook is already active.");
+            }
+
             job.Status = MoveJobStatus.Queued;
             job.Error = null;
             job.FailureKind = MoveFailureKind.None;
             job.NextAttemptAt = null;
-            job.ActiveDeduplicationKey = FileSystemPathIdentity.CreateKey(
-                $"move:{job.AudiobookId}",
-                job.RequestedPath!,
-                targetResolution.Semantics);
+            job.ActiveDeduplicationKey = deduplicationKey;
         }
 
-        relocation.Status = RootFolderRelocationStatus.Running;
-        relocation.Error = null;
+        relocation.Status = skippedSupersededJobs == 0
+            ? RootFolderRelocationStatus.Running
+            : RootFolderRelocationStatus.NeedsAttention;
+        relocation.Error = skippedSupersededJobs == 0
+            ? null
+            : $"{skippedSupersededJobs} job(s) were superseded by a newer move and were not retried.";
         relocation.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

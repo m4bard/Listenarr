@@ -54,18 +54,27 @@ namespace Listenarr.Infrastructure.Metadata.Parsing
         private static readonly string[] AudioExtensions = { ".m4b", ".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac", ".wav" };
         private static readonly string[] CoverExtensions = { ".jpg", ".jpeg", ".png", ".webp" };
 
-        public static PathParsedMetadata Parse(string filePath, string rootFolderPath)
+        public static PathParsedMetadata Parse(
+            string filePath,
+            string rootFolderPath,
+            FileSystemPathSemantics semantics)
         {
             var result = new PathParsedMetadata();
 
             var normalizedFile = Path.GetFullPath(filePath);
             var normalizedRoot = Path.GetFullPath(rootFolderPath);
 
-            if (!FileUtils.IsPathSameOrInside(normalizedFile, normalizedRoot))
+            if (!FileSystemPathIdentity.TryGetRelativePathWithinBase(
+                normalizedRoot,
+                normalizedFile,
+                semantics,
+                out var relative))
                 return result;
 
-            var relative = Path.GetRelativePath(normalizedRoot, normalizedFile);
-            var parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+            var separators = semantics.Syntax == FileSystemPathSyntax.Windows
+                ? new[] { '\\', '/' }
+                : new[] { '/' };
+            var parts = relative.Split(separators, StringSplitOptions.RemoveEmptyEntries);
 
             // parts[^1] is the filename; everything before is folder levels
             if (parts.Length < 2) return result;
@@ -267,4 +276,3 @@ namespace Listenarr.Infrastructure.Metadata.Parsing
         }
     }
 }
-

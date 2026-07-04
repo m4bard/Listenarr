@@ -433,6 +433,37 @@ public sealed class BackendArchitectureTests
         Assert.Empty(violations);
     }
 
+    [Fact]
+    public void ScannerAndMetadataBoundaries_RequireExplicitFilesystemSemantics()
+    {
+        var files = new[]
+        {
+            "listenarr.infrastructure/Library/Scanning/ScanFileDiscovery.cs",
+            "listenarr.infrastructure/Library/Scanning/ScanJobProcessor.cs",
+            "listenarr.infrastructure/Library/Scanning/ScanPathPlanner.cs",
+            "listenarr.infrastructure/Library/Scanning/UnmatchedScanBackgroundService.cs",
+            "listenarr.infrastructure/Library/Scanning/UnmatchedScanProcessor.Grouping.cs",
+            "listenarr.infrastructure/Metadata/Parsing/PathMetadataParser.cs"
+        };
+        var forbidden = new[]
+        {
+            "FilesystemPathComparerForCurrentOs",
+            "AreFilesystemPathsEquivalentForCurrentOs",
+            "FileUtils.IsPathSameOrInside",
+            "FileSystemPathSemantics.CurrentHostDefault",
+            ".Replace('\\\\', '/')"
+        };
+
+        var violations = files
+            .SelectMany(file => forbidden
+                .Where(token => File.ReadAllText(Path.Join(RepositoryRoot, file))
+                    .Contains(token, StringComparison.Ordinal))
+                .Select(token => $"{file}: {token}"))
+            .ToList();
+
+        Assert.Empty(violations);
+    }
+
     private static void AssertProjectReferences(string relativeProject, IReadOnlyCollection<string> expected)
     {
         var document = XDocument.Load(Path.Join(RepositoryRoot, relativeProject));

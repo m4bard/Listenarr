@@ -13,11 +13,12 @@ namespace Listenarr.Infrastructure.Library.Scanning
         internal static List<List<string>> BuildGroupedFilesForFolder(
             IEnumerable<string> files,
             string folderPath,
+            FileSystemPathSemantics semantics,
             IReadOnlyDictionary<string, PathParsedMetadata>? embeddedTagsByFile = null)
         {
             var allFiles = files
                 .Where(f => !string.IsNullOrWhiteSpace(f))
-                .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
+                .Distinct(semantics.Comparer)
                 .ToList();
 
             if (allFiles.Count <= 1)
@@ -27,7 +28,11 @@ namespace Listenarr.Infrastructure.Library.Scanning
 
             if (embeddedTagsByFile != null)
             {
-                var metadataAwareGroups = BuildMetadataAwareGroups(allFiles, folderPath, embeddedTagsByFile);
+                var metadataAwareGroups = BuildMetadataAwareGroups(
+                    allFiles,
+                    folderPath,
+                    semantics,
+                    embeddedTagsByFile);
                 if (metadataAwareGroups.Count > 0)
                 {
                     return metadataAwareGroups;
@@ -40,6 +45,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
         private static List<List<string>> BuildMetadataAwareGroups(
             IReadOnlyCollection<string> files,
             string folderPath,
+            FileSystemPathSemantics semantics,
             IReadOnlyDictionary<string, PathParsedMetadata> embeddedTagsByFile)
         {
             var folderKey = NormalizeGroupKey(Path.GetFileName(folderPath));
@@ -73,7 +79,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
 
             var attachedFiles = new HashSet<string>(
                 metadataGroups.SelectMany(group => group).Select(candidate => candidate.FilePath),
-                FileUtils.FilesystemPathComparerForCurrentOs);
+                semantics.Comparer);
 
             foreach (var candidate in candidates.Where(candidate => !attachedFiles.Contains(candidate.FilePath)))
             {
@@ -97,7 +103,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
                 .ToList();
 
             var grouped = metadataGroups
-                .Select(group => group.Select(candidate => candidate.FilePath).Distinct(FileUtils.FilesystemPathComparerForCurrentOs).ToList())
+                .Select(group => group.Select(candidate => candidate.FilePath).Distinct(semantics.Comparer).ToList())
                 .ToList();
 
             if (leftovers.Count > 0)
@@ -173,9 +179,10 @@ namespace Listenarr.Infrastructure.Library.Scanning
         private static async Task<IReadOnlyDictionary<string, PathParsedMetadata>> ReadEmbeddedTagsForFilesAsync(
             IEnumerable<string> files,
             string ffprobePath,
+            FileSystemPathSemantics semantics,
             CancellationToken ct)
         {
-            var result = new Dictionary<string, PathParsedMetadata>(FileUtils.FilesystemPathComparerForCurrentOs);
+            var result = new Dictionary<string, PathParsedMetadata>(semantics.Comparer);
             foreach (var file in files)
             {
                 result[file] = await PathMetadataParser.ReadEmbeddedTagsAsync(file, ffprobePath, ct);
@@ -196,7 +203,9 @@ namespace Listenarr.Infrastructure.Library.Scanning
             if (!string.IsNullOrEmpty(tags.Asin)) target.Asin = tags.Asin;
         }
 
-        private List<string> CollectAudioFiles(string rootFolderPath)
+        private List<string> CollectAudioFiles(
+            string rootFolderPath,
+            FileSystemPathSemantics semantics)
         {
             var candidates = new List<string>();
             var normalizedRoot = Path.GetFullPath(rootFolderPath);
@@ -230,7 +239,10 @@ namespace Listenarr.Infrastructure.Library.Scanning
                             continue;
                         }
                         var resolvedSub = Path.GetFullPath(sub);
-                        if (!FileUtils.IsPathSameOrInside(resolvedSub, normalizedRoot))
+                        if (!FileSystemPathIdentity.IsSameOrInside(
+                            resolvedSub,
+                            normalizedRoot,
+                            semantics))
                         {
                             _logger.LogWarning("Skipping {Dir}: resolves outside configured root {Root}", sub, normalizedRoot);
                             continue;
@@ -313,7 +325,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
         private static string NormalizeGroupKey(string value) =>
             Regex.Replace(value ?? string.Empty, @"\s+", " ").Trim().ToLowerInvariant();
 
-        private static string NormalizePath(string path) =>
-            Path.GetFullPath(path).Replace('\\', '/').TrimEnd('/');
+        private static string NormalizePath(string path, FileSystemPathSyntax syntax) =>
+            FileSystemPathIdentity.Canonicalize(Path.GetFullPath(path), syntax);
     }
 }

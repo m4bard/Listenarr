@@ -30,6 +30,44 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
+        public async Task MoveContentsAsync_StaleLeaseGeneration_DoesNotMutateFilesystem()
+        {
+            var source = FileService.GetTempDirectory("content-move-stale-lease-src");
+            var sourceFile = await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(
+                FileService.GetTempPath(),
+                $"content-move-stale-lease-dst-{Guid.NewGuid():N}");
+            var jobId = Guid.NewGuid();
+            var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
+            await using (var db = await factory.CreateDbContextAsync())
+            {
+                db.MoveJobs.Add(new MoveJob
+                {
+                    Id = jobId,
+                    AudiobookId = 1,
+                    RequestedPath = target,
+                    SourcePath = source,
+                    Status = MoveJobStatus.Running,
+                    LeaseGeneration = 2,
+                    ActiveDeduplicationKey = $"test:{jobId:N}"
+                });
+                await db.SaveChangesAsync();
+            }
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            await Assert.ThrowsAsync<MoveLeaseLostException>(() => service.MoveContentsAsync(
+                new AudiobookContentMoveRequest(
+                    source,
+                    target,
+                    jobId,
+                    LeaseGeneration: 1),
+                CancellationToken.None));
+
+            Assert.True(File.Exists(sourceFile));
+            Assert.False(Directory.Exists(target));
+        }
+
+        [Fact]
         public async Task MoveContentsAsync_JobTempContainsPartialFile_ReplacesItOnRetry()
         {
             var source = FileService.GetTempDirectory("content-move-partial-src");
@@ -363,7 +401,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             }
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
-            var resumed = service.ResumeSourceCleanup(
+            var resumed = await service.ResumeSourceCleanupAsync(
                 new AudiobookContentMoveRequest(source, target, jobId),
                 new AudiobookContentMoveResult(
                     source,
@@ -371,7 +409,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     false,
                     false,
                     Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
-                    false));
+                    false),
+                CancellationToken.None);
 
             Assert.True(resumed.SourceCleanupCompleted);
             Assert.False(File.Exists(quarantineFile));
@@ -418,7 +457,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             }
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
-            var resumed = service.ResumeSourceCleanup(
+            var resumed = await service.ResumeSourceCleanupAsync(
                 new AudiobookContentMoveRequest(source, target, jobId),
                 new AudiobookContentMoveResult(
                     source,
@@ -426,7 +465,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     false,
                     false,
                     Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
-                    false));
+                    false),
+                CancellationToken.None);
 
             Assert.True(resumed.SourceCleanupCompleted);
             Assert.False(Directory.Exists(source));
@@ -480,7 +520,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             }
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
-            Assert.Throws<MoveNeedsAttentionException>(() => service.ResumeSourceCleanup(
+            await Assert.ThrowsAsync<MoveNeedsAttentionException>(() => service.ResumeSourceCleanupAsync(
                 new AudiobookContentMoveRequest(source, target, jobId),
                 new AudiobookContentMoveResult(
                     source,
@@ -488,7 +528,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     false,
                     false,
                     Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
-                    false)));
+                    false),
+                CancellationToken.None));
 
             Assert.True(File.Exists(sourceFile));
             Assert.True(File.Exists(quarantineFile));

@@ -18,19 +18,22 @@ internal static class ScanFileDiscovery
         string scanRoot,
         Audiobook audiobook,
         Guid jobId,
-        ILogger logger)
+        ILogger logger,
+        FileSystemPathSemantics semantics)
     {
         var candidates = CollectCandidates(scanRoot, jobId, logger);
         var titleToken = (audiobook.Title ?? string.Empty).Replace("\"", string.Empty).Trim();
         var authorToken = audiobook.Authors?.FirstOrDefault() ?? string.Empty;
         if (string.IsNullOrEmpty(titleToken) && string.IsNullOrEmpty(authorToken))
         {
-            return candidates.Distinct(FileUtils.FilesystemPathComparerForCurrentOs).ToList();
+            return candidates.Distinct(semantics.Comparer).ToList();
         }
 
         var foundFiles = new List<string>();
-        var unique = new HashSet<string>(FileUtils.FilesystemPathComparerForCurrentOs);
-        foreach (var group in candidates.GroupBy(file => Path.GetDirectoryName(file) ?? string.Empty))
+        var unique = new HashSet<string>(semantics.Comparer);
+        foreach (var group in candidates.GroupBy(
+            file => Path.GetDirectoryName(file) ?? string.Empty,
+            semantics.Comparer))
         {
             var directoryName = Path.GetFileName(group.Key) ?? string.Empty;
             var groupHasMatch = group.Any(file =>

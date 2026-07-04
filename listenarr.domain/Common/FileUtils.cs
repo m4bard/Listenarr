@@ -337,13 +337,18 @@ namespace Listenarr.Domain.Common
         }
 
         public static string? GetCommonPathForDirectories(IEnumerable<string> directories)
+            => GetCommonPathForDirectories(directories, FileSystemPathSemantics.CurrentHostDefault);
+
+        public static string? GetCommonPathForDirectories(
+            IEnumerable<string> directories,
+            FileSystemPathSemantics semantics)
         {
             try
             {
                 var normalizedDirectories = directories
                     .Where(path => !string.IsNullOrWhiteSpace(path))
                     .Select(NormalizeFullPathForBoundary)
-                    .Distinct(FilesystemPathComparerForCurrentOs)
+                    .Distinct(semantics.Comparer)
                     .ToList();
 
                 if (normalizedDirectories.Count == 0)
@@ -359,7 +364,7 @@ namespace Listenarr.Domain.Common
                 var commonPath = normalizedDirectories[0];
                 foreach (var directory in normalizedDirectories.Skip(1))
                 {
-                    commonPath = GetCommonPath(commonPath, directory);
+                    commonPath = GetCommonPath(commonPath, directory, semantics);
                     if (string.IsNullOrWhiteSpace(commonPath))
                     {
                         break;
@@ -374,11 +379,16 @@ namespace Listenarr.Domain.Common
             }
         }
 
-        private static string GetCommonPath(string firstPath, string secondPath)
+        private static string GetCommonPath(
+            string firstPath,
+            string secondPath,
+            FileSystemPathSemantics semantics)
         {
             var first = DecomposePathForCommonPath(firstPath);
             var second = DecomposePathForCommonPath(secondPath);
-            var comparison = GetPathComparison();
+            var comparison = semantics.CaseSensitivity == FileSystemCaseSensitivity.Sensitive
+                ? StringComparison.Ordinal
+                : StringComparison.OrdinalIgnoreCase;
 
             if (!string.Equals(first.Root, second.Root, comparison))
             {

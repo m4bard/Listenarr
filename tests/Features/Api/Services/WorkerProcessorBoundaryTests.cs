@@ -237,7 +237,8 @@ namespace Listenarr.Tests.Features.Api.Services
                 _provider.GetRequiredService<IServiceScopeFactory>(),
                 _provider.GetRequiredService<ILogger<UnmatchedScanProcessor>>(),
                 hubContext.Object,
-                _provider.GetRequiredService<IFfmpegService>());
+                _provider.GetRequiredService<IFfmpegService>(),
+                _provider.GetRequiredService<IFileSystemSemanticsResolver>());
             await queue.EnqueueAsync(root);
             Assert.True(queue.Reader.TryRead(out var job));
 
@@ -262,7 +263,8 @@ namespace Listenarr.Tests.Features.Api.Services
                 _provider.GetRequiredService<IServiceScopeFactory>(),
                 _provider.GetRequiredService<ILogger<UnmatchedScanProcessor>>(),
                 hubContext.Object,
-                _provider.GetRequiredService<IFfmpegService>());
+                _provider.GetRequiredService<IFfmpegService>(),
+                _provider.GetRequiredService<IFileSystemSemanticsResolver>());
             var missingRoot = Path.Join(FileService.GetTempPath(), "missing-root");
             await queue.EnqueueAsync(missingRoot);
             Assert.True(queue.Reader.TryRead(out var job));

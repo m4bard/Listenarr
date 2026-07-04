@@ -22,6 +22,7 @@ public sealed class MoveJobConfiguration : IEntityTypeConfiguration<MoveJob>
         builder.Property(job => job.FailureKind).HasConversion<string>().HasMaxLength(32);
         builder.Property(job => job.ActiveDeduplicationKey).HasMaxLength(1024);
         builder.Property(job => job.LeaseOwner).HasMaxLength(200);
+        builder.Property(job => job.LeaseGeneration).HasDefaultValue(0);
         builder.HasIndex(job => job.ActiveDeduplicationKey)
             .IsUnique()
             .HasFilter("\"ActiveDeduplicationKey\" IS NOT NULL");

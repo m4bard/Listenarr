@@ -18,6 +18,9 @@
 
 namespace Listenarr.Application.Audiobooks.Contracts
 {
+    public sealed class MoveLeaseLostException(Guid jobId, int leaseGeneration)
+        : InvalidOperationException($"Move job {jobId} no longer owns lease generation {leaseGeneration}.");
+
     public interface IMoveQueueService
     {
         Task<Guid> EnqueueMoveAsync(
@@ -26,13 +29,13 @@ namespace Listenarr.Application.Audiobooks.Contracts
             string? sourcePath = null,
             bool deleteEmptySource = true);
         Task<Guid?> RequeueMoveAsync(Guid jobId);
-        Task<bool> TryClaimJobAsync(Guid jobId, string leaseOwner, CancellationToken cancellationToken = default);
-        Task HeartbeatJobAsync(Guid jobId, string leaseOwner, CancellationToken cancellationToken = default);
+        Task<int?> TryClaimJobAsync(Guid jobId, string leaseOwner, CancellationToken cancellationToken = default);
+        Task<bool> HeartbeatJobAsync(Guid jobId, string leaseOwner, int leaseGeneration, CancellationToken cancellationToken = default);
         Task RecoverActiveJobsAsync(CancellationToken cancellationToken = default);
         Task<IReadOnlyList<MoveJob>> GetActiveJobsAsync(CancellationToken cancellationToken = default);
         Task<MoveQueueHealthSnapshot> GetQueueHealthAsync(CancellationToken cancellationToken = default);
         Task<MoveJob?> GetJobAsync(Guid id, CancellationToken cancellationToken = default);
-        Task UpdateJobStatusAsync(Guid id, MoveJobStatus status, string? error = null, CancellationToken cancellationToken = default);
+        Task UpdateJobStatusAsync(Guid id, int leaseGeneration, MoveJobStatus status, string? error = null, CancellationToken cancellationToken = default);
         System.Threading.Channels.ChannelReader<MoveJob> Reader { get; }
     }
 }

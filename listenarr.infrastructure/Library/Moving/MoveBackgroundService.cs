@@ -16,7 +16,8 @@ public sealed class MoveBackgroundService(
     IMoveQueueService moveQueueService,
     IMoveJobProcessor processor,
     ILogger<MoveBackgroundService> logger,
-    IAppMetricsService? metrics = null) : BackgroundService
+    IAppMetricsService? metrics = null,
+    TimeSpan? heartbeatInterval = null) : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
 
@@ -41,21 +42,30 @@ public sealed class MoveBackgroundService(
                 }
                 while (moveQueueService.Reader.TryRead(out var job))
                 {
-                    if (!await moveQueueService.TryClaimJobAsync(job.Id, leaseOwner, stoppingToken))
+                    var leaseGeneration = await moveQueueService.TryClaimJobAsync(
+                        job.Id,
+                        leaseOwner,
+                        stoppingToken);
+                    if (leaseGeneration == null)
                     {
                         continue;
                     }
 
+                    job.LeaseGeneration = leaseGeneration.Value;
+
                     try
                     {
-                        using var heartbeatCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                        using var processingCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                        using var heartbeatCancellation = new CancellationTokenSource();
                         var heartbeatTask = RunHeartbeatAsync(
                             job.Id,
                             leaseOwner,
+                            leaseGeneration.Value,
+                            processingCancellation,
                             heartbeatCancellation.Token);
                         try
                         {
-                            await processor.ProcessJobAsync(job, stoppingToken);
+                            await processor.ProcessJobAsync(job, processingCancellation.Token);
                         }
                         finally
                         {
@@ -78,6 +88,7 @@ public sealed class MoveBackgroundService(
                         logger.LogError(exception, "Unexpected error processing move job {JobId}", job.Id);
                         await moveQueueService.UpdateJobStatusAsync(
                             job.Id,
+                            leaseGeneration.Value,
                             MoveJobStatus.Failed,
                             exception.Message,
                             stoppingToken);
@@ -105,14 +116,30 @@ public sealed class MoveBackgroundService(
     private async Task RunHeartbeatAsync(
         Guid jobId,
         string leaseOwner,
+        int leaseGeneration,
+        CancellationTokenSource processingCancellation,
         CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        using var timer = new PeriodicTimer(
+            heartbeatInterval ?? TimeSpan.FromSeconds(30));
         while (await timer.WaitForNextTickAsync(cancellationToken))
         {
             try
             {
-                await moveQueueService.HeartbeatJobAsync(jobId, leaseOwner, cancellationToken);
+                var renewed = await moveQueueService.HeartbeatJobAsync(
+                    jobId,
+                    leaseOwner,
+                    leaseGeneration,
+                    cancellationToken);
+                if (!renewed)
+                {
+                    logger.LogWarning(
+                        "Move job {JobId} lost lease generation {LeaseGeneration}; canceling processing",
+                        jobId,
+                        leaseGeneration);
+                    await processingCancellation.CancelAsync();
+                    return;
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

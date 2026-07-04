@@ -209,8 +209,9 @@ public sealed class EfMoveQueuePersistence(
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateStatusAsync(
+    public async Task<bool> UpdateStatusAsync(
         Guid id,
+        int leaseGeneration,
         MoveJobStatus status,
         MoveJobPhase phase,
         string? error,
@@ -221,24 +222,42 @@ public sealed class EfMoveQueuePersistence(
         try
         {
             await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-            var job = await db.MoveJobs.SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
-            if (job == null)
+            if (!db.Database.IsRelational())
             {
-                return;
+                var trackedJob = await db.MoveJobs.SingleOrDefaultAsync(
+                    job => job.Id == id && job.LeaseGeneration == leaseGeneration,
+                    cancellationToken);
+                if (trackedJob == null) return false;
+                trackedJob.Status = status;
+                trackedJob.Phase = phase;
+                trackedJob.Error = error;
+                trackedJob.FailureKind = failureKind;
+                trackedJob.UpdatedAt = updatedAt.UtcDateTime;
+                if (!status.IsActive())
+                {
+                    trackedJob.ActiveDeduplicationKey = null;
+                    trackedJob.LeaseOwner = null;
+                    trackedJob.LeaseExpiresAt = null;
+                }
+                await db.SaveChangesAsync(cancellationToken);
+                return true;
             }
 
-            job.Status = status;
-            job.Phase = phase;
-            job.Error = error;
-            job.FailureKind = failureKind;
-            job.UpdatedAt = updatedAt.UtcDateTime;
-            if (!status.IsActive())
-            {
-                job.ActiveDeduplicationKey = null;
-                job.LeaseOwner = null;
-                job.LeaseExpiresAt = null;
-            }
-            await db.SaveChangesAsync(cancellationToken);
+            var active = status.IsActive();
+            var affected = await db.MoveJobs
+                .Where(job => job.Id == id && job.LeaseGeneration == leaseGeneration)
+                .ExecuteUpdateAsync(
+                    updates => updates
+                        .SetProperty(job => job.Status, status)
+                        .SetProperty(job => job.Phase, phase)
+                        .SetProperty(job => job.Error, error)
+                        .SetProperty(job => job.FailureKind, failureKind)
+                        .SetProperty(job => job.UpdatedAt, updatedAt.UtcDateTime)
+                        .SetProperty(job => job.ActiveDeduplicationKey, job => active ? job.ActiveDeduplicationKey : null)
+                        .SetProperty(job => job.LeaseOwner, job => active ? job.LeaseOwner : null)
+                        .SetProperty(job => job.LeaseExpiresAt, job => active ? job.LeaseExpiresAt : null),
+                    cancellationToken);
+            return affected == 1;
         }
         catch (DbException ex)
         {
@@ -246,7 +265,7 @@ public sealed class EfMoveQueuePersistence(
         }
     }
 
-    public async Task<bool> TryClaimAsync(
+    public async Task<int?> TryClaimAsync(
         Guid id,
         string leaseOwner,
         DateTimeOffset now,
@@ -269,10 +288,15 @@ public sealed class EfMoveQueuePersistence(
                     updates => updates
                         .SetProperty(job => job.Status, MoveJobStatus.Running)
                         .SetProperty(job => job.LeaseOwner, leaseOwner)
+                        .SetProperty(job => job.LeaseGeneration, job => job.LeaseGeneration + 1)
                         .SetProperty(job => job.LeaseExpiresAt, leaseExpiresAt.UtcDateTime)
                         .SetProperty(job => job.UpdatedAt, nowUtc),
                     cancellationToken);
-            return affected == 1;
+            if (affected != 1) return null;
+            return await db.MoveJobs
+                .Where(job => job.Id == id && job.LeaseOwner == leaseOwner)
+                .Select(job => (int?)job.LeaseGeneration)
+                .SingleAsync(cancellationToken);
         }
 
         var job = await db.MoveJobs.SingleOrDefaultAsync(
@@ -286,31 +310,36 @@ public sealed class EfMoveQueuePersistence(
                 && job.LeaseExpiresAt > nowUtc)
             || job.Status is not (MoveJobStatus.Queued or MoveJobStatus.RetryScheduled or MoveJobStatus.Running))
         {
-            return false;
+            return null;
         }
 
         job.Status = MoveJobStatus.Running;
         job.LeaseOwner = leaseOwner;
+        job.LeaseGeneration++;
         job.LeaseExpiresAt = leaseExpiresAt.UtcDateTime;
         job.UpdatedAt = nowUtc;
         await db.SaveChangesAsync(cancellationToken);
-        return true;
+        return job.LeaseGeneration;
     }
 
-    public async Task HeartbeatAsync(
+    public async Task<bool> HeartbeatAsync(
         Guid id,
         string leaseOwner,
+        int leaseGeneration,
         DateTimeOffset leaseExpiresAt,
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        var job = await db.MoveJobs.SingleOrDefaultAsync(
-            candidate => candidate.Id == id
+        var affected = await db.MoveJobs
+            .Where(candidate => candidate.Id == id
                 && candidate.Status == MoveJobStatus.Running
-                && candidate.LeaseOwner == leaseOwner,
-            cancellationToken);
-        if (job == null) return;
-        job.LeaseExpiresAt = leaseExpiresAt.UtcDateTime;
-        await db.SaveChangesAsync(cancellationToken);
+                && candidate.LeaseOwner == leaseOwner
+                && candidate.LeaseGeneration == leaseGeneration)
+            .ExecuteUpdateAsync(
+                updates => updates.SetProperty(
+                    job => job.LeaseExpiresAt,
+                    leaseExpiresAt.UtcDateTime),
+                cancellationToken);
+        return affected == 1;
     }
 }

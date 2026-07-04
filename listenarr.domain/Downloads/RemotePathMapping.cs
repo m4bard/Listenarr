@@ -49,14 +49,11 @@ namespace Listenarr.Domain.Downloads
         {
             get
             {
-                // FIXME: Previous version did not save normalized paths
-                var normalizedValue = FileUtils.NormalizeStoredPath(field);
-                return FileUtils.EnsureTrailingSeparator(normalizedValue);
+                return NormalizeRemotePath(field);
             }
             set
             {
-                value = FileUtils.NormalizeStoredPath(value);
-                field = FileUtils.EnsureTrailingSeparator(value);
+                field = NormalizeRemotePath(value);
             }
         } = string.Empty;
 
@@ -111,7 +108,7 @@ namespace Listenarr.Domain.Downloads
         /// </summary>
         public void NormalizePaths()
         {
-            RemotePath = NormalizePath(RemotePath);
+            RemotePath = NormalizeRemotePath(RemotePath);
             LocalPath = NormalizePath(LocalPath);
         }
 
@@ -129,6 +126,19 @@ namespace Listenarr.Domain.Downloads
 
             return path;
         }
+
+        private static string NormalizeRemotePath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return path;
+            }
+
+            var windowsSyntax = path.Length >= 2 && char.IsLetter(path[0]) && path[1] == ':'
+                || path.StartsWith("\\\\", StringComparison.Ordinal)
+                || path.StartsWith("//", StringComparison.Ordinal);
+            var normalized = windowsSyntax ? path.Replace('\\', '/') : path;
+            return normalized.EndsWith('/') ? normalized : normalized + '/';
+        }
     }
 }
-

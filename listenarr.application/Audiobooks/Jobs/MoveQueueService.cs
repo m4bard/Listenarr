@@ -133,7 +133,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
             }
         }
 
-        public Task<bool> TryClaimJobAsync(
+        public Task<int?> TryClaimJobAsync(
             Guid jobId,
             string leaseOwner,
             CancellationToken cancellationToken = default)
@@ -147,14 +147,16 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 cancellationToken);
         }
 
-        public Task HeartbeatJobAsync(
+        public Task<bool> HeartbeatJobAsync(
             Guid jobId,
             string leaseOwner,
+            int leaseGeneration,
             CancellationToken cancellationToken = default)
         {
             return _persistence.HeartbeatAsync(
                 jobId,
                 leaseOwner,
+                leaseGeneration,
                 _timeProvider.GetUtcNow().AddMinutes(2),
                 cancellationToken);
         }
@@ -183,6 +185,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
 
         public async Task UpdateJobStatusAsync(
             Guid id,
+            int leaseGeneration,
             MoveJobStatus status,
             string? error = null,
             CancellationToken cancellationToken = default)
@@ -198,9 +201,13 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 var failureKind = status is MoveJobStatus.Failed or MoveJobStatus.NeedsAttention
                     ? MoveFailureKind.Unknown
                     : MoveFailureKind.None;
-                await PersistWithRetryAsync(
-                    () => _persistence.UpdateStatusAsync(id, status, phase, error, failureKind, updatedAt, cancellationToken),
+                var updated = await PersistWithRetryAsync(
+                    () => _persistence.UpdateStatusAsync(id, leaseGeneration, status, phase, error, failureKind, updatedAt, cancellationToken),
                     cancellationToken);
+                if (!updated)
+                {
+                    throw new MoveLeaseLostException(id, leaseGeneration);
+                }
                 if (_relocationService != null)
                 {
                     await _relocationService.OnMoveJobStateChangedAsync(id, cancellationToken);
@@ -226,7 +233,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
                     _logger.LogWarning(ex, "Failed to broadcast MoveJobUpdate for job {JobId}", id);
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            catch (Exception ex) when (ex is not MoveLeaseLostException && ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogWarning(ex, "Failed to persist move job status change for {JobId}", id);
             }
@@ -327,15 +334,14 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 semantics);
         }
 
-        private async Task PersistWithRetryAsync(Func<Task> operation, CancellationToken cancellationToken)
+        private async Task<bool> PersistWithRetryAsync(Func<Task<bool>> operation, CancellationToken cancellationToken)
         {
             const int maxAttempts = 3;
             for (var attempt = 1; ; attempt++)
             {
                 try
                 {
-                    await operation();
-                    return;
+                    return await operation();
                 }
                 catch (PersistenceException) when (attempt < maxAttempts)
                 {

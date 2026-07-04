@@ -53,6 +53,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
 
         await persistence.UpdateStatusAsync(
             first.Id,
+            0,
             MoveJobStatus.Completed,
             MoveJobPhase.Finalizing,
             null,
@@ -113,10 +114,91 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
             persistence.TryClaimAsync(job.Id, "worker-a", now, now.AddMinutes(2)),
             persistence.TryClaimAsync(job.Id, "worker-b", now, now.AddMinutes(2)));
 
-        Assert.Single(claims, claimed => claimed);
+        Assert.Single(claims, generation => generation.HasValue);
         var claimedJob = await persistence.GetByIdAsync(job.Id);
         Assert.Equal(MoveJobStatus.Running, claimedJob!.Status);
         Assert.Contains(claimedJob.LeaseOwner, new[] { "worker-a", "worker-b" });
+        Assert.Equal(1, claimedJob.LeaseGeneration);
+    }
+
+    [Fact]
+    public async Task TryClaimAsync_ExpiredLease_IncrementsLeaseGeneration()
+    {
+        var persistence = new EfMoveQueuePersistence(_factory);
+        var job = CreateJob("v2:move:42:s:reclaim");
+        await persistence.AddAsync(job);
+        var now = DateTimeOffset.UtcNow;
+
+        Assert.Equal(1, await persistence.TryClaimAsync(
+            job.Id,
+            "worker-a",
+            now,
+            now.AddMinutes(2)));
+
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var claimedJob = await db.MoveJobs.SingleAsync(candidate => candidate.Id == job.Id);
+            claimedJob.LeaseExpiresAt = now.AddSeconds(-1).UtcDateTime;
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal(2, await persistence.TryClaimAsync(
+            job.Id,
+            "worker-b",
+            now,
+            now.AddMinutes(2)));
+
+        var reclaimedJob = await persistence.GetByIdAsync(job.Id);
+        Assert.Equal(2, reclaimedJob!.LeaseGeneration);
+        Assert.Equal("worker-b", reclaimedJob.LeaseOwner);
+    }
+
+    [Fact]
+    public async Task StaleLeaseGeneration_CannotHeartbeatOrUpdateStatus()
+    {
+        var persistence = new EfMoveQueuePersistence(_factory);
+        var job = CreateJob("v2:move:42:s:fenced");
+        await persistence.AddAsync(job);
+        var now = DateTimeOffset.UtcNow;
+        var staleGeneration = await persistence.TryClaimAsync(
+            job.Id,
+            "worker-a",
+            now,
+            now.AddMinutes(2));
+        Assert.Equal(1, staleGeneration);
+
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var claimedJob = await db.MoveJobs.SingleAsync(candidate => candidate.Id == job.Id);
+            claimedJob.LeaseExpiresAt = now.AddSeconds(-1).UtcDateTime;
+            await db.SaveChangesAsync();
+        }
+
+        var currentGeneration = await persistence.TryClaimAsync(
+            job.Id,
+            "worker-b",
+            now,
+            now.AddMinutes(2));
+        Assert.Equal(2, currentGeneration);
+
+        Assert.False(await persistence.HeartbeatAsync(
+            job.Id,
+            "worker-a",
+            staleGeneration.GetValueOrDefault(),
+            now.AddMinutes(3)));
+        Assert.False(await persistence.UpdateStatusAsync(
+            job.Id,
+            staleGeneration.GetValueOrDefault(),
+            MoveJobStatus.Completed,
+            MoveJobPhase.Finalizing,
+            null,
+            MoveFailureKind.None,
+            now));
+
+        var currentJob = await persistence.GetByIdAsync(job.Id);
+        Assert.Equal(MoveJobStatus.Running, currentJob!.Status);
+        Assert.Equal("worker-b", currentJob.LeaseOwner);
+        Assert.Equal(2, currentJob.LeaseGeneration);
     }
 
     private static MoveJob CreateJob(string key) => new()

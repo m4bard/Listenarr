@@ -46,22 +46,24 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 });
             persistence.Setup(store => store.UpdateStatusAsync(
                     It.IsAny<Guid>(),
+                    It.IsAny<int>(),
                     It.IsAny<MoveJobStatus>(),
                     It.IsAny<MoveJobPhase>(),
                     It.IsAny<string?>(),
                     It.IsAny<MoveFailureKind>(),
                     It.IsAny<DateTimeOffset>(),
                     It.IsAny<CancellationToken>()))
-                .Returns(async (Guid id, MoveJobStatus status, MoveJobPhase phase, string? error, MoveFailureKind failureKind, DateTimeOffset updatedAt, CancellationToken ct) =>
+                .Returns(async (Guid id, int _, MoveJobStatus status, MoveJobPhase phase, string? error, MoveFailureKind failureKind, DateTimeOffset updatedAt, CancellationToken ct) =>
                 {
                     var persisted = await db.MoveJobs.FindAsync([id], ct);
-                    if (persisted == null) return;
+                    if (persisted == null) return false;
                     persisted.Status = status;
                     persisted.Phase = phase;
                     persisted.Error = error;
                     persisted.FailureKind = failureKind;
                     persisted.UpdatedAt = updatedAt.UtcDateTime;
                     await db.SaveChangesAsync(ct);
+                    return true;
                 });
 
             var svc = new MoveQueueService(
@@ -79,7 +81,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
             Assert.Equal(MoveJobStatus.Queued, job1!.Status);
 
             // Update status to Processing
-            await svc.UpdateJobStatusAsync(jobId, MoveJobStatus.Running);
+            await svc.UpdateJobStatusAsync(jobId, 0, MoveJobStatus.Running);
             var job2 = await svc.GetJobAsync(jobId);
             Assert.NotNull(job2);
             Assert.Equal(MoveJobStatus.Running, job2!.Status);
@@ -234,7 +236,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 TimeProvider.System);
             var jobId = await service.EnqueueMoveAsync(9, "/library/Title", "/downloads/Title");
             Assert.True(service.Reader.TryRead(out _));
-            await service.UpdateJobStatusAsync(jobId, MoveJobStatus.Failed, "copy interrupted");
+            await service.UpdateJobStatusAsync(jobId, 0, MoveJobStatus.Failed, "copy interrupted");
 
             var requeuedJobId = await service.RequeueMoveAsync(jobId);
 
@@ -281,7 +283,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 TimeProvider.System);
 
             var firstId = await service.EnqueueMoveAsync(9, "/library/book");
-            await service.UpdateJobStatusAsync(firstId, MoveJobStatus.Completed);
+            await service.UpdateJobStatusAsync(firstId, 0, MoveJobStatus.Completed);
             var secondId = await service.EnqueueMoveAsync(9, "/library/book/");
 
             Assert.NotEqual(firstId, secondId);
@@ -306,13 +308,14 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 });
             persistence.Setup(store => store.UpdateStatusAsync(
                     It.IsAny<Guid>(),
+                    It.IsAny<int>(),
                     It.IsAny<MoveJobStatus>(),
                     It.IsAny<MoveJobPhase>(),
                     It.IsAny<string?>(),
                     It.IsAny<MoveFailureKind>(),
                     It.IsAny<DateTimeOffset>(),
                     It.IsAny<CancellationToken>()))
-                .Returns((Guid id, MoveJobStatus status, MoveJobPhase phase, string? error, MoveFailureKind failureKind, DateTimeOffset updatedAt, CancellationToken _) =>
+                .Returns((Guid id, int _, MoveJobStatus status, MoveJobPhase phase, string? error, MoveFailureKind failureKind, DateTimeOffset updatedAt, CancellationToken _) =>
                 {
                     var job = jobs.Single(candidate => candidate.Id == id);
                     job.Status = status;
@@ -325,7 +328,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                         job.ActiveDeduplicationKey = null;
                     }
 
-                    return Task.CompletedTask;
+                    return Task.FromResult(true);
                 });
             return persistence;
         }

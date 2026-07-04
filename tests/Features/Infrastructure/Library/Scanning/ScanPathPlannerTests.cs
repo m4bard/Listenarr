@@ -15,21 +15,35 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
     public class ScanPathPlannerTests
     {
         [Fact]
-        public void CalculateBasePath_DedupesCaseOnlyDirectoriesUsingHostFilesystemRules()
+        public void CalculateBasePath_DedupesCaseOnlyDirectoriesUsingResolvedSemantics()
         {
             var root = Path.Join(Path.GetTempPath(), "listenarr-scan-path-" + Guid.NewGuid().ToString("N"));
             var upper = Path.Join(root, "Book", "Track01.m4b");
             var lower = Path.Join(root, "book", "Track02.m4b");
 
-            var basePath = ScanPathPlanner.CalculateBasePath([upper, lower]);
-
-            if (OperatingSystem.IsWindows())
+            var insensitive = new FileSystemPathSemantics(
+                FileSystemPathSemantics.CurrentHostDefault.Syntax,
+                FileSystemCaseSensitivity.Insensitive);
+            var sensitive = insensitive with
             {
-                Assert.True(FileUtils.AreFilesystemPathsEquivalentForCurrentOs(Path.Join(root, "Book"), basePath));
-                return;
-            }
+                CaseSensitivity = FileSystemCaseSensitivity.Sensitive
+            };
 
-            Assert.True(FileUtils.AreFilesystemPathsEquivalentForCurrentOs(root, basePath));
+            var insensitiveBasePath = ScanPathPlanner.CalculateBasePath(
+                [upper, lower],
+                insensitive);
+            var sensitiveBasePath = ScanPathPlanner.CalculateBasePath(
+                [upper, lower],
+                sensitive);
+
+            Assert.True(FileSystemPathIdentity.AreEquivalent(
+                Path.Join(root, "Book"),
+                insensitiveBasePath,
+                insensitive));
+            Assert.True(FileSystemPathIdentity.AreEquivalent(
+                root,
+                sensitiveBasePath,
+                sensitive));
         }
     }
 }

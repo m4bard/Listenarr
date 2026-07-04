@@ -105,5 +105,24 @@ namespace Listenarr.Tests.Features.Infrastructure.Configuration.Paths
             Assert.Equal(FileUtils.EnsureTrailingSeparator(FileUtils.NormalizeStoredPath(localPath)), await remotePathMappingService.TranslatePathAsync(client, remotePath));
             Assert.Equal(Path.Join(localPath, "book.m4b"), await remotePathMappingService.TranslatePathAsync(client, childPath));
         }
+
+        [Theory]
+        [InlineData("C:/downloads", "C:\\downloads\\Author\\book.m4b")]
+        [InlineData("/downloads", "/downloads/Author/book.m4b")]
+        public async Task TranslatePathAsync_UsesRemoteSyntaxIndependentOfHost(
+            string remoteRoot,
+            string reportedPath)
+        {
+            var localPath = FileUtils.GetAbsolutePath("remote-syntax-imports");
+            await _remotePathMappingRepository.SaveAsync(new RemotePathMappingBuilder()
+                .WithDownloadClientConfiguration(client)
+                .WithRemotePath(remoteRoot)
+                .WithLocalPath(localPath)
+                .Build());
+
+            var translated = await remotePathMappingService.TranslatePathAsync(client, reportedPath);
+
+            Assert.Equal(Path.Join(localPath, "Author", "book.m4b"), translated);
+        }
     }
 }

@@ -38,10 +38,44 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Common
 
             var sourceFiles = TorrentClientPathMapper.BuildTransmissionSourceFiles(downloadDir, document.RootElement);
 
-            var expected = FileUtils.CombineWithOptionalBase(downloadDir, " Book Folder /chapter1.m4b");
+            var expected = Path.Join(downloadDir, " Book Folder ", "chapter1.m4b");
             Assert.Equal([expected], sourceFiles);
             Assert.StartsWith(downloadDir + Path.DirectorySeparatorChar, expected, StringComparison.Ordinal);
             Assert.Contains(" Book Folder ", expected, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void BuildTransmissionSourceFiles_WindowsClientPath_UsesWindowsSyntaxOnAnyHost()
+        {
+            using var document = JsonDocument.Parse(
+                """
+                [
+                  { "name": "Author/book.m4b" }
+                ]
+                """);
+
+            var sourceFiles = TorrentClientPathMapper.BuildTransmissionSourceFiles(
+                "C:\\downloads",
+                document.RootElement);
+
+            Assert.Equal(["C:\\downloads\\Author\\book.m4b"], sourceFiles);
+        }
+
+        [Fact]
+        public void BuildTransmissionSourceFiles_UnixClientPath_PreservesLiteralBackslash()
+        {
+            using var document = JsonDocument.Parse(
+                """
+                [
+                  { "name": "Author\\Name/book.m4b" }
+                ]
+                """);
+
+            var sourceFiles = TorrentClientPathMapper.BuildTransmissionSourceFiles(
+                "/downloads",
+                document.RootElement);
+
+            Assert.Equal(["/downloads/Author\\Name/book.m4b"], sourceFiles);
         }
 
         [Fact]
@@ -57,7 +91,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Common
 
             var sourceFiles = TorrentClientPathMapper.BuildTransmissionSourceFiles(downloadDir, document.RootElement);
 
-            var expected = FileUtils.CombineWithOptionalBase(downloadDir, "Book Folder /chapter1.m4b");
+            var expected = Path.Join(downloadDir, "Book Folder ", "chapter1.m4b");
             Assert.Equal([expected], sourceFiles);
             Assert.StartsWith(downloadDir + Path.DirectorySeparatorChar, expected, StringComparison.Ordinal);
             Assert.Contains("Book Folder ", expected, StringComparison.Ordinal);
@@ -184,7 +218,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Common
             var sourceFiles = TorrentClientPathMapper.BuildTransmissionSourceFiles(downloadDir, document.RootElement);
 
             var sourceFile = Assert.Single(sourceFiles);
-            Assert.Equal(FileUtils.CombineWithOptionalBase(downloadDir, " Book Folder /chapter1.m4b"), sourceFile);
+            Assert.Equal(Path.Join(downloadDir, " Book Folder ", "chapter1.m4b"), sourceFile);
             Assert.True(FileUtils.IsPathSameOrInside(sourceFile, downloadDir));
         }
 

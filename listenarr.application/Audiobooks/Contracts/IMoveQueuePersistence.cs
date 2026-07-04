@@ -35,8 +35,9 @@ public interface IMoveQueuePersistence
 
     Task RequeueAsync(MoveJob job, CancellationToken cancellationToken = default);
 
-    Task UpdateStatusAsync(
+    Task<bool> UpdateStatusAsync(
         Guid id,
+        int leaseGeneration,
         MoveJobStatus status,
         MoveJobPhase phase,
         string? error,
@@ -44,16 +45,17 @@ public interface IMoveQueuePersistence
         DateTimeOffset updatedAt,
         CancellationToken cancellationToken = default);
 
-    Task<bool> TryClaimAsync(
+    Task<int?> TryClaimAsync(
         Guid id,
         string leaseOwner,
         DateTimeOffset now,
         DateTimeOffset leaseExpiresAt,
         CancellationToken cancellationToken = default);
 
-    Task HeartbeatAsync(
+    Task<bool> HeartbeatAsync(
         Guid id,
         string leaseOwner,
+        int leaseGeneration,
         DateTimeOffset leaseExpiresAt,
         CancellationToken cancellationToken = default);
 }

@@ -235,11 +235,13 @@ namespace Listenarr.Application.Downloads.Common
             if (!string.IsNullOrEmpty(item.RemotePath))
             {
                 item.LocalPath = await remotePathMappingService.TranslatePathAsync(client, item.RemotePath);
+                EnsureNativePath(item.LocalPath, client.Name);
             }
 
             if (!string.IsNullOrEmpty(item.ContentPath))
             {
                 item.ContentPath = await remotePathMappingService.TranslatePathAsync(client, item.ContentPath);
+                EnsureNativePath(item.ContentPath, client.Name);
             }
 
             // FIXME: https://github.com/Listenarrs/Listenarr/issues/592
@@ -253,7 +255,9 @@ namespace Listenarr.Application.Downloads.Common
                 List<string> sourceFiles = [];
                 foreach (string file in item.SourceFiles)
                 {
-                    sourceFiles.Add(await remotePathMappingService.TranslatePathAsync(client, file));
+                    var sourceFile = await remotePathMappingService.TranslatePathAsync(client, file);
+                    EnsureNativePath(sourceFile, client.Name);
+                    sourceFiles.Add(sourceFile);
                 }
                 item.SourceFiles = sourceFiles;
             }
@@ -303,6 +307,24 @@ namespace Listenarr.Application.Downloads.Common
             item.SourceFiles = new HashSet<string>(item.SourceFiles, FileUtils.FilesystemPathComparerForCurrentOs).ToList();
 
             return item;
+        }
+
+        private static void EnsureNativePath(string? path, string clientName)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            var valid = OperatingSystem.IsWindows()
+                ? path.Length >= 3 && char.IsLetter(path[0]) && path[1] == ':' && path[2] is '/' or '\\'
+                    || path.StartsWith("\\\\", StringComparison.Ordinal)
+                : path[0] == '/';
+            if (!valid)
+            {
+                throw new InvalidOperationException(
+                    $"Download client '{clientName}' reported a save path that is not valid on this host; check its remote path mappings.");
+            }
         }
 
         private void LogMissingSourceFiles(

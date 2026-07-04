@@ -210,6 +210,63 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RetryAsync_SupersededJobWithCanonicalReplacement_DoesNotCollide()
+    {
+        var source = Path.Join(Path.GetTempPath(), $"superseded-collision-source-{Guid.NewGuid():N}");
+        var target = Path.Join(Path.GetTempPath(), $"superseded-collision-target-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(source);
+        int rootId;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var root = new RootFolder { Name = "Library", Path = source };
+            db.RootFolders.Add(root);
+            db.Audiobooks.Add(new Audiobook { Title = "Title", BasePath = Path.Join(source, "Title") });
+            await db.SaveChangesAsync();
+            rootId = root.Id;
+        }
+
+        var service = CreateService();
+        var started = await service.StartAsync(
+            rootId,
+            new RootFolderPathChangeCommand(
+                target,
+                RootFolderRelocationMode.Relocate,
+                true,
+                "Library",
+                false,
+                FileSystemCaseSensitivityMode.Auto));
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var superseded = await db.MoveJobs.SingleAsync();
+            var key = superseded.ActiveDeduplicationKey;
+            superseded.Status = MoveJobStatus.Superseded;
+            superseded.ActiveDeduplicationKey = null;
+            db.MoveJobs.Add(new MoveJob
+            {
+                AudiobookId = superseded.AudiobookId,
+                RequestedPath = superseded.RequestedPath,
+                Status = MoveJobStatus.Running,
+                ActiveDeduplicationKey = key
+            });
+            var relocation = await db.RootFolderRelocations.SingleAsync();
+            relocation.Status = RootFolderRelocationStatus.NeedsAttention;
+            await db.SaveChangesAsync();
+        }
+
+        var result = await service.RetryAsync(started.RelocationId!.Value);
+
+        Assert.Equal(RootFolderRelocationStatus.NeedsAttention, result.Status);
+        Assert.Contains("were superseded by a newer move", result.Error);
+        await using var verification = await _factory.CreateDbContextAsync();
+        Assert.Equal(
+            MoveJobStatus.Superseded,
+            (await verification.MoveJobs.SingleAsync(job => job.RelocationId != null)).Status);
+        Assert.Equal(
+            MoveJobStatus.Running,
+            (await verification.MoveJobs.SingleAsync(job => job.RelocationId == null)).Status);
+    }
+
+    [Fact]
     public async Task StartRelocation_BroadcastFailureDoesNotUndoCommittedSaga()
     {
         var source = Path.Join(Path.GetTempPath(), $"broadcast-source-{Guid.NewGuid():N}");

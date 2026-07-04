@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Text.RegularExpressions;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -99,8 +100,13 @@ namespace Listenarr.Infrastructure.Library.Scanning
         internal static List<List<string>> BuildGroupedFilesForFolder(
             IEnumerable<string> files,
             string folderPath,
+            FileSystemPathSemantics semantics,
             IReadOnlyDictionary<string, PathParsedMetadata>? embeddedTagsByFile = null) =>
-            UnmatchedScanProcessor.BuildGroupedFilesForFolder(files, folderPath, embeddedTagsByFile);
+            UnmatchedScanProcessor.BuildGroupedFilesForFolder(
+                files,
+                folderPath,
+                semantics,
+                embeddedTagsByFile);
     }
 
     public partial class UnmatchedScanProcessor : IUnmatchedScanProcessor
@@ -114,19 +120,22 @@ namespace Listenarr.Infrastructure.Library.Scanning
         private readonly ILogger<UnmatchedScanProcessor> _logger;
         private readonly IHubContext<SettingsHub> _hubContext;
         private readonly IFfmpegService _ffmpegService;
+        private readonly IFileSystemSemanticsResolver _semanticsResolver;
 
         public UnmatchedScanProcessor(
             IUnmatchedScanQueueService queue,
             IServiceScopeFactory scopeFactory,
             ILogger<UnmatchedScanProcessor> logger,
             IHubContext<SettingsHub> hubContext,
-            IFfmpegService ffmpegService)
+            IFfmpegService ffmpegService,
+            IFileSystemSemanticsResolver semanticsResolver)
         {
             _queue = queue;
             _scopeFactory = scopeFactory;
             _logger = logger;
             _hubContext = hubContext;
             _ffmpegService = ffmpegService;
+            _semanticsResolver = semanticsResolver;
         }
 
         public async Task ProcessJobAsync(UnmatchedScanJob job, CancellationToken cancellationToken)
@@ -153,6 +162,15 @@ namespace Listenarr.Infrastructure.Library.Scanning
             var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
             var appSettings = await configService.GetApplicationSettingsAsync();
             var concurrency = Math.Clamp(appSettings?.UnmatchedScanConcurrency ?? 2, 1, 8);
+            var semanticsResolution = await _semanticsResolver.ResolveAsync(
+                rootFolderPath,
+                cancellationToken: ct);
+            if (semanticsResolution.State != PathIdentityState.Valid)
+            {
+                throw new InvalidOperationException(
+                    semanticsResolution.Reason ?? "Root filesystem identity is unavailable.");
+            }
+            var semantics = semanticsResolution.Semantics;
 
             // Load all tracked file paths (normalized) from DB.
             // Check BOTH AudiobookFiles (multi-file imports) AND Audiobook.FilePath (single-file imports)
@@ -166,15 +184,16 @@ namespace Listenarr.Infrastructure.Library.Scanning
                 .ToList();
 
             var trackedNormalized = new HashSet<string>(
-                trackedFromFiles.Concat(trackedFromAudiobooks).Select(NormalizePath),
-                StringComparer.OrdinalIgnoreCase);
+                trackedFromFiles.Concat(trackedFromAudiobooks)
+                    .Select(path => NormalizePath(path, semantics.Syntax)),
+                semantics.Comparer);
 
             // Walk the root folder tree
-            var candidates = CollectAudioFiles(rootFolderPath);
+            var candidates = CollectAudioFiles(rootFolderPath, semantics);
 
             // Filter to untracked files
             var unmatched = candidates
-                .Where(f => !trackedNormalized.Contains(NormalizePath(f)))
+                .Where(f => !trackedNormalized.Contains(NormalizePath(f, semantics.Syntax)))
                 .ToList();
 
             // Two-level grouping:
@@ -185,7 +204,9 @@ namespace Listenarr.Infrastructure.Library.Scanning
             //    except for ancillary tracks like "Foreword" or "Introduction", which stay
             //    attached when there is only one primary book group in the folder.
             var folderGroups = unmatched
-                .GroupBy(f => Path.GetFullPath(Path.GetDirectoryName(f) ?? rootFolderPath))
+                .GroupBy(
+                    f => Path.GetFullPath(Path.GetDirectoryName(f) ?? rootFolderPath),
+                    semantics.Comparer)
                 .ToList();
 
             // Resolve ffprobe path once for the whole scan (null = not available)
@@ -202,11 +223,19 @@ namespace Listenarr.Infrastructure.Library.Scanning
                     var folderFiles = folderGroup.ToList();
                     IReadOnlyDictionary<string, PathParsedMetadata>? embeddedTagsByFile = null;
 
-                    var groupedFiles = BuildGroupedFilesForFolder(folderFiles, bookFolder);
+                    var groupedFiles = BuildGroupedFilesForFolder(folderFiles, bookFolder, semantics);
                     if (groupedFiles.Count > 1 && !string.IsNullOrEmpty(ffprobePath))
                     {
-                        embeddedTagsByFile = await ReadEmbeddedTagsForFilesAsync(folderFiles, ffprobePath, token);
-                        groupedFiles = BuildGroupedFilesForFolder(folderFiles, bookFolder, embeddedTagsByFile);
+                        embeddedTagsByFile = await ReadEmbeddedTagsForFilesAsync(
+                            folderFiles,
+                            ffprobePath,
+                            semantics,
+                            token);
+                        groupedFiles = BuildGroupedFilesForFolder(
+                            folderFiles,
+                            bookFolder,
+                            semantics,
+                            embeddedTagsByFile);
                     }
 
                     foreach (var files in groupedFiles)
@@ -215,7 +244,10 @@ namespace Listenarr.Infrastructure.Library.Scanning
                             files.Select(f => (FullPath: f, RelativePath: (string?)Path.GetRelativePath(bookFolder, f))));
                         var orderedFiles = plans.Select(p => p.FullPath).ToList();
                         var representative = orderedFiles.First();
-                        var parsed = PathMetadataParser.Parse(representative, rootFolderPath);
+                        var parsed = PathMetadataParser.Parse(
+                            representative,
+                            rootFolderPath,
+                            semantics);
 
                         PathParsedMetadata? tags = null;
                         if (embeddedTagsByFile != null && embeddedTagsByFile.TryGetValue(representative, out var cachedTags))

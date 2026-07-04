@@ -30,14 +30,16 @@ namespace Listenarr.Infrastructure.Library.Scanning
         private readonly ILogger<ScanJobProcessor> _logger;
         private readonly IHubContext<DownloadHub> _hubContext;
         private readonly IAppMetricsService _metrics;
+        private readonly IFileSystemSemanticsResolver _semanticsResolver;
 
-        public ScanJobProcessor(IScanQueueService queue, IServiceScopeFactory scopeFactory, ILogger<ScanJobProcessor> logger, IHubContext<DownloadHub> hubContext, IAppMetricsService metrics)
+        public ScanJobProcessor(IScanQueueService queue, IServiceScopeFactory scopeFactory, ILogger<ScanJobProcessor> logger, IHubContext<DownloadHub> hubContext, IAppMetricsService metrics, IFileSystemSemanticsResolver semanticsResolver)
         {
             _queue = queue;
             _scopeFactory = scopeFactory;
             _logger = logger;
             _hubContext = hubContext;
             _metrics = metrics;
+            _semanticsResolver = semanticsResolver;
         }
 
         public async Task ProcessJobAsync(ScanJob job, CancellationToken stoppingToken)
@@ -53,7 +55,6 @@ namespace Listenarr.Infrastructure.Library.Scanning
             try
             {
                 _logger.LogInformation("Processing scan job {JobId} for audiobook {AudiobookId}", job.Id, job.AudiobookId);
-                // notify clients that job is now processing
                 try
                 {
                     await _hubContext.Clients.All.SendAsync("ScanJobUpdate", new { jobId = job.Id.ToString(), audiobookId = job.AudiobookId, status = "Processing", startedAt = DateTime.UtcNow });
@@ -62,7 +63,6 @@ namespace Listenarr.Infrastructure.Library.Scanning
                 {
                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                 }
-                // update in-memory job status
                 try { _queue.UpdateJobStatus(job.Id, "Processing"); }
                 catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
                 {
@@ -83,8 +83,6 @@ namespace Listenarr.Infrastructure.Library.Scanning
                 var scanRoot = job.Path;
                 var usedBasePath = false;
 
-                // If audiobook has a BasePath configured, always scan that path for safety
-                // and to avoid scanning the global output root which may be large/unrelated.
                 if (!string.IsNullOrEmpty(audiobook.BasePath))
                 {
                     scanRoot = audiobook.BasePath;
@@ -93,7 +91,6 @@ namespace Listenarr.Infrastructure.Library.Scanning
                 }
                 else
                 {
-                    // No BasePath - allow explicit job path, otherwise fall back to settings OutputPath
                     if (string.IsNullOrEmpty(scanRoot))
                     {
                         try
@@ -208,21 +205,37 @@ namespace Listenarr.Infrastructure.Library.Scanning
                     return;
                 }
 
+                var semanticsResolution = await _semanticsResolver.ResolveAsync(
+                    scanRoot,
+                    cancellationToken: stoppingToken);
+                if (semanticsResolution.State != PathIdentityState.Valid)
+                {
+                    _logger.LogWarning(
+                        "Scan job {JobId} blocked because filesystem identity is unavailable: {Reason}",
+                        job.Id,
+                        semanticsResolution.Reason);
+                    _metrics.Increment("worker.scan.job.skipped");
+                    return;
+                }
+                var semantics = semanticsResolution.Semantics;
+
                 var foundFiles = ScanFileDiscovery.FindMatchingAudioFiles(
                     scanRoot,
                     audiobook,
                     job.Id,
-                    _logger);
+                    _logger,
+                    semantics);
 
-                // Calculate base path for the audiobook files
-                var basePath = ScanPathPlanner.CalculateBasePath(foundFiles);
+                var basePath = ScanPathPlanner.CalculateBasePath(foundFiles, semantics);
                 if (!string.IsNullOrEmpty(basePath))
                 {
-                    var basePathChanged = !FileUtils.AreFilesystemPathsEquivalentForCurrentOs(audiobook.BasePath ?? string.Empty, basePath);
+                    var basePathChanged = !FileSystemPathIdentity.AreEquivalent(
+                        audiobook.BasePath ?? string.Empty,
+                        basePath,
+                        semantics);
                     audiobook.BasePath = basePath;
                     _logger.LogInformation("Set base path for audiobook '{Title}' (ID: {AudiobookId}): {BasePath}", LogRedaction.SanitizeText(audiobook.Title), audiobook.Id, LogRedaction.SanitizeFilePath(basePath));
 
-                    // Persist the recalculated base path before delegating to AudioFileService.
                     // That service resolves the audiobook in a separate scope/db context and
                     // uses BasePath for containment checks, so delayed SaveChanges can cause
                     // legitimate sibling parts to be rejected during multifile scans.
@@ -256,7 +269,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
                     var existingFiles = await fileRepository.GetByAudiobookIdAsync(audiobook.Id);
 
                     // Create set of found files (absolute paths)
-                    var foundSet = new HashSet<string>(foundFiles, FileUtils.FilesystemPathComparerForCurrentOs);
+                    var foundSet = new HashSet<string>(foundFiles, semantics.Comparer);
 
                     // Check which existing files still exist
                     var toRemove = new List<AudiobookFile>();

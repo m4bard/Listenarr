@@ -19,7 +19,8 @@ internal sealed record AudiobookContentMoveRequest(
     string Target,
     Guid JobId,
     bool DeleteEmptySource = true,
-    FileSystemPathSemantics? Semantics = null);
+    FileSystemPathSemantics? Semantics = null,
+    int LeaseGeneration = 0);
 
 internal sealed record AudiobookContentMoveResult(
     string Source,
@@ -49,6 +50,7 @@ internal sealed partial class AudiobookContentMoveService(
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
+        await EnsureLeaseOwnedAsync(request.JobId, request.LeaseGeneration, cancellationToken);
 
         var source = Path.GetFullPath(request.Source);
         var target = Path.GetFullPath(request.Target);
@@ -117,7 +119,7 @@ internal sealed partial class AudiobookContentMoveService(
 
                 if (renamed)
                 {
-                    await UpdateJobPhaseAsync(request.JobId, MoveJobPhase.Finalizing, cancellationToken);
+                    await UpdateJobPhaseAsync(request.JobId, request.LeaseGeneration, MoveJobPhase.Finalizing, cancellationToken);
                     return new AudiobookContentMoveResult(
                         source,
                         target,
@@ -130,12 +132,13 @@ internal sealed partial class AudiobookContentMoveService(
 
             var manifest = await LoadOrCreateManifestAsync(
                 request.JobId,
+                request.LeaseGeneration,
                 source,
                 target,
                 targetInsideSource,
                 semantics,
                 cancellationToken);
-            await UpdateJobPhaseAsync(request.JobId, MoveJobPhase.Planned, cancellationToken);
+            await UpdateJobPhaseAsync(request.JobId, request.LeaseGeneration, MoveJobPhase.Planned, cancellationToken);
 
             // The move operation relocates the contents of the audiobook BasePath, not the
             // BasePath directory itself. Child destinations must copy directly and skip their
@@ -150,7 +153,7 @@ internal sealed partial class AudiobookContentMoveService(
                 WriteRecoveryMarker(copyDestination, request.JobId, CopyStartedStage);
             }
 
-            await UpdateJobPhaseAsync(request.JobId, MoveJobPhase.Copying, cancellationToken);
+            await UpdateJobPhaseAsync(request.JobId, request.LeaseGeneration, MoveJobPhase.Copying, cancellationToken);
             await CopySourceContentsAsync(
                 source,
                 copyDestination,
@@ -160,7 +163,7 @@ internal sealed partial class AudiobookContentMoveService(
                 cancellationToken);
 
             await VerifyPublishedManifestAsync(copyDestination, manifest, semantics, cancellationToken);
-            await UpdateCopyStateAsync(request.JobId, cancellationToken);
+            await UpdateCopyStateAsync(request.JobId, request.LeaseGeneration, cancellationToken);
 
             WriteRecoveryMarker(copyDestination, request.JobId, CopyCompletedStage);
 
@@ -169,24 +172,25 @@ internal sealed partial class AudiobookContentMoveService(
                 Directory.Move(tempName, target);
             }
 
-            await UpdateJobPhaseAsync(request.JobId, MoveJobPhase.Published, cancellationToken);
+            await UpdateJobPhaseAsync(request.JobId, request.LeaseGeneration, MoveJobPhase.Published, cancellationToken);
 
             if (faultInjector != null)
             {
                 await faultInjector.AfterPublishedAsync(request.JobId, cancellationToken);
             }
 
-            await UpdateJobPhaseAsync(request.JobId, MoveJobPhase.CleaningSource, cancellationToken);
+            await UpdateJobPhaseAsync(request.JobId, request.LeaseGeneration, MoveJobPhase.CleaningSource, cancellationToken);
             await DeleteOriginalSourceAsync(
                 source,
                 target,
                 targetInsideSource,
                 request.DeleteEmptySource,
                 request.JobId,
+                request.LeaseGeneration,
                 manifest,
                 semantics,
                 cancellationToken);
-            await UpdateJobPhaseAsync(request.JobId, MoveJobPhase.Finalizing, cancellationToken);
+            await UpdateJobPhaseAsync(request.JobId, request.LeaseGeneration, MoveJobPhase.Finalizing, cancellationToken);
             WriteRecoveryMarker(target, request.JobId, SourceCleanupCompletedStage);
 
             return new AudiobookContentMoveResult(
@@ -257,9 +261,10 @@ internal sealed partial class AudiobookContentMoveService(
         return true;
     }
 
-    public AudiobookContentMoveResult ResumeSourceCleanup(
+    public async Task<AudiobookContentMoveResult> ResumeSourceCleanupAsync(
         AudiobookContentMoveRequest request,
-        AudiobookContentMoveResult result)
+        AudiobookContentMoveResult result,
+        CancellationToken cancellationToken)
     {
         if (result.SourceCleanupCompleted)
         {
@@ -273,15 +278,18 @@ internal sealed partial class AudiobookContentMoveService(
                 "Source cleanup is blocked because no persisted move manifest is available.");
         }
 
-        DeleteOriginalSourceAsync(
+        await EnsureLeaseOwnedAsync(request.JobId, request.LeaseGeneration, cancellationToken);
+
+        await DeleteOriginalSourceAsync(
             result.Source,
             result.Target,
             result.TargetInsideSource,
             request.DeleteEmptySource,
             request.JobId,
+            request.LeaseGeneration,
             manifest,
             request.Semantics ?? FileSystemPathSemantics.CurrentHostDefault,
-            CancellationToken.None).GetAwaiter().GetResult();
+            cancellationToken);
         WriteRecoveryMarker(result.Target, request.JobId, SourceCleanupCompletedStage);
         return result with { SourceCleanupCompleted = true };
     }

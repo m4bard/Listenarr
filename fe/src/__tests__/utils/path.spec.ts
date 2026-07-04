@@ -30,6 +30,7 @@ import {
   hasWindowsTrailingSpaceOrPeriodSegment,
   hasWindowsInvalidCharacter,
   pathsOverlap,
+  pathsEqual,
   pathIsInside,
   hasWindowsReservedDeviceSegment,
   validateLibraryDestinationPath,
@@ -131,6 +132,12 @@ describe('path utils', () => {
     expect(pathsOverlap('/books/title2', '/books/title', 'unix')).toBe(false)
     expect(pathsOverlap('/Books/title', '/books', 'unix')).toBe(false)
     expect(pathIsInside('/Author/Title', '/', 'unix')).toBe(true)
+  })
+
+  it('uses server-provided case sensitivity instead of path shape', () => {
+    expect(pathsEqual('/Books/Title', '/books/title', 'unix', 'Insensitive')).toBe(true)
+    expect(pathsEqual('C:\\Books\\Title', 'c:\\books\\title', 'windows', 'Sensitive')).toBe(false)
+    expect(pathIsInside('/Books/Title', '/books', 'unix', 'Insensitive')).toBe(true)
   })
 
   it('validates library destination paths while allowing platform-valid whitespace', () => {
