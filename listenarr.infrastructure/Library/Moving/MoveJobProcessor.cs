@@ -40,7 +40,7 @@ namespace Listenarr.Infrastructure.Library.Moving
             try
             {
                 logger.LogInformation("Processing move job {JobId} for audiobook {AudiobookId} to {Path}", job.Id, job.AudiobookId, LogRedaction.SanitizeFilePath(job.RequestedPath));
-                await moveQueueService.UpdateJobStatusAsync(job.Id, job.LeaseGeneration, MoveJobStatus.Running, cancellationToken: stoppingToken);
+                await UpdateJobStatusAsync(job, MoveJobStatus.Running, cancellationToken: stoppingToken);
 
                 using var scope = scopeFactory.CreateScope();
                 var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
@@ -49,7 +49,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 var audiobook = await audiobookRepository.GetByIdAsync(job.AudiobookId);
                 if (audiobook == null)
                 {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, job.LeaseGeneration, MoveJobStatus.Failed, "Audiobook not found", stoppingToken);
+                    await UpdateJobStatusAsync(job, MoveJobStatus.Failed, "Audiobook not found", stoppingToken);
                     metrics.Increment("worker.move.job.failed");
                     return;
                 }
@@ -57,7 +57,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 var requested = job.RequestedPath ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(requested))
                 {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, job.LeaseGeneration, MoveJobStatus.Failed, "Target path not provided", stoppingToken);
+                    await UpdateJobStatusAsync(job, MoveJobStatus.Failed, "Target path not provided", stoppingToken);
                     metrics.Increment("worker.move.job.failed");
                     return;
                 }
@@ -68,9 +68,8 @@ namespace Listenarr.Infrastructure.Library.Moving
                     cancellationToken: stoppingToken);
                 if (targetResolution.State != PathIdentityState.Valid)
                 {
-                    await moveQueueService.UpdateJobStatusAsync(
-                        job.Id,
-                        job.LeaseGeneration,
+                    await UpdateJobStatusAsync(
+                        job,
                         MoveJobStatus.NeedsAttention,
                         targetResolution.Reason ?? "Target filesystem identity is unavailable.",
                         stoppingToken);
@@ -119,9 +118,8 @@ namespace Listenarr.Infrastructure.Library.Moving
                         target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
                         targetResolution.Semantics))
                 {
-                    await moveQueueService.UpdateJobStatusAsync(
-                        job.Id,
-                        job.LeaseGeneration,
+                    await UpdateJobStatusAsync(
+                        job,
                         MoveJobStatus.Completed,
                         cancellationToken: stoppingToken);
                     metrics.Increment("worker.move.job.skipped");
@@ -135,7 +133,7 @@ namespace Listenarr.Infrastructure.Library.Moving
 
                 if (recoveredMove == null && (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source)))
                 {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, job.LeaseGeneration, MoveJobStatus.Failed, "Source path invalid or does not exist", stoppingToken);
+                    await UpdateJobStatusAsync(job, MoveJobStatus.Failed, "Source path invalid or does not exist", stoppingToken);
                     metrics.Increment("worker.move.job.failed");
                     return;
                 }
@@ -146,9 +144,8 @@ namespace Listenarr.Infrastructure.Library.Moving
                     cancellationToken: stoppingToken);
                 if (sourceResolution.State != PathIdentityState.Valid)
                 {
-                    await moveQueueService.UpdateJobStatusAsync(
-                        job.Id,
-                        job.LeaseGeneration,
+                    await UpdateJobStatusAsync(
+                        job,
                         MoveJobStatus.NeedsAttention,
                         sourceResolution.Reason ?? "Source filesystem identity is unavailable.",
                         stoppingToken);
@@ -158,7 +155,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 if (IsFilesystemRoot(source, sourceResolution.Semantics)
                     || IsFilesystemRoot(target, targetResolution.Semantics))
                 {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, job.LeaseGeneration, MoveJobStatus.Failed, "Refused to move a filesystem root", stoppingToken);
+                    await UpdateJobStatusAsync(job, MoveJobStatus.Failed, "Refused to move a filesystem root", stoppingToken);
                     metrics.Increment("worker.move.job.failed");
                     logger.LogWarning(
                         "Blocked move job {JobId}: source or target is a filesystem root. Source={Source}, Target={Target}",
@@ -176,7 +173,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         target.TrimEnd(Path.DirectorySeparatorChar),
                         sourceResolution.Semantics))
                 {
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, job.LeaseGeneration, MoveJobStatus.Completed, cancellationToken: stoppingToken);
+                    await UpdateJobStatusAsync(job, MoveJobStatus.Completed, cancellationToken: stoppingToken);
                     metrics.Increment("worker.move.job.skipped");
                     return;
                 }
@@ -320,7 +317,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         logger.LogWarning(historyEx, "Failed to add history entry or send notifications for move job {JobId}", job.Id);
                     }
 
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, job.LeaseGeneration, MoveJobStatus.Completed, cancellationToken: stoppingToken);
+                    await UpdateJobStatusAsync(job, MoveJobStatus.Completed, cancellationToken: stoppingToken);
                     metrics.Increment("worker.move.job.completed");
                     logger.LogInformation("Move job {JobId} completed: {Source} -> {Target}", job.Id, LogRedaction.SanitizeFilePath(source), LogRedaction.SanitizeFilePath(target));
                     // Completed move job — status updated and broadcasted where configured
@@ -331,9 +328,8 @@ namespace Listenarr.Infrastructure.Library.Moving
                 }
                 catch (MoveNeedsAttentionException ex)
                 {
-                    await moveQueueService.UpdateJobStatusAsync(
-                        job.Id,
-                        job.LeaseGeneration,
+                    await UpdateJobStatusAsync(
+                        job,
                         MoveJobStatus.NeedsAttention,
                         ex.Message,
                         stoppingToken);
@@ -395,7 +391,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         logger.LogWarning(historyEx, "Failed to add history entry for failed move job {JobId}", job.Id);
                     }
 
-                    await moveQueueService.UpdateJobStatusAsync(job.Id, job.LeaseGeneration, MoveJobStatus.Failed, ex.Message, stoppingToken);
+                    await UpdateJobStatusAsync(job, MoveJobStatus.Failed, ex.Message, stoppingToken);
                     metrics.Increment("worker.move.job.failed");
                     logger.LogError(ex, "Move job {JobId} failed", job.Id);
                     // Failure during move job — attempt counts updated and history recorded where configured
@@ -417,11 +413,31 @@ namespace Listenarr.Infrastructure.Library.Moving
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 logger.LogError(ex, "Unexpected error processing move job {JobId}", job.Id);
-                await moveQueueService.UpdateJobStatusAsync(job.Id, job.LeaseGeneration, MoveJobStatus.Failed, ex.Message, stoppingToken);
+                await UpdateJobStatusAsync(job, MoveJobStatus.Failed, ex.Message, stoppingToken);
                 metrics.Increment("worker.move.job.failed");
             }
         }
 
+
+        private Task UpdateJobStatusAsync(
+            MoveJob job,
+            MoveJobStatus status,
+            string? error = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(job.LeaseOwner))
+            {
+                throw new MoveLeaseLostException(job.Id, job.LeaseGeneration);
+            }
+
+            return moveQueueService.UpdateJobStatusAsync(
+                job.Id,
+                job.LeaseOwner,
+                job.LeaseGeneration,
+                status,
+                error,
+                cancellationToken);
+        }
 
         private static bool IsFilesystemRoot(string path, FileSystemPathSemantics semantics)
         {

@@ -51,9 +51,15 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
         await Assert.ThrowsAsync<UniqueConstraintViolationException>(
             () => persistence.AddAsync(duplicate));
 
+        var claimedGeneration = await persistence.TryClaimAsync(
+            first.Id,
+            "worker-a",
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow.AddMinutes(2));
         await persistence.UpdateStatusAsync(
             first.Id,
-            0,
+            "worker-a",
+            claimedGeneration.GetValueOrDefault(),
             MoveJobStatus.Completed,
             MoveJobPhase.Finalizing,
             null,
@@ -188,6 +194,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
             now.AddMinutes(3)));
         Assert.False(await persistence.UpdateStatusAsync(
             job.Id,
+            "worker-a",
             staleGeneration.GetValueOrDefault(),
             MoveJobStatus.Completed,
             MoveJobPhase.Finalizing,
@@ -199,6 +206,45 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
         Assert.Equal(MoveJobStatus.Running, currentJob!.Status);
         Assert.Equal("worker-b", currentJob.LeaseOwner);
         Assert.Equal(2, currentJob.LeaseGeneration);
+    }
+
+    [Fact]
+    public async Task TerminalReconciliationState_WithSameGeneration_CannotBeOverwrittenByStaleWorker()
+    {
+        var persistence = new EfMoveQueuePersistence(_factory);
+        var job = CreateJob("v2:move:42:s:superseded");
+        await persistence.AddAsync(job);
+        var now = DateTimeOffset.UtcNow;
+        var generation = await persistence.TryClaimAsync(
+            job.Id,
+            "worker-a",
+            now,
+            now.AddMinutes(2));
+        Assert.Equal(1, generation);
+
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var claimedJob = await db.MoveJobs.SingleAsync(candidate => candidate.Id == job.Id);
+            claimedJob.Status = MoveJobStatus.Superseded;
+            claimedJob.Error = "Superseded by reconciliation.";
+            claimedJob.LeaseOwner = null;
+            claimedJob.LeaseExpiresAt = null;
+            await db.SaveChangesAsync();
+        }
+
+        Assert.False(await persistence.UpdateStatusAsync(
+            job.Id,
+            "worker-a",
+            generation.GetValueOrDefault(),
+            MoveJobStatus.Failed,
+            MoveJobPhase.Finalizing,
+            "stale failure",
+            MoveFailureKind.Unknown,
+            now));
+
+        var currentJob = await persistence.GetByIdAsync(job.Id);
+        Assert.Equal(MoveJobStatus.Superseded, currentJob!.Status);
+        Assert.Equal("Superseded by reconciliation.", currentJob.Error);
     }
 
     private static MoveJob CreateJob(string key) => new()

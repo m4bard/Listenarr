@@ -185,6 +185,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
 
         public async Task UpdateJobStatusAsync(
             Guid id,
+            string leaseOwner,
             int leaseGeneration,
             MoveJobStatus status,
             string? error = null,
@@ -203,7 +204,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
                     ? MoveFailureKind.Unknown
                     : MoveFailureKind.None;
                 var updated = await PersistWithRetryAsync(
-                    () => _persistence.UpdateStatusAsync(id, leaseGeneration, status, phase, error, failureKind, updatedAt, cancellationToken),
+                    () => _persistence.UpdateStatusAsync(id, leaseOwner, leaseGeneration, status, phase, error, failureKind, updatedAt, cancellationToken),
                     cancellationToken);
                 if (!updated)
                 {

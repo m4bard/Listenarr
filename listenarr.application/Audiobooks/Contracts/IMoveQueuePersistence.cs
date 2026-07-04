@@ -37,6 +37,7 @@ public interface IMoveQueuePersistence
 
     Task<bool> UpdateStatusAsync(
         Guid id,
+        string leaseOwner,
         int leaseGeneration,
         MoveJobStatus status,
         MoveJobPhase phase,

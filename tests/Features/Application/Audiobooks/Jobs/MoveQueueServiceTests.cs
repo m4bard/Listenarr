@@ -23,15 +23,17 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
 {
     public class MoveQueueServiceTests
     {
+        private const string LeaseOwner = "test-worker";
         [Fact]
         public async Task UpdateJobStatus_ExhaustedPersistenceRetries_PropagatesWithoutBroadcasting()
         {
-            var job = new MoveJob { Id = Guid.NewGuid(), AudiobookId = 42, LeaseGeneration = 3 };
+            var job = new MoveJob { Id = Guid.NewGuid(), AudiobookId = 42, LeaseOwner = LeaseOwner, LeaseGeneration = 3 };
             var persistence = new Mock<IMoveQueuePersistence>();
             persistence.Setup(store => store.GetByIdAsync(job.Id, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(job);
             persistence.Setup(store => store.UpdateStatusAsync(
                     job.Id,
+                    LeaseOwner,
                     job.LeaseGeneration,
                     MoveJobStatus.Completed,
                     It.IsAny<MoveJobPhase>(),
@@ -51,11 +53,13 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
 
             await Assert.ThrowsAsync<PersistenceException>(() => service.UpdateJobStatusAsync(
                 job.Id,
+                LeaseOwner,
                 job.LeaseGeneration,
                 MoveJobStatus.Completed));
 
             persistence.Verify(store => store.UpdateStatusAsync(
                 job.Id,
+                LeaseOwner,
                 job.LeaseGeneration,
                 MoveJobStatus.Completed,
                 It.IsAny<MoveJobPhase>(),
@@ -72,12 +76,13 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
         [Fact]
         public async Task UpdateJobStatus_PostCommitRelocationFailure_RemainsSuccessfulAndBroadcasts()
         {
-            var job = new MoveJob { Id = Guid.NewGuid(), AudiobookId = 42, LeaseGeneration = 3 };
+            var job = new MoveJob { Id = Guid.NewGuid(), AudiobookId = 42, LeaseOwner = LeaseOwner, LeaseGeneration = 3 };
             var persistence = new Mock<IMoveQueuePersistence>();
             persistence.Setup(store => store.GetByIdAsync(job.Id, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(job);
             persistence.Setup(store => store.UpdateStatusAsync(
                     job.Id,
+                    LeaseOwner,
                     job.LeaseGeneration,
                     MoveJobStatus.Completed,
                     It.IsAny<MoveJobPhase>(),
@@ -108,6 +113,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
 
             await service.UpdateJobStatusAsync(
                 job.Id,
+                LeaseOwner,
                 job.LeaseGeneration,
                 MoveJobStatus.Completed);
 
@@ -140,6 +146,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 });
             persistence.Setup(store => store.UpdateStatusAsync(
                     It.IsAny<Guid>(),
+                    It.IsAny<string>(),
                     It.IsAny<int>(),
                     It.IsAny<MoveJobStatus>(),
                     It.IsAny<MoveJobPhase>(),
@@ -147,7 +154,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                     It.IsAny<MoveFailureKind>(),
                     It.IsAny<DateTimeOffset>(),
                     It.IsAny<CancellationToken>()))
-                .Returns(async (Guid id, int _, MoveJobStatus status, MoveJobPhase phase, string? error, MoveFailureKind failureKind, DateTimeOffset updatedAt, CancellationToken ct) =>
+                .Returns(async (Guid id, string _, int _, MoveJobStatus status, MoveJobPhase phase, string? error, MoveFailureKind failureKind, DateTimeOffset updatedAt, CancellationToken ct) =>
                 {
                     var persisted = await db.MoveJobs.FindAsync([id], ct);
                     if (persisted == null) return false;
@@ -175,7 +182,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
             Assert.Equal(MoveJobStatus.Queued, job1!.Status);
 
             // Update status to Processing
-            await svc.UpdateJobStatusAsync(jobId, 0, MoveJobStatus.Running);
+            await svc.UpdateJobStatusAsync(jobId, LeaseOwner, 0, MoveJobStatus.Running);
             var job2 = await svc.GetJobAsync(jobId);
             Assert.NotNull(job2);
             Assert.Equal(MoveJobStatus.Running, job2!.Status);
@@ -330,7 +337,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 TimeProvider.System);
             var jobId = await service.EnqueueMoveAsync(9, "/library/Title", "/downloads/Title");
             Assert.True(service.Reader.TryRead(out _));
-            await service.UpdateJobStatusAsync(jobId, 0, MoveJobStatus.Failed, "copy interrupted");
+            await service.UpdateJobStatusAsync(jobId, LeaseOwner, 0, MoveJobStatus.Failed, "copy interrupted");
 
             var requeuedJobId = await service.RequeueMoveAsync(jobId);
 
@@ -377,7 +384,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 TimeProvider.System);
 
             var firstId = await service.EnqueueMoveAsync(9, "/library/book");
-            await service.UpdateJobStatusAsync(firstId, 0, MoveJobStatus.Completed);
+            await service.UpdateJobStatusAsync(firstId, LeaseOwner, 0, MoveJobStatus.Completed);
             var secondId = await service.EnqueueMoveAsync(9, "/library/book/");
 
             Assert.NotEqual(firstId, secondId);
@@ -402,6 +409,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 });
             persistence.Setup(store => store.UpdateStatusAsync(
                     It.IsAny<Guid>(),
+                    It.IsAny<string>(),
                     It.IsAny<int>(),
                     It.IsAny<MoveJobStatus>(),
                     It.IsAny<MoveJobPhase>(),
@@ -409,7 +417,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                     It.IsAny<MoveFailureKind>(),
                     It.IsAny<DateTimeOffset>(),
                     It.IsAny<CancellationToken>()))
-                .Returns((Guid id, int _, MoveJobStatus status, MoveJobPhase phase, string? error, MoveFailureKind failureKind, DateTimeOffset updatedAt, CancellationToken _) =>
+                .Returns((Guid id, string _, int _, MoveJobStatus status, MoveJobPhase phase, string? error, MoveFailureKind failureKind, DateTimeOffset updatedAt, CancellationToken _) =>
                 {
                     var job = jobs.Single(candidate => candidate.Id == id);
                     job.Status = status;

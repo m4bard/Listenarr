@@ -35,6 +35,7 @@ public class ManualImportController : ControllerBase
     private readonly IRootFolderService _rootFolderService;
     private readonly IFileMover _fileMover;
     private readonly IFileSystem _fileSystem;
+    private readonly IFileSystemSemanticsResolver _semanticsResolver;
     private readonly ManualImportPathPlanner _pathPlanner;
     private readonly ManualImportCompanionImporter _companionImporter;
 
@@ -48,6 +49,7 @@ public class ManualImportController : ControllerBase
         IRootFolderService rootFolderService,
         IFileMover fileMover,
         IFileSystem fileSystem,
+        IFileSystemSemanticsResolver semanticsResolver,
         ManualImportPathPlanner? pathPlanner = null,
         ManualImportCompanionImporter? companionImporter = null)
     {
@@ -60,6 +62,7 @@ public class ManualImportController : ControllerBase
         _rootFolderService = rootFolderService;
         _fileMover = fileMover;
         _fileSystem = fileSystem;
+        _semanticsResolver = semanticsResolver;
         _pathPlanner = pathPlanner ?? new ManualImportPathPlanner(fileNamingService);
         _companionImporter = companionImporter ?? new ManualImportCompanionImporter(
             metadataService,
@@ -149,22 +152,26 @@ public class ManualImportController : ControllerBase
         }
 
         var results = new List<ManualImportResultDto>();
-        // Track destination paths using host filesystem identity: Linux/Docker paths are
-        // case-sensitive while Windows paths are not.
-        var usedDestinations = new HashSet<string>(FileUtils.FilesystemPathComparerForCurrentOs);
+        var destinationTracker = new ManualImportDestinationTracker(_fileSystem, _semanticsResolver);
 
         try
         {
             // Fetch root folders once for the whole batch (used for path containment validation)
             var rootFolders = await _rootFolderService.GetAllAsync();
             var appSettings = await _configService.GetApplicationSettingsAsync();
-            var orderedItems = ManualImportPathPlanner.BuildOrderedItems(request.Items);
+            var sourceSemantics = await ResolvePathSemanticsAsync(
+                sourceDirectory,
+                "Source filesystem identity is unavailable.");
+            var orderedItems = ManualImportPathPlanner.BuildOrderedItems(
+                request.Items,
+                sourceSemantics.Comparer);
             var selectedAudioProfiles = request.IncludeCompanionFiles
                 ? await _companionImporter.BuildAudioMatchProfilesAsync(
                     orderedItems
                         .Where(item => !string.IsNullOrWhiteSpace(item.FullPath))
                         .Select(item => item.FullPath!)
-                        .Where(FileUtils.IsAudioFile))
+                        .Where(FileUtils.IsAudioFile),
+                    sourceSemantics.Comparer)
                 : Array.Empty<FileUtils.AudioMatchProfile>();
 
             _logger.LogDebug("Manual import batch: {ItemCount} items", orderedItems.Count);
@@ -173,7 +180,7 @@ public class ManualImportController : ControllerBase
             {
                 var fileCount = orderedItems.Count(f => f.MatchedAudiobookId == item.MatchedAudiobookId);
                 _logger.LogDebug("Importing item {Index}: {Path} for audiobook {AudiobookId}, fileCount: {FileCount}", orderedItems.IndexOf(item), item.FullPath, item.MatchedAudiobookId, fileCount);
-                var result = await ImportFileAsync(item, request.Action, sourceDirectory, usedDestinations, rootFolders, appSettings, fileCount > 1);
+                var result = await ImportFileAsync(item, request.Action, sourceDirectory, destinationTracker, rootFolders, appSettings, fileCount > 1);
                 _logger.LogDebug("Import result {Index}: Success={Success}, Destination={Destination}, Error={Error}", orderedItems.IndexOf(item), result.Success, result.DestinationPath, result.Error);
                 results.Add(result);
             }
@@ -186,7 +193,8 @@ public class ManualImportController : ControllerBase
                     results,
                     sourceDirectory,
                     selectedAudioProfiles,
-                    usedDestinations,
+                    destinationTracker,
+                    sourceSemantics.Comparer,
                     appSettings.ImportBlacklistExtensions);
                 _logger.LogInformation("Manual import companion-file pass completed with {Count} imported companion file(s)", companionImportCount);
             }
@@ -199,7 +207,7 @@ public class ManualImportController : ControllerBase
             await EnqueueFocusedScansAsync(results);
 
             var successCount = results.Count(r => r.Success);
-            _logger.LogInformation("Manual import batch completed: {SuccessCount}/{TotalCount} succeeded, usedDestinations: {DestinationCount}", successCount, results.Count, usedDestinations.Count);
+            _logger.LogInformation("Manual import batch completed: {SuccessCount}/{TotalCount} succeeded, usedDestinations: {DestinationCount}", successCount, results.Count, destinationTracker.Count);
             return Ok(new
             {
                 importedCount = successCount,
@@ -220,7 +228,7 @@ public class ManualImportController : ControllerBase
     /// <param name="item">File to import into the library</param>
     /// <param name="action">Action to perform on the file</param>
     /// <param name="sourceDirectory">Directory from which we are importing the file</param>
-    /// <param name="usedDestinations">Already used file names to avoid collisions</param>
+    /// <param name="destinationTracker">Tracks already reserved destinations using each target volume's path identity rules</param>
     /// <param name="rootFolders">Previously fetched list of configured root folders (to save DB hits)</param>
     /// <param name="settings">Application settings (to save DB hits)</param>
     /// <param name="hasMultipleFile">Indicates if this file is part of multiple files for a same audiobook</param>
@@ -230,7 +238,7 @@ public class ManualImportController : ControllerBase
         ManualImportItemDto item,
         FileAction action,
         string sourceDirectory,
-        HashSet<string> usedDestinations,
+        ManualImportDestinationTracker destinationTracker,
         List<RootFolder> rootFolders,
         ApplicationSettings settings,
         bool hasMultipleFile = false)
@@ -281,14 +289,20 @@ public class ManualImportController : ControllerBase
                 return ManualImportResultDto.FailureResult("Failed to extract metadata from file", item.FullPath);
             }
 
-            // Generate destination path using appropriate naming pattern
-            var destinationPath = await _pathPlanner.GeneratePathAsync(audiobook, metadata, item, rootFolders, settings, hasMultipleFile);
+            var destinationSemantics = await ResolveDestinationSemanticsAsync(audiobook.BasePath);
+
+            // Generate destination path using the selected target root's identity semantics.
+            var destinationPath = await _pathPlanner.GeneratePathAsync(
+                audiobook,
+                metadata,
+                item,
+                rootFolders,
+                settings,
+                destinationSemantics,
+                hasMultipleFile);
+            destinationPath = await destinationTracker.ReserveUniqueAsync(destinationPath);
 
             var success = await _fileMover.PerformActionOn(action, item.FullPath, destinationPath);
-            if (success)
-            {
-                usedDestinations.Add(destinationPath);
-            }
 
             // Write ASIN to embedded file tags (non-critical — failure is logged, not thrown)
             if (!string.IsNullOrWhiteSpace(audiobook.Asin))
@@ -364,6 +378,31 @@ public class ManualImportController : ControllerBase
                 _logger.LogWarning(ex, "Failed to enqueue scan for audiobook {AudiobookId} after manual import", group.Key);
             }
         }
+    }
+
+    private Task<FileSystemPathSemantics> ResolveDestinationSemanticsAsync(string? basePath)
+    {
+        if (string.IsNullOrWhiteSpace(basePath))
+        {
+            throw new InvalidOperationException("Destination base path is unavailable.");
+        }
+
+        return ResolvePathSemanticsAsync(
+            basePath,
+            "Destination filesystem identity is unavailable.");
+    }
+
+    private async Task<FileSystemPathSemantics> ResolvePathSemanticsAsync(
+        string path,
+        string defaultReason)
+    {
+        var resolution = await _semanticsResolver.ResolveAsync(path);
+        if (resolution.State != PathIdentityState.Valid)
+        {
+            throw new InvalidOperationException(resolution.Reason ?? defaultReason);
+        }
+
+        return resolution.Semantics;
     }
 
     private async Task PersistAudiobookBasePathAsync(Audiobook audiobook, string? basePath)

@@ -15,7 +15,7 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Rules
     public class MultiFileImportPlannerTests
     {
         [Fact]
-        public void BuildPlans_DedupesCaseOnlyPathsUsingHostFilesystemRules()
+        public void BuildPlans_DedupesCaseOnlyPathsUsingProvidedFilesystemRules()
         {
             var root = Path.Join(Path.GetTempPath(), "listenarr-planner-" + Guid.NewGuid().ToString("N"));
             var upperPath = Path.Join(root, "Chapter01.m4b");
@@ -24,13 +24,13 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Rules
             var plans = MultiFileImportPlanner.BuildPlans([
                 (upperPath, (string?)null),
                 (lowerPath, (string?)null)
-            ]);
+            ], StringComparer.OrdinalIgnoreCase);
 
-            Assert.Equal(OperatingSystem.IsWindows() ? 1 : 2, plans.Count);
+            Assert.Single(plans);
         }
 
         [Fact]
-        public void BuildStableNamingNumbers_UsesHostFilesystemIdentityForPathKeys()
+        public void BuildStableNamingNumbers_UsesProvidedFilesystemIdentityForPathKeys()
         {
             var root = Path.Join(Path.GetTempPath(), "listenarr-planner-" + Guid.NewGuid().ToString("N"));
             var upperPath = Path.Join(root, "Chapter01.m4b");
@@ -38,11 +38,14 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Rules
             var plans = MultiFileImportPlanner.BuildPlans([
                 (upperPath, (string?)null),
                 (lowerPath, (string?)null)
-            ]);
+            ], StringComparer.OrdinalIgnoreCase);
 
-            var numbers = MultiFileImportPlanner.BuildStableNamingNumbers(plans, plan => plan.SequenceNumber);
+            var numbers = MultiFileImportPlanner.BuildStableNamingNumbers(
+                plans,
+                plan => plan.SequenceNumber,
+                StringComparer.OrdinalIgnoreCase);
 
-            Assert.Equal(OperatingSystem.IsWindows() ? 1 : 2, numbers.Count);
+            Assert.Single(numbers);
         }
     }
 }

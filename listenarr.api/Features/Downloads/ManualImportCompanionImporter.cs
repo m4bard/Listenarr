@@ -32,11 +32,13 @@ public sealed class ManualImportCompanionImporter
         _logger = logger;
     }
 
-    public async Task<IReadOnlyCollection<FileUtils.AudioMatchProfile>> BuildAudioMatchProfilesAsync(IEnumerable<string> filePaths)
+    public async Task<IReadOnlyCollection<FileUtils.AudioMatchProfile>> BuildAudioMatchProfilesAsync(
+        IEnumerable<string> filePaths,
+        StringComparer sourcePathComparer)
     {
         return (await Task.WhenAll(filePaths
                 .Where(path => !string.IsNullOrWhiteSpace(path))
-                .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
+                .Distinct(sourcePathComparer)
                 .Select(BuildAudioMatchProfileAsync)))
             .Where(profile => profile != null)
             .Cast<FileUtils.AudioMatchProfile>()
@@ -49,7 +51,8 @@ public sealed class ManualImportCompanionImporter
         IReadOnlyCollection<ManualImportResultDto> results,
         string sourceRootPath,
         IReadOnlyCollection<FileUtils.AudioMatchProfile> selectedAudioProfiles,
-        HashSet<string> unavailableFilenames,
+        ManualImportDestinationTracker destinationTracker,
+        StringComparer sourcePathComparer,
         IEnumerable<string> importBlacklist)
     {
         var audiobookIds = orderedItems
@@ -78,12 +81,12 @@ public sealed class ManualImportCompanionImporter
             orderedItems
                 .Where(item => !string.IsNullOrWhiteSpace(item.FullPath))
                 .Select(item => Path.GetFullPath(item.FullPath!)),
-            FileUtils.FilesystemPathComparerForCurrentOs);
+            sourcePathComparer);
 
         var selectedDirectories = selectedSourceFiles
             .Select(Path.GetDirectoryName)
             .Where(d => !string.IsNullOrWhiteSpace(d))
-            .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
+            .Distinct(sourcePathComparer)
             .ToList();
 
         var companionFiles = selectedDirectories
@@ -92,7 +95,7 @@ public sealed class ManualImportCompanionImporter
             .Where(file => !FileUtils.IsBlacklistedFile(file, importBlacklist))
             .Select(Path.GetFullPath)
             .Where(file => !selectedSourceFiles.Contains(file))
-            .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
+            .Distinct(sourcePathComparer)
             .ToList();
 
         var importedCount = 0;
@@ -119,14 +122,13 @@ public sealed class ManualImportCompanionImporter
                 }
 
                 var destinationPath = ManualImportPathPlanner.CombineWithOptionalBase(destinationRoot, relativePath);
+                destinationPath = await destinationTracker.ReserveUniqueAsync(destinationPath);
 
                 var success = await _fileMover.PerformActionOn(action, companionFile, destinationPath);
                 if (success)
                 {
-                    unavailableFilenames.Add(destinationPath);
+                    importedCount++;
                 }
-
-                importedCount++;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

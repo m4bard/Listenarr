@@ -28,6 +28,7 @@ namespace Listenarr.Application.Downloads.Import
         IArchiveExtractor archiveExtractor,
         IConfigurationService configurationService,
         ImportDestinationPlanner destinationPlanner,
+        IFileSystemSemanticsResolver semanticsResolver,
         ArchiveImportExtractor archiveImportExtractor,
         ILogger<DownloadImportService> logger) : IDownloadImportService
     {
@@ -71,20 +72,25 @@ namespace Listenarr.Application.Downloads.Import
 
                 var results = new List<ImportResult>();
                 var folderPattern = settings.FolderNamingPattern;
-                var sourceFiles = files
-                    .Where(file => !FileUtils.IsBlacklistedFile(file, settings.ImportBlacklistExtensions))
-                    .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
-                    .ToList();
+                var candidateFiles = files.Where(file => !FileUtils.IsBlacklistedFile(file, settings.ImportBlacklistExtensions)).ToList();
+                var sourceRootPath = FileUtils.GetCommonDirectory(candidateFiles);
+                var sourcePathComparer = string.IsNullOrWhiteSpace(sourceRootPath)
+                    ? StringComparer.Ordinal
+                    : (await ResolvePathSemanticsAsync(sourceRootPath, "Source filesystem identity is unavailable.", ct)).Comparer;
+                var sourceFiles = candidateFiles.Distinct(sourcePathComparer).ToList();
+                sourceRootPath = FileUtils.GetCommonDirectory(sourceFiles);
                 var plannedAudioFiles = MultiFileImportPlanner.BuildPlans(
                     sourceFiles
                         .Where(FileUtils.IsAudioFile)
-                        .Select(f => (f, (string?)null)));
-                var planByPath = plannedAudioFiles.ToDictionary(p => p.FullPath, FileUtils.FilesystemPathComparerForCurrentOs);
-                var diskNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plannedAudioFiles, p => p.DiskNumberHint);
-                var chapterNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plannedAudioFiles, p => p.ChapterNumberHint);
+                        .Select(f => (f, (string?)null)),
+                    sourcePathComparer);
+                var planByPath = plannedAudioFiles.ToDictionary(p => p.FullPath, sourcePathComparer);
+                var diskNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plannedAudioFiles, p => p.DiskNumberHint, sourcePathComparer);
+                var chapterNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plannedAudioFiles, p => p.ChapterNumberHint, sourcePathComparer);
                 var isMultiFileBatch = plannedAudioFiles.Count > 1;
-                var sourceRootPath = FileUtils.GetCommonDirectory(sourceFiles);
-                var usedDestinations = new HashSet<string>(FileUtils.FilesystemPathComparerForCurrentOs);
+                var destinationSemantics = await ResolveDestinationSemanticsAsync(audiobook.BasePath, ct);
+                // Batch collision tracking must match the destination volume, not the host OS.
+                var usedDestinations = new HashSet<string>(destinationSemantics.Comparer);
 
                 // Order audio files before companion files
                 var orderedFiles = plannedAudioFiles.Select(p => p.FullPath)
@@ -146,7 +152,7 @@ namespace Listenarr.Application.Downloads.Import
                                     ? Path.GetRelativePath(sourceRootPath, file)
                                     : Path.GetFileName(file);
 
-                                if (!destinationPlanner.TryResolve(audiobook.BasePath, relativePath, out var destination))
+                                if (!destinationPlanner.TryResolve(audiobook.BasePath, relativePath, destinationSemantics, out var destination))
                                 {
                                     results.Add(ImportResult.ImportFailure(completedFileAction, file, audiobook.BasePath));
                                     logger.LogWarning(
@@ -158,7 +164,12 @@ namespace Listenarr.Application.Downloads.Import
                                     continue;
                                 }
 
-                                destination = await destinationPlanner.ResolveIdempotentOrUniqueAsync(file, destination, usedDestinations);
+                                destination = await destinationPlanner.ResolveIdempotentOrUniqueAsync(
+                                    file,
+                                    destination,
+                                    usedDestinations,
+                                    destinationSemantics,
+                                    ct);
 
                                 if (!await fileMover.PerformActionOn(completedFileAction, file, destination))
                                 {
@@ -240,7 +251,7 @@ namespace Listenarr.Application.Downloads.Import
                             var folderRelative = fileNamingService.ApplyNamingPattern(folderPattern, variablesForFile, treatAsFilename: false);
                             if (string.IsNullOrEmpty(audiobook.BasePath) && !string.IsNullOrWhiteSpace(folderRelative))
                             {
-                                if (!destinationPlanner.TryResolve(destDirForFile, folderRelative, out destDirForFile))
+                                if (!destinationPlanner.TryResolve(destDirForFile, folderRelative, destinationSemantics, out destDirForFile))
                                 {
                                     results.Add(ImportResult.ImportFailure(completedFileAction, file, audiobook.BasePath));
                                     logger.LogWarning(
@@ -288,7 +299,7 @@ namespace Listenarr.Application.Downloads.Import
                                 }
                             }
 
-                            if (!destinationPlanner.TryResolve(destDirForFile, filename, out var destination))
+                            if (!destinationPlanner.TryResolve(destDirForFile, filename, destinationSemantics, out var destination))
                             {
                                 results.Add(ImportResult.ImportFailure(completedFileAction, file, destDirForFile));
                                 logger.LogWarning(
@@ -300,7 +311,12 @@ namespace Listenarr.Application.Downloads.Import
                                 continue;
                             }
 
-                            destination = await destinationPlanner.ResolveIdempotentOrUniqueAsync(file, destination, usedDestinations);
+                            destination = await destinationPlanner.ResolveIdempotentOrUniqueAsync(
+                                file,
+                                destination,
+                                usedDestinations,
+                                destinationSemantics,
+                                ct);
                             var destinationAlreadyMatchedSource =
                                 await destinationPlanner.IsExistingEquivalentAsync(file, destination, ct);
 
@@ -343,6 +359,22 @@ namespace Listenarr.Application.Downloads.Import
             {
                 archiveImportExtractor.DisposeTemporaryDirectories();
             }
+        }
+
+        private Task<FileSystemPathSemantics> ResolveDestinationSemanticsAsync(
+            string basePath,
+            CancellationToken cancellationToken) =>
+            ResolvePathSemanticsAsync(basePath, "Destination filesystem identity is unavailable.", cancellationToken);
+
+        private async Task<FileSystemPathSemantics> ResolvePathSemanticsAsync(
+            string path,
+            string defaultReason,
+            CancellationToken cancellationToken)
+        {
+            var resolution = await semanticsResolver.ResolveAsync(path, cancellationToken: cancellationToken);
+            return resolution.State == PathIdentityState.Valid
+                ? resolution.Semantics
+                : throw new InvalidOperationException(resolution.Reason ?? defaultReason);
         }
 
         private static AudioMetadata BuildNamingMetadata(Audiobook? audiobook, AudioMetadata? extractedMetadata, string fallbackTitle)

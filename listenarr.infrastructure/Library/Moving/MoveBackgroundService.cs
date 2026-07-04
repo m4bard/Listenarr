@@ -52,20 +52,28 @@ public sealed class MoveBackgroundService(
                     }
 
                     job.LeaseGeneration = leaseGeneration.Value;
+                    job.LeaseOwner = leaseOwner;
 
                     try
                     {
                         using var processingCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
                         using var heartbeatCancellation = new CancellationTokenSource();
+                        var leaseLost = new TaskCompletionSource<MoveLeaseLostException>(
+                            TaskCreationOptions.RunContinuationsAsynchronously);
                         var heartbeatTask = RunHeartbeatAsync(
                             job.Id,
                             leaseOwner,
                             leaseGeneration.Value,
                             processingCancellation,
+                            leaseLost,
                             heartbeatCancellation.Token);
                         try
                         {
                             await processor.ProcessJobAsync(job, processingCancellation.Token);
+                        }
+                        catch (OperationCanceledException) when (leaseLost.Task.IsCompletedSuccessfully)
+                        {
+                            throw leaseLost.Task.Result;
                         }
                         finally
                         {
@@ -97,6 +105,7 @@ public sealed class MoveBackgroundService(
                         logger.LogError(exception, "Unexpected error processing move job {JobId}", job.Id);
                         await moveQueueService.UpdateJobStatusAsync(
                             job.Id,
+                            leaseOwner,
                             leaseGeneration.Value,
                             MoveJobStatus.Failed,
                             exception.Message,
@@ -127,6 +136,7 @@ public sealed class MoveBackgroundService(
         string leaseOwner,
         int leaseGeneration,
         CancellationTokenSource processingCancellation,
+        TaskCompletionSource<MoveLeaseLostException> leaseLost,
         CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(
@@ -146,8 +156,10 @@ public sealed class MoveBackgroundService(
                         "Move job {JobId} lost lease generation {LeaseGeneration}; canceling processing",
                         jobId,
                         leaseGeneration);
+                    var exception = new MoveLeaseLostException(jobId, leaseGeneration);
+                    leaseLost.TrySetResult(exception);
                     await processingCancellation.CancelAsync();
-                    return;
+                    throw exception;
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

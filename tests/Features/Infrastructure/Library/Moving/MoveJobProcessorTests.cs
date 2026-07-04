@@ -6,6 +6,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
     [Trait("Category", "BackgroundWorkers")]
     public class MoveJobProcessorTests : BaseTests
     {
+        private const string LeaseOwner = "test-worker";
         [Fact]
         public async Task ProcessJobAsync_HappyPath_MovesFilesAndCompletesJob()
         {
@@ -48,6 +49,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var queue = new Mock<IMoveQueueService>();
             queue.Setup(service => service.UpdateJobStatusAsync(
                     job.Id,
+                    LeaseOwner,
                     job.LeaseGeneration,
                     MoveJobStatus.Completed,
                     null,
@@ -57,6 +59,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     new InvalidOperationException("Database unavailable.")));
             queue.Setup(service => service.UpdateJobStatusAsync(
                     job.Id,
+                    LeaseOwner,
                     job.LeaseGeneration,
                     It.Is<MoveJobStatus>(status => status != MoveJobStatus.Completed),
                     It.IsAny<string?>(),
@@ -72,13 +75,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var metrics = _provider.GetRequiredService<Mock<IAppMetricsService>>();
             Assert.Equal(
-                MoveJobStatus.Queued,
+                MoveJobStatus.Running,
                 (await durableQueue.GetJobAsync(job.Id))?.Status);
             metrics.Verify(
                 service => service.Increment("worker.move.job.completed", It.IsAny<double>()),
                 Times.Never);
             queue.Verify(service => service.UpdateJobStatusAsync(
                 job.Id,
+                LeaseOwner,
                 job.LeaseGeneration,
                 MoveJobStatus.Failed,
                 It.IsAny<string?>(),
@@ -237,6 +241,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Assert.NotNull(requeuedJobId);
             var requeuedJob = await queue.GetJobAsync(requeuedJobId!.Value);
             Assert.NotNull(requeuedJob);
+            await PrepareJobForProcessingAsync(queue, requeuedJob!);
             await processor.ProcessJobAsync(requeuedJob!, CancellationToken.None);
 
             var completedRequeue = await queue.GetJobAsync(requeuedJob.Id);
@@ -283,7 +288,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var updatedJob = await queue.GetJobAsync(job.Id);
             Assert.NotNull(updatedJob);
-            Assert.Equal(MoveJobStatus.Queued, updatedJob!.Status);
+            Assert.Equal(MoveJobStatus.Running, updatedJob!.Status);
         }
 
         [Fact]
@@ -296,7 +301,12 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var processor = _provider.GetRequiredService<IMoveJobProcessor>();
             await processor.ProcessJobAsync(job, CancellationToken.None);
-            await processor.ProcessJobAsync(job, CancellationToken.None);
+            var replayedJobId = await queue.RequeueMoveAsync(job.Id);
+            Assert.NotNull(replayedJobId);
+            var replayedJob = await queue.GetJobAsync(replayedJobId.Value);
+            Assert.NotNull(replayedJob);
+            await PrepareJobForProcessingAsync(queue, replayedJob!);
+            await processor.ProcessJobAsync(replayedJob!, CancellationToken.None);
 
             var updatedJob = await queue.GetJobAsync(job.Id);
             Assert.NotNull(updatedJob);
@@ -390,6 +400,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Assert.Equal(MoveJobStatus.Failed, failedJob!.Status);
         }
 
+        private static async Task PrepareJobForProcessingAsync(IMoveQueueService queue, MoveJob job)
+        {
+            var leaseGeneration = await queue.TryClaimJobAsync(job.Id, LeaseOwner);
+            Assert.NotNull(leaseGeneration);
+            job.LeaseOwner = LeaseOwner;
+            job.LeaseGeneration = leaseGeneration.Value;
+        }
+
         private async Task<(IMoveQueueService Queue, MoveJob Job)> CreateQueuedMoveJobAsync(
             Audiobook audiobook,
             string requestedPath,
@@ -404,6 +422,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 deleteEmptySource);
             var job = await queue.GetJobAsync(jobId);
             Assert.NotNull(job);
+            await PrepareJobForProcessingAsync(queue, job!);
             return (queue, job!);
         }
     }

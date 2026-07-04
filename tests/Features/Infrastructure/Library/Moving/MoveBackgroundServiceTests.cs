@@ -41,6 +41,7 @@ public sealed class MoveBackgroundServiceTests
 
         queue.Verify(service => service.UpdateJobStatusAsync(
             job.Id,
+            It.IsAny<string>(),
             It.IsAny<int>(),
             MoveJobStatus.Failed,
             It.IsAny<string?>(),
@@ -100,5 +101,12 @@ public sealed class MoveBackgroundServiceTests
             It.IsAny<string>(),
             1,
             It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+        queue.Verify(service => service.UpdateJobStatusAsync(
+            job.Id,
+            It.IsAny<string>(),
+            It.IsAny<int>(),
+            MoveJobStatus.Failed,
+            It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 }

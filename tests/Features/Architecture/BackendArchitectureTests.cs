@@ -434,6 +434,38 @@ public sealed class BackendArchitectureTests
     }
 
     [Fact]
+    public void ImportDestinationBoundaries_RequireExplicitFilesystemSemantics()
+    {
+        var files = new[]
+        {
+            "listenarr.application/Downloads/Import/DownloadImportService.cs",
+            "listenarr.application/Downloads/Import/ImportDestinationPlanner.cs",
+            "listenarr.api/Features/Downloads/ManualImportController.cs",
+            "listenarr.api/Features/Downloads/ManualImportCompanionImporter.cs",
+            "listenarr.api/Features/Downloads/ManualImportDestinationTracker.cs",
+            "listenarr.api/Features/Downloads/ManualImportPathPlanner.cs",
+            "listenarr.domain/Audiobooks/Rules/MultiFileImportPlanner.cs"
+        };
+        var forbidden = new[]
+        {
+            "FilesystemPathComparerForCurrentOs",
+            "AreFilesystemPathsEquivalentForCurrentOs",
+            "FileUtils.IsPathSameOrInside",
+            "FileSystemPathSemantics.CurrentHostDefault",
+            ".Replace('\\\\', '/')"
+        };
+
+        var violations = files
+            .SelectMany(file => forbidden
+                .Where(token => File.ReadAllText(Path.Join(RepositoryRoot, file))
+                    .Contains(token, StringComparison.Ordinal))
+                .Select(token => $"{file}: {token}"))
+            .ToList();
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
     public void ScannerAndMetadataBoundaries_RequireExplicitFilesystemSemantics()
     {
         var files = new[]

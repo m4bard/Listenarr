@@ -119,7 +119,8 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 scanMock.Object,
                 rootFolderMock.Object,
                 new FileMover(Mock.Of<Microsoft.Extensions.Logging.ILogger<FileMover>>()),
-                new LocalFileSystem()
+                new LocalFileSystem(),
+                new FileSystemSemanticsResolver()
             );
         }
 

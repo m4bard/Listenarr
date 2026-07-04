@@ -211,6 +211,7 @@ public sealed class EfMoveQueuePersistence(
 
     public async Task<bool> UpdateStatusAsync(
         Guid id,
+        string leaseOwner,
         int leaseGeneration,
         MoveJobStatus status,
         MoveJobPhase phase,
@@ -225,7 +226,10 @@ public sealed class EfMoveQueuePersistence(
             if (!db.Database.IsRelational())
             {
                 var trackedJob = await db.MoveJobs.SingleOrDefaultAsync(
-                    job => job.Id == id && job.LeaseGeneration == leaseGeneration,
+                    job => job.Id == id
+                        && job.Status == MoveJobStatus.Running
+                        && job.LeaseOwner == leaseOwner
+                        && job.LeaseGeneration == leaseGeneration,
                     cancellationToken);
                 if (trackedJob == null) return false;
                 trackedJob.Status = status;
@@ -245,7 +249,10 @@ public sealed class EfMoveQueuePersistence(
 
             var active = status.IsActive();
             var affected = await db.MoveJobs
-                .Where(job => job.Id == id && job.LeaseGeneration == leaseGeneration)
+                .Where(job => job.Id == id
+                    && job.Status == MoveJobStatus.Running
+                    && job.LeaseOwner == leaseOwner
+                    && job.LeaseGeneration == leaseGeneration)
                 .ExecuteUpdateAsync(
                     updates => updates
                         .SetProperty(job => job.Status, status)

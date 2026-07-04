@@ -30,6 +30,7 @@ namespace Listenarr.Api.Features.Library
         private readonly LibraryScanPathResolver _scanPathResolver;
         private readonly LibraryScanQueueWorkflow _scanQueueWorkflow;
         private readonly IFileSystem _fileSystem;
+        private readonly IFileSystemSemanticsResolver _semanticsResolver;
         private readonly ILogger<LibraryManualScanWorkflow> _logger;
 
         public LibraryManualScanWorkflow(
@@ -38,6 +39,7 @@ namespace Listenarr.Api.Features.Library
             LibraryScanPathResolver scanPathResolver,
             LibraryScanQueueWorkflow scanQueueWorkflow,
             IFileSystem fileSystem,
+            IFileSystemSemanticsResolver semanticsResolver,
             ILogger<LibraryManualScanWorkflow> logger,
             INotificationService? notificationService = null)
         {
@@ -46,6 +48,7 @@ namespace Listenarr.Api.Features.Library
             _scanPathResolver = scanPathResolver;
             _scanQueueWorkflow = scanQueueWorkflow;
             _fileSystem = fileSystem;
+            _semanticsResolver = semanticsResolver;
             _logger = logger;
             _notificationService = notificationService;
         }
@@ -99,6 +102,8 @@ namespace Listenarr.Api.Features.Library
             var historyRepository = scope.ServiceProvider.GetRequiredService<IHistoryRepository>();
 
             var existingFilesList = await audioFileRepository.GetByAudiobookIdAsync(audiobook.Id);
+            var basePathSemantics = await ResolveRequiredFilesystemSemanticsAsync(basePath);
+            var relativePathComparer = basePathSemantics.Comparer;
 
             foreach (var filePath in foundFiles)
             {
@@ -106,7 +111,8 @@ namespace Listenarr.Api.Features.Library
                 {
                     var relativePath = Path.GetRelativePath(basePath, filePath);
 
-                    var existing = existingFilesList.FirstOrDefault(f => f.Path == relativePath);
+                    var existing = existingFilesList.FirstOrDefault(f =>
+                        f.Path != null && relativePathComparer.Equals(f.Path, relativePath));
                     if (existing != null)
                     {
                         _logger.LogInformation("Skipping existing AudiobookFile for audiobook {AudiobookId}: {Path}", audiobook.Id, relativePath);
@@ -172,7 +178,7 @@ namespace Listenarr.Api.Features.Library
                 await historyRepository.AddAsync(historyEntry);
             }
 
-            await ReconcileMissingFilesAsync(audiobook, foundFiles, basePath, audioFileRepository, historyRepository);
+            await ReconcileMissingFilesAsync(audiobook, foundFiles, basePath, basePathSemantics, audioFileRepository, historyRepository);
             await MigrateLegacyFilePathAsync(audiobook, created, audioFileRepository, historyRepository);
 
             var updated = await _repo.GetByIdAsync(audiobook.Id);
@@ -255,10 +261,23 @@ namespace Listenarr.Api.Features.Library
             return (foundFiles, null);
         }
 
+        private async Task<FileSystemPathSemantics> ResolveRequiredFilesystemSemanticsAsync(string basePath)
+        {
+            var resolution = await _semanticsResolver.ResolveAsync(basePath);
+            if (resolution.State != PathIdentityState.Valid)
+            {
+                throw new InvalidOperationException(
+                    resolution.Reason ?? "Scan filesystem identity is unavailable.");
+            }
+
+            return resolution.Semantics;
+        }
+
         private async Task ReconcileMissingFilesAsync(
             Audiobook audiobook,
             List<string> foundFiles,
             string basePath,
+            FileSystemPathSemantics basePathSemantics,
             IAudiobookFileRepository audioFileRepository,
             IHistoryRepository historyRepository)
         {
@@ -266,7 +285,9 @@ namespace Listenarr.Api.Features.Library
             {
                 var allExistingFiles = await audioFileRepository.GetByAudiobookIdAsync(audiobook.Id);
 
-                var foundSet = new HashSet<string>(foundFiles.Select(f => Path.GetRelativePath(basePath, f)), FileUtils.FilesystemPathComparerForCurrentOs);
+                var foundSet = new HashSet<string>(
+                    foundFiles.Select(f => Path.GetRelativePath(basePath, f)),
+                    basePathSemantics.Comparer);
                 var toRemove = allExistingFiles
                     .Where(f => f.Path != null && FileUtils.IsAudioFile(f.Path) && !foundSet.Contains(f.Path))
                     .ToList();
