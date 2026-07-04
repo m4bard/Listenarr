@@ -285,7 +285,6 @@ public sealed partial class RootFolderRelocationService(
 
     public async Task OnMoveJobStateChangedAsync(
         Guid moveJobId,
-        MoveJobStatus status,
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -382,7 +381,7 @@ public sealed partial class RootFolderRelocationService(
             .Select(group => group.First().Id);
         foreach (var jobId in terminalJobIds)
         {
-            await OnMoveJobStateChangedAsync(jobId, MoveJobStatus.Completed, cancellationToken);
+            await OnMoveJobStateChangedAsync(jobId, cancellationToken);
         }
     }
 

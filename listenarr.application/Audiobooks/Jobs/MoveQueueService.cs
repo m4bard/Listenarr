@@ -203,7 +203,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
                     cancellationToken);
                 if (_relocationService != null)
                 {
-                    await _relocationService.OnMoveJobStateChangedAsync(id, status, cancellationToken);
+                    await _relocationService.OnMoveJobStateChangedAsync(id, cancellationToken);
                 }
 
                 // Broadcast status update to realtime clients so UI can react to Processing/Failed/Completed

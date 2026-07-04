@@ -152,7 +152,7 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
             jobId = job.Id;
         }
 
-        await service.OnMoveJobStateChangedAsync(jobId, MoveJobStatus.Completed);
+        await service.OnMoveJobStateChangedAsync(jobId);
 
         await using var verification = await _factory.CreateDbContextAsync();
         var rootAfter = await verification.RootFolders.SingleAsync();

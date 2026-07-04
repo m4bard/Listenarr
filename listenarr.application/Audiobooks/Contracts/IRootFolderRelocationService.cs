@@ -46,7 +46,6 @@ public interface IRootFolderRelocationService
 
     Task OnMoveJobStateChangedAsync(
         Guid moveJobId,
-        MoveJobStatus status,
         CancellationToken cancellationToken = default);
 
     Task ReconcileActiveAsync(CancellationToken cancellationToken = default);
