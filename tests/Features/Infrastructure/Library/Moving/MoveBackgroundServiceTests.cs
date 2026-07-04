@@ -6,6 +6,48 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving;
 public sealed class MoveBackgroundServiceTests
 {
     [Fact]
+    public async Task LeaseLoss_DoesNotRewriteJobAsFailed()
+    {
+        var jobs = Channel.CreateUnbounded<MoveJob>();
+        var job = new MoveJob { Id = Guid.NewGuid(), AudiobookId = 42 };
+        await jobs.Writer.WriteAsync(job);
+        var queue = new Mock<IMoveQueueService>();
+        queue.SetupGet(service => service.Reader).Returns(jobs.Reader);
+        queue.Setup(service => service.RecoverActiveJobsAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        queue.Setup(service => service.TryClaimJobAsync(
+                job.Id,
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        var processorInvoked = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var processor = new Mock<IMoveJobProcessor>();
+        processor.Setup(service => service.ProcessJobAsync(job, It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                processorInvoked.TrySetResult();
+                return Task.FromException(new MoveLeaseLostException(job.Id, 1));
+            });
+        var worker = new MoveBackgroundService(
+            queue.Object,
+            processor.Object,
+            NullLogger<MoveBackgroundService>.Instance,
+            heartbeatInterval: TimeSpan.FromHours(1));
+
+        await worker.StartAsync(CancellationToken.None);
+        await processorInvoked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await worker.StopAsync(CancellationToken.None);
+
+        queue.Verify(service => service.UpdateJobStatusAsync(
+            job.Id,
+            It.IsAny<int>(),
+            MoveJobStatus.Failed,
+            It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task HeartbeatLeaseLoss_CancelsInFlightProcessing()
     {
         var jobs = Channel.CreateUnbounded<MoveJob>();

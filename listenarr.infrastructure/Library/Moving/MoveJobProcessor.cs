@@ -325,6 +325,10 @@ namespace Listenarr.Infrastructure.Library.Moving
                     logger.LogInformation("Move job {JobId} completed: {Source} -> {Target}", job.Id, LogRedaction.SanitizeFilePath(source), LogRedaction.SanitizeFilePath(target));
                     // Completed move job — status updated and broadcasted where configured
                 }
+                catch (Exception ex) when (ex is PersistenceException or MoveLeaseLostException)
+                {
+                    throw;
+                }
                 catch (MoveNeedsAttentionException ex)
                 {
                     await moveQueueService.UpdateJobStatusAsync(
@@ -405,14 +409,15 @@ namespace Listenarr.Infrastructure.Library.Moving
             {
                 logger.LogWarning(ex, "Move job {JobId} canceled/timed out", job.Id);
             }
+            catch (Exception ex) when (ex is PersistenceException or MoveLeaseLostException)
+            {
+                logger.LogWarning(ex, "Move job {JobId} stopped because durable coordination failed", job.Id);
+                throw;
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 logger.LogError(ex, "Unexpected error processing move job {JobId}", job.Id);
-                try { await moveQueueService.UpdateJobStatusAsync(job.Id, job.LeaseGeneration, MoveJobStatus.Failed, ex.Message, stoppingToken); }
-                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
-                {
-                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                }
+                await moveQueueService.UpdateJobStatusAsync(job.Id, job.LeaseGeneration, MoveJobStatus.Failed, ex.Message, stoppingToken);
                 metrics.Increment("worker.move.job.failed");
             }
         }

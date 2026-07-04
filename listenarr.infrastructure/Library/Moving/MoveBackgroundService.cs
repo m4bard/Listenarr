@@ -83,6 +83,15 @@ public sealed class MoveBackgroundService(
                     {
                         return;
                     }
+                    catch (MoveLeaseLostException exception)
+                    {
+                        logger.LogWarning(exception, "Move job {JobId} lost its lease and stopped", job.Id);
+                    }
+                    catch (PersistenceException exception)
+                    {
+                        logger.LogWarning(exception, "Move job {JobId} stopped because persistence is unavailable", job.Id);
+                        throw;
+                    }
                     catch (Exception exception) when (exception is not OutOfMemoryException and not StackOverflowException)
                     {
                         logger.LogError(exception, "Unexpected error processing move job {JobId}", job.Id);

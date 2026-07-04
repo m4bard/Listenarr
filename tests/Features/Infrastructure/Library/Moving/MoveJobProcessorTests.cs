@@ -34,6 +34,58 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
+        public async Task ProcessJobAsync_CompletedStatusPersistenceFailure_PropagatesWithoutCompletedMetric()
+        {
+            var source = FileService.GetTempDirectory("move-processor-status-failure-src");
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(FileService.GetTempPath(), "move-processor-status-failure-dst");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Move Processor Status Failure",
+                BasePath = source
+            });
+            var (durableQueue, job) = await CreateQueuedMoveJobAsync(audiobook, target, source);
+            var queue = new Mock<IMoveQueueService>();
+            queue.Setup(service => service.UpdateJobStatusAsync(
+                    job.Id,
+                    job.LeaseGeneration,
+                    MoveJobStatus.Completed,
+                    null,
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new PersistenceException(
+                    "Status write failed.",
+                    new InvalidOperationException("Database unavailable.")));
+            queue.Setup(service => service.UpdateJobStatusAsync(
+                    job.Id,
+                    job.LeaseGeneration,
+                    It.Is<MoveJobStatus>(status => status != MoveJobStatus.Completed),
+                    It.IsAny<string?>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+            var processor = ActivatorUtilities.CreateInstance<MoveJobProcessor>(
+                _provider,
+                queue.Object);
+
+            await Assert.ThrowsAsync<PersistenceException>(() => processor.ProcessJobAsync(
+                job,
+                CancellationToken.None));
+
+            var metrics = _provider.GetRequiredService<Mock<IAppMetricsService>>();
+            Assert.Equal(
+                MoveJobStatus.Queued,
+                (await durableQueue.GetJobAsync(job.Id))?.Status);
+            metrics.Verify(
+                service => service.Increment("worker.move.job.completed", It.IsAny<double>()),
+                Times.Never);
+            queue.Verify(service => service.UpdateJobStatusAsync(
+                job.Id,
+                job.LeaseGeneration,
+                MoveJobStatus.Failed,
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
         public async Task ProcessJobAsync_TargetInsideSource_MovesSourceContentsIntoTarget()
         {
             var src = FileService.GetTempDirectory("move-processor-nested-src");

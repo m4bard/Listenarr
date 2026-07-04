@@ -24,6 +24,100 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
     public class MoveQueueServiceTests
     {
         [Fact]
+        public async Task UpdateJobStatus_ExhaustedPersistenceRetries_PropagatesWithoutBroadcasting()
+        {
+            var job = new MoveJob { Id = Guid.NewGuid(), AudiobookId = 42, LeaseGeneration = 3 };
+            var persistence = new Mock<IMoveQueuePersistence>();
+            persistence.Setup(store => store.GetByIdAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(job);
+            persistence.Setup(store => store.UpdateStatusAsync(
+                    job.Id,
+                    job.LeaseGeneration,
+                    MoveJobStatus.Completed,
+                    It.IsAny<MoveJobPhase>(),
+                    null,
+                    MoveFailureKind.None,
+                    It.IsAny<DateTimeOffset>(),
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new PersistenceException(
+                    "Status write failed.",
+                    new InvalidOperationException("Database unavailable.")));
+            var broadcaster = new Mock<IHubBroadcaster>();
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                broadcaster.Object,
+                TimeProvider.System);
+
+            await Assert.ThrowsAsync<PersistenceException>(() => service.UpdateJobStatusAsync(
+                job.Id,
+                job.LeaseGeneration,
+                MoveJobStatus.Completed));
+
+            persistence.Verify(store => store.UpdateStatusAsync(
+                job.Id,
+                job.LeaseGeneration,
+                MoveJobStatus.Completed,
+                It.IsAny<MoveJobPhase>(),
+                null,
+                MoveFailureKind.None,
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()), Times.Exactly(3));
+            broadcaster.Verify(service => service.BroadcastAsync(
+                It.IsAny<string>(),
+                It.IsAny<object>(),
+                It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task UpdateJobStatus_PostCommitRelocationFailure_RemainsSuccessfulAndBroadcasts()
+        {
+            var job = new MoveJob { Id = Guid.NewGuid(), AudiobookId = 42, LeaseGeneration = 3 };
+            var persistence = new Mock<IMoveQueuePersistence>();
+            persistence.Setup(store => store.GetByIdAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(job);
+            persistence.Setup(store => store.UpdateStatusAsync(
+                    job.Id,
+                    job.LeaseGeneration,
+                    MoveJobStatus.Completed,
+                    It.IsAny<MoveJobPhase>(),
+                    null,
+                    MoveFailureKind.None,
+                    It.IsAny<DateTimeOffset>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+            var relocation = new Mock<IRootFolderRelocationService>();
+            relocation.Setup(service => service.OnMoveJobStateChangedAsync(
+                    job.Id,
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new PersistenceException(
+                    "Relocation reconciliation failed.",
+                    new InvalidOperationException("Database unavailable.")));
+            var broadcaster = new Mock<IHubBroadcaster>();
+            broadcaster.Setup(service => service.BroadcastAsync(
+                    "MoveJobUpdate",
+                    It.IsAny<object>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                broadcaster.Object,
+                TimeProvider.System,
+                relocation.Object);
+
+            await service.UpdateJobStatusAsync(
+                job.Id,
+                job.LeaseGeneration,
+                MoveJobStatus.Completed);
+
+            broadcaster.Verify(service => service.BroadcastAsync(
+                "MoveJobUpdate",
+                It.IsAny<object>(),
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
         public async Task UpdateJobStatus_PersistsAndUpdatesInMemory()
         {
             var dbOpts = new DbContextOptionsBuilder<ListenArrDbContext>()

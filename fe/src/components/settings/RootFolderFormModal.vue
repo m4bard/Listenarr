@@ -200,10 +200,7 @@ async function confirmChange(moveFiles: boolean) {
       },
       { moveFiles: moveFiles, deleteEmptySource: modalDeleteEmpty.value },
     )
-    toast.success(
-      'Success',
-      moveFiles ? 'Root renamed and move jobs queued' : 'Root renamed (files unchanged)',
-    )
+    toast.success('Success', moveFiles ? 'Root relocation started' : 'Root path metadata updated')
     emit('saved', updated)
   } catch (e: unknown) {
     const error = e as Error

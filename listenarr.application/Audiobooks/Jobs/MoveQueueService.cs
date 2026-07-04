@@ -191,9 +191,10 @@ namespace Listenarr.Application.Audiobooks.Jobs
             CancellationToken cancellationToken = default)
         {
             var updatedAt = _timeProvider.GetUtcNow();
+            MoveJob? dbJob;
             try
             {
-                var dbJob = await _persistence.GetByIdAsync(id, cancellationToken);
+                dbJob = await _persistence.GetByIdAsync(id, cancellationToken);
                 var phase = status == MoveJobStatus.Running
                     && (dbJob?.Phase ?? MoveJobPhase.None) == MoveJobPhase.None
                         ? MoveJobPhase.Planned
@@ -208,37 +209,47 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 {
                     throw new MoveLeaseLostException(id, leaseGeneration);
                 }
-                if (_relocationService != null)
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to persist move job status change for {JobId}", id);
+                throw;
+            }
+
+            LogStatusChange(id, status, error);
+
+            if (_relocationService != null)
+            {
+                try
                 {
                     await _relocationService.OnMoveJobStateChangedAsync(id, cancellationToken);
                 }
-
-                // Broadcast status update to realtime clients so UI can react to Processing/Failed/Completed
-                try
-                {
-                    var payload = new
-                    {
-                        jobId = id.ToString(),
-                        audiobookId = dbJob?.AudiobookId,
-                        status = status.ToString(),
-                        error = error,
-                        target = dbJob?.RequestedPath,
-                        updatedAt
-                    };
-                    // Fire and forget but block briefly to surface errors during development
-                    await _hubBroadcaster.BroadcastAsync("MoveJobUpdate", payload, cancellationToken);
-                }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
-                    _logger.LogWarning(ex, "Failed to broadcast MoveJobUpdate for job {JobId}", id);
+                    _logger.LogWarning(ex, "Failed to reconcile relocation for move job {JobId}", id);
                 }
             }
-            catch (Exception ex) when (ex is not MoveLeaseLostException && ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                _logger.LogWarning(ex, "Failed to persist move job status change for {JobId}", id);
-            }
 
-            // Log error prominently if status is Failed
+            try
+            {
+                await _hubBroadcaster.BroadcastAsync("MoveJobUpdate", new
+                {
+                    jobId = id.ToString(),
+                    audiobookId = dbJob?.AudiobookId,
+                    status = status.ToString(),
+                    error,
+                    target = dbJob?.RequestedPath,
+                    updatedAt
+                }, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to broadcast MoveJobUpdate for job {JobId}", id);
+            }
+        }
+
+        private void LogStatusChange(Guid id, MoveJobStatus status, string? error)
+        {
             if (status == MoveJobStatus.Failed && !string.IsNullOrWhiteSpace(error))
             {
                 _logger.LogError("Move job {JobId} FAILED with error: {Error}", id, error);
