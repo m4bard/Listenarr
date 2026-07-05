@@ -496,6 +496,79 @@ public sealed class BackendArchitectureTests
         Assert.Empty(violations);
     }
 
+    [Fact]
+    public void LegacyHostPathIdentity_StaysOnExplicitAllowList()
+    {
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Domain compatibility helpers intentionally expose host-default utilities for
+            // callers that operate on local process paths rather than library-volume identity.
+            "listenarr.domain/Common/FileSystemPathIdentity.cs",
+            "listenarr.domain/Common/FileUtils.cs",
+            "listenarr.domain/Common/FileUtils.PathCombining.cs",
+            "listenarr.domain/Common/FileUtils.AudioMatching.cs",
+
+            // Internal application/runtime paths, not user library volume identity.
+            "listenarr.application/Configuration/Core/StartupConfigService.cs",
+            "listenarr.infrastructure/DependencyInjection/InfrastructureStartupCompositionExtensions.cs",
+            "listenarr.infrastructure/Ffmpeg/Installation/FfmpegService.cs",
+            "listenarr.infrastructure/FileSystem/FileSystemSafety.cs",
+
+            // Temporary migration allow-list. Each user-library entry must be removed as its
+            // subsystem is moved to explicit FileSystemPathSemantics.
+            "listenarr.api/Features/Library/LibraryPathPlanner.cs",
+            "listenarr.api/Features/Library/RootFoldersController.cs",
+            "listenarr.application/Audiobooks/Files/AudiobookFileService.cs",
+            "listenarr.application/Audiobooks/Jobs/MoveQueueService.cs",
+            "listenarr.application/Audiobooks/Jobs/ScanQueueService.cs",
+            "listenarr.application/Audiobooks/Jobs/UnmatchedScanQueueService.cs",
+            "listenarr.application/Audiobooks/Renaming/RenameService.cs",
+            "listenarr.application/Audiobooks/Renaming/RenameService.Helpers.cs",
+            "listenarr.application/Audiobooks/RootFolders/RootFolderService.cs",
+            "listenarr.application/Common/FileNamingService.cs",
+            "listenarr.application/Downloads/Common/DownloadClientGateway.cs",
+            "listenarr.infrastructure/Configuration/Paths/RemotePathMappingService.cs",
+            "listenarr.infrastructure/Library/Moving/AudiobookFilesystemDeleteService.cs",
+            "listenarr.infrastructure/Library/Moving/AudiobookFilesystemDeleteService.Folders.cs",
+            "listenarr.infrastructure/Library/Moving/MovedAudiobookPathRewriter.cs",
+            "listenarr.infrastructure/Metadata/Jobs/MetadataRescanService.cs",
+            "listenarr.infrastructure/Persistence/Repositories/EfMoveQueuePersistence.cs"
+        };
+        var forbidden = new[]
+        {
+            "FilesystemPathComparerForCurrentOs",
+            "AreFilesystemPathsEquivalentForCurrentOs",
+            "FileUtils.IsPathInsideOf",
+            "FileUtils.IsPathSameOrInside",
+            "FileSystemPathSemantics.CurrentHostDefault"
+        };
+        var roots = new[]
+        {
+            "listenarr.api",
+            "listenarr.application",
+            "listenarr.domain",
+            "listenarr.infrastructure"
+        };
+
+        var violations = roots
+            .SelectMany(root => Directory.EnumerateFiles(
+                Path.Join(RepositoryRoot, root),
+                "*.cs",
+                SearchOption.AllDirectories))
+            .Where(file => !IsBuildArtifact(file))
+            .Where(file => !file.Contains(
+                $"{Path.DirectorySeparatorChar}Persistence{Path.DirectorySeparatorChar}Migrations{Path.DirectorySeparatorChar}",
+                StringComparison.OrdinalIgnoreCase))
+            .Select(file => Normalize(Path.GetRelativePath(RepositoryRoot, file)))
+            .SelectMany(file => forbidden
+                .Where(token => File.ReadAllText(Path.Join(RepositoryRoot, file)).Contains(token, StringComparison.Ordinal))
+                .Select(token => $"{file}: {token}"))
+            .Where(violation => !allowed.Contains(violation.Split(':', 2)[0]))
+            .ToList();
+
+        Assert.Empty(violations);
+    }
+
     private static void AssertProjectReferences(string relativeProject, IReadOnlyCollection<string> expected)
     {
         var document = XDocument.Load(Path.Join(RepositoryRoot, relativeProject));
