@@ -28,6 +28,7 @@ namespace Listenarr.Api.Features.Library
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IMoveQueueService? _moveQueueService;
         private readonly IFileSystem _fileSystem;
+        private readonly IFileSystemSemanticsResolver _semanticsResolver;
         private readonly ILogger<LibraryMoveWorkflow> _logger;
 
         public LibraryMoveWorkflow(
@@ -35,12 +36,14 @@ namespace Listenarr.Api.Features.Library
             IServiceScopeFactory scopeFactory,
             IFileSystem fileSystem,
             ILogger<LibraryMoveWorkflow> logger,
+            IFileSystemSemanticsResolver semanticsResolver,
             IMoveQueueService? moveQueueService = null)
         {
             _repo = repo;
             _scopeFactory = scopeFactory;
             _fileSystem = fileSystem;
             _logger = logger;
+            _semanticsResolver = semanticsResolver;
             _moveQueueService = moveQueueService;
         }
 
@@ -72,9 +75,9 @@ namespace Listenarr.Api.Features.Library
                 var settings = await configService.GetApplicationSettingsAsync();
                 var rootFolders = await rootFolderService.GetAllAsync();
 
-                var allowedMoveRoots = new List<string>();
+                var allowedMoveRoots = new List<MoveRootBoundary>();
                 var normalizedOutputPath = TryNormalizeMoveRoot(settings.OutputPath, "configured output path");
-                AddAllowedMoveRoot(allowedMoveRoots, normalizedOutputPath);
+                await AddAllowedMoveRootAsync(allowedMoveRoots, normalizedOutputPath, FileSystemCaseSensitivityMode.Auto);
 
                 string? defaultRootPath = null;
                 foreach (var rootFolder in rootFolders)
@@ -85,7 +88,7 @@ namespace Listenarr.Api.Features.Library
                         continue;
                     }
 
-                    AddAllowedMoveRoot(allowedMoveRoots, normalizedRootPath);
+                    await AddAllowedMoveRootAsync(allowedMoveRoots, normalizedRootPath, rootFolder.CaseSensitivityMode);
                     if (rootFolder.IsDefault && defaultRootPath == null)
                     {
                         defaultRootPath = normalizedRootPath;
@@ -98,7 +101,7 @@ namespace Listenarr.Api.Features.Library
                 }
 
                 var destinationIsRooted = Path.IsPathRooted(request.DestinationPath!);
-                var relativeMoveBase = normalizedOutputPath ?? defaultRootPath ?? allowedMoveRoots.FirstOrDefault();
+                var relativeMoveBase = normalizedOutputPath ?? defaultRootPath ?? allowedMoveRoots.FirstOrDefault()?.Path;
                 if (!destinationIsRooted && string.IsNullOrEmpty(relativeMoveBase))
                 {
                     return new BadRequestObjectResult(new { message = "DestinationPath requires a configured root folder or output path" });
@@ -115,7 +118,7 @@ namespace Listenarr.Api.Features.Library
                 {
                     return new BadRequestObjectResult(new { message = $"DestinationPath is invalid: {validationReason}" });
                 }
-                if (!_fileSystem.TryValidateMutationTarget(final, allowedMoveRoots, out final, out var finalReason))
+                if (!_fileSystem.TryValidateMutationTarget(final, allowedMoveRoots.Select(root => root.Path), out final, out var finalReason))
                 {
                     _logger.LogWarning(
                         "Blocked move destination for audiobook {AudiobookId}: {Destination}. Reason: {Reason}",
@@ -183,7 +186,9 @@ namespace Listenarr.Api.Features.Library
                 {
                     var srcFull = Path.GetFullPath(sourcePath);
                     var tgtFull = Path.GetFullPath(final);
-                    if (FileUtils.AreFilesystemPathsEquivalentForCurrentOs(srcFull, tgtFull))
+                    var targetBoundary = FindAllowedMoveRoot(tgtFull, allowedMoveRoots)
+                        ?? throw new InvalidOperationException("Destination filesystem identity is unavailable.");
+                    if (FileSystemPathIdentity.AreEquivalent(srcFull, tgtFull, targetBoundary.Semantics))
                     {
                         return new BadRequestObjectResult(new { message = "Source and target paths are identical; nothing to move." });
                     }
@@ -287,20 +292,48 @@ namespace Listenarr.Api.Features.Library
             return null;
         }
 
-        private static void AddAllowedMoveRoot(List<string> allowedRoots, string? normalizedRoot)
+        private async Task AddAllowedMoveRootAsync(
+            List<MoveRootBoundary> allowedRoots,
+            string? normalizedRoot,
+            FileSystemCaseSensitivityMode caseSensitivityMode)
         {
             if (string.IsNullOrEmpty(normalizedRoot))
             {
                 return;
             }
 
-            if (allowedRoots.Any(root => FileUtils.AreFilesystemPathsEquivalentForCurrentOs(root, normalizedRoot)))
+            var resolution = await _semanticsResolver.ResolveAsync(normalizedRoot, caseSensitivityMode);
+            if (resolution.State != PathIdentityState.Valid)
+            {
+                _logger.LogWarning(
+                    "Skipping move boundary {Root}: {Reason}",
+                    LogRedaction.SanitizeFilePath(normalizedRoot),
+                    resolution.Reason ?? "filesystem identity unavailable");
+                return;
+            }
+
+            if (allowedRoots.Any(root => FileSystemPathIdentity.AreEquivalent(
+                root.Path,
+                normalizedRoot,
+                resolution.Semantics)))
             {
                 return;
             }
 
-            allowedRoots.Add(normalizedRoot);
+            allowedRoots.Add(new MoveRootBoundary(normalizedRoot, resolution.Semantics));
         }
+
+        private static MoveRootBoundary? FindAllowedMoveRoot(
+            string path,
+            IReadOnlyCollection<MoveRootBoundary> allowedRoots)
+        {
+            return allowedRoots.FirstOrDefault(root => FileSystemPathIdentity.IsSameOrInside(
+                path,
+                root.Path,
+                root.Semantics));
+        }
+
+        private sealed record MoveRootBoundary(string Path, FileSystemPathSemantics Semantics);
 
         private async Task BroadcastQueuedAsync(Guid jobId, int? audiobookId)
         {

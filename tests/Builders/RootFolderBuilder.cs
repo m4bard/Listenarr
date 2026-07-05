@@ -41,6 +41,12 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public RootFolderBuilder WithCaseSensitivityMode(FileSystemCaseSensitivityMode value)
+        {
+            _rootFolder.CaseSensitivityMode = value;
+            return this;
+        }
+
         public RootFolder Build()
         {
             return _rootFolder;

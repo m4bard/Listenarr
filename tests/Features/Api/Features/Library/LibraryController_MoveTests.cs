@@ -417,6 +417,47 @@ namespace Listenarr.Tests.Features.Api.Features.Library
 
         [Fact]
         [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "TreatsCaseOnlyDestinationAsIdentical_OnCaseInsensitiveRoot")]
+        public async Task MoveAudiobook_TreatsCaseOnlyDestinationAsIdentical_OnCaseInsensitiveRoot()
+        {
+            var mockMoveQueue = new Mock<IMoveQueueService>();
+            Init(services => services.WithSingleton(mockMoveQueue.Object));
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(string.Empty)
+                .Build());
+            var rootPath = FileService.GetTempDirectory("listenarr-move-insensitive-root");
+            await _rootFolderRepository.AddAsync(new RootFolderBuilder()
+                .WithName("Insensitive Move Root")
+                .WithPath(rootPath)
+                .WithCaseSensitivityMode(FileSystemCaseSensitivityMode.Insensitive)
+                .WithIsDefault()
+                .Build());
+
+            var sourcePath = Path.Join(rootPath, "CaseOnlyBook");
+            Directory.CreateDirectory(sourcePath);
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(sourcePath)
+                .Build());
+            var controller = _provider.GetRequiredService<LibraryController>();
+            var request = new LibraryController.MoveRequest
+            {
+                DestinationPath = Path.Join(rootPath, "caseonlybook")
+            };
+
+            var result = await controller.EnqueueMove(audiobook.Id, request);
+
+            var badObj = Assert.IsAssignableFrom<BadRequestObjectResult>(result);
+            Assert.Contains("identical", badObj.Value?.ToString() ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+            mockMoveQueue.Verify(m => m.EnqueueMoveAsync(
+                It.IsAny<int>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<bool>()), Times.Never);
+        }
+
+        [Fact]
+        [Trait("Method", "EnqueueMove")]
         [Trait("Scenario", "RejectsRelativeDestinationOutsideOutputPath")]
         public async Task MoveAudiobook_RejectsRelativeDestinationOutsideOutputPath()
         {
