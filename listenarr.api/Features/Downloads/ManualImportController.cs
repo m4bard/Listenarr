@@ -300,13 +300,18 @@ public class ManualImportController : ControllerBase
                 settings,
                 destinationSemantics,
                 hasMultipleFile);
-            destinationPath = await destinationTracker.ReserveUniqueAsync(destinationPath);
+            var destinationReservation = await destinationTracker.PlanUniqueAsync(destinationPath);
+            destinationPath = destinationReservation.Path;
 
             var success = await _fileMover.PerformActionOn(action, item.FullPath, destinationPath);
+            if (success)
+            {
+                destinationTracker.Commit(destinationReservation);
 
-            // Write ASIN to embedded file tags (non-critical — failure is logged, not thrown)
-            if (!string.IsNullOrWhiteSpace(audiobook.Asin))
-                await _metadataService.WriteAsinTagAsync(destinationPath, audiobook.Asin);
+                // Write ASIN to embedded file tags (non-critical — failure is logged, not thrown)
+                if (!string.IsNullOrWhiteSpace(audiobook.Asin))
+                    await _metadataService.WriteAsinTagAsync(destinationPath, audiobook.Asin);
+            }
 
             return new ManualImportResultDto
             {

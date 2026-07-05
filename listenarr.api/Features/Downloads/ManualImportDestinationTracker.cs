@@ -20,7 +20,7 @@ public sealed class ManualImportDestinationTracker(
 
     public int Count => _usedDestinationsByBoundary.Values.Sum(set => set.Count);
 
-    public async Task<string> ReserveUniqueAsync(
+    public async Task<ManualImportDestinationReservation> PlanUniqueAsync(
         string desiredDestination,
         CancellationToken cancellationToken = default)
     {
@@ -50,12 +50,23 @@ public sealed class ManualImportDestinationTracker(
 
         // Use the destination volume's case rules for both in-memory batch collisions
         // and pre-existing path checks so macOS/Linux mounted case-insensitive volumes
-        // do not accept two case-only variants in the same import batch.
+        // do not accept two case-only variants in the same successful import batch.
         var uniqueDestination = FileUtils.GetUniqueDestinationPath(
             desiredDestination,
             fileSystem.FileExists,
             usedDestinations);
-        usedDestinations.Add(uniqueDestination);
-        return uniqueDestination;
+        return new ManualImportDestinationReservation(uniqueDestination, boundaryKey);
+    }
+
+    public void Commit(ManualImportDestinationReservation reservation)
+    {
+        if (!_usedDestinationsByBoundary.TryGetValue(reservation.BoundaryKey, out var usedDestinations))
+        {
+            throw new InvalidOperationException("Destination reservation boundary was not planned.");
+        }
+
+        usedDestinations.Add(reservation.Path);
     }
 }
+
+public sealed record ManualImportDestinationReservation(string Path, string BoundaryKey);

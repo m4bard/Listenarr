@@ -122,11 +122,13 @@ public sealed class ManualImportCompanionImporter
                 }
 
                 var destinationPath = ManualImportPathPlanner.CombineWithOptionalBase(destinationRoot, relativePath);
-                destinationPath = await destinationTracker.ReserveUniqueAsync(destinationPath);
+                var destinationReservation = await destinationTracker.PlanUniqueAsync(destinationPath);
+                destinationPath = destinationReservation.Path;
 
                 var success = await _fileMover.PerformActionOn(action, companionFile, destinationPath);
                 if (success)
                 {
+                    destinationTracker.Commit(destinationReservation);
                     importedCount++;
                 }
             }

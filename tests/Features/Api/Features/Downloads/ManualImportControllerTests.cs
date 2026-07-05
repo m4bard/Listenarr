@@ -77,10 +77,11 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             return scanMock;
         }
 
-        public static ManualImportController GetController(Audiobook book, ApplicationSettings settings, Mock<IAudiobookRepository> repoMock = null, Mock<IScanQueueService> scanMock = null)
+        public static ManualImportController GetController(Audiobook book, ApplicationSettings settings, Mock<IAudiobookRepository> repoMock = null, Mock<IScanQueueService> scanMock = null, IFileMover fileMover = null)
         {
             repoMock ??= GetRepoMock(book);
             scanMock ??= GetScanMock();
+            fileMover ??= new FileMover(Mock.Of<Microsoft.Extensions.Logging.ILogger<FileMover>>());
 
             var metadataMock = new Mock<IMetadataService>();
             metadataMock.Setup(m => m.ExtractFileMetadataAsync(It.IsAny<string>()))
@@ -118,7 +119,7 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 configMock.Object,
                 scanMock.Object,
                 rootFolderMock.Object,
-                new FileMover(Mock.Of<Microsoft.Extensions.Logging.ILogger<FileMover>>()),
+                fileMover,
                 new LocalFileSystem(),
                 new FileSystemSemanticsResolver()
             );
@@ -398,6 +399,72 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             Assert.False(File.Exists(Path.Join(destinationRoot, "Different Book.mp3")));
         }
 
+        [Fact]
+        public async Task InteractiveManualImport_FailedMove_DoesNotReserveDestinationForLaterItems()
+        {
+            var basePath = CreateTempDirectory("listenarr-manual-failed-reservation-dst");
+            var srcDir = CreateTempDirectory("listenarr-manual-failed-reservation-src");
+
+            var firstBook = new Audiobook { Id = 501, Title = "Collision Book", BasePath = basePath };
+            var secondBook = new Audiobook { Id = 502, Title = "Collision Book", BasePath = basePath };
+
+            var src1 = Path.Join(srcDir, "one.mp3");
+            var src2 = Path.Join(srcDir, "two.mp3");
+            await File.WriteAllTextAsync(src1, "one");
+            await File.WriteAllTextAsync(src2, "two");
+
+            var repoMock = new Mock<IAudiobookRepository>();
+            repoMock.Setup(r => r.GetByIdAsync(firstBook.Id)).ReturnsAsync(firstBook);
+            repoMock.Setup(r => r.GetByIdAsync(secondBook.Id)).ReturnsAsync(secondBook);
+            repoMock.Setup(r => r.UpdateAsync(It.IsAny<Audiobook>())).ReturnsAsync(true);
+
+            var attemptedDestinations = new List<string>();
+            var callCount = 0;
+            var fileMover = new Mock<IFileMover>();
+            fileMover.Setup(mover => mover.PerformActionOn(FileAction.Copy, It.IsAny<string>(), It.IsAny<string>()))
+                .Returns<FileAction, string, string?>((_, source, destination) =>
+                {
+                    Assert.NotNull(destination);
+                    attemptedDestinations.Add(destination!);
+                    callCount++;
+                    if (callCount == 1)
+                    {
+                        return Task.FromResult(false);
+                    }
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination!)!);
+                    File.Copy(source, destination!, overwrite: false);
+                    return Task.FromResult(true);
+                });
+
+            var controller = GetController(firstBook, new ApplicationSettings
+            {
+                OutputPath = basePath,
+                FolderNamingPattern = "",
+                FileNamingPattern = "{Title}"
+            }, repoMock, fileMover: fileMover.Object);
+
+            var request = new ManualImportRequestDto
+            {
+                Path = srcDir,
+                Mode = "interactive",
+                Action = FileAction.Copy,
+                Items = new System.Collections.Generic.List<ManualImportItemDto>
+                {
+                    new ManualImportItemDto { FullPath = src1, MatchedAudiobookId = firstBook.Id },
+                    new ManualImportItemDto { FullPath = src2, MatchedAudiobookId = secondBook.Id }
+                }
+            };
+
+            var action = await controller.Start(request);
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+
+            Assert.Equal(2, attemptedDestinations.Count);
+            Assert.Equal(attemptedDestinations[0], attemptedDestinations[1]);
+            Assert.EndsWith("Collision Book.mp3", attemptedDestinations[1], StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("(1)", Path.GetFileName(attemptedDestinations[1]), StringComparison.Ordinal);
+            Assert.True(File.Exists(Path.Join(basePath, "Collision Book.mp3")));
+        }
 
         [Fact]
         public async Task InteractiveManualImport_DontMoveAnything_DontRenameAnything()
