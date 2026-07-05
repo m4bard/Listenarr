@@ -34,6 +34,49 @@ namespace Listenarr.Tests.Features.Api.Services
             _service = new FileNamingService(_mockConfigService.Object, _mockLogger.Object);
         }
 
+        [Theory]
+        [InlineData(FileSystemCaseSensitivity.Sensitive, false)]
+        [InlineData(FileSystemCaseSensitivity.Insensitive, true)]
+        public async Task GenerateFilePathAsync_OutputRootComparisonUsesResolvedSemantics(
+            FileSystemCaseSensitivity caseSensitivity,
+            bool shouldUseFolderPattern)
+        {
+            var configuredRoot = Path.GetFullPath(Path.Join(Path.GetTempPath(), "ListenarrNamingRoot"));
+            var requestedRoot = Path.Join(
+                Path.GetDirectoryName(configuredRoot) ?? string.Empty,
+                Path.GetFileName(configuredRoot).ToUpperInvariant());
+            var settings = new ApplicationSettings
+            {
+                OutputPath = configuredRoot,
+                FolderNamingPattern = "{Author}/{Title}",
+                FileNamingPattern = "{Title}"
+            };
+            _mockConfigService.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
+            var resolver = new Mock<IFileSystemSemanticsResolver>();
+            resolver.Setup(r => r.ResolveAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<FileSystemCaseSensitivityMode>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns<string, FileSystemCaseSensitivityMode, CancellationToken>((path, _, _) =>
+                    ValueTask.FromResult(new FileSystemSemanticsResolution(
+                        new FileSystemPathSemantics(FileSystemPathSemantics.CurrentHostDefault.Syntax, caseSensitivity),
+                        PathIdentityState.Valid,
+                        path)));
+            var service = new FileNamingService(
+                _mockConfigService.Object,
+                _mockLogger.Object,
+                resolver.Object);
+            var metadata = new AudioMetadata
+            {
+                Title = "Book",
+                Artist = "Author"
+            };
+
+            var result = await service.GenerateFilePathAsync(metadata, requestedRoot, ".m4b");
+
+            Assert.Equal(shouldUseFolderPattern, result.Contains(Path.Join("Author", "Book"), StringComparison.Ordinal));
+        }
+
         [Fact]
         public async Task GenerateFilePathAsync_WithoutDiskNumber_UsesSingleFilePattern()
         {

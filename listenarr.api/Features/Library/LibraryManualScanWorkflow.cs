@@ -91,7 +91,8 @@ namespace Listenarr.Api.Features.Library
                 return new OkObjectResult(new { message = "No files found during scan", scannedPath = scanRoot, found = 0 });
             }
 
-            var basePath = LibraryPathPlanner.CalculateBasePath(foundFiles, _fileSystem, _logger);
+            var scanRootSemantics = await ResolveRequiredFilesystemSemanticsAsync(scanRoot);
+            var basePath = LibraryPathPlanner.CalculateBasePath(foundFiles, _fileSystem, _logger, scanRootSemantics);
             _logger.LogInformation("Calculated base path for audiobook '{Title}': {BasePath}", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeFilePath(basePath));
 
             var created = new List<AudiobookFile>();

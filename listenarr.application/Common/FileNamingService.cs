@@ -33,11 +33,16 @@ namespace Listenarr.Application.Common
 
         private readonly IConfigurationService _configService;
         private readonly ILogger<FileNamingService> _logger;
+        private readonly IFileSystemSemanticsResolver? _semanticsResolver;
 
-        public FileNamingService(IConfigurationService configService, ILogger<FileNamingService> logger)
+        public FileNamingService(
+            IConfigurationService configService,
+            ILogger<FileNamingService> logger,
+            IFileSystemSemanticsResolver? semanticsResolver = null)
         {
             _configService = configService;
             _logger = logger;
+            _semanticsResolver = semanticsResolver;
         }
 
         /// <summary>
@@ -72,7 +77,7 @@ namespace Listenarr.Application.Common
                 {
                     var requestedRoot = Path.GetFullPath(outputPath);
                     var configuredRoot = Path.GetFullPath(settings.OutputPath);
-                    if (!FileUtils.AreFilesystemPathsEquivalentForCurrentOs(requestedRoot, configuredRoot))
+                    if (!await AreEquivalentOutputRootsAsync(requestedRoot, configuredRoot))
                     {
                         // Caller provided a custom base path (e.g., audiobook BasePath) -> skip folder pattern
                         effectiveFolderPattern = string.Empty;
@@ -151,6 +156,29 @@ namespace Listenarr.Application.Common
             _logger.LogInformation("Generated file path: {FilePath}", fullPath);
             return fullPath;
         }
+
+        private async Task<bool> AreEquivalentOutputRootsAsync(string requestedRoot, string configuredRoot)
+        {
+            if (_semanticsResolver != null)
+            {
+                var resolution = await _semanticsResolver.ResolveAsync(configuredRoot);
+                if (resolution.State == PathIdentityState.Valid)
+                {
+                    return FileSystemPathIdentity.AreEquivalent(
+                        requestedRoot,
+                        configuredRoot,
+                        resolution.Semantics);
+                }
+            }
+
+            return string.Equals(
+                FileSystemPathIdentity.Canonicalize(requestedRoot, GetNativePathSyntax()),
+                FileSystemPathIdentity.Canonicalize(configuredRoot, GetNativePathSyntax()),
+                StringComparison.Ordinal);
+        }
+
+        private static FileSystemPathSyntax GetNativePathSyntax() =>
+            OperatingSystem.IsWindows() ? FileSystemPathSyntax.Windows : FileSystemPathSyntax.Unix;
 
         public string ApplyNamingPattern(string pattern, Dictionary<string, object> variables, bool treatAsFilename = false)
         {

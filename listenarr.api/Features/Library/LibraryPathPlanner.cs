@@ -87,7 +87,7 @@ namespace Listenarr.Api.Features.Library
             return ResolvePathWithOptionalBase(rootPath, relative);
         }
 
-        public static string CalculateBasePath(List<string> filePaths, IFileSystem fileSystem, ILogger logger)
+        public static string CalculateBasePath(List<string> filePaths, IFileSystem fileSystem, ILogger logger, FileSystemPathSemantics semantics)
         {
             if (!filePaths.Any())
                 return string.Empty;
@@ -95,7 +95,7 @@ namespace Listenarr.Api.Features.Library
             var directories = filePaths
                 .Select(p => FileUtils.NormalizeStoredPath(Path.GetDirectoryName(p) ?? p))
                 .Where(p => !string.IsNullOrWhiteSpace(p))
-                .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
+                .Distinct(semantics.Comparer)
                 .ToList();
 
             if (directories.Count == 1)
@@ -103,7 +103,7 @@ namespace Listenarr.Api.Features.Library
                 return directories[0];
             }
 
-            var commonPath = FileUtils.GetCommonPathForDirectories(directories) ?? directories[0];
+            var commonPath = FileUtils.GetCommonPathForDirectories(directories, semantics) ?? directories[0];
             var currentPath = commonPath;
             while (!string.IsNullOrEmpty(currentPath))
             {
