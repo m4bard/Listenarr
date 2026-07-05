@@ -335,33 +335,63 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
             Assert.Equal(sourceFile, actual);
         }
 
-        [Fact]
+        [Theory]
+        [InlineData(FileSystemCaseSensitivity.Sensitive, 2)]
+        [InlineData(FileSystemCaseSensitivity.Insensitive, 1)]
         [Trait("Method", "GetQueueItemAsync")]
-        [Trait("Scenario", "Case-only source file dedupe follows the host filesystem")]
-        public async Task GetQueueItemAsync_DedupesCaseOnlySourceFilesUsingHostFilesystemRules()
+        [Trait("Scenario", "Case-only source file dedupe follows resolved storage semantics")]
+        public async Task GetQueueItemAsync_DedupesCaseOnlySourceFilesUsingResolvedSemantics(
+            FileSystemCaseSensitivity caseSensitivity,
+            int expectedCount)
         {
-            var firstSourceFile = Path.Join(localPath, "chapter1.m4b");
-            var secondSourceFile = Path.Join(localPath, "Chapter1.m4b");
-            var downloadClientAdapterMock = (DownloadCLientAdapterMock)((DownloadClientGateway)downloadClientGateway).ResolveAdapter(client);
-            downloadClientAdapterMock.QueueItemMock = new QueueItemBuilder()
+            var sourceRoot = Path.Join(Path.GetTempPath(), "listenarr-gateway-semantics");
+            var firstSourceFile = Path.Join(sourceRoot, "chapter1.m4b");
+            var secondSourceFile = Path.Join(sourceRoot, "Chapter1.m4b");
+            var item = new QueueItemBuilder()
+                .WithContentPath(sourceRoot)
                 .WithSourceFile(firstSourceFile)
                 .WithSourceFile(secondSourceFile)
                 .WithStatus("completed")
                 .Build();
+            var adapter = new Mock<IDownloadClientAdapter>();
+            adapter.Setup(service => service.GetImportItemAsync(
+                    It.IsAny<DownloadClientConfiguration>(),
+                    It.IsAny<Download>(),
+                    It.IsAny<QueueItem>(),
+                    It.IsAny<QueueItem?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(item);
+            var factory = new Mock<IDownloadClientAdapterFactory>();
+            factory.Setup(service => service.GetByType("mock"))
+                .Returns(adapter.Object);
+            var mapping = new Mock<IRemotePathMappingService>();
+            mapping.Setup(service => service.TranslatePathAsync(
+                    It.IsAny<DownloadClientConfiguration>(),
+                    It.IsAny<string>()))
+                .ReturnsAsync((DownloadClientConfiguration _, string path) => path);
+            var resolver = new Mock<IFileSystemSemanticsResolver>();
+            resolver.Setup(service => service.ResolveAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<FileSystemCaseSensitivityMode>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns<string, FileSystemCaseSensitivityMode, CancellationToken>((path, _, _) =>
+                    ValueTask.FromResult(new FileSystemSemanticsResolution(
+                        new FileSystemPathSemantics(FileSystemPathSemantics.CurrentHostDefault.Syntax, caseSensitivity),
+                        PathIdentityState.Valid,
+                        path)));
+            var gateway = new DownloadClientGateway(
+                mapping.Object,
+                factory.Object,
+                _provider.GetRequiredService<IFileSystem>(),
+                resolver.Object,
+                _provider.GetRequiredService<ILogger<DownloadClientGateway>>());
 
-            var item = await downloadClientGateway.GetQueueItemAsync(client, new DownloadBuilder().Build(), new QueueItem());
+            var result = await gateway.GetQueueItemAsync(
+                new DownloadClientConfiguration { Type = "mock", Name = "mock" },
+                new DownloadBuilder().Build(),
+                new QueueItem());
 
-            if (OperatingSystem.IsWindows())
-            {
-                var actual = Assert.Single(item.SourceFiles);
-                Assert.Equal(firstSourceFile, actual);
-            }
-            else
-            {
-                Assert.Equal(2, item.SourceFiles.Count);
-                Assert.Contains(firstSourceFile, item.SourceFiles);
-                Assert.Contains(secondSourceFile, item.SourceFiles);
-            }
+            Assert.Equal(expectedCount, result.SourceFiles.Count);
         }
 
         [Fact]

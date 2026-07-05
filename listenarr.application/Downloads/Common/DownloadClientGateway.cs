@@ -33,6 +33,7 @@ namespace Listenarr.Application.Downloads.Common
         IRemotePathMappingService remotePathMappingService,
         IDownloadClientAdapterFactory factory,
         IFileSystem fileSystem,
+        IFileSystemSemanticsResolver semanticsResolver,
         ILogger<DownloadClientGateway> logger) : IDownloadClientGateway
     {
         internal IDownloadClientAdapter ResolveAdapter(DownloadClientConfiguration client)
@@ -302,11 +303,41 @@ namespace Listenarr.Application.Downloads.Common
             }
 
             // Source files represent local filesystem identities after remote-path mapping.
-            // Use host filesystem semantics so Docker/Linux can preserve case-distinct files
-            // while Windows still collapses paths that refer to the same file.
-            item.SourceFiles = new HashSet<string>(item.SourceFiles, FileUtils.FilesystemPathComparerForCurrentOs).ToList();
+            // Use the reported local storage boundary rather than the host OS so Docker mounts
+            // with explicit case behavior dedupe the same way the underlying volume does.
+            var sourceFileComparer = await ResolveSourceFileComparerAsync(item);
+            item.SourceFiles = new HashSet<string>(item.SourceFiles, sourceFileComparer).ToList();
 
             return item;
+        }
+
+        private async Task<IEqualityComparer<string>> ResolveSourceFileComparerAsync(QueueItem item)
+        {
+            var boundary = !string.IsNullOrWhiteSpace(item.ContentPath)
+                ? item.ContentPath
+                : item.SourceFiles?
+                    .Select(Path.GetDirectoryName)
+                    .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path));
+            if (string.IsNullOrWhiteSpace(boundary))
+            {
+                return StringComparer.Ordinal;
+            }
+
+            try
+            {
+                var resolution = await semanticsResolver.ResolveAsync(boundary);
+                return resolution.State == PathIdentityState.Valid
+                    ? resolution.Semantics.Comparer
+                    : StringComparer.Ordinal;
+            }
+            catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+            {
+                logger.LogDebug(
+                    exception,
+                    "Failed to resolve download source file semantics for {Path}",
+                    LogRedaction.SanitizeFilePath(boundary));
+                return StringComparer.Ordinal;
+            }
         }
 
         private static void EnsureNativePath(string? path, string clientName)

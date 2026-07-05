@@ -518,7 +518,6 @@ public sealed class BackendArchitectureTests
             // subsystem is moved to explicit FileSystemPathSemantics.
             "listenarr.api/Features/Library/RootFoldersController.cs",
             "listenarr.application/Audiobooks/RootFolders/RootFolderService.cs",
-            "listenarr.application/Downloads/Common/DownloadClientGateway.cs",
             "listenarr.infrastructure/Configuration/Paths/RemotePathMappingService.cs",
             "listenarr.infrastructure/Library/Moving/AudiobookFilesystemDeleteService.cs",
             "listenarr.infrastructure/Library/Moving/AudiobookFilesystemDeleteService.Folders.cs",
