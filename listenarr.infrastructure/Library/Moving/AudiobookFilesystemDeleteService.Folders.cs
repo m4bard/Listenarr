@@ -13,28 +13,20 @@ namespace Listenarr.Infrastructure.Library.Moving
         private async Task<DeleteFolderTarget?> ResolveDeleteFolderTargetAsync(
             Audiobook audiobook,
             IReadOnlyList<string> trackedFilePaths,
+            FileSystemPathSemantics semantics,
             AudiobookFilesystemDeleteResult result)
         {
             var protectedRoots = await GetProtectedRootPathsAsync();
-            var folderPath = ResolveAudiobookFolderPath(audiobook, trackedFilePaths);
+            var folderPath = ResolveAudiobookFolderPath(audiobook, trackedFilePaths, semantics);
             if (string.IsNullOrWhiteSpace(folderPath))
             {
                 result.Warnings.Add("Audiobook folder could not be determined, so only tracked audiobook files were deleted.");
                 return null;
             }
 
-            var resolution = await _semanticsResolver.ResolveAsync(folderPath);
-            if (resolution.State != PathIdentityState.Valid)
-            {
-                result.Warnings.Add(
-                    "Filesystem case sensitivity could not be resolved, so folder deletion was blocked.");
-                return null;
-            }
-
-            var semantics = resolution.Semantics;
             if (protectedRoots.Any(root => PathsEqual(root, folderPath, semantics)))
             {
-                var fallbackFolderPath = ResolveTrackedFolderPath(trackedFilePaths);
+                var fallbackFolderPath = ResolveTrackedFolderPath(trackedFilePaths, semantics);
                 if (!string.IsNullOrWhiteSpace(fallbackFolderPath)
                     && !protectedRoots.Any(root => PathsEqual(root, fallbackFolderPath, semantics))
                     && IsSamePathOrWithin(fallbackFolderPath, folderPath, semantics))
@@ -205,7 +197,7 @@ namespace Listenarr.Infrastructure.Library.Moving
 
         private async Task<HashSet<string>> GetProtectedRootPathsAsync()
         {
-            var protectedRoots = new HashSet<string>(FileUtils.FilesystemPathComparerForCurrentOs);
+            var protectedRoots = new HashSet<string>(StringComparer.Ordinal);
 
             try
             {
@@ -239,7 +231,10 @@ namespace Listenarr.Infrastructure.Library.Moving
             return protectedRoots;
         }
 
-        private static string? ResolveAudiobookFolderPath(Audiobook audiobook, IReadOnlyList<string> trackedFilePaths)
+        private static string? ResolveAudiobookFolderPath(
+            Audiobook audiobook,
+            IReadOnlyList<string> trackedFilePaths,
+            FileSystemPathSemantics semantics)
         {
             var basePath = NormalizePath(audiobook.BasePath);
             if (!string.IsNullOrWhiteSpace(basePath))
@@ -253,10 +248,12 @@ namespace Listenarr.Infrastructure.Library.Moving
                 return NormalizePath(Path.GetDirectoryName(legacyFilePath));
             }
 
-            return GetCommonDirectoryPath(trackedFilePaths);
+            return GetCommonDirectoryPath(trackedFilePaths, semantics);
         }
 
-        private static string? ResolveTrackedFolderPath(IReadOnlyList<string> trackedFilePaths)
+        private static string? ResolveTrackedFolderPath(
+            IReadOnlyList<string> trackedFilePaths,
+            FileSystemPathSemantics semantics)
         {
             if (trackedFilePaths.Count == 0)
             {
@@ -284,7 +281,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 return directFolder;
             }
 
-            return GetCommonDirectoryPath(trackedFilePaths);
+            return GetCommonDirectoryPath(trackedFilePaths, semantics);
         }
 
         private static bool IsLikelySegmentFolder(string? folderName)
@@ -300,7 +297,9 @@ namespace Listenarr.Infrastructure.Library.Moving
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         }
 
-        private static string? GetCommonDirectoryPath(IReadOnlyList<string> filePaths)
+        private static string? GetCommonDirectoryPath(
+            IReadOnlyList<string> filePaths,
+            FileSystemPathSemantics semantics)
         {
             if (filePaths.Count == 0)
             {
@@ -311,7 +310,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 .Select(p => NormalizePath(Path.GetDirectoryName(p)))
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .Cast<string>()
-                .Distinct(FileUtils.FilesystemPathComparerForCurrentOs)
+                .Distinct(semantics.Comparer)
                 .ToList();
 
             if (directories.Count == 0)
@@ -322,10 +321,10 @@ namespace Listenarr.Infrastructure.Library.Moving
             var commonPath = directories[0];
             for (var i = 1; i < directories.Count; i++)
             {
-                while (!IsSamePathOrWithin(directories[i], commonPath))
+                while (!IsSamePathOrWithin(directories[i], commonPath, semantics))
                 {
                     var parent = NormalizePath(Path.GetDirectoryName(commonPath));
-                    if (string.IsNullOrWhiteSpace(parent) || PathsEqual(parent, commonPath))
+                    if (string.IsNullOrWhiteSpace(parent) || PathsEqual(parent, commonPath, semantics))
                     {
                         return null;
                     }
@@ -334,7 +333,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 }
             }
 
-            return IsFilesystemRoot(commonPath) ? null : commonPath;
+            return IsFilesystemRoot(commonPath, semantics) ? null : commonPath;
         }
 
         private static string? NormalizePath(string? path)
@@ -355,16 +354,6 @@ namespace Listenarr.Infrastructure.Library.Moving
             }
         }
 
-        private static bool PathsEqual(string? left, string? right)
-        {
-            if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
-            {
-                return false;
-            }
-
-            return FileUtils.AreFilesystemPathsEquivalentForCurrentOs(left, right);
-        }
-
         private static bool PathsEqual(
             string? left,
             string? right,
@@ -375,25 +364,11 @@ namespace Listenarr.Infrastructure.Library.Moving
                 && FileSystemPathIdentity.AreEquivalent(left, right, semantics);
         }
 
-        private static bool IsSamePathOrWithin(string path, string rootPath)
-            => FileUtils.IsPathSameOrInside(path, rootPath);
-
         private static bool IsSamePathOrWithin(
             string path,
             string rootPath,
             FileSystemPathSemantics semantics) =>
             FileSystemPathIdentity.IsSameOrInside(path, rootPath, semantics);
-
-        private static bool IsFilesystemRoot(string? path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return false;
-            }
-
-            var root = NormalizePath(Path.GetPathRoot(path));
-            return !string.IsNullOrWhiteSpace(root) && PathsEqual(root, path);
-        }
 
         private static bool IsFilesystemRoot(
             string? path,

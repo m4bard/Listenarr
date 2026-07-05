@@ -55,18 +55,14 @@ namespace Listenarr.Infrastructure.Library.Moving
                 : !string.IsNullOrWhiteSpace(audiobook.FilePath)
                     ? audiobook.FilePath
                     : trackedFilePaths.FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(boundaryPath))
+            var semantics = await ResolveDeleteSemanticsAsync(boundaryPath, result);
+            if (semantics == null)
             {
-                var resolution = await _semanticsResolver.ResolveAsync(boundaryPath);
-                if (resolution.State != PathIdentityState.Valid)
-                {
-                    result.Warnings.Add(
-                        "Filesystem case sensitivity could not be resolved, so deletion was blocked.");
-                    return result;
-                }
+                return result;
             }
 
-            var deleteTarget = await ResolveDeleteFolderTargetAsync(audiobook, trackedFilePaths, result);
+            var deleteSemantics = semantics.Value;
+            var deleteTarget = await ResolveDeleteFolderTargetAsync(audiobook, trackedFilePaths, deleteSemantics, result);
 
             if (deleteTarget != null)
             {
@@ -80,7 +76,7 @@ namespace Listenarr.Infrastructure.Library.Moving
             else
             {
                 var protectedRoots = await GetProtectedRootPathsAsync();
-                var fallbackFolderRoot = ResolveAudiobookFolderPath(audiobook, trackedFilePaths);
+                var fallbackFolderRoot = ResolveAudiobookFolderPath(audiobook, trackedFilePaths, deleteSemantics);
                 var allowedRoots = protectedRoots
                     .Concat(string.IsNullOrWhiteSpace(fallbackFolderRoot) ? [] : [fallbackFolderRoot])
                     .ToList();
@@ -100,9 +96,56 @@ namespace Listenarr.Infrastructure.Library.Moving
             public required FileSystemPathSemantics Semantics { get; init; }
         }
 
+        private async Task<FileSystemPathSemantics?> ResolveDeleteSemanticsAsync(
+            string? boundaryPath,
+            AudiobookFilesystemDeleteResult result)
+        {
+            if (string.IsNullOrWhiteSpace(boundaryPath))
+            {
+                return null;
+            }
+
+            try
+            {
+                foreach (var root in await _rootFolderService.GetAllAsync())
+                {
+                    if (string.IsNullOrWhiteSpace(root.Path))
+                    {
+                        continue;
+                    }
+
+                    var rootResolution = await _semanticsResolver.ResolveAsync(
+                        root.Path,
+                        root.CaseSensitivityMode);
+                    if (rootResolution.State == PathIdentityState.Valid
+                        && FileSystemPathIdentity.IsSameOrInside(
+                            boundaryPath,
+                            root.Path,
+                            rootResolution.Semantics))
+                    {
+                        return rootResolution.Semantics;
+                    }
+                }
+            }
+            catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+            {
+                _logger.LogWarning(exception, "Failed to resolve root folder semantics while deleting audiobook files");
+            }
+
+            var resolution = await _semanticsResolver.ResolveAsync(boundaryPath);
+            if (resolution.State == PathIdentityState.Valid)
+            {
+                return resolution.Semantics;
+            }
+
+            result.Warnings.Add(
+                "Filesystem case sensitivity could not be resolved, so deletion was blocked.");
+            return null;
+        }
+
         private static IReadOnlyList<string> CollectTrackedFilePaths(Audiobook audiobook)
         {
-            var paths = new HashSet<string>(FileUtils.FilesystemPathComparerForCurrentOs);
+            var paths = new HashSet<string>(StringComparer.Ordinal);
 
             if (!string.IsNullOrWhiteSpace(audiobook.FilePath))
             {
