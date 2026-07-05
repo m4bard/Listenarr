@@ -144,6 +144,39 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Files
                 .First(h => h.EventType == "File Association Refused"));
         }
 
+        [Theory]
+        [InlineData(FileSystemCaseSensitivityMode.Sensitive, false)]
+        [InlineData(FileSystemCaseSensitivityMode.Insensitive, true)]
+        public async Task EnsureAudiobookFileAsync_ExistingDirectoryContainmentUsesResolvedRootSemantics(
+            FileSystemCaseSensitivityMode caseSensitivityMode,
+            bool shouldCreate)
+        {
+            var rootPath = FileService.GetTempDirectory("audio-file-semantics");
+            await _rootFolderRepository.AddAsync(new RootFolderBuilder()
+                .WithName("Audio Root")
+                .WithPath(rootPath)
+                .WithCaseSensitivityMode(caseSensitivityMode)
+                .WithIsDefault()
+                .Build());
+
+            var candidateDir = Path.Join(rootPath, "casebook");
+            Directory.CreateDirectory(candidateDir);
+            var candidateFile = Path.Join(candidateDir, "track.m4b");
+            await File.WriteAllTextAsync(candidateFile, "audio");
+
+            var book = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Case Book")
+                .WithFilePath(Path.Join(rootPath, "CaseBook", "existing.m4b"))
+                .Build());
+
+            var service = _provider.GetRequiredService<IAudiobookFileService>();
+            var created = await service.EnsureAudiobookFileAsync(book, candidateFile, "test-scan");
+
+            Assert.Equal(shouldCreate, created);
+            var files = await _audiobookFileRepository.GetByAudiobookIdAsync(book.Id);
+            Assert.Equal(shouldCreate, files.Any(file => file.Path == candidateFile));
+        }
+
         [Fact]
         public async Task EnsureAudiobookFileAsync_RejectsNonAudioFile()
         {
@@ -192,4 +225,3 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Files
         }
     }
 }
-

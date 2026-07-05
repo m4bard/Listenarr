@@ -32,6 +32,8 @@ namespace Listenarr.Application.Audiobooks.Files
         IToastService toastService,
         IFfmpegService ffmpegService,
         IFileSystem fileSystem,
+        IFileSystemSemanticsResolver semanticsResolver,
+        IRootFolderService rootFolderService,
         ILogger<AudiobookFileService> logger) : IAudiobookFileService
     {
         public async Task<bool> EnsureAudiobookFileAsync(Audiobook audiobook, string filePath, string? source = "scan")
@@ -71,20 +73,33 @@ namespace Listenarr.Application.Audiobooks.Files
                 {
                     if (!string.IsNullOrWhiteSpace(audiobook.FilePath))
                     {
-                        var existingDir = FileUtils.NormalizeStoredPath(Path.GetDirectoryName(audiobook.FilePath));
-                        var candidateDir = FileUtils.NormalizeStoredPath(Path.GetDirectoryName(filePath));
-                        var candidateFull = FileUtils.NormalizeStoredPath(filePath);
-                        var normalizedBasePath = FileUtils.NormalizeStoredPath(audiobook.BasePath);
+                        var existingDir = ResolveAbsolutePath(Path.GetDirectoryName(audiobook.FilePath));
+                        var candidateDir = ResolveAbsolutePath(Path.GetDirectoryName(filePath));
+                        var candidateFull = ResolveAbsolutePath(filePath);
+                        var normalizedBasePath = ResolveAbsolutePath(audiobook.BasePath);
 
                         if (!string.IsNullOrEmpty(existingDir)
                             && !string.IsNullOrEmpty(candidateDir)
                             && !string.IsNullOrEmpty(candidateFull))
                         {
-                            var isInExistingDir = FileUtils.AreFilesystemPathsEquivalentForCurrentOs(candidateDir, existingDir) ||
-                                                  FileUtils.IsPathInsideOf(candidateDir, existingDir);
-                            var isInBasePath = !string.IsNullOrWhiteSpace(normalizedBasePath) &&
-                                               (FileUtils.AreFilesystemPathsEquivalentForCurrentOs(candidateDir, normalizedBasePath)
-                                                || FileUtils.IsPathInsideOf(candidateFull, normalizedBasePath));
+                            var rootFolders = await GetRootFoldersForSemanticsAsync();
+                            var existingDirSemantics = await ResolveLibrarySemanticsAsync(existingDir, rootFolders);
+                            var isInExistingDir = existingDirSemantics != null
+                                && FileSystemPathIdentity.IsSameOrInside(
+                                    candidateDir,
+                                    existingDir,
+                                    existingDirSemantics.Value);
+
+                            var isInBasePath = false;
+                            if (!string.IsNullOrWhiteSpace(normalizedBasePath))
+                            {
+                                var basePathSemantics = await ResolveLibrarySemanticsAsync(normalizedBasePath, rootFolders);
+                                isInBasePath = basePathSemantics != null
+                                    && FileSystemPathIdentity.IsSameOrInside(
+                                        candidateFull,
+                                        normalizedBasePath,
+                                        basePathSemantics.Value);
+                            }
 
                             if (!isInExistingDir && !isInBasePath)
                             {
@@ -258,6 +273,75 @@ namespace Listenarr.Application.Audiobooks.Files
             {
                 logger.LogWarning(ex, "Failed to create AudiobookFile record for audiobook {AudiobookId} at {Path}", audiobook.Id, LogRedaction.SanitizeFilePath(filePath));
                 return false;
+            }
+        }
+
+        private static string ResolveAbsolutePath(string? path) =>
+            string.IsNullOrWhiteSpace(path)
+                ? string.Empty
+                : FileSystemPathIdentity.ResolveNativeAbsolutePath(path);
+
+        private async Task<IReadOnlyList<RootFolder>> GetRootFoldersForSemanticsAsync()
+        {
+            try
+            {
+                return await rootFolderService.GetAllAsync();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogDebug(ex, "Failed to load root folders while resolving audiobook file path semantics");
+                return Array.Empty<RootFolder>();
+            }
+        }
+
+        private async Task<FileSystemPathSemantics?> ResolveLibrarySemanticsAsync(
+            string path,
+            IReadOnlyList<RootFolder> rootFolders)
+        {
+            foreach (var root in rootFolders)
+            {
+                if (string.IsNullOrWhiteSpace(root.Path))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var rootResolution = await semanticsResolver.ResolveAsync(
+                        root.Path,
+                        root.CaseSensitivityMode);
+                    if (rootResolution.State == PathIdentityState.Valid
+                        && FileSystemPathIdentity.IsSameOrInside(
+                            path,
+                            root.Path,
+                            rootResolution.Semantics))
+                    {
+                        return rootResolution.Semantics;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    logger.LogDebug(
+                        ex,
+                        "Failed to resolve configured root folder semantics for {RootPath}",
+                        LogRedaction.SanitizeFilePath(root.Path));
+                }
+            }
+
+            try
+            {
+                var resolution = await semanticsResolver.ResolveAsync(path);
+                return resolution.State == PathIdentityState.Valid
+                    ? resolution.Semantics
+                    : null;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogDebug(
+                    ex,
+                    "Failed to resolve audiobook file path semantics for {Path}",
+                    LogRedaction.SanitizeFilePath(path));
+                return null;
             }
         }
     }
