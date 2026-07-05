@@ -513,14 +513,14 @@ public sealed class BackendArchitectureTests
             "listenarr.infrastructure/DependencyInjection/InfrastructureStartupCompositionExtensions.cs",
             "listenarr.infrastructure/Ffmpeg/Installation/FfmpegService.cs",
             "listenarr.infrastructure/FileSystem/FileSystemSafety.cs",
+            // Remote path mapping translates client-reported paths to local native paths and
+            // uses host-native semantics only to keep relative joins inside the mapped local base.
+            "listenarr.infrastructure/Configuration/Paths/RemotePathMappingService.cs",
 
             // Temporary migration allow-list. Each user-library entry must be removed as its
             // subsystem is moved to explicit FileSystemPathSemantics.
             "listenarr.api/Features/Library/RootFoldersController.cs",
             "listenarr.application/Audiobooks/RootFolders/RootFolderService.cs",
-            "listenarr.infrastructure/Configuration/Paths/RemotePathMappingService.cs",
-            "listenarr.infrastructure/Library/Moving/AudiobookFilesystemDeleteService.cs",
-            "listenarr.infrastructure/Library/Moving/AudiobookFilesystemDeleteService.Folders.cs",
         };
         var forbidden = new[]
         {
