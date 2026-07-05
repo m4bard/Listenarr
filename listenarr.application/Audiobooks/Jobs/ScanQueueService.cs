@@ -27,10 +27,14 @@ namespace Listenarr.Application.Audiobooks.Jobs
         private readonly ConcurrentDictionary<Guid, ScanJob> _jobs = new();
         private readonly Channel<ScanJob> _channel = Channel.CreateUnbounded<ScanJob>();
         private readonly ILogger<ScanQueueService> _logger;
+        private readonly IFileSystemSemanticsResolver _semanticsResolver;
 
-        public ScanQueueService(ILogger<ScanQueueService> logger)
+        public ScanQueueService(
+            ILogger<ScanQueueService> logger,
+            IFileSystemSemanticsResolver semanticsResolver)
         {
             _logger = logger;
+            _semanticsResolver = semanticsResolver;
         }
 
         public async Task<Guid> EnqueueScanAsync(
@@ -43,11 +47,16 @@ namespace Listenarr.Application.Audiobooks.Jobs
             // queued/processing/completed, return that job id instead of creating a duplicate.
             try
             {
+                var pathSemantics = !string.IsNullOrWhiteSpace(path)
+                    ? await ResolvePathSemanticsAsync(path)
+                    : null;
                 var existing = _jobs.Values.FirstOrDefault(j =>
                 {
                     if (j.AudiobookId != audiobook.Id) return false;
-                    bool bothNull = j.Path == null && path == null;
-                    bool bothMatch = j.Path != null && path != null && FileUtils.AreFilesystemPathsEquivalentForCurrentOs(j.Path, path);
+                    var bothNull = j.Path == null && path == null;
+                    var bothMatch = j.Path != null
+                        && path != null
+                        && AreEquivalentPaths(j.Path, path, pathSemantics);
                     return bothNull || bothMatch;
                 });
 
@@ -128,6 +137,30 @@ namespace Listenarr.Application.Audiobooks.Jobs
             _logger.LogInformation("Requeueing scan job {OldJobId} as new job {NewJobId} for audiobook {AudiobookId}", jobId, newJob.Id, job.AudiobookId);
             await _channel.Writer.WriteAsync(newJob);
             return newJob.Id;
+        }
+
+        private async Task<FileSystemPathSemantics?> ResolvePathSemanticsAsync(string path)
+        {
+            try
+            {
+                var resolution = await _semanticsResolver.ResolveAsync(path);
+                return resolution.State == PathIdentityState.Valid ? resolution.Semantics : null;
+            }
+            catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+            {
+                _logger.LogDebug(exception, "Failed to resolve scan job path semantics for {Path}", LogRedaction.SanitizeFilePath(path));
+                return null;
+            }
+        }
+
+        private static bool AreEquivalentPaths(
+            string left,
+            string right,
+            FileSystemPathSemantics? semantics)
+        {
+            return semantics != null
+                ? FileSystemPathIdentity.AreEquivalent(left, right, semantics.Value)
+                : string.Equals(left, right, StringComparison.Ordinal);
         }
 
         /// <summary>

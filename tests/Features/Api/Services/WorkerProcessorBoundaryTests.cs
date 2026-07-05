@@ -229,7 +229,9 @@ namespace Listenarr.Tests.Features.Api.Services
             var root = FileService.GetTempDirectory("unmatched-processor-root");
             var file = await FileService.GetFileAsync(root, "Untracked Book.m4b", "audio");
             await CreateApplicationSettings();
-            var queue = new UnmatchedScanQueueService(_provider.GetRequiredService<ILogger<UnmatchedScanQueueService>>());
+            var queue = new UnmatchedScanQueueService(
+                _provider.GetRequiredService<ILogger<UnmatchedScanQueueService>>(),
+                _provider.GetRequiredService<IFileSystemSemanticsResolver>());
             CreateHubProxy<SettingsHub>(out var hubContext);
 
             var processor = new UnmatchedScanProcessor(
@@ -255,7 +257,9 @@ namespace Listenarr.Tests.Features.Api.Services
         public async Task UnmatchedScanProcessor_ProcessJob_MissingRootCompletesEmpty()
         {
             await CreateApplicationSettings();
-            var queue = new UnmatchedScanQueueService(_provider.GetRequiredService<ILogger<UnmatchedScanQueueService>>());
+            var queue = new UnmatchedScanQueueService(
+                _provider.GetRequiredService<ILogger<UnmatchedScanQueueService>>(),
+                _provider.GetRequiredService<IFileSystemSemanticsResolver>());
             var clientProxy = CreateHubProxy<SettingsHub>(out var hubContext);
 
             var processor = new UnmatchedScanProcessor(
