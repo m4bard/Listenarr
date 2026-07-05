@@ -522,8 +522,6 @@ public sealed class BackendArchitectureTests
             "listenarr.application/Audiobooks/Jobs/MoveQueueService.cs",
             "listenarr.application/Audiobooks/Jobs/ScanQueueService.cs",
             "listenarr.application/Audiobooks/Jobs/UnmatchedScanQueueService.cs",
-            "listenarr.application/Audiobooks/Renaming/RenameService.cs",
-            "listenarr.application/Audiobooks/Renaming/RenameService.Helpers.cs",
             "listenarr.application/Audiobooks/RootFolders/RootFolderService.cs",
             "listenarr.application/Common/FileNamingService.cs",
             "listenarr.application/Downloads/Common/DownloadClientGateway.cs",

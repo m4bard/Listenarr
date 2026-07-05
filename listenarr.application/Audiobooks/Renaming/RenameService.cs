@@ -31,6 +31,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
         private readonly IFileSystem _fileSystem;
         private readonly ILogger<RenameService> _logger;
         private readonly IRootFolderService? _rootFolderService;
+        private readonly IFileSystemSemanticsResolver _semanticsResolver;
         private readonly IHistoryRepository? _historyRepository;
 
         public RenameService(
@@ -40,6 +41,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
             IAudiobookRepository audiobookRepository,
             IFileSystem fileSystem,
             ILogger<RenameService> logger,
+            IFileSystemSemanticsResolver semanticsResolver,
             IRootFolderService? rootFolderService = null,
             IHistoryRepository? historyRepository = null)
         {
@@ -49,6 +51,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
             _audiobookRepository = audiobookRepository;
             _fileSystem = fileSystem;
             _logger = logger;
+            _semanticsResolver = semanticsResolver;
             _rootFolderService = rootFolderService;
             _historyRepository = historyRepository;
         }
@@ -63,7 +66,13 @@ namespace Listenarr.Application.Audiobooks.Renaming
 
             var audiobooks = await _audiobookRepository.GetByIdsWithFilesAsync(audiobookIds, ct);
 
-            return audiobooks.Select(a => BuildPreview(a, settings, rootFolders)).ToList();
+            var previews = new List<RenamePreview>();
+            foreach (var audiobook in audiobooks)
+            {
+                previews.Add(await BuildPreviewAsync(audiobook, settings, rootFolders, ct));
+            }
+
+            return previews;
         }
 
         public async Task<List<RenameResult>> ExecuteRenameAsync(List<RenameOperation> operations, CancellationToken ct = default)
@@ -78,23 +87,25 @@ namespace Listenarr.Application.Audiobooks.Renaming
             return results;
         }
 
-        private RenamePreview BuildPreview(Audiobook audiobook, ApplicationSettings settings, List<RootFolder> rootFolders)
+        private async Task<RenamePreview> BuildPreviewAsync(Audiobook audiobook, ApplicationSettings settings, List<RootFolder> rootFolders, CancellationToken ct)
         {
+            var currentPathSeed = ComputeCurrentBasePathSeed(audiobook);
+            var semantics = await ResolveRenameSemanticsAsync(currentPathSeed, rootFolders, ct);
             var preview = new RenamePreview
             {
                 AudiobookId = audiobook.Id,
                 AudiobookTitle = audiobook.Title,
-                CurrentFolderPath = ComputeCurrentBasePath(audiobook)
+                CurrentFolderPath = ComputeCurrentBasePath(audiobook, semantics)
             };
 
-            var files = GetFileEntries(audiobook);
+            var files = GetFileEntries(audiobook, semantics);
             if (files.Count == 0)
             {
                 preview.NewFolderPath = preview.CurrentFolderPath;
                 return preview;
             }
 
-            var namingBase = ResolveNamingBasePath(preview.CurrentFolderPath, settings, rootFolders);
+            var namingBase = ResolveNamingBasePath(preview.CurrentFolderPath, settings, rootFolders, semantics);
             var isMultiFile = files.Count > 1;
             var expectedPaths = new List<string>();
 
@@ -109,12 +120,12 @@ namespace Listenarr.Application.Audiobooks.Renaming
                     NewPath = expectedPath,
                     CurrentFilename = Path.GetFileName(file.CurrentPath),
                     NewFilename = Path.GetFileName(expectedPath),
-                    Changed = !PathsEqual(file.CurrentPath, expectedPath)
+                    Changed = !PathsEqual(file.CurrentPath, expectedPath, semantics)
                 });
             }
 
-            preview.NewFolderPath = ComputeCommonBasePath(expectedPaths);
-            preview.FolderChanged = !PathsEqual(preview.CurrentFolderPath, preview.NewFolderPath);
+            preview.NewFolderPath = ComputeCommonBasePath(expectedPaths, semantics);
+            preview.FolderChanged = !PathsEqual(preview.CurrentFolderPath, preview.NewFolderPath, semantics);
             preview.HasChanges = preview.FolderChanged || preview.FileRenames.Any(f => f.Changed);
             return preview;
         }
@@ -132,23 +143,25 @@ namespace Listenarr.Application.Audiobooks.Renaming
                     return result;
                 }
 
-                var currentBasePath = ComputeCurrentBasePath(audiobook);
-                var allowedRoots = BuildAllowedRoots(settings, rootFolders, currentBasePath);
+                var currentPathSeed = ComputeCurrentBasePathSeed(audiobook);
+                var semantics = await ResolveRenameSemanticsAsync(currentPathSeed, rootFolders, ct);
+                var currentBasePath = ComputeCurrentBasePath(audiobook, semantics);
+                var allowedRoots = BuildAllowedRoots(settings, rootFolders, currentBasePath, semantics);
                 var anySucceeded = false;
                 var hasFileOperations = operation.FileRenames != null && operation.FileRenames.Count > 0;
 
                 foreach (var fileOp in operation.FileRenames ?? new())
                 {
-                    var fileResult = await ExecuteFileRenameAsync(audiobook, fileOp, allowedRoots);
+                    var fileResult = await ExecuteFileRenameAsync(audiobook, fileOp, allowedRoots, semantics);
                     result.RenamedFiles.Add(fileResult);
                     anySucceeded |= fileResult.Success;
                 }
 
                 if ((operation.FileRenames == null || operation.FileRenames.Count == 0)
                     && !string.IsNullOrWhiteSpace(operation.NewFolderPath)
-                    && !PathsEqual(currentBasePath, operation.NewFolderPath))
+                    && !PathsEqual(currentBasePath, operation.NewFolderPath, semantics))
                 {
-                    var dirMove = await ExecuteDirectoryMoveAsync(audiobook, operation.NewFolderPath!, allowedRoots);
+                    var dirMove = await ExecuteDirectoryMoveAsync(audiobook, operation.NewFolderPath!, allowedRoots, semantics);
                     result.Success = dirMove.Success;
                     result.Error = dirMove.Error;
                     anySucceeded |= dirMove.Success;
@@ -171,7 +184,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
                 {
                     var shouldTrustRequestedBasePath = !string.IsNullOrWhiteSpace(operation.NewFolderPath)
                         && (!hasFileOperations || result.Success);
-                    UpdateAudiobookPathSummary(audiobook, shouldTrustRequestedBasePath ? operation.NewFolderPath : null);
+                    UpdateAudiobookPathSummary(audiobook, shouldTrustRequestedBasePath ? operation.NewFolderPath : null, semantics);
                     await _audiobookRepository.SaveChangesAsync(ct);
                     await AddHistoryAsync(audiobook, result);
                 }
@@ -186,7 +199,11 @@ namespace Listenarr.Application.Audiobooks.Renaming
             return result;
         }
 
-        private async Task<FileRenameResultItem> ExecuteFileRenameAsync(Audiobook audiobook, FileRenameOperation fileOperation, IReadOnlyCollection<string> allowedRoots)
+        private async Task<FileRenameResultItem> ExecuteFileRenameAsync(
+            Audiobook audiobook,
+            FileRenameOperation fileOperation,
+            IReadOnlyCollection<string> allowedRoots,
+            FileSystemPathSemantics semantics)
         {
             var source = NormalizePath(fileOperation.CurrentPath);
             var dest = NormalizePath(fileOperation.NewPath);
@@ -230,14 +247,14 @@ namespace Listenarr.Application.Audiobooks.Renaming
                 }
             }
 
-            if (!PathsEqual(source, trackedSourcePath))
+            if (!PathsEqual(source, trackedSourcePath, semantics))
             {
                 item.Success = false;
                 item.Error = "Source path does not match the tracked audiobook file.";
                 return item;
             }
 
-            if (!IsPathWithinAllowedRoots(source, allowedRoots) || !IsPathWithinAllowedRoots(dest, allowedRoots))
+            if (!IsPathWithinAllowedRoots(source, allowedRoots, semantics) || !IsPathWithinAllowedRoots(dest, allowedRoots, semantics))
             {
                 item.Success = false;
                 item.Error = "File path is outside the allowed library roots.";
@@ -251,7 +268,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
                 return item;
             }
 
-            if (_fileSystem.FileExists(dest) && !PathsEqual(source, dest))
+            if (_fileSystem.FileExists(dest) && !PathsEqual(source, dest, semantics))
             {
                 item.Success = false;
                 item.Error = "Target file already exists.";
@@ -263,7 +280,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
                 var targetDir = Path.GetDirectoryName(dest);
                 if (!string.IsNullOrWhiteSpace(targetDir)) _fileSystem.CreateDirectory(targetDir);
 
-                if (!PathsEqual(source, dest))
+                if (!PathsEqual(source, dest, semantics))
                 {
                     var moved = await _fileMover.PerformActionOn(FileAction.Move, source, dest);
                     if (!moved)
@@ -289,9 +306,13 @@ namespace Listenarr.Application.Audiobooks.Renaming
             return item;
         }
 
-        private async Task<(bool Success, string? Error)> ExecuteDirectoryMoveAsync(Audiobook audiobook, string newFolderPath, IReadOnlyCollection<string> allowedRoots)
+        private async Task<(bool Success, string? Error)> ExecuteDirectoryMoveAsync(
+            Audiobook audiobook,
+            string newFolderPath,
+            IReadOnlyCollection<string> allowedRoots,
+            FileSystemPathSemantics semantics)
         {
-            var currentBase = ComputeCurrentBasePath(audiobook);
+            var currentBase = ComputeCurrentBasePath(audiobook, semantics);
             if (string.IsNullOrWhiteSpace(currentBase))
             {
                 audiobook.BasePath = NormalizePath(newFolderPath);
@@ -300,7 +321,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
 
             var normalizedCurrent = NormalizePath(currentBase);
             var normalizedNew = NormalizePath(newFolderPath);
-            if (!IsPathWithinAllowedRoots(normalizedCurrent, allowedRoots) || !IsPathWithinAllowedRoots(normalizedNew, allowedRoots))
+            if (!IsPathWithinAllowedRoots(normalizedCurrent, allowedRoots, semantics) || !IsPathWithinAllowedRoots(normalizedNew, allowedRoots, semantics))
                 return (false, "Destination path is outside the allowed library roots.");
             if (!_fileSystem.DirectoryExists(normalizedCurrent))
             {
@@ -320,20 +341,60 @@ namespace Listenarr.Application.Audiobooks.Renaming
             if (audiobook.Files != null)
             {
                 foreach (var file in audiobook.Files.Where(f => !string.IsNullOrWhiteSpace(f.Path)
-                    && (PathsEqual(f.Path, normalizedCurrent) || FileUtils.IsPathInsideOf(f.Path!, normalizedCurrent))))
+                    && IsSamePathOrWithin(f.Path!, normalizedCurrent, semantics)))
                 {
                     var relative = Path.GetRelativePath(normalizedCurrent, file.Path!);
                     file.Path = CombineRelativePath(normalizedNew, relative);
                 }
             }
             if (!string.IsNullOrWhiteSpace(audiobook.FilePath)
-                && (PathsEqual(audiobook.FilePath, normalizedCurrent) || FileUtils.IsPathInsideOf(audiobook.FilePath, normalizedCurrent)))
+                && IsSamePathOrWithin(audiobook.FilePath, normalizedCurrent, semantics))
             {
                 var relative = Path.GetRelativePath(normalizedCurrent, audiobook.FilePath);
                 audiobook.FilePath = CombineRelativePath(normalizedNew, relative);
             }
 
             return (true, null);
+        }
+
+        private async Task<FileSystemPathSemantics> ResolveRenameSemanticsAsync(
+            string path,
+            List<RootFolder> rootFolders,
+            CancellationToken cancellationToken)
+        {
+            var boundaryPath = !string.IsNullOrWhiteSpace(path)
+                ? path
+                : rootFolders.FirstOrDefault(root => root.IsDefault)?.Path
+                    ?? rootFolders.FirstOrDefault(root => !string.IsNullOrWhiteSpace(root.Path))?.Path;
+            if (string.IsNullOrWhiteSpace(boundaryPath))
+            {
+                throw new InvalidOperationException("Filesystem semantics are required for organize operations.");
+            }
+
+            foreach (var root in rootFolders.Where(root => !string.IsNullOrWhiteSpace(root.Path)))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var rootResolution = await _semanticsResolver.ResolveAsync(
+                    root.Path,
+                    root.CaseSensitivityMode,
+                    cancellationToken);
+                if (rootResolution.State == PathIdentityState.Valid
+                    && FileSystemPathIdentity.IsSameOrInside(
+                        boundaryPath,
+                        root.Path,
+                        rootResolution.Semantics))
+                {
+                    return rootResolution.Semantics;
+                }
+            }
+
+            var resolution = await _semanticsResolver.ResolveAsync(boundaryPath, cancellationToken: cancellationToken);
+            if (resolution.State == PathIdentityState.Valid)
+            {
+                return resolution.Semantics;
+            }
+
+            throw new InvalidOperationException(resolution.Reason ?? "Filesystem semantics are required for organize operations.");
         }
 
     }

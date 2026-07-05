@@ -90,6 +90,41 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Renaming
             Assert.Contains("B000TEST", preview.NewFolderPath);
         }
 
+        [Theory]
+        [InlineData(FileSystemCaseSensitivity.Sensitive, true)]
+        [InlineData(FileSystemCaseSensitivity.Insensitive, false)]
+        public async Task PreviewRename_CaseOnlyCandidate_UsesResolvedSemantics(
+            FileSystemCaseSensitivity caseSensitivity,
+            bool expectedChanged)
+        {
+            var bookFolder = Path.Join(_tempRoot, "case-preview");
+            Directory.CreateDirectory(bookFolder);
+            var settings = new ApplicationSettings
+            {
+                OutputPath = bookFolder,
+                FolderNamingPattern = string.Empty,
+                FileNamingPattern = "{Title}"
+            };
+            var (service, db, _) = BuildService(settings, caseSensitivity: caseSensitivity);
+            db.Audiobooks.Add(new Audiobook
+            {
+                Id = 99,
+                Title = "book",
+                BasePath = bookFolder,
+                Files = new List<AudiobookFile>
+                {
+                    new() { Id = 991, AudiobookId = 99, Path = Path.Join(bookFolder, "BOOK.m4b"), Format = "m4b" }
+                }
+            });
+            await db.SaveChangesAsync();
+
+            var preview = Assert.Single(await service.PreviewRenameAsync(new[] { 99 }));
+            var file = Assert.Single(preview.FileRenames);
+
+            Assert.Equal(expectedChanged, file.Changed);
+            Assert.Equal(expectedChanged, preview.HasChanges);
+        }
+
         [Fact]
         public async Task PreviewRename_PreservesCustomBasePath()
         {
@@ -490,7 +525,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Renaming
 
         private (RenameService Service, ListenArrDbContext Db, string DbName) BuildService(
             ApplicationSettings settings,
-            Action<Mock<IFileMover>>? configureFileMover = null)
+            Action<Mock<IFileMover>>? configureFileMover = null,
+            FileSystemCaseSensitivity? caseSensitivity = null)
         {
             var dbName = Guid.NewGuid().ToString();
             var db = CreateContext(dbName);
@@ -526,6 +562,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Renaming
                     return Task.FromResult(true);
                 });
             configureFileMover?.Invoke(fileMover);
+            var semanticsResolver = BuildSemanticsResolver(caseSensitivity);
 
             var service = new RenameService(
                 config.Object,
@@ -533,9 +570,33 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Renaming
                 fileMover.Object,
                 repo,
                 new LocalFileSystem(),
-                NullLogger<RenameService>.Instance);
+                NullLogger<RenameService>.Instance,
+                semanticsResolver);
 
             return (service, db, dbName);
+        }
+
+        private static IFileSystemSemanticsResolver BuildSemanticsResolver(FileSystemCaseSensitivity? caseSensitivity)
+        {
+            var resolver = new Mock<IFileSystemSemanticsResolver>();
+            resolver.Setup(r => r.ResolveAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<FileSystemCaseSensitivityMode>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns<string, FileSystemCaseSensitivityMode, CancellationToken>((path, mode, _) =>
+                {
+                    var sensitivity = caseSensitivity
+                        ?? (mode == FileSystemCaseSensitivityMode.Insensitive
+                            ? FileSystemCaseSensitivity.Insensitive
+                            : mode == FileSystemCaseSensitivityMode.Sensitive
+                                ? FileSystemCaseSensitivity.Sensitive
+                                : FileSystemPathSemantics.CurrentHostDefault.CaseSensitivity);
+                    return ValueTask.FromResult(new FileSystemSemanticsResolution(
+                        new FileSystemPathSemantics(FileSystemPathSemantics.CurrentHostDefault.Syntax, sensitivity),
+                        PathIdentityState.Valid,
+                        path));
+                });
+            return resolver.Object;
         }
 
         private ListenArrDbContext CreateContext(string dbName)
