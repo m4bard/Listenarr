@@ -60,6 +60,7 @@ namespace Listenarr.Api.Features.Library
         private readonly IAudiobookFileRepository _fileRepository;
         private readonly IAudiobookRepository _audiobookRepository;
         private readonly IFileSystem _fileSystem;
+        private readonly IFileSystemSemanticsResolver _semanticsResolver;
         private readonly IRootFolderRelocationService? _relocationService;
 
         public RootFoldersController(
@@ -68,6 +69,7 @@ namespace Listenarr.Api.Features.Library
             IAudiobookFileRepository fileRepository,
             IAudiobookRepository audiobookRepository,
             IFileSystem fileSystem,
+            IFileSystemSemanticsResolver semanticsResolver,
             IRootFolderRelocationService? relocationService = null)
         {
             _service = service;
@@ -75,6 +77,7 @@ namespace Listenarr.Api.Features.Library
             _fileRepository = fileRepository;
             _audiobookRepository = audiobookRepository;
             _fileSystem = fileSystem;
+            _semanticsResolver = semanticsResolver;
             _relocationService = relocationService;
         }
 
@@ -308,11 +311,7 @@ namespace Listenarr.Api.Features.Library
                     .Where(a => a.FilePath != null)
                     .Select(a => a.FilePath!)
                     .ToList();
-                var trackedPathSemantics = new FileSystemPathSemantics(
-                    FileSystemPathSemantics.CurrentHostDefault.Syntax,
-                    folder.ResolvedCaseSensitivity == FileSystemCaseSensitivity.Unknown
-                        ? FileSystemPathSemantics.CurrentHostDefault.CaseSensitivity
-                        : folder.ResolvedCaseSensitivity);
+                var trackedPathSemantics = await ResolveFolderSemanticsAsync(folder);
                 var tracked = new HashSet<string>(
                     trackedFromFiles.Concat(trackedFromAudiobooks),
                     trackedPathSemantics.Comparer);
@@ -329,6 +328,18 @@ namespace Listenarr.Api.Features.Library
             }
 
             return Ok(new { lastScannedAt = (DateTime?)null, items = new List<UnmatchedFileResult>() });
+        }
+
+        private async Task<FileSystemPathSemantics> ResolveFolderSemanticsAsync(RootFolder folder)
+        {
+            var resolution = await _semanticsResolver.ResolveAsync(folder.Path, folder.CaseSensitivityMode);
+            if (resolution.State != PathIdentityState.Valid)
+            {
+                throw new InvalidOperationException(
+                    resolution.Reason ?? "Root folder filesystem identity could not be resolved.");
+            }
+
+            return resolution.Semantics;
         }
 
         private async Task<RootFolderDto> MapAsync(RootFolder root)

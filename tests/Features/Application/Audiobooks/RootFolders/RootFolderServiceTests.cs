@@ -18,6 +18,8 @@
 using Microsoft.EntityFrameworkCore;
 using Xunit.Abstractions;
 using Listenarr.Infrastructure.Persistence.Repositories;
+using AppRootFolderService = Listenarr.Application.Audiobooks.RootFolders.RootFolderService;
+using RootFolderService = Listenarr.Tests.Features.Application.Audiobooks.RootFolders.RootFolderServiceTestAdapter;
 
 namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
 {
@@ -802,6 +804,31 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                 It.IsAny<bool>()), Times.Never);
         }
 
+        private static IFileSystemSemanticsResolver BuildSemanticsResolver(
+            FileSystemCaseSensitivity caseSensitivity = FileSystemCaseSensitivity.Sensitive)
+        {
+            var resolver = new Mock<IFileSystemSemanticsResolver>();
+            resolver.Setup(service => service.ResolveAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<FileSystemCaseSensitivityMode>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns<string, FileSystemCaseSensitivityMode, CancellationToken>((path, mode, _) =>
+                {
+                    var resolvedCaseSensitivity = mode == FileSystemCaseSensitivityMode.Insensitive
+                        ? FileSystemCaseSensitivity.Insensitive
+                        : mode == FileSystemCaseSensitivityMode.Sensitive
+                            ? FileSystemCaseSensitivity.Sensitive
+                            : caseSensitivity;
+                    return ValueTask.FromResult(new FileSystemSemanticsResolution(
+                        new FileSystemPathSemantics(
+                            FileSystemPathSemantics.CurrentHostDefault.Syntax,
+                            resolvedCaseSensitivity),
+                        PathIdentityState.Valid,
+                        Path.GetPathRoot(path) ?? path));
+                });
+            return resolver.Object;
+        }
+
         private class TestDbFactory : IDbContextFactory<ListenArrDbContext>
         {
             private readonly DbContextOptions<ListenArrDbContext> _options;
@@ -820,6 +847,45 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
             {
                 _out.WriteLine($"[{logLevel}] {formatter(state, exception)}{(exception != null ? " Exception: " + exception : "")}");
             }
+        }
+    }
+
+    internal sealed class RootFolderServiceTestAdapter : AppRootFolderService
+    {
+        public RootFolderServiceTestAdapter(
+            IRootFolderRepository repo,
+            ILogger<RootFolderServiceTestAdapter>? logger,
+            IMoveQueueService? moveQueue = null,
+            IFileSystemSemanticsResolver? semanticsResolver = null,
+            IRootFolderRelocationService? relocationService = null)
+            : base(repo, logger, semanticsResolver ?? BuildSemanticsResolver(), moveQueue, relocationService)
+        {
+        }
+
+        private static IFileSystemSemanticsResolver BuildSemanticsResolver()
+        {
+            var resolver = new Mock<IFileSystemSemanticsResolver>();
+            resolver.Setup(service => service.ResolveAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<FileSystemCaseSensitivityMode>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns<string, FileSystemCaseSensitivityMode, CancellationToken>((path, mode, _) =>
+                {
+                    var resolvedCaseSensitivity = mode == FileSystemCaseSensitivityMode.Insensitive
+                        ? FileSystemCaseSensitivity.Insensitive
+                        : mode == FileSystemCaseSensitivityMode.Sensitive
+                            ? FileSystemCaseSensitivity.Sensitive
+                            : OperatingSystem.IsWindows()
+                                ? FileSystemCaseSensitivity.Insensitive
+                                : FileSystemCaseSensitivity.Sensitive;
+                    return ValueTask.FromResult(new FileSystemSemanticsResolution(
+                        new FileSystemPathSemantics(
+                            FileSystemPathSemantics.CurrentHostDefault.Syntax,
+                            resolvedCaseSensitivity),
+                        PathIdentityState.Valid,
+                        Path.GetPathRoot(path) ?? path));
+                });
+            return resolver.Object;
         }
     }
 }

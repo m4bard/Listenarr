@@ -25,20 +25,20 @@ namespace Listenarr.Application.Audiobooks.RootFolders
         private readonly IRootFolderRepository _repo;
         private readonly ILogger<RootFolderService>? _logger;
         private readonly IMoveQueueService? _moveQueue;
-        private readonly IFileSystemSemanticsResolver? _semanticsResolver;
+        private readonly IFileSystemSemanticsResolver _semanticsResolver;
         private readonly IRootFolderRelocationService? _relocationService;
 
         public RootFolderService(
             IRootFolderRepository repo,
             ILogger<RootFolderService>? logger,
+            IFileSystemSemanticsResolver semanticsResolver,
             IMoveQueueService? moveQueue = null,
-            IFileSystemSemanticsResolver? semanticsResolver = null,
             IRootFolderRelocationService? relocationService = null)
         {
             _repo = repo;
             _logger = logger;
+            _semanticsResolver = semanticsResolver ?? throw new ArgumentNullException(nameof(semanticsResolver));
             _moveQueue = moveQueue;
-            _semanticsResolver = semanticsResolver;
             _relocationService = relocationService;
         }
 
@@ -83,7 +83,6 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             var root = await _repo.GetByIdAsync(id);
             if (root == null) throw new KeyNotFoundException("Root folder not found");
 
-            EnsureRootIdentityAvailable(root);
             await EnsureNoActiveRelocationAsync(root.Id);
 
             var sourceSemantics = await ResolveSemanticsAsync(root.Path, root.CaseSensitivityMode);
@@ -98,7 +97,6 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             {
                 var newRoot = await _repo.GetByIdAsync(reassignRootId!.Value);
                 if (newRoot == null) throw new KeyNotFoundException("Reassign root not found");
-                EnsureRootIdentityAvailable(newRoot);
                 var targetSemantics = await ResolveSemanticsAsync(newRoot.Path, newRoot.CaseSensitivityMode);
                 await EnsureNoActiveMoveJobsTouchRootAsync(newRoot.Path, targetSemantics.Semantics);
                 await _repo.MigrateAudiobookPathsAsync(
@@ -250,14 +248,6 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             string path,
             FileSystemCaseSensitivityMode mode)
         {
-            if (_semanticsResolver == null)
-            {
-                return new FileSystemSemanticsResolution(
-                    FileSystemPathSemantics.CurrentHostDefault,
-                    PathIdentityState.Valid,
-                    Path.GetPathRoot(path) ?? path);
-            }
-
             var resolution = await _semanticsResolver.ResolveAsync(path, mode);
             if (resolution.State != PathIdentityState.Valid)
             {
@@ -278,15 +268,6 @@ namespace Listenarr.Application.Audiobooks.RootFolders
                 "root",
                 root.Path,
                 resolution.Semantics);
-        }
-
-        private void EnsureRootIdentityAvailable(RootFolder root)
-        {
-            if (_semanticsResolver != null && root.PathIdentityState != PathIdentityState.Valid)
-            {
-                throw new InvalidOperationException(
-                    "Root filesystem identity is unresolved or conflicted; select an explicit case-sensitivity override before destructive operations.");
-            }
         }
 
         private async Task EnsureNoActiveRelocationAsync(int rootFolderId)
