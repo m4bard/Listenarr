@@ -83,7 +83,12 @@ namespace Listenarr.Infrastructure.Metadata.Jobs
                         if (!FileUtils.IsAudioFile(file.Path ?? string.Empty))
                         {
                             var audiobook = await taskAudiobookRepository.GetByIdAsync(file.AudiobookId);
-                            if (audiobook != null && FileUtils.AreFilesystemPathsEquivalentForCurrentOs(audiobook.FilePath ?? string.Empty, file.Path ?? string.Empty))
+                            if (audiobook != null && await AreSameLibraryPathAsync(
+                                audiobook,
+                                file.Path,
+                                taskScope.ServiceProvider.GetRequiredService<IFileSystemSemanticsResolver>(),
+                                taskScope.ServiceProvider.GetRequiredService<IRootFolderService>(),
+                                cancellationToken))
                             {
                                 audiobook.FilePath = null;
                                 audiobook.FileSize = null;
@@ -130,6 +135,62 @@ namespace Listenarr.Infrastructure.Metadata.Jobs
             }
 
             await Task.WhenAll(tasks);
+        }
+
+        private static async Task<bool> AreSameLibraryPathAsync(
+            Audiobook audiobook,
+            string? filePath,
+            IFileSystemSemanticsResolver semanticsResolver,
+            IRootFolderService rootFolderService,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(audiobook.FilePath) || string.IsNullOrWhiteSpace(filePath))
+            {
+                return false;
+            }
+
+            var semantics = await ResolveLibrarySemanticsAsync(
+                audiobook.FilePath,
+                semanticsResolver,
+                rootFolderService,
+                cancellationToken);
+            return semantics != null
+                && FileSystemPathIdentity.AreEquivalent(
+                    audiobook.FilePath,
+                    filePath,
+                    semantics.Value);
+        }
+
+        private static async Task<FileSystemPathSemantics?> ResolveLibrarySemanticsAsync(
+            string path,
+            IFileSystemSemanticsResolver semanticsResolver,
+            IRootFolderService rootFolderService,
+            CancellationToken cancellationToken)
+        {
+            foreach (var root in await rootFolderService.GetAllAsync())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (string.IsNullOrWhiteSpace(root.Path))
+                {
+                    continue;
+                }
+
+                var rootResolution = await semanticsResolver.ResolveAsync(
+                    root.Path,
+                    root.CaseSensitivityMode,
+                    cancellationToken);
+                if (rootResolution.State == PathIdentityState.Valid
+                    && FileSystemPathIdentity.IsSameOrInside(
+                        path,
+                        root.Path,
+                        rootResolution.Semantics))
+                {
+                    return rootResolution.Semantics;
+                }
+            }
+
+            var resolution = await semanticsResolver.ResolveAsync(path, cancellationToken: cancellationToken);
+            return resolution.State == PathIdentityState.Valid ? resolution.Semantics : null;
         }
     }
 }
