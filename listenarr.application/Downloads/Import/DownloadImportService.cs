@@ -164,18 +164,21 @@ namespace Listenarr.Application.Downloads.Import
                                     continue;
                                 }
 
-                                destination = await destinationPlanner.ResolveIdempotentOrUniqueAsync(
+                                var destinationReservation = await destinationPlanner.PlanIdempotentOrUniqueAsync(
                                     file,
                                     destination,
                                     usedDestinations,
                                     destinationSemantics,
                                     ct);
+                                destination = destinationReservation.Path;
 
                                 if (!await fileMover.PerformActionOn(completedFileAction, file, destination))
                                 {
                                     results.Add(ImportResult.ImportFailure(completedFileAction, file, destination));
                                     continue;
                                 }
+
+                                ImportDestinationPlanner.Commit(destinationReservation, usedDestinations);
                                 results.Add(ImportResult.ImportSuccess(completedFileAction, file, destination));
                             }
                             catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
@@ -311,12 +314,13 @@ namespace Listenarr.Application.Downloads.Import
                                 continue;
                             }
 
-                            destination = await destinationPlanner.ResolveIdempotentOrUniqueAsync(
+                            var destinationReservation = await destinationPlanner.PlanIdempotentOrUniqueAsync(
                                 file,
                                 destination,
                                 usedDestinations,
                                 destinationSemantics,
                                 ct);
+                            destination = destinationReservation.Path;
                             var destinationAlreadyMatchedSource =
                                 await destinationPlanner.IsExistingEquivalentAsync(file, destination, ct);
 
@@ -326,6 +330,8 @@ namespace Listenarr.Application.Downloads.Import
                                 results.Add(ImportResult.ImportFailure(completedFileAction, file, destination));
                                 continue;
                             }
+
+                            ImportDestinationPlanner.Commit(destinationReservation, usedDestinations);
 
                             // Register audiobook file
                             var wasRegisteredToAudiobook = false;
@@ -484,15 +490,7 @@ namespace Listenarr.Application.Downloads.Import
             return trimmedCandidate;
         }
 
-        private static string FirstNonEmpty(params string?[] candidates)
-        {
-            foreach (var candidate in candidates.Where(candidate => !string.IsNullOrWhiteSpace(candidate)))
-            {
-                return candidate!;
-            }
-
-            return string.Empty;
-        }
-
+        private static string FirstNonEmpty(params string?[] candidates) =>
+            candidates.FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate)) ?? string.Empty;
     }
 }

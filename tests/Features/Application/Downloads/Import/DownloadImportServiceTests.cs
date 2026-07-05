@@ -450,6 +450,58 @@ namespace Listenarr.Tests.Features.Application.Downloads.Import
         }
 
         [Fact]
+        public async Task ImportDownloadFilesAsync_FailedMove_DoesNotReserveDestinationForLaterFiles()
+        {
+            var attemptedDestinations = new List<string>();
+            var callCount = 0;
+            var fileMover = new Mock<IFileMover>();
+            fileMover.Setup(mover => mover.PerformActionOn(FileAction.Copy, It.IsAny<string>(), It.IsAny<string>()))
+                .Returns<FileAction, string, string?>((_, source, destination) =>
+                {
+                    Assert.NotNull(destination);
+                    attemptedDestinations.Add(destination!);
+                    callCount++;
+                    if (callCount == 1)
+                    {
+                        return Task.FromResult(false);
+                    }
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination!)!);
+                    File.Copy(source, destination!, overwrite: false);
+                    return Task.FromResult(true);
+                });
+            Init(builder => builder.WithSingleton<IFileMover>(fileMover.Object));
+
+            var outputDirectory = FileService.GetTempDirectory("download-import-reservation-dst");
+            var sourceDirectory = FileService.GetTempDirectory("download-import-reservation-src");
+            var first = await FileService.GetFileAsync(sourceDirectory, "first.mp3", "first");
+            var second = await FileService.GetFileAsync(sourceDirectory, "second.mp3", "second");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Collision Book")
+                .WithBasePath(outputDirectory)
+                .Build());
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(outputDirectory)
+                .WithCopyFileOnCompleted()
+                .WithoutMetadataProcessing()
+                .WithFolderNamingPattern("")
+                .WithFileNamingPattern("{Title}")
+                .WithMultiFileNamingPattern("{Title}")
+                .Build());
+
+            var downloadImportService = _provider.GetRequiredService<IDownloadImportService>();
+            var results = await downloadImportService.ImportDownloadFilesAsync(audiobook, [first, second]);
+
+            Assert.Equal(2, attemptedDestinations.Count);
+            Assert.Equal(attemptedDestinations[0], attemptedDestinations[1]);
+            Assert.EndsWith("Collision Book.mp3", attemptedDestinations[1], StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("(1)", Path.GetFileName(attemptedDestinations[1]), StringComparison.Ordinal);
+            Assert.False(results[0].Success);
+            Assert.True(results[1].Success);
+            Assert.True(File.Exists(Path.Join(outputDirectory, "Collision Book.mp3")));
+        }
+
+        [Fact]
         public async Task DownloadImportService_NoImportedFile_WhenAudioFilesFails()
         {
             var outputDirectory = FileService.GetTempDirectory("library");

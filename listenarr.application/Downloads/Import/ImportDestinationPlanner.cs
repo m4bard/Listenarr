@@ -23,7 +23,7 @@ public sealed class ImportDestinationPlanner(IFileSystem fileSystem)
             out destination);
     }
 
-    public async Task<string> ResolveIdempotentOrUniqueAsync(
+    public async Task<ImportDestinationReservation> PlanIdempotentOrUniqueAsync(
         string sourcePath,
         string destination,
         ISet<string> usedDestinations,
@@ -38,16 +38,21 @@ public sealed class ImportDestinationPlanner(IFileSystem fileSystem)
         if (fileSystem.FileExists(destination)
             && await fileSystem.FilesHaveSameContentAsync(sourcePath, destination, cancellationToken))
         {
-            usedDestinations.Add(destination);
-            return destination;
+            return new ImportDestinationReservation(destination);
         }
 
         var uniqueDestination = FileUtils.GetUniqueDestinationPath(
             destination,
             fileSystem.FileExists,
             usedDestinations);
-        usedDestinations.Add(uniqueDestination);
-        return uniqueDestination;
+        return new ImportDestinationReservation(uniqueDestination);
+    }
+
+    public static void Commit(
+        ImportDestinationReservation reservation,
+        ISet<string> usedDestinations)
+    {
+        usedDestinations.Add(reservation.Path);
     }
 
     public Task<bool> IsExistingEquivalentAsync(
@@ -58,3 +63,5 @@ public sealed class ImportDestinationPlanner(IFileSystem fileSystem)
             ? fileSystem.FilesHaveSameContentAsync(sourcePath, destination, cancellationToken)
             : Task.FromResult(false);
 }
+
+public sealed record ImportDestinationReservation(string Path);
