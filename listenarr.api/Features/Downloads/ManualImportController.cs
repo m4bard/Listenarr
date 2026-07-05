@@ -180,7 +180,7 @@ public class ManualImportController : ControllerBase
             {
                 var fileCount = orderedItems.Count(f => f.MatchedAudiobookId == item.MatchedAudiobookId);
                 _logger.LogDebug("Importing item {Index}: {Path} for audiobook {AudiobookId}, fileCount: {FileCount}", orderedItems.IndexOf(item), item.FullPath, item.MatchedAudiobookId, fileCount);
-                var result = await ImportFileAsync(item, request.Action, sourceDirectory, destinationTracker, rootFolders, appSettings, fileCount > 1);
+                var result = await ImportFileAsync(item, request.Action, sourceDirectory, sourceSemantics, destinationTracker, rootFolders, appSettings, fileCount > 1);
                 _logger.LogDebug("Import result {Index}: Success={Success}, Destination={Destination}, Error={Error}", orderedItems.IndexOf(item), result.Success, result.DestinationPath, result.Error);
                 results.Add(result);
             }
@@ -228,6 +228,7 @@ public class ManualImportController : ControllerBase
     /// <param name="item">File to import into the library</param>
     /// <param name="action">Action to perform on the file</param>
     /// <param name="sourceDirectory">Directory from which we are importing the file</param>
+    /// <param name="sourceSemantics">Resolved filesystem identity rules for the requested source directory</param>
     /// <param name="destinationTracker">Tracks already reserved destinations using each target volume's path identity rules</param>
     /// <param name="rootFolders">Previously fetched list of configured root folders (to save DB hits)</param>
     /// <param name="settings">Application settings (to save DB hits)</param>
@@ -238,6 +239,7 @@ public class ManualImportController : ControllerBase
         ManualImportItemDto item,
         FileAction action,
         string sourceDirectory,
+        FileSystemPathSemantics sourceSemantics,
         ManualImportDestinationTracker destinationTracker,
         List<RootFolder> rootFolders,
         ApplicationSettings settings,
@@ -264,10 +266,15 @@ public class ManualImportController : ControllerBase
                 return ManualImportResultDto.FailureResult("Source file not found", item.FullPath);
             }
 
-            // Validate source is within a configured root folder (prevents path traversal)
-            var isUnderSourceDirectory = FileUtils.IsPathInsideOf(item.FullPath, sourceDirectory);
+            // Validate source is within a configured root folder (prevents path traversal).
+            // Use the source/root volume semantics rather than the host OS so mounted
+            // case-insensitive Unix volumes cannot be misclassified by Linux defaults.
+            var isUnderSourceDirectory = FileSystemPathIdentity.IsSameOrInside(
+                item.FullPath,
+                sourceDirectory,
+                sourceSemantics);
 
-            var isUnderConfiguredRoot = rootFolders.Any(r => FileUtils.IsPathInsideOf(item.FullPath, r.Path));
+            var isUnderConfiguredRoot = await IsInsideAnyConfiguredRootAsync(item.FullPath, rootFolders);
 
             if (!isUnderSourceDirectory && !isUnderConfiguredRoot)
             {
@@ -408,6 +415,30 @@ public class ManualImportController : ControllerBase
         }
 
         return resolution.Semantics;
+    }
+
+    private async Task<bool> IsInsideAnyConfiguredRootAsync(
+        string path,
+        IEnumerable<RootFolder> rootFolders)
+    {
+        foreach (var rootFolder in rootFolders)
+        {
+            if (string.IsNullOrWhiteSpace(rootFolder.Path))
+            {
+                continue;
+            }
+
+            var resolution = await _semanticsResolver.ResolveAsync(
+                rootFolder.Path,
+                rootFolder.CaseSensitivityMode);
+            if (resolution.State == PathIdentityState.Valid
+                && FileSystemPathIdentity.IsSameOrInside(path, rootFolder.Path, resolution.Semantics))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task PersistAudiobookBasePathAsync(Audiobook audiobook, string? basePath)

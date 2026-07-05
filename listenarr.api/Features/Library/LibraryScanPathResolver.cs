@@ -25,15 +25,18 @@ namespace Listenarr.Api.Features.Library
     {
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<LibraryScanPathResolver> _logger;
+        private readonly IFileSystemSemanticsResolver _semanticsResolver;
         private readonly IRootFolderService? _rootFolderService;
 
         public LibraryScanPathResolver(
             IConfigurationService configurationService,
             ILogger<LibraryScanPathResolver> logger,
+            IFileSystemSemanticsResolver semanticsResolver,
             IRootFolderService? rootFolderService = null)
         {
             _configurationService = configurationService;
             _logger = logger;
+            _semanticsResolver = semanticsResolver;
             _rootFolderService = rootFolderService;
         }
 
@@ -101,27 +104,31 @@ namespace Listenarr.Api.Features.Library
             }
         }
 
-        private async Task<List<string>> BuildAllowedRootsAsync(string? outputPath)
+        private async Task<List<ScanRootBoundary>> BuildAllowedRootsAsync(string? outputPath)
         {
-            var allowedRoots = new List<string>();
+            var allowedRoots = new List<ScanRootBoundary>();
             if (_rootFolderService != null)
             {
                 var roots = await _rootFolderService.GetAllAsync();
                 foreach (var root in roots)
                 {
-                    TryAddAllowedRoot(allowedRoots, root.Path, "root folder path");
+                    await TryAddAllowedRootAsync(allowedRoots, root.Path, root.CaseSensitivityMode, "root folder path");
                 }
             }
 
             if (!string.IsNullOrEmpty(outputPath))
             {
-                TryAddAllowedRoot(allowedRoots, outputPath, "output path");
+                await TryAddAllowedRootAsync(allowedRoots, outputPath, FileSystemCaseSensitivityMode.Auto, "output path");
             }
 
             return allowedRoots;
         }
 
-        private void TryAddAllowedRoot(List<string> allowedRoots, string? path, string label)
+        private async Task TryAddAllowedRootAsync(
+            List<ScanRootBoundary> allowedRoots,
+            string? path,
+            FileSystemCaseSensitivityMode caseSensitivityMode,
+            string label)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -130,7 +137,12 @@ namespace Listenarr.Api.Features.Library
 
             try
             {
-                allowedRoots.Add(Path.GetFullPath(path));
+                var normalizedPath = Path.GetFullPath(path);
+                var resolution = await _semanticsResolver.ResolveAsync(normalizedPath, caseSensitivityMode);
+                if (resolution.State == PathIdentityState.Valid)
+                {
+                    allowedRoots.Add(new ScanRootBoundary(normalizedPath, resolution.Semantics));
+                }
             }
             catch (Exception ex) when (
                 ex is ArgumentException
@@ -142,12 +154,13 @@ namespace Listenarr.Api.Features.Library
             }
         }
 
-        private static bool IsPathUnderRoot(string requestedPath, string allowedRoot)
-        {
-            // Use the shared containment helper instead of raw string prefixes so
-            // filesystem-root and UNC roots keep correct segment-boundary behavior.
-            return FileUtils.IsPathSameOrInside(requestedPath, allowedRoot);
-        }
+        private static bool IsPathUnderRoot(string requestedPath, ScanRootBoundary allowedRoot) =>
+            FileSystemPathIdentity.IsSameOrInside(
+                requestedPath,
+                allowedRoot.Path,
+                allowedRoot.Semantics);
+
+        private sealed record ScanRootBoundary(string Path, FileSystemPathSemantics Semantics);
     }
 
     public sealed record LibraryScanPathResolution(string? ScanRoot, IActionResult? ErrorResult)

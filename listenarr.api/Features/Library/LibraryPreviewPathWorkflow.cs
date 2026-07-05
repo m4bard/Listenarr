@@ -15,6 +15,7 @@ namespace Listenarr.Api.Features.Library;
 public sealed class LibraryPreviewPathWorkflow(
     IConfigurationService configurationService,
     IFileNamingService fileNamingService,
+    IFileSystemSemanticsResolver semanticsResolver,
     ILogger<LibraryPreviewPathWorkflow> logger)
 {
     public async Task<IActionResult> PreviewAsync(LibraryController.PreviewPathRequest request)
@@ -42,13 +43,17 @@ public sealed class LibraryPreviewPathWorkflow(
                 namingPattern,
                 fileNamingService);
             var relativePath = fullPath;
-            if (!string.IsNullOrEmpty(root) &&
-                FileUtils.IsPathSameOrInside(fullPath, root))
+            if (!string.IsNullOrEmpty(root))
             {
-                relativePath = Path.GetRelativePath(root, fullPath);
-                if (relativePath == ".")
+                var resolution = await semanticsResolver.ResolveAsync(root);
+                if (resolution.State == PathIdentityState.Valid
+                    && FileSystemPathIdentity.TryGetRelativePathWithinBase(
+                        root,
+                        fullPath,
+                        resolution.Semantics,
+                        out var resolvedRelativePath))
                 {
-                    relativePath = string.Empty;
+                    relativePath = resolvedRelativePath;
                 }
             }
 

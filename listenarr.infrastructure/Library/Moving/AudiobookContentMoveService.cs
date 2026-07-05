@@ -18,8 +18,8 @@ internal sealed record AudiobookContentMoveRequest(
     string Source,
     string Target,
     Guid JobId,
-    bool DeleteEmptySource = true,
-    FileSystemPathSemantics? Semantics = null,
+    bool DeleteEmptySource,
+    FileSystemPathSemantics Semantics,
     int LeaseGeneration = 0);
 
 internal sealed record AudiobookContentMoveResult(
@@ -54,7 +54,7 @@ internal sealed partial class AudiobookContentMoveService(
 
         var source = Path.GetFullPath(request.Source);
         var target = Path.GetFullPath(request.Target);
-        var semantics = request.Semantics ?? FileSystemPathSemantics.CurrentHostDefault;
+        var semantics = request.Semantics;
         var targetInsideSource = IsSameOrInside(target, source, semantics);
         var sourceInsideTarget = IsSameOrInside(source, target, semantics);
 
@@ -216,7 +216,7 @@ internal sealed partial class AudiobookContentMoveService(
         var target = Path.GetFullPath(request.Target);
         var recoveryMarkerPath = GetRecoveryMarkerPath(target, request.JobId);
         var recoveryStage = ReadRecoveryStage(recoveryMarkerPath);
-        var semantics = request.Semantics ?? FileSystemPathSemantics.CurrentHostDefault;
+        var semantics = request.Semantics;
         var manifest = LoadManifest(request.JobId);
         var atomicRenameCompleted = manifest.Count == 0
             && string.Equals(recoveryStage, AtomicRenameCompletedStage, StringComparison.Ordinal);
@@ -288,7 +288,7 @@ internal sealed partial class AudiobookContentMoveService(
             request.JobId,
             request.LeaseGeneration,
             manifest,
-            request.Semantics ?? FileSystemPathSemantics.CurrentHostDefault,
+            request.Semantics,
             cancellationToken);
         WriteRecoveryMarker(result.Target, request.JobId, SourceCleanupCompletedStage);
         return result with { SourceCleanupCompleted = true };
@@ -329,7 +329,7 @@ internal sealed partial class AudiobookContentMoveService(
         }
 
         var target = Path.GetFullPath(targetPath);
-        var semantics = resolvedSemantics ?? FileSystemPathSemantics.CurrentHostDefault;
+        var semantics = resolvedSemantics ?? throw new InvalidOperationException("Filesystem semantics are required for source cleanup checks.");
         if (!IsSameOrInside(target, source, semantics))
         {
             return !Directory.EnumerateFileSystemEntries(source).Any();
@@ -452,6 +452,6 @@ internal sealed partial class AudiobookContentMoveService(
             && FileSystemPathIdentity.AreEquivalent(
                 fullPath,
                 root,
-                resolvedSemantics ?? FileSystemPathSemantics.CurrentHostDefault);
+                resolvedSemantics ?? throw new InvalidOperationException("Filesystem semantics are required for filesystem root checks."));
     }
 }
