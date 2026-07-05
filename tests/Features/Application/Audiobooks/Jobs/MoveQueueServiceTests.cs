@@ -49,7 +49,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 NullLogger<MoveQueueService>.Instance,
                 persistence.Object,
                 broadcaster.Object,
-                TimeProvider.System);
+                TimeProvider.System,
+                BuildSemanticsResolver());
 
             await Assert.ThrowsAsync<PersistenceException>(() => service.UpdateJobStatusAsync(
                 job.Id,
@@ -109,6 +110,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 persistence.Object,
                 broadcaster.Object,
                 TimeProvider.System,
+                BuildSemanticsResolver(),
                 relocation.Object);
 
             await service.UpdateJobStatusAsync(
@@ -171,7 +173,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 logger,
                 persistence.Object,
                 new NoopHubBroadcaster(),
-                TimeProvider.System);
+                TimeProvider.System,
+                BuildSemanticsResolver());
 
             // Enqueue a job (creates DB entry)
             var jobId = await svc.EnqueueMoveAsync(1, "C:\\dest\\path", "C:\\src\\path");
@@ -191,6 +194,23 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
             var dbJob = await db.MoveJobs.FindAsync(jobId);
             Assert.NotNull(dbJob);
             Assert.Equal(MoveJobStatus.Running, dbJob!.Status);
+        }
+
+        [Fact]
+        public async Task EnqueueMoveAsync_UnresolvedIdentity_FailsClosedBeforePersisting()
+        {
+            var persistence = new Mock<IMoveQueuePersistence>();
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System,
+                BuildNoIdentityResolver());
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.EnqueueMoveAsync(7, "/library/book"));
+            persistence.Verify(
+                store => store.AddAsync(It.IsAny<MoveJob>(), It.IsAny<CancellationToken>()),
+                Times.Never);
         }
 
         [Fact]
@@ -221,7 +241,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 NullLogger<MoveQueueService>.Instance,
                 persistence.Object,
                 new NoopHubBroadcaster(),
-                TimeProvider.System);
+                TimeProvider.System,
+                BuildSemanticsResolver(FileSystemCaseSensitivity.Insensitive));
 
             var ids = await Task.WhenAll(
                 Enumerable.Range(0, 16)
@@ -248,7 +269,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 NullLogger<MoveQueueService>.Instance,
                 persistence.Object,
                 new NoopHubBroadcaster(),
-                TimeProvider.System);
+                TimeProvider.System,
+                BuildSemanticsResolver());
 
             var firstId = await service.EnqueueMoveAsync(9, "/library/Title");
             var secondId = await service.EnqueueMoveAsync(9, "/library/title");
@@ -266,7 +288,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 NullLogger<MoveQueueService>.Instance,
                 persistence.Object,
                 new NoopHubBroadcaster(),
-                TimeProvider.System);
+                TimeProvider.System,
+                BuildSemanticsResolver());
 
             var firstId = await service.EnqueueMoveAsync(9, "/library/Title ");
             var secondId = await service.EnqueueMoveAsync(9, "/library/Title");
@@ -284,7 +307,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 NullLogger<MoveQueueService>.Instance,
                 persistence.Object,
                 new NoopHubBroadcaster(),
-                TimeProvider.System);
+                TimeProvider.System,
+                BuildSemanticsResolver());
 
             var jobId = await service.EnqueueMoveAsync(
                 9,
@@ -316,7 +340,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 NullLogger<MoveQueueService>.Instance,
                 persistence.Object,
                 new NoopHubBroadcaster(),
-                TimeProvider.System);
+                TimeProvider.System,
+                BuildSemanticsResolver());
 
             var jobId = await service.EnqueueMoveAsync(9, "/library/Title");
 
@@ -334,7 +359,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 NullLogger<MoveQueueService>.Instance,
                 persistence.Object,
                 new NoopHubBroadcaster(),
-                TimeProvider.System);
+                TimeProvider.System,
+                BuildSemanticsResolver());
             var jobId = await service.EnqueueMoveAsync(9, "/library/Title", "/downloads/Title");
             Assert.True(service.Reader.TryRead(out _));
             await service.UpdateJobStatusAsync(jobId, LeaseOwner, 0, MoveJobStatus.Failed, "copy interrupted");
@@ -364,7 +390,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 NullLogger<MoveQueueService>.Instance,
                 persistence.Object,
                 new NoopHubBroadcaster(),
-                TimeProvider.System);
+                TimeProvider.System,
+                BuildSemanticsResolver());
 
             await service.RecoverActiveJobsAsync();
 
@@ -381,7 +408,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 NullLogger<MoveQueueService>.Instance,
                 persistence.Object,
                 new NoopHubBroadcaster(),
-                TimeProvider.System);
+                TimeProvider.System,
+                BuildSemanticsResolver());
 
             var firstId = await service.EnqueueMoveAsync(9, "/library/book");
             await service.UpdateJobStatusAsync(firstId, LeaseOwner, 0, MoveJobStatus.Completed);
@@ -391,6 +419,37 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
             Assert.Equal(2, jobs.Count);
             Assert.Null(jobs.Single(job => job.Id == firstId).ActiveDeduplicationKey);
             Assert.NotNull(jobs.Single(job => job.Id == secondId).ActiveDeduplicationKey);
+        }
+
+        private static IFileSystemSemanticsResolver BuildSemanticsResolver(FileSystemCaseSensitivity caseSensitivity = FileSystemCaseSensitivity.Sensitive)
+        {
+            var resolver = new Mock<IFileSystemSemanticsResolver>();
+            resolver.Setup(service => service.ResolveAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<FileSystemCaseSensitivityMode>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns<string, FileSystemCaseSensitivityMode, CancellationToken>((path, _, _) =>
+                    ValueTask.FromResult(new FileSystemSemanticsResolution(
+                        new FileSystemPathSemantics(FileSystemPathSemantics.CurrentHostDefault.Syntax, caseSensitivity),
+                        PathIdentityState.Valid,
+                        path)));
+            return resolver.Object;
+        }
+
+        private static IFileSystemSemanticsResolver BuildNoIdentityResolver()
+        {
+            var resolver = new Mock<IFileSystemSemanticsResolver>();
+            resolver.Setup(service => service.ResolveAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<FileSystemCaseSensitivityMode>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns<string, FileSystemCaseSensitivityMode, CancellationToken>((path, _, _) =>
+                    ValueTask.FromResult(new FileSystemSemanticsResolution(
+                        new FileSystemPathSemantics(FileSystemPathSemantics.CurrentHostDefault.Syntax, FileSystemCaseSensitivity.Sensitive),
+                        PathIdentityState.Unavailable,
+                        path,
+                        "identity probe failed")));
+            return resolver.Object;
         }
 
         private static Mock<IMoveQueuePersistence> CreateInMemoryPersistence(List<MoveJob> jobs)

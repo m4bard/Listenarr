@@ -16,7 +16,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories;
 
 public sealed class EfMoveQueuePersistence(
     IDbContextFactory<ListenArrDbContext> dbFactory,
-    IFileSystemSemanticsResolver? semanticsResolver = null)
+    IFileSystemSemanticsResolver semanticsResolver)
     : IMoveQueuePersistence
 {
     public async Task<MoveJob?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -94,26 +94,20 @@ public sealed class EfMoveQueuePersistence(
         foreach (var job in activeJobs.Where(job => !string.IsNullOrWhiteSpace(job.RequestedPath)))
         {
             var absolutePath = FileSystemPathIdentity.ResolveNativeAbsolutePath(job.RequestedPath!);
-            var semantics = FileSystemPathSemantics.CurrentHostDefault;
-            if (semanticsResolver != null)
+            var resolution = await semanticsResolver.ResolveAsync(
+                absolutePath,
+                cancellationToken: cancellationToken);
+            if (resolution.State != PathIdentityState.Valid)
             {
-                var resolution = await semanticsResolver.ResolveAsync(
-                    absolutePath,
-                    cancellationToken: cancellationToken);
-                if (resolution.State != PathIdentityState.Valid)
-                {
-                    job.Status = MoveJobStatus.NeedsAttention;
-                    job.FailureKind = MoveFailureKind.Verification;
-                    job.Error = resolution.Reason ?? "Target filesystem identity is unavailable.";
-                    continue;
-                }
-
-                semantics = resolution.Semantics;
+                job.Status = MoveJobStatus.NeedsAttention;
+                job.FailureKind = MoveFailureKind.Verification;
+                job.Error = resolution.Reason ?? "Target filesystem identity is unavailable.";
+                continue;
             }
 
             resolvedJobs.Add((
                 job,
-                FileSystemPathIdentity.CreateKey($"move:{job.AudiobookId}", absolutePath, semantics)));
+                FileSystemPathIdentity.CreateKey($"move:{job.AudiobookId}", absolutePath, resolution.Semantics)));
         }
 
         var keyedJobs = resolvedJobs.GroupBy(item => item.Key, StringComparer.Ordinal);

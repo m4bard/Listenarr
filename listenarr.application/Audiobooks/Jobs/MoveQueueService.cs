@@ -33,22 +33,22 @@ namespace Listenarr.Application.Audiobooks.Jobs
         private readonly IHubBroadcaster _hubBroadcaster;
         private readonly TimeProvider _timeProvider;
         private readonly IRootFolderRelocationService? _relocationService;
-        private readonly IFileSystemSemanticsResolver? _semanticsResolver;
+        private readonly IFileSystemSemanticsResolver _semanticsResolver;
 
         public MoveQueueService(
             ILogger<MoveQueueService> logger,
             IMoveQueuePersistence persistence,
             IHubBroadcaster hubBroadcaster,
             TimeProvider timeProvider,
-            IRootFolderRelocationService? relocationService = null,
-            IFileSystemSemanticsResolver? semanticsResolver = null)
+            IFileSystemSemanticsResolver semanticsResolver,
+            IRootFolderRelocationService? relocationService = null)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
             _hubBroadcaster = hubBroadcaster ?? throw new ArgumentNullException(nameof(hubBroadcaster));
             _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+            _semanticsResolver = semanticsResolver ?? throw new ArgumentNullException(nameof(semanticsResolver));
             _relocationService = relocationService;
-            _semanticsResolver = semanticsResolver;
         }
 
         public ChannelReader<MoveJob> Reader => _channel.Reader;
@@ -327,23 +327,17 @@ namespace Listenarr.Application.Audiobooks.Jobs
         private async Task<string> BuildDeduplicationKeyAsync(int audiobookId, string? requestedPath)
         {
             var absolutePath = FileSystemPathIdentity.ResolveNativeAbsolutePath(requestedPath ?? string.Empty);
-            var semantics = FileSystemPathSemantics.CurrentHostDefault;
-            if (_semanticsResolver != null)
+            var resolution = await _semanticsResolver.ResolveAsync(absolutePath);
+            if (resolution.State != PathIdentityState.Valid)
             {
-                var resolution = await _semanticsResolver.ResolveAsync(absolutePath);
-                if (resolution.State != PathIdentityState.Valid)
-                {
-                    throw new InvalidOperationException(
-                        resolution.Reason ?? "Target filesystem identity is unavailable.");
-                }
-
-                semantics = resolution.Semantics;
+                throw new InvalidOperationException(
+                    resolution.Reason ?? "Target filesystem identity is unavailable.");
             }
 
             return FileSystemPathIdentity.CreateKey(
                 $"move:{audiobookId}",
                 absolutePath,
-                semantics);
+                resolution.Semantics);
         }
 
         private async Task<bool> PersistWithRetryAsync(Func<Task<bool>> operation, CancellationToken cancellationToken)

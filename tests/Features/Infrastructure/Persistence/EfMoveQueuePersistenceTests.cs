@@ -43,7 +43,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
     [Fact]
     public async Task ActiveDeduplicationKey_IsUniqueUntilTerminalStatus()
     {
-        var persistence = new EfMoveQueuePersistence(_factory);
+        var persistence = CreatePersistence();
         var first = CreateJob("42:/LIBRARY/BOOK");
         var duplicate = CreateJob("42:/LIBRARY/BOOK");
 
@@ -97,7 +97,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
             await db.SaveChangesAsync();
         }
 
-        var persistence = new EfMoveQueuePersistence(_factory);
+        var persistence = CreatePersistence();
         await persistence.ReconcileIdentityKeysAsync();
 
         await using var verification = await _factory.CreateDbContextAsync();
@@ -111,7 +111,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
     [Fact]
     public async Task TryClaimAsync_ConcurrentWorkers_OnlyOneAcquiresLease()
     {
-        var persistence = new EfMoveQueuePersistence(_factory);
+        var persistence = CreatePersistence();
         var job = CreateJob("v2:move:42:s:claim");
         await persistence.AddAsync(job);
         var now = DateTimeOffset.UtcNow;
@@ -130,7 +130,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
     [Fact]
     public async Task TryClaimAsync_ExpiredLease_IncrementsLeaseGeneration()
     {
-        var persistence = new EfMoveQueuePersistence(_factory);
+        var persistence = CreatePersistence();
         var job = CreateJob("v2:move:42:s:reclaim");
         await persistence.AddAsync(job);
         var now = DateTimeOffset.UtcNow;
@@ -162,7 +162,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
     [Fact]
     public async Task StaleLeaseGeneration_CannotHeartbeatOrUpdateStatus()
     {
-        var persistence = new EfMoveQueuePersistence(_factory);
+        var persistence = CreatePersistence();
         var job = CreateJob("v2:move:42:s:fenced");
         await persistence.AddAsync(job);
         var now = DateTimeOffset.UtcNow;
@@ -211,7 +211,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
     [Fact]
     public async Task TerminalReconciliationState_WithSameGeneration_CannotBeOverwrittenByStaleWorker()
     {
-        var persistence = new EfMoveQueuePersistence(_factory);
+        var persistence = CreatePersistence();
         var job = CreateJob("v2:move:42:s:superseded");
         await persistence.AddAsync(job);
         var now = DateTimeOffset.UtcNow;
@@ -247,6 +247,24 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
         Assert.Equal("Superseded by reconciliation.", currentJob.Error);
     }
 
+    private EfMoveQueuePersistence CreatePersistence() =>
+        new(_factory, BuildSemanticsResolver());
+
+    private static IFileSystemSemanticsResolver BuildSemanticsResolver()
+    {
+        var resolver = new Mock<IFileSystemSemanticsResolver>();
+        resolver.Setup(service => service.ResolveAsync(
+                It.IsAny<string>(),
+                It.IsAny<FileSystemCaseSensitivityMode>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<string, FileSystemCaseSensitivityMode, CancellationToken>((path, _, _) =>
+                ValueTask.FromResult(new FileSystemSemanticsResolution(
+                    new FileSystemPathSemantics(FileSystemPathSemantics.CurrentHostDefault.Syntax, FileSystemCaseSensitivity.Sensitive),
+                    PathIdentityState.Valid,
+                    path)));
+        return resolver.Object;
+    }
+
     private static MoveJob CreateJob(string key) => new()
     {
         AudiobookId = 42,
@@ -260,8 +278,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
     {
         public ListenArrDbContext CreateDbContext() => new(options);
 
-        public Task<ListenArrDbContext> CreateDbContextAsync(
-            CancellationToken cancellationToken = default) =>
+        public Task<ListenArrDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(CreateDbContext());
     }
 }

@@ -517,14 +517,12 @@ public sealed class BackendArchitectureTests
             // Temporary migration allow-list. Each user-library entry must be removed as its
             // subsystem is moved to explicit FileSystemPathSemantics.
             "listenarr.api/Features/Library/RootFoldersController.cs",
-            "listenarr.application/Audiobooks/Jobs/MoveQueueService.cs",
             "listenarr.application/Audiobooks/RootFolders/RootFolderService.cs",
             "listenarr.application/Downloads/Common/DownloadClientGateway.cs",
             "listenarr.infrastructure/Configuration/Paths/RemotePathMappingService.cs",
             "listenarr.infrastructure/Library/Moving/AudiobookFilesystemDeleteService.cs",
             "listenarr.infrastructure/Library/Moving/AudiobookFilesystemDeleteService.Folders.cs",
-            "listenarr.infrastructure/Library/Moving/MovedAudiobookPathRewriter.cs",
-            "listenarr.infrastructure/Persistence/Repositories/EfMoveQueuePersistence.cs"
+            "listenarr.infrastructure/Library/Moving/MovedAudiobookPathRewriter.cs"
         };
         var forbidden = new[]
         {
