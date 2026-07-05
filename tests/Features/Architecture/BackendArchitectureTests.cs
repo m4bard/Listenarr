@@ -521,7 +521,6 @@ public sealed class BackendArchitectureTests
             "listenarr.infrastructure/Configuration/Paths/RemotePathMappingService.cs",
             "listenarr.infrastructure/Library/Moving/AudiobookFilesystemDeleteService.cs",
             "listenarr.infrastructure/Library/Moving/AudiobookFilesystemDeleteService.Folders.cs",
-            "listenarr.infrastructure/Library/Moving/MovedAudiobookPathRewriter.cs"
         };
         var forbidden = new[]
         {

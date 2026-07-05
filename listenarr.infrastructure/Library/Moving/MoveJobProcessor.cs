@@ -201,6 +201,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         audiobook,
                         source,
                         target,
+                        moveRequest.Semantics,
                         audiobookRepository,
                         logger);
 

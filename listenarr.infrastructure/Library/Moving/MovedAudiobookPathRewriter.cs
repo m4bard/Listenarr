@@ -13,17 +13,19 @@ internal static class MovedAudiobookPathRewriter
         Audiobook audiobook,
         string source,
         string target,
+        FileSystemPathSemantics semantics,
         IAudiobookRepository audiobookRepository,
         ILogger logger)
     {
-        await RewriteImagePathAsync(audiobook, source, target, audiobookRepository, logger);
-        await RewriteLegacyFilePathAsync(audiobook, source, target, audiobookRepository, logger);
+        await RewriteImagePathAsync(audiobook, source, target, semantics, audiobookRepository, logger);
+        await RewriteLegacyFilePathAsync(audiobook, source, target, semantics, audiobookRepository, logger);
     }
 
     private static async Task RewriteImagePathAsync(
         Audiobook audiobook,
         string source,
         string target,
+        FileSystemPathSemantics semantics,
         IAudiobookRepository audiobookRepository,
         ILogger logger)
     {
@@ -36,10 +38,11 @@ internal static class MovedAudiobookPathRewriter
             }
 
             var looksLikeFileSystemPath = Path.IsPathRooted(imageUrl)
-                || FileUtils.IsPathSameOrInside(imageUrl, source)
-                || FileUtils.IsPathSameOrInside(
+                || IsSameOrInside(imageUrl, source, semantics)
+                || IsSameOrInside(
                     imageUrl.Replace('/', Path.DirectorySeparatorChar),
-                    source);
+                    source,
+                    semantics);
             if (!looksLikeFileSystemPath)
             {
                 return;
@@ -48,13 +51,13 @@ internal static class MovedAudiobookPathRewriter
             var fullImagePath = Path.IsPathRooted(imageUrl)
                 ? Path.GetFullPath(imageUrl)
                 : Path.GetFullPath(Path.Join(source, imageUrl));
-            if (!FileUtils.IsPathSameOrInside(fullImagePath, source))
+            if (!IsSameOrInside(fullImagePath, source, semantics))
             {
                 return;
             }
 
-            var relativePath = Path.GetRelativePath(source, fullImagePath);
-            if (FileUtils.TryResolveRelativePathWithinBase(target, relativePath, out var newImagePath)
+            if (FileSystemPathIdentity.TryGetRelativePathWithinBase(source, fullImagePath, semantics, out var relativePath)
+                && FileSystemPathIdentity.TryResolveRelativePathWithinBase(target, relativePath, semantics, out var newImagePath)
                 && File.Exists(newImagePath))
             {
                 audiobook.ImageUrl = newImagePath;
@@ -77,6 +80,7 @@ internal static class MovedAudiobookPathRewriter
         Audiobook audiobook,
         string source,
         string target,
+        FileSystemPathSemantics semantics,
         IAudiobookRepository audiobookRepository,
         ILogger logger)
     {
@@ -90,13 +94,13 @@ internal static class MovedAudiobookPathRewriter
             var fullFilePath = Path.IsPathRooted(audiobook.FilePath)
                 ? Path.GetFullPath(audiobook.FilePath)
                 : Path.GetFullPath(Path.Join(source, audiobook.FilePath));
-            if (!FileUtils.IsPathSameOrInside(fullFilePath, source))
+            if (!IsSameOrInside(fullFilePath, source, semantics))
             {
                 return;
             }
 
-            var relativePath = Path.GetRelativePath(source, fullFilePath);
-            if (FileUtils.TryResolveRelativePathWithinBase(target, relativePath, out var newFilePath)
+            if (FileSystemPathIdentity.TryGetRelativePathWithinBase(source, fullFilePath, semantics, out var relativePath)
+                && FileSystemPathIdentity.TryResolveRelativePathWithinBase(target, relativePath, semantics, out var newFilePath)
                 && File.Exists(newFilePath))
             {
                 audiobook.FilePath = newFilePath;
@@ -113,5 +117,15 @@ internal static class MovedAudiobookPathRewriter
                 "Non-fatal: failed to update FilePath after move for audiobook {AudiobookId}",
                 audiobook.Id);
         }
+    }
+
+    private static bool IsSameOrInside(
+        string path,
+        string rootPath,
+        FileSystemPathSemantics semantics)
+    {
+        return !string.IsNullOrWhiteSpace(path)
+            && !string.IsNullOrWhiteSpace(rootPath)
+            && FileSystemPathIdentity.IsSameOrInside(path, rootPath, semantics);
     }
 }
