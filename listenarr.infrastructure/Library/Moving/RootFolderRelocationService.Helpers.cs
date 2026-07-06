@@ -29,7 +29,10 @@ public sealed partial class RootFolderRelocationService
 
         if (!FileSystemPathIdentity.TryResolveRelativePathWithinBase(
             targetRoot,
-            relativePath,
+            FileSystemPathIdentity.ConvertRelativePathSyntax(
+                relativePath,
+                sourceSemantics.Syntax,
+                targetSemantics.Syntax),
             targetSemantics,
             out var targetPath))
         {

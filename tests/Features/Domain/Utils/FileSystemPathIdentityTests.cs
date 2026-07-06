@@ -85,6 +85,20 @@ public sealed class FileSystemPathIdentityTests
         Assert.Equal("Author/Title", relativePath);
     }
 
+    [Theory]
+    [InlineData(@"Author\Title\book.m4b", FileSystemPathSyntax.Windows, FileSystemPathSyntax.Unix, "Author/Title/book.m4b")]
+    [InlineData("Author/Title/book.m4b", FileSystemPathSyntax.Unix, FileSystemPathSyntax.Windows, @"Author\Title\book.m4b")]
+    public void ConvertRelativePathSyntax_UsesTargetSeparators(
+        string relativePath,
+        FileSystemPathSyntax sourceSyntax,
+        FileSystemPathSyntax targetSyntax,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            FileSystemPathIdentity.ConvertRelativePathSyntax(relativePath, sourceSyntax, targetSyntax));
+    }
+
     [Fact]
     public void IdentityKey_IsVersionedAndStableForEquivalentPaths()
     {

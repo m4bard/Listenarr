@@ -90,6 +90,7 @@ public sealed partial class RootFolderRelocationService(
         }
 
         var audiobooks = await db.Audiobooks
+            .Include(audiobook => audiobook.Files)
             .Where(audiobook => audiobook.BasePath != null)
             .ToListAsync(cancellationToken);
         var affected = audiobooks
@@ -103,10 +104,17 @@ public sealed partial class RootFolderRelocationService(
         {
             foreach (var audiobook in affected)
             {
-                audiobook.BasePath = MapTargetPath(
+                var sourceBasePath = audiobook.BasePath!;
+                var destinationBasePath = MapTargetPath(
                     root.Path,
                     targetPath,
-                    audiobook.BasePath!,
+                    sourceBasePath,
+                    sourceResolution.Semantics,
+                    targetResolution.Semantics);
+                AudiobookPathReferenceRewriter.Rewrite(
+                    audiobook,
+                    sourceBasePath,
+                    destinationBasePath,
                     sourceResolution.Semantics,
                     targetResolution.Semantics);
             }

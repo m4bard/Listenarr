@@ -46,6 +46,13 @@ public interface IMoveQueuePersistence
         DateTimeOffset updatedAt,
         CancellationToken cancellationToken = default);
 
+    Task<bool> TryIncrementAttemptAsync(
+        Guid id,
+        string leaseOwner,
+        int leaseGeneration,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+
     Task<int?> TryClaimAsync(
         Guid id,
         string leaseOwner,

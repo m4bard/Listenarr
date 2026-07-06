@@ -327,6 +327,53 @@ public sealed class EfMoveQueuePersistence(
         return job.LeaseGeneration;
     }
 
+    public async Task<bool> TryIncrementAttemptAsync(
+        Guid id,
+        string leaseOwner,
+        int leaseGeneration,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+            var nowUtc = now.UtcDateTime;
+            if (!db.Database.IsRelational())
+            {
+                var trackedJob = await db.MoveJobs.SingleOrDefaultAsync(
+                    job => job.Id == id
+                        && job.Status == MoveJobStatus.Running
+                        && job.LeaseOwner == leaseOwner
+                        && job.LeaseGeneration == leaseGeneration
+                        && job.LeaseExpiresAt != null
+                        && job.LeaseExpiresAt > nowUtc,
+                    cancellationToken);
+                if (trackedJob == null) return false;
+                trackedJob.AttemptCount++;
+                await db.SaveChangesAsync(cancellationToken);
+                return true;
+            }
+
+            var affected = await db.MoveJobs
+                .Where(job => job.Id == id
+                    && job.Status == MoveJobStatus.Running
+                    && job.LeaseOwner == leaseOwner
+                    && job.LeaseGeneration == leaseGeneration
+                    && job.LeaseExpiresAt != null
+                    && job.LeaseExpiresAt > nowUtc)
+                .ExecuteUpdateAsync(
+                    updates => updates.SetProperty(
+                        job => job.AttemptCount,
+                        job => job.AttemptCount + 1),
+                    cancellationToken);
+            return affected == 1;
+        }
+        catch (DbException ex)
+        {
+            throw new PersistenceException("Failed to increment move job attempt count.", ex);
+        }
+    }
+
     public async Task<bool> HeartbeatAsync(
         Guid id,
         string leaseOwner,

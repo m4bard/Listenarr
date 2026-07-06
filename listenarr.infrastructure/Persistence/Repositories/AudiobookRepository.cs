@@ -19,7 +19,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Persistence.Repositories
 {
-    public class AudiobookRepository : IAudiobookRepository
+    public partial class AudiobookRepository : IAudiobookRepository
     {
         private readonly ListenArrDbContext _db;
         public AudiobookRepository(ListenArrDbContext db)

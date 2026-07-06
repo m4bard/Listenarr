@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Common;
+
 namespace Listenarr.Application.Audiobooks.Contracts.Repositories
 {
     public interface IAudiobookRepository
@@ -38,6 +40,13 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<SeriesCacheEntry> UpsertCachedSeriesAsync(SeriesCacheEntry seriesCacheEntry);
         Task<Audiobook> AddAsync(Audiobook audiobook);
         Task<bool> UpdateAsync(Audiobook audiobook);
+        Task<bool> RewritePathReferencesAsync(
+            int audiobookId,
+            string? sourceBasePath,
+            string targetBasePath,
+            FileSystemPathSemantics sourceSemantics,
+            FileSystemPathSemantics targetSemantics,
+            CancellationToken ct = default);
         Task<bool> DeleteAsync(Audiobook audiobook);
         Task<bool> DeleteByIdAsync(int id);
         Task<int> DeleteBulkAsync(List<int> ids);

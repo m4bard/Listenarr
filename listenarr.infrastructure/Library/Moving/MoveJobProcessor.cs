@@ -44,7 +44,6 @@ namespace Listenarr.Infrastructure.Library.Moving
 
                 using var scope = scopeFactory.CreateScope();
                 var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
-                var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
 
                 var audiobook = await audiobookRepository.GetByIdAsync(job.AudiobookId);
                 if (audiobook == null)
@@ -356,19 +355,11 @@ namespace Listenarr.Infrastructure.Library.Moving
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     // Increment attempt count for the job on failure
-                    try
-                    {
-                        var dbJob = await moveJobRepository.GetByIdAsync(job.Id, stoppingToken);
-                        if (dbJob != null)
-                        {
-                            dbJob.AttemptCount += 1;
-                            await moveJobRepository.UpdateAsync(dbJob, stoppingToken);
-                        }
-                    }
-                    catch (Exception attEx) when (attEx is not OperationCanceledException && attEx is not OutOfMemoryException && attEx is not StackOverflowException)
-                    {
-                        logger.LogWarning(attEx, "Failed to increment AttemptCount for job {JobId} after failure", job.Id);
-                    }
+                    await moveQueueService.IncrementAttemptAsync(
+                        job.Id,
+                        job.LeaseOwner!,
+                        job.LeaseGeneration,
+                        stoppingToken);
 
                     // Record failure in history and send a toast notification
                     try

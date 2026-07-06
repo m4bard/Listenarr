@@ -35,6 +35,7 @@ namespace Listenarr.Application.Audiobooks.Contracts
         Task<IReadOnlyList<MoveJob>> GetActiveJobsAsync(CancellationToken cancellationToken = default);
         Task<MoveQueueHealthSnapshot> GetQueueHealthAsync(CancellationToken cancellationToken = default);
         Task<MoveJob?> GetJobAsync(Guid id, CancellationToken cancellationToken = default);
+        Task IncrementAttemptAsync(Guid id, string leaseOwner, int leaseGeneration, CancellationToken cancellationToken = default);
         Task UpdateJobStatusAsync(Guid id, string leaseOwner, int leaseGeneration, MoveJobStatus status, string? error = null, CancellationToken cancellationToken = default);
         System.Threading.Channels.ChannelReader<MoveJob> Reader { get; }
     }

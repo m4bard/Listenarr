@@ -128,12 +128,49 @@ namespace Listenarr.Api.Features.Library
                     return new BadRequestObjectResult(new { message = "DestinationPath must be inside a configured root folder or output path" });
                 }
 
+                var targetBoundary = FindAllowedMoveRoot(final, allowedMoveRoots)
+                    ?? throw new InvalidOperationException("Destination filesystem identity is unavailable.");
+
                 if (request.MoveFiles == false)
                 {
                     try
                     {
-                        audiobook.BasePath = final;
-                        await _repo.UpdateAsync(audiobook);
+                        var sourceBasePath = audiobook.BasePath;
+                        var sourceSemantics = targetBoundary.Semantics;
+                        if (!string.IsNullOrWhiteSpace(sourceBasePath))
+                        {
+                            var sourceBoundary = FindAllowedMoveRoot(sourceBasePath, allowedMoveRoots);
+                            if (sourceBoundary != null)
+                            {
+                                sourceSemantics = sourceBoundary.Semantics;
+                            }
+                            else
+                            {
+                                var sourceResolution = await _semanticsResolver.ResolveAsync(sourceBasePath);
+                                if (sourceResolution.State != PathIdentityState.Valid)
+                                {
+                                    return new BadRequestObjectResult(new
+                                    {
+                                        message = sourceResolution.Reason
+                                            ?? "Source filesystem identity is unavailable."
+                                    });
+                                }
+
+                                sourceSemantics = sourceResolution.Semantics;
+                            }
+                        }
+
+                        var rewritten = await _repo.RewritePathReferencesAsync(
+                            audiobook.Id,
+                            sourceBasePath,
+                            final,
+                            sourceSemantics,
+                            targetBoundary.Semantics);
+                        if (!rewritten)
+                        {
+                            return new NotFoundObjectResult(new { message = "Audiobook not found" });
+                        }
+
                         _logger.LogInformation("Updated BasePath for audiobook {AudiobookId} without moving files: {BasePath}", id, final);
                         return new OkObjectResult(new { message = "Destination updated" });
                     }
@@ -186,8 +223,6 @@ namespace Listenarr.Api.Features.Library
                 {
                     var srcFull = Path.GetFullPath(sourcePath);
                     var tgtFull = Path.GetFullPath(final);
-                    var targetBoundary = FindAllowedMoveRoot(tgtFull, allowedMoveRoots)
-                        ?? throw new InvalidOperationException("Destination filesystem identity is unavailable.");
                     if (FileSystemPathIdentity.AreEquivalent(srcFull, tgtFull, targetBoundary.Semantics))
                     {
                         return new BadRequestObjectResult(new { message = "Source and target paths are identical; nothing to move." });

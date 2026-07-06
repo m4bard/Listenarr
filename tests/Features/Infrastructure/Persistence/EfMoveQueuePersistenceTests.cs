@@ -179,6 +179,20 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
             generation.GetValueOrDefault(),
             now.AddSeconds(1),
             now.AddMinutes(3)));
+        var beforeIncrement = await persistence.GetByIdAsync(job.Id);
+        Assert.True(await persistence.TryIncrementAttemptAsync(
+            job.Id,
+            "worker-a",
+            generation.GetValueOrDefault(),
+            now.AddSeconds(1)));
+        var afterIncrement = await persistence.GetByIdAsync(job.Id);
+        Assert.Equal(1, afterIncrement!.AttemptCount);
+        Assert.Equal(beforeIncrement!.Status, afterIncrement.Status);
+        Assert.Equal(beforeIncrement.Phase, afterIncrement.Phase);
+        Assert.Equal(beforeIncrement.ActiveDeduplicationKey, afterIncrement.ActiveDeduplicationKey);
+        Assert.Equal(beforeIncrement.LeaseOwner, afterIncrement.LeaseOwner);
+        Assert.Equal(beforeIncrement.LeaseGeneration, afterIncrement.LeaseGeneration);
+        Assert.Equal(beforeIncrement.LeaseExpiresAt, afterIncrement.LeaseExpiresAt);
         Assert.True(await persistence.UpdateStatusAsync(
             job.Id,
             "worker-a",
@@ -216,6 +230,11 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
             generation.GetValueOrDefault(),
             now.AddSeconds(2),
             now.AddMinutes(3)));
+        Assert.False(await persistence.TryIncrementAttemptAsync(
+            job.Id,
+            "worker-a",
+            generation.GetValueOrDefault(),
+            now.AddSeconds(2)));
         Assert.False(await persistence.UpdateStatusAsync(
             job.Id,
             "worker-a",
@@ -225,6 +244,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
             null,
             MoveFailureKind.None,
             now.AddSeconds(2)));
+        Assert.Equal(0, (await persistence.GetByIdAsync(job.Id))!.AttemptCount);
         Assert.Equal(2, await persistence.TryClaimAsync(
             job.Id,
             "worker-b",
@@ -251,6 +271,11 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
             generation.GetValueOrDefault(),
             now,
             now.AddMinutes(3)));
+        Assert.False(await persistence.TryIncrementAttemptAsync(
+            job.Id,
+            "worker-b",
+            generation.GetValueOrDefault(),
+            now));
         Assert.False(await persistence.UpdateStatusAsync(
             job.Id,
             "worker-b",
@@ -260,6 +285,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
             null,
             MoveFailureKind.None,
             now));
+        Assert.Equal(0, (await persistence.GetByIdAsync(job.Id))!.AttemptCount);
     }
 
     [Fact]
@@ -276,6 +302,11 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
             1,
             now,
             now.AddMinutes(3)));
+        Assert.False(await persistence.TryIncrementAttemptAsync(
+            job.Id,
+            "worker-a",
+            1,
+            now));
         Assert.False(await persistence.UpdateStatusAsync(
             job.Id,
             "worker-a",
@@ -285,6 +316,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
             null,
             MoveFailureKind.None,
             now));
+        Assert.Equal(0, (await persistence.GetByIdAsync(job.Id))!.AttemptCount);
     }
 
     [Fact]
@@ -321,6 +353,11 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
             staleGeneration.GetValueOrDefault(),
             now,
             now.AddMinutes(3)));
+        Assert.False(await persistence.TryIncrementAttemptAsync(
+            job.Id,
+            "worker-a",
+            staleGeneration.GetValueOrDefault(),
+            now));
         Assert.False(await persistence.UpdateStatusAsync(
             job.Id,
             "worker-a",
@@ -335,6 +372,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
         Assert.Equal(MoveJobStatus.Running, currentJob!.Status);
         Assert.Equal("worker-b", currentJob.LeaseOwner);
         Assert.Equal(2, currentJob.LeaseGeneration);
+        Assert.Equal(0, currentJob.AttemptCount);
     }
 
     [Fact]

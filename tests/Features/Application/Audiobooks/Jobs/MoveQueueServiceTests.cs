@@ -75,6 +75,66 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
         }
 
         [Fact]
+        public async Task IncrementAttempt_StaleLease_ThrowsMoveLeaseLostException()
+        {
+            var jobId = Guid.NewGuid();
+            var persistence = new Mock<IMoveQueuePersistence>();
+            persistence.Setup(store => store.TryIncrementAttemptAsync(
+                    jobId,
+                    LeaseOwner,
+                    3,
+                    It.IsAny<DateTimeOffset>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System,
+                BuildSemanticsResolver());
+
+            await Assert.ThrowsAsync<MoveLeaseLostException>(() => service.IncrementAttemptAsync(
+                jobId,
+                LeaseOwner,
+                3));
+        }
+
+        [Fact]
+        public async Task IncrementAttempt_RetriesTransientPersistenceFailures()
+        {
+            var jobId = Guid.NewGuid();
+            var persistence = new Mock<IMoveQueuePersistence>();
+            persistence.SetupSequence(store => store.TryIncrementAttemptAsync(
+                    jobId,
+                    LeaseOwner,
+                    3,
+                    It.IsAny<DateTimeOffset>(),
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new PersistenceException(
+                    "Attempt write failed.",
+                    new InvalidOperationException("Database unavailable.")))
+                .ThrowsAsync(new PersistenceException(
+                    "Attempt write failed.",
+                    new InvalidOperationException("Database unavailable.")))
+                .ReturnsAsync(true);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System,
+                BuildSemanticsResolver());
+
+            await service.IncrementAttemptAsync(jobId, LeaseOwner, 3);
+
+            persistence.Verify(store => store.TryIncrementAttemptAsync(
+                jobId,
+                LeaseOwner,
+                3,
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()), Times.Exactly(3));
+        }
+
+        [Fact]
         public async Task UpdateJobStatus_PostCommitRelocationFailure_RemainsSuccessfulAndBroadcasts()
         {
             var job = new MoveJob { Id = Guid.NewGuid(), AudiobookId = 42, LeaseOwner = LeaseOwner, LeaseGeneration = 3 };

@@ -245,6 +245,96 @@ namespace Listenarr.Tests.Features.Api.Features.Library
 
         [Fact]
         [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "RewritesStoredPathsWithoutMovingFiles")]
+        public async Task MoveAudiobook_PathOnlyUpdate_RewritesStoredAbsoluteReferences()
+        {
+            var moveQueue = new Mock<IMoveQueueService>();
+            Init(services => services.WithSingleton(moveQueue.Object));
+            var rootPath = FileService.GetTempDirectory("listenarr-path-only-root");
+            var sourcePath = FileService.GetTempDirectory("listenarr-path-only-source");
+            var targetPath = Path.Join(rootPath, "Author", "Title");
+            var unrelatedPath = Path.Join(FileService.GetTempPath(), "outside", "bonus.mp3");
+            await _rootFolderRepository.AddAsync(new RootFolderBuilder()
+                .WithName("Path Only Root")
+                .WithPath(rootPath)
+                .WithIsDefault()
+                .Build());
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Path Only",
+                BasePath = sourcePath,
+                FilePath = Path.Join(sourcePath, "book.m4b"),
+                ImageUrl = Path.Join(sourcePath, "cover.jpg"),
+                Files =
+                [
+                    new AudiobookFile { Path = Path.Join(sourcePath, "book.m4b") },
+                    new AudiobookFile { Path = Path.Join("disc-1", "chapter.mp3") },
+                    new AudiobookFile { Path = unrelatedPath }
+                ]
+            });
+
+            var controller = _provider.GetRequiredService<LibraryController>();
+            var result = await controller.EnqueueMove(audiobook.Id, new LibraryController.MoveRequest
+            {
+                DestinationPath = targetPath,
+                MoveFiles = false
+            });
+
+            var ok = Assert.IsAssignableFrom<ObjectResult>(result);
+            Assert.Equal(200, ok.StatusCode);
+            var updated = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(updated);
+            Assert.Equal(targetPath, updated.BasePath);
+            Assert.Equal(Path.Join(targetPath, "book.m4b"), updated.FilePath);
+            Assert.Equal(Path.Join(targetPath, "cover.jpg"), updated.ImageUrl);
+            Assert.Contains(updated.Files!, file => file.Path == Path.Join(targetPath, "book.m4b"));
+            Assert.Contains(updated.Files!, file => file.Path == Path.Join("disc-1", "chapter.mp3"));
+            Assert.Contains(updated.Files!, file => file.Path == unrelatedPath);
+            moveQueue.Verify(service => service.EnqueueMoveAsync(
+                It.IsAny<int>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<bool>()), Times.Never);
+        }
+
+        [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "SetsBasePathWhenNoPriorBaseExists")]
+        public async Task MoveAudiobook_PathOnlyUpdate_WithoutSourceBase_PreservesUnrelatedReferences()
+        {
+            var rootPath = FileService.GetTempDirectory("listenarr-path-only-empty-root");
+            var targetPath = Path.Join(rootPath, "Author", "Title");
+            var legacyPath = Path.Join(FileService.GetTempPath(), "legacy", "book.m4b");
+            await _rootFolderRepository.AddAsync(new RootFolderBuilder()
+                .WithName("Path Only Empty Root")
+                .WithPath(rootPath)
+                .WithIsDefault()
+                .Build());
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "No Source Base",
+                FilePath = legacyPath,
+                Files = [new AudiobookFile { Path = legacyPath }]
+            });
+
+            var controller = _provider.GetRequiredService<LibraryController>();
+            var result = await controller.EnqueueMove(audiobook.Id, new LibraryController.MoveRequest
+            {
+                DestinationPath = targetPath,
+                MoveFiles = false
+            });
+
+            var ok = Assert.IsAssignableFrom<ObjectResult>(result);
+            Assert.Equal(200, ok.StatusCode);
+            var updated = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(updated);
+            Assert.Equal(targetPath, updated.BasePath);
+            Assert.Equal(legacyPath, updated.FilePath);
+            Assert.Equal(legacyPath, Assert.Single(updated.Files!).Path);
+        }
+
+        [Fact]
+        [Trait("Method", "EnqueueMove")]
         [Trait("Scenario", "AllowsAbsoluteDestinationInsideConfiguredOutputPath")]
         public async Task MoveAudiobook_AllowsAbsoluteDestinationInsideConfiguredOutputPath()
         {

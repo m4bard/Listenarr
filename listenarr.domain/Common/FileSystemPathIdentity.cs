@@ -156,6 +156,22 @@ public static partial class FileSystemPathIdentity
         return true;
     }
 
+    public static string ConvertRelativePathSyntax(
+        string relativePath,
+        FileSystemPathSyntax sourceSyntax,
+        FileSystemPathSyntax targetSyntax)
+    {
+        ArgumentNullException.ThrowIfNull(relativePath);
+        if (sourceSyntax == targetSyntax)
+        {
+            return relativePath;
+        }
+
+        return targetSyntax == FileSystemPathSyntax.Windows
+            ? relativePath.Replace('/', '\\')
+            : relativePath.Replace('\\', '/');
+    }
+
     public static bool TryGetRelativePathWithinBase(
         string basePath,
         string candidatePath,

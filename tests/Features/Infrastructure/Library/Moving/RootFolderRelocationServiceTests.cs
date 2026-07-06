@@ -86,13 +86,34 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
     {
         var source = Path.Join(Path.GetTempPath(), $"metadata-source-{Guid.NewGuid():N}");
         var target = Path.Join(Path.GetTempPath(), $"metadata-target-{Guid.NewGuid():N}");
+        var unrelated = Path.Join(Path.GetTempPath(), $"metadata-unrelated-{Guid.NewGuid():N}", "bonus.mp3");
         Directory.CreateDirectory(source);
         int rootId;
         await using (var db = await _factory.CreateDbContextAsync())
         {
             var root = new RootFolder { Name = "Library", Path = source };
             db.RootFolders.Add(root);
-            db.Audiobooks.Add(new Audiobook { Title = "Title", BasePath = Path.Join(source, "Title") });
+            var localBasePath = Path.Join(source, "Title");
+            db.Audiobooks.AddRange(
+                new Audiobook
+                {
+                    Title = "Title",
+                    BasePath = localBasePath,
+                    FilePath = Path.Join(localBasePath, "book.m4b"),
+                    ImageUrl = Path.Join(localBasePath, "cover.jpg"),
+                    Files =
+                    [
+                        new AudiobookFile { Path = Path.Join(localBasePath, "book.m4b") },
+                        new AudiobookFile { Path = Path.Join("disc-1", "chapter.mp3") },
+                        new AudiobookFile { Path = unrelated }
+                    ]
+                },
+                new Audiobook
+                {
+                    Title = "Remote Image",
+                    BasePath = Path.Join(source, "Remote Image"),
+                    ImageUrl = "https://example.test/cover.jpg"
+                });
             await db.SaveChangesAsync();
             rootId = root.Id;
         }
@@ -109,9 +130,72 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
 
         await using var verification = await _factory.CreateDbContextAsync();
         Assert.Equal(target, (await verification.RootFolders.SingleAsync()).Path);
-        Assert.Equal(Path.Join(target, "Title"), (await verification.Audiobooks.SingleAsync()).BasePath);
+        var audiobooks = await verification.Audiobooks
+            .Include(audiobook => audiobook.Files)
+            .OrderBy(audiobook => audiobook.Title)
+            .ToListAsync();
+        var remoteImageAudiobook = audiobooks[0];
+        var localAudiobook = audiobooks[1];
+        var expectedBasePath = Path.Join(target, "Title");
+        Assert.Equal(expectedBasePath, localAudiobook.BasePath);
+        Assert.Equal(Path.Join(expectedBasePath, "book.m4b"), localAudiobook.FilePath);
+        Assert.Equal(Path.Join(expectedBasePath, "cover.jpg"), localAudiobook.ImageUrl);
+        Assert.Contains(localAudiobook.Files!, file => file.Path == Path.Join(expectedBasePath, "book.m4b"));
+        Assert.Contains(localAudiobook.Files!, file => file.Path == Path.Join("disc-1", "chapter.mp3"));
+        Assert.Contains(localAudiobook.Files!, file => file.Path == unrelated);
+        Assert.Equal(Path.Join(target, "Remote Image"), remoteImageAudiobook.BasePath);
+        Assert.Equal("https://example.test/cover.jpg", remoteImageAudiobook.ImageUrl);
         Assert.Empty(await verification.RootFolderRelocations.ToListAsync());
         Assert.Equal(RootFolderRelocationStatus.Completed, result.Status);
+    }
+
+    [Fact]
+    public async Task MetadataOnly_UnmappableReferenceRollsBackRootAndAllAudiobooks()
+    {
+        var source = Path.Join(Path.GetTempPath(), $"metadata-rollback-source-{Guid.NewGuid():N}");
+        var target = Path.Join(Path.GetTempPath(), $"metadata-rollback-target-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(source);
+        int rootId;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var root = new RootFolder { Name = "Library", Path = source };
+            db.RootFolders.Add(root);
+            var validBasePath = Path.Join(source, "A Valid");
+            var invalidBasePath = Path.Join(source, "Z Invalid");
+            db.Audiobooks.AddRange(
+                new Audiobook
+                {
+                    Title = "A Valid",
+                    BasePath = validBasePath,
+                    FilePath = Path.Join(validBasePath, "book.m4b")
+                },
+                new Audiobook
+                {
+                    Title = "Z Invalid",
+                    BasePath = invalidBasePath,
+                    FilePath = invalidBasePath
+                });
+            await db.SaveChangesAsync();
+            rootId = root.Id;
+        }
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService().StartAsync(
+            rootId,
+            new RootFolderPathChangeCommand(
+                target,
+                RootFolderRelocationMode.MetadataOnly,
+                false,
+                "Moved Library",
+                false,
+                FileSystemCaseSensitivityMode.Auto)));
+
+        await using var verification = await _factory.CreateDbContextAsync();
+        Assert.Equal(source, (await verification.RootFolders.SingleAsync()).Path);
+        var audiobooks = await verification.Audiobooks.OrderBy(audiobook => audiobook.Title).ToListAsync();
+        Assert.Equal(Path.Join(source, "A Valid"), audiobooks[0].BasePath);
+        Assert.Equal(Path.Join(source, "A Valid", "book.m4b"), audiobooks[0].FilePath);
+        Assert.Equal(Path.Join(source, "Z Invalid"), audiobooks[1].BasePath);
+        Assert.Equal(Path.Join(source, "Z Invalid"), audiobooks[1].FilePath);
     }
 
     [Fact]

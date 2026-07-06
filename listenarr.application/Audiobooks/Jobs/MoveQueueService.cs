@@ -251,6 +251,26 @@ namespace Listenarr.Application.Audiobooks.Jobs
             }
         }
 
+        public async Task IncrementAttemptAsync(
+            Guid id,
+            string leaseOwner,
+            int leaseGeneration,
+            CancellationToken cancellationToken = default)
+        {
+            var incremented = await PersistWithRetryAsync(
+                () => _persistence.TryIncrementAttemptAsync(
+                    id,
+                    leaseOwner,
+                    leaseGeneration,
+                    _timeProvider.GetUtcNow(),
+                    cancellationToken),
+                cancellationToken);
+            if (!incremented)
+            {
+                throw new MoveLeaseLostException(id, leaseGeneration);
+            }
+        }
+
         private void LogStatusChange(Guid id, MoveJobStatus status, string? error)
         {
             if (status == MoveJobStatus.Failed && !string.IsNullOrWhiteSpace(error))

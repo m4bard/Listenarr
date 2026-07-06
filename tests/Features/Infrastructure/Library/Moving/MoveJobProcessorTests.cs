@@ -87,6 +87,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 MoveJobStatus.Failed,
                 It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()), Times.Never);
+            Assert.Empty(await _historyRepository.GetByEventTypeAsync("MoveFailed"));
         }
 
         [Fact]
@@ -268,10 +269,56 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var updatedJob = await queue.GetJobAsync(job.Id);
             Assert.NotNull(updatedJob);
             Assert.Equal(MoveJobStatus.Failed, updatedJob!.Status);
+            Assert.Equal(1, updatedJob.AttemptCount);
             Assert.True(Directory.Exists(src));
 
             var metricsMock = _provider.GetRequiredService<Mock<IAppMetricsService>>();
             metricsMock.Verify(m => m.Increment("worker.move.job.failed", It.IsAny<double>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_AttemptIncrementLosesLease_DoesNotPublishStaleFailure()
+        {
+            var src = FileService.GetTempDirectory("move-processor-stale-attempt-src");
+            await FileService.GetFileAsync(src, "book.m4b", "audio");
+            var dst = FileService.GetTempDirectory("move-processor-stale-attempt-dst");
+            await FileService.GetFileAsync(dst, "existing.txt", "blocked");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Move Processor Stale Attempt",
+                BasePath = src
+            });
+            var (_, job) = await CreateQueuedMoveJobAsync(audiobook, dst, src);
+            var queue = new Mock<IMoveQueueService>();
+            queue.Setup(service => service.UpdateJobStatusAsync(
+                    job.Id,
+                    LeaseOwner,
+                    job.LeaseGeneration,
+                    MoveJobStatus.Running,
+                    null,
+                    It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+            queue.Setup(service => service.IncrementAttemptAsync(
+                    job.Id,
+                    LeaseOwner,
+                    job.LeaseGeneration,
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new MoveLeaseLostException(job.Id, job.LeaseGeneration));
+            var processor = ActivatorUtilities.CreateInstance<MoveJobProcessor>(
+                _provider,
+                queue.Object);
+
+            await Assert.ThrowsAsync<MoveLeaseLostException>(() => processor.ProcessJobAsync(
+                job,
+                CancellationToken.None));
+
+            queue.Verify(service => service.UpdateJobStatusAsync(
+                job.Id,
+                LeaseOwner,
+                job.LeaseGeneration,
+                MoveJobStatus.Failed,
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
