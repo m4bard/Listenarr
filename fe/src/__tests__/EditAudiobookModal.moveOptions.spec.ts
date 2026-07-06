@@ -308,6 +308,44 @@ describe('EditAudiobookModal move options', () => {
     )
   })
 
+  it('metadata edit with separator-only custom Windows path does not enqueue a move', async () => {
+    const wrapper = mount(EditAudiobookModal, {
+      props: { isOpen: true, audiobook },
+      attachTo: document.body,
+      global: { plugins: [(await import('pinia')).createPinia()] },
+    })
+
+    await new Promise((r) => setTimeout(r, 200))
+
+    const vm = wrapper.vm as unknown as {
+      selectedRootId: number
+      customRootPath: string
+      formData: { title: string }
+      handleSave: () => Promise<void>
+    }
+    vm.selectedRootId = 0
+    vm.customRootPath = 'C:/root/Some Author/Some Title'
+    vm.formData.title = 'Updated Sample'
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('Destination folder must be different')
+
+    await vm.handleSave()
+    await new Promise((r) => setTimeout(r, 50))
+
+    const { apiService } = await import('@/services/api')
+    expect(apiService.updateAudiobook).toHaveBeenCalledTimes(1)
+    expect(apiService.updateAudiobook).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ title: 'Updated Sample' }),
+    )
+    expect(apiService.updateAudiobook).toHaveBeenCalledWith(
+      1,
+      expect.not.objectContaining({ basePath: expect.anything() }),
+    )
+    expect(apiService.moveAudiobook).toHaveBeenCalledTimes(0)
+  })
+
   it('metadata changes should persist through updateAudiobook', async () => {
     const wrapper = mount(EditAudiobookModal, {
       props: {

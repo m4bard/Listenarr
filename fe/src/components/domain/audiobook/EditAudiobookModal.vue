@@ -1298,7 +1298,7 @@ const hasChanges = computed(() => {
     JSON.stringify([...formData.value.tags].sort()) !==
     JSON.stringify([...(audiobook.tags || [])].sort())
 
-  const basePathChanged = (audiobook.basePath || '') !== (combinedBasePath() || '')
+  const basePathChanged = destinationBasePathChanged()
 
   const identifiersChanged =
     serializeIdentifierRows(formData.value.identifiers) !==
@@ -1536,6 +1536,19 @@ function selectedDestinationCaseSensitivity() {
   return 'Unknown' as const
 }
 
+function destinationBasePathChanged(): boolean {
+  const destination = combinedBasePath() || ''
+  const source = baselineAudiobook.value?.basePath || ''
+  if (!destination && !source) return false
+  if (!destination || !source) return true
+  return !pathsEqual(
+    destination,
+    source,
+    selectedDestinationPathKind(),
+    selectedDestinationCaseSensitivity(),
+  )
+}
+
 function combinedBasePath(): string | null {
   const r = resolveSelectedRootPath() || ''
   const rel = formData.value.relativePath || ''
@@ -1564,7 +1577,7 @@ const destinationPathValidationError = computed(() => {
   const destination = editDestinationPath.value
   const source = baselineAudiobook.value?.basePath || ''
   const pathKind = selectedDestinationPathKind()
-  const basePathChanged = destination !== source
+  const basePathChanged = destinationBasePathChanged()
 
   return validateLibraryDestinationPath(destination, {
     pathKind,
@@ -1723,7 +1736,7 @@ async function handleSave() {
   const combined = combinedBasePath()
   const originalBase = audiobook.basePath || ''
   const pathKind = selectedDestinationPathKind()
-  const basePathChanged = (combined || '') !== originalBase
+  const basePathChanged = destinationBasePathChanged()
   const destinationValidationMessage = validateLibraryDestinationPath(combined, {
     pathKind,
     caseSensitivity: selectedDestinationCaseSensitivity(),
@@ -1731,19 +1744,6 @@ async function handleSave() {
   })
   if (destinationValidationMessage) {
     toast.error('Invalid destination', destinationValidationMessage)
-    return
-  }
-  if (
-    basePathChanged &&
-    combined &&
-    originalBase &&
-    normalizeForCompare(combined, pathKind, selectedDestinationCaseSensitivity()) ===
-      normalizeForCompare(originalBase, pathKind, selectedDestinationCaseSensitivity())
-  ) {
-    toast.error(
-      'Invalid destination',
-      'Destination folder must be different from the current source folder.',
-    )
     return
   }
 
