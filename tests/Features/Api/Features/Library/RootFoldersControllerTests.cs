@@ -26,15 +26,46 @@ namespace Listenarr.Tests.Features.Api.Features.Library
     {
         private class FakeUnmatchedQueue : IUnmatchedScanQueueService
         {
+            public UnmatchedScanJob? LastJob { get; set; }
+
             public System.Threading.Channels.ChannelReader<UnmatchedScanJob> Reader =>
                 System.Threading.Channels.Channel.CreateUnbounded<UnmatchedScanJob>().Reader;
             public Task<Guid> EnqueueAsync(string rootFolderPath) => Task.FromResult(Guid.NewGuid());
             public bool TryGetJob(Guid id, out UnmatchedScanJob? job) { job = null; return false; }
             public void UpdateJob(Guid id, string status, List<UnmatchedFileResult>? results = null, string? error = null) { }
-            public bool TryGetLastJobForPath(string rootFolderPath, out UnmatchedScanJob? job) { job = null; return false; }
+            public bool TryGetLastJobForPath(string rootFolderPath, out UnmatchedScanJob? job)
+            {
+                job = LastJob;
+                return job != null && string.Equals(job.RootFolderPath, rootFolderPath, StringComparison.Ordinal);
+            }
         }
 
         private static readonly IUnmatchedScanQueueService _fakeQueue = new FakeUnmatchedQueue();
+
+        internal static IFileSystemSemanticsResolver BuildSemanticsResolver(
+            FileSystemCaseSensitivity caseSensitivity = FileSystemCaseSensitivity.Sensitive)
+        {
+            var resolver = new Mock<IFileSystemSemanticsResolver>();
+            resolver.Setup(service => service.ResolveAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<FileSystemCaseSensitivityMode>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns<string, FileSystemCaseSensitivityMode, CancellationToken>((path, mode, _) =>
+                {
+                    var resolvedCaseSensitivity = mode == FileSystemCaseSensitivityMode.Insensitive
+                        ? FileSystemCaseSensitivity.Insensitive
+                        : mode == FileSystemCaseSensitivityMode.Sensitive
+                            ? FileSystemCaseSensitivity.Sensitive
+                            : caseSensitivity;
+                    return ValueTask.FromResult(new FileSystemSemanticsResolution(
+                        new FileSystemPathSemantics(
+                            FileSystemPathSemantics.CurrentHostDefault.Syntax,
+                            resolvedCaseSensitivity),
+                        PathIdentityState.Valid,
+                        Path.GetPathRoot(path) ?? path));
+                });
+            return resolver.Object;
+        }
 
         private static ListenArrDbContext CreateDb() =>
             new ListenArrDbContext(
@@ -170,6 +201,57 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
+        public async Task GetSavedUnmatched_FiltersUsingResolvedFolderSemantics()
+        {
+            var rootPath = FileUtils.GetAbsolutePath("saved-unmatched-root");
+            var resultPath = Path.Join(rootPath, "CaseBook.m4b");
+            var trackedPath = Path.Join(rootPath, "casebook.m4b");
+            Directory.CreateDirectory(rootPath);
+            await File.WriteAllTextAsync(resultPath, "audio");
+            var svc = new FakeService();
+            svc.Store.Add(new RootFolder
+            {
+                Id = 1,
+                Name = "Root",
+                Path = rootPath,
+                CaseSensitivityMode = FileSystemCaseSensitivityMode.Auto,
+                ResolvedCaseSensitivity = FileSystemCaseSensitivity.Unknown
+            });
+            var queue = new FakeUnmatchedQueue
+            {
+                LastJob = new UnmatchedScanJob
+                {
+                    RootFolderPath = rootPath,
+                    Status = "Completed",
+                    CompletedAt = DateTime.UtcNow,
+                    Results =
+                    [
+                        new UnmatchedFileResult { FullPath = resultPath }
+                    ]
+                }
+            };
+            var db = CreateDb();
+            db.AudiobookFiles.Add(new AudiobookFile { Id = 1, Path = trackedPath, Format = "m4b" });
+            await db.SaveChangesAsync();
+            var resolver = BuildSemanticsResolver(FileSystemCaseSensitivity.Sensitive);
+            var controller = new RootFoldersController(
+                svc,
+                queue,
+                new EfAudiobookFileRepository(db),
+                new AudiobookRepository(db),
+                new LocalFileSystem(),
+                resolver);
+
+            var result = await controller.GetSavedUnmatched(1);
+
+            var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(result);
+            var items = ok.Value!.GetType().GetProperty("items")!.GetValue(ok.Value);
+            var list = Assert.IsAssignableFrom<List<UnmatchedFileResult>>(items);
+            var item = Assert.Single(list);
+            Assert.Equal(resultPath, item.FullPath);
+        }
+
+        [Fact]
         public async Task Delete_InUseWithoutReassign_ReturnsBadRequest()
         {
             var svc = new FakeService();
@@ -205,6 +287,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             IAudiobookFileRepository fileRepository,
             IAudiobookRepository audiobookRepository,
             IFileSystem fileSystem,
+            IFileSystemSemanticsResolver? semanticsResolver = null,
             IRootFolderRelocationService? relocationService = null)
             : base(
                 service,
@@ -212,31 +295,10 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 fileRepository,
                 audiobookRepository,
                 fileSystem,
-                BuildSemanticsResolver(),
+                semanticsResolver ?? RootFoldersControllerTests.BuildSemanticsResolver(),
                 relocationService)
         {
         }
 
-        private static IFileSystemSemanticsResolver BuildSemanticsResolver()
-        {
-            var resolver = new Mock<IFileSystemSemanticsResolver>();
-            resolver.Setup(service => service.ResolveAsync(
-                    It.IsAny<string>(),
-                    It.IsAny<FileSystemCaseSensitivityMode>(),
-                    It.IsAny<CancellationToken>()))
-                .Returns<string, FileSystemCaseSensitivityMode, CancellationToken>((path, mode, _) =>
-                {
-                    var resolvedCaseSensitivity = mode == FileSystemCaseSensitivityMode.Insensitive
-                        ? FileSystemCaseSensitivity.Insensitive
-                        : FileSystemCaseSensitivity.Sensitive;
-                    return ValueTask.FromResult(new FileSystemSemanticsResolution(
-                        new FileSystemPathSemantics(
-                            FileSystemPathSemantics.CurrentHostDefault.Syntax,
-                            resolvedCaseSensitivity),
-                        PathIdentityState.Valid,
-                        Path.GetPathRoot(path) ?? path));
-                });
-            return resolver.Object;
-        }
     }
 }

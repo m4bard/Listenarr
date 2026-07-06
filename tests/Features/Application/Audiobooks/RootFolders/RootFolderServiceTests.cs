@@ -35,6 +35,20 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
         public RootFolderServiceTests(ITestOutputHelper output) { _output = output; }
 
         [Fact]
+        public void Constructor_Throws_WhenSemanticsResolverMissing()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var repo = new EfRootFolderRepository(
+                new TestDbFactory(options),
+                Mock.Of<ILogger<EfRootFolderRepository>>());
+
+            Assert.Throws<ArgumentNullException>(() =>
+                new AppRootFolderService(repo, null!, semanticsResolver: null!));
+        }
+
+        [Fact]
         public async Task Create_Throws_WhenPathDuplicate()
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
