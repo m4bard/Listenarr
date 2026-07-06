@@ -101,7 +101,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         job.DeleteEmptySource,
                         recoverySourceResolution.Semantics,
                         targetResolution.Semantics,
-                        job.LeaseGeneration);
+                        CreateLeaseToken(job));
                     if (contentMoveService.TryGetRecoverableMove(recoveryRequest, out var resumedMove))
                     {
                         recoveredMove = resumedMove;
@@ -201,7 +201,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         job.DeleteEmptySource,
                         sourceResolution.Semantics,
                         targetResolution.Semantics,
-                        job.LeaseGeneration);
+                        CreateLeaseToken(job));
                     var moveResult = recoveredMove ?? await contentMoveService.MoveContentsAsync(
                         moveRequest,
                         stoppingToken);
@@ -435,6 +435,16 @@ namespace Listenarr.Infrastructure.Library.Moving
             }
         }
 
+
+        private static MoveLeaseToken CreateLeaseToken(MoveJob job)
+        {
+            if (string.IsNullOrWhiteSpace(job.LeaseOwner) || job.LeaseGeneration <= 0)
+            {
+                throw new MoveLeaseLostException(job.Id, job.LeaseGeneration);
+            }
+
+            return new MoveLeaseToken(job.LeaseOwner, job.LeaseGeneration);
+        }
 
         private Task UpdateJobStatusAsync(
             MoveJob job,

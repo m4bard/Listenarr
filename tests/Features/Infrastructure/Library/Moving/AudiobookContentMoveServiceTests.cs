@@ -7,6 +7,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
     [Trait("Category", "BackgroundWorkers")]
     public class AudiobookContentMoveServiceTests : BaseTests
     {
+        private const string TestLeaseOwner = "test-worker";
+
+        private static MoveLeaseToken LeaseToken(int generation = 1) =>
+            new(TestLeaseOwner, generation);
+
         [Theory]
         [InlineData(FileSystemCaseSensitivity.Insensitive, true)]
         [InlineData(FileSystemCaseSensitivity.Sensitive, false)]
@@ -111,8 +116,53 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     true,
                     FileSystemPathSemantics.CurrentHostDefault,
                     FileSystemPathSemantics.CurrentHostDefault,
-                    LeaseGeneration: 1),
+                    LeaseToken(1)),
                 CancellationToken.None));
+
+            Assert.True(File.Exists(sourceFile));
+            Assert.False(Directory.Exists(target));
+        }
+
+        [Theory]
+        [InlineData("owner")]
+        [InlineData("generation")]
+        [InlineData("expiration")]
+        [InlineData("status")]
+        public async Task MoveContentsAsync_InvalidLeaseState_DoesNotMutateFilesystem(string invalidState)
+        {
+            var source = FileService.GetTempDirectory($"content-move-invalid-lease-src-{invalidState}");
+            var sourceFile = await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(
+                FileService.GetTempPath(),
+                $"content-move-invalid-lease-dst-{invalidState}-{Guid.NewGuid():N}");
+            var jobId = Guid.NewGuid();
+            var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
+            var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
+            await using (var db = await factory.CreateDbContextAsync())
+            {
+                var job = await db.MoveJobs.SingleAsync(job => job.Id == jobId);
+                switch (invalidState)
+                {
+                    case "owner":
+                        job.LeaseOwner = "other-worker";
+                        break;
+                    case "generation":
+                        job.LeaseGeneration = 2;
+                        break;
+                    case "expiration":
+                        job.LeaseExpiresAt = DateTime.UtcNow.AddSeconds(-1);
+                        break;
+                    case "status":
+                        job.Status = MoveJobStatus.Completed;
+                        break;
+                }
+
+                await db.SaveChangesAsync();
+            }
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            await Assert.ThrowsAsync<MoveLeaseLostException>(() =>
+                service.MoveContentsAsync(request, CancellationToken.None));
 
             Assert.True(File.Exists(sourceFile));
             Assert.False(Directory.Exists(target));
@@ -151,7 +201,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     jobId,
                     true,
                     FileSystemPathSemantics.CurrentHostDefault,
-                    FileSystemPathSemantics.CurrentHostDefault),
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    LeaseToken(0)),
                 CancellationToken.None));
 
             Assert.True(File.Exists(sourceFile));
@@ -411,6 +462,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var service = new AudiobookContentMoveService(
                 _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
                 _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+                TimeProvider.System,
                 faultInjector);
 
             var request = await CreateLeasedMoveRequestAsync(source, target);
@@ -443,7 +495,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     jobId,
                     true,
                     FileSystemPathSemantics.CurrentHostDefault,
-                    FileSystemPathSemantics.CurrentHostDefault),
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    LeaseToken(1)),
                 out _);
 
             Assert.False(recoverable);
@@ -472,7 +525,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     jobId,
                     true,
                     FileSystemPathSemantics.CurrentHostDefault,
-                    FileSystemPathSemantics.CurrentHostDefault),
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    LeaseToken(1)),
                 out var result);
 
             Assert.True(recoverable);
@@ -506,7 +560,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     RequestedPath = target,
                     SourcePath = source,
                     Status = MoveJobStatus.Running,
+                    LeaseOwner = TestLeaseOwner,
                     LeaseGeneration = 1,
+                    LeaseExpiresAt = DateTime.UtcNow.AddMinutes(5),
                     ActiveDeduplicationKey = $"test:{jobId:N}"
                 });
                 db.MoveJobEntries.Add(new MoveJobEntry
@@ -531,7 +587,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     true,
                     FileSystemPathSemantics.CurrentHostDefault,
                     FileSystemPathSemantics.CurrentHostDefault,
-                    LeaseGeneration: 1),
+                    LeaseToken(1)),
                 new AudiobookContentMoveResult(
                     source,
                     target,
@@ -570,7 +626,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     RequestedPath = target,
                     SourcePath = source,
                     Status = MoveJobStatus.Running,
+                    LeaseOwner = TestLeaseOwner,
                     LeaseGeneration = 1,
+                    LeaseExpiresAt = DateTime.UtcNow.AddMinutes(5),
                     ActiveDeduplicationKey = $"test:{jobId:N}"
                 });
                 db.MoveJobEntries.Add(new MoveJobEntry
@@ -595,7 +653,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     true,
                     FileSystemPathSemantics.CurrentHostDefault,
                     FileSystemPathSemantics.CurrentHostDefault,
-                    LeaseGeneration: 1),
+                    LeaseToken(1)),
                 new AudiobookContentMoveResult(
                     source,
                     target,
@@ -641,7 +699,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     RequestedPath = target,
                     SourcePath = source,
                     Status = MoveJobStatus.Running,
+                    LeaseOwner = TestLeaseOwner,
                     LeaseGeneration = 1,
+                    LeaseExpiresAt = DateTime.UtcNow.AddMinutes(5),
                     ActiveDeduplicationKey = $"test:{jobId:N}"
                 });
                 db.MoveJobEntries.Add(new MoveJobEntry
@@ -666,7 +726,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     true,
                     FileSystemPathSemantics.CurrentHostDefault,
                     FileSystemPathSemantics.CurrentHostDefault,
-                    LeaseGeneration: 1),
+                    LeaseToken(1)),
                 new AudiobookContentMoveResult(
                     source,
                     target,
@@ -698,7 +758,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 RequestedPath = target,
                 SourcePath = source,
                 Status = MoveJobStatus.Running,
+                LeaseOwner = TestLeaseOwner,
                 LeaseGeneration = 1,
+                LeaseExpiresAt = DateTime.UtcNow.AddMinutes(5),
                 ActiveDeduplicationKey = $"test:{id:N}"
             });
             await db.SaveChangesAsync();
@@ -710,7 +772,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 deleteEmptySource,
                 sourceSemantics ?? FileSystemPathSemantics.CurrentHostDefault,
                 targetSemantics ?? sourceSemantics ?? FileSystemPathSemantics.CurrentHostDefault,
-                LeaseGeneration: 1);
+                LeaseToken(1));
         }
 
         private sealed class AddSourceFileAfterPublish(string source) : IMoveFaultInjector

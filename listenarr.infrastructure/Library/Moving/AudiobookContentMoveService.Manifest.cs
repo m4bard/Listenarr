@@ -7,7 +7,7 @@ internal sealed partial class AudiobookContentMoveService
 {
     private async Task<IReadOnlyList<MoveJobEntry>> LoadOrCreateManifestAsync(
         Guid jobId,
-        int leaseGeneration,
+        MoveLeaseToken leaseToken,
         string source,
         string target,
         bool targetInsideSource,
@@ -27,9 +27,10 @@ internal sealed partial class AudiobookContentMoveService
             targetInsideSource,
             sourceSemantics,
             cancellationToken);
-        await PersistManifestAsync(jobId, leaseGeneration, manifest, cancellationToken);
+        await PersistManifestAsync(jobId, leaseToken, manifest, cancellationToken);
         return manifest;
     }
+
     private async Task<List<MoveJobEntry>> SnapshotSourceAsync(
         Guid jobId,
         string source,
@@ -105,6 +106,11 @@ internal sealed partial class AudiobookContentMoveService
         var identities = new Dictionary<string, MoveJobEntry>(StringComparer.Ordinal);
         foreach (var entry in manifest)
         {
+            if (Path.IsPathRooted(entry.RelativePath))
+            {
+                throw new MoveNeedsAttentionException("A manifest entry must be relative to the destination root.");
+            }
+
             if (!FileSystemPathIdentity.TryResolveRelativePathWithinBase(
                 target,
                 entry.RelativePath,
@@ -170,7 +176,7 @@ internal sealed partial class AudiobookContentMoveService
         bool targetInsideSource,
         bool deleteEmptySource,
         Guid jobId,
-        int leaseGeneration,
+        MoveLeaseToken leaseToken,
         IReadOnlyList<MoveJobEntry> manifest,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
@@ -232,7 +238,7 @@ internal sealed partial class AudiobookContentMoveService
                 // the process stopped before the final state update.
                 await UpdateCleanupStateAsync(
                     jobId,
-                    leaseGeneration,
+                    leaseToken,
                     entry.RelativePath,
                     MoveJobEntryCleanupState.Deleted,
                     cancellationToken);
@@ -302,14 +308,14 @@ internal sealed partial class AudiobookContentMoveService
             await VerifyPublishedManifestAsync(target, [entry], targetSemantics, cancellationToken);
             await UpdateCleanupStateAsync(
                 jobId,
-                leaseGeneration,
+                leaseToken,
                 entry.RelativePath,
                 MoveJobEntryCleanupState.Quarantined,
                 cancellationToken);
             File.Delete(quarantineFile);
             await UpdateCleanupStateAsync(
                 jobId,
-                leaseGeneration,
+                leaseToken,
                 entry.RelativePath,
                 MoveJobEntryCleanupState.Deleted,
                 cancellationToken);

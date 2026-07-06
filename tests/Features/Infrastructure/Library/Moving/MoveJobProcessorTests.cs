@@ -335,7 +335,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     true,
                     FileSystemPathSemantics.CurrentHostDefault,
                     FileSystemPathSemantics.CurrentHostDefault,
-                    LeaseGeneration: job.LeaseGeneration),
+                    new MoveLeaseToken(LeaseOwner, job.LeaseGeneration)),
                 CancellationToken.None);
 
             Assert.False(Directory.Exists(src));

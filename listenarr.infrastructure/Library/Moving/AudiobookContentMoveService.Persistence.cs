@@ -1,3 +1,4 @@
+using Listenarr.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Library.Moving;
@@ -6,36 +7,41 @@ internal sealed partial class AudiobookContentMoveService
 {
     private async Task EnsureLeaseOwnedAsync(
         Guid jobId,
-        int leaseGeneration,
+        MoveLeaseToken leaseToken,
         CancellationToken cancellationToken)
     {
-        EnsureLeaseGenerationProvided(jobId, leaseGeneration);
+        EnsureLeaseTokenProvided(jobId, leaseToken);
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         if (!await db.MoveJobs.AnyAsync(
-            job => job.Id == jobId && job.LeaseGeneration == leaseGeneration,
+            job => job.Id == jobId
+                && job.Status == MoveJobStatus.Running
+                && job.LeaseOwner == leaseToken.Owner
+                && job.LeaseGeneration == leaseToken.Generation
+                && job.LeaseExpiresAt != null
+                && job.LeaseExpiresAt > nowUtc,
             cancellationToken))
         {
-            throw new MoveLeaseLostException(jobId, leaseGeneration);
+            throw new MoveLeaseLostException(jobId, leaseToken.Generation);
         }
     }
 
     private async Task PersistManifestAsync(
         Guid jobId,
-        int leaseGeneration,
+        MoveLeaseToken leaseToken,
         IReadOnlyCollection<MoveJobEntry> manifest,
         CancellationToken cancellationToken)
     {
-        EnsureLeaseGenerationProvided(jobId, leaseGeneration);
+        EnsureLeaseTokenProvided(jobId, leaseToken);
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         if (!db.Database.IsRelational())
         {
-            if (!await db.MoveJobs.AnyAsync(
-                job => job.Id == jobId && job.LeaseGeneration == leaseGeneration,
-                cancellationToken))
+            if (!await IsLeaseActiveAsync(db, jobId, leaseToken, nowUtc, cancellationToken))
             {
-                throw new MoveLeaseLostException(jobId, leaseGeneration);
+                throw new MoveLeaseLostException(jobId, leaseToken.Generation);
             }
 
             db.MoveJobEntries.AddRange(manifest);
@@ -44,11 +50,9 @@ internal sealed partial class AudiobookContentMoveService
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        if (!await db.MoveJobs.AnyAsync(
-            job => job.Id == jobId && job.LeaseGeneration == leaseGeneration,
-            cancellationToken))
+        if (!await IsLeaseActiveAsync(db, jobId, leaseToken, nowUtc, cancellationToken))
         {
-            throw new MoveLeaseLostException(jobId, leaseGeneration);
+            throw new MoveLeaseLostException(jobId, leaseToken.Generation);
         }
 
         db.MoveJobEntries.AddRange(manifest);
@@ -80,12 +84,13 @@ internal sealed partial class AudiobookContentMoveService
 
     private async Task UpdateCleanupStateAsync(
         Guid jobId,
-        int leaseGeneration,
+        MoveLeaseToken leaseToken,
         string relativePath,
         MoveJobEntryCleanupState cleanupState,
         CancellationToken cancellationToken)
     {
-        EnsureLeaseGenerationProvided(jobId, leaseGeneration);
+        EnsureLeaseTokenProvided(jobId, leaseToken);
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         if (!db.Database.IsRelational())
@@ -93,9 +98,13 @@ internal sealed partial class AudiobookContentMoveService
             var entry = await db.MoveJobEntries.SingleOrDefaultAsync(
                 candidate => candidate.MoveJobId == jobId
                     && candidate.RelativePath == relativePath
-                    && candidate.MoveJob.LeaseGeneration == leaseGeneration,
+                    && candidate.MoveJob.Status == MoveJobStatus.Running
+                    && candidate.MoveJob.LeaseOwner == leaseToken.Owner
+                    && candidate.MoveJob.LeaseGeneration == leaseToken.Generation
+                    && candidate.MoveJob.LeaseExpiresAt != null
+                    && candidate.MoveJob.LeaseExpiresAt > nowUtc,
                 cancellationToken);
-            if (entry == null) throw new MoveLeaseLostException(jobId, leaseGeneration);
+            if (entry == null) throw new MoveLeaseLostException(jobId, leaseToken.Generation);
             entry.CleanupState = cleanupState;
             await db.SaveChangesAsync(cancellationToken);
             return;
@@ -104,43 +113,50 @@ internal sealed partial class AudiobookContentMoveService
         var affected = await db.MoveJobEntries
             .Where(entry => entry.MoveJobId == jobId
                 && entry.RelativePath == relativePath
-                && entry.MoveJob.LeaseGeneration == leaseGeneration)
+                && entry.MoveJob.Status == MoveJobStatus.Running
+                && entry.MoveJob.LeaseOwner == leaseToken.Owner
+                && entry.MoveJob.LeaseGeneration == leaseToken.Generation
+                && entry.MoveJob.LeaseExpiresAt != null
+                && entry.MoveJob.LeaseExpiresAt > nowUtc)
             .ExecuteUpdateAsync(
                 updates => updates.SetProperty(entry => entry.CleanupState, cleanupState),
                 cancellationToken);
         if (affected != 1)
         {
-            throw new MoveLeaseLostException(jobId, leaseGeneration);
+            throw new MoveLeaseLostException(jobId, leaseToken.Generation);
         }
     }
 
     private async Task UpdateCopyStateAsync(
         Guid jobId,
-        int leaseGeneration,
+        MoveLeaseToken leaseToken,
         CancellationToken cancellationToken)
     {
-        EnsureLeaseGenerationProvided(jobId, leaseGeneration);
+        EnsureLeaseTokenProvided(jobId, leaseToken);
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         if (!db.Database.IsRelational())
         {
-            if (!await db.MoveJobs.AnyAsync(
-                job => job.Id == jobId && job.LeaseGeneration == leaseGeneration,
-                cancellationToken))
+            if (!await IsLeaseActiveAsync(db, jobId, leaseToken, nowUtc, cancellationToken))
             {
-                throw new MoveLeaseLostException(jobId, leaseGeneration);
+                throw new MoveLeaseLostException(jobId, leaseToken.Generation);
             }
 
             var persistedEntries = await db.MoveJobEntries
                 .Where(entry => entry.MoveJobId == jobId
-                    && entry.MoveJob.LeaseGeneration == leaseGeneration)
+                    && entry.MoveJob.Status == MoveJobStatus.Running
+                    && entry.MoveJob.LeaseOwner == leaseToken.Owner
+                    && entry.MoveJob.LeaseGeneration == leaseToken.Generation
+                    && entry.MoveJob.LeaseExpiresAt != null
+                    && entry.MoveJob.LeaseExpiresAt > nowUtc)
                 .ToListAsync(cancellationToken);
             var expectedCount = await db.MoveJobEntries.CountAsync(
                 entry => entry.MoveJobId == jobId,
                 cancellationToken);
             if (persistedEntries.Count != expectedCount)
             {
-                throw new MoveLeaseLostException(jobId, leaseGeneration);
+                throw new MoveLeaseLostException(jobId, leaseToken.Generation);
             }
 
             foreach (var entry in persistedEntries)
@@ -152,16 +168,18 @@ internal sealed partial class AudiobookContentMoveService
             return;
         }
 
-        if (!await db.MoveJobs.AnyAsync(
-            job => job.Id == jobId && job.LeaseGeneration == leaseGeneration,
-            cancellationToken))
+        if (!await IsLeaseActiveAsync(db, jobId, leaseToken, nowUtc, cancellationToken))
         {
-            throw new MoveLeaseLostException(jobId, leaseGeneration);
+            throw new MoveLeaseLostException(jobId, leaseToken.Generation);
         }
 
         var affected = await db.MoveJobEntries
             .Where(entry => entry.MoveJobId == jobId
-                && entry.MoveJob.LeaseGeneration == leaseGeneration)
+                && entry.MoveJob.Status == MoveJobStatus.Running
+                && entry.MoveJob.LeaseOwner == leaseToken.Owner
+                && entry.MoveJob.LeaseGeneration == leaseToken.Generation
+                && entry.MoveJob.LeaseExpiresAt != null
+                && entry.MoveJob.LeaseExpiresAt > nowUtc)
             .ExecuteUpdateAsync(
                 updates => updates.SetProperty(
                     entry => entry.CopyState,
@@ -172,26 +190,31 @@ internal sealed partial class AudiobookContentMoveService
             cancellationToken);
         if (affected != expected)
         {
-            throw new MoveLeaseLostException(jobId, leaseGeneration);
+            throw new MoveLeaseLostException(jobId, leaseToken.Generation);
         }
     }
 
     private async Task UpdateJobPhaseAsync(
         Guid jobId,
-        int leaseGeneration,
+        MoveLeaseToken leaseToken,
         MoveJobPhase phase,
         CancellationToken cancellationToken)
     {
-        EnsureLeaseGenerationProvided(jobId, leaseGeneration);
+        EnsureLeaseTokenProvided(jobId, leaseToken);
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         if (!db.Database.IsRelational())
         {
             var job = await db.MoveJobs.SingleOrDefaultAsync(
                 candidate => candidate.Id == jobId
-                    && candidate.LeaseGeneration == leaseGeneration,
+                    && candidate.Status == MoveJobStatus.Running
+                    && candidate.LeaseOwner == leaseToken.Owner
+                    && candidate.LeaseGeneration == leaseToken.Generation
+                    && candidate.LeaseExpiresAt != null
+                    && candidate.LeaseExpiresAt > nowUtc,
                 cancellationToken);
-            if (job == null) throw new MoveLeaseLostException(jobId, leaseGeneration);
+            if (job == null) throw new MoveLeaseLostException(jobId, leaseToken.Generation);
             job.Phase = phase;
             job.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(cancellationToken);
@@ -200,7 +223,11 @@ internal sealed partial class AudiobookContentMoveService
 
         var affected = await db.MoveJobs
             .Where(candidate => candidate.Id == jobId
-                && candidate.LeaseGeneration == leaseGeneration)
+                && candidate.Status == MoveJobStatus.Running
+                && candidate.LeaseOwner == leaseToken.Owner
+                && candidate.LeaseGeneration == leaseToken.Generation
+                && candidate.LeaseExpiresAt != null
+                && candidate.LeaseExpiresAt > nowUtc)
             .ExecuteUpdateAsync(
                 updates => updates
                     .SetProperty(job => job.Phase, phase)
@@ -208,17 +235,34 @@ internal sealed partial class AudiobookContentMoveService
                 cancellationToken);
         if (affected != 1)
         {
-            throw new MoveLeaseLostException(jobId, leaseGeneration);
+            throw new MoveLeaseLostException(jobId, leaseToken.Generation);
         }
     }
 
-    private static void EnsureLeaseGenerationProvided(Guid jobId, int leaseGeneration)
+    private static async Task<bool> IsLeaseActiveAsync(
+        ListenArrDbContext db,
+        Guid jobId,
+        MoveLeaseToken leaseToken,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
     {
-        if (leaseGeneration <= 0)
+        return await db.MoveJobs.AnyAsync(
+            job => job.Id == jobId
+                && job.Status == MoveJobStatus.Running
+                && job.LeaseOwner == leaseToken.Owner
+                && job.LeaseGeneration == leaseToken.Generation
+                && job.LeaseExpiresAt != null
+                && job.LeaseExpiresAt > nowUtc,
+            cancellationToken);
+    }
+
+    private static void EnsureLeaseTokenProvided(Guid jobId, MoveLeaseToken leaseToken)
+    {
+        if (string.IsNullOrWhiteSpace(leaseToken.Owner) || leaseToken.Generation <= 0)
         {
             // Filesystem mutations and their manifest/phase writes must always be tied
-            // to a claimed worker lease; generation zero is only an unclaimed DTO default.
-            throw new MoveLeaseLostException(jobId, leaseGeneration);
+            // to a claimed worker lease; missing owner/generation values are unclaimed DTO defaults.
+            throw new MoveLeaseLostException(jobId, leaseToken.Generation);
         }
     }
 }
