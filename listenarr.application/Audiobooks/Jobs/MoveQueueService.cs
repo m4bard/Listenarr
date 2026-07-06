@@ -143,7 +143,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 jobId,
                 leaseOwner,
                 now,
-                now.AddMinutes(2),
+                now.Add(MoveTimingPolicy.OwnershipDuration),
                 cancellationToken);
         }
 
@@ -153,11 +153,13 @@ namespace Listenarr.Application.Audiobooks.Jobs
             int leaseGeneration,
             CancellationToken cancellationToken = default)
         {
+            var now = _timeProvider.GetUtcNow();
             return _persistence.HeartbeatAsync(
                 jobId,
                 leaseOwner,
                 leaseGeneration,
-                _timeProvider.GetUtcNow().AddMinutes(2),
+                now,
+                now.Add(MoveTimingPolicy.OwnershipDuration),
                 cancellationToken);
         }
 

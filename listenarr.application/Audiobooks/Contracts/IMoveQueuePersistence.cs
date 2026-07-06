@@ -57,6 +57,7 @@ public interface IMoveQueuePersistence
         Guid id,
         string leaseOwner,
         int leaseGeneration,
+        DateTimeOffset now,
         DateTimeOffset leaseExpiresAt,
         CancellationToken cancellationToken = default);
 }

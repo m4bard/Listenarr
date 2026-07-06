@@ -160,6 +160,134 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task MatchingUnexpiredOwnership_CanHeartbeatAndUpdateStatus()
+    {
+        var persistence = CreatePersistence();
+        var job = CreateJob("v2:move:42:s:valid");
+        await persistence.AddAsync(job);
+        var now = DateTimeOffset.UtcNow;
+        var generation = await persistence.TryClaimAsync(
+            job.Id,
+            "worker-a",
+            now,
+            now.AddMinutes(2));
+        Assert.Equal(1, generation);
+
+        Assert.True(await persistence.HeartbeatAsync(
+            job.Id,
+            "worker-a",
+            generation.GetValueOrDefault(),
+            now.AddSeconds(1),
+            now.AddMinutes(3)));
+        Assert.True(await persistence.UpdateStatusAsync(
+            job.Id,
+            "worker-a",
+            generation.GetValueOrDefault(),
+            MoveJobStatus.Completed,
+            MoveJobPhase.Finalizing,
+            null,
+            MoveFailureKind.None,
+            now.AddSeconds(2)));
+
+        var completed = await persistence.GetByIdAsync(job.Id);
+        Assert.Equal(MoveJobStatus.Completed, completed!.Status);
+        Assert.Null(completed.ActiveDeduplicationKey);
+        Assert.Null(completed.LeaseOwner);
+        Assert.Null(completed.LeaseExpiresAt);
+    }
+
+    [Fact]
+    public async Task ExpiredOwnership_CannotHeartbeatOrUpdateStatus()
+    {
+        var persistence = CreatePersistence();
+        var job = CreateJob("v2:move:42:s:expired");
+        await persistence.AddAsync(job);
+        var now = DateTimeOffset.UtcNow;
+        var generation = await persistence.TryClaimAsync(
+            job.Id,
+            "worker-a",
+            now,
+            now.AddSeconds(1));
+        Assert.Equal(1, generation);
+
+        Assert.False(await persistence.HeartbeatAsync(
+            job.Id,
+            "worker-a",
+            generation.GetValueOrDefault(),
+            now.AddSeconds(2),
+            now.AddMinutes(3)));
+        Assert.False(await persistence.UpdateStatusAsync(
+            job.Id,
+            "worker-a",
+            generation.GetValueOrDefault(),
+            MoveJobStatus.Completed,
+            MoveJobPhase.Finalizing,
+            null,
+            MoveFailureKind.None,
+            now.AddSeconds(2)));
+        Assert.Equal(2, await persistence.TryClaimAsync(
+            job.Id,
+            "worker-b",
+            now.AddSeconds(2),
+            now.AddMinutes(4)));
+    }
+
+    [Fact]
+    public async Task WrongOwner_CannotHeartbeatOrUpdateStatus()
+    {
+        var persistence = CreatePersistence();
+        var job = CreateJob("v2:move:42:s:owner");
+        await persistence.AddAsync(job);
+        var now = DateTimeOffset.UtcNow;
+        var generation = await persistence.TryClaimAsync(
+            job.Id,
+            "worker-a",
+            now,
+            now.AddMinutes(2));
+
+        Assert.False(await persistence.HeartbeatAsync(
+            job.Id,
+            "worker-b",
+            generation.GetValueOrDefault(),
+            now,
+            now.AddMinutes(3)));
+        Assert.False(await persistence.UpdateStatusAsync(
+            job.Id,
+            "worker-b",
+            generation.GetValueOrDefault(),
+            MoveJobStatus.Completed,
+            MoveJobPhase.Finalizing,
+            null,
+            MoveFailureKind.None,
+            now));
+    }
+
+    [Fact]
+    public async Task NonRunningJob_CannotHeartbeatOrUpdateStatus()
+    {
+        var persistence = CreatePersistence();
+        var job = CreateJob("v2:move:42:s:queued");
+        await persistence.AddAsync(job);
+        var now = DateTimeOffset.UtcNow;
+
+        Assert.False(await persistence.HeartbeatAsync(
+            job.Id,
+            "worker-a",
+            1,
+            now,
+            now.AddMinutes(3)));
+        Assert.False(await persistence.UpdateStatusAsync(
+            job.Id,
+            "worker-a",
+            1,
+            MoveJobStatus.Completed,
+            MoveJobPhase.Finalizing,
+            null,
+            MoveFailureKind.None,
+            now));
+    }
+
+    [Fact]
     public async Task StaleLeaseGeneration_CannotHeartbeatOrUpdateStatus()
     {
         var persistence = CreatePersistence();
@@ -191,6 +319,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
             job.Id,
             "worker-a",
             staleGeneration.GetValueOrDefault(),
+            now,
             now.AddMinutes(3)));
         Assert.False(await persistence.UpdateStatusAsync(
             job.Id,

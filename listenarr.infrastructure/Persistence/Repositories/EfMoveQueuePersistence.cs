@@ -223,7 +223,9 @@ public sealed class EfMoveQueuePersistence(
                     job => job.Id == id
                         && job.Status == MoveJobStatus.Running
                         && job.LeaseOwner == leaseOwner
-                        && job.LeaseGeneration == leaseGeneration,
+                        && job.LeaseGeneration == leaseGeneration
+                        && job.LeaseExpiresAt != null
+                        && job.LeaseExpiresAt > updatedAt.UtcDateTime,
                     cancellationToken);
                 if (trackedJob == null) return false;
                 trackedJob.Status = status;
@@ -246,7 +248,9 @@ public sealed class EfMoveQueuePersistence(
                 .Where(job => job.Id == id
                     && job.Status == MoveJobStatus.Running
                     && job.LeaseOwner == leaseOwner
-                    && job.LeaseGeneration == leaseGeneration)
+                    && job.LeaseGeneration == leaseGeneration
+                    && job.LeaseExpiresAt != null
+                    && job.LeaseExpiresAt > updatedAt.UtcDateTime)
                 .ExecuteUpdateAsync(
                     updates => updates
                         .SetProperty(job => job.Status, status)
@@ -327,15 +331,35 @@ public sealed class EfMoveQueuePersistence(
         Guid id,
         string leaseOwner,
         int leaseGeneration,
+        DateTimeOffset now,
         DateTimeOffset leaseExpiresAt,
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var nowUtc = now.UtcDateTime;
+        if (!db.Database.IsRelational())
+        {
+            var trackedJob = await db.MoveJobs.SingleOrDefaultAsync(
+                candidate => candidate.Id == id
+                    && candidate.Status == MoveJobStatus.Running
+                    && candidate.LeaseOwner == leaseOwner
+                    && candidate.LeaseGeneration == leaseGeneration
+                    && candidate.LeaseExpiresAt != null
+                    && candidate.LeaseExpiresAt > nowUtc,
+                cancellationToken);
+            if (trackedJob == null) return false;
+            trackedJob.LeaseExpiresAt = leaseExpiresAt.UtcDateTime;
+            await db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
         var affected = await db.MoveJobs
             .Where(candidate => candidate.Id == id
                 && candidate.Status == MoveJobStatus.Running
                 && candidate.LeaseOwner == leaseOwner
-                && candidate.LeaseGeneration == leaseGeneration)
+                && candidate.LeaseGeneration == leaseGeneration
+                && candidate.LeaseExpiresAt != null
+                && candidate.LeaseExpiresAt > nowUtc)
             .ExecuteUpdateAsync(
                 updates => updates.SetProperty(
                     job => job.LeaseExpiresAt,

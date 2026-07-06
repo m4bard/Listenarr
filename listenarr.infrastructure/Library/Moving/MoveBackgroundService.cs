@@ -17,7 +17,8 @@ public sealed class MoveBackgroundService(
     IMoveJobProcessor processor,
     ILogger<MoveBackgroundService> logger,
     IAppMetricsService? metrics = null,
-    TimeSpan? heartbeatInterval = null) : BackgroundService
+    TimeSpan? heartbeatInterval = null,
+    TimeSpan? ownershipDuration = null) : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
 
@@ -60,12 +61,26 @@ public sealed class MoveBackgroundService(
                         using var heartbeatCancellation = new CancellationTokenSource();
                         var leaseLost = new TaskCompletionSource<MoveLeaseLostException>(
                             TaskCreationOptions.RunContinuationsAsynchronously);
+                        using var ownershipDeadline = new CancellationTokenSource(
+                            ownershipDuration ?? MoveTimingPolicy.OwnershipDuration);
+                        using var deadlineRegistration = ownershipDeadline.Token.Register(static state =>
+                        {
+                            var context = (OwnershipDeadlineContext)state!;
+                            context.Logger.LogWarning(
+                                "Move job {JobId} locally confirmed ownership expired for generation {LeaseGeneration}; canceling processing",
+                                context.JobId,
+                                context.Generation);
+                            var exception = new MoveLeaseLostException(context.JobId, context.Generation);
+                            context.Lost.TrySetResult(exception);
+                            _ = context.Processing.CancelAsync();
+                        }, new OwnershipDeadlineContext(job.Id, leaseGeneration.Value, processingCancellation, leaseLost, logger));
                         var heartbeatTask = RunHeartbeatAsync(
                             job.Id,
                             leaseOwner,
                             leaseGeneration.Value,
                             processingCancellation,
                             leaseLost,
+                            ownershipDeadline,
                             heartbeatCancellation.Token);
                         try
                         {
@@ -78,13 +93,7 @@ public sealed class MoveBackgroundService(
                         finally
                         {
                             await heartbeatCancellation.CancelAsync();
-                            try
-                            {
-                                await heartbeatTask;
-                            }
-                            catch (OperationCanceledException) when (heartbeatCancellation.IsCancellationRequested)
-                            {
-                            }
+                            await ObserveHeartbeatExitAsync(heartbeatTask, stoppingToken);
                         }
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -131,12 +140,36 @@ public sealed class MoveBackgroundService(
         logger.LogInformation("MoveBackgroundService stopping due to host shutdown");
     }
 
+    private async Task ObserveHeartbeatExitAsync(Task heartbeatTask, CancellationToken stoppingToken)
+    {
+        var completed = await Task.WhenAny(
+            heartbeatTask,
+            Task.Delay(TimeSpan.FromSeconds(1), stoppingToken));
+        if (completed != heartbeatTask)
+        {
+            logger.LogWarning("Move heartbeat did not stop promptly after cancellation; leaving it detached");
+            _ = heartbeatTask.ContinueWith(
+                static task => _ = task.Exception,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+            return;
+        }
+
+        try
+        {
+            await heartbeatTask;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
     private async Task RunHeartbeatAsync(
         Guid jobId,
         string leaseOwner,
         int leaseGeneration,
         CancellationTokenSource processingCancellation,
         TaskCompletionSource<MoveLeaseLostException> leaseLost,
+        CancellationTokenSource ownershipDeadline,
         CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(
@@ -152,15 +185,17 @@ public sealed class MoveBackgroundService(
                     cancellationToken);
                 if (!renewed)
                 {
-                    logger.LogWarning(
-                        "Move job {JobId} lost lease generation {LeaseGeneration}; canceling processing",
+                    await CancelForLostOwnershipAsync(
                         jobId,
-                        leaseGeneration);
-                    var exception = new MoveLeaseLostException(jobId, leaseGeneration);
-                    leaseLost.TrySetResult(exception);
-                    await processingCancellation.CancelAsync();
-                    throw exception;
+                        leaseGeneration,
+                        processingCancellation,
+                        leaseLost,
+                        null,
+                        "Move job {JobId} lost ownership generation {LeaseGeneration}; canceling processing");
+                    break;
                 }
+
+                ownershipDeadline.CancelAfter(ownershipDuration ?? MoveTimingPolicy.OwnershipDuration);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -168,11 +203,43 @@ public sealed class MoveBackgroundService(
             }
             catch (Exception exception) when (exception is not OutOfMemoryException and not StackOverflowException)
             {
-                logger.LogWarning(
+                await CancelForLostOwnershipAsync(
+                    jobId,
+                    leaseGeneration,
+                    processingCancellation,
+                    leaseLost,
                     exception,
-                    "Failed to renew the lease for move job {JobId}; heartbeat will retry",
-                    jobId);
+                    "Failed to renew ownership for move job {JobId}; canceling processing");
+                break;
             }
         }
     }
+
+    private async Task CancelForLostOwnershipAsync(
+        Guid jobId,
+        int generation,
+        CancellationTokenSource processingCancellation,
+        TaskCompletionSource<MoveLeaseLostException> leaseLost,
+        Exception? exception,
+        string message)
+    {
+        if (exception == null)
+        {
+            logger.LogWarning(message, jobId, generation);
+        }
+        else
+        {
+            logger.LogWarning(exception, message, jobId, generation);
+        }
+
+        leaseLost.TrySetResult(new MoveLeaseLostException(jobId, generation));
+        await processingCancellation.CancelAsync();
+    }
+
+    private sealed record OwnershipDeadlineContext(
+        Guid JobId,
+        int Generation,
+        CancellationTokenSource Processing,
+        TaskCompletionSource<MoveLeaseLostException> Lost,
+        ILogger<MoveBackgroundService> Logger);
 }
