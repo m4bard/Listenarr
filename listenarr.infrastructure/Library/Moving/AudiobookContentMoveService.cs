@@ -19,7 +19,8 @@ internal sealed record AudiobookContentMoveRequest(
     string Target,
     Guid JobId,
     bool DeleteEmptySource,
-    FileSystemPathSemantics Semantics,
+    FileSystemPathSemantics SourceSemantics,
+    FileSystemPathSemantics TargetSemantics,
     int LeaseGeneration = 0);
 
 internal sealed record AudiobookContentMoveResult(
@@ -54,9 +55,10 @@ internal sealed partial class AudiobookContentMoveService(
 
         var source = Path.GetFullPath(request.Source);
         var target = Path.GetFullPath(request.Target);
-        var semantics = request.Semantics;
-        var targetInsideSource = IsSameOrInside(target, source, semantics);
-        var sourceInsideTarget = IsSameOrInside(source, target, semantics);
+        var sourceSemantics = request.SourceSemantics;
+        var targetSemantics = request.TargetSemantics;
+        var targetInsideSource = IsSameOrInside(target, source, sourceSemantics);
+        var sourceInsideTarget = IsSameOrInside(source, target, targetSemantics);
 
         var targetParent = Path.GetDirectoryName(target);
         if (string.IsNullOrEmpty(targetParent))
@@ -76,7 +78,7 @@ internal sealed partial class AudiobookContentMoveService(
         }
 
         var resumingDirectCopy = string.Equals(recoveryStage, CopyStartedStage, StringComparison.Ordinal);
-        EnsureTargetCanReceiveContents(source, target, sourceInsideTarget, resumingDirectCopy, semantics);
+        EnsureTargetCanReceiveContents(source, target, sourceInsideTarget, resumingDirectCopy, targetSemantics);
 
         var tempName = Path.Join(targetParent, Path.GetFileName(target) + ".tmp-" + request.JobId.ToString("N"));
         if (!FileSystemSafety.TryValidateMutationTarget(tempName, [targetParent], out tempName, out var tempReason))
@@ -136,8 +138,9 @@ internal sealed partial class AudiobookContentMoveService(
                 source,
                 target,
                 targetInsideSource,
-                semantics,
+                sourceSemantics,
                 cancellationToken);
+            ValidateTargetManifest(target, manifest, targetSemantics);
             await UpdateJobPhaseAsync(request.JobId, request.LeaseGeneration, MoveJobPhase.Planned, cancellationToken);
 
             // The move operation relocates the contents of the audiobook BasePath, not the
@@ -159,10 +162,11 @@ internal sealed partial class AudiobookContentMoveService(
                 copyDestination,
                 manifest,
                 request.JobId,
-                semantics,
+                sourceSemantics,
+                targetSemantics,
                 cancellationToken);
 
-            await VerifyPublishedManifestAsync(copyDestination, manifest, semantics, cancellationToken);
+            await VerifyPublishedManifestAsync(copyDestination, manifest, targetSemantics, cancellationToken);
             await UpdateCopyStateAsync(request.JobId, request.LeaseGeneration, cancellationToken);
 
             WriteRecoveryMarker(copyDestination, request.JobId, CopyCompletedStage);
@@ -188,7 +192,8 @@ internal sealed partial class AudiobookContentMoveService(
                 request.JobId,
                 request.LeaseGeneration,
                 manifest,
-                semantics,
+                sourceSemantics,
+                targetSemantics,
                 cancellationToken);
             await UpdateJobPhaseAsync(request.JobId, request.LeaseGeneration, MoveJobPhase.Finalizing, cancellationToken);
             WriteRecoveryMarker(target, request.JobId, SourceCleanupCompletedStage);
@@ -216,13 +221,14 @@ internal sealed partial class AudiobookContentMoveService(
         var target = Path.GetFullPath(request.Target);
         var recoveryMarkerPath = GetRecoveryMarkerPath(target, request.JobId);
         var recoveryStage = ReadRecoveryStage(recoveryMarkerPath);
-        var semantics = request.Semantics;
+        var sourceSemantics = request.SourceSemantics;
+        var targetSemantics = request.TargetSemantics;
         var manifest = LoadManifest(request.JobId);
         var atomicRenameCompleted = manifest.Count == 0
             && string.Equals(recoveryStage, AtomicRenameCompletedStage, StringComparison.Ordinal);
-        if (IsFilesystemRoot(source, semantics)
-            || IsFilesystemRoot(target, semantics)
-            || FileSystemPathIdentity.AreEquivalent(source, target, semantics)
+        if (IsFilesystemRoot(source, sourceSemantics)
+            || IsFilesystemRoot(target, targetSemantics)
+            || FileSystemPathIdentity.AreEquivalent(source, target, sourceSemantics)
             || !Directory.Exists(target)
             || (!atomicRenameCompleted && manifest.Count == 0)
             || (!atomicRenameCompleted
@@ -236,7 +242,7 @@ internal sealed partial class AudiobookContentMoveService(
         {
             if (!atomicRenameCompleted)
             {
-                VerifyPublishedManifestAsync(target, manifest, semantics, CancellationToken.None)
+                VerifyPublishedManifestAsync(target, manifest, targetSemantics, CancellationToken.None)
                     .GetAwaiter()
                     .GetResult();
             }
@@ -248,8 +254,8 @@ internal sealed partial class AudiobookContentMoveService(
             return false;
         }
 
-        var targetInsideSource = IsSameOrInside(target, source, semantics);
-        var sourceInsideTarget = IsSameOrInside(source, target, semantics);
+        var targetInsideSource = IsSameOrInside(target, source, sourceSemantics);
+        var sourceInsideTarget = IsSameOrInside(source, target, targetSemantics);
         result = new AudiobookContentMoveResult(
             source,
             target,
@@ -288,7 +294,8 @@ internal sealed partial class AudiobookContentMoveService(
             request.JobId,
             request.LeaseGeneration,
             manifest,
-            request.Semantics,
+            request.SourceSemantics,
+            request.TargetSemantics,
             cancellationToken);
         WriteRecoveryMarker(result.Target, request.JobId, SourceCleanupCompletedStage);
         return result with { SourceCleanupCompleted = true };

@@ -81,11 +81,25 @@ namespace Listenarr.Infrastructure.Library.Moving
                 if (!string.IsNullOrWhiteSpace(source))
                 {
                     source = Path.GetFullPath(source);
+                    var recoverySourceResolution = await semanticsResolver.ResolveAsync(
+                        source,
+                        cancellationToken: stoppingToken);
+                    if (recoverySourceResolution.State != PathIdentityState.Valid)
+                    {
+                        await UpdateJobStatusAsync(
+                            job,
+                            MoveJobStatus.NeedsAttention,
+                            recoverySourceResolution.Reason ?? "Source filesystem identity is unavailable.",
+                            stoppingToken);
+                        return;
+                    }
+
                     var recoveryRequest = new AudiobookContentMoveRequest(
                         source,
                         target,
                         job.Id,
                         job.DeleteEmptySource,
+                        recoverySourceResolution.Semantics,
                         targetResolution.Semantics,
                         job.LeaseGeneration);
                     if (contentMoveService.TryGetRecoverableMove(recoveryRequest, out var resumedMove))
@@ -186,6 +200,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         job.Id,
                         job.DeleteEmptySource,
                         sourceResolution.Semantics,
+                        targetResolution.Semantics,
                         job.LeaseGeneration);
                     var moveResult = recoveredMove ?? await contentMoveService.MoveContentsAsync(
                         moveRequest,
@@ -201,7 +216,8 @@ namespace Listenarr.Infrastructure.Library.Moving
                         audiobook,
                         source,
                         target,
-                        moveRequest.Semantics,
+                        moveRequest.SourceSemantics,
+                        moveRequest.TargetSemantics,
                         audiobookRepository,
                         logger);
 

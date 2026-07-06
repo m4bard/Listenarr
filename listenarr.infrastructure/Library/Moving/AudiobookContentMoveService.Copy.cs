@@ -10,7 +10,8 @@ internal sealed partial class AudiobookContentMoveService
         string copyDestination,
         IReadOnlyList<MoveJobEntry> manifest,
         Guid jobId,
-        FileSystemPathSemantics semantics,
+        FileSystemPathSemantics sourceSemantics,
+        FileSystemPathSemantics targetSemantics,
         CancellationToken cancellationToken)
     {
         foreach (var manifestEntry in manifest.OrderBy(entry => entry.EntryType))
@@ -19,7 +20,7 @@ internal sealed partial class AudiobookContentMoveService
             if (!FileSystemPathIdentity.TryResolveRelativePathWithinBase(
                 copyDestination,
                 manifestEntry.RelativePath,
-                semantics,
+                targetSemantics,
                 out var destinationPath))
             {
                 throw new IOException($"Move entry destination escaped target root: {manifestEntry.RelativePath}");
@@ -31,7 +32,15 @@ internal sealed partial class AudiobookContentMoveService
                 continue;
             }
 
-            var entry = Path.Join(source, manifestEntry.RelativePath);
+            if (!FileSystemPathIdentity.TryResolveRelativePathWithinBase(
+                source,
+                manifestEntry.RelativePath,
+                sourceSemantics,
+                out var entry))
+            {
+                throw new IOException($"Move entry escaped source root: {manifestEntry.RelativePath}");
+            }
+
             await CopyFileWithRetryAsync(entry, destinationPath, jobId, cancellationToken);
         }
     }

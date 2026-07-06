@@ -7,6 +7,52 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
     [Trait("Category", "BackgroundWorkers")]
     public class AudiobookContentMoveServiceTests : BaseTests
     {
+        [Theory]
+        [InlineData(FileSystemCaseSensitivity.Insensitive, true)]
+        [InlineData(FileSystemCaseSensitivity.Sensitive, false)]
+        public void ValidateTargetManifest_CaseOnlyEntriesFollowTargetSemantics(
+            FileSystemCaseSensitivity targetCaseSensitivity,
+            bool shouldReject)
+        {
+            var target = Path.Join(FileService.GetTempPath(), $"content-move-target-manifest-{Guid.NewGuid():N}");
+            var targetSemantics = new FileSystemPathSemantics(
+                FileSystemPathSemantics.CurrentHostDefault.Syntax,
+                targetCaseSensitivity);
+            var manifest = new[]
+            {
+                new MoveJobEntry { RelativePath = "Book.m4b", EntryType = MoveJobEntryType.File },
+                new MoveJobEntry { RelativePath = "book.m4b", EntryType = MoveJobEntryType.File }
+            };
+
+            if (shouldReject)
+            {
+                var exception = Assert.Throws<MoveNeedsAttentionException>(() =>
+                    AudiobookContentMoveService.ValidateTargetManifest(target, manifest, targetSemantics));
+                Assert.Contains("cannot represent both", exception.Message);
+                return;
+            }
+
+            AudiobookContentMoveService.ValidateTargetManifest(target, manifest, targetSemantics);
+        }
+
+        [Theory]
+        [InlineData("../escape.m4b")]
+        [InlineData("/escape.m4b")]
+        public void ValidateTargetManifest_RejectsEscapedEntries(string relativePath)
+        {
+            var target = Path.Join(FileService.GetTempPath(), $"content-move-target-escape-{Guid.NewGuid():N}");
+            var manifest = new[]
+            {
+                new MoveJobEntry { RelativePath = relativePath, EntryType = MoveJobEntryType.File }
+            };
+
+            Assert.Throws<MoveNeedsAttentionException>(() =>
+                AudiobookContentMoveService.ValidateTargetManifest(
+                    target,
+                    manifest,
+                    FileSystemPathSemantics.CurrentHostDefault));
+        }
+
         [Fact]
         public async Task MoveContentsAsync_NormalMove_MovesContentsAndDeletesSource()
         {
@@ -64,6 +110,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     jobId,
                     true,
                     FileSystemPathSemantics.CurrentHostDefault,
+                    FileSystemPathSemantics.CurrentHostDefault,
                     LeaseGeneration: 1),
                 CancellationToken.None));
 
@@ -98,7 +145,13 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
             await Assert.ThrowsAsync<MoveLeaseLostException>(() => service.MoveContentsAsync(
-                new AudiobookContentMoveRequest(source, target, jobId, true, FileSystemPathSemantics.CurrentHostDefault),
+                new AudiobookContentMoveRequest(
+                    source,
+                    target,
+                    jobId,
+                    true,
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    FileSystemPathSemantics.CurrentHostDefault),
                 CancellationToken.None));
 
             Assert.True(File.Exists(sourceFile));
@@ -384,7 +437,13 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
 
             var recoverable = service.TryGetRecoverableMove(
-                new AudiobookContentMoveRequest(source, target, jobId, true, FileSystemPathSemantics.CurrentHostDefault),
+                new AudiobookContentMoveRequest(
+                    source,
+                    target,
+                    jobId,
+                    true,
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    FileSystemPathSemantics.CurrentHostDefault),
                 out _);
 
             Assert.False(recoverable);
@@ -407,7 +466,13 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
             var recoverable = service.TryGetRecoverableMove(
-                new AudiobookContentMoveRequest(source, target, jobId, true, FileSystemPathSemantics.CurrentHostDefault),
+                new AudiobookContentMoveRequest(
+                    source,
+                    target,
+                    jobId,
+                    true,
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    FileSystemPathSemantics.CurrentHostDefault),
                 out var result);
 
             Assert.True(recoverable);
@@ -459,7 +524,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
             var resumed = await service.ResumeSourceCleanupAsync(
-                new AudiobookContentMoveRequest(source, target, jobId, true, FileSystemPathSemantics.CurrentHostDefault, LeaseGeneration: 1),
+                new AudiobookContentMoveRequest(
+                    source,
+                    target,
+                    jobId,
+                    true,
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    LeaseGeneration: 1),
                 new AudiobookContentMoveResult(
                     source,
                     target,
@@ -516,7 +588,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
             var resumed = await service.ResumeSourceCleanupAsync(
-                new AudiobookContentMoveRequest(source, target, jobId, true, FileSystemPathSemantics.CurrentHostDefault, LeaseGeneration: 1),
+                new AudiobookContentMoveRequest(
+                    source,
+                    target,
+                    jobId,
+                    true,
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    LeaseGeneration: 1),
                 new AudiobookContentMoveResult(
                     source,
                     target,
@@ -580,7 +659,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
             await Assert.ThrowsAsync<MoveNeedsAttentionException>(() => service.ResumeSourceCleanupAsync(
-                new AudiobookContentMoveRequest(source, target, jobId, true, FileSystemPathSemantics.CurrentHostDefault, LeaseGeneration: 1),
+                new AudiobookContentMoveRequest(
+                    source,
+                    target,
+                    jobId,
+                    true,
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    LeaseGeneration: 1),
                 new AudiobookContentMoveResult(
                     source,
                     target,
@@ -599,7 +685,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             string target,
             Guid? jobId = null,
             bool deleteEmptySource = true,
-            FileSystemPathSemantics? semantics = null)
+            FileSystemPathSemantics? sourceSemantics = null,
+            FileSystemPathSemantics? targetSemantics = null)
         {
             var id = jobId ?? Guid.NewGuid();
             var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
@@ -621,7 +708,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 target,
                 id,
                 deleteEmptySource,
-                semantics ?? FileSystemPathSemantics.CurrentHostDefault,
+                sourceSemantics ?? FileSystemPathSemantics.CurrentHostDefault,
+                targetSemantics ?? sourceSemantics ?? FileSystemPathSemantics.CurrentHostDefault,
                 LeaseGeneration: 1);
         }
 

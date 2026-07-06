@@ -328,7 +328,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, dst, src);
             var contentMoveService = _provider.GetRequiredService<AudiobookContentMoveService>();
             await contentMoveService.MoveContentsAsync(
-                new AudiobookContentMoveRequest(src, dst, job.Id, true, FileSystemPathSemantics.CurrentHostDefault, LeaseGeneration: job.LeaseGeneration),
+                new AudiobookContentMoveRequest(
+                    src,
+                    dst,
+                    job.Id,
+                    true,
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    FileSystemPathSemantics.CurrentHostDefault,
+                    LeaseGeneration: job.LeaseGeneration),
                 CancellationToken.None);
 
             Assert.False(Directory.Exists(src));

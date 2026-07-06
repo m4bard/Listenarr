@@ -11,7 +11,7 @@ internal sealed partial class AudiobookContentMoveService
         string source,
         string target,
         bool targetInsideSource,
-        FileSystemPathSemantics semantics,
+        FileSystemPathSemantics sourceSemantics,
         CancellationToken cancellationToken)
     {
         var persisted = await LoadManifestAsync(jobId, cancellationToken);
@@ -25,7 +25,7 @@ internal sealed partial class AudiobookContentMoveService
             source,
             target,
             targetInsideSource,
-            semantics,
+            sourceSemantics,
             cancellationToken);
         await PersistManifestAsync(jobId, leaseGeneration, manifest, cancellationToken);
         return manifest;
@@ -35,7 +35,7 @@ internal sealed partial class AudiobookContentMoveService
         string source,
         string target,
         bool targetInsideSource,
-        FileSystemPathSemantics semantics,
+        FileSystemPathSemantics sourceSemantics,
         CancellationToken cancellationToken)
     {
         if ((File.GetAttributes(source) & FileAttributes.ReparsePoint) != 0)
@@ -52,7 +52,7 @@ internal sealed partial class AudiobookContentMoveService
             foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (targetInsideSource && IsSameOrInside(entry, target, semantics))
+                if (targetInsideSource && IsSameOrInside(entry, target, sourceSemantics))
                 {
                     continue;
                 }
@@ -64,7 +64,10 @@ internal sealed partial class AudiobookContentMoveService
                         $"Move entry '{Path.GetRelativePath(source, entry)}' is a symlink or reparse point.");
                 }
 
-                var relativePath = Path.GetRelativePath(source, entry);
+                if (!FileSystemPathIdentity.TryGetRelativePathWithinBase(source, entry, sourceSemantics, out var relativePath))
+                {
+                    throw new MoveNeedsAttentionException("A source entry escaped the source root.");
+                }
                 if ((attributes & FileAttributes.Directory) != 0)
                 {
                     entries.Add(new MoveJobEntry
@@ -93,6 +96,35 @@ internal sealed partial class AudiobookContentMoveService
 
         return entries;
     }
+
+    internal static void ValidateTargetManifest(
+        string target,
+        IReadOnlyCollection<MoveJobEntry> manifest,
+        FileSystemPathSemantics targetSemantics)
+    {
+        var identities = new Dictionary<string, MoveJobEntry>(StringComparer.Ordinal);
+        foreach (var entry in manifest)
+        {
+            if (!FileSystemPathIdentity.TryResolveRelativePathWithinBase(
+                target,
+                entry.RelativePath,
+                targetSemantics,
+                out var destinationPath))
+            {
+                throw new MoveNeedsAttentionException("A manifest entry escaped the destination root.");
+            }
+
+            var key = FileSystemPathIdentity.CreateKey("move-target", destinationPath, targetSemantics);
+            if (identities.TryGetValue(key, out var existing))
+            {
+                throw new MoveNeedsAttentionException(
+                    $"Target filesystem cannot represent both '{existing.RelativePath}' and '{entry.RelativePath}'.");
+            }
+
+            identities.Add(key, entry);
+        }
+    }
+
     private static async Task VerifyPublishedManifestAsync(
         string destinationRoot,
         IReadOnlyCollection<MoveJobEntry> manifest,
@@ -140,11 +172,12 @@ internal sealed partial class AudiobookContentMoveService
         Guid jobId,
         int leaseGeneration,
         IReadOnlyList<MoveJobEntry> manifest,
-        FileSystemPathSemantics semantics,
+        FileSystemPathSemantics sourceSemantics,
+        FileSystemPathSemantics targetSemantics,
         CancellationToken cancellationToken)
     {
         var sourceExists = Directory.Exists(source);
-        if (sourceExists && IsFilesystemRoot(source, semantics))
+        if (sourceExists && IsFilesystemRoot(source, sourceSemantics))
         {
             throw new IOException("Source path became invalid before cleanup.");
         }
@@ -167,7 +200,7 @@ internal sealed partial class AudiobookContentMoveService
             if (FileSystemPathIdentity.TryResolveRelativePathWithinBase(
                 source,
                 directoryEntry.RelativePath,
-                semantics,
+                sourceSemantics,
                 out var sourceDirectory)
                 && Directory.Exists(sourceDirectory))
             {
@@ -178,7 +211,7 @@ internal sealed partial class AudiobookContentMoveService
             entry.EntryType == MoveJobEntryType.File
             && entry.CleanupState != MoveJobEntryCleanupState.Deleted))
         {
-            ResolveCleanupPaths(source, quarantineRoot, entry.RelativePath, semantics, out var sourceFile, out var quarantineFile);
+            ResolveCleanupPaths(source, quarantineRoot, entry.RelativePath, sourceSemantics, out var sourceFile, out var quarantineFile);
             if (File.Exists(sourceFile))
             {
                 if (File.Exists(quarantineFile))
@@ -224,23 +257,23 @@ internal sealed partial class AudiobookContentMoveService
                 source,
                 target,
                 targetInsideSource,
-                semantics,
+                sourceSemantics,
                 cancellationToken)
             : [];
-        if (!ManifestMatches(expectedAtSource, current, semantics))
+        if (!ManifestMatches(expectedAtSource, current, sourceSemantics))
         {
             throw new MoveNeedsAttentionException(
                 "Source content changed after the move was planned; cleanup was blocked.");
         }
 
-        await VerifyPublishedManifestAsync(target, manifest, semantics, cancellationToken);
+        await VerifyPublishedManifestAsync(target, manifest, targetSemantics, cancellationToken);
         Directory.CreateDirectory(quarantineRoot);
         foreach (var entry in manifest.Where(entry =>
             entry.EntryType == MoveJobEntryType.File
             && entry.CleanupState != MoveJobEntryCleanupState.Deleted))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ResolveCleanupPaths(source, quarantineRoot, entry.RelativePath, semantics, out var sourceFile, out var quarantineFile);
+            ResolveCleanupPaths(source, quarantineRoot, entry.RelativePath, sourceSemantics, out var sourceFile, out var quarantineFile);
 
             var quarantineDirectory = Path.GetDirectoryName(quarantineFile);
             if (!string.IsNullOrEmpty(quarantineDirectory))
@@ -266,7 +299,7 @@ internal sealed partial class AudiobookContentMoveService
                     $"Quarantined source bytes changed before cleanup: {entry.RelativePath}");
             }
 
-            await VerifyPublishedManifestAsync(target, [entry], semantics, cancellationToken);
+            await VerifyPublishedManifestAsync(target, [entry], targetSemantics, cancellationToken);
             await UpdateCleanupStateAsync(
                 jobId,
                 leaseGeneration,
@@ -289,7 +322,7 @@ internal sealed partial class AudiobookContentMoveService
             if (FileSystemPathIdentity.TryResolveRelativePathWithinBase(
                 source,
                 directoryEntry.RelativePath,
-                semantics,
+                sourceSemantics,
                 out var directory)
                 && Directory.Exists(directory)
                 && !Directory.EnumerateFileSystemEntries(directory).Any())
@@ -306,7 +339,7 @@ internal sealed partial class AudiobookContentMoveService
             Directory.Delete(source, false);
         }
 
-        RemoveEmptyDirectoryTree(quarantineRoot, sourceParent, semantics);
+        RemoveEmptyDirectoryTree(quarantineRoot, sourceParent, sourceSemantics);
     }
 
     private static void ResolveCleanupPaths(
