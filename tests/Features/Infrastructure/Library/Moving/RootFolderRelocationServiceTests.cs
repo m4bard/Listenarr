@@ -372,6 +372,97 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ConcurrentRetryAsync_SerializesStateTransitions()
+    {
+        var (relocationId, rootId) = await SeedRetryableRelocationAsync();
+        var coordinator = new FirstEntryPausingCoordinator();
+        var service = new RootFolderRelocationService(
+            _factory,
+            new FileSystemSemanticsResolver(),
+            new NoopHubBroadcaster(),
+            TimeProvider.System,
+            coordinator);
+
+        var firstRetry = service.RetryAsync(relocationId);
+        await coordinator.FirstEntered;
+        var secondRetry = service.RetryAsync(relocationId);
+
+        await Task.Delay(50);
+        Assert.Equal(1, coordinator.EntryCount);
+
+        coordinator.ReleaseFirst();
+        var firstResult = await firstRetry;
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => secondRetry);
+
+        Assert.Equal(RootFolderRelocationStatus.Completed, firstResult.Status);
+        Assert.Contains("needing attention", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, coordinator.EntryCount);
+        await using var verification = await _factory.CreateDbContextAsync();
+        var relocation = await verification.RootFolderRelocations.SingleAsync();
+        var root = await verification.RootFolders.SingleAsync();
+        Assert.Equal(relocationId, relocation.Id);
+        Assert.Equal(rootId, root.Id);
+        Assert.Equal(RootFolderRelocationStatus.Completed, relocation.Status);
+        Assert.Null(relocation.ActiveRootFolderId);
+        Assert.Empty(await verification.MoveJobs.ToListAsync());
+        Assert.Empty(await verification.RootFolderRelocationSkippedItems.ToListAsync());
+    }
+
+    [Fact]
+    public async Task RetryAsync_BroadcastsAfterReleasingCoordinator()
+    {
+        var (relocationId, _) = await SeedRetryableRelocationAsync();
+        var coordinator = new TrackingCoordinator();
+        var broadcaster = new RecordingHubBroadcaster(() => coordinator.IsExecuting);
+        var service = new RootFolderRelocationService(
+            _factory,
+            new FileSystemSemanticsResolver(),
+            broadcaster,
+            TimeProvider.System,
+            coordinator);
+
+        var result = await service.RetryAsync(relocationId);
+
+        Assert.Equal(1, broadcaster.BroadcastCount);
+        Assert.False(broadcaster.CoordinatorWasExecuting);
+        Assert.Same(result, broadcaster.Payload);
+    }
+
+    [Fact]
+    public async Task RetryAsync_CancelledWhileWaiting_DoesNotMutateOrBroadcast()
+    {
+        var (relocationId, rootId) = await SeedRetryableRelocationAsync();
+        var coordinator = new FirstEntryPausingCoordinator();
+        var broadcaster = new RecordingHubBroadcaster(() => false);
+        var service = new RootFolderRelocationService(
+            _factory,
+            new FileSystemSemanticsResolver(),
+            broadcaster,
+            TimeProvider.System,
+            coordinator);
+        var blocker = coordinator.ExecuteExclusiveAsync(_ => Task.CompletedTask);
+        await coordinator.FirstEntered;
+        using var cancellation = new CancellationTokenSource();
+
+        var retry = service.RetryAsync(relocationId, cancellation.Token);
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => retry);
+        Assert.Equal(0, broadcaster.BroadcastCount);
+        await using (var verification = await _factory.CreateDbContextAsync())
+        {
+            var relocation = await verification.RootFolderRelocations.SingleAsync();
+            var root = await verification.RootFolders.SingleAsync();
+            Assert.Equal(rootId, relocation.ActiveRootFolderId);
+            Assert.Equal(RootFolderRelocationStatus.NeedsAttention, relocation.Status);
+            Assert.Equal(rootId, root.Id);
+        }
+
+        coordinator.ReleaseFirst();
+        await blocker;
+    }
+
+    [Fact]
     public async Task RetryAsync_AllJobsCompletedAfterFinalizationBlocked_AppliesRootMetadataAndCompletes()
     {
         var source = Path.Join(Path.GetTempPath(), $"retry-finalize-source-{Guid.NewGuid():N}");
@@ -487,15 +578,21 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
             await db.SaveChangesAsync();
         }
 
+        var coordinator = new TrackingCoordinator();
+        var broadcaster = new RecordingHubBroadcaster(() => coordinator.IsExecuting);
         var retryService = new RootFolderRelocationService(
             _factory,
             new TargetUnavailableSemanticsResolver(target),
-            new NoopHubBroadcaster(),
-            TimeProvider.System);
+            broadcaster,
+            TimeProvider.System,
+            coordinator);
         var result = await retryService.RetryAsync(started.RelocationId!.Value);
 
         Assert.Equal(RootFolderRelocationStatus.NeedsAttention, result.Status);
         Assert.Contains("became unavailable", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, broadcaster.BroadcastCount);
+        Assert.False(broadcaster.CoordinatorWasExecuting);
+        Assert.Same(result, broadcaster.Payload);
         await using var verification = await _factory.CreateDbContextAsync();
         var rootAfter = await verification.RootFolders.SingleAsync(root => root.Id == rootId);
         var relocationAfter = await verification.RootFolderRelocations.SingleAsync();
@@ -1119,6 +1216,30 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
         false,
         FileSystemCaseSensitivityMode.Auto);
 
+    private async Task<(Guid RelocationId, int RootId)> SeedRetryableRelocationAsync()
+    {
+        var source = Path.Join(Path.GetTempPath(), $"retry-source-{Guid.NewGuid():N}");
+        var target = Path.Join(Path.GetTempPath(), $"retry-target-{Guid.NewGuid():N}");
+        await using var db = await _factory.CreateDbContextAsync();
+        var root = new RootFolder { Name = "Library", Path = source };
+        db.RootFolders.Add(root);
+        await db.SaveChangesAsync();
+        var relocation = new RootFolderRelocation
+        {
+            RootFolderId = root.Id,
+            ActiveRootFolderId = root.Id,
+            SourcePath = source,
+            TargetPath = target,
+            Mode = RootFolderRelocationMode.MetadataOnly,
+            Status = RootFolderRelocationStatus.NeedsAttention,
+            DesiredName = root.Name,
+            Error = "Retry required."
+        };
+        db.RootFolderRelocations.Add(relocation);
+        await db.SaveChangesAsync();
+        return (relocation.Id, root.Id);
+    }
+
     private sealed class FirstEntryPausingCoordinator : IFilesystemMutationCoordinator
     {
         private readonly FilesystemMutationCoordinator _inner = new();
@@ -1129,6 +1250,8 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
         private int _entries;
 
         public Task FirstEntered => _firstEntered.Task;
+
+        public int EntryCount => Volatile.Read(ref _entries);
 
         public void ReleaseFirst() => _releaseFirst.TrySetResult();
 
@@ -1171,6 +1294,76 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
 
             return await operation(cancellationToken);
         }
+    }
+
+    private sealed class TrackingCoordinator : IFilesystemMutationCoordinator
+    {
+        private readonly FilesystemMutationCoordinator _inner = new();
+        private int _executing;
+
+        public bool IsExecuting => Volatile.Read(ref _executing) != 0;
+
+        public Task ExecuteExclusiveAsync(
+            Func<CancellationToken, Task> operation,
+            CancellationToken cancellationToken = default) =>
+            _inner.ExecuteExclusiveAsync(
+                async token =>
+                {
+                    Interlocked.Increment(ref _executing);
+                    try
+                    {
+                        await operation(token);
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref _executing);
+                    }
+                },
+                cancellationToken);
+
+        public Task<T> ExecuteExclusiveAsync<T>(
+            Func<CancellationToken, Task<T>> operation,
+            CancellationToken cancellationToken = default) =>
+            _inner.ExecuteExclusiveAsync(
+                async token =>
+                {
+                    Interlocked.Increment(ref _executing);
+                    try
+                    {
+                        return await operation(token);
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref _executing);
+                    }
+                },
+                cancellationToken);
+    }
+
+    private sealed class RecordingHubBroadcaster(Func<bool> isCoordinatorExecuting) : IHubBroadcaster
+    {
+        public int BroadcastCount { get; private set; }
+        public bool CoordinatorWasExecuting { get; private set; }
+        public object? Payload { get; private set; }
+
+        public Task BroadcastQueueUpdateAsync(QueueSnapshot queueSnapshot) => Task.CompletedTask;
+
+        public Task BroadcastAsync(
+            string method,
+            object payload,
+            CancellationToken cancellationToken = default)
+        {
+            BroadcastCount++;
+            CoordinatorWasExecuting |= isCoordinatorExecuting();
+            Payload = payload;
+            return Task.CompletedTask;
+        }
+
+        public Task BroadcastAsync(
+            RealtimeHubTarget target,
+            string method,
+            object payload,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private RootFolderRelocationService CreateService() => new(

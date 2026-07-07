@@ -10,6 +10,17 @@ public sealed partial class RootFolderRelocationService
         Guid relocationId,
         CancellationToken cancellationToken = default)
     {
+        var result = await _mutationCoordinator.ExecuteExclusiveAsync(
+            token => RetryCoreAsync(relocationId, token),
+            cancellationToken);
+        await BroadcastAsync(result, cancellationToken);
+        return result;
+    }
+
+    private async Task<RootFolderPathChangeResult> RetryCoreAsync(
+        Guid relocationId,
+        CancellationToken cancellationToken)
+    {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var relocation = await db.RootFolderRelocations
@@ -45,7 +56,6 @@ public sealed partial class RootFolderRelocationService
                     .Select(root => root.Path)
                     .SingleAsync(cancellationToken);
                 var unavailableResult = Map(relocation, unavailableRootPath);
-                await BroadcastAsync(unavailableResult, cancellationToken);
                 return unavailableResult;
             }
         }
@@ -132,7 +142,6 @@ public sealed partial class RootFolderRelocationService
             .Select(root => root.Path)
             .SingleAsync(cancellationToken);
         var result = Map(relocation, rootPath);
-        await BroadcastAsync(result, cancellationToken);
         return result;
     }
 }
