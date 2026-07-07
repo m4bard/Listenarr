@@ -333,15 +333,30 @@ namespace Listenarr.Api.Features.Library
                 return;
             }
 
-            if (allowedRoots.Any(root => FileSystemPathIdentity.AreEquivalent(
+            var existingIndex = allowedRoots.FindIndex(root => FileSystemPathIdentity.AreEquivalent(
                 root.Path,
                 normalizedRoot,
-                resolution.Semantics)))
+                resolution.Semantics));
+            if (existingIndex >= 0)
             {
+                // A configured root-folder override is authoritative when the same path was
+                // already contributed by the legacy output-path setting in Auto mode.
+                if (caseSensitivityMode != FileSystemCaseSensitivityMode.Auto
+                    && allowedRoots[existingIndex].CaseSensitivityMode == FileSystemCaseSensitivityMode.Auto)
+                {
+                    allowedRoots[existingIndex] = new MoveRootBoundary(
+                        normalizedRoot,
+                        resolution.Semantics,
+                        caseSensitivityMode);
+                }
+
                 return;
             }
 
-            allowedRoots.Add(new MoveRootBoundary(normalizedRoot, resolution.Semantics));
+            allowedRoots.Add(new MoveRootBoundary(
+                normalizedRoot,
+                resolution.Semantics,
+                caseSensitivityMode));
         }
 
         private static MoveRootBoundary? FindAllowedMoveRoot(
@@ -354,7 +369,10 @@ namespace Listenarr.Api.Features.Library
                 root.Semantics));
         }
 
-        private sealed record MoveRootBoundary(string Path, FileSystemPathSemantics Semantics);
+        private sealed record MoveRootBoundary(
+            string Path,
+            FileSystemPathSemantics Semantics,
+            FileSystemCaseSensitivityMode CaseSensitivityMode);
 
         private Task<IActionResult> RewriteMetadataOnlyAsync(
             Audiobook audiobook,

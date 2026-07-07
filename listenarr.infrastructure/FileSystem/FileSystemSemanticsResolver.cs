@@ -15,6 +15,12 @@ public sealed class FileSystemSemanticsResolver : IFileSystemSemanticsResolver
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (!Path.IsPathFullyQualified(path))
+        {
+            throw new ArgumentException("Filesystem semantics require an absolute path.", nameof(path));
+        }
+
         var syntax = OperatingSystem.IsWindows()
             ? FileSystemPathSyntax.Windows
             : FileSystemPathSyntax.Unix;
@@ -91,6 +97,10 @@ public sealed class FileSystemSemanticsResolver : IFileSystemSemanticsResolver
 
     private static string? FindExistingBoundary(string path)
     {
+        // Callers provide validated, absolute administrative filesystem paths. Probing the
+        // nearest existing ancestor is intentional: automatic case-sensitivity detection must
+        // work before a configured library destination exists. This must not be exposed as a
+        // general-purpose path-existence oracle for unauthenticated input.
         var current = path;
         while (!string.IsNullOrEmpty(current))
         {

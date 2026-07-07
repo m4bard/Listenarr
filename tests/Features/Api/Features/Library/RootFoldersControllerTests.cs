@@ -203,52 +203,59 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         [Fact]
         public async Task GetSavedUnmatched_FiltersUsingResolvedFolderSemantics()
         {
-            var rootPath = FileUtils.GetAbsolutePath("saved-unmatched-root");
+            var rootPath = Path.Join(Path.GetTempPath(), $"saved-unmatched-root-{Guid.NewGuid():N}");
             var resultPath = Path.Join(rootPath, "CaseBook.m4b");
             var trackedPath = Path.Join(rootPath, "casebook.m4b");
             Directory.CreateDirectory(rootPath);
-            await File.WriteAllTextAsync(resultPath, "audio");
-            var svc = new FakeService();
-            svc.Store.Add(new RootFolder
+            try
             {
-                Id = 1,
-                Name = "Root",
-                Path = rootPath,
-                CaseSensitivityMode = FileSystemCaseSensitivityMode.Auto,
-                ResolvedCaseSensitivity = FileSystemCaseSensitivity.Unknown
-            });
-            var queue = new FakeUnmatchedQueue
-            {
-                LastJob = new UnmatchedScanJob
+                await File.WriteAllTextAsync(resultPath, "audio");
+                var svc = new FakeService();
+                svc.Store.Add(new RootFolder
                 {
-                    RootFolderPath = rootPath,
-                    Status = "Completed",
-                    CompletedAt = DateTime.UtcNow,
-                    Results =
-                    [
-                        new UnmatchedFileResult { FullPath = resultPath }
-                    ]
-                }
-            };
-            var db = CreateDb();
-            db.AudiobookFiles.Add(new AudiobookFile { Id = 1, Path = trackedPath, Format = "m4b" });
-            await db.SaveChangesAsync();
-            var resolver = BuildSemanticsResolver(FileSystemCaseSensitivity.Sensitive);
-            var controller = new RootFoldersController(
-                svc,
-                queue,
-                new EfAudiobookFileRepository(db),
-                new AudiobookRepository(db),
-                new LocalFileSystem(),
-                resolver);
+                    Id = 1,
+                    Name = "Root",
+                    Path = rootPath,
+                    CaseSensitivityMode = FileSystemCaseSensitivityMode.Auto,
+                    ResolvedCaseSensitivity = FileSystemCaseSensitivity.Unknown
+                });
+                var queue = new FakeUnmatchedQueue
+                {
+                    LastJob = new UnmatchedScanJob
+                    {
+                        RootFolderPath = rootPath,
+                        Status = "Completed",
+                        CompletedAt = DateTime.UtcNow,
+                        Results =
+                        [
+                            new UnmatchedFileResult { FullPath = resultPath }
+                        ]
+                    }
+                };
+                var db = CreateDb();
+                db.AudiobookFiles.Add(new AudiobookFile { Id = 1, Path = trackedPath, Format = "m4b" });
+                await db.SaveChangesAsync();
+                var resolver = BuildSemanticsResolver(FileSystemCaseSensitivity.Sensitive);
+                var controller = new RootFoldersController(
+                    svc,
+                    queue,
+                    new EfAudiobookFileRepository(db),
+                    new AudiobookRepository(db),
+                    new LocalFileSystem(),
+                    resolver);
 
-            var result = await controller.GetSavedUnmatched(1);
+                var result = await controller.GetSavedUnmatched(1);
 
-            var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(result);
-            var items = ok.Value!.GetType().GetProperty("items")!.GetValue(ok.Value);
-            var list = Assert.IsAssignableFrom<List<UnmatchedFileResult>>(items);
-            var item = Assert.Single(list);
-            Assert.Equal(resultPath, item.FullPath);
+                var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(result);
+                var items = ok.Value!.GetType().GetProperty("items")!.GetValue(ok.Value);
+                var list = Assert.IsAssignableFrom<List<UnmatchedFileResult>>(items);
+                var item = Assert.Single(list);
+                Assert.Equal(resultPath, item.FullPath);
+            }
+            finally
+            {
+                Directory.Delete(rootPath, recursive: true);
+            }
         }
 
         [Fact]

@@ -627,10 +627,10 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         {
             var mockMoveQueue = new Mock<IMoveQueueService>();
             Init(services => services.WithSingleton(mockMoveQueue.Object));
-            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
-                .WithOutputPath(string.Empty)
-                .Build());
             var rootPath = FileService.GetTempDirectory("listenarr-move-insensitive-root");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(rootPath)
+                .Build());
             await _rootFolderRepository.AddAsync(new RootFolderBuilder()
                 .WithName("Insensitive Move Root")
                 .WithPath(rootPath)
@@ -659,6 +659,53 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 It.IsAny<string>(),
                 It.IsAny<string>(),
                 It.IsAny<bool>()), Times.Never);
+        }
+
+        [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "AllowsCaseOnlyDestination_OnExplicitlyCaseSensitiveRoot")]
+        public async Task MoveAudiobook_AllowsCaseOnlyDestination_OnExplicitlyCaseSensitiveRoot()
+        {
+            var mockMoveQueue = new Mock<IMoveQueueService>();
+            var expectedId = Guid.NewGuid();
+            mockMoveQueue.Setup(m => m.EnqueueMoveAsync(
+                    It.IsAny<int>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
+                .ReturnsAsync(expectedId);
+            Init(services => services.WithSingleton(mockMoveQueue.Object));
+            var rootPath = FileService.GetTempDirectory("listenarr-move-sensitive-root");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(rootPath)
+                .Build());
+            await _rootFolderRepository.AddAsync(new RootFolderBuilder()
+                .WithName("Sensitive Move Root")
+                .WithPath(rootPath)
+                .WithCaseSensitivityMode(FileSystemCaseSensitivityMode.Sensitive)
+                .WithIsDefault()
+                .Build());
+
+            var sourcePath = Path.Join(rootPath, "CaseOnlyBook");
+            Directory.CreateDirectory(sourcePath);
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(sourcePath)
+                .Build());
+            var targetPath = Path.Join(rootPath, "caseonlybook");
+            var controller = _provider.GetRequiredService<LibraryController>();
+
+            var result = await controller.EnqueueMove(audiobook.Id, new LibraryController.MoveRequest
+            {
+                DestinationPath = targetPath
+            });
+
+            Assert.IsType<AcceptedResult>(result);
+            mockMoveQueue.Verify(m => m.EnqueueMoveAsync(
+                audiobook.Id,
+                FileUtils.NormalizeStoredPath(targetPath),
+                sourcePath,
+                true), Times.Once);
         }
 
         [Fact]

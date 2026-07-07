@@ -2,6 +2,18 @@ namespace Listenarr.Tests.Features.Infrastructure.FileSystem;
 
 public sealed class FileSystemSemanticsResolverTests
 {
+    [Theory]
+    [InlineData("")]
+    [InlineData("relative/path")]
+    [InlineData("relative\0path")]
+    public async Task ResolveAsync_RejectsInvalidOrRelativePathBeforeProbing(string path)
+    {
+        var resolver = new FileSystemSemanticsResolver();
+
+        await Assert.ThrowsAnyAsync<ArgumentException>(async () =>
+            await resolver.ResolveAsync(path, FileSystemCaseSensitivityMode.Auto));
+    }
+
     [Fact]
     public async Task ExplicitOverride_ResolvesWithoutExistingPath()
     {
