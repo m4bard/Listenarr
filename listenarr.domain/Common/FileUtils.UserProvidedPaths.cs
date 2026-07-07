@@ -45,6 +45,21 @@ namespace Listenarr.Domain.Common
                 allowFileSystemRoot,
                 rejectParentTraversal);
 
+        public static string NormalizeRootFolderPathForStorage(string? path)
+        {
+            if (!TryNormalizeUserProvidedDirectoryPathForCurrentOs(
+                path,
+                out var normalizedPath,
+                out var validationReason,
+                allowFileSystemRoot: true,
+                rejectParentTraversal: true))
+            {
+                throw new ArgumentException($"Path is not valid for this operating system: {validationReason}");
+            }
+
+            return normalizedPath;
+        }
+
         // The explicit OS parameter lets tests verify Windows and Unix validation rules
         // from any host. Production callers should use TryNormalizeUserProvidedDirectoryPathForCurrentOs.
         public static bool TryNormalizeUserProvidedDirectoryPathForOs(

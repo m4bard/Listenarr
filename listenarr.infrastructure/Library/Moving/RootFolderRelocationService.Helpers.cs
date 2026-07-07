@@ -49,6 +49,102 @@ public sealed partial class RootFolderRelocationService
         FileSystemPathIdentity.IsSameOrInside(first, second, semantics)
         || FileSystemPathIdentity.IsSameOrInside(second, first, semantics);
 
+    private static bool BoundariesOverlapUnderEitherSemantics(
+        string first,
+        string second,
+        FileSystemPathSemantics requestedSemantics,
+        FileSystemPathSemantics existingSemantics) =>
+        BoundariesOverlap(first, second, requestedSemantics)
+        || BoundariesOverlap(first, second, existingSemantics);
+
+    private static bool RootBoundaryConflictsWithTarget(
+        RootFolder candidate,
+        string targetPath,
+        string targetIdentityKey,
+        FileSystemPathSemantics targetSemantics)
+    {
+        var candidateSemantics = FileSystemPathIdentity.ResolveComparisonSemantics(
+            candidate.ResolvedCaseSensitivity,
+            targetSemantics);
+        return candidate.PathIdentityKey == targetIdentityKey
+            || BoundariesOverlapUnderEitherSemantics(
+                targetPath,
+                candidate.Path,
+                targetSemantics,
+                candidateSemantics);
+    }
+
+    private async Task<bool> ActiveBoundaryConflictsWithTargetAsync(
+        string targetPath,
+        FileSystemPathSemantics targetSemantics,
+        string boundaryPath,
+        FileSystemCaseSensitivityMode boundaryMode,
+        CancellationToken cancellationToken)
+    {
+        if (BoundariesOverlap(targetPath, boundaryPath, targetSemantics))
+        {
+            return true;
+        }
+
+        var boundaryResolution = await semanticsResolver.ResolveAsync(
+            boundaryPath,
+            boundaryMode,
+            cancellationToken);
+        if (boundaryResolution.State == PathIdentityState.Valid)
+        {
+            return BoundariesOverlap(targetPath, boundaryPath, boundaryResolution.Semantics);
+        }
+
+        // If an in-flight relocation boundary cannot be resolved, over-block
+        // case-only overlaps rather than allowing a second relocation to race it.
+        var insensitiveTargetSemantics = new FileSystemPathSemantics(
+            targetSemantics.Syntax,
+            FileSystemCaseSensitivity.Insensitive);
+        return BoundariesOverlap(targetPath, boundaryPath, insensitiveTargetSemantics);
+    }
+
+    private async Task FinalizeCompletedRelocationAsync(
+        ListenArrDbContext db,
+        RootFolderRelocation relocation,
+        RootFolder root,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var resolution = await semanticsResolver.ResolveAsync(
+            relocation.TargetPath,
+            relocation.TargetCaseSensitivityMode,
+            cancellationToken);
+        if (resolution.State != PathIdentityState.Valid)
+        {
+            relocation.Status = RootFolderRelocationStatus.NeedsAttention;
+            relocation.Error = "Target filesystem identity became unavailable during finalization.";
+            return;
+        }
+
+        var command = new RootFolderPathChangeCommand(
+            relocation.TargetPath,
+            relocation.Mode,
+            relocation.DeleteEmptySource,
+            relocation.DesiredName,
+            relocation.DesiredIsDefault,
+            relocation.TargetCaseSensitivityMode);
+        ApplyRootMetadata(
+            root,
+            command,
+            relocation.TargetPath,
+            resolution,
+            FileSystemPathIdentity.CreateKey("root", relocation.TargetPath, resolution.Semantics));
+        if (relocation.DesiredIsDefault)
+        {
+            await ClearOtherDefaultsAsync(db, root.Id, cancellationToken);
+        }
+
+        relocation.Status = RootFolderRelocationStatus.Completed;
+        relocation.ActiveRootFolderId = null;
+        relocation.CompletedAt = now;
+        relocation.Error = null;
+    }
+
     private static void ApplyRootMetadata(
         RootFolder root,
         RootFolderPathChangeCommand command,

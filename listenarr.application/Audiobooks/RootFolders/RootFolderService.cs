@@ -50,7 +50,7 @@ namespace Listenarr.Application.Audiobooks.RootFolders
         public async Task<RootFolder> CreateAsync(RootFolder root)
         {
             root.Name = root.Name?.Trim() ?? string.Empty;
-            root.Path = NormalizeRootFolderPathForStorage(root.Path);
+            root.Path = FileUtils.NormalizeRootFolderPathForStorage(root.Path);
 
             if (string.IsNullOrWhiteSpace(root.Name)) throw new ArgumentException("Name is required");
 
@@ -117,7 +117,7 @@ namespace Listenarr.Application.Audiobooks.RootFolders
         {
             if (root == null) throw new ArgumentNullException(nameof(root));
             root.Name = root.Name?.Trim() ?? string.Empty;
-            root.Path = NormalizeRootFolderPathForStorage(root.Path);
+            root.Path = FileUtils.NormalizeRootFolderPathForStorage(root.Path);
 
             if (string.IsNullOrWhiteSpace(root.Name)) throw new ArgumentException("Name is required");
 
@@ -175,22 +175,20 @@ namespace Listenarr.Application.Audiobooks.RootFolders
                     continue;
                 }
 
-                var semantics = existingRoot.ResolvedCaseSensitivity == FileSystemCaseSensitivity.Unknown
-                    ? requestedSemantics
-                    : new FileSystemPathSemantics(
-                        requestedSemantics.Syntax,
-                        existingRoot.ResolvedCaseSensitivity);
-                if (FileSystemPathIdentity.AreEquivalent(existingRoot.Path, normalizedPath, semantics))
+                var existingSemantics = FileSystemPathIdentity.ResolveComparisonSemantics(
+                    existingRoot.ResolvedCaseSensitivity,
+                    requestedSemantics);
+                if (PathsAreEquivalentUnderEitherSemantics(existingRoot.Path, normalizedPath, requestedSemantics, existingSemantics))
                 {
                     return new RootFolderConflict(existingRoot, RootFolderConflictType.Duplicate);
                 }
 
-                if (FileSystemPathIdentity.IsSameOrInside(normalizedPath, existingRoot.Path, semantics))
+                if (PathIsInsideUnderEitherSemantics(normalizedPath, existingRoot.Path, requestedSemantics, existingSemantics))
                 {
                     return new RootFolderConflict(existingRoot, RootFolderConflictType.RequestedRootIsNestedInsideExistingRoot);
                 }
 
-                if (FileSystemPathIdentity.IsSameOrInside(existingRoot.Path, normalizedPath, semantics))
+                if (PathIsInsideUnderEitherSemantics(existingRoot.Path, normalizedPath, requestedSemantics, existingSemantics))
                 {
                     return new RootFolderConflict(existingRoot, RootFolderConflictType.ExistingRootIsNestedInsideRequestedRoot);
                 }
@@ -280,6 +278,22 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             }
         }
 
+        private static bool PathsAreEquivalentUnderEitherSemantics(
+            string left,
+            string right,
+            FileSystemPathSemantics requestedSemantics,
+            FileSystemPathSemantics existingSemantics) =>
+            FileSystemPathIdentity.AreEquivalent(left, right, requestedSemantics)
+            || FileSystemPathIdentity.AreEquivalent(left, right, existingSemantics);
+
+        private static bool PathIsInsideUnderEitherSemantics(
+            string candidate,
+            string root,
+            FileSystemPathSemantics requestedSemantics,
+            FileSystemPathSemantics existingSemantics) =>
+            FileSystemPathIdentity.IsSameOrInside(candidate, root, requestedSemantics)
+            || FileSystemPathIdentity.IsSameOrInside(candidate, root, existingSemantics);
+
         private static string BuildRootFolderConflictMessage(RootFolderConflict conflict)
         {
             return conflict.Type switch
@@ -291,24 +305,6 @@ namespace Listenarr.Application.Audiobooks.RootFolders
                     $"Root folder cannot contain existing root '{conflict.Root.Name}'.",
                 _ => "Root folder path conflicts with an existing root folder."
             };
-        }
-
-        private static string NormalizeRootFolderPathForStorage(string? path)
-        {
-            // Root folders may be filesystem boundaries, including UNC shares, but parent
-            // traversal is still rejected so the stored boundary is explicit rather than
-            // reached indirectly through ../ segments.
-            if (!FileUtils.TryNormalizeUserProvidedDirectoryPathForCurrentOs(
-                path,
-                out var normalizedPath,
-                out var validationReason,
-                allowFileSystemRoot: true,
-                rejectParentTraversal: true))
-            {
-                throw new ArgumentException($"Path is not valid for this operating system: {validationReason}");
-            }
-
-            return normalizedPath;
         }
 
         private sealed record RootFolderConflict(RootFolder Root, RootFolderConflictType Type);

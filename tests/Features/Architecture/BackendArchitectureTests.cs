@@ -434,6 +434,27 @@ public sealed class BackendArchitectureTests
     }
 
     [Fact]
+    public void RootFolderRelocation_UsesSharedRootFolderPathValidation()
+    {
+        var serviceFile = Path.Join(
+            RepositoryRoot,
+            "listenarr.infrastructure",
+            "Library",
+            "Moving",
+            "RootFolderRelocationService.cs");
+        var source = File.ReadAllText(serviceFile);
+
+        Assert.Contains(
+            "FileUtils.NormalizeRootFolderPathForStorage(command.TargetPath)",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "ResolveNativeAbsolutePath(command.TargetPath)",
+            source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ImportDestinationBoundaries_RequireExplicitFilesystemSemantics()
     {
         var files = new[]

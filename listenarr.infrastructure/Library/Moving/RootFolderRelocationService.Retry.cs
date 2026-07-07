@@ -22,14 +22,32 @@ public sealed partial class RootFolderRelocationService
             throw new InvalidOperationException("Only relocations needing attention can be retried.");
         }
 
-        var targetResolution = await semanticsResolver.ResolveAsync(
-            relocation.TargetPath,
-            relocation.TargetCaseSensitivityMode,
-            cancellationToken);
-        if (targetResolution.State != PathIdentityState.Valid)
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var needsTargetSemantics = relocation.SkippedItems.Count > 0
+            || relocation.MoveJobs.Any(job => job.Status is
+                MoveJobStatus.NeedsAttention or MoveJobStatus.Failed or MoveJobStatus.Superseded);
+        FileSystemSemanticsResolution? targetResolution = null;
+        if (needsTargetSemantics)
         {
-            throw new InvalidOperationException(
-                targetResolution.Reason ?? "Target filesystem identity is unavailable.");
+            targetResolution = await semanticsResolver.ResolveAsync(
+                relocation.TargetPath,
+                relocation.TargetCaseSensitivityMode,
+                cancellationToken);
+            if (targetResolution.State != PathIdentityState.Valid)
+            {
+                relocation.Status = RootFolderRelocationStatus.NeedsAttention;
+                relocation.Error = targetResolution.Reason ?? "Target filesystem identity is unavailable.";
+                relocation.UpdatedAt = now;
+                await db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                var unavailableRootPath = await db.RootFolders
+                    .Where(root => root.Id == relocation.RootFolderId)
+                    .Select(root => root.Path)
+                    .SingleAsync(cancellationToken);
+                var unavailableResult = Map(relocation, unavailableRootPath);
+                await BroadcastAsync(unavailableResult, cancellationToken);
+                return unavailableResult;
+            }
         }
 
         var skippedSupersededJobs = 0;
@@ -39,7 +57,7 @@ public sealed partial class RootFolderRelocationService
             var deduplicationKey = FileSystemPathIdentity.CreateKey(
                 $"move:{job.AudiobookId}",
                 job.RequestedPath!,
-                targetResolution.Semantics);
+                targetResolution!.Semantics);
             var conflictingJob = await db.MoveJobs.AsNoTracking().FirstOrDefaultAsync(
                 candidate => candidate.Id != job.Id
                     && candidate.ActiveDeduplicationKey == deduplicationKey,
@@ -69,25 +87,36 @@ public sealed partial class RootFolderRelocationService
             await RetrySkippedMetadataReferencesAsync(
                 db,
                 relocation,
-                targetResolution.Semantics,
+                targetResolution!.Semantics,
                 cancellationToken);
         }
 
         var remainingSkippedItems = relocation.SkippedItems.Count;
-        var now = timeProvider.GetUtcNow().UtcDateTime;
         if (remainingSkippedItems > 0 || skippedSupersededJobs > 0)
         {
             relocation.Status = RootFolderRelocationStatus.NeedsAttention;
             relocation.Error = BuildRetryAttentionError(remainingSkippedItems, skippedSupersededJobs);
         }
-        else if (relocation.MoveJobs.Count == 0
-            || relocation.MoveJobs.All(job => job.Status == MoveJobStatus.Completed))
+        else if (relocation.MoveJobs.Count == 0)
         {
             relocation.Status = RootFolderRelocationStatus.Completed;
             relocation.ActiveRootFolderId = null;
             relocation.CompletedJobs = relocation.TotalJobs;
             relocation.CompletedAt = now;
             relocation.Error = null;
+        }
+        else if (relocation.MoveJobs.All(job => job.Status == MoveJobStatus.Completed))
+        {
+            var root = await db.RootFolders.SingleAsync(
+                candidate => candidate.Id == relocation.RootFolderId,
+                cancellationToken);
+            await FinalizeCompletedRelocationAsync(
+                db,
+                relocation,
+                root,
+                now,
+                cancellationToken);
+            relocation.CompletedJobs = relocation.TotalJobs;
         }
         else
         {

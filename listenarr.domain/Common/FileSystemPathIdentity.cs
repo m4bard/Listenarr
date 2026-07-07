@@ -82,6 +82,15 @@ public static partial class FileSystemPathIdentity
             comparison);
     }
 
+    public static FileSystemPathSemantics ResolveComparisonSemantics(
+        FileSystemCaseSensitivity existingResolvedSensitivity,
+        FileSystemPathSemantics requestedSemantics)
+    {
+        return existingResolvedSensitivity == FileSystemCaseSensitivity.Unknown
+            ? requestedSemantics
+            : new FileSystemPathSemantics(requestedSemantics.Syntax, existingResolvedSensitivity);
+    }
+
     public static bool IsSameOrInside(
         string candidate,
         string root,

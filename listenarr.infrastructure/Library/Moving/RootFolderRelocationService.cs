@@ -23,7 +23,7 @@ public sealed partial class RootFolderRelocationService(
             throw new ArgumentException("Root folder name is required.", nameof(command));
         }
 
-        var targetPath = FileSystemPathIdentity.ResolveNativeAbsolutePath(command.TargetPath);
+        var targetPath = FileUtils.NormalizeRootFolderPathForStorage(command.TargetPath);
         var targetResolution = await semanticsResolver.ResolveAsync(
             targetPath,
             command.TargetCaseSensitivityMode,
@@ -68,21 +68,36 @@ public sealed partial class RootFolderRelocationService(
         var activeBoundaries = await db.RootFolderRelocations
             .Where(relocation => relocation.ActiveRootFolderId != null)
             .AsNoTracking()
-            .Select(relocation => new { relocation.SourcePath, relocation.TargetPath })
+            .Select(relocation => new
+            {
+                relocation.SourcePath,
+                relocation.SourceCaseSensitivityMode,
+                relocation.TargetPath,
+                relocation.TargetCaseSensitivityMode
+            })
             .ToListAsync(cancellationToken);
         var targetConflict = otherRoots.Any(candidate =>
-                candidate.PathIdentityKey == targetIdentityKey
-                || FileSystemPathIdentity.IsSameOrInside(
+            RootBoundaryConflictsWithTarget(candidate, targetPath, targetIdentityKey, targetResolution.Semantics));
+        foreach (var boundary in activeBoundaries)
+        {
+            targetConflict = targetConflict
+                || await ActiveBoundaryConflictsWithTargetAsync(
                     targetPath,
-                    candidate.Path,
-                    targetResolution.Semantics)
-                || FileSystemPathIdentity.IsSameOrInside(
-                    candidate.Path,
+                    targetResolution.Semantics,
+                    boundary.SourcePath,
+                    boundary.SourceCaseSensitivityMode,
+                    cancellationToken)
+                || await ActiveBoundaryConflictsWithTargetAsync(
                     targetPath,
-                    targetResolution.Semantics))
-            || activeBoundaries.Any(boundary =>
-                BoundariesOverlap(targetPath, boundary.SourcePath, targetResolution.Semantics)
-                || BoundariesOverlap(targetPath, boundary.TargetPath, targetResolution.Semantics));
+                    targetResolution.Semantics,
+                    boundary.TargetPath,
+                    boundary.TargetCaseSensitivityMode,
+                    cancellationToken);
+            if (targetConflict)
+            {
+                break;
+            }
+        }
         if (targetConflict)
         {
             throw new InvalidOperationException("A root folder with that filesystem identity already exists.");
@@ -325,40 +340,12 @@ public sealed partial class RootFolderRelocationService(
         }
         else if (relocation.MoveJobs.All(candidate => candidate.Status == MoveJobStatus.Completed))
         {
-            var resolution = await semanticsResolver.ResolveAsync(
-                relocation.TargetPath,
-                relocation.TargetCaseSensitivityMode,
+            await FinalizeCompletedRelocationAsync(
+                db,
+                relocation,
+                root,
+                relocation.UpdatedAt ?? timeProvider.GetUtcNow().UtcDateTime,
                 cancellationToken);
-            if (resolution.State != PathIdentityState.Valid)
-            {
-                relocation.Status = RootFolderRelocationStatus.NeedsAttention;
-                relocation.Error = "Target filesystem identity became unavailable during finalization.";
-            }
-            else
-            {
-                var command = new RootFolderPathChangeCommand(
-                    relocation.TargetPath,
-                    relocation.Mode,
-                    relocation.DeleteEmptySource,
-                    relocation.DesiredName,
-                    relocation.DesiredIsDefault,
-                    relocation.TargetCaseSensitivityMode);
-                ApplyRootMetadata(
-                    root,
-                    command,
-                    relocation.TargetPath,
-                    resolution,
-                    FileSystemPathIdentity.CreateKey("root", relocation.TargetPath, resolution.Semantics));
-                if (relocation.DesiredIsDefault)
-                {
-                    await ClearOtherDefaultsAsync(db, root.Id, cancellationToken);
-                }
-
-                relocation.Status = RootFolderRelocationStatus.Completed;
-                relocation.ActiveRootFolderId = null;
-                relocation.CompletedAt = relocation.UpdatedAt;
-                relocation.Error = null;
-            }
         }
         else
         {
