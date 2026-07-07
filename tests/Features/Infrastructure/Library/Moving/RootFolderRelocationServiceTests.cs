@@ -1,4 +1,5 @@
 using Listenarr.Tests.Mocks;
+using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Tests.Features.Infrastructure.Library.Moving;
@@ -9,6 +10,7 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
         Path.GetTempPath(),
         "listenarr-tests",
         $"relocation-{Guid.NewGuid():N}.db");
+    private string TempRoot => Path.GetDirectoryName(_databasePath)!;
     private TestDbContextFactory _factory = null!;
 
     public async Task InitializeAsync()
@@ -79,6 +81,81 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
         Assert.True(await service.IsBoundaryProtectedAsync(
             source,
             FileSystemPathSemantics.CurrentHostDefault));
+    }
+
+    [Fact]
+    public async Task ConcurrentMoveFirst_BlocksWaitingRelocationAfterMoveIsPersisted()
+    {
+        var (rootId, audiobookId, source, target) = await SeedRelocationScenarioAsync();
+        var coordinator = new FirstEntryPausingCoordinator();
+        var relocationService = new RootFolderRelocationService(
+            _factory,
+            new FileSystemSemanticsResolver(),
+            new NoopHubBroadcaster(),
+            TimeProvider.System,
+            coordinator);
+        var moveService = new MoveQueueService(
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<MoveQueueService>.Instance,
+            new EfMoveQueuePersistence(_factory, new FileSystemSemanticsResolver()),
+            new NoopHubBroadcaster(),
+            TimeProvider.System,
+            new FileSystemSemanticsResolver(),
+            relocationService,
+            coordinator);
+        var standaloneTarget = Path.Join(Path.GetTempPath(), $"standalone-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(standaloneTarget);
+
+        var moveTask = moveService.EnqueueMoveAsync(
+            audiobookId,
+            standaloneTarget,
+            Path.Join(source, "Author", "Title"));
+        await coordinator.FirstEntered;
+        var relocationTask = relocationService.StartAsync(
+            rootId,
+            BuildRelocationCommand(target));
+        await Task.Delay(50);
+        Assert.False(relocationTask.IsCompleted);
+
+        coordinator.ReleaseFirst();
+        await moveTask;
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => relocationTask);
+        Assert.Contains("active move job", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ConcurrentRelocationFirst_BlocksWaitingMoveAfterRelocationIsPersisted()
+    {
+        var (rootId, audiobookId, source, target) = await SeedRelocationScenarioAsync();
+        var coordinator = new FirstEntryPausingCoordinator();
+        var relocationService = new RootFolderRelocationService(
+            _factory,
+            new FileSystemSemanticsResolver(),
+            new NoopHubBroadcaster(),
+            TimeProvider.System,
+            coordinator);
+        var moveService = new MoveQueueService(
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<MoveQueueService>.Instance,
+            new EfMoveQueuePersistence(_factory, new FileSystemSemanticsResolver()),
+            new NoopHubBroadcaster(),
+            TimeProvider.System,
+            new FileSystemSemanticsResolver(),
+            relocationService,
+            coordinator);
+
+        var relocationTask = relocationService.StartAsync(
+            rootId,
+            BuildRelocationCommand(target));
+        await coordinator.FirstEntered;
+        var moveTask = moveService.EnqueueMoveAsync(
+            audiobookId,
+            Path.Join(target, "Author", "Title"),
+            Path.Join(source, "Author", "Title"));
+        await Task.Delay(50);
+        Assert.False(moveTask.IsCompleted);
+
+        coordinator.ReleaseFirst();
+        await relocationTask;
+        await Assert.ThrowsAsync<MoveRelocationConflictException>(() => moveTask);
     }
 
     [Fact]
@@ -887,6 +964,213 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
         Assert.Single(await verification.MoveJobs.ToListAsync());
         Assert.Equal(source, (await verification.RootFolders.SingleAsync()).Path);
         Assert.Equal(audiobookPath, (await verification.Audiobooks.SingleAsync()).BasePath);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task IsBoundaryProtectedAsync_HonorsPersistedInsensitiveBoundaryMode(bool useSourceBoundary)
+    {
+        var protectedPath = Path.Join(TempRoot, useSourceBoundary ? "SourceBoundary" : "TargetBoundary");
+        var otherPath = Path.Join(TempRoot, useSourceBoundary ? "TargetBoundary" : "SourceBoundary");
+        await SeedActiveRelocationAsync(
+            useSourceBoundary ? protectedPath : otherPath,
+            useSourceBoundary ? otherPath : protectedPath,
+            FileSystemCaseSensitivityMode.Insensitive,
+            FileSystemCaseSensitivityMode.Insensitive);
+        var service = CreateService();
+        var caseDistinctPath = Path.Join(
+            Path.GetDirectoryName(protectedPath)!,
+            Path.GetFileName(protectedPath).ToUpperInvariant(),
+            "Book");
+
+        var protectedResult = await service.IsBoundaryProtectedAsync(
+            caseDistinctPath,
+            new FileSystemPathSemantics(
+                FileSystemPathSemantics.CurrentHostDefault.Syntax,
+                FileSystemCaseSensitivity.Sensitive));
+
+        Assert.True(protectedResult);
+    }
+
+    [Fact]
+    public async Task IsBoundaryProtectedAsync_PreservesCaseDistinctSensitiveBoundary()
+    {
+        var protectedPath = Path.Join(TempRoot, "CaseSensitiveBoundary");
+        await SeedActiveRelocationAsync(
+            protectedPath,
+            Path.Join(TempRoot, "Target"),
+            FileSystemCaseSensitivityMode.Sensitive,
+            FileSystemCaseSensitivityMode.Sensitive);
+        var service = CreateService();
+        var caseDistinctPath = Path.Join(
+            Path.GetDirectoryName(protectedPath)!,
+            Path.GetFileName(protectedPath).ToUpperInvariant(),
+            "Book");
+
+        var protectedResult = await service.IsBoundaryProtectedAsync(
+            caseDistinctPath,
+            new FileSystemPathSemantics(
+                FileSystemPathSemantics.CurrentHostDefault.Syntax,
+                FileSystemCaseSensitivity.Sensitive));
+
+        Assert.False(protectedResult);
+    }
+
+    [Fact]
+    public async Task IsBoundaryProtectedAsync_FailsClosedWhenBoundarySemanticsAreUnavailable()
+    {
+        var protectedPath = Path.Join(TempRoot, "UnavailableBoundary");
+        await SeedActiveRelocationAsync(
+            protectedPath,
+            Path.Join(TempRoot, "Target"),
+            FileSystemCaseSensitivityMode.Auto,
+            FileSystemCaseSensitivityMode.Sensitive);
+        var service = new RootFolderRelocationService(
+            _factory,
+            new TargetUnavailableSemanticsResolver(protectedPath),
+            new NoopHubBroadcaster(),
+            TimeProvider.System);
+        var caseDistinctPath = Path.Join(
+            Path.GetDirectoryName(protectedPath)!,
+            Path.GetFileName(protectedPath).ToUpperInvariant(),
+            "Book");
+
+        var protectedResult = await service.IsBoundaryProtectedAsync(
+            caseDistinctPath,
+            new FileSystemPathSemantics(
+                FileSystemPathSemantics.CurrentHostDefault.Syntax,
+                FileSystemCaseSensitivity.Sensitive));
+
+        Assert.True(protectedResult);
+    }
+
+    [Theory]
+    [InlineData("child")]
+    [InlineData("parent")]
+    public async Task IsBoundaryProtectedAsync_BlocksContainmentInEitherDirection(string relationship)
+    {
+        var protectedPath = Path.Join(TempRoot, "Boundary", "Nested");
+        await SeedActiveRelocationAsync(
+            protectedPath,
+            Path.Join(TempRoot, "Target"),
+            FileSystemCaseSensitivityMode.Sensitive,
+            FileSystemCaseSensitivityMode.Sensitive);
+        var candidate = relationship == "child"
+            ? Path.Join(protectedPath, "Book")
+            : Path.GetDirectoryName(protectedPath)!;
+
+        Assert.True(await CreateService().IsBoundaryProtectedAsync(
+            candidate,
+            new FileSystemPathSemantics(
+                FileSystemPathSemantics.CurrentHostDefault.Syntax,
+                FileSystemCaseSensitivity.Sensitive)));
+    }
+
+    private async Task SeedActiveRelocationAsync(
+        string sourcePath,
+        string targetPath,
+        FileSystemCaseSensitivityMode sourceMode,
+        FileSystemCaseSensitivityMode targetMode)
+    {
+        await using var db = await _factory.CreateDbContextAsync();
+        var root = new RootFolder { Name = $"Root-{Guid.NewGuid():N}", Path = sourcePath };
+        db.RootFolders.Add(root);
+        await db.SaveChangesAsync();
+        db.RootFolderRelocations.Add(new RootFolderRelocation
+        {
+            RootFolderId = root.Id,
+            ActiveRootFolderId = root.Id,
+            SourcePath = sourcePath,
+            SourceCaseSensitivityMode = sourceMode,
+            TargetPath = targetPath,
+            TargetCaseSensitivityMode = targetMode,
+            DesiredName = root.Name,
+            Status = RootFolderRelocationStatus.Running
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<(int RootId, int AudiobookId, string Source, string Target)>
+        SeedRelocationScenarioAsync()
+    {
+        var source = Path.Join(Path.GetTempPath(), $"relocation-source-{Guid.NewGuid():N}");
+        var target = Path.Join(Path.GetTempPath(), $"relocation-target-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Join(source, "Author", "Title"));
+        Directory.CreateDirectory(target);
+        await using var db = await _factory.CreateDbContextAsync();
+        var root = new RootFolder { Name = "Library", Path = source };
+        var audiobook = new Audiobook
+        {
+            Title = "Title",
+            BasePath = Path.Join(source, "Author", "Title")
+        };
+        db.RootFolders.Add(root);
+        db.Audiobooks.Add(audiobook);
+        await db.SaveChangesAsync();
+        return (root.Id, audiobook.Id, source, target);
+    }
+
+    private static RootFolderPathChangeCommand BuildRelocationCommand(string target) => new(
+        target,
+        RootFolderRelocationMode.Relocate,
+        true,
+        "Moved Library",
+        false,
+        FileSystemCaseSensitivityMode.Auto);
+
+    private sealed class FirstEntryPausingCoordinator : IFilesystemMutationCoordinator
+    {
+        private readonly FilesystemMutationCoordinator _inner = new();
+        private readonly TaskCompletionSource _firstEntered =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseFirst =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _entries;
+
+        public Task FirstEntered => _firstEntered.Task;
+
+        public void ReleaseFirst() => _releaseFirst.TrySetResult();
+
+        public Task ExecuteExclusiveAsync(
+            Func<CancellationToken, Task> operation,
+            CancellationToken cancellationToken = default) =>
+            _inner.ExecuteExclusiveAsync(
+                token => PauseFirstThenExecuteAsync(operation, token),
+                cancellationToken);
+
+        public Task<T> ExecuteExclusiveAsync<T>(
+            Func<CancellationToken, Task<T>> operation,
+            CancellationToken cancellationToken = default) =>
+            _inner.ExecuteExclusiveAsync(
+                token => PauseFirstThenExecuteAsync(operation, token),
+                cancellationToken);
+
+        private async Task PauseFirstThenExecuteAsync(
+            Func<CancellationToken, Task> operation,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _entries) == 1)
+            {
+                _firstEntered.TrySetResult();
+                await _releaseFirst.Task.WaitAsync(cancellationToken);
+            }
+
+            await operation(cancellationToken);
+        }
+
+        private async Task<T> PauseFirstThenExecuteAsync<T>(
+            Func<CancellationToken, Task<T>> operation,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _entries) == 1)
+            {
+                _firstEntered.TrySetResult();
+                await _releaseFirst.Task.WaitAsync(cancellationToken);
+            }
+
+            return await operation(cancellationToken);
+        }
     }
 
     private RootFolderRelocationService CreateService() => new(

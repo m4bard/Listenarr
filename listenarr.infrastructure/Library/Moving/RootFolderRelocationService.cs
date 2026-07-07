@@ -8,14 +8,33 @@ public sealed partial class RootFolderRelocationService(
     IDbContextFactory<ListenArrDbContext> dbContextFactory,
     IFileSystemSemanticsResolver semanticsResolver,
     IHubBroadcaster hubBroadcaster,
-    TimeProvider timeProvider) : IRootFolderRelocationService
+    TimeProvider timeProvider,
+    IFilesystemMutationCoordinator? mutationCoordinator = null) : IRootFolderRelocationService
 {
     private readonly SemaphoreSlim _rootIdentityGate = new(1, 1);
+    private readonly IFilesystemMutationCoordinator _mutationCoordinator =
+        mutationCoordinator ?? new FilesystemMutationCoordinator();
     private bool _rootIdentitiesReconciled;
     public async Task<RootFolderPathChangeResult> StartAsync(
         int rootFolderId,
         RootFolderPathChangeCommand command,
         CancellationToken cancellationToken = default)
+    {
+        var outcome = await _mutationCoordinator.ExecuteExclusiveAsync(
+            token => StartCoreAsync(rootFolderId, command, token),
+            cancellationToken);
+        if (outcome.Broadcast)
+        {
+            await BroadcastAsync(outcome.Result, cancellationToken);
+        }
+
+        return outcome.Result;
+    }
+
+    private async Task<StartOutcome> StartCoreAsync(
+        int rootFolderId,
+        RootFolderPathChangeCommand command,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
         if (string.IsNullOrWhiteSpace(command.DesiredName))
@@ -218,12 +237,7 @@ public sealed partial class RootFolderRelocationService(
                 affected.Count,
                 completed,
                 metadataRelocation?.Error);
-            if (metadataRelocation != null)
-            {
-                await BroadcastAsync(metadataResult, cancellationToken);
-            }
-
-            return metadataResult;
+            return new StartOutcome(metadataResult, metadataRelocation != null);
         }
 
         var relocation = new RootFolderRelocation
@@ -282,9 +296,10 @@ public sealed partial class RootFolderRelocationService(
 
         await transaction.CommitAsync(cancellationToken);
         var result = Map(relocation, root.Path);
-        await BroadcastAsync(result, cancellationToken);
-        return result;
+        return new StartOutcome(result, true);
     }
+
+    private sealed record StartOutcome(RootFolderPathChangeResult Result, bool Broadcast);
 
     private static bool PathTouchesBoundary(
         string? path,
@@ -293,49 +308,6 @@ public sealed partial class RootFolderRelocationService(
         !string.IsNullOrWhiteSpace(path)
         && (FileSystemPathIdentity.IsSameOrInside(path, boundaryPath, semantics)
             || FileSystemPathIdentity.IsSameOrInside(boundaryPath, path, semantics));
-
-    public async Task<RootFolderPathChangeResult?> GetAsync(
-        Guid relocationId,
-        CancellationToken cancellationToken = default)
-    {
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var relocation = await db.RootFolderRelocations
-            .AsNoTracking()
-            .SingleOrDefaultAsync(candidate => candidate.Id == relocationId, cancellationToken);
-        if (relocation == null) return null;
-        var rootPath = await db.RootFolders
-            .Where(root => root.Id == relocation.RootFolderId)
-            .Select(root => root.Path)
-            .SingleAsync(cancellationToken);
-        return Map(relocation, rootPath);
-    }
-    public async Task<RootFolderRelocation?> GetActiveForRootAsync(
-        int rootFolderId,
-        CancellationToken cancellationToken = default)
-    {
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        return await db.RootFolderRelocations
-            .AsNoTracking()
-            .SingleOrDefaultAsync(
-                relocation => relocation.ActiveRootFolderId == rootFolderId,
-                cancellationToken);
-    }
-
-    public async Task<bool> IsBoundaryProtectedAsync(
-        string path,
-        FileSystemPathSemantics semantics,
-        CancellationToken cancellationToken = default)
-    {
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var boundaries = await db.RootFolderRelocations
-            .Where(relocation => relocation.ActiveRootFolderId != null)
-            .AsNoTracking()
-            .Select(relocation => new { relocation.SourcePath, relocation.TargetPath })
-            .ToListAsync(cancellationToken);
-        return boundaries.Any(boundary =>
-            BoundariesOverlap(path, boundary.SourcePath, semantics)
-            || BoundariesOverlap(path, boundary.TargetPath, semantics));
-    }
 
     public async Task OnMoveJobStateChangedAsync(
         Guid moveJobId,

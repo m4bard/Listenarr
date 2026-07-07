@@ -30,6 +30,7 @@ namespace Listenarr.Api.Features.Library
         private readonly IFileSystem _fileSystem;
         private readonly IFileSystemSemanticsResolver _semanticsResolver;
         private readonly IRootFolderRelocationService? _relocationService;
+        private readonly IFilesystemMutationCoordinator _mutationCoordinator;
         private readonly ILogger<LibraryMoveWorkflow> _logger;
 
         public LibraryMoveWorkflow(
@@ -39,13 +40,15 @@ namespace Listenarr.Api.Features.Library
             ILogger<LibraryMoveWorkflow> logger,
             IFileSystemSemanticsResolver semanticsResolver,
             IMoveQueueService? moveQueueService = null,
-            IRootFolderRelocationService? relocationService = null)
+            IRootFolderRelocationService? relocationService = null,
+            IFilesystemMutationCoordinator? mutationCoordinator = null)
         {
             _repo = repo;
             _scopeFactory = scopeFactory;
             _fileSystem = fileSystem;
             _logger = logger;
             _semanticsResolver = semanticsResolver;
+            _mutationCoordinator = mutationCoordinator ?? new FilesystemMutationCoordinator();
             _moveQueueService = moveQueueService;
             _relocationService = relocationService;
         }
@@ -138,55 +141,11 @@ namespace Listenarr.Api.Features.Library
                 {
                     try
                     {
-                        var sourceBasePath = audiobook.BasePath;
-                        var sourceSemantics = targetBoundary.Semantics;
-                        if (!string.IsNullOrWhiteSpace(sourceBasePath))
-                        {
-                            var sourceBoundary = FindAllowedMoveRoot(sourceBasePath, allowedMoveRoots);
-                            if (sourceBoundary != null)
-                            {
-                                sourceSemantics = sourceBoundary.Semantics;
-                            }
-                            else
-                            {
-                                var sourceResolution = await _semanticsResolver.ResolveAsync(sourceBasePath);
-                                if (sourceResolution.State != PathIdentityState.Valid)
-                                {
-                                    return new BadRequestObjectResult(new
-                                    {
-                                        message = sourceResolution.Reason
-                                            ?? "Source filesystem identity is unavailable."
-                                    });
-                                }
-
-                                sourceSemantics = sourceResolution.Semantics;
-                            }
-                        }
-
-                        if (_relocationService != null
-                            && (await _relocationService.IsBoundaryProtectedAsync(final, targetBoundary.Semantics)
-                                || (!string.IsNullOrWhiteSpace(sourceBasePath)
-                                    && await _relocationService.IsBoundaryProtectedAsync(sourceBasePath, sourceSemantics))))
-                        {
-                            return new ConflictObjectResult(new
-                            {
-                                message = "Move source or target overlaps an active root folder relocation boundary."
-                            });
-                        }
-
-                        var rewritten = await _repo.RewritePathReferencesAsync(
-                            audiobook.Id,
-                            sourceBasePath,
+                        return await RewriteMetadataOnlyAsync(
+                            audiobook,
                             final,
-                            sourceSemantics,
-                            targetBoundary.Semantics);
-                        if (!rewritten)
-                        {
-                            return new NotFoundObjectResult(new { message = "Audiobook not found" });
-                        }
-
-                        _logger.LogInformation("Updated BasePath for audiobook {AudiobookId} without moving files: {BasePath}", id, final);
-                        return new OkObjectResult(new { message = "Destination updated" });
+                            targetBoundary,
+                            allowedMoveRoots);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
@@ -396,6 +355,81 @@ namespace Listenarr.Api.Features.Library
         }
 
         private sealed record MoveRootBoundary(string Path, FileSystemPathSemantics Semantics);
+
+        private Task<IActionResult> RewriteMetadataOnlyAsync(
+            Audiobook audiobook,
+            string destinationPath,
+            MoveRootBoundary targetBoundary,
+            IReadOnlyCollection<MoveRootBoundary> allowedMoveRoots) =>
+            _mutationCoordinator.ExecuteExclusiveAsync<IActionResult>(async cancellationToken =>
+            {
+                var currentAudiobook = await _repo.GetByIdAsync(audiobook.Id);
+                if (currentAudiobook == null)
+                {
+                    return new NotFoundObjectResult(new { message = "Audiobook not found" });
+                }
+
+                var sourceBasePath = currentAudiobook.BasePath;
+                var sourceSemantics = targetBoundary.Semantics;
+                if (!string.IsNullOrWhiteSpace(sourceBasePath))
+                {
+                    var sourceBoundary = FindAllowedMoveRoot(sourceBasePath, allowedMoveRoots);
+                    if (sourceBoundary != null)
+                    {
+                        sourceSemantics = sourceBoundary.Semantics;
+                    }
+                    else
+                    {
+                        var sourceResolution = await _semanticsResolver.ResolveAsync(
+                            sourceBasePath,
+                            cancellationToken: cancellationToken);
+                        if (sourceResolution.State != PathIdentityState.Valid)
+                        {
+                            return new BadRequestObjectResult(new
+                            {
+                                message = sourceResolution.Reason
+                                    ?? "Source filesystem identity is unavailable."
+                            });
+                        }
+
+                        sourceSemantics = sourceResolution.Semantics;
+                    }
+                }
+
+                if (_relocationService != null
+                    && (await _relocationService.IsBoundaryProtectedAsync(
+                            destinationPath,
+                            targetBoundary.Semantics,
+                            cancellationToken)
+                        || (!string.IsNullOrWhiteSpace(sourceBasePath)
+                            && await _relocationService.IsBoundaryProtectedAsync(
+                                sourceBasePath,
+                                sourceSemantics,
+                                cancellationToken))))
+                {
+                    return new ConflictObjectResult(new
+                    {
+                        message = "Move source or target overlaps an active root folder relocation boundary."
+                    });
+                }
+
+                var rewritten = await _repo.RewritePathReferencesAsync(
+                    audiobook.Id,
+                    sourceBasePath,
+                    destinationPath,
+                    sourceSemantics,
+                    targetBoundary.Semantics);
+                if (!rewritten)
+                {
+                    return new NotFoundObjectResult(new { message = "Audiobook not found" });
+                }
+
+                _logger.LogInformation(
+                    "Updated BasePath for audiobook {AudiobookId} without moving files: {BasePath}",
+                    audiobook.Id,
+                    destinationPath);
+                return new OkObjectResult(new { message = "Destination updated" });
+            });
 
         private async Task BroadcastQueuedAsync(Guid jobId, int? audiobookId)
         {

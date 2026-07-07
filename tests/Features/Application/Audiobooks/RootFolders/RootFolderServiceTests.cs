@@ -66,6 +66,64 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
             await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CreateAsync(new RootFolder { Name = "B", Path = booksPath }));
         }
 
+        [Theory]
+        [InlineData("create")]
+        [InlineData("update")]
+        [InlineData("delete")]
+        public async Task RootMutation_WaitsForSharedFilesystemMutationCoordinator(string operation)
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var factory = new TestDbFactory(options);
+            var repo = new EfRootFolderRepository(factory, Mock.Of<ILogger<EfRootFolderRepository>>());
+            var coordinator = new FilesystemMutationCoordinator();
+            var service = new RootFolderService(
+                repo,
+                null,
+                mutationCoordinator: coordinator);
+            var root = new RootFolder { Name = "Existing", Path = rootPath };
+            if (operation != "create")
+            {
+                await repo.AddAsync(root);
+            }
+
+            var lockEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var lockTask = coordinator.ExecuteExclusiveAsync(async _ =>
+            {
+                lockEntered.SetResult();
+                await releaseLock.Task;
+            });
+            await lockEntered.Task;
+
+            var mutationTask = operation switch
+            {
+                "create" => service.CreateAsync(new RootFolder { Name = "Created", Path = newRootPath }),
+                "update" => service.UpdateAsync(new RootFolder
+                {
+                    Id = root.Id,
+                    Name = "Updated",
+                    Path = root.Path
+                }),
+                "delete" => DeleteAndReturnAsync(service, root.Id),
+                _ => throw new ArgumentOutOfRangeException(nameof(operation))
+            };
+            await Task.Delay(50);
+            Assert.False(mutationTask.IsCompleted);
+
+            releaseLock.SetResult();
+            await Task.WhenAll(lockTask, mutationTask);
+        }
+
+        private static async Task<RootFolder> DeleteAndReturnAsync(
+            RootFolderService service,
+            int rootFolderId)
+        {
+            await service.DeleteAsync(rootFolderId);
+            return new RootFolder();
+        }
+
         [Fact]
         public async Task Update_InsensitiveOverrideRejectsCaseVariantIdentityConflict()
         {
@@ -914,8 +972,15 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
             ILogger<RootFolderServiceTestAdapter>? logger,
             IMoveQueueService? moveQueue = null,
             IFileSystemSemanticsResolver? semanticsResolver = null,
-            IRootFolderRelocationService? relocationService = null)
-            : base(repo, logger, semanticsResolver ?? BuildSemanticsResolver(), moveQueue, relocationService)
+            IRootFolderRelocationService? relocationService = null,
+            IFilesystemMutationCoordinator? mutationCoordinator = null)
+            : base(
+                repo,
+                logger,
+                semanticsResolver ?? BuildSemanticsResolver(),
+                moveQueue,
+                relocationService,
+                mutationCoordinator)
         {
         }
 

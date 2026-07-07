@@ -226,6 +226,44 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
+        public async Task MoveAudiobook_MetadataOnlyWaitsForFilesystemMutationCoordinator()
+        {
+            var coordinator = new FilesystemMutationCoordinator();
+            var moveQueue = new Mock<IMoveQueueService>();
+            Init(services => services
+                .WithSingleton(moveQueue.Object)
+                .WithSingleton<IFilesystemMutationCoordinator>(coordinator));
+            var outputPath = FileService.GetTempDirectory("listenarr-move-output");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(outputPath)
+                .Build());
+            var sourcePath = FileService.GetTempDirectory("listenarr-move-src");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(sourcePath)
+                .Build());
+            var targetPath = Path.Join(outputPath, "metadata-target");
+            var lockEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var lockTask = coordinator.ExecuteExclusiveAsync(async _ =>
+            {
+                lockEntered.SetResult();
+                await releaseLock.Task;
+            });
+            await lockEntered.Task;
+
+            var moveTask = _provider.GetRequiredService<LibraryController>().EnqueueMove(
+                audiobook.Id,
+                new LibraryController.MoveRequest { DestinationPath = targetPath, MoveFiles = false });
+            await Task.Delay(50);
+            Assert.False(moveTask.IsCompleted);
+
+            releaseLock.SetResult();
+            await lockTask;
+            Assert.IsType<OkObjectResult>(await moveTask);
+        }
+
+        [Fact]
         [Trait("Method", "EnqueueMove")]
         [Trait("Scenario", "PreservesDestinationPathWhitespace_WhenMoveFilesFalse")]
         public async Task MoveAudiobook_PreservesDestinationPathWhitespace_WhenMoveFilesFalse()

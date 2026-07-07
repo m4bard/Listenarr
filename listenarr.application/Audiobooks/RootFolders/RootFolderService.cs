@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Common;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
@@ -27,17 +28,20 @@ namespace Listenarr.Application.Audiobooks.RootFolders
         private readonly IMoveQueueService? _moveQueue;
         private readonly IFileSystemSemanticsResolver _semanticsResolver;
         private readonly IRootFolderRelocationService? _relocationService;
+        private readonly IFilesystemMutationCoordinator _mutationCoordinator;
 
         public RootFolderService(
             IRootFolderRepository repo,
             ILogger<RootFolderService>? logger,
             IFileSystemSemanticsResolver semanticsResolver,
             IMoveQueueService? moveQueue = null,
-            IRootFolderRelocationService? relocationService = null)
+            IRootFolderRelocationService? relocationService = null,
+            IFilesystemMutationCoordinator? mutationCoordinator = null)
         {
             _repo = repo;
             _logger = logger;
             _semanticsResolver = semanticsResolver ?? throw new ArgumentNullException(nameof(semanticsResolver));
+            _mutationCoordinator = mutationCoordinator ?? new FilesystemMutationCoordinator();
             _moveQueue = moveQueue;
             _relocationService = relocationService;
         }
@@ -47,7 +51,10 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             return await _repo.GetDefaultAsync();
         }
 
-        public async Task<RootFolder> CreateAsync(RootFolder root)
+        public Task<RootFolder> CreateAsync(RootFolder root) =>
+            _mutationCoordinator.ExecuteExclusiveAsync(_ => CreateCoreAsync(root));
+
+        private async Task<RootFolder> CreateCoreAsync(RootFolder root)
         {
             root.Name = root.Name?.Trim() ?? string.Empty;
             root.Path = FileUtils.NormalizeRootFolderPathForStorage(root.Path);
@@ -78,7 +85,10 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             return root;
         }
 
-        public async Task DeleteAsync(int id, int? reassignRootId = null)
+        public Task DeleteAsync(int id, int? reassignRootId = null) =>
+            _mutationCoordinator.ExecuteExclusiveAsync(_ => DeleteCoreAsync(id, reassignRootId));
+
+        private async Task DeleteCoreAsync(int id, int? reassignRootId)
         {
             var root = await _repo.GetByIdAsync(id);
             if (root == null) throw new KeyNotFoundException("Root folder not found");
@@ -114,7 +124,14 @@ namespace Listenarr.Application.Audiobooks.RootFolders
 
         public async Task<RootFolder?> GetByIdAsync(int id) => await _repo.GetByIdAsync(id);
 
-        public async Task<RootFolder> UpdateAsync(RootFolder root, bool moveFiles = false, bool deleteEmptySource = true)
+        public Task<RootFolder> UpdateAsync(RootFolder root, bool moveFiles = false, bool deleteEmptySource = true) =>
+            _mutationCoordinator.ExecuteExclusiveAsync(
+                _ => UpdateCoreAsync(root, moveFiles, deleteEmptySource));
+
+        private async Task<RootFolder> UpdateCoreAsync(
+            RootFolder root,
+            bool moveFiles,
+            bool deleteEmptySource)
         {
             if (root == null) throw new ArgumentNullException(nameof(root));
             root.Name = root.Name?.Trim() ?? string.Empty;
