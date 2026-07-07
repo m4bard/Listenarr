@@ -75,6 +75,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                     return;
                 }
 
+                var hasPersistedSource = !string.IsNullOrWhiteSpace(job.SourcePath);
                 var source = job.SourcePath;
                 AudiobookContentMoveResult? recoveredMove = null;
                 if (!string.IsNullOrWhiteSpace(source))
@@ -111,10 +112,9 @@ namespace Listenarr.Infrastructure.Library.Moving
                     else if (!Directory.Exists(source))
                     {
                         logger.LogWarning(
-                            "Provided source path {Source} for job {JobId} does not exist; falling back to audiobook.BasePath",
+                            "Persisted source path {Source} for job {JobId} does not exist",
                             LogRedaction.SanitizeFilePath(source),
                             job.Id);
-                        source = null;
                     }
                 }
 
@@ -142,6 +142,20 @@ namespace Listenarr.Infrastructure.Library.Moving
                 if (string.IsNullOrWhiteSpace(source))
                 {
                     source = audiobook.BasePath;
+                }
+
+                if (hasPersistedSource
+                    && recoveredMove == null
+                    && !Directory.Exists(source!)
+                    && !string.IsNullOrWhiteSpace(audiobook.BasePath)
+                    && Directory.Exists(audiobook.BasePath))
+                {
+                    await UpdateJobStatusAsync(
+                        job,
+                        MoveJobStatus.NeedsAttention,
+                        "Persisted source path does not exist and cannot be recovered",
+                        stoppingToken);
+                    return;
                 }
 
                 if (recoveredMove == null && (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source)))

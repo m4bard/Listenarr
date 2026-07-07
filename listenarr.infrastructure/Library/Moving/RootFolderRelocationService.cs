@@ -113,6 +113,23 @@ public sealed partial class RootFolderRelocationService(
                 root.Path,
                 sourceResolution.Semantics))
             .ToList();
+        var affectedAudiobookIds = affected.Select(audiobook => audiobook.Id).ToHashSet();
+        var activeMoveJobs = await db.MoveJobs
+            .Where(job => job.Status == MoveJobStatus.Queued
+                || job.Status == MoveJobStatus.Running
+                || job.Status == MoveJobStatus.RetryScheduled)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        var conflictingMoveJob = activeMoveJobs.FirstOrDefault(job =>
+            affectedAudiobookIds.Contains(job.AudiobookId)
+            || IsPathInsideRoot(job.SourcePath, root.Path, sourceResolution.Semantics)
+            || IsPathInsideRoot(job.RequestedPath, targetPath, targetResolution.Semantics));
+        if (conflictingMoveJob != null)
+        {
+            throw new InvalidOperationException(
+                $"Active move job {conflictingMoveJob.Id} overlaps this root folder relocation; wait for it to finish before starting the relocation.");
+        }
+
         var now = timeProvider.GetUtcNow();
         var nowUtc = now.UtcDateTime;
 
@@ -266,6 +283,14 @@ public sealed partial class RootFolderRelocationService(
         await BroadcastAsync(result, cancellationToken);
         return result;
     }
+
+    private static bool IsPathInsideRoot(
+        string? path,
+        string rootPath,
+        FileSystemPathSemantics semantics) =>
+        !string.IsNullOrWhiteSpace(path)
+        && FileSystemPathIdentity.IsSameOrInside(path, rootPath, semantics);
+
     public async Task<RootFolderPathChangeResult?> GetAsync(
         Guid relocationId,
         CancellationToken cancellationToken = default)

@@ -480,6 +480,49 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
         }
 
         [Fact]
+        public async Task Delete_Throws_WhenReassignmentTargetHasActiveRelocation()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            var db = new ListenArrDbContext(options);
+            var sourceRoot = new RootFolder { Name = "Source", Path = rootPath };
+            var targetRoot = new RootFolder { Name = "Target", Path = newRootPath };
+            db.RootFolders.AddRange(sourceRoot, targetRoot);
+            db.Audiobooks.Add(new Audiobook { Title = "T", BasePath = rootAuthorTitlePath });
+            await db.SaveChangesAsync();
+
+            var repo = new EfRootFolderRepository(
+                new TestDbFactory(options),
+                Mock.Of<ILogger<EfRootFolderRepository>>());
+            var relocationService = new Mock<IRootFolderRelocationService>();
+            relocationService.Setup(service => service.GetActiveForRootAsync(
+                    targetRoot.Id,
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new RootFolderRelocation
+                {
+                    RootFolderId = targetRoot.Id,
+                    ActiveRootFolderId = targetRoot.Id,
+                    SourcePath = newRootPath,
+                    TargetPath = FileUtils.GetAbsolutePath("relocating-target"),
+                    Mode = RootFolderRelocationMode.MetadataOnly,
+                    Status = RootFolderRelocationStatus.NeedsAttention
+                });
+            var service = new RootFolderService(
+                repo,
+                null!,
+                relocationService: relocationService.Object);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.DeleteAsync(sourceRoot.Id, targetRoot.Id));
+
+            Assert.Contains("relocation", exception.Message, StringComparison.OrdinalIgnoreCase);
+            await using var verification = new ListenArrDbContext(options);
+            Assert.Equal(2, await verification.RootFolders.CountAsync());
+            Assert.Equal(rootAuthorTitlePath, (await verification.Audiobooks.SingleAsync()).BasePath);
+        }
+
+        [Fact]
         public async Task Delete_Throws_WhenReferencedWithoutReassign()
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()

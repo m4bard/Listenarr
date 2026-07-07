@@ -454,6 +454,59 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Assert.Equal(MoveJobStatus.Failed, failedJob!.Status);
         }
 
+        [Fact]
+        public async Task ProcessJobAsync_MissingPersistedSource_DoesNotMoveCurrentBasePath()
+        {
+            var missingSource = Path.Join(FileService.GetTempPath(), $"move-processor-stale-src-{Guid.NewGuid():N}");
+            var currentBasePath = FileService.GetTempDirectory("move-processor-current-base");
+            await FileService.GetFileAsync(currentBasePath, "current.m4b", "current audio");
+            var target = Path.Join(FileService.GetTempPath(), $"move-processor-stale-target-{Guid.NewGuid():N}");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Move Processor Stale Source",
+                BasePath = currentBasePath
+            });
+            var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, target, missingSource);
+
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var updatedJob = await queue.GetJobAsync(job.Id);
+            Assert.NotNull(updatedJob);
+            Assert.Equal(MoveJobStatus.NeedsAttention, updatedJob!.Status);
+            Assert.True(File.Exists(Path.Join(currentBasePath, "current.m4b")));
+            Assert.False(Directory.Exists(target));
+            using var verificationScope = _provider.CreateScope();
+            var repository = verificationScope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+            Assert.Equal(currentBasePath, (await repository.GetByIdAsync(audiobook.Id))!.BasePath);
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_LegacyJobWithoutSourcePath_UsesCurrentBasePath()
+        {
+            var source = FileService.GetTempDirectory("move-processor-legacy-src");
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(FileService.GetTempPath(), $"move-processor-legacy-target-{Guid.NewGuid():N}");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Move Processor Legacy Source",
+                BasePath = source
+            });
+            var queue = _provider.GetRequiredService<IMoveQueueService>();
+            var jobId = await queue.EnqueueMoveAsync(audiobook.Id, target, sourcePath: null);
+            var job = await queue.GetJobAsync(jobId);
+            Assert.NotNull(job);
+            await PrepareJobForProcessingAsync(queue, job!);
+
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job!, CancellationToken.None);
+
+            var updatedJob = await queue.GetJobAsync(jobId);
+            Assert.NotNull(updatedJob);
+            Assert.Equal(MoveJobStatus.Completed, updatedJob!.Status);
+            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        }
+
         private static async Task PrepareJobForProcessingAsync(IMoveQueueService queue, MoveJob job)
         {
             var leaseGeneration = await queue.TryClaimJobAsync(job.Id, LeaseOwner);

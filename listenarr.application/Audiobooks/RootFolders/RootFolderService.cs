@@ -97,6 +97,7 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             {
                 var newRoot = await _repo.GetByIdAsync(reassignRootId!.Value);
                 if (newRoot == null) throw new KeyNotFoundException("Reassign root not found");
+                await EnsureNoActiveRelocationAsync(newRoot.Id);
                 var targetSemantics = await ResolveSemanticsAsync(newRoot.Path, newRoot.CaseSensitivityMode);
                 await EnsureNoActiveMoveJobsTouchRootAsync(newRoot.Path, targetSemantics.Semantics);
                 await _repo.MigrateAudiobookPathsAsync(
