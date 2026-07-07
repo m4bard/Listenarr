@@ -105,6 +105,39 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
+        public async Task MoveAudiobook_RelocationConflictReturnsConflict()
+        {
+            var moveQueue = new Mock<IMoveQueueService>();
+            moveQueue.Setup(service => service.EnqueueMoveAsync(
+                    It.IsAny<int>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<bool>()))
+                .ThrowsAsync(new MoveRelocationConflictException(
+                    "Move target overlaps an active root folder relocation boundary."));
+            Init(services => services.WithSingleton(moveQueue.Object));
+            var outputPath = FileService.GetTempDirectory("listenarr-move-output");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(outputPath)
+                .Build());
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(FileService.GetTempDirectory("listenarr-move-src"))
+                .Build());
+
+            var result = await _provider.GetRequiredService<LibraryController>().EnqueueMove(
+                audiobook.Id,
+                new LibraryController.MoveRequest
+                {
+                    DestinationPath = Path.Join(outputPath, "listenarr-move-dst")
+                });
+
+            var conflict = Assert.IsType<ConflictObjectResult>(result);
+            Assert.Equal(409, conflict.StatusCode);
+            Assert.Contains("active root folder relocation", conflict.Value?.ToString() ?? string.Empty);
+        }
+
+        [Fact]
         [Trait("Method", "EnqueueMove")]
         [Trait("Scenario", "UpdatesBasePath_WhenMoveFilesFalse")]
         public async Task MoveAudiobook_UpdatesBasePath_WhenMoveFilesFalse()
@@ -145,6 +178,50 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 It.IsAny<int>(),
                 It.IsAny<string>(),
                 It.IsAny<string>(),
+                It.IsAny<bool>()), Times.Never);
+        }
+
+        [Theory]
+        [InlineData("source")]
+        [InlineData("target")]
+        public async Task MoveAudiobook_MetadataOnlyRejectsActiveRelocationBoundary(string protectedEndpoint)
+        {
+            var moveQueue = new Mock<IMoveQueueService>();
+            var relocation = new Mock<IRootFolderRelocationService>();
+            Init(services => services
+                .WithSingleton(moveQueue.Object)
+                .WithSingleton(relocation.Object));
+
+            var outputPath = FileService.GetTempDirectory("listenarr-move-output");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(outputPath)
+                .Build());
+            var sourcePath = FileService.GetTempDirectory("listenarr-move-src");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(sourcePath)
+                .Build());
+            var targetPath = Path.Join(outputPath, "listenarr-move-dst");
+            var protectedPath = protectedEndpoint == "source"
+                ? sourcePath
+                : FileUtils.NormalizeStoredPath(targetPath);
+            relocation.Setup(service => service.IsBoundaryProtectedAsync(
+                    protectedPath,
+                    It.IsAny<FileSystemPathSemantics>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+
+            var result = await _provider.GetRequiredService<LibraryController>().EnqueueMove(
+                audiobook.Id,
+                new LibraryController.MoveRequest { DestinationPath = targetPath, MoveFiles = false });
+
+            var conflict = Assert.IsType<ConflictObjectResult>(result);
+            Assert.Contains("active root folder relocation", conflict.Value?.ToString() ?? string.Empty);
+            Assert.Equal(sourcePath, (await _audiobookRepository.GetByIdAsync(audiobook.Id))!.BasePath);
+            moveQueue.Verify(service => service.EnqueueMoveAsync(
+                It.IsAny<int>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
                 It.IsAny<bool>()), Times.Never);
         }
 

@@ -18,7 +18,7 @@ public sealed class ImportDestinationPlanner(IFileSystem fileSystem)
 
         return FileSystemPathIdentity.TryResolveRelativePathWithinBase(
             basePath,
-            candidatePath.Trim(),
+            candidatePath,
             destinationSemantics,
             out destination);
     }

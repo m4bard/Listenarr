@@ -122,8 +122,10 @@ public sealed partial class RootFolderRelocationService(
             .ToListAsync(cancellationToken);
         var conflictingMoveJob = activeMoveJobs.FirstOrDefault(job =>
             affectedAudiobookIds.Contains(job.AudiobookId)
-            || IsPathInsideRoot(job.SourcePath, root.Path, sourceResolution.Semantics)
-            || IsPathInsideRoot(job.RequestedPath, targetPath, targetResolution.Semantics));
+            || PathTouchesBoundary(job.SourcePath, root.Path, sourceResolution.Semantics)
+            || PathTouchesBoundary(job.RequestedPath, root.Path, sourceResolution.Semantics)
+            || PathTouchesBoundary(job.SourcePath, targetPath, targetResolution.Semantics)
+            || PathTouchesBoundary(job.RequestedPath, targetPath, targetResolution.Semantics));
         if (conflictingMoveJob != null)
         {
             throw new InvalidOperationException(
@@ -284,12 +286,13 @@ public sealed partial class RootFolderRelocationService(
         return result;
     }
 
-    private static bool IsPathInsideRoot(
+    private static bool PathTouchesBoundary(
         string? path,
-        string rootPath,
+        string boundaryPath,
         FileSystemPathSemantics semantics) =>
         !string.IsNullOrWhiteSpace(path)
-        && FileSystemPathIdentity.IsSameOrInside(path, rootPath, semantics);
+        && (FileSystemPathIdentity.IsSameOrInside(path, boundaryPath, semantics)
+            || FileSystemPathIdentity.IsSameOrInside(boundaryPath, path, semantics));
 
     public async Task<RootFolderPathChangeResult?> GetAsync(
         Guid relocationId,

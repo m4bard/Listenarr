@@ -273,6 +273,40 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 Times.Never);
         }
 
+        [Theory]
+        [InlineData("target-source")]
+        [InlineData("target-target")]
+        [InlineData("source-source")]
+        public async Task EnqueueMoveAsync_RelocationBoundaryConflict_FailsBeforePersisting(string conflictKind)
+        {
+            var requestedPath = conflictKind == "target-source" ? "/books/new-title" : "/books-new/new-title";
+            var sourcePath = conflictKind == "source-source" ? "/books/old-title" : "/downloads/old-title";
+            var protectedPath = FileSystemPathIdentity.ResolveNativeAbsolutePath(
+                conflictKind == "source-source" ? sourcePath : requestedPath);
+            var persistence = new Mock<IMoveQueuePersistence>();
+            var relocation = new Mock<IRootFolderRelocationService>();
+            relocation.Setup(service => service.IsBoundaryProtectedAsync(
+                    protectedPath,
+                    It.IsAny<FileSystemPathSemantics>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System,
+                BuildSemanticsResolver(),
+                relocation.Object);
+
+            var exception = await Assert.ThrowsAsync<MoveRelocationConflictException>(() =>
+                service.EnqueueMoveAsync(7, requestedPath, sourcePath));
+
+            Assert.Contains(conflictKind.StartsWith("source", StringComparison.Ordinal) ? "source" : "target", exception.Message);
+            persistence.Verify(
+                store => store.AddAsync(It.IsAny<MoveJob>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
         [Fact]
         public async Task EnqueueMoveAsync_ConcurrentDuplicates_ReturnSingleJob()
         {
@@ -430,6 +464,41 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
             Assert.Equal(jobId, requeuedJobId);
             Assert.True(service.Reader.TryRead(out var scheduledJob));
             Assert.Equal(jobId, scheduledJob.Id);
+        }
+
+        [Fact]
+        public async Task RequeueMoveAsync_RelocationBoundaryConflict_DoesNotRequeue()
+        {
+            var job = new MoveJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 9,
+                SourcePath = "/downloads/Title",
+                RequestedPath = "/library/Title",
+                Status = MoveJobStatus.Failed
+            };
+            var persistence = CreateInMemoryPersistence([job]);
+            var relocation = new Mock<IRootFolderRelocationService>();
+            relocation.Setup(service => service.IsBoundaryProtectedAsync(
+                    FileSystemPathIdentity.ResolveNativeAbsolutePath(job.RequestedPath),
+                    It.IsAny<FileSystemPathSemantics>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System,
+                BuildSemanticsResolver(),
+                relocation.Object);
+
+            await Assert.ThrowsAsync<MoveRelocationConflictException>(() => service.RequeueMoveAsync(job.Id));
+
+            Assert.Equal(MoveJobStatus.Failed, job.Status);
+            Assert.False(service.Reader.TryRead(out _));
+            persistence.Verify(store => store.RequeueAsync(
+                It.IsAny<MoveJob>(),
+                It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]

@@ -59,6 +59,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
             string? sourcePath = null,
             bool deleteEmptySource = true)
         {
+            await ThrowIfRelocationBoundaryProtectedAsync(requestedPath, sourcePath);
             var deduplicationKey = await BuildDeduplicationKeyAsync(audiobookId, requestedPath);
             await _enqueueGate.WaitAsync();
             try
@@ -308,6 +309,8 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 return null;
             }
 
+            await ThrowIfRelocationBoundaryProtectedAsync(job.RequestedPath, job.SourcePath);
+
             if (job.Status == MoveJobStatus.Queued)
             {
                 await ScheduleAsync(job);
@@ -362,6 +365,40 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 resolution.Semantics);
         }
 
+        private async Task ThrowIfRelocationBoundaryProtectedAsync(
+            string? requestedPath,
+            string? sourcePath)
+        {
+            if (_relocationService == null)
+            {
+                return;
+            }
+
+            ArgumentNullException.ThrowIfNull(requestedPath);
+            await ThrowIfEndpointProtectedAsync(requestedPath, "target");
+            if (!string.IsNullOrWhiteSpace(sourcePath))
+            {
+                await ThrowIfEndpointProtectedAsync(sourcePath, "source");
+            }
+        }
+
+        private async Task ThrowIfEndpointProtectedAsync(string path, string endpoint)
+        {
+            var absolutePath = FileSystemPathIdentity.ResolveNativeAbsolutePath(path);
+            var resolution = await _semanticsResolver.ResolveAsync(absolutePath);
+            if (resolution.State != PathIdentityState.Valid)
+            {
+                throw new InvalidOperationException(
+                    resolution.Reason ?? $"Move {endpoint} filesystem identity is unavailable.");
+            }
+
+            if (await _relocationService!.IsBoundaryProtectedAsync(absolutePath, resolution.Semantics))
+            {
+                throw new MoveRelocationConflictException(
+                    $"Move {endpoint} overlaps an active root folder relocation boundary.");
+            }
+        }
+
         private async Task<bool> PersistWithRetryAsync(Func<Task<bool>> operation, CancellationToken cancellationToken)
         {
             const int maxAttempts = 3;
@@ -378,4 +415,6 @@ namespace Listenarr.Application.Audiobooks.Jobs
             }
         }
     }
+
+    public sealed class MoveRelocationConflictException(string message) : InvalidOperationException(message);
 }

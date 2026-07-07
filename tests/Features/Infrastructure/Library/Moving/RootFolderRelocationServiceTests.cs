@@ -824,6 +824,8 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
     [InlineData("audiobook")]
     [InlineData("source")]
     [InlineData("target")]
+    [InlineData("requested-source")]
+    [InlineData("source-target")]
     public async Task StartRelocation_RejectsOverlappingActiveStandaloneMove(string conflictKind)
     {
         var source = Path.Join(Path.GetTempPath(), $"active-move-source-{Guid.NewGuid():N}");
@@ -850,12 +852,18 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
             db.MoveJobs.Add(new MoveJob
             {
                 AudiobookId = conflictKind == "audiobook" ? audiobookId : audiobookId + 1000,
-                SourcePath = conflictKind == "source"
-                    ? Path.Join(source.ToUpperInvariant(), "OTHER")
-                    : Path.Join(Path.GetTempPath(), $"unrelated-source-{Guid.NewGuid():N}"),
-                RequestedPath = conflictKind == "target"
-                    ? Path.Join(target.ToUpperInvariant(), "OTHER")
-                    : Path.Join(Path.GetTempPath(), $"unrelated-target-{Guid.NewGuid():N}"),
+                SourcePath = conflictKind switch
+                {
+                    "source" => Path.Join(source.ToUpperInvariant(), "OTHER"),
+                    "source-target" => Path.Join(target.ToUpperInvariant(), "OTHER"),
+                    _ => Path.Join(Path.GetTempPath(), $"unrelated-source-{Guid.NewGuid():N}")
+                },
+                RequestedPath = conflictKind switch
+                {
+                    "target" => Path.Join(target.ToUpperInvariant(), "OTHER"),
+                    "requested-source" => Path.Join(source.ToUpperInvariant(), "OTHER"),
+                    _ => Path.Join(Path.GetTempPath(), $"unrelated-target-{Guid.NewGuid():N}")
+                },
                 Status = MoveJobStatus.Queued,
                 EnqueuedAt = DateTime.UtcNow
             });

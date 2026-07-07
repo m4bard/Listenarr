@@ -29,6 +29,7 @@ namespace Listenarr.Api.Features.Library
         private readonly IMoveQueueService? _moveQueueService;
         private readonly IFileSystem _fileSystem;
         private readonly IFileSystemSemanticsResolver _semanticsResolver;
+        private readonly IRootFolderRelocationService? _relocationService;
         private readonly ILogger<LibraryMoveWorkflow> _logger;
 
         public LibraryMoveWorkflow(
@@ -37,7 +38,8 @@ namespace Listenarr.Api.Features.Library
             IFileSystem fileSystem,
             ILogger<LibraryMoveWorkflow> logger,
             IFileSystemSemanticsResolver semanticsResolver,
-            IMoveQueueService? moveQueueService = null)
+            IMoveQueueService? moveQueueService = null,
+            IRootFolderRelocationService? relocationService = null)
         {
             _repo = repo;
             _scopeFactory = scopeFactory;
@@ -45,6 +47,7 @@ namespace Listenarr.Api.Features.Library
             _logger = logger;
             _semanticsResolver = semanticsResolver;
             _moveQueueService = moveQueueService;
+            _relocationService = relocationService;
         }
 
         public async Task<IActionResult> EnqueueAsync(int id, LibraryController.MoveRequest request)
@@ -160,6 +163,17 @@ namespace Listenarr.Api.Features.Library
                             }
                         }
 
+                        if (_relocationService != null
+                            && (await _relocationService.IsBoundaryProtectedAsync(final, targetBoundary.Semantics)
+                                || (!string.IsNullOrWhiteSpace(sourceBasePath)
+                                    && await _relocationService.IsBoundaryProtectedAsync(sourceBasePath, sourceSemantics))))
+                        {
+                            return new ConflictObjectResult(new
+                            {
+                                message = "Move source or target overlaps an active root folder relocation boundary."
+                            });
+                        }
+
                         var rewritten = await _repo.RewritePathReferencesAsync(
                             audiobook.Id,
                             sourceBasePath,
@@ -258,6 +272,11 @@ namespace Listenarr.Api.Features.Library
                     StatusCode = StatusCodes.Status500InternalServerError
                 };
             }
+            catch (MoveRelocationConflictException ex)
+            {
+                _logger.LogWarning(ex, "Blocked move for audiobook {AudiobookId} during an active root folder relocation", id);
+                return new ConflictObjectResult(new { message = ex.Message, code = "move_relocation_conflict" });
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Failed to enqueue move job for audiobook {AudiobookId}", id);
@@ -293,7 +312,15 @@ namespace Listenarr.Api.Features.Library
             if (_moveQueueService == null) return new NotFoundObjectResult(new { message = "Move queue not available" });
             if (!Guid.TryParse(jobId, out var gid)) return new BadRequestObjectResult(new { message = "Invalid jobId" });
 
-            var newJobId = await _moveQueueService.RequeueMoveAsync(gid);
+            Guid? newJobId;
+            try
+            {
+                newJobId = await _moveQueueService.RequeueMoveAsync(gid);
+            }
+            catch (MoveRelocationConflictException ex)
+            {
+                return new ConflictObjectResult(new { message = ex.Message, code = "move_relocation_conflict" });
+            }
             if (newJobId == null)
             {
                 return new BadRequestObjectResult(new { message = "Unable to requeue job (not found or invalid status)" });

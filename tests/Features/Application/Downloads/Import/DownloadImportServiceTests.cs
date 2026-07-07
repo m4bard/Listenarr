@@ -54,6 +54,24 @@ namespace Listenarr.Tests.Features.Application.Downloads.Import
             }
         }
 
+        [Fact]
+        public void ImportDestinationPlanner_PreservesUnixSegmentWhitespace()
+        {
+            var planner = new ImportDestinationPlanner(Mock.Of<IFileSystem>());
+            var semantics = new FileSystemPathSemantics(
+                FileSystemPathSyntax.Unix,
+                FileSystemCaseSensitivity.Sensitive);
+
+            var resolved = planner.TryResolve(
+                "/library",
+                " Disc 1/Chapter 01.mp3 ",
+                semantics,
+                out var destination);
+
+            Assert.True(resolved);
+            Assert.Equal("/library/ Disc 1/Chapter 01.mp3 ", destination);
+        }
+
         [Theory]
         [MemberData(nameof(PathSuffixes))]
         public async Task CompletedDownload_LinkedToAudiobook_DoesNotMoveToUnknownAuthor(string pathSuffix)
