@@ -414,5 +414,6 @@ If you have any questions about contributing, please:
   4. In `listenarr.api/Program.cs` call the infrastructure registration extension instead of registering types inline.
   5. Delete the old API placeholder files and run `dotnet test` to verify no regressions.
 - Add a small DI/registration unit test (DependencyInjectionTests) that asserts required services are resolvable; run it early in CI to catch layering regressions.
+- Create EF Core migrations with `dotnet ef migrations add` only. Do not hand-author migration `.cs`, `.Designer.cs`, or model snapshot files; generated migrations may be reviewed, but the scaffold is the source of truth so EF discovery metadata and accumulated snapshots stay complete.
 
 Thank you for contributing to Listenarr! 🎵📚

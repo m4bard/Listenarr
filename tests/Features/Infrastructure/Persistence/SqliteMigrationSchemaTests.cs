@@ -21,9 +21,9 @@ using Microsoft.EntityFrameworkCore;
 namespace Listenarr.Tests.Features.Infrastructure.Persistence
 {
     /// <summary>
-    /// Migrations are hand-written in this repo, and the regular test suite runs
-    /// on the EF InMemory provider — which never executes them. That combination
-    /// let a migration ship without its [Migration] attribute + Designer
+    /// Migrations must be scaffolded with dotnet ef, and many tests still run
+    /// on the EF InMemory provider — which never executes them. Missing migration
+    /// metadata once let a migration ship without its [Migration] attribute + Designer
     /// (20251124102000_AddMoveJobSourcePath): EF discovery never saw it, so every
     /// SQLite install was missing MoveJobs.SourcePath while the model mapped it,
     /// and the first full-entity query failed at runtime ("no such column").
@@ -98,6 +98,27 @@ namespace Listenarr.Tests.Features.Infrastructure.Persistence
                 "Model maps columns the migrated SQLite schema does not have — a migration is missing, "
                 + "not discovered (missing [Migration] attribute / Designer), or out of sync:\n"
                 + string.Join("\n", failures));
+        }
+
+        [Fact]
+        [Trait("Scenario", "MigrationHistoryMatchesModel")]
+        public async Task MigrationHistory_HasNoPendingModelChanges()
+        {
+            await using var connection = new SqliteConnection("DataSource=:memory:");
+            await connection.OpenAsync();
+
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseSqlite(connection, sqlite =>
+                    sqlite.MigrationsAssembly(typeof(ListenArrDbContext).Assembly.GetName().Name))
+                .Options;
+
+            await using var context = new ListenArrDbContext(options);
+            await context.Database.MigrateAsync();
+
+            Assert.False(
+                context.Database.HasPendingModelChanges(),
+                "The configured EF model differs from the accumulated migration snapshots. "
+                + "Regenerate migrations with dotnet ef migrations add instead of hand-authoring them.");
         }
 
         [Fact]

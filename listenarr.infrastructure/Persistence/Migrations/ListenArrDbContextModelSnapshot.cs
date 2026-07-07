@@ -946,14 +946,16 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("RootFolderId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("SourceCaseSensitivityMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Auto");
+
                     b.Property<string>("SourcePath")
                         .IsRequired()
                         .HasMaxLength(1000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SourceCaseSensitivityMode")
-                        .IsRequired()
-                        .HasMaxLength(16)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Status")

@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 
+using Listenarr.Domain.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -47,7 +48,10 @@ public sealed class RootFolderRelocationConfiguration : IEntityTypeConfiguration
         builder.ToTable("RootFolderRelocations");
         builder.Property(relocation => relocation.Mode).HasConversion<string>().HasMaxLength(24);
         builder.Property(relocation => relocation.Status).HasConversion<string>().HasMaxLength(24);
-        builder.Property(relocation => relocation.SourceCaseSensitivityMode).HasConversion<string>().HasMaxLength(16);
+        builder.Property(relocation => relocation.SourceCaseSensitivityMode)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .HasDefaultValue(FileSystemCaseSensitivityMode.Auto);
         builder.Property(relocation => relocation.TargetCaseSensitivityMode).HasConversion<string>().HasMaxLength(16);
         builder.HasIndex(relocation => relocation.ActiveRootFolderId)
             .IsUnique()
