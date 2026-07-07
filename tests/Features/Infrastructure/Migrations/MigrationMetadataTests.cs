@@ -32,5 +32,15 @@ namespace Listenarr.Tests.Features.Infrastructure.Migrations
             Assert.NotNull(attribute);
             Assert.Equal("20260317123000_AddImportBlacklistExtensionsToApplicationSettings", attribute!.Id);
         }
+
+        [Fact]
+        public void AddRootFolderRelocationSkippedItemsMigration_IsDiscoverableByEf()
+        {
+            var attribute = typeof(AddRootFolderRelocationSkippedItems)
+                .GetCustomAttribute<MigrationAttribute>();
+
+            Assert.NotNull(attribute);
+            Assert.Equal("20260706161500_AddRootFolderRelocationSkippedItems", attribute!.Id);
+        }
     }
 }

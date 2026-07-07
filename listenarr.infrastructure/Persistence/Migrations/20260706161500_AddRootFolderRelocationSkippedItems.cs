@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -6,8 +5,6 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     /// <inheritdoc />
-    [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20260706161500_AddRootFolderRelocationSkippedItems")]
     public partial class AddRootFolderRelocationSkippedItems : Migration
     {
         /// <inheritdoc />
