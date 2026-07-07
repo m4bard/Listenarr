@@ -235,6 +235,9 @@ internal sealed partial class AudiobookContentMoveService(
             && string.Equals(recoveryStage, AtomicRenameCompletedStage, StringComparison.Ordinal);
         if (IsFilesystemRoot(source, sourceSemantics)
             || IsFilesystemRoot(target, targetSemantics)
+            // This recovery check is source-centered on purpose: the marker was
+            // written beside the source move request, before target semantics may
+            // have been fully trusted for ambiguous cross-filesystem comparisons.
             || FileSystemPathIdentity.AreEquivalent(source, target, sourceSemantics)
             || !Directory.Exists(target)
             || (!atomicRenameCompleted && manifest.Count == 0)

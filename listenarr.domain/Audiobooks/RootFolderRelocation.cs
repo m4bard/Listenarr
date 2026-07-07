@@ -27,6 +27,7 @@ public sealed class RootFolderRelocation
     public RootFolder RootFolder { get; set; } = null!;
     [Required, MaxLength(1000)]
     public string SourcePath { get; set; } = string.Empty;
+    public FileSystemCaseSensitivityMode SourceCaseSensitivityMode { get; set; } = FileSystemCaseSensitivityMode.Auto;
     [Required, MaxLength(1000)]
     public string TargetPath { get; set; } = string.Empty;
     public RootFolderRelocationMode Mode { get; set; } = RootFolderRelocationMode.Relocate;
@@ -44,4 +45,17 @@ public sealed class RootFolderRelocation
     public DateTime? UpdatedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public ICollection<MoveJob> MoveJobs { get; set; } = new List<MoveJob>();
+    public ICollection<RootFolderRelocationSkippedItem> SkippedItems { get; set; } = new List<RootFolderRelocationSkippedItem>();
+}
+
+public sealed class RootFolderRelocationSkippedItem
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid RelocationId { get; set; }
+    public int AudiobookId { get; set; }
+    [Required, MaxLength(4000)]
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public RootFolderRelocation Relocation { get; set; } = null!;
 }

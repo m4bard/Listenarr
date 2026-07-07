@@ -99,24 +99,43 @@ public sealed partial class RootFolderRelocationService(
                 root.Path,
                 sourceResolution.Semantics))
             .ToList();
+        var now = timeProvider.GetUtcNow();
+        var nowUtc = now.UtcDateTime;
 
         if (command.Mode == RootFolderRelocationMode.MetadataOnly)
         {
+            var sourcePath = root.Path;
+            var sourceCaseSensitivityMode = root.CaseSensitivityMode;
+            var skipped = new List<RootFolderRelocationSkippedItem>();
+            var completed = 0;
             foreach (var audiobook in affected)
             {
                 var sourceBasePath = audiobook.BasePath!;
-                var destinationBasePath = MapTargetPath(
-                    root.Path,
-                    targetPath,
-                    sourceBasePath,
-                    sourceResolution.Semantics,
-                    targetResolution.Semantics);
-                AudiobookPathReferenceRewriter.Rewrite(
-                    audiobook,
-                    sourceBasePath,
-                    destinationBasePath,
-                    sourceResolution.Semantics,
-                    targetResolution.Semantics);
+                try
+                {
+                    var destinationBasePath = MapTargetPath(
+                        sourcePath,
+                        targetPath,
+                        sourceBasePath,
+                        sourceResolution.Semantics,
+                        targetResolution.Semantics);
+                    AudiobookPathReferenceRewriter.Rewrite(
+                        audiobook,
+                        sourceBasePath,
+                        destinationBasePath,
+                        sourceResolution.Semantics,
+                        targetResolution.Semantics);
+                    completed++;
+                }
+                catch (InvalidOperationException ex)
+                {
+                    skipped.Add(new RootFolderRelocationSkippedItem
+                    {
+                        AudiobookId = audiobook.Id,
+                        Reason = ex.Message,
+                        CreatedAt = now
+                    });
+                }
             }
 
             ApplyRootMetadata(root, command, targetPath, targetResolution, targetIdentityKey);
@@ -125,25 +144,61 @@ public sealed partial class RootFolderRelocationService(
                 await ClearOtherDefaultsAsync(db, rootFolderId, cancellationToken);
             }
 
+            RootFolderRelocation? metadataRelocation = null;
+            if (skipped.Count > 0)
+            {
+                metadataRelocation = new RootFolderRelocation
+                {
+                    RootFolderId = root.Id,
+                    ActiveRootFolderId = root.Id,
+                    SourcePath = sourcePath,
+                    SourceCaseSensitivityMode = sourceCaseSensitivityMode,
+                    TargetPath = targetPath,
+                    Mode = command.Mode,
+                    Status = RootFolderRelocationStatus.NeedsAttention,
+                    DeleteEmptySource = command.DeleteEmptySource,
+                    DesiredName = command.DesiredName.Trim(),
+                    DesiredIsDefault = command.DesiredIsDefault,
+                    TargetCaseSensitivityMode = command.TargetCaseSensitivityMode,
+                    TotalJobs = affected.Count,
+                    CompletedJobs = completed,
+                    Error = BuildSkippedMetadataError(skipped.Count),
+                    CreatedAt = nowUtc,
+                    UpdatedAt = nowUtc
+                };
+                foreach (var skippedItem in skipped)
+                {
+                    metadataRelocation.SkippedItems.Add(skippedItem);
+                }
+
+                db.RootFolderRelocations.Add(metadataRelocation);
+            }
+
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new RootFolderPathChangeResult(
-                null,
+            var metadataResult = new RootFolderPathChangeResult(
+                metadataRelocation?.Id,
                 root.Id,
                 root.Path,
                 targetPath,
-                RootFolderRelocationStatus.Completed,
+                metadataRelocation?.Status ?? RootFolderRelocationStatus.Completed,
                 affected.Count,
-                affected.Count,
-                null);
+                completed,
+                metadataRelocation?.Error);
+            if (metadataRelocation != null)
+            {
+                await BroadcastAsync(metadataResult, cancellationToken);
+            }
+
+            return metadataResult;
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
         var relocation = new RootFolderRelocation
         {
             RootFolderId = root.Id,
             ActiveRootFolderId = root.Id,
             SourcePath = root.Path,
+            SourceCaseSensitivityMode = root.CaseSensitivityMode,
             TargetPath = targetPath,
             Mode = command.Mode,
             Status = RootFolderRelocationStatus.Pending,
@@ -152,7 +207,7 @@ public sealed partial class RootFolderRelocationService(
             DesiredIsDefault = command.DesiredIsDefault,
             TargetCaseSensitivityMode = command.TargetCaseSensitivityMode,
             TotalJobs = affected.Count,
-            CreatedAt = now
+            CreatedAt = nowUtc
         };
         db.RootFolderRelocations.Add(relocation);
 
@@ -172,7 +227,7 @@ public sealed partial class RootFolderRelocationService(
                 DeleteEmptySource = command.DeleteEmptySource,
                 Status = MoveJobStatus.Queued,
                 Phase = MoveJobPhase.None,
-                EnqueuedAt = now,
+                EnqueuedAt = nowUtc,
                 RelocationId = relocation.Id,
                 IdentityKeyVersion = 2,
                 ActiveDeduplicationKey = FileSystemPathIdentity.CreateKey(
@@ -188,7 +243,7 @@ public sealed partial class RootFolderRelocationService(
             ApplyRootMetadata(root, command, targetPath, targetResolution, targetIdentityKey);
             relocation.Status = RootFolderRelocationStatus.Completed;
             relocation.ActiveRootFolderId = null;
-            relocation.CompletedAt = now;
+            relocation.CompletedAt = nowUtc;
             await db.SaveChangesAsync(cancellationToken);
         }
 
@@ -248,6 +303,7 @@ public sealed partial class RootFolderRelocationService(
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var relocation = await db.RootFolderRelocations
             .Include(candidate => candidate.MoveJobs)
+            .Include(candidate => candidate.SkippedItems)
             .SingleOrDefaultAsync(candidate => candidate.Id == relocationId, cancellationToken)
             ?? throw new KeyNotFoundException("Root folder relocation not found");
         if (relocation.Status != RootFolderRelocationStatus.NeedsAttention)
@@ -297,13 +353,38 @@ public sealed partial class RootFolderRelocationService(
             job.ActiveDeduplicationKey = deduplicationKey;
         }
 
-        relocation.Status = skippedSupersededJobs == 0
-            ? RootFolderRelocationStatus.Running
-            : RootFolderRelocationStatus.NeedsAttention;
-        relocation.Error = skippedSupersededJobs == 0
-            ? null
-            : $"{skippedSupersededJobs} job(s) were superseded by a newer move and were not retried.";
-        relocation.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
+        if (relocation.SkippedItems.Count > 0)
+        {
+            await RetrySkippedMetadataReferencesAsync(
+                db,
+                relocation,
+                targetResolution.Semantics,
+                cancellationToken);
+        }
+
+        var remainingSkippedItems = relocation.SkippedItems.Count;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        if (remainingSkippedItems > 0 || skippedSupersededJobs > 0)
+        {
+            relocation.Status = RootFolderRelocationStatus.NeedsAttention;
+            relocation.Error = BuildRetryAttentionError(remainingSkippedItems, skippedSupersededJobs);
+        }
+        else if (relocation.MoveJobs.Count == 0
+            || relocation.MoveJobs.All(job => job.Status == MoveJobStatus.Completed))
+        {
+            relocation.Status = RootFolderRelocationStatus.Completed;
+            relocation.ActiveRootFolderId = null;
+            relocation.CompletedJobs = relocation.TotalJobs;
+            relocation.CompletedAt = now;
+            relocation.Error = null;
+        }
+        else
+        {
+            relocation.Status = RootFolderRelocationStatus.Running;
+            relocation.Error = null;
+        }
+
+        relocation.UpdatedAt = now;
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         var rootPath = await db.RootFolders

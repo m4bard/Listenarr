@@ -77,6 +77,101 @@ public sealed partial class RootFolderRelocationService
         foreach (var root in defaults) root.IsDefault = false;
     }
 
+    private async Task RetrySkippedMetadataReferencesAsync(
+        ListenArrDbContext db,
+        RootFolderRelocation relocation,
+        FileSystemPathSemantics targetSemantics,
+        CancellationToken cancellationToken)
+    {
+        var sourceResolution = await semanticsResolver.ResolveAsync(
+            relocation.SourcePath,
+            relocation.SourceCaseSensitivityMode,
+            cancellationToken);
+        if (sourceResolution.State != PathIdentityState.Valid)
+        {
+            var reason = sourceResolution.Reason
+                ?? "Source filesystem identity is unavailable.";
+            foreach (var skippedItem in relocation.SkippedItems)
+            {
+                skippedItem.Reason = reason;
+            }
+
+            return;
+        }
+
+        var skippedItems = relocation.SkippedItems.ToList();
+        var audiobookIds = skippedItems.Select(item => item.AudiobookId).ToList();
+        var audiobooks = await db.Audiobooks
+            .Include(audiobook => audiobook.Files)
+            .Where(audiobook => audiobookIds.Contains(audiobook.Id))
+            .ToDictionaryAsync(audiobook => audiobook.Id, cancellationToken);
+
+        var resolvedCount = 0;
+        foreach (var skippedItem in skippedItems)
+        {
+            if (!audiobooks.TryGetValue(skippedItem.AudiobookId, out var audiobook))
+            {
+                relocation.SkippedItems.Remove(skippedItem);
+                db.RootFolderRelocationSkippedItems.Remove(skippedItem);
+                resolvedCount++;
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(audiobook.BasePath))
+            {
+                skippedItem.Reason = "Audiobook no longer has a base path to rewrite.";
+                continue;
+            }
+
+            try
+            {
+                var sourceBasePath = audiobook.BasePath!;
+                var destinationBasePath = MapTargetPath(
+                    relocation.SourcePath,
+                    relocation.TargetPath,
+                    sourceBasePath,
+                    sourceResolution.Semantics,
+                    targetSemantics);
+                AudiobookPathReferenceRewriter.Rewrite(
+                    audiobook,
+                    sourceBasePath,
+                    destinationBasePath,
+                    sourceResolution.Semantics,
+                    targetSemantics);
+                relocation.SkippedItems.Remove(skippedItem);
+                db.RootFolderRelocationSkippedItems.Remove(skippedItem);
+                resolvedCount++;
+            }
+            catch (InvalidOperationException ex)
+            {
+                skippedItem.Reason = ex.Message;
+            }
+        }
+
+        relocation.CompletedJobs = Math.Min(
+            relocation.TotalJobs,
+            relocation.CompletedJobs + resolvedCount);
+    }
+
+    private static string BuildSkippedMetadataError(int skippedCount) =>
+        $"{skippedCount} audiobook(s) could not have stored paths rewritten automatically.";
+
+    private static string BuildRetryAttentionError(int skippedCount, int supersededJobCount)
+    {
+        var messages = new List<string>();
+        if (skippedCount > 0)
+        {
+            messages.Add(BuildSkippedMetadataError(skippedCount));
+        }
+
+        if (supersededJobCount > 0)
+        {
+            messages.Add($"{supersededJobCount} job(s) were superseded by a newer move and were not retried.");
+        }
+
+        return string.Join(" ", messages);
+    }
+
     private static RootFolderPathChangeResult Map(RootFolderRelocation relocation, string currentPath) => new(
         relocation.Id,
         relocation.RootFolderId,

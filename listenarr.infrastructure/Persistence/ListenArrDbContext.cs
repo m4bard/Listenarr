@@ -42,6 +42,7 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<ProcessExecutionLog> ProcessExecutionLogs { get; set; } = null!;
         public DbSet<RootFolder> RootFolders { get; set; } = null!;
         public DbSet<RootFolderRelocation> RootFolderRelocations { get; set; } = null!;
+        public DbSet<RootFolderRelocationSkippedItem> RootFolderRelocationSkippedItems { get; set; } = null!;
         public DbSet<MonitoredAuthor> MonitoredAuthors { get; set; } = null!;
         public DbSet<MonitoredSeries> MonitoredSeries { get; set; } = null!;
         public DbSet<AuthorCacheEntry> AuthorCacheEntries { get; set; } = null!;

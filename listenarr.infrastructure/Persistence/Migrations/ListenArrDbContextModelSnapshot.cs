@@ -951,6 +951,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SourceCaseSensitivityMode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(24)
@@ -981,6 +986,34 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.HasIndex("RootFolderId");
 
                     b.ToTable("RootFolderRelocations", (string)null);
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Audiobooks.RootFolderRelocationSkippedItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AudiobookId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RelocationId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RelocationId", "AudiobookId")
+                        .IsUnique();
+
+                    b.ToTable("RootFolderRelocationSkippedItems", (string)null);
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.SeriesCacheEntry", b =>
@@ -1750,6 +1783,17 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Navigation("RootFolder");
                 });
 
+            modelBuilder.Entity("Listenarr.Domain.Audiobooks.RootFolderRelocationSkippedItem", b =>
+                {
+                    b.HasOne("Listenarr.Domain.Audiobooks.RootFolderRelocation", "Relocation")
+                        .WithMany("SkippedItems")
+                        .HasForeignKey("RelocationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Relocation");
+                });
+
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.Audiobook", b =>
                 {
                     b.Navigation("ExternalIdentifiers");
@@ -1772,6 +1816,8 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.RootFolderRelocation", b =>
                 {
                     b.Navigation("MoveJobs");
+
+                    b.Navigation("SkippedItems");
                 });
 #pragma warning restore 612, 618
         }

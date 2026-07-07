@@ -14,15 +14,19 @@ internal static class AudiobookPathReferenceRewriter
         ArgumentNullException.ThrowIfNull(audiobook);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetBasePath);
 
+        var filePath = audiobook.FilePath;
+        var imageUrl = audiobook.ImageUrl;
+        var rewrittenFiles = new List<(AudiobookFile File, string? Path)>();
+
         if (!string.IsNullOrWhiteSpace(sourceBasePath))
         {
-            audiobook.FilePath = RewriteAbsoluteReference(
+            filePath = RewriteAbsoluteReference(
                 audiobook.FilePath,
                 sourceBasePath,
                 targetBasePath,
                 sourceSemantics,
                 targetSemantics);
-            audiobook.ImageUrl = RewriteAbsoluteReference(
+            imageUrl = RewriteAbsoluteReference(
                 audiobook.ImageUrl,
                 sourceBasePath,
                 targetBasePath,
@@ -31,13 +35,22 @@ internal static class AudiobookPathReferenceRewriter
 
             foreach (var file in audiobook.Files ?? [])
             {
-                file.Path = RewriteAbsoluteReference(
+                rewrittenFiles.Add((file, RewriteAbsoluteReference(
                     file.Path,
                     sourceBasePath,
                     targetBasePath,
                     sourceSemantics,
-                    targetSemantics);
+                    targetSemantics)));
             }
+        }
+
+        // Apply rewritten references only after every path has been validated so
+        // one bad stored value cannot leave the audiobook half-rebased.
+        audiobook.FilePath = filePath;
+        audiobook.ImageUrl = imageUrl;
+        foreach (var (file, path) in rewrittenFiles)
+        {
+            file.Path = path;
         }
 
         audiobook.BasePath = targetBasePath;

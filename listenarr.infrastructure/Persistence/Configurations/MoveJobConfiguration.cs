@@ -47,6 +47,7 @@ public sealed class RootFolderRelocationConfiguration : IEntityTypeConfiguration
         builder.ToTable("RootFolderRelocations");
         builder.Property(relocation => relocation.Mode).HasConversion<string>().HasMaxLength(24);
         builder.Property(relocation => relocation.Status).HasConversion<string>().HasMaxLength(24);
+        builder.Property(relocation => relocation.SourceCaseSensitivityMode).HasConversion<string>().HasMaxLength(16);
         builder.Property(relocation => relocation.TargetCaseSensitivityMode).HasConversion<string>().HasMaxLength(16);
         builder.HasIndex(relocation => relocation.ActiveRootFolderId)
             .IsUnique()
@@ -55,6 +56,20 @@ public sealed class RootFolderRelocationConfiguration : IEntityTypeConfiguration
             .WithMany(root => root.Relocations)
             .HasForeignKey(relocation => relocation.RootFolderId)
             .OnDelete(DeleteBehavior.Restrict);
+        builder.HasMany(relocation => relocation.SkippedItems)
+            .WithOne(item => item.Relocation)
+            .HasForeignKey(item => item.RelocationId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class RootFolderRelocationSkippedItemConfiguration : IEntityTypeConfiguration<RootFolderRelocationSkippedItem>
+{
+    public void Configure(EntityTypeBuilder<RootFolderRelocationSkippedItem> builder)
+    {
+        builder.ToTable("RootFolderRelocationSkippedItems");
+        builder.Property(item => item.Reason).HasMaxLength(4000);
+        builder.HasIndex(item => new { item.RelocationId, item.AudiobookId }).IsUnique();
     }
 }
 
