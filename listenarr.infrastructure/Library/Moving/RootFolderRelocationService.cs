@@ -322,9 +322,9 @@ public sealed partial class RootFolderRelocationService(
         var relocation = await db.RootFolderRelocations
             .Include(candidate => candidate.MoveJobs)
             .SingleAsync(candidate => candidate.Id == job.RelocationId, cancellationToken);
-        var root = relocation.RootFolderId.HasValue
+        var root = relocation.RootFolderId is int rootFolderId
             ? await db.RootFolders.SingleOrDefaultAsync(
-                candidate => candidate.Id == relocation.RootFolderId.Value,
+                candidate => candidate.Id == rootFolderId,
                 cancellationToken)
             : null;
         relocation.CompletedJobs = relocation.MoveJobs.Count(candidate => candidate.Status == MoveJobStatus.Completed);
@@ -396,11 +396,11 @@ public sealed partial class RootFolderRelocationService(
 
     private async Task ReconcileRootIdentitiesAsync(CancellationToken cancellationToken)
     {
-        if (_rootIdentitiesReconciled) return;
+        if (Volatile.Read(ref _rootIdentitiesReconciled)) return;
         await _rootIdentityGate.WaitAsync(cancellationToken);
         try
         {
-            if (_rootIdentitiesReconciled) return;
+            if (Volatile.Read(ref _rootIdentitiesReconciled)) return;
             await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
             await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
             var roots = await db.RootFolders.ToListAsync(cancellationToken);
@@ -443,7 +443,7 @@ public sealed partial class RootFolderRelocationService(
 
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            _rootIdentitiesReconciled = true;
+            Volatile.Write(ref _rootIdentitiesReconciled, true);
         }
         finally
         {

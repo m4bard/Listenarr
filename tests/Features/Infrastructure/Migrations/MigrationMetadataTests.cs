@@ -41,7 +41,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Migrations
                 .GetCustomAttribute<MigrationAttribute>();
 
             Assert.NotNull(attribute);
-            Assert.Equal("20260706161500_AddRootFolderRelocationSkippedItems", attribute!.Id);
+            Assert.Equal("20260708224900_AddRootFolderRelocationSkippedItems", attribute!.Id);
         }
 
         [Fact]

@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20260703203741_ReconcileDurableMoveJobs")]
-    partial class ReconcileDurableMoveJobs
+    [Migration("20260708225144_SetRootFolderRelocationRootDeleteBehavior")]
+    partial class SetRootFolderRelocationRootDeleteBehavior
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -668,6 +668,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("LeaseExpiresAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("LeaseGeneration")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("LeaseOwner")
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
@@ -941,8 +946,15 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasMaxLength(24)
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("RootFolderId")
+                    b.Property<int?>("RootFolderId")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("SourceCaseSensitivityMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Auto");
 
                     b.Property<string>("SourcePath")
                         .IsRequired()
@@ -979,6 +991,34 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.HasIndex("RootFolderId");
 
                     b.ToTable("RootFolderRelocations", (string)null);
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Audiobooks.RootFolderRelocationSkippedItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AudiobookId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RelocationId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RelocationId", "AudiobookId")
+                        .IsUnique();
+
+                    b.ToTable("RootFolderRelocationSkippedItems", (string)null);
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.SeriesCacheEntry", b =>
@@ -1742,10 +1782,20 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.HasOne("Listenarr.Domain.Audiobooks.RootFolder", "RootFolder")
                         .WithMany("Relocations")
                         .HasForeignKey("RootFolderId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("RootFolder");
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Audiobooks.RootFolderRelocationSkippedItem", b =>
+                {
+                    b.HasOne("Listenarr.Domain.Audiobooks.RootFolderRelocation", "Relocation")
+                        .WithMany("SkippedItems")
+                        .HasForeignKey("RelocationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Relocation");
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.Audiobook", b =>
@@ -1770,6 +1820,8 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.RootFolderRelocation", b =>
                 {
                     b.Navigation("MoveJobs");
+
+                    b.Navigation("SkippedItems");
                 });
 #pragma warning restore 612, 618
         }

@@ -16,7 +16,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 type: "TEXT",
                 maxLength: 16,
                 nullable: false,
-                defaultValue: "Auto");
+                defaultValue: "");
 
             migrationBuilder.AddColumn<string>(
                 name: "PathIdentityKey",
@@ -31,7 +31,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 type: "TEXT",
                 maxLength: 16,
                 nullable: false,
-                defaultValue: "Unavailable");
+                defaultValue: "");
 
             migrationBuilder.AddColumn<string>(
                 name: "ResolvedCaseSensitivity",
@@ -39,7 +39,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 type: "TEXT",
                 maxLength: 16,
                 nullable: false,
-                defaultValue: "Unknown");
+                defaultValue: "");
 
             migrationBuilder.AddColumn<string>(
                 name: "FailureKind",
@@ -47,14 +47,14 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 type: "TEXT",
                 maxLength: 32,
                 nullable: false,
-                defaultValue: "None");
+                defaultValue: "");
 
             migrationBuilder.AddColumn<int>(
                 name: "IdentityKeyVersion",
                 table: "MoveJobs",
                 type: "INTEGER",
                 nullable: false,
-                defaultValue: 2);
+                defaultValue: 0);
 
             migrationBuilder.AddColumn<DateTime>(
                 name: "LeaseExpiresAt",
@@ -81,7 +81,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 type: "TEXT",
                 maxLength: 32,
                 nullable: false,
-                defaultValue: "None");
+                defaultValue: "");
 
             migrationBuilder.AddColumn<Guid>(
                 name: "RelocationId",
@@ -182,24 +182,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 name: "IX_RootFolderRelocations_RootFolderId",
                 table: "RootFolderRelocations",
                 column: "RootFolderId");
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_MoveJobs_RootFolderRelocations_RelocationId",
-                table: "MoveJobs",
-                column: "RelocationId",
-                principalTable: "RootFolderRelocations",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.Restrict);
-
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_MoveJobs_RootFolderRelocations_RelocationId",
-                table: "MoveJobs");
-
             migrationBuilder.DropTable(
                 name: "MoveJobEntries");
 

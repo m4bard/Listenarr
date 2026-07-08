@@ -52,12 +52,15 @@ public sealed partial class RootFolderRelocationService
                 await db.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 var fallbackPath = ResolveCurrentPathFallback(relocation);
-                var unavailableRootPath = relocation.RootFolderId.HasValue
-                    ? await db.RootFolders
-                        .Where(root => root.Id == relocation.RootFolderId.Value)
+                string? unavailableRootPath = null;
+                if (relocation.RootFolderId is int unavailableRootFolderId)
+                {
+                    unavailableRootPath = await db.RootFolders
+                        .Where(root => root.Id == unavailableRootFolderId)
                         .Select(root => root.Path)
-                        .SingleOrDefaultAsync(cancellationToken)
-                    : null;
+                        .SingleOrDefaultAsync(cancellationToken);
+                }
+
                 var unavailableResult = Map(relocation, unavailableRootPath ?? fallbackPath);
                 return unavailableResult;
             }
@@ -120,14 +123,14 @@ public sealed partial class RootFolderRelocationService
         }
         else if (relocation.MoveJobs.All(job => job.Status == MoveJobStatus.Completed))
         {
-            if (!relocation.RootFolderId.HasValue)
+            if (relocation.RootFolderId is not int rootFolderId)
             {
                 throw new InvalidOperationException(
                     "The root folder no longer exists; this relocation cannot be retried.");
             }
 
             var root = await db.RootFolders.SingleOrDefaultAsync(
-                candidate => candidate.Id == relocation.RootFolderId.Value,
+                candidate => candidate.Id == rootFolderId,
                 cancellationToken)
                 ?? throw new InvalidOperationException(
                     "The root folder no longer exists; this relocation cannot be retried.");
@@ -149,12 +152,15 @@ public sealed partial class RootFolderRelocationService
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         var resultFallbackPath = ResolveCurrentPathFallback(relocation);
-        var rootPath = relocation.RootFolderId.HasValue
-            ? await db.RootFolders
-                .Where(root => root.Id == relocation.RootFolderId.Value)
+        string? rootPath = null;
+        if (relocation.RootFolderId is int resultRootFolderId)
+        {
+            rootPath = await db.RootFolders
+                .Where(root => root.Id == resultRootFolderId)
                 .Select(root => root.Path)
-                .SingleOrDefaultAsync(cancellationToken)
-            : null;
+                .SingleOrDefaultAsync(cancellationToken);
+        }
+
         var result = Map(relocation, rootPath ?? resultFallbackPath);
         return result;
     }

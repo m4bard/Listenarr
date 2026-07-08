@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20260704140310_AddMoveJobLeaseGeneration")]
-    partial class AddMoveJobLeaseGeneration
+    [Migration("20260708224312_AddMoveJobRelocationForeignKey")]
+    partial class AddMoveJobRelocationForeignKey
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -667,11 +667,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime?>("LeaseExpiresAt")
                         .HasColumnType("TEXT");
-
-                    b.Property<int>("LeaseGeneration")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER")
-                        .HasDefaultValue(0);
 
                     b.Property<string>("LeaseOwner")
                         .HasMaxLength(200)

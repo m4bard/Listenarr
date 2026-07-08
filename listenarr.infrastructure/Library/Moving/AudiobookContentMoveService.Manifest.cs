@@ -180,6 +180,7 @@ internal sealed partial class AudiobookContentMoveService
         IReadOnlyList<MoveJobEntry> manifest,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
+        string? sourceCleanupBoundary,
         CancellationToken cancellationToken)
     {
         var sourceExists = Directory.Exists(source);
@@ -201,17 +202,16 @@ internal sealed partial class AudiobookContentMoveService
         }
 
         var expectedAtSource = new List<MoveJobEntry>();
-        foreach (var directoryEntry in manifest.Where(entry => entry.EntryType == MoveJobEntryType.Directory))
-        {
-            if (FileSystemPathIdentity.TryResolveRelativePathWithinBase(
+        foreach (var directoryEntry in manifest
+            .Where(entry => entry.EntryType == MoveJobEntryType.Directory)
+            .Where(entry => FileSystemPathIdentity.TryResolveRelativePathWithinBase(
                 source,
-                directoryEntry.RelativePath,
+                entry.RelativePath,
                 sourceSemantics,
                 out var sourceDirectory)
-                && Directory.Exists(sourceDirectory))
-            {
-                expectedAtSource.Add(directoryEntry);
-            }
+                && Directory.Exists(sourceDirectory)))
+        {
+            expectedAtSource.Add(directoryEntry);
         }
         foreach (var entry in manifest.Where(entry =>
             entry.EntryType == MoveJobEntryType.File
@@ -323,18 +323,22 @@ internal sealed partial class AudiobookContentMoveService
 
         foreach (var directoryEntry in manifest
             .Where(entry => entry.EntryType == MoveJobEntryType.Directory)
-            .OrderByDescending(entry => entry.RelativePath.Length))
-        {
-            if (FileSystemPathIdentity.TryResolveRelativePathWithinBase(
-                source,
-                directoryEntry.RelativePath,
-                sourceSemantics,
-                out var directory)
-                && Directory.Exists(directory)
-                && !Directory.EnumerateFileSystemEntries(directory).Any())
+            .OrderByDescending(entry => entry.RelativePath.Length)
+            .Select(entry => new
             {
-                Directory.Delete(directory, false);
-            }
+                Directory = FileSystemPathIdentity.TryResolveRelativePathWithinBase(
+                    source,
+                    entry.RelativePath,
+                    sourceSemantics,
+                    out var directory)
+                    ? directory
+                    : null
+            })
+            .Where(entry => entry.Directory != null
+                && Directory.Exists(entry.Directory)
+                && !Directory.EnumerateFileSystemEntries(entry.Directory).Any()))
+        {
+            Directory.Delete(directoryEntry.Directory!, false);
         }
 
         if (deleteEmptySource
@@ -343,6 +347,7 @@ internal sealed partial class AudiobookContentMoveService
             && !Directory.EnumerateFileSystemEntries(source).Any())
         {
             Directory.Delete(source, false);
+            RemoveEmptySourceAncestors(source, sourceCleanupBoundary, sourceSemantics);
         }
 
         RemoveEmptyDirectoryTree(quarantineRoot, sourceParent, sourceSemantics);
@@ -439,5 +444,25 @@ internal sealed partial class AudiobookContentMoveService
             Directory.Delete(current, false);
             current = Path.GetDirectoryName(current) ?? boundary;
         }
+    }
+
+    private static void RemoveEmptySourceAncestors(
+        string source,
+        string? boundary,
+        FileSystemPathSemantics semantics)
+    {
+        if (string.IsNullOrWhiteSpace(boundary))
+        {
+            return;
+        }
+
+        var fullBoundary = Path.GetFullPath(boundary);
+        var parent = Path.GetDirectoryName(Path.GetFullPath(source));
+        if (parent == null || !FileSystemPathIdentity.IsSameOrInside(parent, fullBoundary, semantics))
+        {
+            return;
+        }
+
+        RemoveEmptyDirectoryTree(parent, fullBoundary, semantics);
     }
 }

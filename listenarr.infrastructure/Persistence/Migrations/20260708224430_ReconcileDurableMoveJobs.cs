@@ -10,6 +10,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // Data-only reconciliation migration. EF correctly scaffolds no schema
+            // operations here; these updates normalize existing MoveJob rows created
+            // before durable move state tracking was introduced.
             migrationBuilder.Sql(
                 "UPDATE \"MoveJobs\" SET \"Status\" = 'Running' WHERE \"Status\" = 'Processing';");
             migrationBuilder.Sql(
@@ -21,6 +24,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Reverse only the data normalization performed above.
             migrationBuilder.Sql(
                 "UPDATE \"MoveJobs\" SET \"Status\" = 'Processing' WHERE \"Status\" = 'Running';");
             migrationBuilder.Sql(

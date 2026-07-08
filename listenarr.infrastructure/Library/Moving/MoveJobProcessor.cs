@@ -21,7 +21,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 namespace Listenarr.Infrastructure.Library.Moving
 {
-    internal class MoveJobProcessor(
+    internal partial class MoveJobProcessor(
         IMoveQueueService moveQueueService,
         IToastService toastService,
         IScanQueueService scanQueueService,
@@ -44,6 +44,7 @@ namespace Listenarr.Infrastructure.Library.Moving
 
                 using var scope = scopeFactory.CreateScope();
                 var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                var rootFolderRepository = scope.ServiceProvider.GetRequiredService<IRootFolderRepository>();
 
                 var audiobook = await audiobookRepository.GetByIdAsync(job.AudiobookId);
                 if (audiobook == null)
@@ -52,6 +53,8 @@ namespace Listenarr.Infrastructure.Library.Moving
                     metrics.Increment("worker.move.job.failed");
                     return;
                 }
+
+                var rootFolders = await rootFolderRepository.GetAllAsync();
 
                 var requested = job.RequestedPath ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(requested))
@@ -101,7 +104,8 @@ namespace Listenarr.Infrastructure.Library.Moving
                         job.DeleteEmptySource,
                         recoverySourceResolution.Semantics,
                         targetResolution.Semantics,
-                        CreateLeaseToken(job));
+                        CreateLeaseToken(job),
+                        ResolveSourceCleanupBoundary(source, rootFolders, recoverySourceResolution.Semantics));
                     var resumedMove = await contentMoveService.GetRecoverableMoveAsync(
                         recoveryRequest,
                         stoppingToken);
@@ -217,7 +221,8 @@ namespace Listenarr.Infrastructure.Library.Moving
                         job.DeleteEmptySource,
                         sourceResolution.Semantics,
                         targetResolution.Semantics,
-                        CreateLeaseToken(job));
+                        CreateLeaseToken(job),
+                        ResolveSourceCleanupBoundary(source, rootFolders, sourceResolution.Semantics));
                     var moveResult = recoveredMove ?? await contentMoveService.MoveContentsAsync(
                         moveRequest,
                         stoppingToken);
@@ -444,16 +449,6 @@ namespace Listenarr.Infrastructure.Library.Moving
         }
 
 
-        private static MoveLeaseToken CreateLeaseToken(MoveJob job)
-        {
-            if (string.IsNullOrWhiteSpace(job.LeaseOwner) || job.LeaseGeneration <= 0)
-            {
-                throw new MoveLeaseLostException(job.Id, job.LeaseGeneration);
-            }
-
-            return new MoveLeaseToken(job.LeaseOwner, job.LeaseGeneration);
-        }
-
         private Task UpdateJobStatusAsync(
             MoveJob job,
             MoveJobStatus status,
@@ -472,19 +467,6 @@ namespace Listenarr.Infrastructure.Library.Moving
                 status,
                 error,
                 cancellationToken);
-        }
-
-        private static bool IsFilesystemRoot(string path, FileSystemPathSemantics semantics)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return false;
-            }
-
-            var fullPath = Path.GetFullPath(path);
-            var root = Path.GetPathRoot(fullPath);
-            return !string.IsNullOrWhiteSpace(root)
-                && FileSystemPathIdentity.AreEquivalent(fullPath, root, semantics);
         }
     }
 }

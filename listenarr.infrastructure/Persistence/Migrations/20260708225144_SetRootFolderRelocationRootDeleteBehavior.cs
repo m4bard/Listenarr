@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     /// <inheritdoc />
-    public partial class MakeRootFolderRelocationRootNullable : Migration
+    public partial class SetRootFolderRelocationRootDeleteBehavior : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -13,14 +13,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
             migrationBuilder.DropForeignKey(
                 name: "FK_RootFolderRelocations_RootFolders_RootFolderId",
                 table: "RootFolderRelocations");
-
-            migrationBuilder.AlterColumn<int>(
-                name: "RootFolderId",
-                table: "RootFolderRelocations",
-                type: "INTEGER",
-                nullable: true,
-                oldClrType: typeof(int),
-                oldType: "INTEGER");
 
             migrationBuilder.AddForeignKey(
                 name: "FK_RootFolderRelocations_RootFolders_RootFolderId",
@@ -37,16 +29,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
             migrationBuilder.DropForeignKey(
                 name: "FK_RootFolderRelocations_RootFolders_RootFolderId",
                 table: "RootFolderRelocations");
-
-            migrationBuilder.AlterColumn<int>(
-                name: "RootFolderId",
-                table: "RootFolderRelocations",
-                type: "INTEGER",
-                nullable: false,
-                defaultValue: 0,
-                oldClrType: typeof(int),
-                oldType: "INTEGER",
-                oldNullable: true);
 
             migrationBuilder.AddForeignKey(
                 name: "FK_RootFolderRelocations_RootFolders_RootFolderId",

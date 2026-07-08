@@ -32,6 +32,8 @@ public sealed class MoveJobConfiguration : IEntityTypeConfiguration<MoveJob>
             .WithOne(entry => entry.MoveJob)
             .HasForeignKey(entry => entry.MoveJobId)
             .OnDelete(DeleteBehavior.Cascade);
+        builder.HasIndex(job => job.RelocationId);
+
         builder.HasOne(job => job.Relocation)
             .WithMany(relocation => relocation.MoveJobs)
             .HasForeignKey(job => job.RelocationId)

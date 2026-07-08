@@ -35,6 +35,28 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
+        public async Task ProcessJobAsync_RemovesEmptySourceAncestorsWithinConfiguredRoot()
+        {
+            var sourceRoot = FileService.GetTempDirectory("move-processor-cleanup-root");
+            var source = Path.Join(sourceRoot, "Author", "Series", "Title", "test");
+            Directory.CreateDirectory(source);
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(FileService.GetTempPath(), $"move-processor-cleanup-dst-{Guid.NewGuid():N}");
+            var rootFolderRepository = _provider.GetRequiredService<IRootFolderRepository>();
+            await rootFolderRepository.AddAsync(new RootFolder { Name = "Cleanup Root", Path = sourceRoot });
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook { Title = "Cleanup Test", BasePath = source });
+            var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, target, source);
+
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            Assert.Equal(MoveJobStatus.Completed, (await queue.GetJobAsync(job.Id))?.Status);
+            Assert.True(Directory.Exists(sourceRoot));
+            Assert.False(Directory.Exists(Path.Join(sourceRoot, "Author")));
+            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        }
+
+        [Fact]
         public async Task ProcessJobAsync_CompletedStatusPersistenceFailure_PropagatesWithoutCompletedMetric()
         {
             var source = FileService.GetTempDirectory("move-processor-status-failure-src");

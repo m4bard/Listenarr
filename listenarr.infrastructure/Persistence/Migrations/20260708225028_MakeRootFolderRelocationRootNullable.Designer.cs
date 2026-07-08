@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20260706161500_AddRootFolderRelocationSkippedItems")]
-    partial class AddRootFolderRelocationSkippedItems
+    [Migration("20260708225028_MakeRootFolderRelocationRootNullable")]
+    partial class MakeRootFolderRelocationRootNullable
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -946,7 +946,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasMaxLength(24)
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("RootFolderId")
+                    b.Property<int?>("RootFolderId")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("SourceCaseSensitivityMode")
@@ -1782,8 +1782,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.HasOne("Listenarr.Domain.Audiobooks.RootFolder", "RootFolder")
                         .WithMany("Relocations")
                         .HasForeignKey("RootFolderId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("RootFolder");
                 });

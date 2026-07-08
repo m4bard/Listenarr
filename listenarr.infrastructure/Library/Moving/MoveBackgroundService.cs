@@ -160,6 +160,7 @@ public sealed class MoveBackgroundService(
         }
         catch (OperationCanceledException)
         {
+            logger.LogDebug("Move heartbeat task canceled after processing stopped");
         }
     }
 

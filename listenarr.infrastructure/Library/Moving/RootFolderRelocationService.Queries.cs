@@ -15,12 +15,15 @@ public sealed partial class RootFolderRelocationService
             .SingleOrDefaultAsync(candidate => candidate.Id == relocationId, cancellationToken);
         if (relocation == null) return null;
         var fallbackPath = ResolveCurrentPathFallback(relocation);
-        var rootPath = relocation.RootFolderId.HasValue
-            ? await db.RootFolders
-                .Where(root => root.Id == relocation.RootFolderId.Value)
+        string? rootPath = null;
+        if (relocation.RootFolderId is int rootFolderId)
+        {
+            rootPath = await db.RootFolders
+                .Where(root => root.Id == rootFolderId)
                 .Select(root => root.Path)
-                .SingleOrDefaultAsync(cancellationToken)
-            : null;
+                .SingleOrDefaultAsync(cancellationToken);
+        }
+
         return Map(relocation, rootPath ?? fallbackPath);
     }
 

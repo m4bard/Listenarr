@@ -23,7 +23,8 @@ internal sealed record AudiobookContentMoveRequest(
     bool DeleteEmptySource,
     FileSystemPathSemantics SourceSemantics,
     FileSystemPathSemantics TargetSemantics,
-    MoveLeaseToken LeaseToken)
+    MoveLeaseToken LeaseToken,
+    string? SourceCleanupBoundary = null)
 {
     public string LeaseOwner => LeaseToken.Owner;
     public int LeaseGeneration => LeaseToken.Generation;
@@ -128,6 +129,7 @@ internal sealed partial class AudiobookContentMoveService(
 
                 if (renamed)
                 {
+                    RemoveEmptySourceAncestors(request.Source, request.SourceCleanupBoundary, sourceSemantics);
                     await UpdateJobPhaseAsync(request.JobId, request.LeaseToken, MoveJobPhase.Finalizing, cancellationToken);
                     return new AudiobookContentMoveResult(
                         source,
@@ -201,6 +203,7 @@ internal sealed partial class AudiobookContentMoveService(
                 manifest,
                 sourceSemantics,
                 targetSemantics,
+                request.SourceCleanupBoundary,
                 cancellationToken);
             await UpdateJobPhaseAsync(request.JobId, request.LeaseToken, MoveJobPhase.Finalizing, cancellationToken);
             WriteRecoveryMarker(target, request.JobId, SourceCleanupCompletedStage);
@@ -305,6 +308,7 @@ internal sealed partial class AudiobookContentMoveService(
             manifest,
             request.SourceSemantics,
             request.TargetSemantics,
+            request.SourceCleanupBoundary,
             cancellationToken);
         WriteRecoveryMarker(result.Target, request.JobId, SourceCleanupCompletedStage);
         return result with { SourceCleanupCompleted = true };

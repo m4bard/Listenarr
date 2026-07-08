@@ -359,6 +359,25 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
+        public async Task MoveContentsAsync_WithCleanupBoundary_RemovesEmptyAncestorsButKeepsBoundary()
+        {
+            var sourceRoot = FileService.GetTempDirectory("content-move-cleanup-boundary");
+            var source = Path.Join(sourceRoot, "Author", "Series", "Title", "test");
+            Directory.CreateDirectory(source);
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(FileService.GetTempPath(), $"content-move-cleanup-boundary-dst-{Guid.NewGuid():N}");
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            await service.MoveContentsAsync(
+                await CreateLeasedMoveRequestAsync(source, target, sourceCleanupBoundary: sourceRoot),
+                CancellationToken.None);
+
+            Assert.True(Directory.Exists(sourceRoot));
+            Assert.False(Directory.Exists(Path.Join(sourceRoot, "Author")));
+            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        }
+
+        [Fact]
         public async Task MoveContentsAsync_DeleteEmptySourceFalse_KeepsEmptySourceDirectory()
         {
             var source = FileService.GetTempDirectory("content-move-keep-source");
@@ -800,7 +819,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Guid? jobId = null,
             bool deleteEmptySource = true,
             FileSystemPathSemantics? sourceSemantics = null,
-            FileSystemPathSemantics? targetSemantics = null)
+            FileSystemPathSemantics? targetSemantics = null,
+            string? sourceCleanupBoundary = null)
         {
             var id = jobId ?? Guid.NewGuid();
             var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
@@ -826,7 +846,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 deleteEmptySource,
                 sourceSemantics ?? FileSystemPathSemantics.CurrentHostDefault,
                 targetSemantics ?? sourceSemantics ?? FileSystemPathSemantics.CurrentHostDefault,
-                LeaseToken(1));
+                LeaseToken(1),
+                sourceCleanupBoundary);
         }
 
         private sealed class AddSourceFileAfterPublish(string source) : IMoveFaultInjector
