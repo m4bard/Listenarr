@@ -18,6 +18,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Listenarr.Tests.Mocks;
+using AppMoveQueueService = Listenarr.Application.Audiobooks.Jobs.MoveQueueService;
+using MoveQueueService = Listenarr.Tests.Features.Application.Audiobooks.Jobs.MoveQueueServiceTestAdapter;
 
 namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
 {
@@ -699,6 +701,28 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                     return Task.FromResult(true);
                 });
             return persistence;
+        }
+    }
+
+    internal sealed class MoveQueueServiceTestAdapter : AppMoveQueueService
+    {
+        public MoveQueueServiceTestAdapter(
+            ILogger<MoveQueueService> logger,
+            IMoveQueuePersistence persistence,
+            IHubBroadcaster hubBroadcaster,
+            TimeProvider timeProvider,
+            IFileSystemSemanticsResolver semanticsResolver,
+            IRootFolderRelocationService? relocationService = null,
+            IFilesystemMutationCoordinator? mutationCoordinator = null)
+            : base(
+                NullLogger<AppMoveQueueService>.Instance,
+                persistence,
+                hubBroadcaster,
+                timeProvider,
+                semanticsResolver,
+                relocationService ?? Mock.Of<IRootFolderRelocationService>(),
+                mutationCoordinator ?? new FilesystemMutationCoordinator())
+        {
         }
     }
 }

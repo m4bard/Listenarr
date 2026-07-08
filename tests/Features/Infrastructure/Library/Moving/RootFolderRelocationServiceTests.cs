@@ -977,7 +977,8 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
             _factory,
             new FileSystemSemanticsResolver(),
             new ThrowingHubBroadcaster(),
-            TimeProvider.System);
+            TimeProvider.System,
+            new FilesystemMutationCoordinator());
         var result = await service.StartAsync(
             rootId,
             new RootFolderPathChangeCommand(
@@ -1127,7 +1128,8 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
             _factory,
             new TargetUnavailableSemanticsResolver(protectedPath),
             new NoopHubBroadcaster(),
-            TimeProvider.System);
+            TimeProvider.System,
+            new FilesystemMutationCoordinator());
         var caseDistinctPath = Path.Join(
             Path.GetDirectoryName(protectedPath)!,
             Path.GetFileName(protectedPath).ToUpperInvariant(),
@@ -1370,7 +1372,8 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
         _factory,
         new FileSystemSemanticsResolver(),
         new NoopHubBroadcaster(),
-        TimeProvider.System);
+        TimeProvider.System,
+        new FilesystemMutationCoordinator());
 
     private sealed class TestDbContextFactory(DbContextOptions<ListenArrDbContext> options)
         : IDbContextFactory<ListenArrDbContext>

@@ -303,7 +303,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 audiobookRepository,
                 fileSystem,
                 semanticsResolver ?? RootFoldersControllerTests.BuildSemanticsResolver(),
-                relocationService)
+                relocationService ?? Mock.Of<IRootFolderRelocationService>())
         {
         }
 

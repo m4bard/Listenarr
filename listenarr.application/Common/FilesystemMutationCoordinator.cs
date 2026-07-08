@@ -1,5 +1,10 @@
 namespace Listenarr.Application.Common;
 
+/// <summary>
+/// Serializes filesystem check-and-mutate workflows within one Listenarr process.
+/// Deployments must run a single Listenarr process per database; this in-memory gate
+/// does not coordinate independent processes.
+/// </summary>
 public sealed class FilesystemMutationCoordinator : IFilesystemMutationCoordinator, IDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);

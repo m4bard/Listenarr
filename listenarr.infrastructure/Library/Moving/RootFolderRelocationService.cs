@@ -9,11 +9,11 @@ public sealed partial class RootFolderRelocationService(
     IFileSystemSemanticsResolver semanticsResolver,
     IHubBroadcaster hubBroadcaster,
     TimeProvider timeProvider,
-    IFilesystemMutationCoordinator? mutationCoordinator = null) : IRootFolderRelocationService
+    IFilesystemMutationCoordinator mutationCoordinator) : IRootFolderRelocationService
 {
     private readonly SemaphoreSlim _rootIdentityGate = new(1, 1);
     private readonly IFilesystemMutationCoordinator _mutationCoordinator =
-        mutationCoordinator ?? new FilesystemMutationCoordinator();
+        mutationCoordinator ?? throw new ArgumentNullException(nameof(mutationCoordinator));
     private bool _rootIdentitiesReconciled;
     public async Task<RootFolderPathChangeResult> StartAsync(
         int rootFolderId,

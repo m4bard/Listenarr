@@ -9,6 +9,7 @@
  */
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Library;
 
@@ -16,6 +17,10 @@ internal static class LibraryRegistrationExtensions
 {
     public static IServiceCollection AddLibraryServices(this IServiceCollection services)
     {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IFilesystemMutationCoordinator, FilesystemMutationCoordinator>();
+        services.AddSingleton<IRootFolderRelocationService, RootFolderRelocationService>();
+        services.AddSingleton<IMoveQueueService, MoveQueueService>();
         services.AddScoped<IAudiobookFileService, AudiobookFileService>();
         services.AddScoped<IAuthorCatalogService, AuthorCatalogService>();
         services.AddScoped<ISeriesCatalogService, SeriesCatalogService>();

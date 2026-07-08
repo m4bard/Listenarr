@@ -488,7 +488,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 "copy-complete");
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
 
-            var recoverable = service.TryGetRecoverableMove(
+            var recoverable = await service.GetRecoverableMoveAsync(
                 new AudiobookContentMoveRequest(
                     source,
                     target,
@@ -496,10 +496,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     true,
                     FileSystemPathSemantics.CurrentHostDefault,
                     FileSystemPathSemantics.CurrentHostDefault,
-                    LeaseToken(1)),
-                out _);
+                    LeaseToken(1)));
 
-            Assert.False(recoverable);
+            Assert.Null(recoverable);
             Assert.True(File.Exists(Path.Join(source, "book.m4b")));
         }
 
@@ -518,7 +517,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Directory.Move(source, target);
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
-            var recoverable = service.TryGetRecoverableMove(
+            var result = await service.GetRecoverableMoveAsync(
                 new AudiobookContentMoveRequest(
                     source,
                     target,
@@ -526,12 +525,67 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     true,
                     FileSystemPathSemantics.CurrentHostDefault,
                     FileSystemPathSemantics.CurrentHostDefault,
-                    LeaseToken(1)),
-                out var result);
+                    LeaseToken(1)));
 
-            Assert.True(recoverable);
+            Assert.NotNull(result);
             Assert.True(result.SourceCleanupCompleted);
             Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        }
+
+        [Fact]
+        public async Task GetRecoverableMoveAsync_PropagatesCancellationDuringManifestVerification()
+        {
+            var source = FileService.GetTempDirectory("content-move-cancel-recovery-src");
+            var target = FileService.GetTempDirectory("content-move-cancel-recovery-dst");
+            var destination = await FileService.GetFileAsync(target, "book.m4b", "audio");
+            var jobId = Guid.NewGuid();
+            await File.WriteAllTextAsync(
+                Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
+                "copy-complete");
+            var hash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(destination)));
+            var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
+            await using (var db = await factory.CreateDbContextAsync())
+            {
+                db.MoveJobs.Add(new MoveJob
+                {
+                    Id = jobId,
+                    AudiobookId = 1,
+                    RequestedPath = target,
+                    SourcePath = source,
+                    Status = MoveJobStatus.Running,
+                    LeaseOwner = TestLeaseOwner,
+                    LeaseGeneration = 1,
+                    LeaseExpiresAt = DateTime.UtcNow.AddMinutes(5),
+                    ActiveDeduplicationKey = $"test:{jobId:N}"
+                });
+                db.MoveJobEntries.Add(new MoveJobEntry
+                {
+                    MoveJobId = jobId,
+                    RelativePath = "book.m4b",
+                    EntryType = MoveJobEntryType.File,
+                    Length = new FileInfo(destination).Length,
+                    Sha256 = hash,
+                    CopyState = MoveJobEntryCopyState.Verified
+                });
+                await db.SaveChangesAsync();
+            }
+
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                service.GetRecoverableMoveAsync(
+                    new AudiobookContentMoveRequest(
+                        source,
+                        target,
+                        jobId,
+                        true,
+                        FileSystemPathSemantics.CurrentHostDefault,
+                        FileSystemPathSemantics.CurrentHostDefault,
+                        LeaseToken(1)),
+                    cancellation.Token));
         }
 
         [Fact]

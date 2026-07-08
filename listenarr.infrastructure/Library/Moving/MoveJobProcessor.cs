@@ -102,7 +102,10 @@ namespace Listenarr.Infrastructure.Library.Moving
                         recoverySourceResolution.Semantics,
                         targetResolution.Semantics,
                         CreateLeaseToken(job));
-                    if (contentMoveService.TryGetRecoverableMove(recoveryRequest, out var resumedMove))
+                    var resumedMove = await contentMoveService.GetRecoverableMoveAsync(
+                        recoveryRequest,
+                        stoppingToken);
+                    if (resumedMove != null)
                     {
                         recoveredMove = resumedMove;
                         logger.LogInformation(

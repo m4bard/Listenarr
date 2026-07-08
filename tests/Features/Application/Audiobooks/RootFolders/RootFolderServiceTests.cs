@@ -45,7 +45,13 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                 Mock.Of<ILogger<EfRootFolderRepository>>());
 
             Assert.Throws<ArgumentNullException>(() =>
-                new AppRootFolderService(repo, null!, semanticsResolver: null!));
+                new AppRootFolderService(
+                    repo,
+                    null!,
+                    semanticsResolver: null!,
+                    Mock.Of<IMoveQueueService>(),
+                    Mock.Of<IRootFolderRelocationService>(),
+                    new FilesystemMutationCoordinator()));
         }
 
         [Fact]
@@ -978,9 +984,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
                 repo,
                 logger,
                 semanticsResolver ?? BuildSemanticsResolver(),
-                moveQueue,
-                relocationService,
-                mutationCoordinator)
+                moveQueue ?? Mock.Of<IMoveQueueService>(),
+                relocationService ?? Mock.Of<IRootFolderRelocationService>(),
+                mutationCoordinator ?? new FilesystemMutationCoordinator())
         {
         }
 

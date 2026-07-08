@@ -8,7 +8,6 @@
  * (at your option) any later version.
  */
 
-using Listenarr.Application.Common;
 using Listenarr.Application.Common.Exceptions;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
@@ -22,7 +21,7 @@ public sealed class AudiobookDestinationRewriteService : IAudiobookDestinationRe
     private readonly IRootFolderService _rootFolderService;
     private readonly IFileSystem _fileSystem;
     private readonly IFileSystemSemanticsResolver _semanticsResolver;
-    private readonly IRootFolderRelocationService? _relocationService;
+    private readonly IRootFolderRelocationService _relocationService;
     private readonly IFilesystemMutationCoordinator _mutationCoordinator;
     private readonly ILogger<AudiobookDestinationRewriteService> _logger;
 
@@ -33,8 +32,8 @@ public sealed class AudiobookDestinationRewriteService : IAudiobookDestinationRe
         IFileSystem fileSystem,
         IFileSystemSemanticsResolver semanticsResolver,
         ILogger<AudiobookDestinationRewriteService> logger,
-        IRootFolderRelocationService? relocationService = null,
-        IFilesystemMutationCoordinator? mutationCoordinator = null)
+        IRootFolderRelocationService relocationService,
+        IFilesystemMutationCoordinator mutationCoordinator)
     {
         _repo = repo;
         _configService = configService;
@@ -42,8 +41,8 @@ public sealed class AudiobookDestinationRewriteService : IAudiobookDestinationRe
         _fileSystem = fileSystem;
         _semanticsResolver = semanticsResolver;
         _logger = logger;
-        _relocationService = relocationService;
-        _mutationCoordinator = mutationCoordinator ?? new FilesystemMutationCoordinator();
+        _relocationService = relocationService ?? throw new ArgumentNullException(nameof(relocationService));
+        _mutationCoordinator = mutationCoordinator ?? throw new ArgumentNullException(nameof(mutationCoordinator));
     }
 
     public async Task<AudiobookDestinationRewriteResult> RewriteDestinationAsync(

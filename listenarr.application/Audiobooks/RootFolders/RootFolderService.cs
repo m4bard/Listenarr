@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Application.Common;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
@@ -25,25 +24,25 @@ namespace Listenarr.Application.Audiobooks.RootFolders
     {
         private readonly IRootFolderRepository _repo;
         private readonly ILogger<RootFolderService>? _logger;
-        private readonly IMoveQueueService? _moveQueue;
+        private readonly IMoveQueueService _moveQueue;
         private readonly IFileSystemSemanticsResolver _semanticsResolver;
-        private readonly IRootFolderRelocationService? _relocationService;
+        private readonly IRootFolderRelocationService _relocationService;
         private readonly IFilesystemMutationCoordinator _mutationCoordinator;
 
         public RootFolderService(
             IRootFolderRepository repo,
             ILogger<RootFolderService>? logger,
             IFileSystemSemanticsResolver semanticsResolver,
-            IMoveQueueService? moveQueue = null,
-            IRootFolderRelocationService? relocationService = null,
-            IFilesystemMutationCoordinator? mutationCoordinator = null)
+            IMoveQueueService moveQueue,
+            IRootFolderRelocationService relocationService,
+            IFilesystemMutationCoordinator mutationCoordinator)
         {
             _repo = repo;
             _logger = logger;
             _semanticsResolver = semanticsResolver ?? throw new ArgumentNullException(nameof(semanticsResolver));
-            _mutationCoordinator = mutationCoordinator ?? new FilesystemMutationCoordinator();
-            _moveQueue = moveQueue;
-            _relocationService = relocationService;
+            _mutationCoordinator = mutationCoordinator ?? throw new ArgumentNullException(nameof(mutationCoordinator));
+            _moveQueue = moveQueue ?? throw new ArgumentNullException(nameof(moveQueue));
+            _relocationService = relocationService ?? throw new ArgumentNullException(nameof(relocationService));
         }
 
         public async Task<RootFolder?> GetDefaultAsync()
@@ -63,8 +62,7 @@ namespace Listenarr.Application.Audiobooks.RootFolders
 
             var resolution = await ResolveSemanticsAsync(root.Path, root.CaseSensitivityMode);
             ApplyIdentity(root, resolution);
-            if (_relocationService != null
-                && await _relocationService.IsBoundaryProtectedAsync(root.Path, resolution.Semantics))
+            if (await _relocationService.IsBoundaryProtectedAsync(root.Path, resolution.Semantics))
             {
                 throw new InvalidOperationException(
                     "Root folder path overlaps an active relocation boundary.");
@@ -219,11 +217,6 @@ namespace Listenarr.Application.Audiobooks.RootFolders
             string rootPath,
             FileSystemPathSemantics semantics)
         {
-            if (_moveQueue == null)
-            {
-                return;
-            }
-
             var activeJobsTask = _moveQueue.GetActiveJobsAsync();
             IReadOnlyList<MoveJob>? activeJobs = activeJobsTask == null
                 ? Array.Empty<MoveJob>()
@@ -288,8 +281,7 @@ namespace Listenarr.Application.Audiobooks.RootFolders
 
         private async Task EnsureNoActiveRelocationAsync(int rootFolderId)
         {
-            if (_relocationService != null
-                && await _relocationService.GetActiveForRootAsync(rootFolderId) != null)
+            if (await _relocationService.GetActiveForRootAsync(rootFolderId) != null)
             {
                 throw new InvalidOperationException(
                     "Root folder metadata and deletion are locked while a relocation is active.");

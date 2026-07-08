@@ -90,7 +90,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DependencyInjection
 
             // Assert - singletons / supporting services registered
             Assert.Contains(services, d => d.ServiceType == typeof(IScanQueueService) && d.Lifetime == ServiceLifetime.Singleton);
-            Assert.Contains(services, d => d.ServiceType == typeof(IMoveQueueService) && d.Lifetime == ServiceLifetime.Singleton);
+            Assert.DoesNotContain(services, d => d.ServiceType == typeof(IMoveQueueService));
             Assert.Contains(services, d => d.ServiceType == typeof(IWorkerCycleRunner) && d.Lifetime == ServiceLifetime.Singleton);
 
             foreach (var processorType in ExpectedProcessorTypes)

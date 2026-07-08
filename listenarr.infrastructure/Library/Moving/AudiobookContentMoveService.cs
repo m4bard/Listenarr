@@ -220,9 +220,9 @@ internal sealed partial class AudiobookContentMoveService(
         }
     }
 
-    public bool TryGetRecoverableMove(
+    public async Task<AudiobookContentMoveResult?> GetRecoverableMoveAsync(
         AudiobookContentMoveRequest request,
-        out AudiobookContentMoveResult result)
+        CancellationToken cancellationToken = default)
     {
         var source = Path.GetFullPath(request.Source);
         var target = Path.GetFullPath(request.Target);
@@ -244,29 +244,29 @@ internal sealed partial class AudiobookContentMoveService(
             || (!atomicRenameCompleted
                 && recoveryStage is not (CopyCompletedStage or SourceCleanupCompletedStage)))
         {
-            result = null!;
-            return false;
+            return null;
         }
 
         try
         {
             if (!atomicRenameCompleted)
             {
-                VerifyPublishedManifestAsync(target, manifest, targetSemantics, CancellationToken.None)
-                    .GetAwaiter()
-                    .GetResult();
+                await VerifyPublishedManifestAsync(
+                    target,
+                    manifest,
+                    targetSemantics,
+                    cancellationToken);
             }
         }
         catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
         {
             logger.LogWarning(exception, "Rejected unverifiable recovery marker for move job {JobId}", request.JobId);
-            result = null!;
-            return false;
+            return null;
         }
 
         var targetInsideSource = IsSameOrInside(target, source, sourceSemantics);
         var sourceInsideTarget = IsSameOrInside(source, target, targetSemantics);
-        result = new AudiobookContentMoveResult(
+        return new AudiobookContentMoveResult(
             source,
             target,
             targetInsideSource,
@@ -274,7 +274,6 @@ internal sealed partial class AudiobookContentMoveService(
             recoveryMarkerPath,
             atomicRenameCompleted
                 || string.Equals(recoveryStage, SourceCleanupCompletedStage, StringComparison.Ordinal));
-        return true;
     }
 
     public async Task<AudiobookContentMoveResult> ResumeSourceCleanupAsync(

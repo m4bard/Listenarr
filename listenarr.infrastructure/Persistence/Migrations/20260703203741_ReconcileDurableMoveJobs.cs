@@ -25,7 +25,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 "UPDATE \"MoveJobs\" SET \"Status\" = 'Processing' WHERE \"Status\" = 'Running';");
             migrationBuilder.Sql(
                 "UPDATE \"MoveJobs\" SET \"ActiveDeduplicationKey\" = 'legacy:' || \"Id\" " +
-                "WHERE \"Status\" IN ('Queued', 'Processing');");
+                "WHERE \"Status\" IN ('Queued', 'Processing', 'RetryScheduled');");
         }
     }
 }

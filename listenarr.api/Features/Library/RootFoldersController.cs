@@ -61,7 +61,7 @@ namespace Listenarr.Api.Features.Library
         private readonly IAudiobookRepository _audiobookRepository;
         private readonly IFileSystem _fileSystem;
         private readonly IFileSystemSemanticsResolver _semanticsResolver;
-        private readonly IRootFolderRelocationService? _relocationService;
+        private readonly IRootFolderRelocationService _relocationService;
 
         public RootFoldersController(
             IRootFolderService service,
@@ -70,7 +70,7 @@ namespace Listenarr.Api.Features.Library
             IAudiobookRepository audiobookRepository,
             IFileSystem fileSystem,
             IFileSystemSemanticsResolver semanticsResolver,
-            IRootFolderRelocationService? relocationService = null)
+            IRootFolderRelocationService relocationService)
         {
             _service = service;
             _unmatchedQueue = unmatchedQueue;
@@ -78,7 +78,7 @@ namespace Listenarr.Api.Features.Library
             _audiobookRepository = audiobookRepository;
             _fileSystem = fileSystem;
             _semanticsResolver = semanticsResolver;
-            _relocationService = relocationService;
+            _relocationService = relocationService ?? throw new ArgumentNullException(nameof(relocationService));
         }
 
         /// <summary>
@@ -195,11 +195,6 @@ namespace Listenarr.Api.Features.Library
             [FromBody] RootFolderPathChangeRequest request,
             CancellationToken cancellationToken)
         {
-            if (_relocationService == null)
-            {
-                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "Relocation service unavailable" });
-            }
-
             if (!Enum.TryParse<RootFolderRelocationMode>(request.Mode, true, out var mode))
             {
                 return BadRequest(new { message = "Mode must be 'relocate' or 'metadataOnly'." });
@@ -345,13 +340,10 @@ namespace Listenarr.Api.Features.Library
         private async Task<RootFolderDto> MapAsync(RootFolder root)
         {
             RootFolderPathChangeResult? active = null;
-            if (_relocationService != null)
+            var relocation = await _relocationService.GetActiveForRootAsync(root.Id);
+            if (relocation != null)
             {
-                var relocation = await _relocationService.GetActiveForRootAsync(root.Id);
-                if (relocation != null)
-                {
-                    active = await _relocationService.GetAsync(relocation.Id);
-                }
+                active = await _relocationService.GetAsync(relocation.Id);
             }
 
             return new RootFolderDto(

@@ -18,6 +18,7 @@
 using System.Reflection;
 using Listenarr.Infrastructure.Persistence.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace Listenarr.Tests.Features.Infrastructure.Migrations
 {
@@ -41,6 +42,22 @@ namespace Listenarr.Tests.Features.Infrastructure.Migrations
 
             Assert.NotNull(attribute);
             Assert.Equal("20260706161500_AddRootFolderRelocationSkippedItems", attribute!.Id);
+        }
+
+        [Fact]
+        public void ReconcileDurableMoveJobs_DownResetsRetryScheduledDeduplicationKeys()
+        {
+            var migration = new ReconcileDurableMoveJobs();
+            var builder = new MigrationBuilder("Microsoft.EntityFrameworkCore.Sqlite");
+            typeof(ReconcileDurableMoveJobs)
+                .GetMethod("Down", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(migration, [builder]);
+
+            var sql = string.Join(
+                Environment.NewLine,
+                builder.Operations.OfType<SqlOperation>().Select(operation => operation.Sql));
+
+            Assert.Contains("'Queued', 'Processing', 'RetryScheduled'", sql, StringComparison.Ordinal);
         }
     }
 }

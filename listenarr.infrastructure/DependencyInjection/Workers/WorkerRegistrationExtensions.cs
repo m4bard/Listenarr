@@ -10,7 +10,6 @@
 using Listenarr.Infrastructure.HostedServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Workers;
 
@@ -20,16 +19,12 @@ internal static class WorkerRegistrationExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IWorkerCycleRunner, WorkerCycleRunner>();
 
         services.AddSingleton<IScanQueueService, ScanQueueService>();
         AddProcessor<ScanJobProcessor, IScanJobProcessor>(services);
         services.AddHostedService<ScanBackgroundService>();
 
-        services.AddSingleton<IFilesystemMutationCoordinator, FilesystemMutationCoordinator>();
-        services.AddSingleton<IRootFolderRelocationService, RootFolderRelocationService>();
-        services.AddSingleton<IMoveQueueService, MoveQueueService>();
         services.AddSingleton<AudiobookContentMoveService>();
         AddProcessor<MoveJobProcessor, IMoveJobProcessor>(services);
         services.AddHostedService<MoveBackgroundService>();

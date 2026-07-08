@@ -26,13 +26,12 @@ namespace Listenarr.Application.Audiobooks.Jobs
     public class MoveQueueService : IMoveQueueService
     {
         private readonly Channel<MoveJob> _channel = Channel.CreateUnbounded<MoveJob>();
-        private readonly SemaphoreSlim _enqueueGate = new(1, 1);
         private bool _identityKeysReconciled;
         private readonly ILogger<MoveQueueService> _logger;
         private readonly IMoveQueuePersistence _persistence;
         private readonly IHubBroadcaster _hubBroadcaster;
         private readonly TimeProvider _timeProvider;
-        private readonly IRootFolderRelocationService? _relocationService;
+        private readonly IRootFolderRelocationService _relocationService;
         private readonly IFileSystemSemanticsResolver _semanticsResolver;
         private readonly IFilesystemMutationCoordinator _mutationCoordinator;
 
@@ -42,16 +41,16 @@ namespace Listenarr.Application.Audiobooks.Jobs
             IHubBroadcaster hubBroadcaster,
             TimeProvider timeProvider,
             IFileSystemSemanticsResolver semanticsResolver,
-            IRootFolderRelocationService? relocationService = null,
-            IFilesystemMutationCoordinator? mutationCoordinator = null)
+            IRootFolderRelocationService relocationService,
+            IFilesystemMutationCoordinator mutationCoordinator)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
             _hubBroadcaster = hubBroadcaster ?? throw new ArgumentNullException(nameof(hubBroadcaster));
             _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
             _semanticsResolver = semanticsResolver ?? throw new ArgumentNullException(nameof(semanticsResolver));
-            _mutationCoordinator = mutationCoordinator ?? new FilesystemMutationCoordinator();
-            _relocationService = relocationService;
+            _mutationCoordinator = mutationCoordinator ?? throw new ArgumentNullException(nameof(mutationCoordinator));
+            _relocationService = relocationService ?? throw new ArgumentNullException(nameof(relocationService));
         }
 
         public ChannelReader<MoveJob> Reader => _channel.Reader;
@@ -67,53 +66,44 @@ namespace Listenarr.Application.Audiobooks.Jobs
             var jobId = await _mutationCoordinator.ExecuteExclusiveAsync(async cancellationToken =>
             {
                 await ThrowIfRelocationBoundaryProtectedAsync(requestedPath, sourcePath, cancellationToken);
-                await _enqueueGate.WaitAsync(cancellationToken);
+                var existingDb = await _persistence.GetActiveByKeyAsync(deduplicationKey, cancellationToken);
+                if (existingDb != null)
+                {
+                    jobToSchedule = existingDb;
+                    _logger.LogInformation("Found active move job {JobId} for audiobook {AudiobookId} to {Path}; deduping and returning existing job id", existingDb.Id, audiobookId, LogRedaction.SanitizeFilePath(requestedPath));
+                    return existingDb.Id;
+                }
+
+                var job = new MoveJob
+                {
+                    AudiobookId = audiobookId,
+                    RequestedPath = requestedPath,
+                    ActiveDeduplicationKey = deduplicationKey,
+                    EnqueuedAt = _timeProvider.GetUtcNow().UtcDateTime,
+                    Status = MoveJobStatus.Queued,
+                    SourcePath = sourcePath,
+                    DeleteEmptySource = deleteEmptySource
+                };
+
                 try
                 {
-                    var existingDb = await _persistence.GetActiveByKeyAsync(deduplicationKey, cancellationToken);
-
+                    await _persistence.AddAsync(job, cancellationToken);
+                }
+                catch (UniqueConstraintViolationException)
+                {
+                    existingDb = await _persistence.GetActiveByKeyAsync(deduplicationKey, cancellationToken);
                     if (existingDb != null)
                     {
                         jobToSchedule = existingDb;
-                        _logger.LogInformation("Found active move job {JobId} for audiobook {AudiobookId} to {Path}; deduping and returning existing job id", existingDb.Id, audiobookId, LogRedaction.SanitizeFilePath(requestedPath));
                         return existingDb.Id;
                     }
 
-                    var job = new MoveJob
-                    {
-                        AudiobookId = audiobookId,
-                        RequestedPath = requestedPath,
-                        ActiveDeduplicationKey = deduplicationKey,
-                        EnqueuedAt = _timeProvider.GetUtcNow().UtcDateTime,
-                        Status = MoveJobStatus.Queued,
-                        SourcePath = sourcePath,
-                        DeleteEmptySource = deleteEmptySource
-                    };
-
-                    try
-                    {
-                        await _persistence.AddAsync(job, cancellationToken);
-                    }
-                    catch (UniqueConstraintViolationException)
-                    {
-                        existingDb = await _persistence.GetActiveByKeyAsync(deduplicationKey, cancellationToken);
-                        if (existingDb != null)
-                        {
-                            jobToSchedule = existingDb;
-                            return existingDb.Id;
-                        }
-
-                        throw;
-                    }
-
-                    _logger.LogInformation("Enqueueing move job {JobId} for audiobook {AudiobookId} to {Path}", job.Id, audiobookId, LogRedaction.SanitizeFilePath(requestedPath));
-                    jobToSchedule = job;
-                    return job.Id;
+                    throw;
                 }
-                finally
-                {
-                    _enqueueGate.Release();
-                }
+
+                _logger.LogInformation("Enqueueing move job {JobId} for audiobook {AudiobookId} to {Path}", job.Id, audiobookId, LogRedaction.SanitizeFilePath(requestedPath));
+                jobToSchedule = job;
+                return job.Id;
             });
 
             if (jobToSchedule != null)
@@ -133,10 +123,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
             }
 
             var activeJobs = await _persistence.GetActiveAsync(cancellationToken);
-            if (_relocationService != null)
-            {
-                await _relocationService.ReconcileActiveAsync(cancellationToken);
-            }
+            await _relocationService.ReconcileActiveAsync(cancellationToken);
             foreach (var activeJob in activeJobs)
             {
                 await ScheduleAsync(activeJob, cancellationToken);
@@ -236,16 +223,13 @@ namespace Listenarr.Application.Audiobooks.Jobs
 
             LogStatusChange(id, status, error);
 
-            if (_relocationService != null)
+            try
             {
-                try
-                {
-                    await _relocationService.OnMoveJobStateChangedAsync(id, cancellationToken);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                {
-                    _logger.LogWarning(ex, "Failed to reconcile relocation for move job {JobId}", id);
-                }
+                await _relocationService.OnMoveJobStateChangedAsync(id, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to reconcile relocation for move job {JobId}", id);
             }
 
             try
@@ -399,11 +383,6 @@ namespace Listenarr.Application.Audiobooks.Jobs
             string? sourcePath,
             CancellationToken cancellationToken = default)
         {
-            if (_relocationService == null)
-            {
-                return;
-            }
-
             ArgumentNullException.ThrowIfNull(requestedPath);
             await ThrowIfEndpointProtectedAsync(requestedPath, "target", cancellationToken);
             if (!string.IsNullOrWhiteSpace(sourcePath))
