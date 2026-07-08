@@ -1802,14 +1802,6 @@ async function handleSave() {
       updates.runtime = parsedRuntime
     }
 
-    const shouldPersistBasePathImmediately = basePathChanged && !userWantsMove
-
-    // Physical moves are committed by the move worker after the filesystem operation succeeds.
-    // Pre-saving BasePath here can leave the library pointing at the destination when enqueue fails.
-    if (shouldPersistBasePathImmediately) {
-      ;(updates as Partial<Audiobook>).basePath = combined ?? undefined
-    }
-
     // If qualityProfileId is null, send -1 to signal "use default"
     // Otherwise send the actual ID
     if (formData.value.qualityProfileId === null) {
@@ -1852,33 +1844,17 @@ async function handleSave() {
       JSON.stringify([...formData.value.tags].sort()) !==
         JSON.stringify([...(audiobook.tags || [])].sort()) ||
       formData.value.abridged !== Boolean(audiobook.abridged) ||
-      formData.value.explicit !== Boolean(audiobook.explicit) ||
-      shouldPersistBasePathImmediately
+      formData.value.explicit !== Boolean(audiobook.explicit)
 
-    if (hasNonIdentifierChanges) {
-      await apiService.updateAudiobook(audiobook.id, updates)
-    }
-
-    if (identifiersChanged) {
-      await apiService.updateAudiobookIdentifiers(
-        audiobook.id,
-        formData.value.identifiers.map(toIdentifierWritePayload),
-      )
-      originalIdentifierRows.value = cloneIdentifierRows(formData.value.identifiers)
-    }
-
-    // If base path changed, either update DB without moving or enqueue server-side move and show progress via SignalR
     if (basePathChanged) {
-      if (!userWantsMove) {
-        // User requested a DB-only change
-        toast.info('Destination updated', 'Destination changed without moving files.')
-      } else {
-        try {
-          const res = await apiService.moveAudiobook(audiobook.id, combined ?? '', {
-            sourcePath: originalBase || undefined,
-            moveFiles: true,
-            deleteEmptySource: userWantsDeleteEmpty,
-          })
+      try {
+        const res = await apiService.moveAudiobook(audiobook.id, combined ?? '', {
+          sourcePath: originalBase || undefined,
+          moveFiles: userWantsMove,
+          deleteEmptySource: userWantsMove ? userWantsDeleteEmpty : false,
+        })
+
+        if (userWantsMove) {
           toast.info('Move queued', `Move job queued (${res.jobId}). Moving files in background.`)
 
           // Record initial move job state and subscribe to updates
@@ -1915,12 +1891,26 @@ async function handleSave() {
               toast.info('Move in progress', `Moving files to ${job.target || combined}`)
             }
           })
-        } catch (moveErr) {
-          console.error('Failed to enqueue move job:', moveErr)
-          toast.error('Move failed', 'Failed to enqueue move job. Please try again.')
-          return
+        } else {
+          toast.info('Destination updated', 'Destination changed without moving files.')
         }
+      } catch (moveErr) {
+        console.error('Failed to update destination:', moveErr)
+        toast.error('Move failed', 'Failed to update destination. Please try again.')
+        return
       }
+    }
+
+    if (hasNonIdentifierChanges) {
+      await apiService.updateAudiobook(audiobook.id, updates)
+    }
+
+    if (identifiersChanged) {
+      await apiService.updateAudiobookIdentifiers(
+        audiobook.id,
+        formData.value.identifiers.map(toIdentifierWritePayload),
+      )
+      originalIdentifierRows.value = cloneIdentifierRows(formData.value.identifiers)
     }
 
     emit('saved')

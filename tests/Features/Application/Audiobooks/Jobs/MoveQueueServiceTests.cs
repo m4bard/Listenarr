@@ -467,6 +467,84 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
         }
 
         [Fact]
+        public async Task RequeueMoveAsync_FailedJob_ResetsRetryStateBeforePersistence()
+        {
+            var future = DateTimeOffset.UtcNow.AddHours(1);
+            var job = new MoveJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 9,
+                SourcePath = "/downloads/Title",
+                RequestedPath = "/library/Title",
+                Status = MoveJobStatus.Failed,
+                Phase = MoveJobPhase.CleaningSource,
+                Error = "verification failed",
+                FailureKind = MoveFailureKind.Verification,
+                NextAttemptAt = future.UtcDateTime,
+                LeaseOwner = "worker",
+                LeaseExpiresAt = future.UtcDateTime
+            };
+            var persistence = CreateInMemoryPersistence([job]);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System,
+                BuildSemanticsResolver());
+
+            var requeuedJobId = await service.RequeueMoveAsync(job.Id);
+
+            Assert.Equal(job.Id, requeuedJobId);
+            Assert.Equal(MoveJobStatus.Queued, job.Status);
+            Assert.Equal(MoveJobPhase.None, job.Phase);
+            Assert.Null(job.Error);
+            Assert.Equal(MoveFailureKind.None, job.FailureKind);
+            Assert.Null(job.NextAttemptAt);
+            Assert.Null(job.LeaseOwner);
+            Assert.Null(job.LeaseExpiresAt);
+            Assert.NotNull(job.ActiveDeduplicationKey);
+            persistence.Verify(store => store.RequeueAsync(
+                It.Is<MoveJob>(persisted =>
+                    persisted.Status == MoveJobStatus.Queued
+                    && persisted.Phase == MoveJobPhase.None
+                    && persisted.Error == null
+                    && persisted.FailureKind == MoveFailureKind.None
+                    && persisted.NextAttemptAt == null
+                    && persisted.LeaseOwner == null
+                    && persisted.LeaseExpiresAt == null
+                    && persisted.ActiveDeduplicationKey != null),
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task RequeuedJob_MarkedRunning_UsesPlannedPhase()
+        {
+            var item = new MoveJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 9,
+                SourcePath = "/downloads/Title",
+                RequestedPath = "/library/Title",
+                Status = MoveJobStatus.Failed,
+                Phase = MoveJobPhase.CleaningSource,
+                FailureKind = MoveFailureKind.Verification
+            };
+            var persistence = CreateInMemoryPersistence([item]);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System,
+                BuildSemanticsResolver());
+
+            await service.RequeueMoveAsync(item.Id);
+            await service.UpdateJobStatusAsync(item.Id, LeaseOwner, 0, MoveJobStatus.Running);
+
+            Assert.Equal(MoveJobStatus.Running, item.Status);
+            Assert.Equal(MoveJobPhase.Planned, item.Phase);
+        }
+
+        [Fact]
         public async Task RequeueMoveAsync_RelocationBoundaryConflict_DoesNotRequeue()
         {
             var job = new MoveJob

@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Microsoft.AspNetCore.Mvc;
+using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Api.Features.Library
@@ -150,6 +151,101 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             Assert.False(storedAudiobook.Monitored);
             Assert.True(storedAudiobook.Explicit);
             Assert.True(storedAudiobook.Abridged);
+        }
+
+        [Fact]
+        [Trait("Method", "UpdateAudiobook")]
+        [Trait("Scenario", "LegacyBasePathCompatibilityRewritesReferences")]
+        public async Task UpdateAudiobook_LegacyBasePathChange_RewritesStoredAbsoluteReferences()
+        {
+            // Given
+            var rootPath = FileService.GetTempDirectory("listenarr-update-basepath-root");
+            await _rootFolderRepository.AddAsync(new RootFolderBuilder()
+                .WithName("Update Root")
+                .WithPath(rootPath)
+                .WithIsDefault()
+                .Build());
+
+            var sourcePath = FileService.GetTempDirectory("listenarr-update-basepath-source");
+            var targetPath = Path.Join(rootPath, "Author", "Title");
+            var unrelatedPath = Path.Join(FileService.GetTempPath(), "outside", "bonus.mp3");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Legacy Path Update",
+                BasePath = sourcePath,
+                FilePath = Path.Join(sourcePath, "book.m4b"),
+                ImageUrl = Path.Join(sourcePath, "cover.jpg"),
+                Files =
+                [
+                    new AudiobookFile { Path = Path.Join(sourcePath, "book.m4b") },
+                    new AudiobookFile { Path = Path.Join("disc-1", "chapter.mp3") },
+                    new AudiobookFile { Path = unrelatedPath }
+                ]
+            });
+            var controller = _provider.GetRequiredService<LibraryController>();
+
+            // When
+            var result = await controller.UpdateAudiobook(audiobook.Id, new Audiobook
+            {
+                BasePath = targetPath,
+                Title = "Legacy Path Update Edited"
+            });
+
+            // Then
+            Assert.IsType<OkObjectResult>(result);
+            var updated = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(updated);
+            Assert.Equal("Legacy Path Update Edited", updated.Title);
+            Assert.Equal(FileUtils.NormalizeStoredPath(targetPath), updated.BasePath);
+            Assert.Equal(Path.Join(targetPath, "book.m4b"), updated.FilePath);
+            Assert.Equal(Path.Join(targetPath, "cover.jpg"), updated.ImageUrl);
+            Assert.Contains(updated.Files!, file => file.Path == Path.Join(targetPath, "book.m4b"));
+            Assert.Contains(updated.Files!, file => file.Path == Path.Join("disc-1", "chapter.mp3"));
+            Assert.Contains(updated.Files!, file => file.Path == unrelatedPath);
+        }
+
+        [Fact]
+        [Trait("Method", "UpdateAudiobook")]
+        [Trait("Scenario", "LegacyBasePathCompatibilityRejectsInvalidDestination")]
+        public async Task UpdateAudiobook_LegacyBasePathOutsideConfiguredRoots_IsRejected()
+        {
+            // Given
+            var rootPath = FileService.GetTempDirectory("listenarr-update-valid-root");
+            await _rootFolderRepository.AddAsync(new RootFolderBuilder()
+                .WithName("Valid Update Root")
+                .WithPath(rootPath)
+                .WithIsDefault()
+                .Build());
+
+            var sourcePath = FileService.GetTempDirectory("listenarr-update-original-source");
+            var originalFilePath = Path.Join(sourcePath, "book.m4b");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Invalid Legacy Path Update",
+                BasePath = sourcePath,
+                FilePath = originalFilePath,
+                Files = [new AudiobookFile { Path = originalFilePath }]
+            });
+            var outsidePath = Path.Join(FileService.GetTempDirectory("listenarr-update-outside-root"), "Author", "Title");
+            var controller = _provider.GetRequiredService<LibraryController>();
+
+            // When
+            var result = await controller.UpdateAudiobook(audiobook.Id, new Audiobook
+            {
+                BasePath = outsidePath,
+                Title = "Should Not Persist"
+            });
+
+            // Then
+            var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+            Assert.Contains("configured root folder or output path", badRequest.Value?.ToString() ?? string.Empty);
+
+            var unchanged = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(unchanged);
+            Assert.Equal("Invalid Legacy Path Update", unchanged.Title);
+            Assert.Equal(sourcePath, unchanged.BasePath);
+            Assert.Equal(originalFilePath, unchanged.FilePath);
+            Assert.Equal(originalFilePath, Assert.Single(unchanged.Files!).Path);
         }
     }
 }

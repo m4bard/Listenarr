@@ -57,7 +57,7 @@ describe('EditAudiobookModal move options', () => {
     vi.clearAllMocks()
   })
 
-  it('Change without moving should update audiobook and not call move API', async () => {
+  it('Change without moving plus metadata should call move API before metadata update', async () => {
     const wrapper = mount(EditAudiobookModal, {
       props: { isOpen: true, audiobook },
       attachTo: document.body,
@@ -85,12 +85,49 @@ describe('EditAudiobookModal move options', () => {
     await new Promise((r) => setTimeout(r, 50))
 
     const { apiService } = await import('@/services/api')
+    expect(apiService.moveAudiobook).toHaveBeenCalledTimes(1)
+    expect(apiService.moveAudiobook).toHaveBeenCalledWith(1, 'C:/root/New Author/New Book', {
+      sourcePath: 'C:\\root\\Some Author\\Some Title',
+      moveFiles: false,
+      deleteEmptySource: false,
+    })
     expect(apiService.updateAudiobook).toHaveBeenCalledTimes(1)
     expect(apiService.updateAudiobook).toHaveBeenCalledWith(
       1,
-      expect.objectContaining({ basePath: 'C:/root/New Author/New Book' }),
+      expect.not.objectContaining({ basePath: expect.anything() }),
     )
-    expect(apiService.moveAudiobook).toHaveBeenCalledTimes(0)
+    expect(vi.mocked(apiService.moveAudiobook).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(apiService.updateAudiobook).mock.invocationCallOrder[0],
+    )
+  })
+
+  it('Destination-only change without moving should call move API and skip metadata update', async () => {
+    const wrapper = mount(EditAudiobookModal, {
+      props: { isOpen: true, audiobook },
+      attachTo: document.body,
+      global: { plugins: [(await import('pinia')).createPinia()] },
+    })
+
+    await new Promise((r) => setTimeout(r, 200))
+    ;(wrapper.vm as unknown).selectedRootId = 0
+    ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\New Author\\New Book'
+    await wrapper.vm.$nextTick()
+
+    const savePromise = (wrapper.vm as unknown).handleSave()
+    await new Promise((r) => setTimeout(r, 10))
+    const resolver = (wrapper.vm as unknown).moveConfirmResolver
+    if (resolver) resolver({ proceed: true, moveFiles: false, deleteEmptySource: true })
+    await savePromise
+    await new Promise((r) => setTimeout(r, 50))
+
+    const { apiService } = await import('@/services/api')
+    expect(apiService.updateAudiobook).toHaveBeenCalledTimes(0)
+    expect(apiService.moveAudiobook).toHaveBeenCalledTimes(1)
+    expect(apiService.moveAudiobook).toHaveBeenCalledWith(1, 'C:/root/New Author/New Book', {
+      sourcePath: 'C:\\root\\Some Author\\Some Title',
+      moveFiles: false,
+      deleteEmptySource: false,
+    })
   })
 
   it('Move should call move API with deleteEmptySource true by default', async () => {

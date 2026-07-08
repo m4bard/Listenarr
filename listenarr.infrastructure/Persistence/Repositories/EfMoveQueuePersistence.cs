@@ -197,7 +197,12 @@ public sealed class EfMoveQueuePersistence(
         }
 
         persistedJob.Status = job.Status;
+        persistedJob.Phase = job.Phase;
         persistedJob.Error = job.Error;
+        persistedJob.FailureKind = job.FailureKind;
+        persistedJob.NextAttemptAt = job.NextAttemptAt;
+        persistedJob.LeaseOwner = null;
+        persistedJob.LeaseExpiresAt = null;
         persistedJob.UpdatedAt = job.UpdatedAt;
         persistedJob.ActiveDeduplicationKey = job.ActiveDeduplicationKey;
         await db.SaveChangesAsync(cancellationToken);

@@ -345,6 +345,10 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 job.Status = MoveJobStatus.Queued;
                 job.Phase = MoveJobPhase.None;
                 job.Error = null;
+                job.FailureKind = MoveFailureKind.None;
+                job.NextAttemptAt = null;
+                job.LeaseOwner = null;
+                job.LeaseExpiresAt = null;
                 job.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
                 job.ActiveDeduplicationKey = deduplicationKey;
                 await _persistence.RequeueAsync(job, cancellationToken);

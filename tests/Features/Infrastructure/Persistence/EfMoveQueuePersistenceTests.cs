@@ -414,6 +414,47 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
         Assert.Equal("Superseded by reconciliation.", currentJob.Error);
     }
 
+    [Fact]
+    public async Task RequeueAsync_PersistsResetRetryAndLeaseState()
+    {
+        var persistence = CreatePersistence();
+        var future = DateTimeOffset.UtcNow.AddHours(1);
+        var job = CreateJob("v2:move:42:s:requeue-reset");
+        job.Status = MoveJobStatus.Failed;
+        job.Phase = MoveJobPhase.CleaningSource;
+        job.Error = "verification failed";
+        job.FailureKind = MoveFailureKind.Verification;
+        job.NextAttemptAt = future.UtcDateTime;
+        job.LeaseOwner = "worker-a";
+        job.LeaseExpiresAt = future.UtcDateTime;
+        job.LeaseGeneration = 3;
+        job.AttemptCount = 2;
+        await persistence.AddAsync(job);
+
+        job.Status = MoveJobStatus.Queued;
+        job.Phase = MoveJobPhase.None;
+        job.Error = null;
+        job.FailureKind = MoveFailureKind.None;
+        job.NextAttemptAt = null;
+        job.LeaseOwner = null;
+        job.LeaseExpiresAt = null;
+        job.ActiveDeduplicationKey = "v2:move:42:s:requeue-reset-new";
+        await persistence.RequeueAsync(job);
+
+        var persisted = await persistence.GetByIdAsync(job.Id);
+        Assert.NotNull(persisted);
+        Assert.Equal(MoveJobStatus.Queued, persisted.Status);
+        Assert.Equal(MoveJobPhase.None, persisted.Phase);
+        Assert.Null(persisted.Error);
+        Assert.Equal(MoveFailureKind.None, persisted.FailureKind);
+        Assert.Null(persisted.NextAttemptAt);
+        Assert.Null(persisted.LeaseOwner);
+        Assert.Null(persisted.LeaseExpiresAt);
+        Assert.Equal("v2:move:42:s:requeue-reset-new", persisted.ActiveDeduplicationKey);
+        Assert.Equal(3, persisted.LeaseGeneration);
+        Assert.Equal(2, persisted.AttemptCount);
+    }
+
     private EfMoveQueuePersistence CreatePersistence() =>
         new(_factory, BuildSemanticsResolver());
 

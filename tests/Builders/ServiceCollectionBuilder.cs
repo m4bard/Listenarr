@@ -174,6 +174,7 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<IMoveQueueService, MoveQueueService>();
             services.AddSingleton<IScanQueueService, ScanQueueService>();
             services.AddSingleton<IRootFolderService, RootFolderService>();
+            services.AddSingleton<IAudiobookDestinationRewriteService, AudiobookDestinationRewriteService>();
             services.AddSingleton<MetadataConverters>();
             services.AddSingleton<MetadataMerger>();
             services.AddSingleton<SearchProgressReporter>();

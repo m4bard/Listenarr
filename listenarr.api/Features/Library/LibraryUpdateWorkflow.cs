@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Common.Exceptions;
 using Listenarr.Domain.Common;
 using Microsoft.AspNetCore.Mvc;
 
@@ -25,15 +26,18 @@ namespace Listenarr.Api.Features.Library
     {
         private readonly IAudiobookRepository _repo;
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly IAudiobookDestinationRewriteService _destinationRewriteService;
         private readonly ILogger<LibraryUpdateWorkflow> _logger;
 
         public LibraryUpdateWorkflow(
             IAudiobookRepository repo,
             IServiceScopeFactory scopeFactory,
+            IAudiobookDestinationRewriteService destinationRewriteService,
             ILogger<LibraryUpdateWorkflow> logger)
         {
             _repo = repo;
             _scopeFactory = scopeFactory;
+            _destinationRewriteService = destinationRewriteService;
             _logger = logger;
         }
 
@@ -46,6 +50,46 @@ namespace Listenarr.Api.Features.Library
             }
 
             var legacyIdentifierFieldsTouched = false;
+
+            if (updatedAudiobook.BasePath != null)
+            {
+                var requestedBasePath = FileUtils.NormalizeStoredPath(updatedAudiobook.BasePath);
+                var existingBasePath = string.IsNullOrEmpty(existingAudiobook.BasePath)
+                    ? string.Empty
+                    : FileUtils.NormalizeStoredPath(existingAudiobook.BasePath);
+                if (!string.Equals(requestedBasePath, existingBasePath, StringComparison.Ordinal))
+                {
+                    _logger.LogWarning(
+                        "Deprecated PUT /library/{AudiobookId} BasePath update received. Route destination changes through the move endpoint with moveFiles=false.",
+                        id);
+
+                    try
+                    {
+                        await _destinationRewriteService.RewriteDestinationAsync(
+                            id,
+                            updatedAudiobook.BasePath,
+                            existingAudiobook.BasePath);
+                    }
+                    catch (ListenarrApplicationException ex)
+                    {
+                        return ToApplicationExceptionResult(ex);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        _logger.LogError(ex, "Failed to compatibility-route BasePath update for audiobook {AudiobookId}", id);
+                        return new ObjectResult(new { message = "Failed to update BasePath", error = ex.Message })
+                        {
+                            StatusCode = StatusCodes.Status500InternalServerError
+                        };
+                    }
+
+                    existingAudiobook = await _repo.GetByIdAsync(id);
+                    if (existingAudiobook == null)
+                    {
+                        return new NotFoundObjectResult(new { message = "Audiobook not found" });
+                    }
+                }
+            }
 
             if (updatedAudiobook.Title != null) existingAudiobook.Title = updatedAudiobook.Title;
             if (updatedAudiobook.Subtitle != null) existingAudiobook.Subtitle = updatedAudiobook.Subtitle;
@@ -93,12 +137,6 @@ namespace Listenarr.Api.Features.Library
 
             await ApplyQualityProfileAsync(existingAudiobook, updatedAudiobook);
 
-            if (updatedAudiobook.BasePath != null)
-            {
-                existingAudiobook.BasePath = FileUtils.NormalizeStoredPath(updatedAudiobook.BasePath);
-                _logger.LogInformation("Updated BasePath for audiobook '{Title}' to: {BasePath}", LogRedaction.SanitizeText(existingAudiobook.Title), LogRedaction.SanitizeFilePath(updatedAudiobook.BasePath));
-            }
-
             if (legacyIdentifierFieldsTouched)
             {
                 AudiobookIdentifierMapper.SyncImportedIdentifiersFromLegacyFields(existingAudiobook);
@@ -110,6 +148,18 @@ namespace Listenarr.Api.Features.Library
 
             return new OkObjectResult(new { message = "Audiobook updated successfully", audiobook = existingAudiobook });
         }
+
+        private static IActionResult ToApplicationExceptionResult(ListenarrApplicationException exception) =>
+            exception switch
+            {
+                ApplicationNotFoundException => new NotFoundObjectResult(new { message = exception.SafeDetail, code = exception.Code }),
+                ApplicationConflictException => new ConflictObjectResult(new { message = exception.SafeDetail, code = exception.Code }),
+                ApplicationValidationException => new BadRequestObjectResult(new { message = exception.SafeDetail, code = exception.Code }),
+                _ => new ObjectResult(new { message = exception.SafeDetail, code = exception.Code })
+                {
+                    StatusCode = StatusCodes.Status500InternalServerError
+                }
+            };
 
         private static void ApplySeriesMembershipUpdates(Audiobook existingAudiobook, Audiobook updatedAudiobook)
         {
