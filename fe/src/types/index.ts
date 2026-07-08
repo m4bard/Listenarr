@@ -300,7 +300,7 @@ export interface RootFolder {
 
 export interface RootFolderPathChangeResult {
   relocationId?: string | null
-  rootFolderId: number
+  rootFolderId: number | null
   currentPath: string
   targetPath: string
   status: 'Pending' | 'Running' | 'NeedsAttention' | 'Completed' | 'Failed'

@@ -322,9 +322,11 @@ public sealed partial class RootFolderRelocationService(
         var relocation = await db.RootFolderRelocations
             .Include(candidate => candidate.MoveJobs)
             .SingleAsync(candidate => candidate.Id == job.RelocationId, cancellationToken);
-        var root = await db.RootFolders.SingleAsync(
-            candidate => candidate.Id == relocation.RootFolderId,
-            cancellationToken);
+        var root = relocation.RootFolderId.HasValue
+            ? await db.RootFolders.SingleOrDefaultAsync(
+                candidate => candidate.Id == relocation.RootFolderId.Value,
+                cancellationToken)
+            : null;
         relocation.CompletedJobs = relocation.MoveJobs.Count(candidate => candidate.Status == MoveJobStatus.Completed);
         relocation.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
@@ -340,12 +342,21 @@ public sealed partial class RootFolderRelocationService(
         }
         else if (relocation.MoveJobs.All(candidate => candidate.Status == MoveJobStatus.Completed))
         {
-            await FinalizeCompletedRelocationAsync(
-                db,
-                relocation,
-                root,
-                relocation.UpdatedAt ?? timeProvider.GetUtcNow().UtcDateTime,
-                cancellationToken);
+            if (root == null)
+            {
+                relocation.Status = RootFolderRelocationStatus.NeedsAttention;
+                relocation.ActiveRootFolderId = null;
+                relocation.Error = "The root folder no longer exists; relocation finalization requires manual review.";
+            }
+            else
+            {
+                await FinalizeCompletedRelocationAsync(
+                    db,
+                    relocation,
+                    root,
+                    relocation.UpdatedAt ?? timeProvider.GetUtcNow().UtcDateTime,
+                    cancellationToken);
+            }
         }
         else
         {
@@ -354,7 +365,7 @@ public sealed partial class RootFolderRelocationService(
 
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        await BroadcastAsync(Map(relocation, root.Path), cancellationToken);
+        await BroadcastAsync(Map(relocation, root?.Path ?? ResolveCurrentPathFallback(relocation)), cancellationToken);
     }
 
     public async Task ReconcileActiveAsync(CancellationToken cancellationToken = default)

@@ -59,7 +59,7 @@ public sealed class RootFolderRelocationConfiguration : IEntityTypeConfiguration
         builder.HasOne(relocation => relocation.RootFolder)
             .WithMany(root => root.Relocations)
             .HasForeignKey(relocation => relocation.RootFolderId)
-            .OnDelete(DeleteBehavior.Restrict);
+            .OnDelete(DeleteBehavior.SetNull);
         builder.HasMany(relocation => relocation.SkippedItems)
             .WithOne(item => item.Relocation)
             .HasForeignKey(item => item.RelocationId)

@@ -226,6 +226,116 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "RejectsStaleMetadataOnlySourcePath")]
+        public async Task MoveAudiobook_MetadataOnlyRejectsStaleSourcePath()
+        {
+            var moveQueue = new Mock<IMoveQueueService>();
+            Init(services => services.WithSingleton(moveQueue.Object));
+
+            var rootPath = FileService.GetTempDirectory("listenarr-move-root");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithoutOutputPath()
+                .Build());
+            await _rootFolderRepository.AddAsync(new RootFolderBuilder()
+                .WithName("Move Root")
+                .WithPath(rootPath)
+                .WithIsDefault()
+                .Build());
+
+            var sourcePath = Path.Join(rootPath, "Author", "Title");
+            Directory.CreateDirectory(sourcePath);
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Stale Source")
+                .WithBasePath(sourcePath)
+                .Build());
+            var staleSourcePath = Path.Join(rootPath, "Author", "OldTitle");
+            var targetPath = Path.Join(rootPath, "Author", "NewTitle");
+
+            var result = await _provider.GetRequiredService<LibraryController>().EnqueueMove(
+                audiobook.Id,
+                new LibraryController.MoveRequest
+                {
+                    DestinationPath = targetPath,
+                    MoveFiles = false,
+                    SourcePath = staleSourcePath
+                });
+
+            var conflict = Assert.IsType<ConflictObjectResult>(result);
+            Assert.Contains("source path changed", conflict.Value?.ToString() ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(sourcePath, (await _audiobookRepository.GetByIdAsync(audiobook.Id))!.BasePath);
+            moveQueue.Verify(service => service.EnqueueMoveAsync(
+                It.IsAny<int>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<bool>()), Times.Never);
+        }
+
+        [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "ResolvesDestinationAfterAcquiringMutationCoordinator")]
+        public async Task MoveAudiobook_MetadataOnlyResolvesDestinationInsideMutationCoordinator()
+        {
+            var coordinator = new FilesystemMutationCoordinator();
+            var moveQueue = new Mock<IMoveQueueService>();
+            Init(services => services
+                .WithSingleton(moveQueue.Object)
+                .WithSingleton<IFilesystemMutationCoordinator>(coordinator));
+
+            var rootPath = FileService.GetTempDirectory("listenarr-move-root");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithoutOutputPath()
+                .Build());
+            var root = new RootFolderBuilder()
+                .WithName("Move Root")
+                .WithPath(rootPath)
+                .WithIsDefault()
+                .Build();
+            await _rootFolderRepository.AddAsync(root);
+
+            var sourcePath = Path.Join(rootPath, "Author", "Title");
+            Directory.CreateDirectory(sourcePath);
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Coordinator")
+                .WithBasePath(sourcePath)
+                .Build());
+            var targetPath = Path.Join(rootPath, "Author", "UpdatedTitle");
+
+            var lockEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var lockTask = coordinator.ExecuteExclusiveAsync(async _ =>
+            {
+                lockEntered.SetResult();
+                await releaseLock.Task;
+            });
+            await lockEntered.Task;
+
+            var moveTask = _provider.GetRequiredService<LibraryController>().EnqueueMove(
+                audiobook.Id,
+                new LibraryController.MoveRequest
+                {
+                    DestinationPath = targetPath,
+                    MoveFiles = false
+                });
+            await Task.Delay(50);
+            Assert.False(moveTask.IsCompleted);
+
+            await _rootFolderRepository.RemoveAsync(root.Id);
+
+            releaseLock.SetResult();
+            await lockTask;
+            var result = await moveTask;
+            var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+            Assert.Contains("configured root folder or output path", badRequest.Value?.ToString() ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(sourcePath, (await _audiobookRepository.GetByIdAsync(audiobook.Id))!.BasePath);
+            moveQueue.Verify(service => service.EnqueueMoveAsync(
+                It.IsAny<int>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<bool>()), Times.Never);
+        }
+
+        [Fact]
         public async Task MoveAudiobook_MetadataOnlyWaitsForFilesystemMutationCoordinator()
         {
             var coordinator = new FilesystemMutationCoordinator();

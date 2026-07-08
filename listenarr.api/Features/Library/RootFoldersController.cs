@@ -17,6 +17,7 @@
  */
 using Listenarr.Domain.Common;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Api.Features.Library
 {
@@ -253,6 +254,13 @@ namespace Listenarr.Api.Features.Library
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { message = ex.Message });
+            }
+            catch (DbUpdateException)
+            {
+                return Conflict(new
+                {
+                    message = "Root folder delete conflicted with persisted references. Resolve active references and retry."
+                });
             }
         }
 

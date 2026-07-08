@@ -51,11 +51,9 @@ public sealed class AudiobookDestinationRewriteService : IAudiobookDestinationRe
         string? expectedSourcePath,
         CancellationToken cancellationToken = default)
     {
-        _ = expectedSourcePath;
-        var destination = await ResolveDestinationAsync(destinationPath, cancellationToken);
-
         return await _mutationCoordinator.ExecuteExclusiveAsync(async lockedCancellationToken =>
         {
+            var destination = await ResolveDestinationAsync(destinationPath, lockedCancellationToken);
             var currentAudiobook = await _repo.GetByIdAsync(audiobookId);
             if (currentAudiobook == null)
             {
@@ -84,6 +82,20 @@ public sealed class AudiobookDestinationRewriteService : IAudiobookDestinationRe
                     }
 
                     sourceSemantics = sourceResolution.Semantics;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(expectedSourcePath))
+            {
+                if (string.IsNullOrWhiteSpace(sourceBasePath)
+                    || !FileSystemPathIdentity.AreEquivalent(
+                        expectedSourcePath,
+                        sourceBasePath,
+                        sourceSemantics))
+                {
+                    throw new ApplicationConflictException(
+                        "source_path_changed",
+                        "The audiobook source path changed. Refresh and try again.");
                 }
             }
 

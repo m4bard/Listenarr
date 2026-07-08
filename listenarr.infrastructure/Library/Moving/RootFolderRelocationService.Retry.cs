@@ -51,11 +51,14 @@ public sealed partial class RootFolderRelocationService
                 relocation.UpdatedAt = now;
                 await db.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
-                var unavailableRootPath = await db.RootFolders
-                    .Where(root => root.Id == relocation.RootFolderId)
-                    .Select(root => root.Path)
-                    .SingleAsync(cancellationToken);
-                var unavailableResult = Map(relocation, unavailableRootPath);
+                var fallbackPath = ResolveCurrentPathFallback(relocation);
+                var unavailableRootPath = relocation.RootFolderId.HasValue
+                    ? await db.RootFolders
+                        .Where(root => root.Id == relocation.RootFolderId.Value)
+                        .Select(root => root.Path)
+                        .SingleOrDefaultAsync(cancellationToken)
+                    : null;
+                var unavailableResult = Map(relocation, unavailableRootPath ?? fallbackPath);
                 return unavailableResult;
             }
         }
@@ -117,9 +120,17 @@ public sealed partial class RootFolderRelocationService
         }
         else if (relocation.MoveJobs.All(job => job.Status == MoveJobStatus.Completed))
         {
-            var root = await db.RootFolders.SingleAsync(
-                candidate => candidate.Id == relocation.RootFolderId,
-                cancellationToken);
+            if (!relocation.RootFolderId.HasValue)
+            {
+                throw new InvalidOperationException(
+                    "The root folder no longer exists; this relocation cannot be retried.");
+            }
+
+            var root = await db.RootFolders.SingleOrDefaultAsync(
+                candidate => candidate.Id == relocation.RootFolderId.Value,
+                cancellationToken)
+                ?? throw new InvalidOperationException(
+                    "The root folder no longer exists; this relocation cannot be retried.");
             await FinalizeCompletedRelocationAsync(
                 db,
                 relocation,
@@ -137,11 +148,14 @@ public sealed partial class RootFolderRelocationService
         relocation.UpdatedAt = now;
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        var rootPath = await db.RootFolders
-            .Where(root => root.Id == relocation.RootFolderId)
-            .Select(root => root.Path)
-            .SingleAsync(cancellationToken);
-        var result = Map(relocation, rootPath);
+        var resultFallbackPath = ResolveCurrentPathFallback(relocation);
+        var rootPath = relocation.RootFolderId.HasValue
+            ? await db.RootFolders
+                .Where(root => root.Id == relocation.RootFolderId.Value)
+                .Select(root => root.Path)
+                .SingleOrDefaultAsync(cancellationToken)
+            : null;
+        var result = Map(relocation, rootPath ?? resultFallbackPath);
         return result;
     }
 }

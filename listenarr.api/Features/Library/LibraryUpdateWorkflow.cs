@@ -50,6 +50,7 @@ namespace Listenarr.Api.Features.Library
             }
 
             var legacyIdentifierFieldsTouched = false;
+            var basePathRewritten = false;
 
             if (updatedAudiobook.BasePath != null)
             {
@@ -69,6 +70,7 @@ namespace Listenarr.Api.Features.Library
                             id,
                             updatedAudiobook.BasePath,
                             existingAudiobook.BasePath);
+                        basePathRewritten = true;
                     }
                     catch (ListenarrApplicationException ex)
                     {
@@ -94,7 +96,7 @@ namespace Listenarr.Api.Features.Library
             if (updatedAudiobook.Title != null) existingAudiobook.Title = updatedAudiobook.Title;
             if (updatedAudiobook.Subtitle != null) existingAudiobook.Subtitle = updatedAudiobook.Subtitle;
             if (updatedAudiobook.Authors != null) existingAudiobook.Authors = updatedAudiobook.Authors;
-            if (updatedAudiobook.ImageUrl != null) existingAudiobook.ImageUrl = updatedAudiobook.ImageUrl;
+            if (!basePathRewritten && updatedAudiobook.ImageUrl != null) existingAudiobook.ImageUrl = updatedAudiobook.ImageUrl;
             if (updatedAudiobook.PublishYear != null) existingAudiobook.PublishYear = updatedAudiobook.PublishYear;
             if (updatedAudiobook.PublishedDate != null) existingAudiobook.PublishedDate = updatedAudiobook.PublishedDate;
             if (updatedAudiobook.Description != null) existingAudiobook.Description = updatedAudiobook.Description;
@@ -131,7 +133,7 @@ namespace Listenarr.Api.Features.Library
             existingAudiobook.Abridged = updatedAudiobook.Abridged;
             existingAudiobook.Monitored = updatedAudiobook.Monitored;
 
-            if (updatedAudiobook.FilePath != null) existingAudiobook.FilePath = updatedAudiobook.FilePath;
+            if (!basePathRewritten && updatedAudiobook.FilePath != null) existingAudiobook.FilePath = updatedAudiobook.FilePath;
             if (updatedAudiobook.FileSize.HasValue) existingAudiobook.FileSize = updatedAudiobook.FileSize;
             if (updatedAudiobook.Quality != null) existingAudiobook.Quality = updatedAudiobook.Quality;
 

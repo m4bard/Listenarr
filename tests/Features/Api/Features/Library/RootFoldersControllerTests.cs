@@ -76,6 +76,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         private class FakeService : IRootFolderService
         {
             public List<RootFolder> Store { get; } = new List<RootFolder>();
+            public bool ThrowPersistenceConflictOnDelete { get; set; }
 
             public Task<RootFolder?> GetDefaultAsync() => Task.FromResult(Store.Count > 0 ? Store.First() : null);
 
@@ -113,6 +114,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             {
                 var idx = Store.FindIndex(s => s.Id == id);
                 if (idx < 0) throw new KeyNotFoundException("Root folder not found");
+                if (ThrowPersistenceConflictOnDelete)
+                    throw new DbUpdateException("Delete failed due to relational constraint.", new Exception("FK"));
 
                 // simulate in-use error if path contains "inuse"
                 if (Store[idx].Path?.Contains("inuse") == true && reassignRootId == null)
@@ -283,6 +286,28 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var res = await controller.Delete(1, 2);
             var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(res);
             Assert.Contains("Deleted", ok.Value.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task Delete_PersistenceConflict_ReturnsConflict()
+        {
+            var svc = new FakeService
+            {
+                ThrowPersistenceConflictOnDelete = true
+            };
+            svc.Store.Add(new RootFolder { Id = 1, Name = "R", Path = FileUtils.GetAbsolutePath("delete-conflict") });
+            var db = CreateDb();
+            var controller = new RootFoldersController(
+                svc,
+                _fakeQueue,
+                new EfAudiobookFileRepository(db),
+                new AudiobookRepository(db),
+                new LocalFileSystem());
+
+            var result = await controller.Delete(1, null);
+
+            var conflict = Assert.IsType<Microsoft.AspNetCore.Mvc.ConflictObjectResult>(result);
+            Assert.Contains("persisted references", conflict.Value?.ToString() ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         }
     }
 

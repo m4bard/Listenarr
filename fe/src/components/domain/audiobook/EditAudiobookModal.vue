@@ -1767,84 +1767,120 @@ async function handleSave() {
       formData.value.seriesMemberships,
     )
     const primarySeries = derivePrimarySeriesMembership(normalizedSeriesMemberships)
+    const normalizedTitle = normalizeOptionalText(formData.value.title)
+    const normalizedSubtitle = normalizeOptionalText(formData.value.subtitle)
+    const normalizedAuthors = normalizeStringList(formData.value.authors)
+    const normalizedNarrators = normalizeStringList(formData.value.narrators)
+    const normalizedDescription = normalizeOptionalText(formData.value.description)
+    const normalizedPublisher = normalizeOptionalText(formData.value.publisher)
+    const normalizedLanguage = normalizeLanguageText(formData.value.language)
+    const normalizedPublishedDate = normalizeOptionalText(formData.value.publishedDate)
+    const normalizedPublishYear = normalizeOptionalText(formData.value.publishYear)
+    const normalizedEdition = normalizeOptionalText(formData.value.edition)
+    const normalizedGenres = normalizeStringList(formData.value.genres)
+    const normalizedImageUrl = normalizeOptionalText(formData.value.imageUrl)
+    const normalizedTags = [...formData.value.tags].sort()
+    const baselineTags = [...(audiobook.tags || [])].sort()
+    const normalizedRuntimeInput = normalizeNumericInput(formData.value.runtime)
+    const baselineRuntimeInput = normalizeNumericInput(audiobook.runtime?.toString())
 
-    // Build update payload with current form values
-    const updates: Partial<Audiobook> = {
-      monitored: formData.value.monitored,
-      title: normalizeOptionalText(formData.value.title),
-      subtitle: normalizeOptionalText(formData.value.subtitle),
-      authors: normalizeStringList(formData.value.authors),
-      narrators: normalizeStringList(formData.value.narrators),
-      description: normalizeOptionalText(formData.value.description),
-      publisher: normalizeOptionalText(formData.value.publisher),
-      language: normalizeLanguageText(formData.value.language),
-      publishedDate: normalizeOptionalText(formData.value.publishedDate),
-      publishYear: normalizeOptionalText(formData.value.publishYear),
-      edition: normalizeOptionalText(formData.value.edition),
-      series: primarySeries.series,
-      seriesNumber: primarySeries.seriesNumber,
-      seriesMemberships: normalizedSeriesMemberships.map((membership, index) => ({
+    const updates: Partial<Audiobook> = {}
+    if (formData.value.monitored !== Boolean(audiobook.monitored)) {
+      updates.monitored = formData.value.monitored
+    }
+
+    if (formData.value.qualityProfileId !== (audiobook.qualityProfileId ?? null)) {
+      updates.qualityProfileId =
+        formData.value.qualityProfileId === null ? -1 : formData.value.qualityProfileId
+    }
+
+    if (normalizedTitle !== normalizeOptionalText(audiobook.title)) {
+      updates.title = normalizedTitle
+    }
+
+    if (normalizedSubtitle !== normalizeOptionalText(audiobook.subtitle)) {
+      updates.subtitle = normalizedSubtitle
+    }
+
+    if (serializeStringList(normalizedAuthors) !== serializeStringList(audiobook.authors)) {
+      updates.authors = normalizedAuthors
+    }
+
+    if (serializeStringList(normalizedNarrators) !== serializeStringList(audiobook.narrators)) {
+      updates.narrators = normalizedNarrators
+    }
+
+    if (normalizedDescription !== normalizeOptionalText(audiobook.description)) {
+      updates.description = normalizedDescription
+    }
+
+    if (normalizedPublisher !== normalizeOptionalText(audiobook.publisher)) {
+      updates.publisher = normalizedPublisher
+    }
+
+    if (normalizedLanguage !== normalizeLanguageText(audiobook.language)) {
+      updates.language = normalizedLanguage
+    }
+
+    if (normalizedPublishedDate !== normalizeOptionalText(audiobook.publishedDate)) {
+      updates.publishedDate = normalizedPublishedDate
+    }
+
+    if (normalizedPublishYear !== normalizeOptionalText(audiobook.publishYear)) {
+      updates.publishYear = normalizedPublishYear
+    }
+
+    if (normalizedRuntimeInput !== '' && normalizedRuntimeInput !== baselineRuntimeInput) {
+      if (parsedRuntime !== undefined) {
+        updates.runtime = parsedRuntime
+      }
+    }
+
+    if (normalizedEdition !== normalizeOptionalText(audiobook.edition)) {
+      updates.edition = normalizedEdition
+    }
+
+    if (
+      serializeSeriesMembershipRows(formData.value.seriesMemberships) !==
+      serializeSeriesMembershipRows(
+        audiobook.seriesMemberships,
+        audiobook.series,
+        audiobook.seriesNumber,
+      )
+    ) {
+      updates.series = primarySeries.series
+      updates.seriesNumber = primarySeries.seriesNumber
+      updates.seriesMemberships = normalizedSeriesMemberships.map((membership, index) => ({
         id: membership.id,
         seriesName: membership.seriesName,
         seriesNumber: membership.seriesNumber || undefined,
         seriesAsin: membership.seriesAsin || undefined,
         isPrimary: Boolean(membership.isPrimary),
         sortOrder: index,
-      })),
-      genres: normalizeStringList(formData.value.genres),
-      imageUrl: normalizeOptionalText(formData.value.imageUrl),
-      tags: formData.value.tags,
-      abridged: formData.value.abridged,
-      explicit: formData.value.explicit,
+      }))
     }
 
-    if (parsedRuntime !== undefined) {
-      updates.runtime = parsedRuntime
+    if (serializeStringList(normalizedGenres) !== serializeStringList(audiobook.genres)) {
+      updates.genres = normalizedGenres
     }
 
-    // If qualityProfileId is null, send -1 to signal "use default"
-    // Otherwise send the actual ID
-    if (formData.value.qualityProfileId === null) {
-      ;(updates as { qualityProfileId?: number }).qualityProfileId = -1 // -1 means "use default profile"
-    } else {
-      updates.qualityProfileId = formData.value.qualityProfileId
+    if (normalizedImageUrl !== normalizeOptionalText(audiobook.imageUrl)) {
+      updates.imageUrl = normalizedImageUrl
     }
 
-    const hasNonIdentifierChanges =
-      formData.value.monitored !== Boolean(audiobook.monitored) ||
-      formData.value.qualityProfileId !== (audiobook.qualityProfileId ?? null) ||
-      normalizeOptionalText(formData.value.title) !== normalizeOptionalText(audiobook.title) ||
-      normalizeOptionalText(formData.value.subtitle) !==
-        normalizeOptionalText(audiobook.subtitle) ||
-      serializeStringList(formData.value.authors) !== serializeStringList(audiobook.authors) ||
-      serializeStringList(formData.value.narrators) !== serializeStringList(audiobook.narrators) ||
-      normalizeOptionalText(formData.value.description) !==
-        normalizeOptionalText(audiobook.description) ||
-      normalizeOptionalText(formData.value.publisher) !==
-        normalizeOptionalText(audiobook.publisher) ||
-      normalizeLanguageText(formData.value.language) !==
-        normalizeLanguageText(audiobook.language) ||
-      normalizeOptionalText(formData.value.publishedDate) !==
-        normalizeOptionalText(audiobook.publishedDate) ||
-      normalizeOptionalText(formData.value.publishYear) !==
-        normalizeOptionalText(audiobook.publishYear) ||
-      (normalizeNumericInput(formData.value.runtime) !== '' &&
-        normalizeNumericInput(formData.value.runtime) !==
-          normalizeNumericInput(audiobook.runtime?.toString())) ||
-      normalizeOptionalText(formData.value.edition) !== normalizeOptionalText(audiobook.edition) ||
-      serializeSeriesMembershipRows(formData.value.seriesMemberships) !==
-        serializeSeriesMembershipRows(
-          audiobook.seriesMemberships,
-          audiobook.series,
-          audiobook.seriesNumber,
-        ) ||
-      serializeStringList(formData.value.genres) !== serializeStringList(audiobook.genres) ||
-      normalizeOptionalText(formData.value.imageUrl) !==
-        normalizeOptionalText(audiobook.imageUrl) ||
-      JSON.stringify([...formData.value.tags].sort()) !==
-        JSON.stringify([...(audiobook.tags || [])].sort()) ||
-      formData.value.abridged !== Boolean(audiobook.abridged) ||
-      formData.value.explicit !== Boolean(audiobook.explicit)
+    if (JSON.stringify(normalizedTags) !== JSON.stringify(baselineTags)) {
+      updates.tags = formData.value.tags
+    }
+
+    if (formData.value.abridged !== Boolean(audiobook.abridged)) {
+      updates.abridged = formData.value.abridged
+    }
+
+    if (formData.value.explicit !== Boolean(audiobook.explicit)) {
+      updates.explicit = formData.value.explicit
+    }
+
+    const hasNonIdentifierChanges = Object.keys(updates).length > 0
 
     if (basePathChanged) {
       try {

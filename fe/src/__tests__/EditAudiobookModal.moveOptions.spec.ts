@@ -48,6 +48,7 @@ const audiobook = {
   title: 'Sample',
   authors: ['Author'],
   basePath: 'C:\\root\\Some Author\\Some Title',
+  imageUrl: 'C:\\root\\Some Author\\Some Title\\cover.jpg',
   monitored: true,
   tags: [],
 }
@@ -67,10 +68,10 @@ describe('EditAudiobookModal move options', () => {
     // let init settle
     await new Promise((r) => setTimeout(r, 200))
 
-    // Ensure there is a detectable change: set an explicit custom root and flip monitored
+    // Ensure there is a detectable change: set an explicit custom root and change title
     ;(wrapper.vm as unknown).selectedRootId = 0
     ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\New Author\\New Book'
-    ;(wrapper.vm as unknown).formData.monitored = false
+    ;(wrapper.vm as unknown).formData.title = 'Sample Updated'
     await wrapper.vm.$nextTick()
 
     // Start save flow and resolve the in-component confirmation promise by
@@ -92,10 +93,13 @@ describe('EditAudiobookModal move options', () => {
       deleteEmptySource: false,
     })
     expect(apiService.updateAudiobook).toHaveBeenCalledTimes(1)
-    expect(apiService.updateAudiobook).toHaveBeenCalledWith(
-      1,
-      expect.not.objectContaining({ basePath: expect.anything() }),
-    )
+    const updatePayload = vi.mocked(apiService.updateAudiobook).mock.calls[0][1] as Record<
+      string,
+      unknown
+    >
+    expect(updatePayload.title).toBe('Sample Updated')
+    expect(Object.prototype.hasOwnProperty.call(updatePayload, 'basePath')).toBe(false)
+    expect(Object.prototype.hasOwnProperty.call(updatePayload, 'imageUrl')).toBe(false)
     expect(vi.mocked(apiService.moveAudiobook).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(apiService.updateAudiobook).mock.invocationCallOrder[0],
     )

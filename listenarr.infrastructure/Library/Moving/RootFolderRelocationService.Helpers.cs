@@ -268,6 +268,11 @@ public sealed partial class RootFolderRelocationService
         return string.Join(" ", messages);
     }
 
+    private static string ResolveCurrentPathFallback(RootFolderRelocation relocation) =>
+        relocation.Status == RootFolderRelocationStatus.Completed
+            ? relocation.TargetPath
+            : relocation.SourcePath;
+
     private static RootFolderPathChangeResult Map(RootFolderRelocation relocation, string currentPath) => new(
         relocation.Id,
         relocation.RootFolderId,

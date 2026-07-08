@@ -206,6 +206,87 @@ namespace Listenarr.Tests.Features.Api.Features.Library
 
         [Fact]
         [Trait("Method", "UpdateAudiobook")]
+        [Trait("Scenario", "LegacyBasePathCompatibilityIgnoresStalePathFields")]
+        public async Task UpdateAudiobook_LegacyBasePathChange_DoesNotRestoreStaleFileOrImagePaths()
+        {
+            // Given
+            var rootPath = FileService.GetTempDirectory("listenarr-update-stale-path-root");
+            await _rootFolderRepository.AddAsync(new RootFolderBuilder()
+                .WithName("Stale Path Root")
+                .WithPath(rootPath)
+                .WithIsDefault()
+                .Build());
+
+            var sourcePath = FileService.GetTempDirectory("listenarr-update-stale-path-source");
+            var targetPath = Path.Join(rootPath, "Author", "Title");
+            var staleFilePath = Path.Join(sourcePath, "book.m4b");
+            var staleImagePath = Path.Join(sourcePath, "cover.jpg");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Stale Path Payload",
+                BasePath = sourcePath,
+                FilePath = staleFilePath,
+                ImageUrl = staleImagePath,
+                Files = [new AudiobookFile { Path = staleFilePath }]
+            });
+            var controller = _provider.GetRequiredService<LibraryController>();
+
+            // When
+            var result = await controller.UpdateAudiobook(audiobook.Id, new Audiobook
+            {
+                BasePath = targetPath,
+                FilePath = staleFilePath,
+                ImageUrl = staleImagePath,
+                Title = "Stale Path Payload Edited"
+            });
+
+            // Then
+            Assert.IsType<OkObjectResult>(result);
+            var updated = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(updated);
+            Assert.Equal("Stale Path Payload Edited", updated.Title);
+            Assert.Equal(FileUtils.NormalizeStoredPath(targetPath), updated.BasePath);
+            Assert.Equal(Path.Join(targetPath, "book.m4b"), updated.FilePath);
+            Assert.Equal(Path.Join(targetPath, "cover.jpg"), updated.ImageUrl);
+            Assert.Contains(updated.Files!, file => file.Path == Path.Join(targetPath, "book.m4b"));
+            Assert.DoesNotContain(updated.Files!, file => file.Path == staleFilePath);
+        }
+
+        [Fact]
+        [Trait("Method", "UpdateAudiobook")]
+        [Trait("Scenario", "MetadataOnlyUpdateStillAppliesExplicitImagePathField")]
+        public async Task UpdateAudiobook_MetadataOnlyUpdate_StillAllowsExplicitImagePathAssignments()
+        {
+            // Given
+            var basePath = FileService.GetTempDirectory("listenarr-update-metadata-path-base");
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Metadata Path Update",
+                BasePath = basePath,
+                ImageUrl = Path.Join(basePath, "original.jpg")
+            });
+            var updatedImagePath = Path.Join(basePath, "relinked.jpg");
+            var controller = _provider.GetRequiredService<LibraryController>();
+
+            // When
+            var result = await controller.UpdateAudiobook(audiobook.Id, new Audiobook
+            {
+                Title = "Metadata Path Update Edited",
+                BasePath = basePath,
+                ImageUrl = updatedImagePath
+            });
+
+            // Then
+            Assert.IsType<OkObjectResult>(result);
+            var updated = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(updated);
+            Assert.Equal("Metadata Path Update Edited", updated.Title);
+            Assert.Equal(basePath, updated.BasePath);
+            Assert.Equal(updatedImagePath, updated.ImageUrl);
+        }
+
+        [Fact]
+        [Trait("Method", "UpdateAudiobook")]
         [Trait("Scenario", "LegacyBasePathCompatibilityRejectsInvalidDestination")]
         public async Task UpdateAudiobook_LegacyBasePathOutsideConfiguredRoots_IsRejected()
         {

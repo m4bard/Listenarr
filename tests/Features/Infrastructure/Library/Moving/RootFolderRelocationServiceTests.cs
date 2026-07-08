@@ -901,6 +901,62 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DeleteRootFolder_PreservesCompletedRelocationHistoryAndKeepsHistoryQueryable()
+    {
+        var source = Path.Join(Path.GetTempPath(), $"delete-root-history-source-{Guid.NewGuid():N}");
+        var target = Path.Join(Path.GetTempPath(), $"delete-root-history-target-{Guid.NewGuid():N}");
+        Guid relocationId;
+        DateTime? completedAt;
+
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var root = new RootFolder { Name = "Library", Path = source };
+            db.RootFolders.Add(root);
+            await db.SaveChangesAsync();
+
+            var relocation = new RootFolderRelocation
+            {
+                RootFolderId = root.Id,
+                ActiveRootFolderId = null,
+                SourcePath = source,
+                TargetPath = target,
+                Mode = RootFolderRelocationMode.Relocate,
+                Status = RootFolderRelocationStatus.Completed,
+                DesiredName = "Library",
+                TotalJobs = 1,
+                CompletedJobs = 1,
+                CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+                CompletedAt = DateTime.UtcNow
+            };
+            db.RootFolderRelocations.Add(relocation);
+            await db.SaveChangesAsync();
+            relocationId = relocation.Id;
+            completedAt = relocation.CompletedAt;
+
+            db.RootFolders.Remove(root);
+            await db.SaveChangesAsync();
+        }
+
+        await using (var verification = await _factory.CreateDbContextAsync())
+        {
+            Assert.Empty(await verification.RootFolders.ToListAsync());
+            var relocation = await verification.RootFolderRelocations.SingleAsync(candidate => candidate.Id == relocationId);
+            Assert.Null(relocation.RootFolderId);
+            Assert.Equal(source, relocation.SourcePath);
+            Assert.Equal(target, relocation.TargetPath);
+            Assert.Equal(RootFolderRelocationStatus.Completed, relocation.Status);
+            Assert.Equal(completedAt, relocation.CompletedAt);
+        }
+
+        var result = await CreateService().GetAsync(relocationId);
+        Assert.NotNull(result);
+        Assert.Null(result!.RootFolderId);
+        Assert.Equal(target, result.CurrentPath);
+        Assert.Equal(target, result.TargetPath);
+        Assert.Equal(RootFolderRelocationStatus.Completed, result.Status);
+    }
+
+    [Fact]
     public async Task RetryAsync_SupersededJobWithCanonicalReplacement_DoesNotCollide()
     {
         var source = Path.Join(Path.GetTempPath(), $"superseded-collision-source-{Guid.NewGuid():N}");

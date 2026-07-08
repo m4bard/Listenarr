@@ -22,9 +22,9 @@ public sealed class RootFolderRelocation
 {
     [Key]
     public Guid Id { get; set; } = Guid.NewGuid();
-    public int RootFolderId { get; set; }
+    public int? RootFolderId { get; set; }
     public int? ActiveRootFolderId { get; set; }
-    public RootFolder RootFolder { get; set; } = null!;
+    public RootFolder? RootFolder { get; set; }
     [Required, MaxLength(1000)]
     public string SourcePath { get; set; } = string.Empty;
     public FileSystemCaseSensitivityMode SourceCaseSensitivityMode { get; set; } = FileSystemCaseSensitivityMode.Auto;

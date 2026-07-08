@@ -12,7 +12,7 @@ public sealed record RootFolderPathChangeCommand(
 
 public sealed record RootFolderPathChangeResult(
     Guid? RelocationId,
-    int RootFolderId,
+    int? RootFolderId,
     string CurrentPath,
     string TargetPath,
     RootFolderRelocationStatus Status,

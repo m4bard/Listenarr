@@ -14,11 +14,14 @@ public sealed partial class RootFolderRelocationService
             .AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.Id == relocationId, cancellationToken);
         if (relocation == null) return null;
-        var rootPath = await db.RootFolders
-            .Where(root => root.Id == relocation.RootFolderId)
-            .Select(root => root.Path)
-            .SingleAsync(cancellationToken);
-        return Map(relocation, rootPath);
+        var fallbackPath = ResolveCurrentPathFallback(relocation);
+        var rootPath = relocation.RootFolderId.HasValue
+            ? await db.RootFolders
+                .Where(root => root.Id == relocation.RootFolderId.Value)
+                .Select(root => root.Path)
+                .SingleOrDefaultAsync(cancellationToken)
+            : null;
+        return Map(relocation, rootPath ?? fallbackPath);
     }
 
     public async Task<RootFolderRelocation?> GetActiveForRootAsync(
