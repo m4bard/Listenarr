@@ -89,8 +89,18 @@ internal static class AudiobookPathReferenceRewriter
                 sourceBasePath,
                 path,
                 sourceSemantics,
-                out var relativePath)
-            || !FileSystemPathIdentity.TryResolveRelativePathWithinBase(
+                out var relativePath))
+        {
+            throw new InvalidOperationException(
+                $"Stored audiobook path '{path}' could not be mapped to the new base path.");
+        }
+
+        if (string.IsNullOrEmpty(relativePath))
+        {
+            return targetBasePath;
+        }
+
+        if (!FileSystemPathIdentity.TryResolveRelativePathWithinBase(
                 targetBasePath,
                 FileSystemPathIdentity.ConvertRelativePathSyntax(
                     relativePath,
