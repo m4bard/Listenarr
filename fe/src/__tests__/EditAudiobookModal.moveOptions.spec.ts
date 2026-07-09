@@ -18,6 +18,27 @@
 import { mount } from '@vue/test-utils'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
+type MoveJobUpdate = { jobId?: string; status?: string; target?: string; error?: string }
+
+const toastMocks = vi.hoisted(() => ({
+  info: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+}))
+
+const signalRMocks = vi.hoisted(() => {
+  const state = {
+    callback: null as ((job: MoveJobUpdate) => void) | null,
+    unsubscribe: vi.fn(),
+    onMoveJobUpdate: vi.fn(),
+  }
+  state.onMoveJobUpdate.mockImplementation((callback: (job: MoveJobUpdate) => void) => {
+    state.callback = callback
+    return state.unsubscribe
+  })
+  return state
+})
+
 vi.mock('@/services/api', () => ({
   apiService: {
     getAudiobook: vi.fn().mockImplementation(async (id: number) => ({ id })),
@@ -32,12 +53,12 @@ vi.mock('@/services/api', () => ({
 }))
 
 vi.mock('@/services/toastService', () => ({
-  useToast: () => ({ info: vi.fn(), success: vi.fn(), error: vi.fn() }),
+  useToast: () => toastMocks,
 }))
 
 vi.mock('@/services/signalr', () => ({
   signalRService: {
-    onMoveJobUpdate: vi.fn(() => () => {}),
+    onMoveJobUpdate: signalRMocks.onMoveJobUpdate,
   },
 }))
 
@@ -53,9 +74,24 @@ const audiobook = {
   tags: [],
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
 describe('EditAudiobookModal move options', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    signalRMocks.callback = null
+    signalRMocks.onMoveJobUpdate.mockImplementation((callback: (job: MoveJobUpdate) => void) => {
+      signalRMocks.callback = callback
+      return signalRMocks.unsubscribe
+    })
   })
 
   it('Change without moving plus metadata should call move API before metadata update', async () => {
@@ -173,6 +209,88 @@ describe('EditAudiobookModal move options', () => {
       deleteEmptySource: true,
     })
   })
+
+  it('Running move status shows move-in-progress toast', async () => {
+    const { apiService } = await import('@/services/api')
+    const updateDeferred = createDeferred<{ message: string; audiobook: object }>()
+    vi.mocked(apiService.updateAudiobook).mockImplementationOnce(() => updateDeferred.promise)
+    const wrapper = mount(EditAudiobookModal, {
+      props: { isOpen: true, audiobook },
+      attachTo: document.body,
+      global: { plugins: [(await import('pinia')).createPinia()] },
+    })
+
+    await new Promise((r) => setTimeout(r, 200))
+    ;(wrapper.vm as unknown).selectedRootId = 0
+    ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\New Author\\New Book'
+    ;(wrapper.vm as unknown).formData.title = 'Sample Updated'
+    await wrapper.vm.$nextTick()
+
+    const savePromise = (wrapper.vm as unknown).handleSave()
+    await new Promise((r) => setTimeout(r, 10))
+    const resolver = (wrapper.vm as unknown).moveConfirmResolver
+    if (resolver) resolver({ proceed: true, moveFiles: true, deleteEmptySource: true })
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(signalRMocks.callback).toBeTypeOf('function')
+    signalRMocks.callback!({
+      jobId: 'job-1',
+      status: 'Running',
+      target: 'C:/root/New Author/New Book',
+    })
+
+    expect(toastMocks.info).toHaveBeenCalledWith(
+      'Move in progress',
+      'Moving files to C:/root/New Author/New Book',
+    )
+    expect(signalRMocks.unsubscribe).not.toHaveBeenCalled()
+
+    updateDeferred.resolve({ message: 'ok', audiobook: {} })
+    await savePromise
+  })
+
+  it.each([
+    ['NeedsAttention', 'Move needs attention', 'Manual review required'],
+    ['Superseded', 'Move failed', 'Move job did not complete. Check the move queue.'],
+  ])(
+    '%s move status shows terminal error toast and unsubscribes',
+    async (status, title, message) => {
+      const { apiService } = await import('@/services/api')
+      const updateDeferred = createDeferred<{ message: string; audiobook: object }>()
+      vi.mocked(apiService.updateAudiobook).mockImplementationOnce(() => updateDeferred.promise)
+      const wrapper = mount(EditAudiobookModal, {
+        props: { isOpen: true, audiobook },
+        attachTo: document.body,
+        global: { plugins: [(await import('pinia')).createPinia()] },
+      })
+
+      await new Promise((r) => setTimeout(r, 200))
+      ;(wrapper.vm as unknown).selectedRootId = 0
+      ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\New Author\\New Book'
+      ;(wrapper.vm as unknown).formData.title = 'Sample Updated'
+      await wrapper.vm.$nextTick()
+
+      const savePromise = (wrapper.vm as unknown).handleSave()
+      await new Promise((r) => setTimeout(r, 10))
+      const resolver = (wrapper.vm as unknown).moveConfirmResolver
+      if (resolver) resolver({ proceed: true, moveFiles: true, deleteEmptySource: true })
+      await new Promise((r) => setTimeout(r, 50))
+
+      expect(signalRMocks.callback).toBeTypeOf('function')
+      signalRMocks.callback!({
+        jobId: 'job-1',
+        status,
+        target: 'C:/root/New Author/New Book',
+        error: status === 'NeedsAttention' ? message : undefined,
+      })
+
+      expect(toastMocks.error).toHaveBeenCalledWith(title, message)
+      expect(signalRMocks.unsubscribe).toHaveBeenCalledTimes(1)
+
+      updateDeferred.resolve({ message: 'ok', audiobook: {} })
+      await savePromise
+    },
+  )
 
   it('Destination with parent traversal should be invalid and not call save APIs', async () => {
     const wrapper = mount(EditAudiobookModal, {

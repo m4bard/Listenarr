@@ -146,18 +146,47 @@ namespace Listenarr.Api.Features.Library
                 {
                     return new BadRequestObjectResult(new { message = $"DestinationPath is invalid: {validationReason}" });
                 }
-                if (!_fileSystem.TryValidateMutationTarget(final, allowedMoveRoots.Select(root => root.Path), out final, out var finalReason))
+                var destinationInsideConfiguredBoundary = _fileSystem.TryValidateMutationTarget(
+                    final,
+                    allowedMoveRoots.Select(root => root.Path),
+                    out final,
+                    out var finalReason);
+                var customPhysicalDestination = false;
+                if (!destinationInsideConfiguredBoundary)
                 {
-                    _logger.LogWarning(
-                        "Blocked move destination for audiobook {AudiobookId}: {Destination}. Reason: {Reason}",
-                        id,
-                        final,
-                        finalReason);
-                    return new BadRequestObjectResult(new { message = "DestinationPath must be inside a configured root folder or output path" });
+                    var customMutationRoot = TryFindNearestExistingDirectory(final);
+                    customPhysicalDestination = !string.IsNullOrEmpty(customMutationRoot)
+                        && _fileSystem.TryValidateMutationTarget(final, [customMutationRoot], out final, out finalReason);
+                    if (!customPhysicalDestination)
+                    {
+                        _logger.LogWarning(
+                            "Blocked move destination for audiobook {AudiobookId}: {Destination}. Reason: {Reason}",
+                            id,
+                            final,
+                            finalReason);
+                        return new BadRequestObjectResult(new { message = "DestinationPath must be inside a configured root folder or output path" });
+                    }
                 }
 
-                var targetBoundary = FindAllowedMoveRoot(final, allowedMoveRoots)
-                    ?? throw new InvalidOperationException("Destination filesystem identity is unavailable.");
+                var targetBoundary = FindAllowedMoveRoot(final, allowedMoveRoots);
+                if (targetBoundary == null && customPhysicalDestination)
+                {
+                    var customTargetResolution = await _semanticsResolver.ResolveAsync(final);
+                    if (customTargetResolution.State != PathIdentityState.Valid)
+                    {
+                        return new BadRequestObjectResult(new { message = customTargetResolution.Reason ?? "Destination filesystem identity is unavailable." });
+                    }
+
+                    targetBoundary = new MoveRootBoundary(
+                        final,
+                        customTargetResolution.Semantics,
+                        FileSystemCaseSensitivityMode.Auto);
+                }
+
+                if (targetBoundary == null)
+                {
+                    throw new InvalidOperationException("Destination filesystem identity is unavailable.");
+                }
 
                 var sourcePath = !string.IsNullOrEmpty(request.SourcePath)
                     ? request.SourcePath
@@ -359,6 +388,29 @@ namespace Listenarr.Api.Features.Library
                 normalizedRoot,
                 resolution.Semantics,
                 caseSensitivityMode));
+        }
+
+        private string? TryFindNearestExistingDirectory(string path)
+        {
+            try
+            {
+                var current = Path.GetFullPath(path);
+                while (!string.IsNullOrWhiteSpace(current))
+                {
+                    if (_fileSystem.DirectoryExists(current))
+                    {
+                        return current;
+                    }
+
+                    current = _fileSystem.GetParentDirectory(current);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Unable to resolve nearest existing custom move destination directory.");
+            }
+
+            return null;
         }
 
         private static MoveRootBoundary? FindAllowedMoveRoot(

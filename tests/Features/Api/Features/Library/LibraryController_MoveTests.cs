@@ -105,6 +105,55 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
+        [Trait("Method", "EnqueueMove")]
+        [Trait("Scenario", "CreatesCustomPhysicalDestinationOutsideConfiguredRoots")]
+        public async Task MoveAudiobook_MoveFilesTrue_AllowsCustomDestinationOutsideConfiguredRootsAndCreatesParent()
+        {
+            var mockMoveQueue = new Mock<IMoveQueueService>();
+            var expectedId = Guid.NewGuid();
+            mockMoveQueue.Setup(m => m.EnqueueMoveAsync(
+                    It.IsAny<int>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
+                .ReturnsAsync(expectedId);
+
+            Init(services => services.WithSingleton(mockMoveQueue.Object));
+            var configuredOutputPath = FileService.GetTempDirectory("listenarr-move-output");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(configuredOutputPath)
+                .Build());
+
+            var sourcePath = FileService.GetTempDirectory("listenarr-move-src");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Custom Physical Move")
+                .WithBasePath(sourcePath)
+                .Build());
+            var customRoot = FileService.GetTempDirectory("listenarr-custom-destination");
+            var target = Path.Join(customRoot, "Author", "Title", "test");
+            var targetParent = Path.GetDirectoryName(target)!;
+
+            var result = await _provider.GetRequiredService<LibraryController>().EnqueueMove(
+                audiobook.Id,
+                new LibraryController.MoveRequest
+                {
+                    DestinationPath = target,
+                    SourcePath = sourcePath,
+                    MoveFiles = true,
+                    DeleteEmptySource = true
+                });
+
+            var accepted = Assert.IsType<AcceptedResult>(result);
+            Assert.Equal(202, accepted.StatusCode);
+            Assert.True(Directory.Exists(targetParent));
+            mockMoveQueue.Verify(m => m.EnqueueMoveAsync(
+                audiobook.Id,
+                FileUtils.NormalizeStoredPath(target),
+                sourcePath,
+                true), Times.Once);
+        }
+
+        [Fact]
         public async Task MoveAudiobook_RelocationConflictReturnsConflict()
         {
             var moveQueue = new Mock<IMoveQueueService>();

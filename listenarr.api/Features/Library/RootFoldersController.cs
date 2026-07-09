@@ -315,12 +315,23 @@ namespace Listenarr.Api.Features.Library
                     .Select(a => a.FilePath!)
                     .ToList();
                 var trackedPathSemantics = await ResolveFolderSemanticsAsync(folder);
-                var tracked = new HashSet<string>(
-                    trackedFromFiles.Concat(trackedFromAudiobooks),
-                    trackedPathSemantics.Comparer);
+                var tracked = trackedFromFiles
+                    .Concat(trackedFromAudiobooks)
+                    .Select(path => TryCanonicalizePathForComparison(path, trackedPathSemantics))
+                    .Where(path => path != null)
+                    .Select(path => path!)
+                    .ToHashSet(trackedPathSemantics.Comparer);
 
                 var filtered = (job.Results ?? new List<UnmatchedFileResult>())
-                    .Where(r => !tracked.Contains(r.FullPath) && _fileSystem.FileExists(r.FullPath))
+                    .Where(result =>
+                    {
+                        var canonicalPath = TryCanonicalizePathForComparison(
+                            result.FullPath,
+                            trackedPathSemantics);
+                        return canonicalPath != null
+                            && !tracked.Contains(canonicalPath)
+                            && _fileSystem.FileExists(result.FullPath);
+                    })
                     .ToList();
 
                 return Ok(new
@@ -343,6 +354,25 @@ namespace Listenarr.Api.Features.Library
             }
 
             return resolution.Semantics;
+        }
+
+        private static string? TryCanonicalizePathForComparison(
+            string? path,
+            FileSystemPathSemantics semantics)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            try
+            {
+                return FileSystemPathIdentity.Canonicalize(path, semantics.Syntax);
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
         }
 
         private async Task<RootFolderDto> MapAsync(RootFolder root)

@@ -1153,9 +1153,18 @@ function serializeStringList(values: string[] | null | undefined): string {
   return JSON.stringify(normalizeStringList(values))
 }
 
-// Move job tracking (shows queued/processing/completed/failed state)
+// Move job tracking (shows queued/running/completed/failed/attention state)
 const moveJob = ref<{ jobId: string; status: string; target?: string; error?: string } | null>(null)
 const moveUnsub = ref<(() => void) | null>(null)
+
+function cleanupMoveSubscription() {
+  try {
+    if (moveUnsub.value) {
+      moveUnsub.value()
+    }
+  } catch {}
+  moveUnsub.value = null
+}
 
 // In-component move confirmation modal state
 const showMoveConfirm = ref(false)
@@ -1913,17 +1922,18 @@ async function handleSave() {
 
             if (job.status === 'Completed') {
               toast.success('Move completed', `Files moved to ${job.target || combined}`)
-              try {
-                if (moveUnsub.value) moveUnsub.value()
-              } catch {}
-              moveUnsub.value = null
-            } else if (job.status === 'Failed') {
-              toast.error('Move failed', job.error || 'Move job failed. Check logs for details.')
-              try {
-                if (moveUnsub.value) moveUnsub.value()
-              } catch {}
-              moveUnsub.value = null
-            } else if (job.status === 'Processing') {
+              cleanupMoveSubscription()
+            } else if (
+              job.status === 'Failed' ||
+              job.status === 'NeedsAttention' ||
+              job.status === 'Superseded'
+            ) {
+              toast.error(
+                job.status === 'NeedsAttention' ? 'Move needs attention' : 'Move failed',
+                job.error || 'Move job did not complete. Check the move queue.',
+              )
+              cleanupMoveSubscription()
+            } else if (job.status === 'Running') {
               toast.info('Move in progress', `Moving files to ${job.target || combined}`)
             }
           })
@@ -2147,14 +2157,7 @@ function setPrimarySeriesMembership(index: number) {
 
 function close() {
   // If there's an active move subscription, unsubscribe to avoid leaks
-  try {
-    if (moveUnsub.value) {
-      try {
-        moveUnsub.value()
-      } catch {}
-      moveUnsub.value = null
-    }
-  } catch {}
+  cleanupMoveSubscription()
   moveJob.value = null
   emit('close')
 }

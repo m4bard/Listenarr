@@ -262,6 +262,61 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
+        public async Task GetSavedUnmatched_FiltersTrackedFilesAfterCanonicalizingPathSyntax()
+        {
+            var rootPath = Path.Join(Path.GetTempPath(), $"saved-unmatched-canonical-root-{Guid.NewGuid():N}");
+            var resultPath = Path.Join(rootPath, "Book", "book.m4b");
+            var trackedPath = Path.Join(rootPath, "Book", ".", "book.m4b");
+            Directory.CreateDirectory(Path.GetDirectoryName(resultPath)!);
+            try
+            {
+                await File.WriteAllTextAsync(resultPath, "audio");
+                var svc = new FakeService();
+                svc.Store.Add(new RootFolder
+                {
+                    Id = 1,
+                    Name = "Root",
+                    Path = rootPath,
+                    CaseSensitivityMode = FileSystemCaseSensitivityMode.Auto,
+                    ResolvedCaseSensitivity = FileSystemCaseSensitivity.Unknown
+                });
+                var queue = new FakeUnmatchedQueue
+                {
+                    LastJob = new UnmatchedScanJob
+                    {
+                        RootFolderPath = rootPath,
+                        Status = "Completed",
+                        CompletedAt = DateTime.UtcNow,
+                        Results =
+                        [
+                            new UnmatchedFileResult { FullPath = resultPath }
+                        ]
+                    }
+                };
+                var db = CreateDb();
+                db.AudiobookFiles.Add(new AudiobookFile { Id = 1, Path = trackedPath, Format = "m4b" });
+                await db.SaveChangesAsync();
+                var controller = new RootFoldersController(
+                    svc,
+                    queue,
+                    new EfAudiobookFileRepository(db),
+                    new AudiobookRepository(db),
+                    new LocalFileSystem());
+
+                var result = await controller.GetSavedUnmatched(1);
+
+                var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(result);
+                var items = ok.Value!.GetType().GetProperty("items")!.GetValue(ok.Value);
+                var list = Assert.IsAssignableFrom<List<UnmatchedFileResult>>(items);
+                Assert.Empty(list);
+            }
+            finally
+            {
+                Directory.Delete(rootPath, recursive: true);
+            }
+        }
+
+        [Fact]
         public async Task Delete_InUseWithoutReassign_ReturnsBadRequest()
         {
             var svc = new FakeService();
