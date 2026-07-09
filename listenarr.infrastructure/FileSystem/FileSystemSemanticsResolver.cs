@@ -97,7 +97,8 @@ public sealed class FileSystemSemanticsResolver : IFileSystemSemanticsResolver
             }
 
             var alternateLeaf = BuildAlternateCaseProbeName(leaf);
-            if (string.Equals(alternateLeaf, leaf, StringComparison.Ordinal))
+            if (string.Equals(alternateLeaf, leaf, StringComparison.Ordinal)
+                || Path.IsPathRooted(alternateLeaf))
             {
                 return null;
             }

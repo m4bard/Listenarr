@@ -187,8 +187,18 @@ public sealed partial class RootFolderRelocationService(
                 .ToList();
             var metadataTotal = affected.Count + skipped.Count;
             var completed = 0;
+            if (affected.Count > 0 && sourceResolution is null)
+            {
+                throw new InvalidOperationException(
+                    "Source filesystem semantics are required to rewrite affected audiobook metadata.");
+            }
+
+            var metadataSourceSemantics = sourceResolution?.Semantics;
             foreach (var audiobook in affected)
             {
+                var sourceSemantics = metadataSourceSemantics
+                    ?? throw new InvalidOperationException(
+                        "Source filesystem semantics are required to rewrite affected audiobook metadata.");
                 var sourceBasePath = audiobook.BasePath!;
                 try
                 {
@@ -196,13 +206,13 @@ public sealed partial class RootFolderRelocationService(
                         sourcePath,
                         targetPath,
                         sourceBasePath,
-                        sourceResolution!.Semantics,
+                        sourceSemantics,
                         targetResolution.Semantics);
                     AudiobookPathReferenceRewriter.Rewrite(
                         audiobook,
                         sourceBasePath,
                         destinationBasePath,
-                        sourceResolution.Semantics,
+                        sourceSemantics,
                         targetResolution.Semantics);
                     completed++;
                 }
