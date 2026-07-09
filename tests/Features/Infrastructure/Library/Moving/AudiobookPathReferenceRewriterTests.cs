@@ -67,22 +67,32 @@ public sealed class AudiobookPathReferenceRewriterTests
     }
 
     [Fact]
-    public void Rewrite_ThrowsWhenInScopeReferenceCannotBeMapped()
+    public void Rewrite_MapsSourceRootReferencesToTargetRoot()
     {
         var audiobook = new Audiobook
         {
             BasePath = "/library/Book",
-            FilePath = "/library/Book"
+            FilePath = "/library/Book",
+            ImageUrl = "/library/Book",
+            Files =
+            [
+                new AudiobookFile { Path = "/library/Book" }
+            ]
         };
         var semantics = new FileSystemPathSemantics(
             FileSystemPathSyntax.Unix,
             FileSystemCaseSensitivity.Sensitive);
 
-        Assert.Throws<InvalidOperationException>(() => AudiobookPathReferenceRewriter.Rewrite(
+        AudiobookPathReferenceRewriter.Rewrite(
             audiobook,
             "/library/Book",
             "/target/Book",
             semantics,
-            semantics));
+            semantics);
+
+        Assert.Equal(FileUtils.NormalizeStoredPath("/target/Book"), audiobook.BasePath);
+        Assert.Equal("/target/Book", audiobook.FilePath);
+        Assert.Equal("/target/Book", audiobook.ImageUrl);
+        Assert.Equal("/target/Book", audiobook.Files![0].Path);
     }
 }
