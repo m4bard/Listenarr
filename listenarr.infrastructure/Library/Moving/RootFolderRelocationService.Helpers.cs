@@ -66,12 +66,19 @@ public sealed partial class RootFolderRelocationService
         var candidateSemantics = FileSystemPathIdentity.ResolveComparisonSemantics(
             candidate.ResolvedCaseSensitivity,
             targetSemantics);
-        return candidate.PathIdentityKey == targetIdentityKey
-            || BoundariesOverlapUnderEitherSemantics(
-                targetPath,
-                candidate.Path,
-                targetSemantics,
-                candidateSemantics);
+        try
+        {
+            return candidate.PathIdentityKey == targetIdentityKey
+                || BoundariesOverlapUnderEitherSemantics(
+                    targetPath,
+                    candidate.Path,
+                    targetSemantics,
+                    candidateSemantics);
+        }
+        catch (ArgumentException)
+        {
+            return candidate.PathIdentityKey == targetIdentityKey;
+        }
     }
 
     private async Task<bool> ActiveBoundaryConflictsWithTargetAsync(
@@ -81,15 +88,30 @@ public sealed partial class RootFolderRelocationService
         FileSystemCaseSensitivityMode boundaryMode,
         CancellationToken cancellationToken)
     {
-        if (BoundariesOverlap(targetPath, boundaryPath, targetSemantics))
+        try
         {
-            return true;
+            if (BoundariesOverlap(targetPath, boundaryPath, targetSemantics))
+            {
+                return true;
+            }
+        }
+        catch (ArgumentException)
+        {
+            return false;
         }
 
-        var boundaryResolution = await semanticsResolver.ResolveAsync(
-            boundaryPath,
-            boundaryMode,
-            cancellationToken);
+        FileSystemSemanticsResolution boundaryResolution;
+        try
+        {
+            boundaryResolution = await semanticsResolver.ResolveAsync(
+                boundaryPath,
+                boundaryMode,
+                cancellationToken);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
         if (boundaryResolution.State == PathIdentityState.Valid)
         {
             return BoundariesOverlap(targetPath, boundaryPath, boundaryResolution.Semantics);

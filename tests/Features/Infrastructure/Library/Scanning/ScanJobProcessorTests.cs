@@ -87,6 +87,33 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
         }
 
         [Fact]
+        public async Task ProcessJobAsync_MissingBasePath_FailsWithoutClearingMetadataOrFiles()
+        {
+            var missingBasePath = Path.Join(Path.GetTempPath(), $"scan-processor-missing-{Guid.NewGuid():N}");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Missing Scan Book")
+                .WithBasePath(missingBasePath)
+                .Build());
+            await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
+                .WithAudiobook(audiobook)
+                .WithPath(Path.Join(missingBasePath, "Missing Scan Book.m4b"))
+                .Build());
+            var (queue, job) = await CreateQueuedScanJobAsync(audiobook);
+
+            var processor = _provider.GetRequiredService<IScanJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            Assert.True(queue.TryGetJob(job.Id, out var updatedJob));
+            Assert.Equal("Failed", updatedJob!.Status);
+            Assert.Equal("BasePath unavailable", updatedJob.Error);
+
+            var persistedAudiobook = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.Equal(missingBasePath, persistedAudiobook!.BasePath);
+            var files = await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id);
+            Assert.Single(files);
+        }
+
+        [Fact]
         public async Task ProcessJobAsync_CanceledToken_ThrowsBeforeStateChange()
         {
             var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()

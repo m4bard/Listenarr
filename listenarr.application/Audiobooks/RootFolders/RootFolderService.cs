@@ -194,19 +194,34 @@ namespace Listenarr.Application.Audiobooks.RootFolders
                 var existingSemantics = FileSystemPathIdentity.ResolveComparisonSemantics(
                     existingRoot.ResolvedCaseSensitivity,
                     requestedSemantics);
-                if (PathsAreEquivalentUnderEitherSemantics(existingRoot.Path, normalizedPath, requestedSemantics, existingSemantics))
+                try
                 {
-                    return new RootFolderConflict(existingRoot, RootFolderConflictType.Duplicate);
-                }
+                    if (PathsAreEquivalentUnderEitherSemantics(existingRoot.Path, normalizedPath, requestedSemantics, existingSemantics))
+                    {
+                        return new RootFolderConflict(existingRoot, RootFolderConflictType.Duplicate);
+                    }
 
-                if (PathIsInsideUnderEitherSemantics(normalizedPath, existingRoot.Path, requestedSemantics, existingSemantics))
-                {
-                    return new RootFolderConflict(existingRoot, RootFolderConflictType.RequestedRootIsNestedInsideExistingRoot);
-                }
+                    if (PathIsInsideUnderEitherSemantics(normalizedPath, existingRoot.Path, requestedSemantics, existingSemantics))
+                    {
+                        return new RootFolderConflict(existingRoot, RootFolderConflictType.RequestedRootIsNestedInsideExistingRoot);
+                    }
 
-                if (PathIsInsideUnderEitherSemantics(existingRoot.Path, normalizedPath, requestedSemantics, existingSemantics))
+                    if (PathIsInsideUnderEitherSemantics(existingRoot.Path, normalizedPath, requestedSemantics, existingSemantics))
+                    {
+                        return new RootFolderConflict(existingRoot, RootFolderConflictType.ExistingRootIsNestedInsideRequestedRoot);
+                    }
+                }
+                catch (ArgumentException exception)
                 {
-                    return new RootFolderConflict(existingRoot, RootFolderConflictType.ExistingRootIsNestedInsideRequestedRoot);
+                    // Legacy/manual databases may contain a root path that is invalid for
+                    // the current host OS, especially after switching between Docker/Linux
+                    // paths and a Windows development host. Do not let that stale row block
+                    // creation of a valid root; identity reconciliation will mark it
+                    // unavailable until the user repairs or deletes it.
+                    _logger?.LogWarning(
+                        exception,
+                        "Skipping root folder {RootFolderId} with invalid stored path while checking root-folder conflicts.",
+                        existingRoot.Id);
                 }
             }
 

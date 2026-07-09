@@ -66,14 +66,27 @@ public sealed partial class RootFolderRelocationService(
             throw new InvalidOperationException("The root folder already has an active relocation.");
         }
 
-        var sourceResolution = await semanticsResolver.ResolveAsync(
-            root.Path,
-            root.CaseSensitivityMode,
-            cancellationToken);
-        if (sourceResolution.State != PathIdentityState.Valid)
+        FileSystemSemanticsResolution? sourceResolution = null;
+        try
+        {
+            var resolvedSource = await semanticsResolver.ResolveAsync(
+                root.Path,
+                root.CaseSensitivityMode,
+                cancellationToken);
+            if (resolvedSource.State == PathIdentityState.Valid)
+            {
+                sourceResolution = resolvedSource;
+            }
+        }
+        catch (ArgumentException)
+        {
+            sourceResolution = null;
+        }
+
+        if (sourceResolution == null && command.Mode != RootFolderRelocationMode.MetadataOnly)
         {
             throw new InvalidOperationException(
-                "The current root filesystem semantics are unavailable; select an explicit override before moving it.");
+                "The current root folder path is invalid or unavailable; use metadata-only path change to repair it before relocating files.");
         }
 
         var targetIdentityKey = FileSystemPathIdentity.CreateKey(
@@ -126,12 +139,14 @@ public sealed partial class RootFolderRelocationService(
             .Include(audiobook => audiobook.Files)
             .Where(audiobook => audiobook.BasePath != null)
             .ToListAsync(cancellationToken);
-        var affected = audiobooks
-            .Where(audiobook => FileSystemPathIdentity.IsSameOrInside(
-                audiobook.BasePath!,
-                root.Path,
-                sourceResolution.Semantics))
-            .ToList();
+        var affected = sourceResolution == null
+            ? []
+            : audiobooks
+                .Where(audiobook => FileSystemPathIdentity.IsSameOrInside(
+                    audiobook.BasePath!,
+                    root.Path,
+                    sourceResolution.Semantics))
+                .ToList();
         var affectedAudiobookIds = affected.Select(audiobook => audiobook.Id).ToHashSet();
         var activeMoveJobs = await db.MoveJobs
             .Where(job => job.Status == MoveJobStatus.Queued
@@ -141,8 +156,9 @@ public sealed partial class RootFolderRelocationService(
             .ToListAsync(cancellationToken);
         var conflictingMoveJob = activeMoveJobs.FirstOrDefault(job =>
             affectedAudiobookIds.Contains(job.AudiobookId)
-            || PathTouchesBoundary(job.SourcePath, root.Path, sourceResolution.Semantics)
-            || PathTouchesBoundary(job.RequestedPath, root.Path, sourceResolution.Semantics)
+            || (sourceResolution != null
+                && (PathTouchesBoundary(job.SourcePath, root.Path, sourceResolution.Semantics)
+                    || PathTouchesBoundary(job.RequestedPath, root.Path, sourceResolution.Semantics)))
             || PathTouchesBoundary(job.SourcePath, targetPath, targetResolution.Semantics)
             || PathTouchesBoundary(job.RequestedPath, targetPath, targetResolution.Semantics));
         if (conflictingMoveJob != null)
@@ -169,7 +185,7 @@ public sealed partial class RootFolderRelocationService(
                         sourcePath,
                         targetPath,
                         sourceBasePath,
-                        sourceResolution.Semantics,
+                        sourceResolution!.Semantics,
                         targetResolution.Semantics);
                     AudiobookPathReferenceRewriter.Rewrite(
                         audiobook,
@@ -264,7 +280,7 @@ public sealed partial class RootFolderRelocationService(
                 root.Path,
                 targetPath,
                 audiobook.BasePath!,
-                sourceResolution.Semantics,
+                sourceResolution!.Semantics,
                 targetResolution.Semantics);
             db.MoveJobs.Add(new MoveJob
             {
@@ -410,17 +426,30 @@ public sealed partial class RootFolderRelocationService(
             var resolvedRoots = new List<(RootFolder Root, string Key)>();
             foreach (var root in roots)
             {
-                var resolution = await semanticsResolver.ResolveAsync(
-                    root.Path,
-                    root.CaseSensitivityMode,
-                    cancellationToken);
-                root.ResolvedCaseSensitivity = resolution.Semantics.CaseSensitivity;
-                root.PathIdentityState = resolution.State;
-                if (resolution.State == PathIdentityState.Valid)
+                try
                 {
-                    resolvedRoots.Add((
-                        root,
-                        FileSystemPathIdentity.CreateKey("root", root.Path, resolution.Semantics)));
+                    var resolution = await semanticsResolver.ResolveAsync(
+                        root.Path,
+                        root.CaseSensitivityMode,
+                        cancellationToken);
+                    root.ResolvedCaseSensitivity = resolution.Semantics.CaseSensitivity;
+                    root.PathIdentityState = resolution.State;
+                    if (resolution.State == PathIdentityState.Valid)
+                    {
+                        resolvedRoots.Add((
+                            root,
+                            FileSystemPathIdentity.CreateKey("root", root.Path, resolution.Semantics)));
+                    }
+                }
+                catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+                {
+                    // Existing databases can contain a root path that is invalid on the
+                    // current host after switching between Docker/Linux paths and a
+                    // Windows development host. Keep the worker alive and surface the
+                    // root as unavailable until the path is repaired or deleted.
+                    root.ResolvedCaseSensitivity = FileSystemCaseSensitivity.Unknown;
+                    root.PathIdentityState = PathIdentityState.Unavailable;
+                    root.PathIdentityKey = null;
                 }
             }
 

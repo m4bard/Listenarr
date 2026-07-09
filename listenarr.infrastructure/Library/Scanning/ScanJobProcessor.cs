@@ -108,93 +108,27 @@ namespace Listenarr.Infrastructure.Library.Scanning
 
                 if (usedBasePath && (string.IsNullOrEmpty(scanRoot) || !Directory.Exists(scanRoot)))
                 {
-                    _logger.LogWarning("Audiobook BasePath missing for job {JobId}: {Path}. Removing tracked files.", job.Id, LogRedaction.SanitizeFilePath(scanRoot));
-
-                    try
+                    // Do not remove tracked files or clear BasePath just because a scan cannot
+                    // currently access the saved directory. Directory.Exists also returns false
+                    // for permission, process-user, stale metadata, and mount visibility issues,
+                    // so destructive reconciliation here can erase valid metadata after a typo
+                    // or temporary access failure. Surface the scan failure and let an explicit
+                    // repair/update path operation change metadata intentionally.
+                    _logger.LogWarning(
+                        "Audiobook BasePath is unavailable for scan job {JobId}: {Path}. Leaving tracked files unchanged.",
+                        job.Id,
+                        LogRedaction.SanitizeFilePath(scanRoot));
+                    try { _queue.UpdateJobStatus(job.Id, "Failed", "BasePath unavailable"); }
+                    catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
                     {
-                        var existingFiles = await fileRepository.GetByAudiobookIdAsync(audiobook.Id);
-
-                        List<object> removedFilesDto = new();
-                        if (existingFiles.Count > 0)
-                        {
-                            foreach (var rem in existingFiles)
-                            {
-                                removedFilesDto.Add(new { id = rem.Id, path = rem.Path });
-                                await fileRepository.DeleteAsync(rem.Id);
-                                _logger.LogInformation("Removing AudiobookFile DB row Id={Id} Path={Path} due to missing BasePath", rem.Id, LogRedaction.SanitizeFilePath(rem.Path));
-
-                                var historyEntry = new History
-                                {
-                                    AudiobookId = audiobook.Id,
-                                    AudiobookTitle = audiobook.Title ?? "Unknown",
-                                    EventType = "File Removed",
-                                    Message = "File removed (base path missing)",
-                                    Source = "Scan",
-                                    Data = JsonSerializer.Serialize(new
-                                    {
-                                        FilePath = rem.Path,
-                                        FileSize = rem.Size,
-                                        Format = rem.Format,
-                                        Source = rem.Source
-                                    }),
-                                    Timestamp = DateTime.UtcNow
-                                };
-                                await historyRepository.AddAsync(historyEntry);
-                            }
-                        }
-
-                        audiobook.BasePath = null;
-                        await audiobookRepository.UpdateAsync(audiobook);
-
-                        if (removedFilesDto.Count > 0)
-                        {
-                            try
-                            {
-                                await _hubContext.Clients.All.SendAsync("FilesRemoved", new { audiobookId = audiobook.Id, removed = removedFilesDto });
-                            }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                            {
-                                _logger.LogDebug(ex, "Failed to broadcast FilesRemoved event for audiobook {AudiobookId}", audiobook.Id);
-                            }
-                        }
-
-                        try
-                        {
-                            var audiobookDto = AudiobookDtoFactory.BuildFromEntity(audiobook);
-                            await _hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDto);
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                        {
-                            _logger.LogDebug(ex, "Failed to broadcast AudiobookUpdate for audiobook {AudiobookId}", audiobook.Id);
-                        }
-
-                        try { _queue.UpdateJobStatus(job.Id, "Completed"); }
-                        catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
-                        {
-                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                        }
-                        try { await _hubContext.Clients.All.SendAsync("ScanJobUpdate", new { jobId = job.Id.ToString(), audiobookId = job.AudiobookId, status = "Completed", found = 0, created = 0, completedAt = DateTime.UtcNow }); }
-                        catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException)
-                        {
-                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                        }
-                        _metrics.Increment("worker.scan.job.completed");
+                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    try { await _hubContext.Clients.All.SendAsync("ScanJobUpdate", new { jobId = job.Id.ToString(), audiobookId = job.AudiobookId, status = "Failed", error = "BasePath unavailable", failedAt = DateTime.UtcNow }); }
+                    catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException)
                     {
-                        _logger.LogWarning(ex, "Failed to remove audiobook files for missing BasePath (job {JobId})", job.Id);
-                        try { _queue.UpdateJobStatus(job.Id, "Failed", "BasePath missing"); }
-                        catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException)
-                        {
-                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                        }
-                        try { await _hubContext.Clients.All.SendAsync("ScanJobUpdate", new { jobId = job.Id.ToString(), audiobookId = job.AudiobookId, status = "Failed", error = "BasePath missing", failedAt = DateTime.UtcNow }); }
-                        catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException)
-                        {
-                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                        }
-                        _metrics.Increment("worker.scan.job.failed");
+                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                     }
+                    _metrics.Increment("worker.scan.job.failed");
                     return;
                 }
 

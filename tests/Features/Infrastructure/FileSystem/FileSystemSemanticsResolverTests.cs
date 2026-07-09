@@ -29,6 +29,27 @@ public sealed class FileSystemSemanticsResolverTests
     }
 
     [Fact]
+    public async Task AutoProbe_UsesReadOnlyBoundaryProbeWhenExistingLeafCanBeInspected()
+    {
+        var root = Path.Join(Path.GetTempPath(), "filesystem-semantics-" + Guid.NewGuid().ToString("N"));
+        var boundary = Path.Join(root, "Books");
+        Directory.CreateDirectory(boundary);
+        var resolver = new FileSystemSemanticsResolver();
+        try
+        {
+            var resolution = await resolver.ResolveAsync(boundary, FileSystemCaseSensitivityMode.Auto);
+
+            Assert.NotEqual(FileSystemCaseSensitivity.Unknown, resolution.Semantics.CaseSensitivity);
+            Assert.Equal(PathIdentityState.Valid, resolution.State);
+            Assert.Empty(Directory.EnumerateFileSystemEntries(boundary, ".listenarr-case-probe-*"));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public async Task AutoProbe_ResolvesAndRemovesProbeFile()
     {
         var root = Path.Join(Path.GetTempPath(), "filesystem-semantics-" + Guid.NewGuid().ToString("N"));

@@ -84,6 +84,97 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task MetadataOnlyPathChange_RepairsInvalidStoredRootPath()
+    {
+        var target = Path.Join(Path.GetTempPath(), $"repair-root-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(target);
+        int rootId;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var root = new RootFolder
+            {
+                Name = "Stale",
+                Path = "relative-root",
+                PathIdentityState = PathIdentityState.Unavailable,
+                PathIdentityKey = null
+            };
+            db.RootFolders.Add(root);
+            await db.SaveChangesAsync();
+            rootId = root.Id;
+        }
+
+        var result = await CreateService().StartAsync(
+            rootId,
+            new RootFolderPathChangeCommand(
+                target,
+                RootFolderRelocationMode.MetadataOnly,
+                false,
+                "Repaired",
+                true,
+                FileSystemCaseSensitivityMode.Auto));
+
+        Assert.Equal(RootFolderRelocationStatus.Completed, result.Status);
+        await using var verification = await _factory.CreateDbContextAsync();
+        var repaired = await verification.RootFolders.SingleAsync();
+        Assert.Equal(target, repaired.Path);
+        Assert.Equal("Repaired", repaired.Name);
+        Assert.Equal(PathIdentityState.Valid, repaired.PathIdentityState);
+        Assert.NotNull(repaired.PathIdentityKey);
+    }
+
+    [Fact]
+    public async Task RelocatePathChange_RejectsInvalidStoredRootPath()
+    {
+        var target = Path.Join(Path.GetTempPath(), $"repair-root-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(target);
+        int rootId;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var root = new RootFolder { Name = "Stale", Path = "relative-root" };
+            db.RootFolders.Add(root);
+            await db.SaveChangesAsync();
+            rootId = root.Id;
+        }
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            CreateService().StartAsync(
+                rootId,
+                new RootFolderPathChangeCommand(
+                    target,
+                    RootFolderRelocationMode.Relocate,
+                    false,
+                    "Still Stale",
+                    false,
+                    FileSystemCaseSensitivityMode.Auto)));
+
+        Assert.Contains("metadata-only", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReconcileActive_MarksInvalidStoredRootUnavailableInsteadOfThrowing()
+    {
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            db.RootFolders.Add(new RootFolder
+            {
+                Name = "Stale",
+                Path = "relative-root",
+                PathIdentityState = PathIdentityState.Valid,
+                PathIdentityKey = "stale"
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await CreateService().ReconcileActiveAsync();
+
+        await using var verification = await _factory.CreateDbContextAsync();
+        var root = await verification.RootFolders.SingleAsync();
+        Assert.Equal(PathIdentityState.Unavailable, root.PathIdentityState);
+        Assert.Null(root.PathIdentityKey);
+        Assert.Equal(FileSystemCaseSensitivity.Unknown, root.ResolvedCaseSensitivity);
+    }
+
+    [Fact]
     public async Task ConcurrentMoveFirst_BlocksWaitingRelocationAfterMoveIsPersisted()
     {
         var (rootId, audiobookId, source, target) = await SeedRelocationScenarioAsync();

@@ -17,6 +17,7 @@
  */
 
 using System.Text.Json;
+using Listenarr.Application.Common.Exceptions;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Configuration.Core
@@ -31,6 +32,8 @@ namespace Listenarr.Application.Configuration.Core
         IRootFolderRepository rootFolderRepository,
         ISecretProtector secretProtector) : IConfigurationService
     {
+        private static readonly SemaphoreSlim ApplicationSettingsInitializationLock = new(1, 1);
+
         // API Configuration methods
         public async Task<List<ApiConfiguration>> GetApiConfigurationsAsync()
         {
@@ -144,43 +147,102 @@ namespace Listenarr.Application.Configuration.Core
         {
             try
             {
-                var settings = await settingsRepository.GetAsync();
-
-                if (settings == null)
+                await ApplicationSettingsInitializationLock.WaitAsync();
+                try
                 {
-                    settings = new ApplicationSettings();
-                    await settingsRepository.SaveAsync(settings);
-                }
+                    var settings = await settingsRepository.GetAsync();
 
-                settings.ImportBlacklistExtensions ??= [];
-                settings.EnabledNotificationTriggers ??= [];
-                settings.Webhooks ??= [];
-
-                if (string.IsNullOrEmpty(settings.OutputPath))
-                {
-                    // Fallback to default root folder
-                    var rootFolder = await rootFolderRepository.GetDefaultAsync();
-                    if (rootFolder != null)
+                    if (settings == null)
                     {
-                        settings.OutputPath = rootFolder.Path;
-                        logger.LogInformation($"OutputPath not configured, using default root folder: {settings.OutputPath}");
-                    }
-                    else
-                    {
-                        settings.OutputPath = AppContext.BaseDirectory;
-                        logger.LogInformation($"OutputPath not configured, using: {settings.OutputPath}");
+                        settings = new ApplicationSettings();
+                        await settingsRepository.SaveAsync(settings);
                     }
 
-                    await settingsRepository.SaveAsync(settings);
+                    ApplyRuntimeDefaults(settings);
+                    return await EnsureOutputPathAsync(settings);
                 }
-
-                return settings;
+                finally
+                {
+                    ApplicationSettingsInitializationLock.Release();
+                }
             }
             catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
             {
                 logger.LogError(exception, "Error loading application settings from database (no runtime ALTERs will be attempted)");
                 return new ApplicationSettings();
             }
+        }
+
+        private async Task<ApplicationSettings> EnsureOutputPathAsync(ApplicationSettings settings)
+        {
+            if (!string.IsNullOrEmpty(settings.OutputPath))
+            {
+                return settings;
+            }
+
+            var outputPath = await ResolveDefaultOutputPathAsync();
+            var candidate = settings;
+
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                ApplyRuntimeDefaults(candidate);
+                if (!string.IsNullOrEmpty(candidate.OutputPath))
+                {
+                    return candidate;
+                }
+
+                candidate.OutputPath = outputPath;
+                try
+                {
+                    return await settingsRepository.SaveAsync(candidate);
+                }
+                catch (ApplicationConflictException) when (attempt < 2)
+                {
+                    // Fresh startup can have several hosted services ask for settings at
+                    // the same time. If another scope touched the singleton row first,
+                    // reload and retry against the latest version instead of surfacing
+                    // a benign startup conflict.
+                    var latest = await settingsRepository.GetAsync();
+                    if (latest == null)
+                    {
+                        throw;
+                    }
+
+                    candidate = latest;
+                }
+            }
+
+            var finalSettings = await settingsRepository.GetAsync();
+            if (finalSettings != null)
+            {
+                ApplyRuntimeDefaults(finalSettings);
+                finalSettings.OutputPath = string.IsNullOrEmpty(finalSettings.OutputPath)
+                    ? outputPath
+                    : finalSettings.OutputPath;
+                return finalSettings;
+            }
+
+            return candidate;
+        }
+
+        private async Task<string> ResolveDefaultOutputPathAsync()
+        {
+            var rootFolder = await rootFolderRepository.GetDefaultAsync();
+            if (rootFolder != null)
+            {
+                logger.LogInformation($"OutputPath not configured, using default root folder: {rootFolder.Path}");
+                return rootFolder.Path;
+            }
+
+            logger.LogInformation($"OutputPath not configured, using: {AppContext.BaseDirectory}");
+            return AppContext.BaseDirectory;
+        }
+
+        private static void ApplyRuntimeDefaults(ApplicationSettings settings)
+        {
+            settings.ImportBlacklistExtensions ??= [];
+            settings.EnabledNotificationTriggers ??= [];
+            settings.Webhooks ??= [];
         }
 
         public async Task SaveApplicationSettingsAsync(ApplicationSettings settings)

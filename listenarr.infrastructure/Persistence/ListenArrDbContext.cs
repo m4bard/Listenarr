@@ -60,6 +60,10 @@ namespace Listenarr.Infrastructure.Persistence
             {
                 return base.SaveChanges();
             }
+            catch (DbUpdateConcurrencyException)
+            {
+                throw;
+            }
             catch (DbUpdateException ex)
             {
                 throw TranslatePersistenceException(ex);
@@ -71,6 +75,10 @@ namespace Listenarr.Infrastructure.Persistence
             try
             {
                 return await base.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                throw;
             }
             catch (DbUpdateException ex)
             {

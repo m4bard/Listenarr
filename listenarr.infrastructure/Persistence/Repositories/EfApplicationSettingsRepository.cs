@@ -15,13 +15,14 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Microsoft.EntityFrameworkCore;
 using Listenarr.Application.Common.Exceptions;
+using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Persistence.Repositories
 {
     public class EfApplicationSettingsRepository : IApplicationSettingsRepository
     {
+        private static readonly SemaphoreSlim SingletonSettingsWriteLock = new(1, 1);
         private readonly ListenArrDbContext _db;
 
         public EfApplicationSettingsRepository(ListenArrDbContext db)
@@ -38,51 +39,78 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
         {
             settings.Id = 1;
 
-            var existing = await _db.ApplicationSettings.FindAsync([1], ct);
-
-            if (existing == null)
-            {
-                settings.Version = 1;
-                _db.ApplicationSettings.Add(settings);
-                await _db.SaveChangesAsync(ct);
-                return settings;
-            }
-
-            var persistedVersion = existing.Version;
-            var expectedVersion = settings.Version == 0
-                ? persistedVersion
-                : settings.Version;
-
-            if (expectedVersion != persistedVersion)
-            {
-                throw new ApplicationConflictException(
-                    "settings_concurrency_conflict",
-                    "Application settings were changed by another request. Reload and try again.");
-            }
-
-            settings.Version = persistedVersion + 1;
-
-            // Detach the existing tracked entity to avoid identity-map conflicts when
-            // `settings` is the same object reference that was previously Add()ed.
-            if (!ReferenceEquals(existing, settings))
-            {
-                _db.Entry(existing).State = EntityState.Detached;
-            }
-
-            _db.ApplicationSettings.Update(settings);
+            // ApplicationSettings is a singleton row. Several hosted services can
+            // request settings at once during fresh startup, so serialize the local
+            // write path to avoid noisy duplicate-key failures while still retaining
+            // database-level recovery for external/multi-process races.
+            await SingletonSettingsWriteLock.WaitAsync(ct);
             try
             {
-                _db.Entry(settings).Property(item => item.Version).OriginalValue = persistedVersion;
-                await _db.SaveChangesAsync(ct);
+                var existing = await _db.ApplicationSettings.FindAsync([1], ct);
+
+                if (existing == null)
+                {
+                    settings.Version = 1;
+                    _db.ApplicationSettings.Add(settings);
+                    try
+                    {
+                        await _db.SaveChangesAsync(ct);
+                        return settings;
+                    }
+                    catch (UniqueConstraintViolationException)
+                    {
+                        _db.Entry(settings).State = EntityState.Detached;
+                        var racedExisting = await _db.ApplicationSettings.FindAsync([1], ct);
+                        if (racedExisting != null)
+                        {
+                            return racedExisting;
+                        }
+
+                        throw;
+                    }
+                }
+
+                var persistedVersion = existing.Version;
+                var expectedVersion = settings.Version == 0
+                    ? persistedVersion
+                    : settings.Version;
+
+                if (expectedVersion != persistedVersion)
+                {
+                    throw new ApplicationConflictException(
+                        "settings_concurrency_conflict",
+                        "Application settings were changed by another request. Reload and try again.");
+                }
+
+                settings.Version = persistedVersion + 1;
+
+                // Detach the existing tracked entity to avoid identity-map conflicts when
+                // `settings` is the same object reference that was previously Add()ed.
+                if (!ReferenceEquals(existing, settings))
+                {
+                    _db.Entry(existing).State = EntityState.Detached;
+                }
+
+                _db.ApplicationSettings.Update(settings);
+                try
+                {
+                    _db.Entry(settings).Property(item => item.Version).OriginalValue = persistedVersion;
+                    await _db.SaveChangesAsync(ct);
+                }
+                catch (DbUpdateConcurrencyException exception)
+                {
+                    throw new ApplicationConflictException(
+                        "settings_concurrency_conflict",
+                        "Application settings were changed by another request. Reload and try again.",
+                        exception);
+                }
+
+                return settings;
             }
-            catch (DbUpdateConcurrencyException exception)
+            finally
             {
-                throw new ApplicationConflictException(
-                    "settings_concurrency_conflict",
-                    "Application settings were changed by another request. Reload and try again.",
-                    exception);
+                SingletonSettingsWriteLock.Release();
             }
-            return settings;
         }
     }
 }

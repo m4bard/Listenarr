@@ -236,6 +236,28 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
         }
 
         [Fact]
+        public async Task Create_SkipsInvalidStoredRootWhenCheckingConflicts()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            await using (var db = new ListenArrDbContext(options))
+            {
+                db.RootFolders.Add(new RootFolder { Name = "Stale", Path = "relative-root" });
+                await db.SaveChangesAsync();
+            }
+
+            var dbFactory = new TestDbFactory(options);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
+            var svc = new RootFolderService(repo, null!);
+
+            var created = await svc.CreateAsync(new RootFolder { Name = "Valid", Path = rootPath });
+
+            Assert.Equal(rootPath, created.Path);
+        }
+
+        [Fact]
         public async Task Create_Throws_WhenRootFolderPathContainsParentTraversal()
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()

@@ -28,7 +28,6 @@ public sealed class ApplicationSettingsConcurrencyTests : IAsyncLifetime
             .Options;
         await using var db = new ListenArrDbContext(_options);
         await db.Database.EnsureCreatedAsync();
-        await new EfApplicationSettingsRepository(db).SaveAsync(new ApplicationSettings());
     }
 
     public Task DisposeAsync()
@@ -42,8 +41,30 @@ public sealed class ApplicationSettingsConcurrencyTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ConcurrentInitialSave_ReturnsSingletonSettingsForBothCallers()
+    {
+        await using var db1 = new ListenArrDbContext(_options);
+        await using var db2 = new ListenArrDbContext(_options);
+        var repository1 = new EfApplicationSettingsRepository(db1);
+        var repository2 = new EfApplicationSettingsRepository(db2);
+
+        var results = await Task.WhenAll(
+            repository1.SaveAsync(new ApplicationSettings()),
+            repository2.SaveAsync(new ApplicationSettings()));
+
+        Assert.All(results, settings => Assert.Equal(1, settings.Id));
+        await using var verificationDb = new ListenArrDbContext(_options);
+        Assert.Equal(1, await verificationDb.ApplicationSettings.CountAsync());
+    }
+
+    [Fact]
     public async Task StaleSettingsUpdate_ThrowsStableConflict()
     {
+        await using (var seedDb = new ListenArrDbContext(_options))
+        {
+            await new EfApplicationSettingsRepository(seedDb).SaveAsync(new ApplicationSettings());
+        }
+
         await using var db1 = new ListenArrDbContext(_options);
         await using var db2 = new ListenArrDbContext(_options);
         var repository1 = new EfApplicationSettingsRepository(db1);
