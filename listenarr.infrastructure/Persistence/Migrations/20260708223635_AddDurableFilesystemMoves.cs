@@ -16,7 +16,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 type: "TEXT",
                 maxLength: 16,
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "Auto");
 
             migrationBuilder.AddColumn<string>(
                 name: "PathIdentityKey",
@@ -31,7 +31,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 type: "TEXT",
                 maxLength: 16,
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "Unavailable");
 
             migrationBuilder.AddColumn<string>(
                 name: "ResolvedCaseSensitivity",
@@ -39,7 +39,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 type: "TEXT",
                 maxLength: 16,
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "Unknown");
 
             migrationBuilder.AddColumn<string>(
                 name: "FailureKind",
@@ -47,7 +47,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 type: "TEXT",
                 maxLength: 32,
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "None");
 
             migrationBuilder.AddColumn<int>(
                 name: "IdentityKeyVersion",
@@ -81,7 +81,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 type: "TEXT",
                 maxLength: 32,
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "None");
 
             migrationBuilder.AddColumn<Guid>(
                 name: "RelocationId",

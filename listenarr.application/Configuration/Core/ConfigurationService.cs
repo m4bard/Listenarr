@@ -22,7 +22,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Configuration.Core
 {
-    public class ConfigurationService(
+    public partial class ConfigurationService(
         IApplicationSettingsRepository settingsRepository,
         IApiConfigurationRepository apiConfigRepository,
         IDownloadClientConfigurationRepository downloadClientRepository,
@@ -238,13 +238,6 @@ namespace Listenarr.Application.Configuration.Core
             return AppContext.BaseDirectory;
         }
 
-        private static void ApplyRuntimeDefaults(ApplicationSettings settings)
-        {
-            settings.ImportBlacklistExtensions ??= [];
-            settings.EnabledNotificationTriggers ??= [];
-            settings.Webhooks ??= [];
-        }
-
         public async Task SaveApplicationSettingsAsync(ApplicationSettings settings)
         {
             try
@@ -422,33 +415,6 @@ namespace Listenarr.Application.Configuration.Core
                 logger.LogWarning(ex, "Failed to decrypt saved Prowlarr import API key");
                 return null;
             }
-        }
-
-        private static List<string>? NormalizeTriggerList(List<string>? list)
-        {
-            if (list == null) return null;
-            if (list.Count == 1)
-            {
-                var first = list[0];
-                if (!string.IsNullOrWhiteSpace(first) && first.TrimStart().StartsWith("["))
-                {
-                    try
-                    {
-                        var decoded = System.Text.Json.JsonSerializer.Deserialize<List<string>>(first);
-                        if (decoded != null && decoded.Count > 0) return decoded;
-                    }
-                    catch (JsonException)
-                    {
-                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                    }
-                    catch (NotSupportedException)
-                    {
-                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                    }
-                }
-            }
-
-            return list;
         }
 
         // Startup Configuration methods

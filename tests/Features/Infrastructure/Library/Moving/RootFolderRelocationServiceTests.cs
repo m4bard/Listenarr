@@ -318,6 +318,65 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task MetadataOnly_InvalidStoredAudiobookBasePathIsSkippedWithoutAbortingOtherUpdates()
+    {
+        var source = Path.Join(Path.GetTempPath(), $"metadata-invalid-base-source-{Guid.NewGuid():N}");
+        var target = Path.Join(Path.GetTempPath(), $"metadata-invalid-base-target-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(source);
+        int rootId;
+        int invalidAudiobookId;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var root = new RootFolder { Name = "Library", Path = source };
+            db.RootFolders.Add(root);
+            var validBasePath = Path.Join(source, "Valid");
+            var invalid = new Audiobook
+            {
+                Title = "Invalid Legacy Path",
+                BasePath = @"\\server"
+            };
+            db.Audiobooks.AddRange(
+                new Audiobook
+                {
+                    Title = "Valid",
+                    BasePath = validBasePath,
+                    FilePath = Path.Join(validBasePath, "book.m4b")
+                },
+                invalid);
+            await db.SaveChangesAsync();
+            rootId = root.Id;
+            invalidAudiobookId = invalid.Id;
+        }
+
+        var result = await CreateService().StartAsync(
+            rootId,
+            new RootFolderPathChangeCommand(
+                target,
+                RootFolderRelocationMode.MetadataOnly,
+                false,
+                "Moved Library",
+                false,
+                FileSystemCaseSensitivityMode.Auto));
+
+        Assert.Equal(RootFolderRelocationStatus.NeedsAttention, result.Status);
+        Assert.Equal(2, result.TotalJobs);
+        Assert.Equal(1, result.CompletedJobs);
+        await using var verification = await _factory.CreateDbContextAsync();
+        var audiobooks = await verification.Audiobooks.OrderBy(audiobook => audiobook.Title).ToListAsync();
+        Assert.Equal(@"\\server", audiobooks[0].BasePath);
+        Assert.Equal(Path.Join(target, "Valid"), audiobooks[1].BasePath);
+        Assert.Equal(Path.Join(target, "Valid", "book.m4b"), audiobooks[1].FilePath);
+
+        var relocation = await verification.RootFolderRelocations
+            .Include(candidate => candidate.SkippedItems)
+            .SingleAsync();
+        var skipped = Assert.Single(relocation.SkippedItems);
+        Assert.Equal(invalidAudiobookId, skipped.AudiobookId);
+        Assert.Contains("invalid", skipped.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(await verification.MoveJobs.ToListAsync());
+    }
+
+    [Fact]
     public async Task MetadataOnly_UnmappableReferenceSkipsBadAudiobookAndPersistsAttentionRecord()
     {
         var source = Path.Join(Path.GetTempPath(), $"metadata-skip-source-{Guid.NewGuid():N}");

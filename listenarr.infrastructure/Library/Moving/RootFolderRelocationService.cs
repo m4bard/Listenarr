@@ -139,14 +139,17 @@ public sealed partial class RootFolderRelocationService(
             .Include(audiobook => audiobook.Files)
             .Where(audiobook => audiobook.BasePath != null)
             .ToListAsync(cancellationToken);
-        var affected = sourceResolution == null
-            ? []
-            : audiobooks
-                .Where(audiobook => FileSystemPathIdentity.IsSameOrInside(
-                    audiobook.BasePath!,
-                    root.Path,
-                    sourceResolution.Semantics))
-                .ToList();
+        var (affected, invalidStoredBasePaths) = DiscoverAffectedAudiobooks(
+            audiobooks,
+            root.Path,
+            sourceResolution?.Semantics);
+
+        if (command.Mode != RootFolderRelocationMode.MetadataOnly && invalidStoredBasePaths.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "One or more audiobook base paths are invalid; use metadata-only path change to repair stored metadata before relocating files.");
+        }
+
         var affectedAudiobookIds = affected.Select(audiobook => audiobook.Id).ToHashSet();
         var activeMoveJobs = await db.MoveJobs
             .Where(job => job.Status == MoveJobStatus.Queued
@@ -174,7 +177,15 @@ public sealed partial class RootFolderRelocationService(
         {
             var sourcePath = root.Path;
             var sourceCaseSensitivityMode = root.CaseSensitivityMode;
-            var skipped = new List<RootFolderRelocationSkippedItem>();
+            var skipped = invalidStoredBasePaths
+                .Select(audiobook => new RootFolderRelocationSkippedItem
+                {
+                    AudiobookId = audiobook.Id,
+                    Reason = "Stored audiobook base path is invalid and could not be compared with the source root.",
+                    CreatedAt = now
+                })
+                .ToList();
+            var metadataTotal = affected.Count + skipped.Count;
             var completed = 0;
             foreach (var audiobook in affected)
             {
@@ -228,7 +239,7 @@ public sealed partial class RootFolderRelocationService(
                     DesiredName = command.DesiredName.Trim(),
                     DesiredIsDefault = command.DesiredIsDefault,
                     TargetCaseSensitivityMode = command.TargetCaseSensitivityMode,
-                    TotalJobs = affected.Count,
+                    TotalJobs = metadataTotal,
                     CompletedJobs = completed,
                     Error = BuildSkippedMetadataError(skipped.Count),
                     CreatedAt = nowUtc,
@@ -250,7 +261,7 @@ public sealed partial class RootFolderRelocationService(
                 root.Path,
                 targetPath,
                 metadataRelocation?.Status ?? RootFolderRelocationStatus.Completed,
-                affected.Count,
+                metadataTotal,
                 completed,
                 metadataRelocation?.Error);
             return new StartOutcome(metadataResult, metadataRelocation != null);
@@ -316,14 +327,6 @@ public sealed partial class RootFolderRelocationService(
     }
 
     private sealed record StartOutcome(RootFolderPathChangeResult Result, bool Broadcast);
-
-    private static bool PathTouchesBoundary(
-        string? path,
-        string boundaryPath,
-        FileSystemPathSemantics semantics) =>
-        !string.IsNullOrWhiteSpace(path)
-        && (FileSystemPathIdentity.IsSameOrInside(path, boundaryPath, semantics)
-            || FileSystemPathIdentity.IsSameOrInside(boundaryPath, path, semantics));
 
     public async Task OnMoveJobStateChangedAsync(
         Guid moveJobId,

@@ -72,16 +72,17 @@ public sealed class AudiobookDestinationRewriteService : IAudiobookDestinationRe
                 else
                 {
                     // Metadata-only updates must not require source filesystem access.
-                    // If the source is not inside a configured boundary, compare and
-                    // rewrite using the current runtime's default path semantics.
-                    sourceSemantics = FileSystemPathSemantics.CurrentHostDefault;
+                    // If the source is not inside a configured boundary, reuse the validated
+                    // target boundary semantics only for stale-source comparison and best-effort
+                    // reference rewriting. Invalid source references are preserved by the rewriter.
+                    sourceSemantics = destination.TargetBoundary.Semantics;
                 }
             }
 
             if (!string.IsNullOrWhiteSpace(expectedSourcePath))
             {
                 if (string.IsNullOrWhiteSpace(sourceBasePath)
-                    || !FileSystemPathIdentity.AreEquivalent(
+                    || !StoredSourcePathMatchesExpected(
                         expectedSourcePath,
                         sourceBasePath,
                         sourceSemantics))
@@ -98,7 +99,7 @@ public sealed class AudiobookDestinationRewriteService : IAudiobookDestinationRe
                         destination.TargetBoundary.Semantics,
                         lockedCancellationToken)
                     || (!string.IsNullOrWhiteSpace(sourceBasePath)
-                        && await _relocationService.IsBoundaryProtectedAsync(
+                        && await TryIsBoundaryProtectedAsync(
                             sourceBasePath,
                             sourceSemantics,
                             lockedCancellationToken))))
@@ -155,10 +156,11 @@ public sealed class AudiobookDestinationRewriteService : IAudiobookDestinationRe
 
         var allowedMoveRoots = new List<MoveRootBoundary>();
         var normalizedOutputPath = TryNormalizeMoveRoot(settings.OutputPath, "configured output path");
-        AddAllowedMoveRoot(
+        await AddAllowedMoveRootAsync(
             allowedMoveRoots,
             normalizedOutputPath,
-            FileSystemCaseSensitivityMode.Auto);
+            FileSystemCaseSensitivityMode.Auto,
+            cancellationToken);
 
         string? defaultRootPath = null;
         foreach (var rootFolder in rootFolders)
@@ -169,10 +171,11 @@ public sealed class AudiobookDestinationRewriteService : IAudiobookDestinationRe
                 continue;
             }
 
-            AddAllowedMoveRoot(
+            await AddAllowedMoveRootAsync(
                 allowedMoveRoots,
                 normalizedRootPath,
-                rootFolder.CaseSensitivityMode);
+                rootFolder.CaseSensitivityMode,
+                cancellationToken);
             if (rootFolder.IsDefault && defaultRootPath == null)
             {
                 defaultRootPath = normalizedRootPath;
@@ -255,17 +258,31 @@ public sealed class AudiobookDestinationRewriteService : IAudiobookDestinationRe
         return null;
     }
 
-    private static void AddAllowedMoveRoot(
+    private async Task AddAllowedMoveRootAsync(
         List<MoveRootBoundary> allowedRoots,
         string? normalizedRoot,
-        FileSystemCaseSensitivityMode caseSensitivityMode)
+        FileSystemCaseSensitivityMode caseSensitivityMode,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(normalizedRoot))
         {
             return;
         }
 
-        var semantics = ResolveConfiguredSemantics(caseSensitivityMode);
+        var resolution = await _semanticsResolver.ResolveAsync(
+            normalizedRoot,
+            caseSensitivityMode,
+            cancellationToken);
+        if (resolution.State != PathIdentityState.Valid)
+        {
+            _logger.LogWarning(
+                "Skipping move boundary with unavailable filesystem identity: {Path}. Reason: {Reason}",
+                LogRedaction.SanitizeFilePath(normalizedRoot),
+                resolution.Reason);
+            return;
+        }
+
+        var semantics = resolution.Semantics;
         var existingIndex = allowedRoots.FindIndex(root => FileSystemPathIdentity.AreEquivalent(
             root.Path,
             normalizedRoot,
@@ -292,32 +309,70 @@ public sealed class AudiobookDestinationRewriteService : IAudiobookDestinationRe
             caseSensitivityMode));
     }
 
-    private static FileSystemPathSemantics ResolveConfiguredSemantics(
-        FileSystemCaseSensitivityMode caseSensitivityMode)
+    private async Task<bool> TryIsBoundaryProtectedAsync(
+        string path,
+        FileSystemPathSemantics semantics,
+        CancellationToken cancellationToken)
     {
-        var hostDefault = FileSystemPathSemantics.CurrentHostDefault;
-        return caseSensitivityMode switch
+        try
         {
-            FileSystemCaseSensitivityMode.Sensitive => hostDefault with
-            {
-                CaseSensitivity = FileSystemCaseSensitivity.Sensitive
-            },
-            FileSystemCaseSensitivityMode.Insensitive => hostDefault with
-            {
-                CaseSensitivity = FileSystemCaseSensitivity.Insensitive
-            },
-            _ => hostDefault
-        };
+            return await _relocationService.IsBoundaryProtectedAsync(path, semantics, cancellationToken);
+        }
+        catch (ArgumentException)
+        {
+            // Legacy stored source paths can be invalid for the current host. A metadata-only
+            // rewrite must still be able to repair the BasePath without source filesystem access.
+            return false;
+        }
+    }
+
+    private static bool StoredSourcePathMatchesExpected(
+        string expectedSourcePath,
+        string sourceBasePath,
+        FileSystemPathSemantics sourceSemantics)
+    {
+        try
+        {
+            return FileSystemPathIdentity.AreEquivalent(
+                expectedSourcePath,
+                sourceBasePath,
+                sourceSemantics);
+        }
+        catch (ArgumentException)
+        {
+            // If a legacy stored path cannot be canonicalized, keep stale-source protection by
+            // accepting only the exact value the caller read before submitting the repair. The
+            // legacy entity getter may normalize relative stored paths, so also accept the same
+            // normalized storage value that legacy update callers already send.
+            return string.Equals(expectedSourcePath, sourceBasePath, StringComparison.Ordinal)
+                || string.Equals(
+                    FileUtils.NormalizeStoredPath(expectedSourcePath),
+                    sourceBasePath,
+                    StringComparison.Ordinal);
+        }
     }
 
     private static MoveRootBoundary? FindAllowedMoveRoot(
         string path,
         IReadOnlyCollection<MoveRootBoundary> allowedRoots)
     {
-        return allowedRoots.FirstOrDefault(root => FileSystemPathIdentity.IsSameOrInside(
-            path,
-            root.Path,
-            root.Semantics));
+        foreach (var root in allowedRoots)
+        {
+            try
+            {
+                if (FileSystemPathIdentity.IsSameOrInside(path, root.Path, root.Semantics))
+                {
+                    return root;
+                }
+            }
+            catch (ArgumentException)
+            {
+                // Invalid legacy audiobook paths are repaired by the rewrite path below rather
+                // than being treated as a configured filesystem boundary.
+            }
+        }
+
+        return null;
     }
 
     private sealed record MoveRootBoundary(

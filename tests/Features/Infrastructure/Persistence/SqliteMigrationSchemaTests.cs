@@ -17,6 +17,8 @@
  */
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Listenarr.Tests.Features.Infrastructure.Persistence
 {
@@ -119,6 +121,62 @@ namespace Listenarr.Tests.Features.Infrastructure.Persistence
                 context.Database.HasPendingModelChanges(),
                 "The configured EF model differs from the accumulated migration snapshots. "
                 + "Regenerate migrations with dotnet ef migrations add instead of hand-authoring them.");
+        }
+
+        [Fact]
+        [Trait("Scenario", "ExistingRowsReceiveValidEnumDefaults")]
+        public async Task ExistingRows_MaterializeAfterDurableMoveMigrationAddsEnumColumns()
+        {
+            await using var connection = new SqliteConnection("DataSource=:memory:");
+            await connection.OpenAsync();
+
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseSqlite(connection, sqlite =>
+                    sqlite.MigrationsAssembly(typeof(ListenArrDbContext).Assembly.GetName().Name))
+                .Options;
+            var moveJobId = Guid.NewGuid();
+            var enqueuedAt = DateTime.UtcNow;
+
+            await using (var seedingContext = new ListenArrDbContext(options))
+            {
+                var migrator = seedingContext.GetService<IMigrator>();
+                await migrator.MigrateAsync("20260703024452_AddMoveJobDeleteEmptySource");
+                await seedingContext.Database.ExecuteSqlRawAsync(
+                    """
+                    INSERT INTO "RootFolders" ("Name", "Path", "IsDefault")
+                    VALUES ({0}, {1}, {2})
+                    """,
+                    "Library",
+                    "/library",
+                    true);
+                await seedingContext.Database.ExecuteSqlRawAsync(
+                    """
+                    INSERT INTO "MoveJobs" (
+                        "Id", "AudiobookId", "RequestedPath", "EnqueuedAt", "Status",
+                        "AttemptCount", "DeleteEmptySource", "SourcePath")
+                    VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7})
+                    """,
+                    moveJobId,
+                    42,
+                    "/library/New Title",
+                    enqueuedAt,
+                    nameof(MoveJobStatus.Queued),
+                    0,
+                    true,
+                    "/library/Old Title");
+
+                await migrator.MigrateAsync();
+            }
+
+            await using var verification = new ListenArrDbContext(options);
+            var root = await verification.RootFolders.SingleAsync();
+            var moveJob = await verification.MoveJobs.SingleAsync();
+
+            Assert.Equal(FileSystemCaseSensitivityMode.Auto, root.CaseSensitivityMode);
+            Assert.Equal(PathIdentityState.Unavailable, root.PathIdentityState);
+            Assert.Equal(FileSystemCaseSensitivity.Unknown, root.ResolvedCaseSensitivity);
+            Assert.Equal(MoveFailureKind.None, moveJob.FailureKind);
+            Assert.Equal(MoveJobPhase.None, moveJob.Phase);
         }
 
         [Fact]

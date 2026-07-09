@@ -42,12 +42,66 @@ public sealed partial class RootFolderRelocationService
         return targetPath;
     }
 
+    private static (List<Audiobook> Affected, List<Audiobook> InvalidStoredBasePaths) DiscoverAffectedAudiobooks(
+        IEnumerable<Audiobook> audiobooks,
+        string sourceRootPath,
+        FileSystemPathSemantics? sourceSemantics)
+    {
+        var affected = new List<Audiobook>();
+        var invalidStoredBasePaths = new List<Audiobook>();
+        if (sourceSemantics == null)
+        {
+            return (affected, invalidStoredBasePaths);
+        }
+
+        foreach (var audiobook in audiobooks)
+        {
+            try
+            {
+                if (FileSystemPathIdentity.IsSameOrInside(
+                    audiobook.BasePath!,
+                    sourceRootPath,
+                    sourceSemantics.Value))
+                {
+                    affected.Add(audiobook);
+                }
+            }
+            catch (ArgumentException)
+            {
+                invalidStoredBasePaths.Add(audiobook);
+            }
+        }
+
+        return (affected, invalidStoredBasePaths);
+    }
+
     private static bool BoundariesOverlap(
         string first,
         string second,
         FileSystemPathSemantics semantics) =>
         FileSystemPathIdentity.IsSameOrInside(first, second, semantics)
         || FileSystemPathIdentity.IsSameOrInside(second, first, semantics);
+
+    private static bool PathTouchesBoundary(
+        string? path,
+        string boundaryPath,
+        FileSystemPathSemantics semantics)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            return FileSystemPathIdentity.IsSameOrInside(path, boundaryPath, semantics)
+                || FileSystemPathIdentity.IsSameOrInside(boundaryPath, path, semantics);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
 
     private static bool BoundariesOverlapUnderEitherSemantics(
         string first,
