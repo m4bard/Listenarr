@@ -333,7 +333,7 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
             var invalid = new Audiobook
             {
                 Title = "Invalid Legacy Path",
-                BasePath = @"\\server"
+                BasePath = "\0invalid"
             };
             db.Audiobooks.AddRange(
                 new Audiobook
@@ -363,7 +363,7 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
         Assert.Equal(1, result.CompletedJobs);
         await using var verification = await _factory.CreateDbContextAsync();
         var audiobooks = await verification.Audiobooks.OrderBy(audiobook => audiobook.Title).ToListAsync();
-        Assert.Equal(@"\\server", audiobooks[0].BasePath);
+        Assert.Equal("\0invalid", audiobooks[0].BasePath);
         Assert.Equal(Path.Join(target, "Valid"), audiobooks[1].BasePath);
         Assert.Equal(Path.Join(target, "Valid", "book.m4b"), audiobooks[1].FilePath);
 

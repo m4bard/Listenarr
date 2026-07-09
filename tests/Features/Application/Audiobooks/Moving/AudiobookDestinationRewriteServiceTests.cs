@@ -7,7 +7,7 @@ public sealed class AudiobookDestinationRewriteServiceTests
     {
         var rootPath = Path.Join(Path.GetTempPath(), $"listenarr-root-{Guid.NewGuid():N}");
         var destinationPath = Path.Join(rootPath, "Author", "Valid Title");
-        const string legacyInvalidSourcePath = @"\\server";
+        const string legacyInvalidSourcePath = "\0invalid";
         var repository = new Mock<IAudiobookRepository>(MockBehavior.Strict);
         var settings = new Mock<IConfigurationService>(MockBehavior.Strict);
         var rootFolders = new Mock<IRootFolderService>(MockBehavior.Strict);
