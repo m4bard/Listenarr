@@ -24,7 +24,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             {
                 Title = "Move Processor File References",
                 BasePath = source,
-                FilePath = bookPath,
+                FilePath = source,
                 Files =
                 [
                     new AudiobookFile { Path = bookPath },
@@ -51,7 +51,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var updatedAudiobook = await repository.GetByIdAsync(audiobook.Id);
             Assert.NotNull(updatedAudiobook);
             Assert.Equal(Path.GetFullPath(target), updatedAudiobook!.BasePath);
-            Assert.Equal(Path.Join(target, "book.m4b"), updatedAudiobook.FilePath);
+            Assert.Equal(Path.GetFullPath(target), updatedAudiobook.FilePath);
             Assert.NotNull(updatedAudiobook.Files);
             Assert.Contains(updatedAudiobook.Files!, file => file.Path == Path.Join(target, "book.m4b"));
             Assert.Contains(updatedAudiobook.Files!, file => file.Path == Path.Join(target, "extras", "chapter2.mp3"));
