@@ -74,16 +74,6 @@ const audiobook = {
   tags: [],
 }
 
-function createDeferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((promiseResolve, promiseReject) => {
-    resolve = promiseResolve
-    reject = promiseReject
-  })
-  return { promise, resolve, reject }
-}
-
 describe('EditAudiobookModal move options', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -209,88 +199,6 @@ describe('EditAudiobookModal move options', () => {
       deleteEmptySource: true,
     })
   })
-
-  it('Running move status shows move-in-progress toast', async () => {
-    const { apiService } = await import('@/services/api')
-    const updateDeferred = createDeferred<{ message: string; audiobook: object }>()
-    vi.mocked(apiService.updateAudiobook).mockImplementationOnce(() => updateDeferred.promise)
-    const wrapper = mount(EditAudiobookModal, {
-      props: { isOpen: true, audiobook },
-      attachTo: document.body,
-      global: { plugins: [(await import('pinia')).createPinia()] },
-    })
-
-    await new Promise((r) => setTimeout(r, 200))
-    ;(wrapper.vm as unknown).selectedRootId = 0
-    ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\New Author\\New Book'
-    ;(wrapper.vm as unknown).formData.title = 'Sample Updated'
-    await wrapper.vm.$nextTick()
-
-    const savePromise = (wrapper.vm as unknown).handleSave()
-    await new Promise((r) => setTimeout(r, 10))
-    const resolver = (wrapper.vm as unknown).moveConfirmResolver
-    if (resolver) resolver({ proceed: true, moveFiles: true, deleteEmptySource: true })
-    await new Promise((r) => setTimeout(r, 50))
-
-    expect(signalRMocks.callback).toBeTypeOf('function')
-    signalRMocks.callback!({
-      jobId: 'job-1',
-      status: 'Running',
-      target: 'C:/root/New Author/New Book',
-    })
-
-    expect(toastMocks.info).toHaveBeenCalledWith(
-      'Move in progress',
-      'Moving files to C:/root/New Author/New Book',
-    )
-    expect(signalRMocks.unsubscribe).not.toHaveBeenCalled()
-
-    updateDeferred.resolve({ message: 'ok', audiobook: {} })
-    await savePromise
-  })
-
-  it.each([
-    ['NeedsAttention', 'Move needs attention', 'Manual review required'],
-    ['Superseded', 'Move failed', 'Move job did not complete. Check the move queue.'],
-  ])(
-    '%s move status shows terminal error toast and unsubscribes',
-    async (status, title, message) => {
-      const { apiService } = await import('@/services/api')
-      const updateDeferred = createDeferred<{ message: string; audiobook: object }>()
-      vi.mocked(apiService.updateAudiobook).mockImplementationOnce(() => updateDeferred.promise)
-      const wrapper = mount(EditAudiobookModal, {
-        props: { isOpen: true, audiobook },
-        attachTo: document.body,
-        global: { plugins: [(await import('pinia')).createPinia()] },
-      })
-
-      await new Promise((r) => setTimeout(r, 200))
-      ;(wrapper.vm as unknown).selectedRootId = 0
-      ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\New Author\\New Book'
-      ;(wrapper.vm as unknown).formData.title = 'Sample Updated'
-      await wrapper.vm.$nextTick()
-
-      const savePromise = (wrapper.vm as unknown).handleSave()
-      await new Promise((r) => setTimeout(r, 10))
-      const resolver = (wrapper.vm as unknown).moveConfirmResolver
-      if (resolver) resolver({ proceed: true, moveFiles: true, deleteEmptySource: true })
-      await new Promise((r) => setTimeout(r, 50))
-
-      expect(signalRMocks.callback).toBeTypeOf('function')
-      signalRMocks.callback!({
-        jobId: 'job-1',
-        status,
-        target: 'C:/root/New Author/New Book',
-        error: status === 'NeedsAttention' ? message : undefined,
-      })
-
-      expect(toastMocks.error).toHaveBeenCalledWith(title, message)
-      expect(signalRMocks.unsubscribe).toHaveBeenCalledTimes(1)
-
-      updateDeferred.resolve({ message: 'ok', audiobook: {} })
-      await savePromise
-    },
-  )
 
   it('Destination with parent traversal should be invalid and not call save APIs', async () => {
     const wrapper = mount(EditAudiobookModal, {
@@ -437,12 +345,23 @@ describe('EditAudiobookModal move options', () => {
     await new Promise((r) => setTimeout(r, 50))
 
     const { apiService } = await import('@/services/api')
+    const { useMoveJobsStore } = await import('@/stores/moveJobs')
+    const moveJobsStore = useMoveJobsStore()
     expect(apiService.updateAudiobook).toHaveBeenCalledTimes(0)
     expect(apiService.moveAudiobook).toHaveBeenCalledWith(1, 'C:/root/New Author/New Book', {
       sourcePath: 'C:\\root\\Some Author\\Some Title',
       moveFiles: true,
       deleteEmptySource: true,
     })
+    expect(moveJobsStore.trackedById['job-1']).toEqual({
+      jobId: 'job-1',
+      audiobookId: 1,
+      status: 'Queued',
+      target: 'C:/root/New Author/New Book',
+    })
+    expect(signalRMocks.onMoveJobUpdate).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('saved')).toHaveLength(1)
+    expect(wrapper.emitted('close')).toHaveLength(1)
   })
 
   it('Edition-only changes should persist through updateAudiobook', async () => {

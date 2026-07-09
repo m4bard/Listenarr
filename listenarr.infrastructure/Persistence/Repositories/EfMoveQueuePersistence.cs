@@ -93,10 +93,23 @@ public sealed class EfMoveQueuePersistence(
         var resolvedJobs = new List<(MoveJob Job, string Key)>();
         foreach (var job in activeJobs.Where(job => !string.IsNullOrWhiteSpace(job.RequestedPath)))
         {
-            var absolutePath = FileSystemPathIdentity.ResolveNativeAbsolutePath(job.RequestedPath!);
-            var resolution = await semanticsResolver.ResolveAsync(
-                absolutePath,
-                cancellationToken: cancellationToken);
+            string absolutePath;
+            FileSystemSemanticsResolution resolution;
+            try
+            {
+                absolutePath = FileSystemPathIdentity.ResolveNativeAbsolutePath(job.RequestedPath!);
+                resolution = await semanticsResolver.ResolveAsync(
+                    absolutePath,
+                    cancellationToken: cancellationToken);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException or InvalidOperationException)
+            {
+                job.Status = MoveJobStatus.NeedsAttention;
+                job.FailureKind = MoveFailureKind.Verification;
+                job.Error = $"Target path could not be reconciled: {ex.Message}";
+                continue;
+            }
+
             if (resolution.State != PathIdentityState.Valid)
             {
                 job.Status = MoveJobStatus.NeedsAttention;

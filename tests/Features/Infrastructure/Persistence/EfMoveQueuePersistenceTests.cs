@@ -109,6 +109,53 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ReconcileIdentityKeysAsync_MalformedLegacyJobMarksNeedsAttentionAndContinues()
+    {
+        var throwingPath = Path.GetFullPath("/library/bad-book");
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            db.MoveJobs.AddRange(
+                new MoveJob
+                {
+                    AudiobookId = 42,
+                    RequestedPath = throwingPath,
+                    Status = MoveJobStatus.Queued,
+                    Phase = MoveJobPhase.None,
+                    IdentityKeyVersion = 1,
+                    ActiveDeduplicationKey = "legacy:bad"
+                },
+                new MoveJob
+                {
+                    AudiobookId = 43,
+                    RequestedPath = "/library/good-book",
+                    Status = MoveJobStatus.Queued,
+                    Phase = MoveJobPhase.None,
+                    IdentityKeyVersion = 1,
+                    ActiveDeduplicationKey = "legacy:good"
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var resolver = BuildSemanticsResolver(path =>
+            string.Equals(path, throwingPath, StringComparison.Ordinal)
+                ? throw new InvalidOperationException("simulated invalid path")
+                : null);
+        var persistence = CreatePersistence(resolver);
+
+        await persistence.ReconcileIdentityKeysAsync();
+
+        await using var verification = await _factory.CreateDbContextAsync();
+        var bad = await verification.MoveJobs.SingleAsync(job => job.AudiobookId == 42);
+        var good = await verification.MoveJobs.SingleAsync(job => job.AudiobookId == 43);
+        Assert.Equal(MoveJobStatus.NeedsAttention, bad.Status);
+        Assert.Equal(MoveFailureKind.Verification, bad.FailureKind);
+        Assert.Contains("Target path could not be reconciled", bad.Error, StringComparison.Ordinal);
+        Assert.Null(bad.ActiveDeduplicationKey);
+        Assert.Equal(MoveJobStatus.Queued, good.Status);
+        Assert.StartsWith("v2:move:43:", good.ActiveDeduplicationKey);
+    }
+
+    [Fact]
     public async Task TryClaimAsync_ConcurrentWorkers_OnlyOneAcquiresLease()
     {
         var persistence = CreatePersistence();
@@ -455,10 +502,11 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
         Assert.Equal(2, persisted.AttemptCount);
     }
 
-    private EfMoveQueuePersistence CreatePersistence() =>
-        new(_factory, BuildSemanticsResolver());
+    private EfMoveQueuePersistence CreatePersistence(IFileSystemSemanticsResolver? resolver = null) =>
+        new(_factory, resolver ?? BuildSemanticsResolver());
 
-    private static IFileSystemSemanticsResolver BuildSemanticsResolver()
+    private static IFileSystemSemanticsResolver BuildSemanticsResolver(
+        Func<string, Exception?>? exceptionFactory = null)
     {
         var resolver = new Mock<IFileSystemSemanticsResolver>();
         resolver.Setup(service => service.ResolveAsync(
@@ -466,10 +514,17 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
                 It.IsAny<FileSystemCaseSensitivityMode>(),
                 It.IsAny<CancellationToken>()))
             .Returns<string, FileSystemCaseSensitivityMode, CancellationToken>((path, _, _) =>
-                ValueTask.FromResult(new FileSystemSemanticsResolution(
+            {
+                if (exceptionFactory?.Invoke(path) is { } exception)
+                {
+                    throw exception;
+                }
+
+                return ValueTask.FromResult(new FileSystemSemanticsResolution(
                     new FileSystemPathSemantics(FileSystemPathSemantics.CurrentHostDefault.Syntax, FileSystemCaseSensitivity.Sensitive),
                     PathIdentityState.Valid,
-                    path)));
+                    path));
+            });
         return resolver.Object;
     }
 

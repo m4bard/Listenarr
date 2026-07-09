@@ -728,14 +728,6 @@
       >
         Close
       </button>
-      <div v-if="moveJob" class="move-status">
-        <small>
-          <strong>Move Job</strong>: {{ moveJob.jobId }} — <em>{{ moveJob.status }}</em>
-        </small>
-        <div v-if="moveJob.target">
-          <small>Target: {{ moveJob.target }}</small>
-        </div>
-      </div>
       <button
         type="button"
         class="btn btn-primary"
@@ -772,7 +764,6 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useToast } from '@/services/toastService'
 import { apiService } from '@/services/api'
-import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
 import type {
   Audiobook,
@@ -807,6 +798,7 @@ import { Modal, ModalHeader, ModalBody } from '@/components/feedback'
 import MoveAudiobookModal from '@/components/feedback/MoveAudiobookModal.vue'
 // FormRow and CheckboxCard not used in this component script; UI uses local markup
 import { useRootFoldersStore } from '@/stores/rootFolders'
+import { useMoveJobsStore } from '@/stores/moveJobs'
 import { usePathLengthCheck } from '@/composables/usePathLengthCheck'
 
 // Diagnostic: surface undefined imports that can cause `Invalid vnode type` warnings
@@ -881,6 +873,7 @@ const emit = defineEmits<{
 const qualityProfiles = ref<QualityProfile[]>([])
 const configStore = useConfigurationStore()
 const rootStore = useRootFoldersStore()
+const moveJobsStore = useMoveJobsStore()
 const selectedRootId = ref<number | null>(null) // null/use default, 0 = custom
 const customRootPath = ref<string | undefined>(undefined)
 
@@ -1151,19 +1144,6 @@ function parseRuntimeInput(value: string | null | undefined): number | undefined
 
 function serializeStringList(values: string[] | null | undefined): string {
   return JSON.stringify(normalizeStringList(values))
-}
-
-// Move job tracking (shows queued/running/completed/failed/attention state)
-const moveJob = ref<{ jobId: string; status: string; target?: string; error?: string } | null>(null)
-const moveUnsub = ref<(() => void) | null>(null)
-
-function cleanupMoveSubscription() {
-  try {
-    if (moveUnsub.value) {
-      moveUnsub.value()
-    }
-  } catch {}
-  moveUnsub.value = null
 }
 
 // In-component move confirmation modal state
@@ -1902,40 +1882,11 @@ async function handleSave() {
         if (userWantsMove) {
           toast.info('Move queued', `Move job queued (${res.jobId}). Moving files in background.`)
 
-          // Record initial move job state and subscribe to updates
-          moveJob.value = {
+          moveJobsStore.trackQueuedJob({
             jobId: String(res.jobId),
+            audiobookId: audiobook.id,
             status: 'Queued',
             target: combined || '',
-          }
-          moveUnsub.value = signalRService.onMoveJobUpdate((job) => {
-            if (!job || !job.jobId) return
-            if (String(job.jobId).toLowerCase() !== String(res.jobId).toLowerCase()) return
-
-            // Update local job state
-            moveJob.value = {
-              jobId: job.jobId,
-              status: job.status,
-              target: job.target,
-              error: job.error,
-            }
-
-            if (job.status === 'Completed') {
-              toast.success('Move completed', `Files moved to ${job.target || combined}`)
-              cleanupMoveSubscription()
-            } else if (
-              job.status === 'Failed' ||
-              job.status === 'NeedsAttention' ||
-              job.status === 'Superseded'
-            ) {
-              toast.error(
-                job.status === 'NeedsAttention' ? 'Move needs attention' : 'Move failed',
-                job.error || 'Move job did not complete. Check the move queue.',
-              )
-              cleanupMoveSubscription()
-            } else if (job.status === 'Running') {
-              toast.info('Move in progress', `Moving files to ${job.target || combined}`)
-            }
           })
         } else {
           toast.info('Destination updated', 'Destination changed without moving files.')
@@ -2156,9 +2107,6 @@ function setPrimarySeriesMembership(index: number) {
 }
 
 function close() {
-  // If there's an active move subscription, unsubscribe to avoid leaks
-  cleanupMoveSubscription()
-  moveJob.value = null
   emit('close')
 }
 </script>

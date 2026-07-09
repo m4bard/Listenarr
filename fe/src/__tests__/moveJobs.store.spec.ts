@@ -1,0 +1,156 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+
+type MoveJobUpdate = {
+  jobId?: string
+  audiobookId?: number
+  status?: string
+  target?: string
+  error?: string
+}
+
+const toastMocks = vi.hoisted(() => ({
+  info: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+}))
+
+const signalRMocks = vi.hoisted(() => {
+  const state = {
+    callback: null as ((job: MoveJobUpdate) => void) | null,
+    unsubscribe: vi.fn(),
+    onMoveJobUpdate: vi.fn(),
+  }
+  state.onMoveJobUpdate.mockImplementation((callback: (job: MoveJobUpdate) => void) => {
+    state.callback = callback
+    return state.unsubscribe
+  })
+  return state
+})
+
+vi.mock('@/services/toastService', () => ({
+  useToast: () => toastMocks,
+}))
+
+vi.mock('@/services/signalr', () => ({
+  signalRService: {
+    onMoveJobUpdate: signalRMocks.onMoveJobUpdate,
+  },
+}))
+
+import { useMoveJobsStore } from '@/stores/moveJobs'
+
+describe('move jobs store', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setActivePinia(createPinia())
+    signalRMocks.callback = null
+    signalRMocks.onMoveJobUpdate.mockImplementation((callback: (job: MoveJobUpdate) => void) => {
+      signalRMocks.callback = callback
+      return signalRMocks.unsubscribe
+    })
+  })
+
+  it('starts SignalR subscription idempotently', () => {
+    const store = useMoveJobsStore()
+
+    store.start()
+    store.start()
+
+    expect(signalRMocks.onMoveJobUpdate).toHaveBeenCalledTimes(1)
+
+    store.stop()
+    expect(signalRMocks.unsubscribe).toHaveBeenCalledTimes(1)
+  })
+
+  it('tracks queued move jobs and subscribes on first track', () => {
+    const store = useMoveJobsStore()
+
+    store.trackQueuedJob({
+      jobId: 'JOB-1',
+      audiobookId: 42,
+      target: '/library/book',
+    })
+
+    expect(signalRMocks.onMoveJobUpdate).toHaveBeenCalledTimes(1)
+    expect(store.trackedById['job-1']).toEqual({
+      jobId: 'JOB-1',
+      audiobookId: 42,
+      status: 'Queued',
+      target: '/library/book',
+    })
+  })
+
+  it('shows one in-progress toast when a tracked job starts running', () => {
+    const store = useMoveJobsStore()
+    store.trackQueuedJob({ jobId: 'job-1', target: '/library/book' })
+
+    signalRMocks.callback?.({ jobId: 'job-1', status: 'Running', target: '/library/book' })
+    signalRMocks.callback?.({ jobId: 'job-1', status: 'Running', target: '/library/book' })
+
+    expect(toastMocks.info).toHaveBeenCalledTimes(1)
+    expect(toastMocks.info).toHaveBeenCalledWith(
+      'Move in progress',
+      'Moving files to /library/book',
+    )
+    expect(store.trackedById['job-1']?.status).toBe('Running')
+  })
+
+  it('shows success toast and clears tracked job on completion', () => {
+    const store = useMoveJobsStore()
+    store.trackQueuedJob({ jobId: 'job-1', target: '/library/book' })
+
+    signalRMocks.callback?.({ jobId: 'job-1', status: 'Completed', target: '/library/book' })
+
+    expect(toastMocks.success).toHaveBeenCalledWith(
+      'Move completed',
+      'Files moved to /library/book',
+    )
+    expect(store.trackedById['job-1']).toBeUndefined()
+  })
+
+  it('shows attention toast and clears tracked job on NeedsAttention', () => {
+    const store = useMoveJobsStore()
+    store.trackQueuedJob({ jobId: 'job-1', target: '/library/book' })
+
+    signalRMocks.callback?.({
+      jobId: 'job-1',
+      status: 'NeedsAttention',
+      target: '/library/book',
+      error: 'Manual review required',
+    })
+
+    expect(toastMocks.error).toHaveBeenCalledWith('Move needs attention', 'Manual review required')
+    expect(store.trackedById['job-1']).toBeUndefined()
+  })
+
+  it('shows terminal error toast and clears tracked job on Superseded', () => {
+    const store = useMoveJobsStore()
+    store.trackQueuedJob({ jobId: 'job-1', target: '/library/book' })
+
+    signalRMocks.callback?.({ jobId: 'job-1', status: 'Superseded', target: '/library/book' })
+
+    expect(toastMocks.error).toHaveBeenCalledWith(
+      'Move failed',
+      'Move job did not complete. Check the move queue.',
+    )
+    expect(store.trackedById['job-1']).toBeUndefined()
+  })
+})
