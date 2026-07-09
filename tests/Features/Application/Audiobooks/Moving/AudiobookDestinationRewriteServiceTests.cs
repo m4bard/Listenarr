@@ -8,6 +8,7 @@ public sealed class AudiobookDestinationRewriteServiceTests
         var rootPath = Path.Join(Path.GetTempPath(), $"listenarr-root-{Guid.NewGuid():N}");
         var destinationPath = Path.Join(rootPath, "Author", "Valid Title");
         const string legacyInvalidSourcePath = "\0invalid";
+        var normalizedLegacySourcePath = FileUtils.NormalizeStoredPath(legacyInvalidSourcePath);
         var repository = new Mock<IAudiobookRepository>(MockBehavior.Strict);
         var settings = new Mock<IConfigurationService>(MockBehavior.Strict);
         var rootFolders = new Mock<IRootFolderService>(MockBehavior.Strict);
@@ -57,7 +58,7 @@ public sealed class AudiobookDestinationRewriteServiceTests
             .ReturnsAsync(false);
         repository.Setup(repo => repo.RewritePathReferencesAsync(
                 85,
-                legacyInvalidSourcePath,
+                normalizedLegacySourcePath,
                 destinationPath,
                 rootSemantics,
                 rootSemantics,
@@ -80,7 +81,7 @@ public sealed class AudiobookDestinationRewriteServiceTests
             expectedSourcePath: legacyInvalidSourcePath);
 
         Assert.Equal(destinationPath, result.DestinationPath);
-        Assert.Equal(legacyInvalidSourcePath, result.SourcePath);
+        Assert.Equal(normalizedLegacySourcePath, result.SourcePath);
         fileSystem.Verify(service => service.DirectoryExists(It.IsAny<string>()), Times.Never);
         semanticsResolver.Verify(service => service.ResolveAsync(
             rootPath,
