@@ -31,7 +31,6 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         [Trait("Scenario", "PersistsExpandedMetadataFields")]
         public async Task UpdateAudiobook_PersistsExpandedMetadataFields()
         {
-            // Given
             var existingAudiobook = await _audiobookRepository.AddAsync(new Audiobook
             {
                 Title = "Original Title",
@@ -67,8 +66,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             });
 
             var controller = _provider.GetRequiredService<LibraryController>();
-
-            var updatedAudiobook = new Audiobook
+            var request = new AudiobookUpdateRequest
             {
                 Title = "Edited Title",
                 Subtitle = "Edited Subtitle",
@@ -109,10 +107,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 Abridged = true,
             };
 
-            // When
-            var actionResult = await controller.UpdateAudiobook(existingAudiobook.Id, updatedAudiobook);
+            var actionResult = await controller.UpdateAudiobook(existingAudiobook.Id, request);
 
-            // Then
             Assert.IsType<OkObjectResult>(actionResult);
             var storedAudiobook = await _audiobookRepository.GetByIdAsync(existingAudiobook.Id);
             Assert.NotNull(storedAudiobook);
@@ -155,10 +151,37 @@ namespace Listenarr.Tests.Features.Api.Features.Library
 
         [Fact]
         [Trait("Method", "UpdateAudiobook")]
+        [Trait("Scenario", "OmittedBooleansRemainUnchanged")]
+        public async Task UpdateAudiobook_OmittedBooleansRemainUnchanged()
+        {
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Original",
+                Monitored = false,
+                Explicit = true,
+                Abridged = true
+            });
+            var controller = _provider.GetRequiredService<LibraryController>();
+
+            var result = await controller.UpdateAudiobook(audiobook.Id, new AudiobookUpdateRequest
+            {
+                Title = "Edited"
+            });
+
+            Assert.IsType<OkObjectResult>(result);
+            var updated = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(updated);
+            Assert.Equal("Edited", updated.Title);
+            Assert.False(updated.Monitored);
+            Assert.True(updated.Explicit);
+            Assert.True(updated.Abridged);
+        }
+
+        [Fact]
+        [Trait("Method", "UpdateAudiobook")]
         [Trait("Scenario", "LegacyBasePathCompatibilityRewritesReferences")]
         public async Task UpdateAudiobook_LegacyBasePathChange_RewritesStoredAbsoluteReferences()
         {
-            // Given
             var rootPath = FileService.GetTempDirectory("listenarr-update-basepath-root");
             await _rootFolderRepository.AddAsync(new RootFolderBuilder()
                 .WithName("Update Root")
@@ -184,14 +207,12 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             });
             var controller = _provider.GetRequiredService<LibraryController>();
 
-            // When
-            var result = await controller.UpdateAudiobook(audiobook.Id, new Audiobook
+            var result = await controller.UpdateAudiobook(audiobook.Id, new AudiobookUpdateRequest
             {
                 BasePath = targetPath,
                 Title = "Legacy Path Update Edited"
             });
 
-            // Then
             Assert.IsType<OkObjectResult>(result);
             var updated = await _audiobookRepository.GetByIdAsync(audiobook.Id);
             Assert.NotNull(updated);
@@ -209,7 +230,6 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         [Trait("Scenario", "LegacyBasePathCompatibilityIgnoresStalePathFields")]
         public async Task UpdateAudiobook_LegacyBasePathChange_DoesNotRestoreStaleFileOrImagePaths()
         {
-            // Given
             var rootPath = FileService.GetTempDirectory("listenarr-update-stale-path-root");
             await _rootFolderRepository.AddAsync(new RootFolderBuilder()
                 .WithName("Stale Path Root")
@@ -231,8 +251,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             });
             var controller = _provider.GetRequiredService<LibraryController>();
 
-            // When
-            var result = await controller.UpdateAudiobook(audiobook.Id, new Audiobook
+            var result = await controller.UpdateAudiobook(audiobook.Id, new AudiobookUpdateRequest
             {
                 BasePath = targetPath,
                 FilePath = staleFilePath,
@@ -240,7 +259,6 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 Title = "Stale Path Payload Edited"
             });
 
-            // Then
             Assert.IsType<OkObjectResult>(result);
             var updated = await _audiobookRepository.GetByIdAsync(audiobook.Id);
             Assert.NotNull(updated);
@@ -257,7 +275,6 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         [Trait("Scenario", "MetadataOnlyUpdateStillAppliesExplicitImagePathField")]
         public async Task UpdateAudiobook_MetadataOnlyUpdate_StillAllowsExplicitImagePathAssignments()
         {
-            // Given
             var basePath = FileService.GetTempDirectory("listenarr-update-metadata-path-base");
             var audiobook = await _audiobookRepository.AddAsync(new Audiobook
             {
@@ -268,15 +285,13 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var updatedImagePath = Path.Join(basePath, "relinked.jpg");
             var controller = _provider.GetRequiredService<LibraryController>();
 
-            // When
-            var result = await controller.UpdateAudiobook(audiobook.Id, new Audiobook
+            var result = await controller.UpdateAudiobook(audiobook.Id, new AudiobookUpdateRequest
             {
                 Title = "Metadata Path Update Edited",
                 BasePath = basePath,
                 ImageUrl = updatedImagePath
             });
 
-            // Then
             Assert.IsType<OkObjectResult>(result);
             var updated = await _audiobookRepository.GetByIdAsync(audiobook.Id);
             Assert.NotNull(updated);
@@ -290,7 +305,6 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         [Trait("Scenario", "LegacyBasePathCompatibilityRejectsInvalidDestination")]
         public async Task UpdateAudiobook_LegacyBasePathOutsideConfiguredRoots_IsRejected()
         {
-            // Given
             var rootPath = FileService.GetTempDirectory("listenarr-update-valid-root");
             await _rootFolderRepository.AddAsync(new RootFolderBuilder()
                 .WithName("Valid Update Root")
@@ -310,14 +324,12 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var outsidePath = Path.Join(FileService.GetTempDirectory("listenarr-update-outside-root"), "Author", "Title");
             var controller = _provider.GetRequiredService<LibraryController>();
 
-            // When
-            var result = await controller.UpdateAudiobook(audiobook.Id, new Audiobook
+            var result = await controller.UpdateAudiobook(audiobook.Id, new AudiobookUpdateRequest
             {
                 BasePath = outsidePath,
                 Title = "Should Not Persist"
             });
 
-            // Then
             var badRequest = Assert.IsType<BadRequestObjectResult>(result);
             Assert.Contains("configured root folder or output path", badRequest.Value?.ToString() ?? string.Empty);
 
