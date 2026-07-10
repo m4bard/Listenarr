@@ -66,9 +66,9 @@ namespace Listenarr.Infrastructure.Library.Moving
 
             if (deleteTarget != null)
             {
-                TryDeleteFolderContents(deleteTarget.FolderPath, result);
+                var contentsDeleted = TryDeleteFolderContents(deleteTarget.FolderPath, result);
 
-                if (deleteFolder)
+                if (deleteFolder && contentsDeleted)
                 {
                     await TryDeleteAudiobookFolderAsync(audiobook, deleteTarget, result);
                 }
@@ -202,23 +202,26 @@ namespace Listenarr.Infrastructure.Library.Moving
             }
         }
 
-        private void TryDeleteFolderContents(string folderPath, AudiobookFilesystemDeleteResult result)
+        private bool TryDeleteFolderContents(string folderPath, AudiobookFilesystemDeleteResult result)
         {
             if (!Directory.Exists(folderPath))
             {
-                return;
+                return true;
             }
 
-            string[] files;
-            try
+            if (!FileSystemSafety.TryEnumerateTreeWithoutLinks(
+                folderPath,
+                out var files,
+                out var directories,
+                out var reason))
             {
-                files = Directory.GetFiles(folderPath, "*", SearchOption.AllDirectories);
-            }
-            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
-            {
-                result.Warnings.Add("Could not enumerate the audiobook folder contents for deletion.");
-                _logger.LogWarning(ex, "Failed to enumerate audiobook folder contents for {FolderPath}", LogRedaction.SanitizeFilePath(folderPath));
-                return;
+                result.Warnings.Add(
+                    "Refused to recursively delete the audiobook folder because it contains a symbolic link or reparse point.");
+                _logger.LogWarning(
+                    "Blocked recursive audiobook delete for {FolderPath}: {Reason}",
+                    LogRedaction.SanitizeFilePath(folderPath),
+                    LogRedaction.SanitizeText(reason));
+                return false;
             }
 
             foreach (var filePath in files)
@@ -226,25 +229,12 @@ namespace Listenarr.Infrastructure.Library.Moving
                 TryDeleteFile(filePath, result, [folderPath]);
             }
 
-            string[] directories;
-            try
-            {
-                directories = Directory.GetDirectories(folderPath, "*", SearchOption.AllDirectories)
-                    .OrderByDescending(path => path.Length)
-                    .ToArray();
-            }
-            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
-            {
-                result.Warnings.Add("Some nested folders could not be cleaned up after file deletion.");
-                _logger.LogWarning(ex, "Failed to enumerate nested audiobook directories for {FolderPath}", LogRedaction.SanitizeFilePath(folderPath));
-                return;
-            }
-
-            foreach (var directoryPath in directories)
+            foreach (var directoryPath in directories.OrderByDescending(path => path.Length))
             {
                 try
                 {
-                    if (!Directory.Exists(directoryPath))
+                    if (!Directory.Exists(directoryPath)
+                        || (File.GetAttributes(directoryPath) & FileAttributes.ReparsePoint) != 0)
                     {
                         continue;
                     }
@@ -259,7 +249,8 @@ namespace Listenarr.Infrastructure.Library.Moving
                     _logger.LogDebug(ex, "Failed to remove nested audiobook directory {FolderPath}", LogRedaction.SanitizeFilePath(directoryPath));
                 }
             }
-        }
 
+            return true;
+        }
     }
 }
