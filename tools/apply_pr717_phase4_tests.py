@@ -14,16 +14,20 @@ old = """            db.RootFolderRelocations.Add(new RootFolderRelocation
             });
             await db.SaveChangesAsync();
 """
-new = """            await db.Database.ExecuteSqlRawAsync(
+new = """            var triggerSql =
                 \"\"\"
                 CREATE TRIGGER prevent_root_reassignment_delete
                 BEFORE DELETE ON RootFolders
-                WHEN OLD.Id = {0}
+                WHEN OLD.Id =
+                \"\"\"
+                + sourceRoot.Id
+                + \"\"\"
+
                 BEGIN
                     SELECT RAISE(ABORT, 'forced root delete failure');
                 END;
-                \"\"\",
-                sourceRoot.Id);
+                \"\"\";
+            await db.Database.ExecuteSqlRawAsync(triggerSql);
 """
 if content.count(old) != 1:
     raise RuntimeError("Rollback test failure anchor mismatch")
