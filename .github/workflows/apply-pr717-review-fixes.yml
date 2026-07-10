@@ -11,6 +11,7 @@ on:
       - tools/apply_pr717_phase3_import.py
       - tools/apply_pr717_phase3_main.py
       - tools/apply_pr717_phase3_guard.py
+      - tools/apply_pr717_phase3_legacy_focus.py
       - tools/apply_pr717_phase3_copy.py
       - tools/apply_pr717_phase3_tests.py
       - tools/apply_pr717_phase4.py
@@ -73,6 +74,9 @@ jobs:
       - name: Harden marker manifest guard
         run: python tools/apply_pr717_phase3_guard.py
 
+      - name: Preserve legacy identity and source focus
+        run: python tools/apply_pr717_phase3_legacy_focus.py
+
       - name: Apply manifest copy publication fixes
         run: python tools/apply_pr717_phase3_copy.py
 
@@ -93,6 +97,7 @@ jobs:
             listenarr.infrastructure/Library/Moving/AudiobookContentMoveService.cs
             listenarr.infrastructure/Library/Moving/AudiobookContentMoveService.Persistence.cs
             listenarr.infrastructure/Library/Moving/AudiobookContentMoveService.Recovery.cs
+            listenarr.infrastructure/Library/Moving/AudiobookContentMoveService.Validation.cs
             tests/Features/Infrastructure/Persistence/RootFolderReassignmentTransactionTests.cs
           retention-days: 1
 
@@ -104,6 +109,7 @@ jobs:
           rm tools/apply_pr717_phase3_import.py
           rm tools/apply_pr717_phase3_main.py
           rm tools/apply_pr717_phase3_guard.py
+          rm tools/apply_pr717_phase3_legacy_focus.py
           rm tools/apply_pr717_phase3_copy.py
           rm tools/apply_pr717_phase3_tests.py
           rm tools/apply_pr717_phase4.py
@@ -151,7 +157,7 @@ jobs:
             --configuration Release \
             --logger "console;verbosity=normal" \
             --logger "trx;LogFileName=focused-tests.trx" \
-            --filter "FullyQualifiedName~LibraryUpdateWorkflowTests|FullyQualifiedName~LibraryController_UpdateAudiobookTests|FullyQualifiedName~LibraryController_DeleteLinkSafetyTests|FullyQualifiedName~AudiobookContentMoveServiceTests|FullyQualifiedName~RootFolderReassignmentTransactionTests|FullyQualifiedName~RootFolderServiceTests|FullyQualifiedName~RootFolderRelocationServiceTests" \
+            --filter "FullyQualifiedName~LibraryUpdateWorkflowTests|FullyQualifiedName~LibraryController_UpdateAudiobookTests|FullyQualifiedName~LibraryController_DeleteLinkSafetyTests|FullyQualifiedName~AudiobookContentMoveServiceTests|FullyQualifiedName~RootFolderReassignmentTransactionTests|FullyQualifiedName~RootFolderServiceTests|FullyQualifiedName~RootFolderRelocationServiceTests|FullyQualifiedName~MoveJobProcessorTests|FullyQualifiedName~BackendArchitectureTests" \
             > focused-tests.log 2>&1
           status=$?
           cat focused-tests.log
