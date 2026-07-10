@@ -169,7 +169,30 @@ jobs:
           retention-days: 1
 
       - name: Run complete backend suite
-        run: dotnet test listenarr.slnx --no-build --configuration Release --logger "console;verbosity=normal"
+        id: complete-backend-tests
+        shell: bash
+        run: |
+          set +e
+          dotnet test listenarr.slnx \
+            --no-build \
+            --configuration Release \
+            --logger "console;verbosity=normal" \
+            --logger "trx;LogFileName=complete-backend-tests.trx" \
+            > complete-backend-tests.log 2>&1
+          status=$?
+          cat complete-backend-tests.log
+          exit "$status"
+
+      - name: Upload complete backend test diagnostics
+        if: failure() && steps.complete-backend-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: complete-backend-test-errors
+          path: |
+            complete-backend-tests.log
+            **/TestResults/complete-backend-tests.trx
+          if-no-files-found: warn
+          retention-days: 1
 
       - name: Install frontend dependencies
         working-directory: fe
