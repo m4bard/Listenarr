@@ -17,6 +17,7 @@
  */
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import { useToast } from '@/services/toastService'
 
@@ -118,6 +119,26 @@ export const useMoveJobsStore = defineStore('moveJobs', () => {
       audiobookId: job.audiobookId,
       status: job.status ?? 'Queued',
       target: job.target,
+    }
+    void reconcileTrackedJob(key, job.jobId)
+  }
+
+  async function reconcileTrackedJob(key: string, jobId: string) {
+    try {
+      const current = await apiService.getMoveJobStatus(jobId)
+      const existing = trackedById.value[key]
+      if (!existing) {
+        return
+      }
+
+      const currentStatus = normalizeStatus(current.status)
+      if (existing.status !== 'Queued' && !terminalStatuses.has(currentStatus)) {
+        return
+      }
+
+      handleMoveJobUpdate(current)
+    } catch {
+      // SignalR remains authoritative when a one-time reconciliation request fails.
     }
   }
 

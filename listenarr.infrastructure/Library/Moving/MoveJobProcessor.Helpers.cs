@@ -26,12 +26,35 @@ namespace Listenarr.Infrastructure.Library.Moving
         private static string? ResolveSourceCleanupBoundary(
             string source,
             IEnumerable<RootFolder> rootFolders,
-            FileSystemPathSemantics semantics) =>
-            rootFolders
-                .Where(root => FileSystemPathIdentity.IsSameOrInside(source, root.Path, semantics))
-                .OrderByDescending(root => Path.GetFullPath(root.Path).Length)
+            FileSystemPathSemantics semantics)
+        {
+            var containingRoots = new List<(string Path, int CanonicalLength)>();
+            foreach (var root in rootFolders)
+            {
+                try
+                {
+                    if (!FileSystemPathIdentity.IsSameOrInside(source, root.Path, semantics))
+                    {
+                        continue;
+                    }
+
+                    containingRoots.Add((
+                        root.Path,
+                        FileSystemPathIdentity.Canonicalize(root.Path, semantics.Syntax).Length));
+                }
+                catch (Exception exception) when (exception is
+                    ArgumentException or InvalidOperationException or NotSupportedException or PathTooLongException)
+                {
+                    // A legacy root from another host must not block an otherwise valid
+                    // move or broaden cleanup beyond a root whose identity is known.
+                }
+            }
+
+            return containingRoots
+                .OrderByDescending(root => root.CanonicalLength)
                 .Select(root => root.Path)
                 .FirstOrDefault();
+        }
 
         private static bool IsFilesystemRoot(string path, FileSystemPathSemantics semantics)
         {

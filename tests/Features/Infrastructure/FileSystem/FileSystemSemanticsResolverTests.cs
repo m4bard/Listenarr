@@ -29,7 +29,7 @@ public sealed class FileSystemSemanticsResolverTests
     }
 
     [Fact]
-    public async Task AutoProbe_UsesReadOnlyBoundaryProbeWhenExistingLeafCanBeInspected()
+    public async Task AutoProbe_ExistingBoundary_ProbesWithinBoundaryAndRemovesProbeFile()
     {
         var root = Path.Join(Path.GetTempPath(), "filesystem-semantics-" + Guid.NewGuid().ToString("N"));
         var boundary = Path.Join(root, "Books");

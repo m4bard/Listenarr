@@ -1,0 +1,162 @@
+using Listenarr.Domain.Common;
+using Microsoft.EntityFrameworkCore;
+
+namespace Listenarr.Infrastructure.Library.Moving;
+
+public sealed partial class RootFolderRelocationService
+{
+    public async Task OnMoveJobStateChangedAsync(
+        Guid moveJobId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var job = await db.MoveJobs.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.Id == moveJobId,
+            cancellationToken);
+        if (job?.RelocationId == null) return;
+        var relocation = await db.RootFolderRelocations
+            .Include(candidate => candidate.MoveJobs)
+            .SingleAsync(candidate => candidate.Id == job.RelocationId, cancellationToken);
+        var root = relocation.RootFolderId is int rootFolderId
+            ? await db.RootFolders.SingleOrDefaultAsync(
+                candidate => candidate.Id == rootFolderId,
+                cancellationToken)
+            : null;
+        relocation.CompletedJobs = relocation.MoveJobs.Count(candidate => candidate.Status == MoveJobStatus.Completed);
+        relocation.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
+
+        if (relocation.MoveJobs.Any(candidate => candidate.Status is
+            MoveJobStatus.NeedsAttention or MoveJobStatus.Failed or MoveJobStatus.Superseded))
+        {
+            relocation.Status = RootFolderRelocationStatus.NeedsAttention;
+            relocation.Error = relocation.MoveJobs
+                .First(candidate => candidate.Status is
+                    MoveJobStatus.NeedsAttention or MoveJobStatus.Failed or MoveJobStatus.Superseded)
+                .Error
+                ?? "A relocation move job was superseded during queue reconciliation.";
+        }
+        else if (relocation.MoveJobs.All(candidate => candidate.Status == MoveJobStatus.Completed))
+        {
+            if (root == null)
+            {
+                relocation.Status = RootFolderRelocationStatus.NeedsAttention;
+                relocation.ActiveRootFolderId = null;
+                relocation.Error = "The root folder no longer exists; relocation finalization requires manual review.";
+            }
+            else
+            {
+                await FinalizeCompletedRelocationAsync(
+                    db,
+                    relocation,
+                    root,
+                    relocation.UpdatedAt ?? timeProvider.GetUtcNow().UtcDateTime,
+                    cancellationToken);
+            }
+        }
+        else
+        {
+            relocation.Status = RootFolderRelocationStatus.Running;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        await BroadcastAsync(Map(relocation, root?.Path ?? ResolveCurrentPathFallback(relocation)), cancellationToken);
+    }
+
+    public async Task ReconcileActiveAsync(CancellationToken cancellationToken = default)
+    {
+        await ReconcileRootIdentitiesAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var activeRelocationIds = await db.RootFolderRelocations
+            .Where(relocation => relocation.ActiveRootFolderId != null)
+            .Select(relocation => relocation.Id)
+            .ToListAsync(cancellationToken);
+        var terminalJobs = await db.MoveJobs
+            .Where(job => job.RelocationId != null
+                && activeRelocationIds.Contains(job.RelocationId.Value))
+            .Where(job => job.Status == MoveJobStatus.Completed
+                || job.Status == MoveJobStatus.NeedsAttention
+                || job.Status == MoveJobStatus.Failed
+                || job.Status == MoveJobStatus.Superseded)
+            .OrderByDescending(job => job.UpdatedAt)
+            .ToListAsync(cancellationToken);
+        var terminalJobIds = terminalJobs
+            .GroupBy(job => job.RelocationId)
+            .Select(group => group.First().Id);
+        foreach (var jobId in terminalJobIds)
+        {
+            await OnMoveJobStateChangedAsync(jobId, cancellationToken);
+        }
+    }
+
+    private async Task ReconcileRootIdentitiesAsync(CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _rootIdentitiesReconciled)) return;
+        await _rootIdentityGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (Volatile.Read(ref _rootIdentitiesReconciled)) return;
+            await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            var roots = await db.RootFolders.ToListAsync(cancellationToken);
+            foreach (var root in roots) root.PathIdentityKey = null;
+            await db.SaveChangesAsync(cancellationToken);
+
+            var resolvedRoots = new List<(RootFolder Root, string Key)>();
+            foreach (var root in roots)
+            {
+                try
+                {
+                    var resolution = await semanticsResolver.ResolveAsync(
+                        root.Path,
+                        root.CaseSensitivityMode,
+                        cancellationToken);
+                    root.ResolvedCaseSensitivity = resolution.Semantics.CaseSensitivity;
+                    root.PathIdentityState = resolution.State;
+                    if (resolution.State == PathIdentityState.Valid)
+                    {
+                        resolvedRoots.Add((
+                            root,
+                            FileSystemPathIdentity.CreateKey("root", root.Path, resolution.Semantics)));
+                    }
+                }
+                catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+                {
+                    // Existing databases can contain a root path that is invalid on the
+                    // current host after switching between Docker/Linux paths and a
+                    // Windows development host. Keep the worker alive and surface the
+                    // root as unavailable until the path is repaired or deleted.
+                    root.ResolvedCaseSensitivity = FileSystemCaseSensitivity.Unknown;
+                    root.PathIdentityState = PathIdentityState.Unavailable;
+                    root.PathIdentityKey = null;
+                }
+            }
+
+            foreach (var group in resolvedRoots.GroupBy(item => item.Key, StringComparer.Ordinal))
+            {
+                if (group.Count() == 1)
+                {
+                    var item = group.Single();
+                    item.Root.PathIdentityKey = item.Key;
+                    item.Root.PathIdentityState = PathIdentityState.Valid;
+                    continue;
+                }
+
+                foreach (var item in group)
+                {
+                    item.Root.PathIdentityState = PathIdentityState.Conflict;
+                    item.Root.PathIdentityKey = null;
+                }
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            Volatile.Write(ref _rootIdentitiesReconciled, true);
+        }
+        finally
+        {
+            _rootIdentityGate.Release();
+        }
+    }
+}

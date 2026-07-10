@@ -414,7 +414,8 @@ public sealed class BackendArchitectureTests
             "listenarr.infrastructure/Library/Moving/AudiobookContentMoveService.Copy.cs",
             "listenarr.infrastructure/Library/Moving/AudiobookContentMoveService.Manifest.cs",
             "listenarr.infrastructure/Library/Moving/MoveJobProcessor.cs",
-            "listenarr.infrastructure/Library/Moving/RootFolderRelocationService.cs"
+            "listenarr.infrastructure/Library/Moving/RootFolderRelocationService.cs",
+            "listenarr.infrastructure/Library/Moving/RootFolderRelocationService.Reconciliation.cs"
         };
         var forbidden = new[]
         {
