@@ -22,10 +22,15 @@ def replace_once(old: str, new: str) -> None:
 
 
 replace_once(
-    """        var sourceSemantics = request.SourceSemantics;
+    """        var source = Path.GetFullPath(request.Source);
+        var target = Path.GetFullPath(request.Target);
+        var sourceSemantics = request.SourceSemantics;
         var targetSemantics = request.TargetSemantics;
+        var targetInsideSource = IsSameOrInside(target, source, sourceSemantics);
 """,
-    """        var sourceSemantics = request.SourceSemantics;
+    """        var source = Path.GetFullPath(request.Source);
+        var target = Path.GetFullPath(request.Target);
+        var sourceSemantics = request.SourceSemantics;
         var targetSemantics = request.TargetSemantics;
         await ValidatePersistedMoveIdentityAsync(
             request.JobId,
@@ -34,6 +39,7 @@ replace_once(
             sourceSemantics,
             targetSemantics,
             cancellationToken);
+        var targetInsideSource = IsSameOrInside(target, source, sourceSemantics);
 """,
 )
 replace_once(
@@ -54,7 +60,7 @@ replace_once(
         ValidateRecoveryMarker(recoveryMarker, request, source, target);
         var recoveryStage = recoveryMarker?.Stage;
         var persistedManifest = LoadManifest(request.JobId);
-        if (recoveryStage is CopyStartedStage or CopyCompletedStage or SourceCleanupCompletedStage
+        if ((recoveryStage is CopyStartedStage or CopyCompletedStage or SourceCleanupCompletedStage)
             && persistedManifest.Count == 0)
         {
             throw new MoveNeedsAttentionException(
