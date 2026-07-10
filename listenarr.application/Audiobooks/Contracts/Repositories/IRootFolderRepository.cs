@@ -44,6 +44,12 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
             FileSystemPathSemantics sourceSemantics,
             FileSystemPathSemantics targetSemantics,
             CancellationToken ct = default);
+        Task ReassignAudiobooksAndRemoveAsync(
+            int sourceRootId,
+            int targetRootId,
+            FileSystemPathSemantics sourceSemantics,
+            FileSystemPathSemantics targetSemantics,
+            CancellationToken ct = default);
         Task SaveChangesAsync(CancellationToken ct = default);
     }
 }
