@@ -75,11 +75,33 @@ internal sealed partial class AudiobookContentMoveService
         CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        return await db.MoveJobEntries
+        var entries = await db.MoveJobEntries
             .AsNoTracking()
             .Where(entry => entry.MoveJobId == jobId)
             .OrderBy(entry => entry.Id)
             .ToListAsync(cancellationToken);
+        if (entries.Count > 0)
+        {
+            return entries;
+        }
+
+        var requestedPath = await db.MoveJobs
+            .AsNoTracking()
+            .Where(job => job.Id == jobId)
+            .Select(job => job.RequestedPath)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(requestedPath))
+        {
+            var target = Path.GetFullPath(requestedPath);
+            var markerPath = GetRecoveryMarkerPath(target, jobId);
+            if (File.Exists(markerPath))
+            {
+                throw new MoveNeedsAttentionException(
+                    "A move recovery marker exists without a persisted manifest; destination ownership cannot be proven.");
+            }
+        }
+
+        return entries;
     }
 
     private async Task UpdateCleanupStateAsync(
