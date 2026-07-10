@@ -117,7 +117,9 @@ internal sealed partial class AudiobookContentMoveService
 
         foreach (var directory in directories)
         {
-            if (sourceInsideDestination && IsSameOrInside(directory, source, targetSemantics))
+            if (sourceInsideDestination
+                && (IsSameOrInside(directory, source, targetSemantics)
+                    || IsSameOrInside(source, directory, targetSemantics)))
             {
                 continue;
             }
