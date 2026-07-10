@@ -42,6 +42,7 @@ public sealed partial class RootFolderRelocationService(
             throw new ArgumentException("Root folder name is required.", nameof(command));
         }
 
+        RejectTargetNavigationSegments(command.TargetPath);
         var targetPath = FileUtils.NormalizeRootFolderPathForStorage(command.TargetPath);
         var targetResolution = await semanticsResolver.ResolveAsync(
             targetPath,
@@ -202,6 +203,12 @@ public sealed partial class RootFolderRelocationService(
                 var sourceBasePath = audiobook.BasePath!;
                 try
                 {
+                    if (HasDirectoryValuedLegacyFilePath(audiobook, sourceBasePath, sourceSemantics))
+                    {
+                        throw new InvalidOperationException(
+                            $"Stored audiobook path '{audiobook.FilePath}' could not be mapped to the new base path.");
+                    }
+
                     var destinationBasePath = MapTargetPath(
                         sourcePath,
                         targetPath,
@@ -334,6 +341,52 @@ public sealed partial class RootFolderRelocationService(
         await transaction.CommitAsync(cancellationToken);
         var result = Map(relocation, root.Path);
         return new StartOutcome(result, true);
+    }
+
+    private static void RejectTargetNavigationSegments(string targetPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+        var root = Path.GetPathRoot(targetPath);
+        var relativePath = string.IsNullOrEmpty(root)
+            ? targetPath
+            : targetPath[root.Length..];
+        var segments = relativePath.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Any(segment => segment == "."))
+        {
+            throw new ArgumentException(
+                "Root folder target path cannot contain current directory segments.",
+                nameof(targetPath));
+        }
+
+        if (segments.Any(segment => segment == ".."))
+        {
+            throw new ArgumentException(
+                "Root folder target path cannot contain parent traversal segments.",
+                nameof(targetPath));
+        }
+    }
+
+    private static bool HasDirectoryValuedLegacyFilePath(
+        Audiobook audiobook,
+        string sourceBasePath,
+        FileSystemPathSemantics sourceSemantics)
+    {
+        if (string.IsNullOrWhiteSpace(audiobook.FilePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            return FileSystemPathIdentity.AreEquivalent(
+                audiobook.FilePath,
+                sourceBasePath,
+                sourceSemantics);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
     private sealed record StartOutcome(RootFolderPathChangeResult Result, bool Broadcast);
