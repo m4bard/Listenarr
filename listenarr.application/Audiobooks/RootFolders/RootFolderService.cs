@@ -90,6 +90,10 @@ namespace Listenarr.Application.Audiobooks.RootFolders
         {
             var root = await _repo.GetByIdAsync(id);
             if (root == null) throw new KeyNotFoundException("Root folder not found");
+            if (reassignRootId == id)
+            {
+                throw new InvalidOperationException("A root folder cannot be reassigned to itself.");
+            }
 
             await EnsureNoActiveRelocationAsync(root.Id);
 
@@ -108,11 +112,12 @@ namespace Listenarr.Application.Audiobooks.RootFolders
                 await EnsureNoActiveRelocationAsync(newRoot.Id);
                 var targetSemantics = await ResolveSemanticsAsync(newRoot.Path, newRoot.CaseSensitivityMode);
                 await EnsureNoActiveMoveJobsTouchRootAsync(newRoot.Path, targetSemantics.Semantics);
-                await _repo.MigrateAudiobookPathsAsync(
-                    root.Path,
-                    newRoot.Path,
+                await _repo.ReassignAudiobooksAndRemoveAsync(
+                    root.Id,
+                    newRoot.Id,
                     sourceSemantics.Semantics,
                     targetSemantics.Semantics);
+                return;
             }
 
             await _repo.RemoveAsync(id);
