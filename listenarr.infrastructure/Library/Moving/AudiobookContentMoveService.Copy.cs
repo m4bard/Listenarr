@@ -165,15 +165,18 @@ internal sealed partial class AudiobookContentMoveService
                     destinationFile,
                     [destinationRoot],
                     out destinationFile,
-                    out var destinationReason)
-                    || !FileSystemSafety.TryValidateMutationTarget(
-                        partialFile,
-                        [destinationRoot],
-                        out partialFile,
-                        out var partialReason))
+                    out var destinationReason))
                 {
-                    throw new MoveNeedsAttentionException(
-                        string.IsNullOrWhiteSpace(destinationReason) ? partialReason : destinationReason);
+                    throw new MoveNeedsAttentionException(destinationReason);
+                }
+
+                if (!FileSystemSafety.TryValidateMutationTarget(
+                    partialFile,
+                    [destinationRoot],
+                    out partialFile,
+                    out var partialReason))
+                {
+                    throw new MoveNeedsAttentionException(partialReason);
                 }
 
                 if (File.Exists(destinationFile))
