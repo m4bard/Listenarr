@@ -4,12 +4,13 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
   issues: write
 
 jobs:
   diagnose-windows:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
@@ -20,6 +21,42 @@ jobs:
           dotnet-version: 10.0.x
       - name: Restore
         run: dotnet restore
+      - name: Apply recovery marker invariant and format
+        shell: pwsh
+        run: |
+          $path = 'listenarr.infrastructure/Library/Moving/AudiobookContentMoveService.cs'
+          $content = Get-Content $path -Raw
+          $old = @'
+          if (string.Equals(recoveryStage, CopyCompletedStage, StringComparison.Ordinal)
+              && LoadManifest(request.JobId).Count == 0)
+          {
+              throw new MoveNeedsAttentionException(
+                  "A legacy copy-complete marker has no byte-verified manifest; source cleanup is blocked.");
+          }
+          '@
+          $new = @'
+          if (recoveryStage is CopyStartedStage or CopyCompletedStage
+              && LoadManifest(request.JobId).Count == 0)
+          {
+              throw new MoveNeedsAttentionException(
+                  "A move recovery marker exists without a persisted manifest; destination ownership cannot be proven.");
+          }
+          '@
+          if ($content.Contains($old)) {
+            $content = $content.Replace($old, $new)
+            Set-Content $path $content -NoNewline
+          } elseif (-not $content.Contains('recoveryStage is CopyStartedStage or CopyCompletedStage')) {
+            throw 'Expected recovery marker guard was not found.'
+          }
+
+          dotnet format
+          if (-not (git diff --quiet)) {
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add -u
+            git commit -m 'fix(moves): require manifest for direct-copy recovery markers'
+            git push origin HEAD:${{ github.head_ref }}
+          }
       - name: Run tests and report compact failures
         shell: pwsh
         env:
@@ -48,7 +85,7 @@ jobs:
           }
 
           if ($diagnostics.Count -eq 0) {
-            $diagnostics.AddRange([string[]](Get-Content test.log | Select-Object -Last 160))
+            $diagnostics.AddRange([string[]](Get-Content test.log | Select-Object -Last 80))
           }
 
           @(
