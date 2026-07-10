@@ -8,6 +8,7 @@ on:
       - tools/apply_pr717_phase1.py
       - tools/apply_pr717_phase2.py
       - tools/apply_pr717_phase3_prod.py
+      - tools/apply_pr717_phase3_import.py
       - tools/apply_pr717_phase3_main.py
       - tools/apply_pr717_phase3_copy.py
       - tools/apply_pr717_phase3_tests.py
@@ -61,6 +62,9 @@ jobs:
       - name: Apply recovery marker persistence fixes
         run: python tools/apply_pr717_phase3_prod.py
 
+      - name: Add recovery persistence import
+        run: python tools/apply_pr717_phase3_import.py
+
       - name: Apply recovery orchestration fixes
         run: python tools/apply_pr717_phase3_main.py
 
@@ -78,6 +82,7 @@ jobs:
           rm tools/apply_pr717_phase1.py
           rm tools/apply_pr717_phase2.py
           rm tools/apply_pr717_phase3_prod.py
+          rm tools/apply_pr717_phase3_import.py
           rm tools/apply_pr717_phase3_main.py
           rm tools/apply_pr717_phase3_copy.py
           rm tools/apply_pr717_phase3_tests.py
