@@ -10,9 +10,11 @@ on:
       - tools/apply_pr717_phase3_prod.py
       - tools/apply_pr717_phase3_import.py
       - tools/apply_pr717_phase3_main.py
+      - tools/apply_pr717_phase3_guard.py
       - tools/apply_pr717_phase3_copy.py
       - tools/apply_pr717_phase3_tests.py
       - tools/apply_pr717_phase4.py
+      - tools/apply_pr717_phase4_tests.py
       - .github/workflows/apply-pr717-review-fixes.yml
   pull_request:
     branches:
@@ -62,11 +64,14 @@ jobs:
       - name: Apply recovery marker persistence fixes
         run: python tools/apply_pr717_phase3_prod.py
 
-      - name: Add recovery persistence import
+      - name: Add recovery persistence imports
         run: python tools/apply_pr717_phase3_import.py
 
       - name: Apply recovery orchestration fixes
         run: python tools/apply_pr717_phase3_main.py
+
+      - name: Harden marker manifest guard
+        run: python tools/apply_pr717_phase3_guard.py
 
       - name: Apply manifest copy publication fixes
         run: python tools/apply_pr717_phase3_copy.py
@@ -77,6 +82,9 @@ jobs:
       - name: Apply transactional root reassignment fixes
         run: python tools/apply_pr717_phase4.py
 
+      - name: Correct transactional rollback regression test
+        run: python tools/apply_pr717_phase4_tests.py
+
       - name: Remove temporary automation
         run: |
           rm tools/apply_pr717_phase1.py
@@ -84,9 +92,11 @@ jobs:
           rm tools/apply_pr717_phase3_prod.py
           rm tools/apply_pr717_phase3_import.py
           rm tools/apply_pr717_phase3_main.py
+          rm tools/apply_pr717_phase3_guard.py
           rm tools/apply_pr717_phase3_copy.py
           rm tools/apply_pr717_phase3_tests.py
           rm tools/apply_pr717_phase4.py
+          rm tools/apply_pr717_phase4_tests.py
           rm .github/workflows/apply-pr717-review-fixes.yml
 
       - name: Restore backend
@@ -94,14 +104,6 @@ jobs:
 
       - name: Format backend changes
         run: dotnet format listenarr.slnx --no-restore
-
-      - name: Install frontend dependencies
-        working-directory: fe
-        run: npm ci
-
-      - name: Format frontend changes
-        working-directory: fe
-        run: npx prettier --write src/types/index.ts src/services/api.ts
 
       - name: Build backend
         id: backend-build
@@ -156,6 +158,14 @@ jobs:
 
       - name: Run complete backend suite
         run: dotnet test listenarr.slnx --no-build --configuration Release --logger "console;verbosity=normal"
+
+      - name: Install frontend dependencies
+        working-directory: fe
+        run: npm ci
+
+      - name: Format frontend changes
+        working-directory: fe
+        run: npx prettier --write src/types/index.ts src/services/api.ts
 
       - name: Frontend type check
         working-directory: fe
