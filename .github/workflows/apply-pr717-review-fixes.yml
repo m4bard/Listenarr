@@ -1,0 +1,112 @@
+name: Apply PR 717 Review Fixes
+
+on:
+  push:
+    branches:
+      - automation/pr717-review-fixes
+    paths:
+      - tools/apply_pr717_phase1.py
+      - tools/apply_pr717_phase2.py
+      - tools/apply_pr717_phase3_prod.py
+      - tools/apply_pr717_phase3_tests.py
+      - tools/apply_pr717_phase4.py
+      - .github/workflows/apply-pr717-review-fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      ASPNETCORE_ENVIRONMENT: Test
+      Playwright__Enabled: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: fe/package-lock.json
+
+      - name: Apply focused fixes
+        run: |
+          python tools/apply_pr717_phase1.py
+          python tools/apply_pr717_phase2.py
+          python tools/apply_pr717_phase3_prod.py
+          python tools/apply_pr717_phase3_tests.py
+          python tools/apply_pr717_phase4.py
+
+      - name: Remove temporary automation
+        run: |
+          rm tools/apply_pr717_phase1.py
+          rm tools/apply_pr717_phase2.py
+          rm tools/apply_pr717_phase3_prod.py
+          rm tools/apply_pr717_phase3_tests.py
+          rm tools/apply_pr717_phase4.py
+          rm .github/workflows/apply-pr717-review-fixes.yml
+
+      - name: Restore backend
+        run: dotnet restore listenarr.slnx
+
+      - name: Format backend changes
+        run: dotnet format listenarr.slnx --no-restore
+
+      - name: Install frontend dependencies
+        working-directory: fe
+        run: npm ci
+
+      - name: Format frontend changes
+        working-directory: fe
+        run: npx prettier --write src/types/index.ts src/services/api.ts
+
+      - name: Build backend
+        run: dotnet build listenarr.slnx --no-restore --configuration Release
+
+      - name: Run focused backend tests
+        run: >-
+          dotnet test tests/Listenarr.Tests.csproj
+          --no-build
+          --configuration Release
+          --logger "console;verbosity=normal"
+          --filter "FullyQualifiedName~LibraryUpdateWorkflowTests|FullyQualifiedName~LibraryController_UpdateAudiobookTests|FullyQualifiedName~LibraryController_DeleteLinkSafetyTests|FullyQualifiedName~AudiobookContentMoveServiceTests|FullyQualifiedName~RootFolderReassignmentTransactionTests|FullyQualifiedName~RootFolderServiceTests|FullyQualifiedName~RootFolderRelocationServiceTests"
+
+      - name: Run complete backend suite
+        run: dotnet test listenarr.slnx --no-build --configuration Release --logger "console;verbosity=normal"
+
+      - name: Frontend type check
+        working-directory: fe
+        run: npm run type-check
+
+      - name: Frontend unit tests
+        working-directory: fe
+        run: npm run test:unit
+
+      - name: Frontend build
+        working-directory: fe
+        run: npm run build
+
+      - name: Verify formatting and diff hygiene
+        run: |
+          dotnet format listenarr.slnx --no-restore --verify-no-changes
+          git diff --check
+
+      - name: Commit validated fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: address PR 717 path safety review findings"
+          git push origin HEAD:automation/pr717-review-fixes
