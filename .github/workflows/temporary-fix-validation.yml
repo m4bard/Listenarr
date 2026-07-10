@@ -1,0 +1,37 @@
+name: Temporary Fix Validation
+
+on:
+  push:
+    branches:
+      - bugfix/unix-folder-name-space
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore
+      - name: Report formatter and compiler failures
+        shell: bash
+        run: |
+          set +e
+          dotnet format --verify-no-changes --verbosity diagnostic > format.log 2>&1
+          format_status=$?
+          echo "=== FORMAT DIAGNOSTICS ==="
+          grep -E "(Formatted|error|warning|Unable|Fix whitespace|Fix style|Fix analyzers|would be formatted|Files formatted)" format.log | tail -n 120 || tail -n 80 format.log
+
+          dotnet build --no-restore --nologo --verbosity minimal > build.log 2>&1
+          build_status=$?
+          echo "=== BUILD DIAGNOSTICS ==="
+          grep -E "(: error |error CS|error NETSDK|Build FAILED|Build succeeded)" build.log | tail -n 160 || tail -n 100 build.log
+
+          if [ "$format_status" -ne 0 ] || [ "$build_status" -ne 0 ]; then
+            exit 1
+          fi
