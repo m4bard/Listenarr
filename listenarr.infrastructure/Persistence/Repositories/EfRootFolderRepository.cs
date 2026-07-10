@@ -187,7 +187,9 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             }
 
             await using var ctx = await _dbFactory.CreateDbContextAsync(ct);
-            await using var transaction = await ctx.Database.BeginTransactionAsync(ct);
+            await using var transaction = ctx.Database.IsRelational()
+                ? await ctx.Database.BeginTransactionAsync(ct)
+                : null;
             var roots = await ctx.RootFolders
                 .Where(root => root.Id == sourceRootId || root.Id == targetRootId)
                 .ToListAsync(ct);
@@ -248,7 +250,10 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
             ctx.RootFolders.Remove(sourceRoot);
             await ctx.SaveChangesAsync(ct);
-            await transaction.CommitAsync(ct);
+            if (transaction != null)
+            {
+                await transaction.CommitAsync(ct);
+            }
         }
 
         public async Task SaveChangesAsync(CancellationToken ct = default)
