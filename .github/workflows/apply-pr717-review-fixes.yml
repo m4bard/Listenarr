@@ -99,7 +99,28 @@ jobs:
         run: npx prettier --write src/types/index.ts src/services/api.ts
 
       - name: Build backend
-        run: dotnet build listenarr.slnx --no-restore --configuration Release
+        id: backend-build
+        shell: bash
+        run: |
+          set +e
+          dotnet build listenarr.slnx --no-restore --configuration Release --verbosity minimal > backend-build.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            grep -E "(^|: )(error (CS|NU|NETSDK)[0-9]+|error :)" backend-build.log > backend-build-errors.txt || tail -n 250 backend-build.log > backend-build-errors.txt
+            cat backend-build-errors.txt
+          else
+            cat backend-build.log
+          fi
+          exit "$status"
+
+      - name: Upload backend build diagnostics
+        if: failure() && steps.backend-build.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-build-errors
+          path: backend-build-errors.txt
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Run focused backend tests
         run: >-
