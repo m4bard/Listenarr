@@ -8,6 +8,8 @@ on:
       - tools/apply_pr717_phase1.py
       - tools/apply_pr717_phase2.py
       - tools/apply_pr717_phase3_prod.py
+      - tools/apply_pr717_phase3_main.py
+      - tools/apply_pr717_phase3_copy.py
       - tools/apply_pr717_phase3_tests.py
       - tools/apply_pr717_phase4.py
       - .github/workflows/apply-pr717-review-fixes.yml
@@ -56,8 +58,14 @@ jobs:
       - name: Apply link-safe deletion fixes
         run: python tools/apply_pr717_phase2.py
 
-      - name: Apply manifest-owned recovery fixes
+      - name: Apply recovery marker persistence fixes
         run: python tools/apply_pr717_phase3_prod.py
+
+      - name: Apply recovery orchestration fixes
+        run: python tools/apply_pr717_phase3_main.py
+
+      - name: Apply manifest copy publication fixes
+        run: python tools/apply_pr717_phase3_copy.py
 
       - name: Add recovery regression tests
         run: python tools/apply_pr717_phase3_tests.py
@@ -70,6 +78,8 @@ jobs:
           rm tools/apply_pr717_phase1.py
           rm tools/apply_pr717_phase2.py
           rm tools/apply_pr717_phase3_prod.py
+          rm tools/apply_pr717_phase3_main.py
+          rm tools/apply_pr717_phase3_copy.py
           rm tools/apply_pr717_phase3_tests.py
           rm tools/apply_pr717_phase4.py
           rm .github/workflows/apply-pr717-review-fixes.yml
