@@ -378,6 +378,29 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
+        public async Task MoveContentsAsync_ExistingEmptyTarget_RemovesEmptySourceParentAfterQuarantineCleanup()
+        {
+            var sourceRoot = FileService.GetTempDirectory("content-move-existing-target-root");
+            var series = Path.Join(sourceRoot, "Matt Dinniman", "Dungeon Crawler Carl");
+            var oldTitle = Path.Join(series, "A Parade of Horribles (20262)");
+            var source = Path.Join(oldTitle, "test");
+            Directory.CreateDirectory(source);
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(series, "A Parade of Horribles (2026)", "test");
+            Directory.CreateDirectory(target);
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            await service.MoveContentsAsync(
+                await CreateLeasedMoveRequestAsync(source, target, sourceCleanupBoundary: sourceRoot),
+                CancellationToken.None);
+
+            Assert.False(Directory.Exists(source));
+            Assert.False(Directory.Exists(oldTitle));
+            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+            Assert.True(Directory.Exists(sourceRoot));
+        }
+
+        [Fact]
         public async Task MoveContentsAsync_DeleteEmptySourceFalse_KeepsEmptySourceDirectory()
         {
             var source = FileService.GetTempDirectory("content-move-keep-source");

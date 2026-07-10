@@ -341,16 +341,23 @@ internal sealed partial class AudiobookContentMoveService
             Directory.Delete(directoryEntry.Directory!, false);
         }
 
+        var sourceDirectoryDeleted = false;
         if (deleteEmptySource
             && sourceExists
             && Directory.Exists(source)
             && !Directory.EnumerateFileSystemEntries(source).Any())
         {
             Directory.Delete(source, false);
-            RemoveEmptySourceAncestors(source, sourceCleanupBoundary, sourceSemantics);
+            sourceDirectoryDeleted = true;
         }
 
+        // Remove the temporary quarantine before pruning source ancestors. While the
+        // quarantine exists, its parent appears nonempty and stops cleanup one level early.
         RemoveEmptyDirectoryTree(quarantineRoot, sourceParent, sourceSemantics);
+        if (sourceDirectoryDeleted)
+        {
+            RemoveEmptySourceAncestors(source, sourceCleanupBoundary, sourceSemantics);
+        }
     }
 
     private static void ResolveCleanupPaths(
