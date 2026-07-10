@@ -8,8 +8,6 @@
  * (at your option) any later version.
  */
 
-using Listenarr.Domain.Audiobooks;
-
 namespace Listenarr.Api.Features.Library;
 
 /// <summary>
