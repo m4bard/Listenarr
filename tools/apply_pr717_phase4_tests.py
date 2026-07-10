@@ -33,4 +33,14 @@ new = """            var triggerSql =
 """
 if content.count(old) != 1:
     raise RuntimeError("Rollback test failure anchor mismatch")
-path.write_text(content.replace(old, new, 1), encoding="utf-8", newline="\n")
+content = content.replace(old, new, 1)
+
+assertion_old = """        await Assert.ThrowsAsync<DbUpdateException>(() =>
+"""
+assertion_new = """        await Assert.ThrowsAsync<Listenarr.Application.Common.PersistenceException>(() =>
+"""
+if content.count(assertion_old) != 1:
+    raise RuntimeError("Rollback exception assertion anchor mismatch")
+content = content.replace(assertion_old, assertion_new, 1)
+
+path.write_text(content, encoding="utf-8", newline="\n")
