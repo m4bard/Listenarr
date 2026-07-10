@@ -1,5 +1,7 @@
 from pathlib import Path
 
+# This script intentionally replaces the historical FK-assumption test with a
+# deterministic SQLite delete failure so transaction rollback is exercised.
 root = Path(__file__).resolve().parents[1]
 path = root / "tests/Features/Infrastructure/Persistence/RootFolderReassignmentTransactionTests.cs"
 content = path.read_text(encoding="utf-8")
