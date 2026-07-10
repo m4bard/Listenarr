@@ -11,6 +11,13 @@ on:
       - tools/apply_pr717_phase3_tests.py
       - tools/apply_pr717_phase4.py
       - .github/workflows/apply-pr717-review-fixes.yml
+  pull_request:
+    branches:
+      - canary
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
@@ -23,10 +30,12 @@ jobs:
       DOTNET_NOLOGO: "1"
       ASPNETCORE_ENVIRONMENT: Test
       Playwright__Enabled: "false"
+      TARGET_BRANCH: ${{ github.head_ref || github.ref_name }}
 
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
 
       - name: Setup .NET
@@ -109,4 +118,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "fix: address PR 717 path safety review findings"
-          git push origin HEAD:automation/pr717-review-fixes
+          git push origin HEAD:"${TARGET_BRANCH}"
