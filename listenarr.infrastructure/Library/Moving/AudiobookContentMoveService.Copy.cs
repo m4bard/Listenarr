@@ -20,6 +20,7 @@ internal sealed partial class AudiobookContentMoveService
             manifest,
             jobId,
             targetSemantics);
+        var destinationIsJobOwnedTemp = IsJobOwnedTempDirectory(copyDestination, jobId);
 
         foreach (var manifestEntry in manifest.OrderBy(entry => entry.EntryType))
         {
@@ -64,7 +65,13 @@ internal sealed partial class AudiobookContentMoveService
                 throw new IOException($"Move entry escaped source root: {manifestEntry.RelativePath}");
             }
 
-            await CopyFileWithRetryAsync(entry, destinationPath, jobId, copyDestination, cancellationToken);
+            await CopyFileWithRetryAsync(
+                entry,
+                destinationPath,
+                jobId,
+                copyDestination,
+                destinationIsJobOwnedTemp,
+                cancellationToken);
         }
     }
 
@@ -148,6 +155,7 @@ internal sealed partial class AudiobookContentMoveService
         string destinationFile,
         Guid jobId,
         string destinationRoot,
+        bool destinationIsJobOwnedTemp,
         CancellationToken cancellationToken)
     {
         var destinationDirectory = Path.GetDirectoryName(destinationFile);
@@ -191,8 +199,13 @@ internal sealed partial class AudiobookContentMoveService
                         return;
                     }
 
-                    throw new MoveNeedsAttentionException(
-                        $"Destination file differs from the move manifest and will not be overwritten: {Path.GetFileName(destinationFile)}");
+                    if (!destinationIsJobOwnedTemp)
+                    {
+                        throw new MoveNeedsAttentionException(
+                            $"Destination file differs from the move manifest and will not be overwritten: {Path.GetFileName(destinationFile)}");
+                    }
+
+                    File.Delete(destinationFile);
                 }
 
                 TryDeleteOwnedPartial(partialFile);
@@ -237,6 +250,11 @@ internal sealed partial class AudiobookContentMoveService
 
         throw new IOException($"Failed to copy file after {MaxCopyAttempts} attempts: {sourceFile}");
     }
+
+    private static bool IsJobOwnedTempDirectory(string destinationRoot, Guid jobId) =>
+        Path.GetFileName(destinationRoot).EndsWith(
+            $".tmp-{jobId:N}",
+            StringComparison.Ordinal);
 
     private static void TryDeleteOwnedPartial(string partialFile)
     {
