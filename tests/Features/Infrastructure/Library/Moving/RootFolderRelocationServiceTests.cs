@@ -88,6 +88,7 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
     {
         var target = Path.Join(Path.GetTempPath(), $"repair-root-{Guid.NewGuid():N}");
         Directory.CreateDirectory(target);
+        var unrelatedBasePath = Path.Join(Path.GetTempPath(), $"unrelated-repair-book-{Guid.NewGuid():N}");
         int rootId;
         await using (var db = await _factory.CreateDbContextAsync())
         {
@@ -99,6 +100,11 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
                 PathIdentityKey = null
             };
             db.RootFolders.Add(root);
+            db.Audiobooks.Add(new Audiobook
+            {
+                Title = "Unrelated",
+                BasePath = unrelatedBasePath
+            });
             await db.SaveChangesAsync();
             rootId = root.Id;
         }
@@ -120,6 +126,75 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
         Assert.Equal("Repaired", repaired.Name);
         Assert.Equal(PathIdentityState.Valid, repaired.PathIdentityState);
         Assert.NotNull(repaired.PathIdentityKey);
+        Assert.Equal(unrelatedBasePath, (await verification.Audiobooks.SingleAsync()).BasePath);
+    }
+
+    [Fact]
+    public async Task MetadataOnlyPathChange_ForeignSyntaxRoot_RewritesRawStoredAudiobookPaths()
+    {
+        var target = Path.Join(Path.GetTempPath(), $"repair-foreign-root-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(target);
+        var sourceRoot = OperatingSystem.IsWindows() ? "/legacy/library" : @"Z:\legacy\library";
+        var sourceBook = OperatingSystem.IsWindows()
+            ? sourceRoot + "/Author/Title"
+            : sourceRoot + @"\Author\Title";
+        var sourceFile = OperatingSystem.IsWindows()
+            ? sourceBook + "/book.m4b"
+            : sourceBook + @"\book.m4b";
+        var unrelatedBasePath = Path.Join(Path.GetTempPath(), $"unrelated-book-{Guid.NewGuid():N}");
+        int rootId;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var root = new RootFolder
+            {
+                Name = "Foreign",
+                Path = sourceRoot,
+                PathIdentityState = PathIdentityState.Unavailable
+            };
+            db.RootFolders.Add(root);
+            db.Audiobooks.AddRange(
+                new Audiobook
+                {
+                    Title = "Affected",
+                    BasePath = sourceBook,
+                    FilePath = sourceFile,
+                    Files = [new AudiobookFile { Path = sourceFile }]
+                },
+                new Audiobook
+                {
+                    Title = "Unrelated",
+                    BasePath = unrelatedBasePath
+                });
+            await db.SaveChangesAsync();
+            rootId = root.Id;
+        }
+
+        var result = await CreateService().StartAsync(
+            rootId,
+            new RootFolderPathChangeCommand(
+                target,
+                RootFolderRelocationMode.MetadataOnly,
+                false,
+                "Repaired Foreign Root",
+                false,
+                FileSystemCaseSensitivityMode.Auto));
+
+        Assert.Equal(RootFolderRelocationStatus.Completed, result.Status);
+        Assert.Equal(1, result.TotalJobs);
+        Assert.Equal(1, result.CompletedJobs);
+        await using var verification = await _factory.CreateDbContextAsync();
+        Assert.Equal(target, (await verification.RootFolders.SingleAsync()).Path);
+        var affected = await verification.Audiobooks
+            .Include(audiobook => audiobook.Files)
+            .SingleAsync(audiobook => audiobook.Title == "Affected");
+        var expectedBasePath = Path.Join(target, "Author", "Title");
+        Assert.Equal(expectedBasePath, affected.BasePath);
+        Assert.Equal(Path.Join(expectedBasePath, "book.m4b"), affected.FilePath);
+        Assert.Equal(Path.Join(expectedBasePath, "book.m4b"), Assert.Single(affected.Files!).Path);
+        Assert.Equal(
+            unrelatedBasePath,
+            (await verification.Audiobooks.SingleAsync(audiobook => audiobook.Title == "Unrelated")).BasePath);
+        Assert.Empty(await verification.RootFolderRelocations.ToListAsync());
     }
 
     [Fact]

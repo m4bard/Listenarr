@@ -1271,6 +1271,30 @@ class ApiService {
     })
   }
 
+  async getMoveJobStatus(jobId: string): Promise<{
+    jobId: string
+    audiobookId?: number
+    status: string
+    target?: string
+    error?: string
+  }> {
+    const job = await this.request<{
+      id: string
+      audiobookId?: number
+      status: string
+      requestedPath?: string
+      error?: string
+    }>('/library/move/' + encodeURIComponent(jobId))
+
+    return {
+      jobId: job.id,
+      audiobookId: job.audiobookId,
+      status: job.status,
+      target: job.requestedPath,
+      error: job.error,
+    }
+  }
+
   async removeFromLibrary(
     id: number,
     options?: { deleteFiles?: boolean; deleteFolder?: boolean },

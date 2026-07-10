@@ -42,28 +42,104 @@ public sealed partial class RootFolderRelocationService
         return targetPath;
     }
 
-    private static (List<Audiobook> Affected, List<Audiobook> InvalidStoredBasePaths) DiscoverAffectedAudiobooks(
-        IEnumerable<Audiobook> audiobooks,
-        string sourceRootPath,
-        FileSystemPathSemantics? sourceSemantics)
+    private sealed record AudiobookPathCandidate(Audiobook Audiobook, string StoredBasePath);
+
+    private sealed record StoredSourcePathSemantics(
+        FileSystemPathSemantics Semantics,
+        bool DetectAmbiguousCaseMatches);
+
+    private static StoredSourcePathSemantics? ResolveStoredSourcePathSemantics(RootFolder root)
     {
-        var affected = new List<Audiobook>();
-        var invalidStoredBasePaths = new List<Audiobook>();
-        if (sourceSemantics == null)
+        FileSystemPathSyntax syntax;
+        if (root.Path.StartsWith("/", StringComparison.Ordinal))
         {
-            return (affected, invalidStoredBasePaths);
+            syntax = FileSystemPathSyntax.Unix;
         }
+        else if (
+            (root.Path.Length >= 3
+                && char.IsAsciiLetter(root.Path[0])
+                && root.Path[1] == ':'
+                && root.Path[2] is '\\' or '/')
+            || root.Path.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            syntax = FileSystemPathSyntax.Windows;
+        }
+        else
+        {
+            return null;
+        }
+
+        var sensitivity = root.ResolvedCaseSensitivity;
+        if (sensitivity == FileSystemCaseSensitivity.Unknown)
+        {
+            sensitivity = root.CaseSensitivityMode switch
+            {
+                FileSystemCaseSensitivityMode.Sensitive => FileSystemCaseSensitivity.Sensitive,
+                FileSystemCaseSensitivityMode.Insensitive => FileSystemCaseSensitivity.Insensitive,
+                _ => FileSystemCaseSensitivity.Sensitive
+            };
+        }
+
+        return new StoredSourcePathSemantics(
+            new FileSystemPathSemantics(syntax, sensitivity),
+            root.ResolvedCaseSensitivity == FileSystemCaseSensitivity.Unknown
+                && root.CaseSensitivityMode == FileSystemCaseSensitivityMode.Auto);
+    }
+
+    private static bool IsStoredWindowsAbsolutePath(string path) =>
+        (path.Length >= 3
+            && char.IsAsciiLetter(path[0])
+            && path[1] == ':'
+            && path[2] is '\\' or '/')
+        || path.StartsWith(@"\\", StringComparison.Ordinal);
+
+    private static (
+        List<AudiobookPathCandidate> Affected,
+        List<AudiobookPathCandidate> InvalidStoredBasePaths) DiscoverAffectedAudiobooks(
+        IEnumerable<AudiobookPathCandidate> audiobooks,
+        string sourceRootPath,
+        FileSystemPathSemantics sourceSemantics,
+        bool detectAmbiguousCaseMatches)
+    {
+        var affected = new List<AudiobookPathCandidate>();
+        var invalidStoredBasePaths = new List<AudiobookPathCandidate>();
 
         foreach (var audiobook in audiobooks)
         {
+            var usesWindowsSyntax = IsStoredWindowsAbsolutePath(audiobook.StoredBasePath);
+            var usesUnixSyntax = audiobook.StoredBasePath.StartsWith("/", StringComparison.Ordinal);
+            if ((sourceSemantics.Syntax == FileSystemPathSyntax.Windows && usesUnixSyntax)
+                || (sourceSemantics.Syntax == FileSystemPathSyntax.Unix && usesWindowsSyntax))
+            {
+                continue;
+            }
+
+            if (!usesWindowsSyntax && !usesUnixSyntax)
+            {
+                invalidStoredBasePaths.Add(audiobook);
+                continue;
+            }
+
             try
             {
                 if (FileSystemPathIdentity.IsSameOrInside(
-                    audiobook.BasePath!,
+                    audiobook.StoredBasePath,
                     sourceRootPath,
-                    sourceSemantics.Value))
+                    sourceSemantics))
                 {
                     affected.Add(audiobook);
+                    continue;
+                }
+
+                if (detectAmbiguousCaseMatches
+                    && FileSystemPathIdentity.IsSameOrInside(
+                        audiobook.StoredBasePath,
+                        sourceRootPath,
+                        new FileSystemPathSemantics(
+                            sourceSemantics.Syntax,
+                            FileSystemCaseSensitivity.Insensitive)))
+                {
+                    invalidStoredBasePaths.Add(audiobook);
                 }
             }
             catch (ArgumentException)

@@ -48,95 +48,16 @@ public sealed class FileSystemSemanticsResolver : IFileSystemSemanticsResolver
             return ValueTask.FromResult(cached);
         }
 
-        var resolved = TryReadOnlyProbe(boundary, syntax) ?? Probe(boundary, syntax);
+        // Probe inside the boundary whose semantics were requested. Looking up the
+        // boundary name with alternate casing tests its parent directory instead,
+        // which is incorrect on filesystems with per-directory case sensitivity.
+        var resolved = Probe(boundary, syntax);
         if (resolved.State == PathIdentityState.Valid)
         {
             _cache[boundary] = resolved;
         }
 
         return ValueTask.FromResult(resolved);
-    }
-
-    private static FileSystemSemanticsResolution? TryReadOnlyProbe(
-        string boundary,
-        FileSystemPathSyntax syntax)
-    {
-        var trimmedBoundary = boundary.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        if (string.IsNullOrEmpty(trimmedBoundary))
-        {
-            return null;
-        }
-
-        var parent = Path.GetDirectoryName(trimmedBoundary);
-        var leaf = Path.GetFileName(trimmedBoundary);
-        if (string.IsNullOrEmpty(parent)
-            || string.IsNullOrEmpty(leaf)
-            || !leaf.Any(char.IsLetter))
-        {
-            return null;
-        }
-
-        try
-        {
-            var caseVariants = Directory
-                .EnumerateFileSystemEntries(parent)
-                .Select(Path.GetFileName)
-                .Where(name => string.Equals(name, leaf, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-            if (caseVariants.Count > 1)
-            {
-                return new FileSystemSemanticsResolution(
-                    new FileSystemPathSemantics(syntax, FileSystemCaseSensitivity.Sensitive),
-                    PathIdentityState.Valid,
-                    boundary);
-            }
-
-            if (caseVariants.Count == 0)
-            {
-                return null;
-            }
-
-            var alternateLeaf = BuildAlternateCaseProbeName(leaf);
-            if (string.Equals(alternateLeaf, leaf, StringComparison.Ordinal)
-                || Path.IsPathRooted(alternateLeaf))
-            {
-                return null;
-            }
-
-            var alternatePath = Path.Combine(parent, alternateLeaf);
-            var sensitivity = Directory.Exists(alternatePath) || File.Exists(alternatePath)
-                ? FileSystemCaseSensitivity.Insensitive
-                : FileSystemCaseSensitivity.Sensitive;
-            return new FileSystemSemanticsResolution(
-                new FileSystemPathSemantics(syntax, sensitivity),
-                PathIdentityState.Valid,
-                boundary);
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-    }
-
-    private static string BuildAlternateCaseProbeName(string value)
-    {
-        var chars = value.ToCharArray();
-        for (var index = 0; index < chars.Length; index++)
-        {
-            if (char.IsUpper(chars[index]))
-            {
-                chars[index] = char.ToLowerInvariant(chars[index]);
-                return new string(chars);
-            }
-
-            if (char.IsLower(chars[index]))
-            {
-                chars[index] = char.ToUpperInvariant(chars[index]);
-                return new string(chars);
-            }
-        }
-
-        return value;
     }
 
     private static FileSystemSemanticsResolution Probe(

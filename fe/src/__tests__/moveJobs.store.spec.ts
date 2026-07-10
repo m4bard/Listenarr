@@ -32,6 +32,10 @@ const toastMocks = vi.hoisted(() => ({
   error: vi.fn(),
 }))
 
+const apiMocks = vi.hoisted(() => ({
+  getMoveJobStatus: vi.fn(),
+}))
+
 const signalRMocks = vi.hoisted(() => {
   const state = {
     callback: null as ((job: MoveJobUpdate) => void) | null,
@@ -44,6 +48,12 @@ const signalRMocks = vi.hoisted(() => {
   })
   return state
 })
+
+vi.mock('@/services/api', () => ({
+  apiService: {
+    getMoveJobStatus: apiMocks.getMoveJobStatus,
+  },
+}))
 
 vi.mock('@/services/toastService', () => ({
   useToast: () => toastMocks,
@@ -62,6 +72,7 @@ describe('move jobs store', () => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
     signalRMocks.callback = null
+    apiMocks.getMoveJobStatus.mockImplementation(() => new Promise(() => {}))
     signalRMocks.onMoveJobUpdate.mockImplementation((callback: (job: MoveJobUpdate) => void) => {
       signalRMocks.callback = callback
       return signalRMocks.unsubscribe
@@ -139,6 +150,76 @@ describe('move jobs store', () => {
 
     expect(toastMocks.error).toHaveBeenCalledWith('Move needs attention', 'Manual review required')
     expect(store.trackedById['job-1']).toBeUndefined()
+  })
+
+  it('reconciles a job that completed before tracking began', async () => {
+    apiMocks.getMoveJobStatus.mockResolvedValue({
+      jobId: 'job-1',
+      status: 'Completed',
+      target: '/library/book',
+    })
+    const store = useMoveJobsStore()
+
+    store.trackQueuedJob({ jobId: 'job-1', target: '/library/book' })
+
+    await vi.waitFor(() => expect(store.trackedById['job-1']).toBeUndefined())
+    expect(toastMocks.success).toHaveBeenCalledWith(
+      'Move completed',
+      'Files moved to /library/book',
+    )
+  })
+
+  it('does not recreate a terminal job when a stale status response arrives later', async () => {
+    let resolveStatus:
+      | ((value: { jobId: string; status: string; target: string }) => void)
+      | undefined
+    apiMocks.getMoveJobStatus.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveStatus = resolve
+        }),
+    )
+    const store = useMoveJobsStore()
+    store.trackQueuedJob({ jobId: 'job-1', target: '/library/book' })
+
+    signalRMocks.callback?.({ jobId: 'job-1', status: 'Completed', target: '/library/book' })
+    resolveStatus?.({ jobId: 'job-1', status: 'Queued', target: '/library/book' })
+    await Promise.resolve()
+
+    expect(store.trackedById['job-1']).toBeUndefined()
+    expect(toastMocks.success).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not regress a running job when a stale queued status response arrives', async () => {
+    let resolveStatus:
+      | ((value: { jobId: string; status: string; target: string }) => void)
+      | undefined
+    apiMocks.getMoveJobStatus.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveStatus = resolve
+        }),
+    )
+    const store = useMoveJobsStore()
+    store.trackQueuedJob({ jobId: 'job-1', target: '/library/book' })
+
+    signalRMocks.callback?.({ jobId: 'job-1', status: 'Running', target: '/library/book' })
+    resolveStatus?.({ jobId: 'job-1', status: 'Queued', target: '/library/book' })
+    await Promise.resolve()
+
+    expect(store.trackedById['job-1']?.status).toBe('Running')
+    expect(toastMocks.info).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps tracking when status reconciliation fails', async () => {
+    apiMocks.getMoveJobStatus.mockRejectedValue(new Error('offline'))
+    const store = useMoveJobsStore()
+
+    store.trackQueuedJob({ jobId: 'job-1', target: '/library/book' })
+
+    await vi.waitFor(() => expect(apiMocks.getMoveJobStatus).toHaveBeenCalledWith('job-1'))
+    expect(store.trackedById['job-1']?.status).toBe('Queued')
+    expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
   it('shows terminal error toast and clears tracked job on Superseded', () => {

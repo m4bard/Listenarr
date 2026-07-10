@@ -57,6 +57,37 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
+        public async Task ProcessJobAsync_UnrelatedForeignSyntaxRoot_DoesNotBlockBoundedCleanup()
+        {
+            var sourceRoot = FileService.GetTempDirectory("move-processor-foreign-root");
+            var source = Path.Join(sourceRoot, "Author", "Title");
+            Directory.CreateDirectory(source);
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(FileService.GetTempPath(), $"move-processor-foreign-dst-{Guid.NewGuid():N}");
+            var rootFolderRepository = _provider.GetRequiredService<IRootFolderRepository>();
+            await rootFolderRepository.AddAsync(new RootFolder
+            {
+                Name = "Foreign Legacy Root",
+                Path = OperatingSystem.IsWindows() ? "/legacy/library" : @"Z:\legacy\library"
+            });
+            await rootFolderRepository.AddAsync(new RootFolder { Name = "Valid Root", Path = sourceRoot });
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "Foreign Root Cleanup",
+                BasePath = source
+            });
+            var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, target, source);
+
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            Assert.Equal(MoveJobStatus.Completed, (await queue.GetJobAsync(job.Id))?.Status);
+            Assert.True(Directory.Exists(sourceRoot));
+            Assert.False(Directory.Exists(Path.Join(sourceRoot, "Author")));
+            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        }
+
+        [Fact]
         public async Task ProcessJobAsync_CompletedStatusPersistenceFailure_PropagatesWithoutCompletedMetric()
         {
             var source = FileService.GetTempDirectory("move-processor-status-failure-src");

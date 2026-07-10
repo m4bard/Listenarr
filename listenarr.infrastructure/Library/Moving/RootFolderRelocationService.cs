@@ -90,6 +90,10 @@ public sealed partial class RootFolderRelocationService(
                 "The current root folder path is invalid or unavailable; use metadata-only path change to repair it before relocating files.");
         }
 
+        var storedSourcePathSemantics = sourceResolution == null
+            ? ResolveStoredSourcePathSemantics(root)
+            : new StoredSourcePathSemantics(sourceResolution.Semantics, false);
+
         var targetIdentityKey = FileSystemPathIdentity.CreateKey(
             "root",
             targetPath,
@@ -136,14 +140,28 @@ public sealed partial class RootFolderRelocationService(
             throw new InvalidOperationException("A root folder with that filesystem identity already exists.");
         }
 
-        var audiobooks = await db.Audiobooks
-            .Include(audiobook => audiobook.Files)
+        var audiobookRows = await db.Audiobooks
             .Where(audiobook => audiobook.BasePath != null)
+            .Select(audiobook => new
+            {
+                Audiobook = audiobook,
+                StoredBasePath = EF.Property<string>(audiobook, nameof(Audiobook.BasePath))!
+            })
             .ToListAsync(cancellationToken);
-        var (affected, invalidStoredBasePaths) = DiscoverAffectedAudiobooks(
-            audiobooks,
-            root.Path,
-            sourceResolution?.Semantics);
+        var audiobookIds = audiobookRows.Select(row => row.Audiobook.Id).ToList();
+        await db.AudiobookFiles
+            .Where(file => audiobookIds.Contains(file.AudiobookId))
+            .LoadAsync(cancellationToken);
+        var audiobooks = audiobookRows
+            .Select(row => new AudiobookPathCandidate(row.Audiobook, row.StoredBasePath))
+            .ToList();
+        var (affected, invalidStoredBasePaths) = storedSourcePathSemantics == null
+            ? (new List<AudiobookPathCandidate>(), new List<AudiobookPathCandidate>())
+            : DiscoverAffectedAudiobooks(
+                audiobooks,
+                root.Path,
+                storedSourcePathSemantics.Semantics,
+                storedSourcePathSemantics.DetectAmbiguousCaseMatches);
 
         if (command.Mode != RootFolderRelocationMode.MetadataOnly && invalidStoredBasePaths.Count > 0)
         {
@@ -151,7 +169,7 @@ public sealed partial class RootFolderRelocationService(
                 "One or more audiobook base paths are invalid; use metadata-only path change to repair stored metadata before relocating files.");
         }
 
-        var affectedAudiobookIds = affected.Select(audiobook => audiobook.Id).ToHashSet();
+        var affectedAudiobookIds = affected.Select(candidate => candidate.Audiobook.Id).ToHashSet();
         var activeMoveJobs = await db.MoveJobs
             .Where(job => job.Status == MoveJobStatus.Queued
                 || job.Status == MoveJobStatus.Running
@@ -179,28 +197,23 @@ public sealed partial class RootFolderRelocationService(
             var sourcePath = root.Path;
             var sourceCaseSensitivityMode = root.CaseSensitivityMode;
             var skipped = invalidStoredBasePaths
-                .Select(audiobook => new RootFolderRelocationSkippedItem
+                .Select(candidate => new RootFolderRelocationSkippedItem
                 {
-                    AudiobookId = audiobook.Id,
-                    Reason = "Stored audiobook base path is invalid and could not be compared with the source root.",
+                    AudiobookId = candidate.Audiobook.Id,
+                    Reason = "Stored audiobook base path is invalid or case-ambiguous and could not be compared safely with the source root.",
                     CreatedAt = now
                 })
                 .ToList();
             var metadataTotal = affected.Count + skipped.Count;
             var completed = 0;
-            if (affected.Count > 0 && sourceResolution is null)
-            {
-                throw new InvalidOperationException(
-                    "Source filesystem semantics are required to rewrite affected audiobook metadata.");
-            }
 
-            var metadataSourceSemantics = sourceResolution?.Semantics;
-            foreach (var audiobook in affected)
+            var metadataSourceSemantics = storedSourcePathSemantics?.Semantics;
+            foreach (var candidate in affected)
             {
+                var audiobook = candidate.Audiobook;
                 var sourceSemantics = metadataSourceSemantics
-                    ?? throw new InvalidOperationException(
-                        "Source filesystem semantics are required to rewrite affected audiobook metadata.");
-                var sourceBasePath = audiobook.BasePath!;
+                    ?? throw new InvalidOperationException("Stored source path semantics are unavailable.");
+                var sourceBasePath = candidate.StoredBasePath;
                 try
                 {
                     var destinationBasePath = MapTargetPath(
@@ -296,19 +309,20 @@ public sealed partial class RootFolderRelocationService(
         };
         db.RootFolderRelocations.Add(relocation);
 
-        foreach (var audiobook in affected)
+        foreach (var candidate in affected)
         {
+            var audiobook = candidate.Audiobook;
             var requestedPath = MapTargetPath(
                 root.Path,
                 targetPath,
-                audiobook.BasePath!,
+                candidate.StoredBasePath,
                 sourceResolution!.Semantics,
                 targetResolution.Semantics);
             db.MoveJobs.Add(new MoveJob
             {
                 AudiobookId = audiobook.Id,
                 RequestedPath = requestedPath,
-                SourcePath = audiobook.BasePath,
+                SourcePath = candidate.StoredBasePath,
                 DeleteEmptySource = command.DeleteEmptySource,
                 Status = MoveJobStatus.Queued,
                 Phase = MoveJobPhase.None,
@@ -361,160 +375,4 @@ public sealed partial class RootFolderRelocationService(
     }
 
     private sealed record StartOutcome(RootFolderPathChangeResult Result, bool Broadcast);
-
-    public async Task OnMoveJobStateChangedAsync(
-        Guid moveJobId,
-        CancellationToken cancellationToken = default)
-    {
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var job = await db.MoveJobs.AsNoTracking().SingleOrDefaultAsync(
-            candidate => candidate.Id == moveJobId,
-            cancellationToken);
-        if (job?.RelocationId == null) return;
-        var relocation = await db.RootFolderRelocations
-            .Include(candidate => candidate.MoveJobs)
-            .SingleAsync(candidate => candidate.Id == job.RelocationId, cancellationToken);
-        var root = relocation.RootFolderId is int rootFolderId
-            ? await db.RootFolders.SingleOrDefaultAsync(
-                candidate => candidate.Id == rootFolderId,
-                cancellationToken)
-            : null;
-        relocation.CompletedJobs = relocation.MoveJobs.Count(candidate => candidate.Status == MoveJobStatus.Completed);
-        relocation.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
-
-        if (relocation.MoveJobs.Any(candidate => candidate.Status is
-            MoveJobStatus.NeedsAttention or MoveJobStatus.Failed or MoveJobStatus.Superseded))
-        {
-            relocation.Status = RootFolderRelocationStatus.NeedsAttention;
-            relocation.Error = relocation.MoveJobs
-                .First(candidate => candidate.Status is
-                    MoveJobStatus.NeedsAttention or MoveJobStatus.Failed or MoveJobStatus.Superseded)
-                .Error
-                ?? "A relocation move job was superseded during queue reconciliation.";
-        }
-        else if (relocation.MoveJobs.All(candidate => candidate.Status == MoveJobStatus.Completed))
-        {
-            if (root == null)
-            {
-                relocation.Status = RootFolderRelocationStatus.NeedsAttention;
-                relocation.ActiveRootFolderId = null;
-                relocation.Error = "The root folder no longer exists; relocation finalization requires manual review.";
-            }
-            else
-            {
-                await FinalizeCompletedRelocationAsync(
-                    db,
-                    relocation,
-                    root,
-                    relocation.UpdatedAt ?? timeProvider.GetUtcNow().UtcDateTime,
-                    cancellationToken);
-            }
-        }
-        else
-        {
-            relocation.Status = RootFolderRelocationStatus.Running;
-        }
-
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        await BroadcastAsync(Map(relocation, root?.Path ?? ResolveCurrentPathFallback(relocation)), cancellationToken);
-    }
-
-    public async Task ReconcileActiveAsync(CancellationToken cancellationToken = default)
-    {
-        await ReconcileRootIdentitiesAsync(cancellationToken);
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var activeRelocationIds = await db.RootFolderRelocations
-            .Where(relocation => relocation.ActiveRootFolderId != null)
-            .Select(relocation => relocation.Id)
-            .ToListAsync(cancellationToken);
-        var terminalJobs = await db.MoveJobs
-            .Where(job => job.RelocationId != null
-                && activeRelocationIds.Contains(job.RelocationId.Value))
-            .Where(job => job.Status == MoveJobStatus.Completed
-                || job.Status == MoveJobStatus.NeedsAttention
-                || job.Status == MoveJobStatus.Failed
-                || job.Status == MoveJobStatus.Superseded)
-            .OrderByDescending(job => job.UpdatedAt)
-            .ToListAsync(cancellationToken);
-        var terminalJobIds = terminalJobs
-            .GroupBy(job => job.RelocationId)
-            .Select(group => group.First().Id);
-        foreach (var jobId in terminalJobIds)
-        {
-            await OnMoveJobStateChangedAsync(jobId, cancellationToken);
-        }
-    }
-
-    private async Task ReconcileRootIdentitiesAsync(CancellationToken cancellationToken)
-    {
-        if (Volatile.Read(ref _rootIdentitiesReconciled)) return;
-        await _rootIdentityGate.WaitAsync(cancellationToken);
-        try
-        {
-            if (Volatile.Read(ref _rootIdentitiesReconciled)) return;
-            await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-            var roots = await db.RootFolders.ToListAsync(cancellationToken);
-            foreach (var root in roots) root.PathIdentityKey = null;
-            await db.SaveChangesAsync(cancellationToken);
-
-            var resolvedRoots = new List<(RootFolder Root, string Key)>();
-            foreach (var root in roots)
-            {
-                try
-                {
-                    var resolution = await semanticsResolver.ResolveAsync(
-                        root.Path,
-                        root.CaseSensitivityMode,
-                        cancellationToken);
-                    root.ResolvedCaseSensitivity = resolution.Semantics.CaseSensitivity;
-                    root.PathIdentityState = resolution.State;
-                    if (resolution.State == PathIdentityState.Valid)
-                    {
-                        resolvedRoots.Add((
-                            root,
-                            FileSystemPathIdentity.CreateKey("root", root.Path, resolution.Semantics)));
-                    }
-                }
-                catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
-                {
-                    // Existing databases can contain a root path that is invalid on the
-                    // current host after switching between Docker/Linux paths and a
-                    // Windows development host. Keep the worker alive and surface the
-                    // root as unavailable until the path is repaired or deleted.
-                    root.ResolvedCaseSensitivity = FileSystemCaseSensitivity.Unknown;
-                    root.PathIdentityState = PathIdentityState.Unavailable;
-                    root.PathIdentityKey = null;
-                }
-            }
-
-            foreach (var group in resolvedRoots.GroupBy(item => item.Key, StringComparer.Ordinal))
-            {
-                if (group.Count() == 1)
-                {
-                    var item = group.Single();
-                    item.Root.PathIdentityKey = item.Key;
-                    item.Root.PathIdentityState = PathIdentityState.Valid;
-                    continue;
-                }
-
-                foreach (var item in group)
-                {
-                    item.Root.PathIdentityState = PathIdentityState.Conflict;
-                    item.Root.PathIdentityKey = null;
-                }
-            }
-
-            await db.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            Volatile.Write(ref _rootIdentitiesReconciled, true);
-        }
-        finally
-        {
-            _rootIdentityGate.Release();
-        }
-    }
-
 }
