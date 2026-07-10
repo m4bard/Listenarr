@@ -96,6 +96,153 @@ public sealed class MoveCleanupBoundaryResolverTests : BaseTests
         Assert.Equal(sourceAnchor, result.Boundary);
     }
 
+    [Fact]
+    public async Task ResolveAsync_UnixConfiguredSourceRoot_PreservesRootAcrossCrossRootMove()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var sourceRoot = Path.Join(
+            Path.GetTempPath(),
+            $"listenarr-unix-source-{Guid.NewGuid():N}");
+        var targetRoot = Path.Join(
+            Path.GetTempPath(),
+            $"listenarr-unix-target-{Guid.NewGuid():N}");
+        var source = Path.Join(sourceRoot, "Author", "Series", "Old Title", "test");
+        var target = Path.Join(targetRoot, "Author", "Series", "New Title", "test");
+        var resolver = CreateResolver(new FileSystemPathSemantics(
+            FileSystemPathSyntax.Unix,
+            FileSystemCaseSensitivity.Sensitive));
+
+        var result = await resolver.ResolveAsync(
+            source,
+            target,
+            [new RootFolder { Name = "Unix Source", Path = sourceRoot }]);
+
+        Assert.True(result.IsAvailable);
+        Assert.Equal(MoveCleanupBoundaryKind.ConfiguredRoot, result.Kind);
+        Assert.Equal(Path.GetFullPath(sourceRoot), result.Boundary);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_UnixCustomSiblingMove_UsesCommonSeriesAncestor()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var series = Path.Join(
+            Path.GetTempPath(),
+            $"listenarr-unix-sibling-{Guid.NewGuid():N}",
+            "Matt Dinniman",
+            "Dungeon Crawler Carl");
+        var source = Path.Join(series, "A Parade of Horribles (20262)", "test");
+        var target = Path.Join(series, "A Parade of Horribles (2026)", "test");
+        var resolver = CreateResolver(new FileSystemPathSemantics(
+            FileSystemPathSyntax.Unix,
+            FileSystemCaseSensitivity.Sensitive));
+
+        var result = await resolver.ResolveAsync(source, target, []);
+
+        Assert.True(result.IsAvailable);
+        Assert.Equal(MoveCleanupBoundaryKind.CommonAncestor, result.Kind);
+        Assert.Equal(Path.GetFullPath(series), result.Boundary);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_UnixCrossRootWithoutConfiguredRoot_DoesNotUseFilesystemRoot()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var source = "/listenarr-downloads/Author/Series/Old Title/test";
+        var target = "/listenarr-library/Author/Series/New Title/test";
+        var resolver = CreateResolver(new FileSystemPathSemantics(
+            FileSystemPathSyntax.Unix,
+            FileSystemCaseSensitivity.Sensitive));
+
+        var result = await resolver.ResolveAsync(source, target, []);
+
+        Assert.False(result.IsAvailable);
+        Assert.Equal(MoveCleanupBoundaryKind.Unavailable, result.Kind);
+        Assert.Contains("No configured source root", result.Reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_UncConfiguredSourceRoot_TakesPrecedence()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        const string sourceRoot = @"\\server\downloads\Listenarr Downloads";
+        const string source = @"\\server\downloads\Listenarr Downloads\Author\Series\Old Title\test";
+        const string target = @"\\server\library\Audiobooks\Author\Series\New Title\test";
+        var resolver = CreateResolver(new FileSystemPathSemantics(
+            FileSystemPathSyntax.Windows,
+            FileSystemCaseSensitivity.Insensitive));
+
+        var result = await resolver.ResolveAsync(
+            source,
+            target,
+            [new RootFolder { Name = "UNC Source", Path = sourceRoot }]);
+
+        Assert.True(result.IsAvailable);
+        Assert.Equal(MoveCleanupBoundaryKind.ConfiguredRoot, result.Kind);
+        Assert.Equal(sourceRoot, result.Boundary);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_UncSameShareSiblingMove_UsesCommonSeriesAncestor()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        const string series = @"\\server\share\Listenarr Downloads\Matt Dinniman\Dungeon Crawler Carl";
+        const string source = @"\\server\share\Listenarr Downloads\Matt Dinniman\Dungeon Crawler Carl\A Parade of Horribles (20262)\test";
+        const string target = @"\\server\share\Listenarr Downloads\Matt Dinniman\Dungeon Crawler Carl\A Parade of Horribles (2026)\test";
+        var resolver = CreateResolver(new FileSystemPathSemantics(
+            FileSystemPathSyntax.Windows,
+            FileSystemCaseSensitivity.Insensitive));
+
+        var result = await resolver.ResolveAsync(source, target, []);
+
+        Assert.True(result.IsAvailable);
+        Assert.Equal(MoveCleanupBoundaryKind.CommonAncestor, result.Kind);
+        Assert.Equal(series, result.Boundary);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_UncCrossShareMove_UsesTopLevelSourceAnchor()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        const string sourceAnchor = @"\\server\downloads\Listenarr Downloads";
+        const string source = @"\\server\downloads\Listenarr Downloads\Author\Series\Old Title\test";
+        const string target = @"\\server\library\Audiobooks\Author\Series\New Title\test";
+        var resolver = CreateResolver(new FileSystemPathSemantics(
+            FileSystemPathSyntax.Windows,
+            FileSystemCaseSensitivity.Insensitive));
+
+        var result = await resolver.ResolveAsync(source, target, []);
+
+        Assert.True(result.IsAvailable);
+        Assert.Equal(MoveCleanupBoundaryKind.VolumeAnchor, result.Kind);
+        Assert.Equal(sourceAnchor, result.Boundary);
+        Assert.NotEqual(@"\\server\downloads", result.Boundary);
+    }
+
     private static MoveCleanupBoundaryResolver CreateResolver(
         FileSystemPathSemantics? semantics = null)
     {
