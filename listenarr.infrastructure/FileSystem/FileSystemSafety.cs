@@ -80,6 +80,7 @@ internal static class FileSystemSafety
             }
 
             normalizedPath = Path.GetFullPath(targetPath);
+            var normalizedTarget = normalizedPath;
             var normalizedRoots = allowedRoots
                 .Where(root => !string.IsNullOrWhiteSpace(root))
                 .Select(root => Path.GetFullPath(root!))
@@ -93,7 +94,7 @@ internal static class FileSystemSafety
             }
 
             var candidateRoots = normalizedRoots
-                .Where(root => FileUtils.IsPathSameOrInside(normalizedPath, root))
+                .Where(root => FileUtils.IsPathSameOrInside(normalizedTarget, root))
                 .OrderByDescending(root => root.Length)
                 .ToList();
             if (candidateRoots.Count == 0)
@@ -104,7 +105,7 @@ internal static class FileSystemSafety
 
             foreach (var root in candidateRoots)
             {
-                if (TryValidateResolvedComponents(normalizedPath, root, out reason))
+                if (TryValidateResolvedComponents(normalizedTarget, root, out reason))
                 {
                     return true;
                 }
