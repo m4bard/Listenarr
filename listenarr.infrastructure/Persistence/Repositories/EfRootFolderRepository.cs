@@ -151,7 +151,10 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 if (relativePath.Length > 0
                     && !FileSystemPathIdentity.TryResolveRelativePathWithinBase(
                         newRootPath,
-                        relativePath,
+                        FileSystemPathIdentity.ConvertRelativePathSyntax(
+                            relativePath,
+                            sourceSemantics.Syntax,
+                            targetSemantics.Syntax),
                         targetSemantics,
                         out target))
                 {
@@ -169,6 +172,83 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             }
 
             return moves;
+        }
+
+        public async Task ReassignAudiobooksAndRemoveAsync(
+            int sourceRootId,
+            int targetRootId,
+            FileSystemPathSemantics sourceSemantics,
+            FileSystemPathSemantics targetSemantics,
+            CancellationToken ct = default)
+        {
+            if (sourceRootId == targetRootId)
+            {
+                throw new InvalidOperationException("A root folder cannot be reassigned to itself.");
+            }
+
+            await using var ctx = await _dbFactory.CreateDbContextAsync(ct);
+            await using var transaction = await ctx.Database.BeginTransactionAsync(ct);
+            var roots = await ctx.RootFolders
+                .Where(root => root.Id == sourceRootId || root.Id == targetRootId)
+                .ToListAsync(ct);
+            var sourceRoot = roots.SingleOrDefault(root => root.Id == sourceRootId)
+                ?? throw new KeyNotFoundException("Root folder not found");
+            var targetRoot = roots.SingleOrDefault(root => root.Id == targetRootId)
+                ?? throw new KeyNotFoundException("Reassign root not found");
+
+            var audiobooks = await ctx.Audiobooks
+                .Include(audiobook => audiobook.Files)
+                .Where(audiobook => audiobook.BasePath != null)
+                .ToListAsync(ct);
+            var plannedRewrites = new List<(Audiobook Audiobook, string SourceBasePath, string TargetBasePath)>();
+            foreach (var audiobook in audiobooks.Where(audiobook =>
+                FileSystemPathIdentity.IsSameOrInside(
+                    audiobook.BasePath!,
+                    sourceRoot.Path,
+                    sourceSemantics)))
+            {
+                var sourceBasePath = audiobook.BasePath!;
+                if (!FileSystemPathIdentity.TryGetRelativePathWithinBase(
+                    sourceRoot.Path,
+                    sourceBasePath,
+                    sourceSemantics,
+                    out var relativePath))
+                {
+                    throw new InvalidOperationException(
+                        "An audiobook path escaped its source root during reassignment.");
+                }
+
+                var targetBasePath = targetRoot.Path;
+                if (relativePath.Length > 0
+                    && !FileSystemPathIdentity.TryResolveRelativePathWithinBase(
+                        targetRoot.Path,
+                        FileSystemPathIdentity.ConvertRelativePathSyntax(
+                            relativePath,
+                            sourceSemantics.Syntax,
+                            targetSemantics.Syntax),
+                        targetSemantics,
+                        out targetBasePath))
+                {
+                    throw new InvalidOperationException(
+                        "An audiobook relative path is invalid for the target root.");
+                }
+
+                plannedRewrites.Add((audiobook, sourceBasePath, targetBasePath));
+            }
+
+            foreach (var rewrite in plannedRewrites)
+            {
+                AudiobookPathReferenceRewriter.Rewrite(
+                    rewrite.Audiobook,
+                    rewrite.SourceBasePath,
+                    rewrite.TargetBasePath,
+                    sourceSemantics,
+                    targetSemantics);
+            }
+
+            ctx.RootFolders.Remove(sourceRoot);
+            await ctx.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
         }
 
         public async Task SaveChangesAsync(CancellationToken ct = default)
