@@ -1,0 +1,36 @@
+name: Render PR 717 Patch
+
+on:
+  push:
+    branches:
+      - automation/pr717-review-fixes
+    paths:
+      - .github/workflows/render-pr717-patch.yml
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: automation/pr717-review-fixes
+      - run: |
+          python tools/apply_pr717_phase3_prod.py
+          python tools/apply_pr717_phase3_import.py
+          python tools/apply_pr717_phase3_main.py
+          python tools/apply_pr717_phase3_guard.py
+          python tools/apply_pr717_phase3_copy.py
+          python tools/apply_pr717_phase4.py
+          python tools/apply_pr717_phase4_tests.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rendered-pr717-source
+          path: |
+            listenarr.infrastructure/Library/Moving/AudiobookContentMoveService.cs
+            listenarr.infrastructure/Library/Moving/AudiobookContentMoveService.Persistence.cs
+            listenarr.infrastructure/Library/Moving/AudiobookContentMoveService.Recovery.cs
+            tests/Features/Infrastructure/Persistence/RootFolderReassignmentTransactionTests.cs
+          retention-days: 1
