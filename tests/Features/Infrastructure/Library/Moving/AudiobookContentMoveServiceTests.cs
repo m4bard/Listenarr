@@ -232,7 +232,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
-        public async Task MoveContentsAsync_DirectCopyInterrupted_ResumesOwnedPartialTarget()
+        public async Task MoveContentsAsync_DirectCopyMarkerWithoutManifest_BlocksRecovery()
         {
             var source = FileService.GetTempDirectory("content-move-direct-retry-src");
             await FileService.GetFileAsync(source, "book.m4b", "complete audio");
@@ -244,12 +244,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 "copy-started");
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
-            await service.MoveContentsAsync(
-                await CreateLeasedMoveRequestAsync(source, target, jobId),
-                CancellationToken.None);
+            var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(async () =>
+                service.MoveContentsAsync(
+                    await CreateLeasedMoveRequestAsync(source, target, jobId),
+                    CancellationToken.None));
 
-            Assert.False(Directory.Exists(source));
-            Assert.Equal("complete audio", await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
+            Assert.Contains("without a persisted manifest", exception.Message);
+            Assert.True(Directory.Exists(source));
+            Assert.Equal("partial", await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
         }
 
         [Fact]
