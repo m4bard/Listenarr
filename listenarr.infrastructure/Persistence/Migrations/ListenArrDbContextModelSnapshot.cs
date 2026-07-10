@@ -688,6 +688,10 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<string>("RequestedPath")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SourceCleanupBoundary")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SourcePath")
                         .HasColumnType("TEXT");
 

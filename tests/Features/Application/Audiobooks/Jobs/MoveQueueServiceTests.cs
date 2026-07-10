@@ -417,6 +417,29 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
         }
 
         [Fact]
+        public async Task EnqueueMoveAsync_SourceCleanupBoundary_PersistsWithJob()
+        {
+            var jobs = new List<MoveJob>();
+            var persistence = CreateInMemoryPersistence(jobs);
+            var service = new MoveQueueService(
+                NullLogger<MoveQueueService>.Instance,
+                persistence.Object,
+                new NoopHubBroadcaster(),
+                TimeProvider.System,
+                BuildSemanticsResolver());
+
+            var jobId = await service.EnqueueMoveAsync(
+                9,
+                "/library/Title",
+                "/downloads/Author/Title",
+                deleteEmptySource: true,
+                sourceCleanupBoundary: "/downloads");
+
+            var job = Assert.Single(jobs, candidate => candidate.Id == jobId);
+            Assert.Equal("/downloads", job.SourceCleanupBoundary);
+        }
+
+        [Fact]
         public async Task EnqueueMoveAsync_PersistedActiveJob_SchedulesExistingJob()
         {
             var existingJob = new MoveJob

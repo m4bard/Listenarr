@@ -30,6 +30,7 @@ namespace Listenarr.Api.Features.Library
         private readonly IMoveQueueService? _moveQueueService;
         private readonly IFileSystem _fileSystem;
         private readonly IFileSystemSemanticsResolver _semanticsResolver;
+        private readonly IMoveCleanupBoundaryResolver _cleanupBoundaryResolver;
         private readonly IAudiobookDestinationRewriteService _destinationRewriteService;
         private readonly ILogger<LibraryMoveWorkflow> _logger;
 
@@ -39,6 +40,7 @@ namespace Listenarr.Api.Features.Library
             IFileSystem fileSystem,
             ILogger<LibraryMoveWorkflow> logger,
             IFileSystemSemanticsResolver semanticsResolver,
+            IMoveCleanupBoundaryResolver cleanupBoundaryResolver,
             IAudiobookDestinationRewriteService destinationRewriteService,
             IMoveQueueService? moveQueueService = null)
         {
@@ -47,6 +49,7 @@ namespace Listenarr.Api.Features.Library
             _fileSystem = fileSystem;
             _logger = logger;
             _semanticsResolver = semanticsResolver;
+            _cleanupBoundaryResolver = cleanupBoundaryResolver;
             _destinationRewriteService = destinationRewriteService;
             _moveQueueService = moveQueueService;
         }
@@ -241,11 +244,38 @@ namespace Listenarr.Api.Features.Library
                     _logger.LogDebug(normalizeEx, "Unable to normalize move paths for audiobook {AudiobookId}", id);
                 }
 
+                var deleteEmptySource = request.DeleteEmptySource ?? true;
+                string? sourceCleanupBoundary = null;
+                if (deleteEmptySource)
+                {
+                    var cleanupBoundary = await _cleanupBoundaryResolver.ResolveAsync(
+                        sourcePath,
+                        final,
+                        rootFolders);
+                    sourceCleanupBoundary = cleanupBoundary.Boundary;
+                    if (!cleanupBoundary.IsAvailable)
+                    {
+                        _logger.LogWarning(
+                            "Move for audiobook {AudiobookId} has no safe source cleanup boundary: {Reason}",
+                            id,
+                            cleanupBoundary.Reason ?? "boundary unavailable");
+                    }
+                    else
+                    {
+                        _logger.LogInformation(
+                            "Resolved {BoundaryKind} source cleanup boundary {Boundary} for audiobook {AudiobookId}",
+                            cleanupBoundary.Kind,
+                            LogRedaction.SanitizeFilePath(sourceCleanupBoundary),
+                            id);
+                    }
+                }
+
                 var jobId = await _moveQueueService.EnqueueMoveAsync(
                     id,
                     final,
                     sourcePath,
-                    request.DeleteEmptySource ?? true);
+                    deleteEmptySource,
+                    sourceCleanupBoundary);
                 await BroadcastQueuedAsync(jobId, id);
 
                 return new AcceptedResult(string.Empty, new { message = "Move enqueued", jobId });

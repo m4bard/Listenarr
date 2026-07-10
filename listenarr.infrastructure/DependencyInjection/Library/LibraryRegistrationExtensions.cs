@@ -20,6 +20,7 @@ internal static class LibraryRegistrationExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IFilesystemMutationCoordinator, FilesystemMutationCoordinator>();
         services.AddSingleton<IRootFolderRelocationService, RootFolderRelocationService>();
+        services.AddSingleton<IMoveCleanupBoundaryResolver, MoveCleanupBoundaryResolver>();
         services.AddSingleton<IMoveQueueService, MoveQueueService>();
         services.AddScoped<IAudiobookFileService, AudiobookFileService>();
         services.AddScoped<IAuthorCatalogService, AuthorCatalogService>();

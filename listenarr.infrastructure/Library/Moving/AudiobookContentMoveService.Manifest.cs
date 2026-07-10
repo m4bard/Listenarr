@@ -341,23 +341,35 @@ internal sealed partial class AudiobookContentMoveService
             Directory.Delete(directoryEntry.Directory!, false);
         }
 
-        var sourceDirectoryDeleted = false;
         if (deleteEmptySource
             && sourceExists
             && Directory.Exists(source)
+            && !IsSourceCleanupBoundary(source, sourceCleanupBoundary, sourceSemantics)
             && !Directory.EnumerateFileSystemEntries(source).Any())
         {
             Directory.Delete(source, false);
-            sourceDirectoryDeleted = true;
         }
 
-        // Remove the temporary quarantine before pruning source ancestors. While the
-        // quarantine exists, its parent appears nonempty and stops cleanup one level early.
-        RemoveEmptyDirectoryTree(quarantineRoot, sourceParent, sourceSemantics);
-        if (sourceDirectoryDeleted)
+        // Quarantined files preserve their relative directory structure. Remove those
+        // now-empty, manifest-owned directories from deepest to shallowest before
+        // removing the quarantine root itself.
+        foreach (var directoryEntry in manifest
+            .Where(entry => entry.EntryType == MoveJobEntryType.Directory)
+            .OrderByDescending(entry => entry.RelativePath.Length))
         {
-            RemoveEmptySourceAncestors(source, sourceCleanupBoundary, sourceSemantics);
+            if (FileSystemPathIdentity.TryResolveRelativePathWithinBase(
+                    quarantineRoot,
+                    directoryEntry.RelativePath,
+                    sourceSemantics,
+                    out var quarantineDirectory)
+                && Directory.Exists(quarantineDirectory)
+                && !Directory.EnumerateFileSystemEntries(quarantineDirectory).Any())
+            {
+                Directory.Delete(quarantineDirectory, false);
+            }
         }
+
+        RemoveEmptyDirectoryTree(quarantineRoot, sourceParent, sourceSemantics);
     }
 
     private static void ResolveCleanupPaths(
@@ -435,41 +447,4 @@ internal sealed partial class AudiobookContentMoveService
         }
     }
 
-    private static void RemoveEmptyDirectoryTree(
-        string directory,
-        string boundary,
-        FileSystemPathSemantics semantics)
-    {
-        var current = directory;
-        while (Directory.Exists(current)
-            && !FileSystemPathIdentity.AreEquivalent(
-                current,
-                boundary,
-                semantics)
-            && !Directory.EnumerateFileSystemEntries(current).Any())
-        {
-            Directory.Delete(current, false);
-            current = Path.GetDirectoryName(current) ?? boundary;
-        }
-    }
-
-    private static void RemoveEmptySourceAncestors(
-        string source,
-        string? boundary,
-        FileSystemPathSemantics semantics)
-    {
-        if (string.IsNullOrWhiteSpace(boundary))
-        {
-            return;
-        }
-
-        var fullBoundary = Path.GetFullPath(boundary);
-        var parent = Path.GetDirectoryName(Path.GetFullPath(source));
-        if (parent == null || !FileSystemPathIdentity.IsSameOrInside(parent, fullBoundary, semantics))
-        {
-            return;
-        }
-
-        RemoveEmptyDirectoryTree(parent, fullBoundary, semantics);
-    }
 }

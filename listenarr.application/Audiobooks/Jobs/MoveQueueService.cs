@@ -59,7 +59,8 @@ namespace Listenarr.Application.Audiobooks.Jobs
             int audiobookId,
             string requestedPath,
             string? sourcePath = null,
-            bool deleteEmptySource = true)
+            bool deleteEmptySource = true,
+            string? sourceCleanupBoundary = null)
         {
             var deduplicationKey = await BuildDeduplicationKeyAsync(audiobookId, requestedPath);
             MoveJob? jobToSchedule = null;
@@ -82,6 +83,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
                     EnqueuedAt = _timeProvider.GetUtcNow().UtcDateTime,
                     Status = MoveJobStatus.Queued,
                     SourcePath = sourcePath,
+                    SourceCleanupBoundary = sourceCleanupBoundary,
                     DeleteEmptySource = deleteEmptySource
                 };
 

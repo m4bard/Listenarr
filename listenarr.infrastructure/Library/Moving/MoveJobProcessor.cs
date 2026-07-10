@@ -30,7 +30,8 @@ namespace Listenarr.Infrastructure.Library.Moving
         IServiceScopeFactory scopeFactory,
         IHubContext<DownloadHub> hubContext,
         IAppMetricsService metrics,
-        IFileSystemSemanticsResolver semanticsResolver) : IMoveJobProcessor
+        IFileSystemSemanticsResolver semanticsResolver,
+        IMoveCleanupBoundaryResolver cleanupBoundaryResolver) : IMoveJobProcessor
     {
         public async Task ProcessJobAsync(MoveJob job, CancellationToken stoppingToken)
         {
@@ -81,6 +82,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 var hasPersistedSource = !string.IsNullOrWhiteSpace(job.SourcePath);
                 var source = job.SourcePath;
                 AudiobookContentMoveResult? recoveredMove = null;
+                MoveCleanupBoundaryResolution? cleanupBoundaryResolution = null;
                 if (!string.IsNullOrWhiteSpace(source))
                 {
                     source = Path.GetFullPath(source);
@@ -97,6 +99,12 @@ namespace Listenarr.Infrastructure.Library.Moving
                         return;
                     }
 
+                    cleanupBoundaryResolution = await cleanupBoundaryResolver.ResolveAsync(
+                        source,
+                        target,
+                        rootFolders,
+                        job.SourceCleanupBoundary,
+                        stoppingToken);
                     var recoveryRequest = new AudiobookContentMoveRequest(
                         source,
                         target,
@@ -105,7 +113,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         recoverySourceResolution.Semantics,
                         targetResolution.Semantics,
                         CreateLeaseToken(job),
-                        ResolveSourceCleanupBoundary(source, rootFolders, recoverySourceResolution.Semantics));
+                        cleanupBoundaryResolution.Boundary);
                     var resumedMove = await contentMoveService.GetRecoverableMoveAsync(
                         recoveryRequest,
                         stoppingToken);
@@ -186,6 +194,31 @@ namespace Listenarr.Infrastructure.Library.Moving
                     return;
                 }
 
+                cleanupBoundaryResolution ??= await cleanupBoundaryResolver.ResolveAsync(
+                    source,
+                    target,
+                    rootFolders,
+                    job.SourceCleanupBoundary,
+                    stoppingToken);
+                if (job.DeleteEmptySource)
+                {
+                    if (cleanupBoundaryResolution.IsAvailable)
+                    {
+                        logger.LogInformation(
+                            "Using {BoundaryKind} source cleanup boundary {Boundary} for move job {JobId}",
+                            cleanupBoundaryResolution.Kind,
+                            LogRedaction.SanitizeFilePath(cleanupBoundaryResolution.Boundary),
+                            job.Id);
+                    }
+                    else
+                    {
+                        logger.LogWarning(
+                            "Move job {JobId} has no safe source cleanup boundary: {Reason}",
+                            job.Id,
+                            cleanupBoundaryResolution.Reason ?? "boundary unavailable");
+                    }
+                }
+
                 if (IsFilesystemRoot(source, sourceResolution.Semantics)
                     || IsFilesystemRoot(target, targetResolution.Semantics))
                 {
@@ -222,7 +255,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         sourceResolution.Semantics,
                         targetResolution.Semantics,
                         CreateLeaseToken(job),
-                        ResolveSourceCleanupBoundary(source, rootFolders, sourceResolution.Semantics));
+                        cleanupBoundaryResolution.Boundary);
                     var moveResult = recoveredMove ?? await contentMoveService.MoveContentsAsync(
                         moveRequest,
                         stoppingToken);
@@ -244,7 +277,7 @@ namespace Listenarr.Infrastructure.Library.Moving
 
                     audiobook.BasePath = target;
                     await audiobookRepository.UpdateAsync(audiobook);
-                    contentMoveService.CompleteMove(moveResult);
+                    contentMoveService.FinalizeMove(moveRequest, moveResult);
 
                     // Add history entry and send notifications for the move
                     try
@@ -448,25 +481,5 @@ namespace Listenarr.Infrastructure.Library.Moving
             }
         }
 
-
-        private Task UpdateJobStatusAsync(
-            MoveJob job,
-            MoveJobStatus status,
-            string? error = null,
-            CancellationToken cancellationToken = default)
-        {
-            if (string.IsNullOrWhiteSpace(job.LeaseOwner))
-            {
-                throw new MoveLeaseLostException(job.Id, job.LeaseGeneration);
-            }
-
-            return moveQueueService.UpdateJobStatusAsync(
-                job.Id,
-                job.LeaseOwner,
-                job.LeaseGeneration,
-                status,
-                error,
-                cancellationToken);
-        }
     }
 }

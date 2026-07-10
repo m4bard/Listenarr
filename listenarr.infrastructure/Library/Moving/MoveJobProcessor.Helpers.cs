@@ -23,37 +23,24 @@ namespace Listenarr.Infrastructure.Library.Moving
             return new MoveLeaseToken(job.LeaseOwner, job.LeaseGeneration);
         }
 
-        private static string? ResolveSourceCleanupBoundary(
-            string source,
-            IEnumerable<RootFolder> rootFolders,
-            FileSystemPathSemantics semantics)
+        private Task UpdateJobStatusAsync(
+            MoveJob job,
+            MoveJobStatus status,
+            string? error = null,
+            CancellationToken cancellationToken = default)
         {
-            var containingRoots = new List<(string Path, int CanonicalLength)>();
-            foreach (var root in rootFolders)
+            if (string.IsNullOrWhiteSpace(job.LeaseOwner))
             {
-                try
-                {
-                    if (!FileSystemPathIdentity.IsSameOrInside(source, root.Path, semantics))
-                    {
-                        continue;
-                    }
-
-                    containingRoots.Add((
-                        root.Path,
-                        FileSystemPathIdentity.Canonicalize(root.Path, semantics.Syntax).Length));
-                }
-                catch (Exception exception) when (exception is
-                    ArgumentException or InvalidOperationException or NotSupportedException or PathTooLongException)
-                {
-                    // A legacy root from another host must not block an otherwise valid
-                    // move or broaden cleanup beyond a root whose identity is known.
-                }
+                throw new MoveLeaseLostException(job.Id, job.LeaseGeneration);
             }
 
-            return containingRoots
-                .OrderByDescending(root => root.CanonicalLength)
-                .Select(root => root.Path)
-                .FirstOrDefault();
+            return moveQueueService.UpdateJobStatusAsync(
+                job.Id,
+                job.LeaseOwner,
+                job.LeaseGeneration,
+                status,
+                error,
+                cancellationToken);
         }
 
         private static bool IsFilesystemRoot(string path, FileSystemPathSemantics semantics)

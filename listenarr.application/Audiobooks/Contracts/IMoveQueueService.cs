@@ -27,7 +27,8 @@ namespace Listenarr.Application.Audiobooks.Contracts
             int audiobookId,
             string requestedPath,
             string? sourcePath = null,
-            bool deleteEmptySource = true);
+            bool deleteEmptySource = true,
+            string? sourceCleanupBoundary = null);
         Task<Guid?> RequeueMoveAsync(Guid jobId);
         Task<int?> TryClaimJobAsync(Guid jobId, string leaseOwner, CancellationToken cancellationToken = default);
         Task<bool> HeartbeatJobAsync(Guid jobId, string leaseOwner, int leaseGeneration, CancellationToken cancellationToken = default);

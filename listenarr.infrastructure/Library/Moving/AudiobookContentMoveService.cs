@@ -101,6 +101,7 @@ internal sealed partial class AudiobookContentMoveService(
                 && !sourceInsideTarget
                 && faultInjector == null
                 && request.DeleteEmptySource
+                && !IsSourceCleanupBoundary(source, request.SourceCleanupBoundary, sourceSemantics)
                 && !Directory.Exists(target)
                 && !Directory.Exists(tempName)
                 && recoveryStage == null)
@@ -129,7 +130,6 @@ internal sealed partial class AudiobookContentMoveService(
 
                 if (renamed)
                 {
-                    RemoveEmptySourceAncestors(request.Source, request.SourceCleanupBoundary, sourceSemantics);
                     await UpdateJobPhaseAsync(request.JobId, request.LeaseToken, MoveJobPhase.Finalizing, cancellationToken);
                     return new AudiobookContentMoveResult(
                         source,
@@ -312,24 +312,6 @@ internal sealed partial class AudiobookContentMoveService(
             cancellationToken);
         WriteRecoveryMarker(result.Target, request.JobId, SourceCleanupCompletedStage);
         return result with { SourceCleanupCompleted = true };
-    }
-
-    public void CompleteMove(AudiobookContentMoveResult result)
-    {
-        try
-        {
-            if (File.Exists(result.RecoveryMarkerPath))
-            {
-                File.Delete(result.RecoveryMarkerPath);
-            }
-        }
-        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
-        {
-            logger.LogWarning(
-                exception,
-                "Failed to remove move recovery marker {Marker}",
-                LogRedaction.SanitizeFilePath(result.RecoveryMarkerPath));
-        }
     }
 
     public bool IsSourceCleanupComplete(
