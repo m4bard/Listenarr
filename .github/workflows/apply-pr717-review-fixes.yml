@@ -128,12 +128,31 @@ jobs:
           retention-days: 1
 
       - name: Run focused backend tests
-        run: >-
-          dotnet test tests/Listenarr.Tests.csproj
-          --no-build
-          --configuration Release
-          --logger "console;verbosity=normal"
-          --filter "FullyQualifiedName~LibraryUpdateWorkflowTests|FullyQualifiedName~LibraryController_UpdateAudiobookTests|FullyQualifiedName~LibraryController_DeleteLinkSafetyTests|FullyQualifiedName~AudiobookContentMoveServiceTests|FullyQualifiedName~RootFolderReassignmentTransactionTests|FullyQualifiedName~RootFolderServiceTests|FullyQualifiedName~RootFolderRelocationServiceTests"
+        id: focused-tests
+        shell: bash
+        run: |
+          set +e
+          dotnet test tests/Listenarr.Tests.csproj \
+            --no-build \
+            --configuration Release \
+            --logger "console;verbosity=normal" \
+            --logger "trx;LogFileName=focused-tests.trx" \
+            --filter "FullyQualifiedName~LibraryUpdateWorkflowTests|FullyQualifiedName~LibraryController_UpdateAudiobookTests|FullyQualifiedName~LibraryController_DeleteLinkSafetyTests|FullyQualifiedName~AudiobookContentMoveServiceTests|FullyQualifiedName~RootFolderReassignmentTransactionTests|FullyQualifiedName~RootFolderServiceTests|FullyQualifiedName~RootFolderRelocationServiceTests" \
+            > focused-tests.log 2>&1
+          status=$?
+          cat focused-tests.log
+          exit "$status"
+
+      - name: Upload focused test diagnostics
+        if: failure() && steps.focused-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: focused-test-errors
+          path: |
+            focused-tests.log
+            tests/TestResults/focused-tests.trx
+          if-no-files-found: warn
+          retention-days: 1
 
       - name: Run complete backend suite
         run: dotnet test listenarr.slnx --no-build --configuration Release --logger "console;verbosity=normal"
