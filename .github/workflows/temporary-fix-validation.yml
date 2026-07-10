@@ -26,31 +26,20 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('tests/Features/Infrastructure/Library/Moving/AudiobookContentMoveServiceTests.cs')
           text = path.read_text()
-          old = '''        [Fact]
-          public async Task MoveContentsAsync_DirectCopyInterrupted_ResumesOwnedPartialTarget()
-          {
-              var source = FileService.GetTempDirectory("content-move-direct-retry-src");
-              await FileService.GetFileAsync(source, "book.m4b", "complete audio");
-              var target = FileService.GetTempDirectory("content-move-direct-retry-dst");
-              await FileService.GetFileAsync(target, "book.m4b", "partial");
-              var jobId = Guid.NewGuid();
-              await File.WriteAllTextAsync(
-                  Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
-                  "copy-started");
-
-              var service = _provider.GetRequiredService<AudiobookContentMoveService>();
-              await service.MoveContentsAsync(
-                  await CreateLeasedMoveRequestAsync(source, target, jobId),
-                  CancellationToken.None);
-
-              Assert.False(Directory.Exists(source));
-              Assert.Equal("complete audio", await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
-          }
-          '''
-          new = '''        [Fact]
+          if 'MoveContentsAsync_DirectCopyMarkerWithoutManifest_BlocksRecovery' not in text:
+              pattern = re.compile(
+                  r'        \[Fact\]\n'
+                  r'        public async Task MoveContentsAsync_DirectCopyInterrupted_ResumesOwnedPartialTarget\(\)\n'
+                  r'        \{.*?\n'
+                  r'        \}\n\n'
+                  r'        \[Fact\]\n'
+                  r'        public async Task MoveContentsAsync_TargetInsideSource',
+                  re.DOTALL)
+              replacement = '''        [Fact]
           public async Task MoveContentsAsync_DirectCopyMarkerWithoutManifest_BlocksRecovery()
           {
               var source = FileService.GetTempDirectory("content-move-direct-retry-src");
@@ -72,11 +61,13 @@ jobs:
               Assert.True(Directory.Exists(source));
               Assert.Equal("partial", await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
           }
-          '''
-          if old in text:
-              path.write_text(text.replace(old, new, 1))
-          elif 'MoveContentsAsync_DirectCopyMarkerWithoutManifest_BlocksRecovery' not in text:
-              raise SystemExit('Expected recovery test block was not found')
+
+          [Fact]
+          public async Task MoveContentsAsync_TargetInsideSource'''
+              text, count = pattern.subn(replacement, text, count=1)
+              if count != 1:
+                  raise SystemExit(f'Expected one recovery test block, replaced {count}')
+              path.write_text(text)
           PY
 
           dotnet format
@@ -88,7 +79,7 @@ jobs:
           fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add tests/Features/Infrastructure/Library/Moving/AudiobookContentMoveServiceTests.cs '*.cs'
+          git add -u
           git commit -m 'test(moves): reject recovery without persisted manifest'
           git push origin HEAD:${{ github.head_ref }}
       - name: Report formatter and compiler failures
