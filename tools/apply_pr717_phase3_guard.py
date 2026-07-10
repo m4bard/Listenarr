@@ -34,3 +34,20 @@ if content.count(guard_old) != 1:
 content = content.replace(guard_old, guard_new, 1)
 
 path.write_text(content, encoding="utf-8", newline="\n")
+
+test_path = root / "tests/Features/Infrastructure/Library/Moving/AudiobookContentMoveServiceTests.cs"
+tests = test_path.read_text(encoding="utf-8")
+test_old = """            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(async () =>
+                service.MoveContentsAsync(
+                    await CreateLeasedMoveRequestAsync(source, target, jobId),
+                    CancellationToken.None));
+"""
+test_new = """            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
+            var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+                service.MoveContentsAsync(request, CancellationToken.None));
+"""
+if tests.count(test_old) != 1:
+    raise RuntimeError("Direct-copy marker test await anchor mismatch")
+test_path.write_text(tests.replace(test_old, test_new, 1), encoding="utf-8", newline="\n")
