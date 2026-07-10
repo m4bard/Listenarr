@@ -203,12 +203,6 @@ public sealed partial class RootFolderRelocationService(
                 var sourceBasePath = audiobook.BasePath!;
                 try
                 {
-                    if (HasDirectoryValuedLegacyFilePath(audiobook, sourceBasePath, sourceSemantics))
-                    {
-                        throw new InvalidOperationException(
-                            $"Stored audiobook path '{audiobook.FilePath}' could not be mapped to the new base path.");
-                    }
-
                     var destinationBasePath = MapTargetPath(
                         sourcePath,
                         targetPath,
@@ -363,29 +357,6 @@ public sealed partial class RootFolderRelocationService(
             throw new ArgumentException(
                 "Root folder target path cannot contain parent traversal segments.",
                 nameof(targetPath));
-        }
-    }
-
-    private static bool HasDirectoryValuedLegacyFilePath(
-        Audiobook audiobook,
-        string sourceBasePath,
-        FileSystemPathSemantics sourceSemantics)
-    {
-        if (string.IsNullOrWhiteSpace(audiobook.FilePath))
-        {
-            return false;
-        }
-
-        try
-        {
-            return FileSystemPathIdentity.AreEquivalent(
-                audiobook.FilePath,
-                sourceBasePath,
-                sourceSemantics);
-        }
-        catch (ArgumentException)
-        {
-            return false;
         }
     }
 

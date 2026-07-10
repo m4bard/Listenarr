@@ -377,27 +377,19 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task MetadataOnly_UnmappableReferenceSkipsBadAudiobookAndPersistsAttentionRecord()
+    public async Task MetadataOnly_SourceRootFilePathReferencesAreRewrittenWithoutAttentionRecord()
     {
-        var source = Path.Join(Path.GetTempPath(), $"metadata-skip-source-{Guid.NewGuid():N}");
-        var target = Path.Join(Path.GetTempPath(), $"metadata-skip-target-{Guid.NewGuid():N}");
+        var source = Path.Join(Path.GetTempPath(), $"metadata-source-root-source-{Guid.NewGuid():N}");
+        var target = Path.Join(Path.GetTempPath(), $"metadata-source-root-target-{Guid.NewGuid():N}");
         Directory.CreateDirectory(source);
         int rootId;
-        int invalidAudiobookId;
         await using (var db = await _factory.CreateDbContextAsync())
         {
             var root = new RootFolder { Name = "Library", Path = source };
             db.RootFolders.Add(root);
             var firstBasePath = Path.Join(source, "A Valid");
-            var invalidBasePath = Path.Join(source, "M Invalid");
+            var sourceRootFilePath = Path.Join(source, "M Source Root");
             var lastBasePath = Path.Join(source, "Z Valid");
-            var invalid = new Audiobook
-            {
-                Title = "M Invalid",
-                BasePath = invalidBasePath,
-                FilePath = invalidBasePath,
-                ImageUrl = Path.Join(invalidBasePath, "cover.jpg")
-            };
             db.Audiobooks.AddRange(
                 new Audiobook
                 {
@@ -406,7 +398,13 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
                     FilePath = Path.Join(firstBasePath, "book.m4b"),
                     ImageUrl = Path.Join(firstBasePath, "cover.jpg")
                 },
-                invalid,
+                new Audiobook
+                {
+                    Title = "M Source Root",
+                    BasePath = sourceRootFilePath,
+                    FilePath = sourceRootFilePath,
+                    ImageUrl = Path.Join(sourceRootFilePath, "cover.jpg")
+                },
                 new Audiobook
                 {
                     Title = "Z Valid",
@@ -416,7 +414,6 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
                 });
             await db.SaveChangesAsync();
             rootId = root.Id;
-            invalidAudiobookId = invalid.Id;
         }
 
         var result = await CreateService().StartAsync(
@@ -431,63 +428,51 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
 
         await using var verification = await _factory.CreateDbContextAsync();
         Assert.Equal(target, (await verification.RootFolders.SingleAsync()).Path);
-        Assert.Equal(RootFolderRelocationStatus.NeedsAttention, result.Status);
+        Assert.Equal(RootFolderRelocationStatus.Completed, result.Status);
         Assert.Equal(3, result.TotalJobs);
-        Assert.Equal(2, result.CompletedJobs);
-        Assert.NotNull(result.RelocationId);
+        Assert.Equal(3, result.CompletedJobs);
+        Assert.Null(result.RelocationId);
 
         var audiobooks = await verification.Audiobooks.OrderBy(audiobook => audiobook.Title).ToListAsync();
         Assert.Equal(Path.Join(target, "A Valid"), audiobooks[0].BasePath);
         Assert.Equal(Path.Join(target, "A Valid", "book.m4b"), audiobooks[0].FilePath);
         Assert.Equal(Path.Join(target, "A Valid", "cover.jpg"), audiobooks[0].ImageUrl);
-        Assert.Equal(Path.Join(source, "M Invalid"), audiobooks[1].BasePath);
-        Assert.Equal(Path.Join(source, "M Invalid"), audiobooks[1].FilePath);
-        Assert.Equal(Path.Join(source, "M Invalid", "cover.jpg"), audiobooks[1].ImageUrl);
+        Assert.Equal(Path.Join(target, "M Source Root"), audiobooks[1].BasePath);
+        Assert.Equal(Path.Join(target, "M Source Root"), audiobooks[1].FilePath);
+        Assert.Equal(Path.Join(target, "M Source Root", "cover.jpg"), audiobooks[1].ImageUrl);
         Assert.Equal(Path.Join(target, "Z Valid"), audiobooks[2].BasePath);
         Assert.Equal(Path.Join(target, "Z Valid", "book.m4b"), audiobooks[2].FilePath);
         Assert.Equal(Path.Join(target, "Z Valid", "cover.jpg"), audiobooks[2].ImageUrl);
 
-        var relocation = await verification.RootFolderRelocations
-            .Include(candidate => candidate.SkippedItems)
-            .SingleAsync();
-        var skipped = Assert.Single(relocation.SkippedItems);
-        Assert.Equal(rootId, relocation.ActiveRootFolderId);
-        Assert.Equal(RootFolderRelocationStatus.NeedsAttention, relocation.Status);
-        Assert.Equal(3, relocation.TotalJobs);
-        Assert.Equal(2, relocation.CompletedJobs);
-        Assert.Equal(invalidAudiobookId, skipped.AudiobookId);
-        Assert.Contains("could not be mapped", skipped.Reason);
+        Assert.Empty(await verification.RootFolderRelocations.ToListAsync());
+        Assert.Empty(await verification.RootFolderRelocationSkippedItems.ToListAsync());
         Assert.Empty(await verification.MoveJobs.ToListAsync());
     }
 
     [Fact]
-    public async Task RetryAsync_MetadataOnlySkippedAudiobookRewritesAndClearsAttentionRecord()
+    public async Task MetadataOnly_SourceRootFilePathCompletesWithoutRetry()
     {
-        var source = Path.Join(Path.GetTempPath(), $"metadata-retry-source-{Guid.NewGuid():N}");
-        var target = Path.Join(Path.GetTempPath(), $"metadata-retry-target-{Guid.NewGuid():N}");
+        var source = Path.Join(Path.GetTempPath(), $"metadata-source-root-source-{Guid.NewGuid():N}");
+        var target = Path.Join(Path.GetTempPath(), $"metadata-source-root-target-{Guid.NewGuid():N}");
         Directory.CreateDirectory(source);
         int rootId;
-        int audiobookId;
         await using (var db = await _factory.CreateDbContextAsync())
         {
             var root = new RootFolder { Name = "Library", Path = source };
             db.RootFolders.Add(root);
             var basePath = Path.Join(source, "Title");
-            var audiobook = new Audiobook
+            db.Audiobooks.Add(new Audiobook
             {
                 Title = "Title",
                 BasePath = basePath,
                 FilePath = basePath,
                 ImageUrl = Path.Join(basePath, "cover.jpg")
-            };
-            db.Audiobooks.Add(audiobook);
+            });
             await db.SaveChangesAsync();
             rootId = root.Id;
-            audiobookId = audiobook.Id;
         }
 
-        var service = CreateService();
-        var started = await service.StartAsync(
+        var started = await CreateService().StartAsync(
             rootId,
             new RootFolderPathChangeCommand(
                 target,
@@ -496,28 +481,17 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
                 "Moved Library",
                 false,
                 FileSystemCaseSensitivityMode.Auto));
-        Assert.Equal(RootFolderRelocationStatus.NeedsAttention, started.Status);
 
-        await using (var db = await _factory.CreateDbContextAsync())
-        {
-            var audiobook = await db.Audiobooks.SingleAsync(candidate => candidate.Id == audiobookId);
-            audiobook.FilePath = Path.Join(source, "Title", "book.m4b");
-            await db.SaveChangesAsync();
-        }
+        Assert.Equal(RootFolderRelocationStatus.Completed, started.Status);
+        Assert.Equal(1, started.CompletedJobs);
+        Assert.Null(started.RelocationId);
 
-        var result = await service.RetryAsync(started.RelocationId!.Value);
-
-        Assert.Equal(RootFolderRelocationStatus.Completed, result.Status);
-        Assert.Equal(1, result.CompletedJobs);
-        Assert.Null(result.Error);
         await using var verification = await _factory.CreateDbContextAsync();
-        var relocation = await verification.RootFolderRelocations.SingleAsync();
         var audiobookAfter = await verification.Audiobooks.SingleAsync();
-        Assert.Null(relocation.ActiveRootFolderId);
-        Assert.Equal(RootFolderRelocationStatus.Completed, relocation.Status);
+        Assert.Empty(await verification.RootFolderRelocations.ToListAsync());
         Assert.Empty(await verification.RootFolderRelocationSkippedItems.ToListAsync());
         Assert.Equal(Path.Join(target, "Title"), audiobookAfter.BasePath);
-        Assert.Equal(Path.Join(target, "Title", "book.m4b"), audiobookAfter.FilePath);
+        Assert.Equal(Path.Join(target, "Title"), audiobookAfter.FilePath);
         Assert.Equal(Path.Join(target, "Title", "cover.jpg"), audiobookAfter.ImageUrl);
     }
 
