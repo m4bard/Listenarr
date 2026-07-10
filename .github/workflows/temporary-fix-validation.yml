@@ -1,6 +1,7 @@
 name: Temporary Fix Validation
 
 on:
+  pull_request:
   push:
     branches:
       - bugfix/unix-folder-name-space
