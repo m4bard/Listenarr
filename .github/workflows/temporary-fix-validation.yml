@@ -2,12 +2,11 @@ name: Temporary Fix Validation
 
 on:
   pull_request:
-  push:
-    branches:
-      - bugfix/unix-folder-name-space
 
 permissions:
   contents: read
+  pull-requests: write
+  issues: write
 
 jobs:
   validate:
@@ -21,17 +20,39 @@ jobs:
         run: dotnet restore
       - name: Report formatter and compiler failures
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set +e
           dotnet format --verify-no-changes --verbosity diagnostic > format.log 2>&1
           format_status=$?
-          echo "=== FORMAT DIAGNOSTICS ==="
-          grep -E "(Formatted|error|warning|Unable|Fix whitespace|Fix style|Fix analyzers|would be formatted|Files formatted)" format.log | tail -n 120 || tail -n 80 format.log
-
           dotnet build --no-restore --nologo --verbosity minimal > build.log 2>&1
           build_status=$?
-          echo "=== BUILD DIAGNOSTICS ==="
-          grep -E "(: error |error CS|error NETSDK|Build FAILED|Build succeeded)" build.log | tail -n 160 || tail -n 100 build.log
+
+          {
+            echo '<!-- temporary-fix-validation -->'
+            echo '### Temporary fix validation'
+            echo
+            echo "Format exit code: \`$format_status\`"
+            echo "Build exit code: \`$build_status\`"
+            echo
+            echo '<details><summary>Formatter diagnostics</summary>'
+            echo
+            echo '```text'
+            grep -E '(Formatted|error|warning|Unable|Fix whitespace|Fix style|Fix analyzers|would be formatted|Files formatted)' format.log | tail -n 120 || tail -n 80 format.log
+            echo '```'
+            echo '</details>'
+            echo
+            echo '<details><summary>Compiler diagnostics</summary>'
+            echo
+            echo '```text'
+            grep -E '(: error |error CS|error NETSDK|Build FAILED|Build succeeded)' build.log | tail -n 160 || tail -n 100 build.log
+            echo '```'
+            echo '</details>'
+          } > diagnostics.md
+
+          gh pr comment "$PR_NUMBER" --body-file diagnostics.md
 
           if [ "$format_status" -ne 0 ] || [ "$build_status" -ne 0 ]; then
             exit 1
