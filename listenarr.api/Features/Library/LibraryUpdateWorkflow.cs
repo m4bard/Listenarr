@@ -41,7 +41,7 @@ namespace Listenarr.Api.Features.Library
             _logger = logger;
         }
 
-        public async Task<IActionResult> UpdateAsync(int id, Audiobook updatedAudiobook)
+        public async Task<IActionResult> UpdateAsync(int id, AudiobookUpdateRequest request)
         {
             var existingAudiobook = await _repo.GetByIdAsync(id);
             if (existingAudiobook == null)
@@ -52,9 +52,9 @@ namespace Listenarr.Api.Features.Library
             var legacyIdentifierFieldsTouched = false;
             var basePathRewritten = false;
 
-            if (updatedAudiobook.BasePath != null)
+            if (request.BasePath != null)
             {
-                var requestedBasePath = FileUtils.NormalizeStoredPath(updatedAudiobook.BasePath);
+                var requestedBasePath = FileUtils.NormalizeStoredPath(request.BasePath);
                 var existingBasePath = string.IsNullOrEmpty(existingAudiobook.BasePath)
                     ? string.Empty
                     : FileUtils.NormalizeStoredPath(existingAudiobook.BasePath);
@@ -68,7 +68,7 @@ namespace Listenarr.Api.Features.Library
                     {
                         await _destinationRewriteService.RewriteDestinationAsync(
                             id,
-                            updatedAudiobook.BasePath,
+                            request.BasePath,
                             existingAudiobook.BasePath);
                         basePathRewritten = true;
                     }
@@ -93,51 +93,51 @@ namespace Listenarr.Api.Features.Library
                 }
             }
 
-            if (updatedAudiobook.Title != null) existingAudiobook.Title = updatedAudiobook.Title;
-            if (updatedAudiobook.Subtitle != null) existingAudiobook.Subtitle = updatedAudiobook.Subtitle;
-            if (updatedAudiobook.Authors != null) existingAudiobook.Authors = updatedAudiobook.Authors;
-            if (!basePathRewritten && updatedAudiobook.ImageUrl != null) existingAudiobook.ImageUrl = updatedAudiobook.ImageUrl;
-            if (updatedAudiobook.PublishYear != null) existingAudiobook.PublishYear = updatedAudiobook.PublishYear;
-            if (updatedAudiobook.PublishedDate != null) existingAudiobook.PublishedDate = updatedAudiobook.PublishedDate;
-            if (updatedAudiobook.Description != null) existingAudiobook.Description = updatedAudiobook.Description;
-            if (updatedAudiobook.Genres != null) existingAudiobook.Genres = updatedAudiobook.Genres;
-            if (updatedAudiobook.Tags != null) existingAudiobook.Tags = updatedAudiobook.Tags;
-            if (updatedAudiobook.Narrators != null) existingAudiobook.Narrators = updatedAudiobook.Narrators;
-            if (updatedAudiobook.Isbn != null)
+            if (request.Title != null) existingAudiobook.Title = request.Title;
+            if (request.Subtitle != null) existingAudiobook.Subtitle = request.Subtitle;
+            if (request.Authors != null) existingAudiobook.Authors = request.Authors;
+            if (!basePathRewritten && request.ImageUrl != null) existingAudiobook.ImageUrl = request.ImageUrl;
+            if (request.PublishYear != null) existingAudiobook.PublishYear = request.PublishYear;
+            if (request.PublishedDate != null) existingAudiobook.PublishedDate = request.PublishedDate;
+            if (request.Description != null) existingAudiobook.Description = request.Description;
+            if (request.Genres != null) existingAudiobook.Genres = request.Genres;
+            if (request.Tags != null) existingAudiobook.Tags = request.Tags;
+            if (request.Narrators != null) existingAudiobook.Narrators = request.Narrators;
+            if (request.Isbn != null)
             {
-                existingAudiobook.Isbn = updatedAudiobook.Isbn;
+                existingAudiobook.Isbn = request.Isbn;
                 legacyIdentifierFieldsTouched = true;
             }
 
-            if (updatedAudiobook.Asin != null)
+            if (request.Asin != null)
             {
-                existingAudiobook.Asin = updatedAudiobook.Asin;
+                existingAudiobook.Asin = request.Asin;
                 legacyIdentifierFieldsTouched = true;
             }
 
-            if (updatedAudiobook.OpenLibraryId != null)
+            if (request.OpenLibraryId != null)
             {
-                existingAudiobook.OpenLibraryId = updatedAudiobook.OpenLibraryId;
+                existingAudiobook.OpenLibraryId = request.OpenLibraryId;
                 legacyIdentifierFieldsTouched = true;
             }
 
-            if (updatedAudiobook.Publisher != null) existingAudiobook.Publisher = updatedAudiobook.Publisher;
-            if (updatedAudiobook.Language != null) existingAudiobook.Language = updatedAudiobook.Language;
-            if (updatedAudiobook.Runtime != null) existingAudiobook.Runtime = updatedAudiobook.Runtime;
-            if (updatedAudiobook.Edition != null) existingAudiobook.Edition = updatedAudiobook.Edition;
-            if (updatedAudiobook.Version != null) existingAudiobook.Version = updatedAudiobook.Version;
+            if (request.Publisher != null) existingAudiobook.Publisher = request.Publisher;
+            if (request.Language != null) existingAudiobook.Language = request.Language;
+            if (request.Runtime != null) existingAudiobook.Runtime = request.Runtime;
+            if (request.Edition != null) existingAudiobook.Edition = request.Edition;
+            if (request.Version != null) existingAudiobook.Version = request.Version;
 
-            ApplySeriesMembershipUpdates(existingAudiobook, updatedAudiobook);
+            ApplySeriesMembershipUpdates(existingAudiobook, request);
 
-            existingAudiobook.Explicit = updatedAudiobook.Explicit;
-            existingAudiobook.Abridged = updatedAudiobook.Abridged;
-            existingAudiobook.Monitored = updatedAudiobook.Monitored;
+            if (request.Explicit.HasValue) existingAudiobook.Explicit = request.Explicit.Value;
+            if (request.Abridged.HasValue) existingAudiobook.Abridged = request.Abridged.Value;
+            if (request.Monitored.HasValue) existingAudiobook.Monitored = request.Monitored.Value;
 
-            if (!basePathRewritten && updatedAudiobook.FilePath != null) existingAudiobook.FilePath = updatedAudiobook.FilePath;
-            if (updatedAudiobook.FileSize.HasValue) existingAudiobook.FileSize = updatedAudiobook.FileSize;
-            if (updatedAudiobook.Quality != null) existingAudiobook.Quality = updatedAudiobook.Quality;
+            if (!basePathRewritten && request.FilePath != null) existingAudiobook.FilePath = request.FilePath;
+            if (request.FileSize.HasValue) existingAudiobook.FileSize = request.FileSize;
+            if (request.Quality != null) existingAudiobook.Quality = request.Quality;
 
-            await ApplyQualityProfileAsync(existingAudiobook, updatedAudiobook);
+            await ApplyQualityProfileAsync(existingAudiobook, request);
 
             if (legacyIdentifierFieldsTouched)
             {
@@ -163,24 +163,24 @@ namespace Listenarr.Api.Features.Library
                 }
             };
 
-        private static void ApplySeriesMembershipUpdates(Audiobook existingAudiobook, Audiobook updatedAudiobook)
+        private static void ApplySeriesMembershipUpdates(Audiobook existingAudiobook, AudiobookUpdateRequest request)
         {
             var seriesMembershipsTouched =
-                updatedAudiobook.SeriesMemberships != null ||
-                updatedAudiobook.Series != null ||
-                updatedAudiobook.SeriesNumber != null;
+                request.SeriesMemberships != null ||
+                request.Series != null ||
+                request.SeriesNumber != null;
 
             if (!seriesMembershipsTouched)
             {
                 return;
             }
 
-            var mergedSeries = updatedAudiobook.Series ?? existingAudiobook.Series;
-            var mergedSeriesNumber = updatedAudiobook.SeriesNumber ?? existingAudiobook.SeriesNumber;
+            var mergedSeries = request.Series ?? existingAudiobook.Series;
+            var mergedSeriesNumber = request.SeriesNumber ?? existingAudiobook.SeriesNumber;
             var existingPrimaryMembership = AudiobookSeriesMembershipHelper.GetPrimaryMembership(existingAudiobook.SeriesMemberships);
 
             var normalizedMemberships = AudiobookSeriesMembershipHelper.Normalize(
-                updatedAudiobook.SeriesMemberships,
+                request.SeriesMemberships,
                 mergedSeries,
                 mergedSeriesNumber,
                 existingPrimaryMembership?.SeriesAsin);
@@ -202,14 +202,14 @@ namespace Listenarr.Api.Features.Library
             AudiobookSeriesMembershipHelper.ApplyPrimarySeriesFields(existingAudiobook);
         }
 
-        private async Task ApplyQualityProfileAsync(Audiobook existingAudiobook, Audiobook updatedAudiobook)
+        private async Task ApplyQualityProfileAsync(Audiobook existingAudiobook, AudiobookUpdateRequest request)
         {
-            if (!updatedAudiobook.QualityProfileId.HasValue)
+            if (!request.QualityProfileId.HasValue)
             {
                 return;
             }
 
-            if (updatedAudiobook.QualityProfileId.Value == -1)
+            if (request.QualityProfileId.Value == -1)
             {
                 using var scope = _scopeFactory.CreateScope();
                 var qualityProfileService = scope.ServiceProvider.GetRequiredService<IQualityProfileService>();
@@ -229,9 +229,9 @@ namespace Listenarr.Api.Features.Library
                 return;
             }
 
-            existingAudiobook.QualityProfileId = updatedAudiobook.QualityProfileId.Value;
+            existingAudiobook.QualityProfileId = request.QualityProfileId.Value;
             _logger.LogInformation("Updated quality profile for audiobook '{Title}' to ID {ProfileId}",
-                existingAudiobook.Title, updatedAudiobook.QualityProfileId.Value);
+                existingAudiobook.Title, request.QualityProfileId.Value);
         }
     }
 }
