@@ -105,6 +105,7 @@ namespace Listenarr.Domain.Audiobooks
         // Optional source path snapshot provided at enqueue time. Persist this so jobs
         // remain durable and can be inspected / resumed across restarts.
         public string? SourcePath { get; set; }
+        public string? SourceCleanupBoundary { get; set; }
         public bool DeleteEmptySource { get; set; } = true;
         public ICollection<MoveJobEntry> Entries { get; set; } = new List<MoveJobEntry>();
     }

@@ -74,6 +74,7 @@ public sealed class RootFolderRelocationServiceTests : IAsyncLifetime
         Assert.Equal(Path.Join(source, "Author", "Title"), audiobookAfter.BasePath);
         Assert.Equal(rootId, relocation.ActiveRootFolderId);
         Assert.Equal(relocation.Id, job.RelocationId);
+        Assert.Equal(source, job.SourceCleanupBoundary);
         Assert.Equal(RootFolderRelocationStatus.Pending, result.Status);
         Assert.True(await service.IsBoundaryProtectedAsync(
             target,

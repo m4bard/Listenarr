@@ -359,7 +359,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
-        public async Task MoveContentsAsync_WithCleanupBoundary_RemovesEmptyAncestorsButKeepsBoundary()
+        public async Task FinalizeMove_WithCleanupBoundary_RemovesEmptyAncestorsButKeepsBoundary()
         {
             var sourceRoot = FileService.GetTempDirectory("content-move-cleanup-boundary");
             var source = Path.Join(sourceRoot, "Author", "Series", "Title", "test");
@@ -368,9 +368,15 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var target = Path.Join(FileService.GetTempPath(), $"content-move-cleanup-boundary-dst-{Guid.NewGuid():N}");
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
-            await service.MoveContentsAsync(
-                await CreateLeasedMoveRequestAsync(source, target, sourceCleanupBoundary: sourceRoot),
-                CancellationToken.None);
+            var request = await CreateLeasedMoveRequestAsync(
+                source,
+                target,
+                sourceCleanupBoundary: sourceRoot);
+            var result = await service.MoveContentsAsync(request, CancellationToken.None);
+
+            Assert.True(Directory.Exists(Path.Join(sourceRoot, "Author")));
+
+            service.FinalizeMove(request, result);
 
             Assert.True(Directory.Exists(sourceRoot));
             Assert.False(Directory.Exists(Path.Join(sourceRoot, "Author")));
@@ -378,26 +384,133 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
-        public async Task MoveContentsAsync_ExistingEmptyTarget_RemovesEmptySourceParentAfterQuarantineCleanup()
+        public async Task FinalizeMove_SourceEqualsCleanupBoundary_PreservesBoundaryDirectory()
+        {
+            var source = FileService.GetTempDirectory("content-move-source-is-boundary");
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(FileService.GetTempPath(), $"content-move-source-is-boundary-dst-{Guid.NewGuid():N}");
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            var request = await CreateLeasedMoveRequestAsync(
+                source,
+                target,
+                sourceCleanupBoundary: source);
+            var result = await service.MoveContentsAsync(request, CancellationToken.None);
+
+            Assert.True(Directory.Exists(source));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(source));
+
+            service.FinalizeMove(request, result);
+
+            Assert.True(Directory.Exists(source));
+            Assert.False(File.Exists(result.RecoveryMarkerPath));
+            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        }
+
+        [Fact]
+        public async Task FinalizeMove_ExistingEmptyTarget_PrunesSourceParentAfterNestedQuarantineCleanup()
         {
             var sourceRoot = FileService.GetTempDirectory("content-move-existing-target-root");
             var series = Path.Join(sourceRoot, "Matt Dinniman", "Dungeon Crawler Carl");
-            var oldTitle = Path.Join(series, "A Parade of Horribles (20262)");
+            var oldTitle = Path.Join(series, "A Parade of Horribles (2026)");
             var source = Path.Join(oldTitle, "test");
-            Directory.CreateDirectory(source);
-            await FileService.GetFileAsync(source, "book.m4b", "audio");
-            var target = Path.Join(series, "A Parade of Horribles (2026)", "test");
+            var sourceDisc = Path.Join(source, "Disc 01");
+            Directory.CreateDirectory(sourceDisc);
+            await FileService.GetFileAsync(sourceDisc, "book.m4b", "audio");
+            var target = Path.Join(series, "A Parade of Horribles (20262)", "test");
             Directory.CreateDirectory(target);
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
-            await service.MoveContentsAsync(
-                await CreateLeasedMoveRequestAsync(source, target, sourceCleanupBoundary: sourceRoot),
-                CancellationToken.None);
+            var request = await CreateLeasedMoveRequestAsync(
+                source,
+                target,
+                sourceCleanupBoundary: sourceRoot);
+            var result = await service.MoveContentsAsync(request, CancellationToken.None);
 
             Assert.False(Directory.Exists(source));
+            Assert.True(Directory.Exists(oldTitle));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(oldTitle));
+            Assert.True(File.Exists(result.RecoveryMarkerPath));
+
+            service.FinalizeMove(request, result);
+
             Assert.False(Directory.Exists(oldTitle));
-            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+            Assert.False(File.Exists(result.RecoveryMarkerPath));
+            Assert.True(File.Exists(Path.Join(target, "Disc 01", "book.m4b")));
             Assert.True(Directory.Exists(sourceRoot));
+        }
+
+        [Fact]
+        public async Task FinalizeMove_MissingCleanupBoundary_LeavesMarkerAndRequiresAttention()
+        {
+            var sourceRoot = FileService.GetTempDirectory("content-move-missing-boundary-root");
+            var oldTitle = Path.Join(sourceRoot, "Author", "Old Title");
+            var source = Path.Join(oldTitle, "test");
+            Directory.CreateDirectory(source);
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(FileService.GetTempPath(), $"content-move-missing-boundary-dst-{Guid.NewGuid():N}");
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            var request = await CreateLeasedMoveRequestAsync(source, target);
+            var result = await service.MoveContentsAsync(request, CancellationToken.None);
+
+            var exception = Assert.Throws<MoveNeedsAttentionException>(() =>
+                service.FinalizeMove(request, result));
+
+            Assert.Contains("no source cleanup boundary", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True(File.Exists(result.RecoveryMarkerPath));
+            Assert.True(Directory.Exists(oldTitle));
+            Assert.False(Directory.Exists(source));
+        }
+
+        [Fact]
+        public async Task FinalizeMove_RetryAfterImmediateParentRemoved_PrunesHigherEmptyAncestors()
+        {
+            var sourceRoot = FileService.GetTempDirectory("content-move-finalize-retry-root");
+            var author = Path.Join(sourceRoot, "Author");
+            var oldTitle = Path.Join(author, "Old Title");
+            var source = Path.Join(oldTitle, "test");
+            Directory.CreateDirectory(source);
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(FileService.GetTempPath(), $"content-move-finalize-retry-dst-{Guid.NewGuid():N}");
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            var request = await CreateLeasedMoveRequestAsync(
+                source,
+                target,
+                sourceCleanupBoundary: sourceRoot);
+            var result = await service.MoveContentsAsync(request, CancellationToken.None);
+
+            Directory.Delete(oldTitle, false);
+            Assert.True(Directory.Exists(author));
+            Assert.False(Directory.Exists(oldTitle));
+
+            service.FinalizeMove(request, result);
+
+            Assert.False(Directory.Exists(author));
+            Assert.True(Directory.Exists(sourceRoot));
+            Assert.False(File.Exists(result.RecoveryMarkerPath));
+        }
+
+        [Fact]
+        public async Task FinalizeMove_MissingBoundaryWithNonEmptyParent_CompletesAtNaturalStop()
+        {
+            var sourceParent = FileService.GetTempDirectory("content-move-nonempty-stop-parent");
+            await FileService.GetFileAsync(sourceParent, "keep.txt", "keep");
+            var source = Path.Join(sourceParent, "test");
+            Directory.CreateDirectory(source);
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(FileService.GetTempPath(), $"content-move-nonempty-stop-dst-{Guid.NewGuid():N}");
+
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            var request = await CreateLeasedMoveRequestAsync(source, target);
+            var result = await service.MoveContentsAsync(request, CancellationToken.None);
+
+            service.FinalizeMove(request, result);
+
+            Assert.False(File.Exists(result.RecoveryMarkerPath));
+            Assert.True(Directory.Exists(sourceParent));
+            Assert.True(File.Exists(Path.Join(sourceParent, "keep.txt")));
         }
 
         [Fact]

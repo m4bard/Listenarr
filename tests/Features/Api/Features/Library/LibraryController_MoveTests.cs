@@ -67,7 +67,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                     It.IsAny<int>(),
                     It.IsAny<string>(),
                     It.IsAny<string>(),
-                    It.IsAny<bool>()))
+                    It.IsAny<bool>(),
+                    It.IsAny<string?>()))
                 .ReturnsAsync(expectedId);
 
             Init(services => services.WithSingleton(mockMoveQueue.Object));
@@ -101,7 +102,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 ab.Id,
                 FileUtils.NormalizeStoredPath(target),
                 ab.BasePath,
-                false), Times.Once);
+                false,
+                null), Times.Once);
         }
 
         [Fact]
@@ -115,7 +117,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                     It.IsAny<int>(),
                     It.IsAny<string>(),
                     It.IsAny<string>(),
-                    It.IsAny<bool>()))
+                    It.IsAny<bool>(),
+                    It.IsAny<string?>()))
                 .ReturnsAsync(expectedId);
 
             Init(services => services.WithSingleton(mockMoveQueue.Object));
@@ -150,7 +153,54 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 audiobook.Id,
                 FileUtils.NormalizeStoredPath(target),
                 sourcePath,
-                true), Times.Once);
+                true,
+                Path.GetDirectoryName(sourcePath)), Times.Once);
+        }
+
+        [Fact]
+        public async Task MoveAudiobook_CustomSiblingMove_PersistsCommonSeriesCleanupBoundary()
+        {
+            var moveQueue = new Mock<IMoveQueueService>();
+            moveQueue.Setup(service => service.EnqueueMoveAsync(
+                    It.IsAny<int>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<bool>(),
+                    It.IsAny<string?>()))
+                .ReturnsAsync(Guid.NewGuid());
+            Init(services => services.WithSingleton(moveQueue.Object));
+            var configuredOutputPath = FileService.GetTempDirectory("listenarr-move-output");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(configuredOutputPath)
+                .Build());
+
+            var customRoot = FileService.GetTempDirectory("listenarr-custom-sibling-root");
+            var series = Path.Join(customRoot, "Matt Dinniman", "Dungeon Crawler Carl");
+            var source = Path.Join(series, "A Parade of Horribles (20262)", "test");
+            Directory.CreateDirectory(source);
+            var target = Path.Join(series, "A Parade of Horribles (2026)", "test");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("A Parade of Horribles")
+                .WithBasePath(source)
+                .Build());
+
+            var result = await _provider.GetRequiredService<LibraryController>().EnqueueMove(
+                audiobook.Id,
+                new LibraryController.MoveRequest
+                {
+                    SourcePath = source,
+                    DestinationPath = target,
+                    MoveFiles = true,
+                    DeleteEmptySource = true
+                });
+
+            Assert.IsType<AcceptedResult>(result);
+            moveQueue.Verify(service => service.EnqueueMoveAsync(
+                audiobook.Id,
+                FileUtils.NormalizeStoredPath(target),
+                source,
+                true,
+                series), Times.Once);
         }
 
         [Fact]
@@ -161,7 +211,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                     It.IsAny<int>(),
                     It.IsAny<string>(),
                     It.IsAny<string?>(),
-                    It.IsAny<bool>()))
+                    It.IsAny<bool>(),
+                    It.IsAny<string?>()))
                 .ThrowsAsync(new MoveRelocationConflictException(
                     "Move target overlaps an active root folder relocation boundary."));
             Init(services => services.WithSingleton(moveQueue.Object));
@@ -227,7 +278,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 It.IsAny<int>(),
                 It.IsAny<string>(),
                 It.IsAny<string>(),
-                It.IsAny<bool>()), Times.Never);
+                It.IsAny<bool>(),
+                It.IsAny<string?>()), Times.Never);
         }
 
         [Theory]
@@ -271,7 +323,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 It.IsAny<int>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
-                It.IsAny<bool>()), Times.Never);
+                It.IsAny<bool>(),
+                It.IsAny<string?>()), Times.Never);
         }
 
         [Fact]
@@ -317,7 +370,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 It.IsAny<int>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
-                It.IsAny<bool>()), Times.Never);
+                It.IsAny<bool>(),
+                It.IsAny<string?>()), Times.Never);
         }
 
         [Fact]
@@ -381,7 +435,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 It.IsAny<int>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
-                It.IsAny<bool>()), Times.Never);
+                It.IsAny<bool>(),
+                It.IsAny<string?>()), Times.Never);
         }
 
         [Fact]
@@ -568,7 +623,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 It.IsAny<int>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
-                It.IsAny<bool>()), Times.Never);
+                It.IsAny<bool>(),
+                It.IsAny<string?>()), Times.Never);
         }
 
         [Fact]
@@ -747,7 +803,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                     It.IsAny<int>(),
                     It.IsAny<string>(),
                     It.IsAny<string>(),
-                    It.IsAny<bool>()))
+                    It.IsAny<bool>(),
+                    It.IsAny<string?>()))
                 .ReturnsAsync(expectedId);
 
             Init(services => services.WithSingleton(mockMoveQueue.Object));
@@ -776,7 +833,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 audiobook.Id,
                 FileUtils.NormalizeStoredPath(targetPath),
                 sourcePath,
-                true), Times.Once);
+                true,
+                outputPath), Times.Once);
         }
 
         [Fact]
@@ -817,7 +875,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 It.IsAny<int>(),
                 It.IsAny<string>(),
                 It.IsAny<string>(),
-                It.IsAny<bool>()), Times.Never);
+                It.IsAny<bool>(),
+                It.IsAny<string?>()), Times.Never);
         }
 
         [Fact]
@@ -831,7 +890,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                     It.IsAny<int>(),
                     It.IsAny<string>(),
                     It.IsAny<string>(),
-                    It.IsAny<bool>()))
+                    It.IsAny<bool>(),
+                    It.IsAny<string?>()))
                 .ReturnsAsync(expectedId);
             Init(services => services.WithSingleton(mockMoveQueue.Object));
             var rootPath = FileService.GetTempDirectory("listenarr-move-sensitive-root");
@@ -864,7 +924,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 audiobook.Id,
                 FileUtils.NormalizeStoredPath(targetPath),
                 sourcePath,
-                true), Times.Once);
+                true,
+                rootPath), Times.Once);
         }
 
         [Fact]

@@ -323,6 +323,7 @@ public sealed partial class RootFolderRelocationService(
                 AudiobookId = audiobook.Id,
                 RequestedPath = requestedPath,
                 SourcePath = candidate.StoredBasePath,
+                SourceCleanupBoundary = root.Path,
                 DeleteEmptySource = command.DeleteEmptySource,
                 Status = MoveJobStatus.Queued,
                 Phase = MoveJobPhase.None,

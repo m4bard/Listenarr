@@ -57,6 +57,36 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
+        public async Task ProcessJobAsync_CustomSiblingMove_RemovesOldTitleFolderAndKeepsSeries()
+        {
+            var customRoot = FileService.GetTempDirectory("move-processor-sibling-root");
+            var series = Path.Join(customRoot, "Matt Dinniman", "Dungeon Crawler Carl");
+            var oldTitle = Path.Join(series, "A Parade of Horribles (20262)");
+            var source = Path.Join(oldTitle, "test");
+            Directory.CreateDirectory(source);
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(series, "A Parade of Horribles (2026)", "test");
+            Directory.CreateDirectory(target);
+            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+            {
+                Title = "A Parade of Horribles",
+                BasePath = source
+            });
+            var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, target, source);
+
+            var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var updatedJob = await queue.GetJobAsync(job.Id);
+            Assert.NotNull(updatedJob);
+            Assert.Equal(MoveJobStatus.Completed, updatedJob!.Status);
+            Assert.False(Directory.Exists(source));
+            Assert.False(Directory.Exists(oldTitle));
+            Assert.True(Directory.Exists(series));
+            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        }
+
+        [Fact]
         public async Task ProcessJobAsync_UnrelatedForeignSyntaxRoot_DoesNotBlockBoundedCleanup()
         {
             var sourceRoot = FileService.GetTempDirectory("move-processor-foreign-root");
@@ -176,7 +206,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
-        public async Task ProcessJobAsync_SourceInsideEmptyParent_DoesNotDeleteParentAfterMove()
+        public async Task ProcessJobAsync_CustomMove_RemovesEmptySourceParentUsingFallbackBoundary()
         {
             var sourceParent = FileService.GetTempDirectory("move-processor-empty-parent");
             var src = Path.Join(sourceParent, " test");
@@ -193,7 +223,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Assert.NotNull(updatedJob);
             Assert.Equal(MoveJobStatus.Completed, updatedJob!.Status);
             Assert.False(Directory.Exists(src));
-            Assert.True(Directory.Exists(sourceParent));
+            Assert.False(Directory.Exists(sourceParent));
+            Assert.True(Directory.Exists(Path.GetDirectoryName(sourceParent)!));
             Assert.True(File.Exists(Path.Join(dst, "book.m4b")));
         }
 

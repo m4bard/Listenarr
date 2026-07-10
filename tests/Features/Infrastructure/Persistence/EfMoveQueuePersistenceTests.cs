@@ -71,6 +71,21 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SourceCleanupBoundary_RoundTripsWithMoveJob()
+    {
+        var persistence = CreatePersistence();
+        var job = CreateJob("v2:move:42:s:cleanup-boundary");
+        job.SourcePath = "/downloads/Author/Title/test";
+        job.SourceCleanupBoundary = "/downloads";
+
+        await persistence.AddAsync(job);
+        var persisted = await persistence.GetByIdAsync(job.Id);
+
+        Assert.NotNull(persisted);
+        Assert.Equal("/downloads", persisted!.SourceCleanupBoundary);
+    }
+
+    [Fact]
     public async Task ReconcileIdentityKeys_SelectsMostAdvancedLegacyDuplicate()
     {
         await using (var db = await _factory.CreateDbContextAsync())
