@@ -179,14 +179,14 @@ namespace Listenarr.Api.Features.Library
         }
 
         /// <summary>
-        /// Update an existing audiobook's metadata and settings. Supports partial updates — only non-null fields are applied.
+        /// Update an existing audiobook's metadata and settings. Supports partial updates; omitted fields are left unchanged.
         /// </summary>
         /// <param name="id">Audiobook ID.</param>
-        /// <param name="updatedAudiobook">Fields to update (null fields are left unchanged).</param>
+        /// <param name="request">Fields to update.</param>
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateAudiobook(int id, [FromBody] Audiobook updatedAudiobook)
+        public async Task<IActionResult> UpdateAudiobook(int id, [FromBody] AudiobookUpdateRequest request)
         {
-            return await _updateWorkflow.UpdateAsync(id, updatedAudiobook);
+            return await _updateWorkflow.UpdateAsync(id, request);
         }
 
         /// <summary>
