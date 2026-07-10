@@ -50,13 +50,20 @@ jobs:
           cache: npm
           cache-dependency-path: fe/package-lock.json
 
-      - name: Apply focused fixes
-        run: |
-          python tools/apply_pr717_phase1.py
-          python tools/apply_pr717_phase2.py
-          python tools/apply_pr717_phase3_prod.py
-          python tools/apply_pr717_phase3_tests.py
-          python tools/apply_pr717_phase4.py
+      - name: Apply sparse-update fixes
+        run: python tools/apply_pr717_phase1.py
+
+      - name: Apply link-safe deletion fixes
+        run: python tools/apply_pr717_phase2.py
+
+      - name: Apply manifest-owned recovery fixes
+        run: python tools/apply_pr717_phase3_prod.py
+
+      - name: Add recovery regression tests
+        run: python tools/apply_pr717_phase3_tests.py
+
+      - name: Apply transactional root reassignment fixes
+        run: python tools/apply_pr717_phase4.py
 
       - name: Remove temporary automation
         run: |
