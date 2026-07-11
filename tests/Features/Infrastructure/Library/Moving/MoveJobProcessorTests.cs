@@ -588,6 +588,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var updatedJob = await queue.GetJobAsync(jobId);
             Assert.NotNull(updatedJob);
             Assert.Equal(MoveJobStatus.Completed, updatedJob!.Status);
+            Assert.Equal(Path.GetFullPath(source), updatedJob.SourcePath);
             Assert.True(File.Exists(Path.Join(target, "book.m4b")));
         }
 

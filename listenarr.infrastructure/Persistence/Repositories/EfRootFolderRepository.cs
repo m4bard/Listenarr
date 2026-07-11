@@ -198,6 +198,32 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             var targetRoot = roots.SingleOrDefault(root => root.Id == targetRootId)
                 ?? throw new KeyNotFoundException("Reassign root not found");
 
+            if (await ctx.RootFolderRelocations.AnyAsync(
+                    relocation => relocation.ActiveRootFolderId == sourceRootId
+                        || relocation.ActiveRootFolderId == targetRootId,
+                    ct))
+            {
+                throw new InvalidOperationException(
+                    "Root folder reassignment is blocked while a relocation is active.");
+            }
+
+            var activeMovePaths = await ctx.MoveJobs
+                .AsNoTracking()
+                .Where(job => job.Status == MoveJobStatus.Queued
+                    || job.Status == MoveJobStatus.Running
+                    || job.Status == MoveJobStatus.RetryScheduled)
+                .Select(job => new { job.SourcePath, job.RequestedPath })
+                .ToListAsync(ct);
+            if (activeMovePaths.Any(job =>
+                    MoveTouchesRoot(job.SourcePath, sourceRoot.Path, sourceSemantics)
+                    || MoveTouchesRoot(job.RequestedPath, sourceRoot.Path, sourceSemantics)
+                    || MoveTouchesRoot(job.SourcePath, targetRoot.Path, targetSemantics)
+                    || MoveTouchesRoot(job.RequestedPath, targetRoot.Path, targetSemantics)))
+            {
+                throw new InvalidOperationException(
+                    "Root folder reassignment is blocked while an active move touches either root.");
+            }
+
             var audiobooks = await ctx.Audiobooks
                 .Include(audiobook => audiobook.Files)
                 .Where(audiobook => audiobook.BasePath != null)
@@ -235,6 +261,15 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                         "An audiobook relative path is invalid for the target root.");
                 }
 
+                if (!FileSystemPathIdentity.IsSameOrInside(
+                        targetBasePath,
+                        targetRoot.Path,
+                        targetSemantics))
+                {
+                    throw new InvalidOperationException(
+                        "An audiobook target path escaped the reassignment root.");
+                }
+
                 plannedRewrites.Add((audiobook, sourceBasePath, targetBasePath));
             }
 
@@ -253,6 +288,28 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             if (transaction != null)
             {
                 await transaction.CommitAsync(ct);
+            }
+        }
+
+        private static bool MoveTouchesRoot(
+            string? path,
+            string rootPath,
+            FileSystemPathSemantics semantics)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                return FileSystemPathIdentity.IsSameOrInside(path, rootPath, semantics);
+            }
+            catch (ArgumentException)
+            {
+                // Fail closed for malformed active-job paths while deciding whether a
+                // destructive root-folder reassignment can proceed.
+                return true;
             }
         }
 

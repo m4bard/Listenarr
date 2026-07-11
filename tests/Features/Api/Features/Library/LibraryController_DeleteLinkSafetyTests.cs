@@ -58,6 +58,50 @@ public class LibraryController_DeleteLinkSafetyTests : BaseTests
             || warning.Contains("reparse point", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task FilesystemDelete_LinkedFileDoesNotDeleteExternalFile()
+    {
+        var tempRoot = FileService.GetTempDirectory("listenarr-delete-file-link-root");
+        var bookFolder = Path.Join(tempRoot, "Book");
+        var externalFolder = FileService.GetTempDirectory("listenarr-delete-file-link-external");
+        var localFile = Path.Join(bookFolder, "book.m4b");
+        var externalFile = Path.Join(externalFolder, "external.txt");
+        var linkedFile = Path.Join(bookFolder, "linked.txt");
+        Directory.CreateDirectory(bookFolder);
+        await File.WriteAllTextAsync(localFile, "audio");
+        await File.WriteAllTextAsync(externalFile, "external");
+
+        try
+        {
+            File.CreateSymbolicLink(linkedFile, externalFile);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return;
+        }
+
+        var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+            .WithTitle("Linked File Book")
+            .WithBasePath(bookFolder)
+            .WithFilePath(localFile)
+            .Build());
+        await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
+            .WithAudiobook(audiobook)
+            .WithPath(localFile)
+            .Build());
+
+        var service = _provider.GetRequiredService<IAudiobookFilesystemDeleteService>();
+        var result = await service.DeleteAsync(audiobook, deleteFolder: true);
+
+        Assert.True(File.Exists(externalFile));
+        Assert.True(File.Exists(localFile));
+        Assert.True(File.Exists(linkedFile));
+        Assert.False(result.DeletedFolder);
+        Assert.Contains(result.Warnings, warning =>
+            warning.Contains("symbolic link", StringComparison.OrdinalIgnoreCase)
+            || warning.Contains("reparse point", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static bool TryCreateDirectoryLink(string linkPath, string targetPath)
     {
         try

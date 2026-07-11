@@ -1,3 +1,4 @@
+using Listenarr.Domain.Common;
 using Listenarr.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,6 +25,110 @@ internal sealed partial class AudiobookContentMoveService
             cancellationToken))
         {
             throw new MoveLeaseLostException(jobId, leaseToken.Generation);
+        }
+    }
+
+    private async Task ValidatePersistedMoveIdentityAsync(
+        Guid jobId,
+        string source,
+        string target,
+        FileSystemPathSemantics sourceSemantics,
+        FileSystemPathSemantics targetSemantics,
+        MoveLeaseToken leaseToken,
+        CancellationToken cancellationToken)
+    {
+        EnsureLeaseTokenProvided(jobId, leaseToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var identity = await db.MoveJobs
+            .AsNoTracking()
+            .Where(job => job.Id == jobId)
+            .Select(job => new { job.SourcePath, job.RequestedPath })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (identity == null || string.IsNullOrWhiteSpace(identity.RequestedPath))
+        {
+            throw new MoveNeedsAttentionException(
+                "Persisted move target identity is required before filesystem recovery.");
+        }
+
+        try
+        {
+            if (!FileSystemPathIdentity.AreEquivalent(identity.RequestedPath, target, targetSemantics))
+            {
+                throw new MoveNeedsAttentionException(
+                    "Persisted move target identity does not match the requested filesystem operation.");
+            }
+        }
+        catch (ArgumentException)
+        {
+            throw new MoveNeedsAttentionException("Persisted move target identity is invalid.");
+        }
+
+        var persistedSource = identity.SourcePath;
+        if (string.IsNullOrWhiteSpace(persistedSource))
+        {
+            var hasRecoveryArtifacts = await db.MoveJobEntries.AnyAsync(
+                    entry => entry.MoveJobId == jobId,
+                    cancellationToken)
+                || File.Exists(GetRecoveryMarkerPath(target, jobId))
+                || File.Exists(GetRecoveryMarkerPath(source, jobId));
+            if (hasRecoveryArtifacts)
+            {
+                throw new MoveNeedsAttentionException(
+                    "A legacy move without a persisted source cannot own existing recovery artifacts.");
+            }
+
+            var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+            if (!db.Database.IsRelational())
+            {
+                var job = await db.MoveJobs.SingleOrDefaultAsync(
+                    candidate => candidate.Id == jobId
+                        && candidate.Status == MoveJobStatus.Running
+                        && candidate.LeaseOwner == leaseToken.Owner
+                        && candidate.LeaseGeneration == leaseToken.Generation
+                        && candidate.LeaseExpiresAt != null
+                        && candidate.LeaseExpiresAt > nowUtc,
+                    cancellationToken);
+                if (job == null || !string.IsNullOrWhiteSpace(job.SourcePath))
+                {
+                    throw new MoveLeaseLostException(jobId, leaseToken.Generation);
+                }
+
+                job.SourcePath = source;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            else
+            {
+                var affected = await db.MoveJobs
+                    .Where(candidate => candidate.Id == jobId
+                        && candidate.SourcePath == identity.SourcePath
+                        && candidate.Status == MoveJobStatus.Running
+                        && candidate.LeaseOwner == leaseToken.Owner
+                        && candidate.LeaseGeneration == leaseToken.Generation
+                        && candidate.LeaseExpiresAt != null
+                        && candidate.LeaseExpiresAt > nowUtc)
+                    .ExecuteUpdateAsync(
+                        updates => updates.SetProperty(job => job.SourcePath, source),
+                        cancellationToken);
+                if (affected != 1)
+                {
+                    throw new MoveLeaseLostException(jobId, leaseToken.Generation);
+                }
+            }
+
+            persistedSource = source;
+        }
+
+        try
+        {
+            if (!FileSystemPathIdentity.AreEquivalent(persistedSource, source, sourceSemantics))
+            {
+                throw new MoveNeedsAttentionException(
+                    "Persisted move source identity does not match the requested filesystem operation.");
+            }
+        }
+        catch (ArgumentException)
+        {
+            throw new MoveNeedsAttentionException("Persisted move source identity is invalid.");
         }
     }
 
