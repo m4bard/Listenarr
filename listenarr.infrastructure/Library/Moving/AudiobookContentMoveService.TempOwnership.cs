@@ -11,15 +11,16 @@ internal sealed partial class AudiobookContentMoveService
         string MarkerPath,
         MoveOwnershipMarker Marker);
 
-    private ValidatedTempOwnership CreateOrValidateOwnedTempDirectory(
+    private async Task<ValidatedTempOwnership> CreateOrValidateOwnedTempDirectoryAsync(
         string tempDirectory,
         string targetParent,
         AudiobookContentMoveRequest request,
         string source,
-        string target)
+        string target,
+        CancellationToken cancellationToken)
     {
         var markerPath = Path.Join(tempDirectory, TempOwnershipMarkerFileName);
-        if (TryCompleteOwnedDirectoryCleanup(
+        if (await TryCompleteOwnedDirectoryCleanupAsync(
                 tempDirectory,
                 markerPath,
                 TemporaryDirectoryArtifactType,
@@ -28,18 +29,20 @@ internal sealed partial class AudiobookContentMoveService
                 target,
                 request.SourceSemantics,
                 request.TargetSemantics,
-                request.TargetSemantics))
+                request.TargetSemantics,
+                () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken)))
         {
             // A prior cleanup completed. A new temp directory may now be claimed.
         }
         else if (Directory.Exists(tempDirectory))
         {
-            return ValidateOwnedTempDirectory(
+            return await ValidateOwnedTempDirectoryAsync(
                 tempDirectory,
                 targetParent,
                 request,
                 source,
-                target);
+                target,
+                cancellationToken);
         }
 
         if (File.Exists(tempDirectory))
@@ -49,6 +52,7 @@ internal sealed partial class AudiobookContentMoveService
         }
 
         ValidateMoveRootPath(tempDirectory, mustExist: false, "temporary directory");
+        await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
         Directory.CreateDirectory(tempDirectory);
         ValidateExistingMoveDirectory(tempDirectory, "temporary directory");
         var marker = CreateOwnershipMarker(
@@ -59,31 +63,43 @@ internal sealed partial class AudiobookContentMoveService
             tempDirectory);
         try
         {
-            PublishOwnershipMarker(
+            await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
+            await PublishOwnershipMarkerAsync(
                 markerPath,
                 marker,
-                OwnershipMarkerKind.TemporaryDirectory);
-            return ValidateOwnedTempDirectory(
+                OwnershipMarkerKind.TemporaryDirectory,
+                () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken));
+            return await ValidateOwnedTempDirectoryAsync(
                 tempDirectory,
                 targetParent,
                 request,
                 source,
-                target);
+                target,
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is MoveLeaseLostException or PersistenceException)
+        {
+            throw;
         }
         catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
         {
-            TryRemoveNewEmptyOwnershipDirectory(tempDirectory, request.JobId, "temp");
+            await TryRemoveNewEmptyOwnershipDirectoryAsync(
+                tempDirectory,
+                request.JobId,
+                "temp",
+                () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken));
             throw new MoveNeedsAttentionException(
                 $"The move temporary directory could not be claimed safely: {exception.Message}");
         }
     }
 
-    private ValidatedTempOwnership ValidateOwnedTempDirectory(
+    private async Task<ValidatedTempOwnership> ValidateOwnedTempDirectoryAsync(
         string tempDirectory,
         string targetParent,
         AudiobookContentMoveRequest request,
         string source,
-        string target)
+        string target,
+        CancellationToken cancellationToken)
     {
         if (!FileSystemSafety.TryValidateMutationTarget(
                 tempDirectory,
@@ -102,29 +118,32 @@ internal sealed partial class AudiobookContentMoveService
             source,
             target,
             tempDirectory);
-        var marker = RecoverOrReadOwnershipMarker(
+        var marker = await RecoverOrReadOwnershipMarkerAsync(
             markerPath,
             expectedMarker,
             request.SourceSemantics,
             request.TargetSemantics,
-            request.TargetSemantics);
+            request.TargetSemantics,
+            () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken));
         return new ValidatedTempOwnership(
             safeTempDirectory,
             markerPath,
             marker);
     }
 
-    private void TryDeleteOwnedTempDirectory(
+    private async Task TryDeleteOwnedTempDirectoryAsync(
         string tempDirectory,
         string targetParent,
         AudiobookContentMoveRequest request,
         string source,
-        string target)
+        string target,
+        CancellationToken cancellationToken)
     {
         var markerPath = Path.Join(tempDirectory, TempOwnershipMarkerFileName);
         try
         {
-            if (TryCompleteOwnedDirectoryCleanup(
+            await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
+            if (await TryCompleteOwnedDirectoryCleanupAsync(
                     tempDirectory,
                     markerPath,
                     TemporaryDirectoryArtifactType,
@@ -133,7 +152,8 @@ internal sealed partial class AudiobookContentMoveService
                     target,
                     request.SourceSemantics,
                     request.TargetSemantics,
-                    request.TargetSemantics))
+                    request.TargetSemantics,
+                    () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken)))
             {
                 return;
             }
@@ -143,13 +163,15 @@ internal sealed partial class AudiobookContentMoveService
                 return;
             }
 
-            var ownership = ValidateOwnedTempDirectory(
+            await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
+            var ownership = await ValidateOwnedTempDirectoryAsync(
                 tempDirectory,
                 targetParent,
                 request,
                 source,
-                target);
-            DeleteOwnedDirectoryWithTombstone(
+                target,
+                cancellationToken);
+            await DeleteOwnedDirectoryWithTombstoneAsync(
                 ownership.DirectoryPath,
                 ownership.MarkerPath,
                 TemporaryDirectoryArtifactType,
@@ -158,7 +180,16 @@ internal sealed partial class AudiobookContentMoveService
                 target,
                 request.SourceSemantics,
                 request.TargetSemantics,
-                request.TargetSemantics);
+                request.TargetSemantics,
+                () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken));
+        }
+        catch (MoveLeaseLostException)
+        {
+            throw;
+        }
+        catch (PersistenceException)
+        {
+            throw;
         }
         catch (MoveNeedsAttentionException exception)
         {
@@ -176,11 +207,12 @@ internal sealed partial class AudiobookContentMoveService
         }
     }
 
-    private ValidatedTempOwnership? TryValidatePublishedTempOwnership(
+    private async Task<ValidatedTempOwnership?> TryValidatePublishedTempOwnershipAsync(
         string destinationRoot,
         AudiobookContentMoveRequest request,
         string source,
-        string target)
+        string target,
+        CancellationToken cancellationToken)
     {
         var markerPath = Path.Join(destinationRoot, TempOwnershipMarkerFileName);
         if (!File.Exists(markerPath))
@@ -209,21 +241,25 @@ internal sealed partial class AudiobookContentMoveService
             source,
             target,
             originalTempDirectory);
-        var marker = RecoverOrReadOwnershipMarker(
+        var marker = await RecoverOrReadOwnershipMarkerAsync(
             markerPath,
             expectedMarker,
             request.SourceSemantics,
             request.TargetSemantics,
-            request.TargetSemantics);
+            request.TargetSemantics,
+            () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken));
         return new ValidatedTempOwnership(
             safeDestination,
             markerPath,
             marker);
     }
 
-    private static void TryDeletePublishedTempOwnershipMarker(
+    private async Task TryDeletePublishedTempOwnershipMarkerAsync(
         ValidatedTempOwnership? ownership,
-        AudiobookContentMoveRequest request)
+        AudiobookContentMoveRequest request,
+        string source,
+        string target,
+        CancellationToken cancellationToken)
     {
         if (ownership == null || !File.Exists(ownership.MarkerPath))
         {
@@ -250,13 +286,25 @@ internal sealed partial class AudiobookContentMoveService
             request.SourceSemantics,
             request.TargetSemantics,
             request.TargetSemantics);
+        await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
+        ValidateExistingMoveDirectory(
+            ownership.DirectoryPath,
+            "published temporary directory");
+        currentMarker = ReadOwnershipMarker(ownership.MarkerPath);
+        ValidateOwnershipMarker(
+            currentMarker,
+            ownership.Marker,
+            request.SourceSemantics,
+            request.TargetSemantics,
+            request.TargetSemantics);
         File.Delete(ownership.MarkerPath);
     }
 
-    private void TryRemoveNewEmptyOwnershipDirectory(
+    private async Task TryRemoveNewEmptyOwnershipDirectoryAsync(
         string directory,
         Guid jobId,
-        string artifactName)
+        string artifactName,
+        Func<Task> authorizeMutation)
     {
         try
         {
@@ -267,12 +315,21 @@ internal sealed partial class AudiobookContentMoveService
                     $"new {artifactName} directory");
                 if (!Directory.EnumerateFileSystemEntries(directory).Any())
                 {
+                    await authorizeMutation();
                     ValidateExistingMoveDirectory(
                         directory,
                         $"new {artifactName} directory");
-                    Directory.Delete(directory, recursive: false);
+                    if (!Directory.EnumerateFileSystemEntries(directory).Any())
+                    {
+                        Directory.Delete(directory, recursive: false);
+                    }
                 }
             }
+        }
+        catch (Exception cleanupException) when (cleanupException is
+            MoveLeaseLostException or PersistenceException)
+        {
+            throw;
         }
         catch (Exception cleanupException) when (WorkerExceptionClassifier.IsNonFatal(cleanupException))
         {

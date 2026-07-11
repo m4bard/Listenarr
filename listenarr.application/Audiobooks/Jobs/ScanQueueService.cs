@@ -50,25 +50,41 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 var pathSemantics = !string.IsNullOrWhiteSpace(path)
                     ? await ResolvePathSemanticsAsync(path)
                     : null;
-                var existing = _jobs.Values.FirstOrDefault(j =>
+                var matchingJobs = _jobs.Values.Where(job =>
                 {
-                    if (j.AudiobookId != audiobook.Id) return false;
-                    var bothNull = j.Path == null && path == null;
-                    var bothMatch = j.Path != null
+                    if (job.AudiobookId != audiobook.Id) return false;
+                    var bothNull = job.Path == null && path == null;
+                    var bothMatch = job.Path != null
                         && path != null
-                        && AreEquivalentPaths(j.Path, path, pathSemantics);
+                        && AreEquivalentPaths(job.Path, path, pathSemantics);
                     return bothNull || bothMatch;
                 });
 
-                // Only dedupe when an existing job is actively queued or processing.
-                // If a previous job Completed or Failed, allow a new job to be created so
-                // explicit re-scans can be scheduled.
-                if (existing != null &&
-                    (string.Equals(existing.Status, "Queued", StringComparison.OrdinalIgnoreCase) ||
-                     string.Equals(existing.Status, "Processing", StringComparison.OrdinalIgnoreCase)))
+                // A correlation id identifies one completion handoff. Replays within the
+                // current process must reuse that scan even when it already completed;
+                // explicit rescans omit the correlation id and retain active-only dedupe.
+                var correlated = !string.IsNullOrWhiteSpace(correlationId)
+                    ? matchingJobs.FirstOrDefault(job => string.Equals(
+                        job.CorrelationId,
+                        correlationId,
+                        StringComparison.Ordinal))
+                    : null;
+                if (correlated != null)
                 {
-                    _logger.LogInformation("Found active scan job {JobId} for audiobook {AudiobookId} (path: {Path}) with status {Status}; deduping and returning existing job id", existing.Id, audiobook.Id, LogRedaction.SanitizeFilePath(path), existing.Status);
-                    return existing.Id;
+                    _logger.LogInformation(
+                        "Found correlated scan job {JobId} for audiobook {AudiobookId}; reusing completion handoff",
+                        correlated.Id,
+                        audiobook.Id);
+                    return correlated.Id;
+                }
+
+                var active = matchingJobs.FirstOrDefault(job =>
+                    string.Equals(job.Status, "Queued", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(job.Status, "Processing", StringComparison.OrdinalIgnoreCase));
+                if (active != null)
+                {
+                    _logger.LogInformation("Found active scan job {JobId} for audiobook {AudiobookId} (path: {Path}) with status {Status}; deduping and returning existing job id", active.Id, audiobook.Id, LogRedaction.SanitizeFilePath(path), active.Status);
+                    return active.Id;
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

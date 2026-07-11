@@ -35,6 +35,34 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
             Assert.Equal(shouldDedupe, firstJob == secondJob);
         }
 
+        [Fact]
+        public async Task ScanQueue_SameCorrelationReusesCompletedHandoff()
+        {
+            var queue = new ScanQueueService(
+                NullLogger<ScanQueueService>.Instance,
+                BuildResolver(FileSystemCaseSensitivity.Sensitive));
+            var audiobook = new AudiobookBuilder()
+                .WithId(1002)
+                .WithTitle("Move Completion Book")
+                .Build();
+            const string correlationId = "move:abc123";
+
+            var earlierExplicitScan = await queue.EnqueueScanAsync(audiobook);
+            queue.UpdateJobStatus(earlierExplicitScan, "Completed");
+            var correlatedScan = await queue.EnqueueScanAsync(
+                audiobook,
+                correlationId: correlationId);
+            queue.UpdateJobStatus(correlatedScan, "Completed");
+            var replayedJob = await queue.EnqueueScanAsync(
+                audiobook,
+                correlationId: correlationId);
+            var explicitRescan = await queue.EnqueueScanAsync(audiobook);
+
+            Assert.Equal(correlatedScan, replayedJob);
+            Assert.NotEqual(earlierExplicitScan, correlatedScan);
+            Assert.NotEqual(correlatedScan, explicitRescan);
+        }
+
         [Theory]
         [InlineData(FileSystemCaseSensitivity.Sensitive, false)]
         [InlineData(FileSystemCaseSensitivity.Insensitive, true)]

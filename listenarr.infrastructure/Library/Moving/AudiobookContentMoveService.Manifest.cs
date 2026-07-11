@@ -145,17 +145,28 @@ internal sealed partial class AudiobookContentMoveService
             throw new MoveNeedsAttentionException(quarantineReason);
         }
 
+        var cleanupRequest = new AudiobookContentMoveRequest(
+            source,
+            target,
+            jobId,
+            deleteEmptySource,
+            sourceSemantics,
+            targetSemantics,
+            leaseToken,
+            sourceCleanupBoundary);
         ValidatedQuarantineOwnership? quarantineOwnership = null;
         if (Directory.Exists(quarantineRoot))
         {
-            quarantineOwnership = ValidateOwnedQuarantineDirectory(
+            quarantineOwnership = await ValidateOwnedQuarantineDirectoryAsync(
                 quarantineRoot,
                 sourceParent,
                 jobId,
                 source,
                 target,
                 sourceSemantics,
-                targetSemantics);
+                targetSemantics,
+                leaseToken,
+                cancellationToken);
         }
         else if (File.Exists(quarantineRoot))
         {
@@ -240,14 +251,16 @@ internal sealed partial class AudiobookContentMoveService
         }
 
         await VerifyPublishedManifestAsync(target, manifest, targetSemantics, cancellationToken);
-        quarantineOwnership ??= CreateOrValidateOwnedQuarantineDirectory(
+        quarantineOwnership ??= await CreateOrValidateOwnedQuarantineDirectoryAsync(
             quarantineRoot,
             sourceParent,
             jobId,
             source,
             target,
             sourceSemantics,
-            targetSemantics);
+            targetSemantics,
+            leaseToken,
+            cancellationToken);
         foreach (var entry in manifest.Where(entry =>
             entry.EntryType == MoveJobEntryType.File
             && entry.CleanupState != MoveJobEntryCleanupState.Deleted))
@@ -259,6 +272,8 @@ internal sealed partial class AudiobookContentMoveService
             var quarantineDirectory = Path.GetDirectoryName(quarantineFile);
             if (!string.IsNullOrEmpty(quarantineDirectory))
             {
+                await EnsureMutationAuthorizedAsync(cleanupRequest, source, target, cancellationToken);
+                ValidateQuarantineMutationPath(quarantineOwnership, quarantineFile);
                 Directory.CreateDirectory(quarantineDirectory);
             }
 
@@ -370,6 +385,7 @@ internal sealed partial class AudiobookContentMoveService
                 && Directory.Exists(entry.Directory)
                 && !Directory.EnumerateFileSystemEntries(entry.Directory).Any()))
         {
+            await EnsureMutationAuthorizedAsync(cleanupRequest, source, target, cancellationToken);
             DeleteValidatedEmptySourceDirectory(
                 source,
                 directoryEntry.Directory!,
@@ -382,6 +398,7 @@ internal sealed partial class AudiobookContentMoveService
             && !IsSourceCleanupBoundary(source, sourceCleanupBoundary, sourceSemantics)
             && !Directory.EnumerateFileSystemEntries(source).Any())
         {
+            await EnsureMutationAuthorizedAsync(cleanupRequest, source, target, cancellationToken);
             DeleteValidatedEmptySourceDirectory(source, source, sourceSemantics);
         }
 
@@ -400,19 +417,23 @@ internal sealed partial class AudiobookContentMoveService
                 && Directory.Exists(quarantineDirectory)
                 && !Directory.EnumerateFileSystemEntries(quarantineDirectory).Any())
             {
+                await EnsureMutationAuthorizedAsync(cleanupRequest, source, target, cancellationToken);
                 DeleteValidatedEmptyQuarantineDirectory(
                     quarantineOwnership,
                     quarantineDirectory);
             }
         }
 
-        DeleteEmptyOwnedQuarantineDirectory(
+        await EnsureMutationAuthorizedAsync(cleanupRequest, source, target, cancellationToken);
+        await DeleteEmptyOwnedQuarantineDirectoryAsync(
             quarantineOwnership,
             jobId,
             source,
             target,
             sourceSemantics,
-            targetSemantics);
+            targetSemantics,
+            leaseToken,
+            cancellationToken);
     }
 
     private static void ResolveCleanupPaths(

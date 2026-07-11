@@ -46,16 +46,18 @@ internal sealed partial class AudiobookContentMoveService
         }
 
         var atomicMarkerPath = GetRecoveryMarkerPath(source, request.JobId);
-        WriteRecoveryMarker(
+        await WriteRecoveryMarkerAsync(
             source,
             request,
             source,
             target,
-            AtomicRenameCompletedStage);
+            AtomicRenameCompletedStage,
+            cancellationToken);
         try
         {
             // Recheck both roots after publishing the durable marker and immediately
             // before the rename so a linked or newly occupied target is never followed.
+            await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
             ValidateMoveSourceRoot(source);
             ValidateMoveTargetRoot(target);
             if (Directory.Exists(target))
@@ -68,12 +70,24 @@ internal sealed partial class AudiobookContentMoveService
         }
         catch (MoveNeedsAttentionException)
         {
-            DeleteFailedAtomicMarker(atomicMarkerPath, source, null);
+            await DeleteFailedAtomicMarkerAsync(
+                request,
+                atomicMarkerPath,
+                source,
+                target,
+                null,
+                cancellationToken);
             throw;
         }
         catch (IOException exception)
         {
-            DeleteFailedAtomicMarker(atomicMarkerPath, source, exception);
+            await DeleteFailedAtomicMarkerAsync(
+                request,
+                atomicMarkerPath,
+                source,
+                target,
+                exception,
+                cancellationToken);
             ValidateMoveTargetRoot(target);
             if (!Directory.Exists(source) || Directory.Exists(target))
             {
@@ -98,10 +112,13 @@ internal sealed partial class AudiobookContentMoveService
             SourceCleanupCompleted: true);
     }
 
-    private static void DeleteFailedAtomicMarker(
+    private async Task DeleteFailedAtomicMarkerAsync(
+        AudiobookContentMoveRequest request,
         string atomicMarkerPath,
         string source,
-        Exception? renameException)
+        string target,
+        Exception? renameException,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -123,8 +140,19 @@ internal sealed partial class AudiobookContentMoveService
                         "The failed atomic recovery marker became a symbolic link or reparse point.");
                 }
 
+                await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
+                ValidateMoveSourceRoot(source);
+                ValidateRecoveryMarker(
+                    ReadRecoveryMarker(atomicMarkerPath),
+                    request,
+                    source,
+                    target);
                 File.Delete(atomicMarkerPath);
             }
+        }
+        catch (Exception exception) when (exception is MoveLeaseLostException or PersistenceException)
+        {
+            throw;
         }
         catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
         {

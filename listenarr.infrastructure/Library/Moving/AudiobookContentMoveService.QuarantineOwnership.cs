@@ -11,19 +11,21 @@ internal sealed partial class AudiobookContentMoveService
         string MarkerPath,
         MoveOwnershipMarker Marker);
 
-    private ValidatedQuarantineOwnership CreateOrValidateOwnedQuarantineDirectory(
+    private async Task<ValidatedQuarantineOwnership> CreateOrValidateOwnedQuarantineDirectoryAsync(
         string quarantineRoot,
         string sourceParent,
         Guid jobId,
         string source,
         string target,
         FileSystemPathSemantics sourceSemantics,
-        FileSystemPathSemantics targetSemantics)
+        FileSystemPathSemantics targetSemantics,
+        MoveLeaseToken leaseToken,
+        CancellationToken cancellationToken)
     {
         var markerPath = Path.Join(
             quarantineRoot,
             QuarantineOwnershipMarkerFileName);
-        if (TryCompleteOwnedDirectoryCleanup(
+        if (await TryCompleteOwnedDirectoryCleanupAsync(
                 quarantineRoot,
                 markerPath,
                 QuarantineDirectoryArtifactType,
@@ -32,20 +34,30 @@ internal sealed partial class AudiobookContentMoveService
                 target,
                 sourceSemantics,
                 targetSemantics,
-                sourceSemantics))
+                sourceSemantics,
+                () => EnsureMutationAuthorizedAsync(
+                    jobId,
+                    leaseToken,
+                    source,
+                    target,
+                    sourceSemantics,
+                    targetSemantics,
+                    cancellationToken)))
         {
             // A prior completed cleanup left durable tombstone evidence.
         }
         else if (Directory.Exists(quarantineRoot))
         {
-            return ValidateOwnedQuarantineDirectory(
+            return await ValidateOwnedQuarantineDirectoryAsync(
                 quarantineRoot,
                 sourceParent,
                 jobId,
                 source,
                 target,
                 sourceSemantics,
-                targetSemantics);
+                targetSemantics,
+                leaseToken,
+                cancellationToken);
         }
 
         if (File.Exists(quarantineRoot))
@@ -55,6 +67,14 @@ internal sealed partial class AudiobookContentMoveService
         }
 
         ValidateMoveRootPath(quarantineRoot, mustExist: false, "quarantine");
+        await EnsureMutationAuthorizedAsync(
+            jobId,
+            leaseToken,
+            source,
+            target,
+            sourceSemantics,
+            targetSemantics,
+            cancellationToken);
         Directory.CreateDirectory(quarantineRoot);
         ValidateExistingMoveDirectory(quarantineRoot, "quarantine directory");
         var marker = CreateOwnershipMarker(
@@ -65,38 +85,70 @@ internal sealed partial class AudiobookContentMoveService
             quarantineRoot);
         try
         {
-            PublishOwnershipMarker(
+            await EnsureMutationAuthorizedAsync(
+                jobId,
+                leaseToken,
+                source,
+                target,
+                sourceSemantics,
+                targetSemantics,
+                cancellationToken);
+            await PublishOwnershipMarkerAsync(
                 markerPath,
                 marker,
-                OwnershipMarkerKind.QuarantineDirectory);
-            return ValidateOwnedQuarantineDirectory(
+                OwnershipMarkerKind.QuarantineDirectory,
+                () => EnsureMutationAuthorizedAsync(
+                    jobId,
+                    leaseToken,
+                    source,
+                    target,
+                    sourceSemantics,
+                    targetSemantics,
+                    cancellationToken));
+            return await ValidateOwnedQuarantineDirectoryAsync(
                 quarantineRoot,
                 sourceParent,
                 jobId,
                 source,
                 target,
                 sourceSemantics,
-                targetSemantics);
+                targetSemantics,
+                leaseToken,
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is MoveLeaseLostException or PersistenceException)
+        {
+            throw;
         }
         catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
         {
-            TryRemoveNewEmptyOwnershipDirectory(
+            await TryRemoveNewEmptyOwnershipDirectoryAsync(
                 quarantineRoot,
                 jobId,
-                "quarantine");
+                "quarantine",
+                () => EnsureMutationAuthorizedAsync(
+                    jobId,
+                    leaseToken,
+                    source,
+                    target,
+                    sourceSemantics,
+                    targetSemantics,
+                    cancellationToken));
             throw new MoveNeedsAttentionException(
                 $"The move quarantine directory could not be claimed safely: {exception.Message}");
         }
     }
 
-    private ValidatedQuarantineOwnership ValidateOwnedQuarantineDirectory(
+    private async Task<ValidatedQuarantineOwnership> ValidateOwnedQuarantineDirectoryAsync(
         string quarantineRoot,
         string sourceParent,
         Guid jobId,
         string source,
         string target,
         FileSystemPathSemantics sourceSemantics,
-        FileSystemPathSemantics targetSemantics)
+        FileSystemPathSemantics targetSemantics,
+        MoveLeaseToken leaseToken,
+        CancellationToken cancellationToken)
     {
         if (!FileSystemSafety.TryValidateMutationTarget(
                 quarantineRoot,
@@ -119,12 +171,20 @@ internal sealed partial class AudiobookContentMoveService
             source,
             target,
             quarantineRoot);
-        var marker = RecoverOrReadOwnershipMarker(
+        var marker = await RecoverOrReadOwnershipMarkerAsync(
             markerPath,
             expectedMarker,
             sourceSemantics,
             targetSemantics,
-            sourceSemantics);
+            sourceSemantics,
+            () => EnsureMutationAuthorizedAsync(
+                jobId,
+                leaseToken,
+                source,
+                target,
+                sourceSemantics,
+                targetSemantics,
+                cancellationToken));
 
         var ownership = new ValidatedQuarantineOwnership(
             safeQuarantineRoot,
@@ -134,12 +194,14 @@ internal sealed partial class AudiobookContentMoveService
         return ownership;
     }
 
-    private ValidatedQuarantineOwnership? TryValidateExistingQuarantineDirectory(
+    private async Task<ValidatedQuarantineOwnership?> TryValidateExistingQuarantineDirectoryAsync(
         string source,
         string target,
         Guid jobId,
         FileSystemPathSemantics sourceSemantics,
-        FileSystemPathSemantics targetSemantics)
+        FileSystemPathSemantics targetSemantics,
+        MoveLeaseToken leaseToken,
+        CancellationToken cancellationToken)
     {
         var sourceParent = Path.GetDirectoryName(Path.GetFullPath(source))
             ?? throw new MoveNeedsAttentionException("The source parent is unavailable.");
@@ -149,7 +211,7 @@ internal sealed partial class AudiobookContentMoveService
         var markerPath = Path.Join(
             quarantineRoot,
             QuarantineOwnershipMarkerFileName);
-        if (TryCompleteOwnedDirectoryCleanup(
+        if (await TryCompleteOwnedDirectoryCleanupAsync(
                 quarantineRoot,
                 markerPath,
                 QuarantineDirectoryArtifactType,
@@ -158,7 +220,15 @@ internal sealed partial class AudiobookContentMoveService
                 target,
                 sourceSemantics,
                 targetSemantics,
-                sourceSemantics))
+                sourceSemantics,
+                () => EnsureMutationAuthorizedAsync(
+                    jobId,
+                    leaseToken,
+                    source,
+                    target,
+                    sourceSemantics,
+                    targetSemantics,
+                    cancellationToken)))
         {
             return null;
         }
@@ -174,14 +244,16 @@ internal sealed partial class AudiobookContentMoveService
             return null;
         }
 
-        return ValidateOwnedQuarantineDirectory(
+        return await ValidateOwnedQuarantineDirectoryAsync(
             quarantineRoot,
             sourceParent,
             jobId,
             source,
             target,
             sourceSemantics,
-            targetSemantics);
+            targetSemantics,
+            leaseToken,
+            cancellationToken);
     }
 
     private static void ValidateOwnedQuarantineTree(
@@ -223,13 +295,15 @@ internal sealed partial class AudiobookContentMoveService
         }
     }
 
-    private void DeleteEmptyOwnedQuarantineDirectory(
+    private async Task DeleteEmptyOwnedQuarantineDirectoryAsync(
         ValidatedQuarantineOwnership ownership,
         Guid jobId,
         string source,
         string target,
         FileSystemPathSemantics sourceSemantics,
-        FileSystemPathSemantics targetSemantics)
+        FileSystemPathSemantics targetSemantics,
+        MoveLeaseToken leaseToken,
+        CancellationToken cancellationToken)
     {
         if (!FileSystemSafety.TryEnumerateTreeWithoutLinks(
                 ownership.DirectoryPath,
@@ -259,7 +333,7 @@ internal sealed partial class AudiobookContentMoveService
                 "The completed move quarantine contains an unexpected non-empty directory.");
         }
 
-        DeleteOwnedDirectoryWithTombstone(
+        await DeleteOwnedDirectoryWithTombstoneAsync(
             ownership.DirectoryPath,
             ownership.MarkerPath,
             QuarantineDirectoryArtifactType,
@@ -268,6 +342,14 @@ internal sealed partial class AudiobookContentMoveService
             target,
             sourceSemantics,
             targetSemantics,
-            sourceSemantics);
+            sourceSemantics,
+            () => EnsureMutationAuthorizedAsync(
+                jobId,
+                leaseToken,
+                source,
+                target,
+                sourceSemantics,
+                targetSemantics,
+                cancellationToken));
     }
 }

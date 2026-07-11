@@ -32,22 +32,42 @@ internal sealed partial class AudiobookContentMoveService
         var manifest = await LoadManifestAsync(request.JobId, cancellationToken);
         if (manifest.Count == 0)
         {
-            throw new MoveNeedsAttentionException(
-                "A markerless atomic move cannot be verified from persisted filesystem evidence.");
+            var phase = await LoadJobPhaseAsync(request.JobId, cancellationToken);
+            if (phase < MoveJobPhase.CleaningArtifacts)
+            {
+                throw new MoveNeedsAttentionException(
+                    "A markerless atomic move cannot be verified before durable artifact cleanup begins.");
+            }
+
+            if (!FileSystemSafety.TryEnumerateTreeWithoutLinks(
+                    target,
+                    out _,
+                    out _,
+                    out var reason))
+            {
+                throw new MoveNeedsAttentionException(
+                    $"The finalized atomic target could not be verified safely: {reason}");
+            }
+
+            VerifySourceCleanupState(request, source, target);
+            return;
         }
 
         ValidateTargetManifest(target, manifest, request.TargetSemantics);
-        var tempOwnership = TryValidatePublishedTempOwnership(
+        var tempOwnership = await TryValidatePublishedTempOwnershipAsync(
             target,
             request,
             source,
-            target);
-        var quarantineOwnership = TryValidateExistingQuarantineDirectory(
+            target,
+            cancellationToken);
+        var quarantineOwnership = await TryValidateExistingQuarantineDirectoryAsync(
             source,
             target,
             request.JobId,
             request.SourceSemantics,
-            request.TargetSemantics);
+            request.TargetSemantics,
+            request.LeaseToken,
+            cancellationToken);
         ValidateExistingDestinationContents(
             source,
             target,

@@ -41,6 +41,13 @@ internal sealed partial class AudiobookContentMoveService
                     continue;
                 }
 
+                var entryName = Path.GetFileName(entry);
+                if (IsReservedMoveArtifactName(entryName))
+                {
+                    throw new MoveNeedsAttentionException(
+                        $"Move source contains a reserved Listenarr recovery artifact that must be resolved before moving: {Path.GetRelativePath(source, entry)}");
+                }
+
                 var attributes = File.GetAttributes(entry);
                 if ((attributes & FileAttributes.ReparsePoint) != 0)
                 {
@@ -74,6 +81,15 @@ internal sealed partial class AudiobookContentMoveService
 
         return entries;
     }
+
+    private static bool IsReservedMoveArtifactName(string name) =>
+        name.StartsWith(".listenarr-move-", StringComparison.Ordinal)
+        || name.StartsWith(".listenarr-quarantine-", StringComparison.Ordinal)
+        || name.StartsWith(".listenarr-temporary-directory-", StringComparison.Ordinal)
+        || string.Equals(name, ".listenarr-temp-owner.json", StringComparison.Ordinal)
+        || string.Equals(name, ".listenarr-quarantine-owner.json", StringComparison.Ordinal)
+        || name.Contains(".listenarr-", StringComparison.Ordinal)
+            && name.EndsWith(".partial", StringComparison.Ordinal);
 
     private static async Task<List<MoveJobEntry>> BuildManifestAsync(
         Guid jobId,

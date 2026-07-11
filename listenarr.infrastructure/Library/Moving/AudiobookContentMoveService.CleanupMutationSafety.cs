@@ -18,14 +18,13 @@ internal sealed partial class AudiobookContentMoveService
         FileSystemPathSemantics targetSemantics,
         CancellationToken cancellationToken)
     {
-        await EnsureLeaseOwnedAsync(jobId, leaseToken, cancellationToken);
-        await ValidatePersistedMoveIdentityAsync(
+        await EnsureMutationAuthorizedAsync(
             jobId,
+            leaseToken,
             source,
             target,
             sourceSemantics,
             targetSemantics,
-            leaseToken,
             cancellationToken);
         ValidateMoveSourceRoot(source);
         if (!FileSystemSafety.TryValidateMutationTarget(
@@ -53,14 +52,16 @@ internal sealed partial class AudiobookContentMoveService
                 $"Source cleanup entry changed after planning: {manifestEntry.RelativePath}");
         }
 
-        var ownership = ValidateOwnedQuarantineDirectory(
+        var ownership = await ValidateOwnedQuarantineDirectoryAsync(
             quarantineRoot,
             sourceParent,
             jobId,
             source,
             target,
             sourceSemantics,
-            targetSemantics);
+            targetSemantics,
+            leaseToken,
+            cancellationToken);
         ValidateQuarantineMutationPath(ownership, quarantineFile);
         if (File.Exists(quarantineFile) || Directory.Exists(quarantineFile))
         {
@@ -84,8 +85,18 @@ internal sealed partial class AudiobookContentMoveService
         FileSystemPathSemantics targetSemantics,
         CancellationToken cancellationToken)
     {
-        await EnsureLeaseOwnedAsync(jobId, leaseToken, cancellationToken);
-        await ValidatePersistedMoveIdentityAsync(
+        await EnsureMutationAuthorizedAsync(
+            jobId,
+            leaseToken,
+            source,
+            target,
+            sourceSemantics,
+            targetSemantics,
+            cancellationToken);
+        ValidateMoveTargetRoot(target);
+        var ownership = await ValidateOwnedQuarantineDirectoryAsync(
+            quarantineRoot,
+            sourceParent,
             jobId,
             source,
             target,
@@ -93,15 +104,6 @@ internal sealed partial class AudiobookContentMoveService
             targetSemantics,
             leaseToken,
             cancellationToken);
-        ValidateMoveTargetRoot(target);
-        var ownership = ValidateOwnedQuarantineDirectory(
-            quarantineRoot,
-            sourceParent,
-            jobId,
-            source,
-            target,
-            sourceSemantics,
-            targetSemantics);
         ValidateQuarantineMutationPath(ownership, quarantineFile);
         if (!File.Exists(quarantineFile)
             || (File.GetAttributes(quarantineFile) & FileAttributes.ReparsePoint) != 0

@@ -13,15 +13,31 @@ namespace Listenarr.Infrastructure.Library.Moving;
 
 internal sealed partial class AudiobookContentMoveService
 {
-    public void FinalizeMove(
+    public async Task FinalizeMoveAsync(
         AudiobookContentMoveRequest request,
-        AudiobookContentMoveResult result)
+        AudiobookContentMoveResult result,
+        CancellationToken cancellationToken)
     {
+        await EnsureLeaseOwnedAsync(request.JobId, request.LeaseToken, cancellationToken);
+        await ValidatePersistedMoveIdentityAsync(
+            request.JobId,
+            result.Source,
+            result.Target,
+            request.SourceSemantics,
+            request.TargetSemantics,
+            request.LeaseToken,
+            cancellationToken);
         if (!result.SourceCleanupCompleted)
         {
             throw new InvalidOperationException(
                 "Move finalization cannot run before source cleanup completes.");
         }
+
+        await UpdateJobPhaseAsync(
+            request.JobId,
+            request.LeaseToken,
+            MoveJobPhase.Finalizing,
+            cancellationToken);
 
         if (request.DeleteEmptySource && !Directory.Exists(result.Source))
         {
@@ -40,25 +56,45 @@ internal sealed partial class AudiobookContentMoveService
             {
                 // Keep the recovery marker until pruning succeeds so transient filesystem
                 // failures remain retryable instead of leaving an orphaned empty folder.
-                RemoveEmptySourceAncestors(
+                await RemoveEmptySourceAncestorsAsync(
+                    request,
                     result.Source,
+                    result.Target,
                     request.SourceCleanupBoundary,
-                    request.SourceSemantics);
+                    request.SourceSemantics,
+                    cancellationToken);
             }
         }
 
-        var tempOwnership = TryValidatePublishedTempOwnership(
+        var tempOwnership = await TryValidatePublishedTempOwnershipAsync(
             result.Target,
             request,
             result.Source,
-            result.Target);
-        TryDeletePublishedTempOwnershipMarker(tempOwnership, request);
+            result.Target,
+            cancellationToken);
+        await EnsureLeaseOwnedAsync(request.JobId, request.LeaseToken, cancellationToken);
+        await TryDeletePublishedTempOwnershipMarkerAsync(
+            tempOwnership,
+            request,
+            result.Source,
+            result.Target,
+            cancellationToken);
     }
 
-    public void CleanupCompletedMoveArtifacts(
+    public async Task CleanupCompletedMoveArtifactsAsync(
         AudiobookContentMoveRequest request,
-        AudiobookContentMoveResult result)
+        AudiobookContentMoveResult result,
+        CancellationToken cancellationToken)
     {
+        await EnsureLeaseOwnedAsync(request.JobId, request.LeaseToken, cancellationToken);
+        await ValidatePersistedMoveIdentityAsync(
+            request.JobId,
+            result.Source,
+            result.Target,
+            request.SourceSemantics,
+            request.TargetSemantics,
+            request.LeaseToken,
+            cancellationToken);
         if (!result.SourceCleanupCompleted)
         {
             throw new InvalidOperationException(
@@ -67,6 +103,40 @@ internal sealed partial class AudiobookContentMoveService
 
         if (!File.Exists(result.RecoveryMarkerPath))
         {
+            var manifest = await LoadManifestAsync(request.JobId, cancellationToken);
+            if (manifest.Count > 0)
+            {
+                ValidateTargetManifest(
+                    result.Target,
+                    manifest,
+                    request.TargetSemantics);
+                ValidateExistingDestinationContents(
+                    result.Source,
+                    result.Target,
+                    manifest,
+                    request.JobId,
+                    request.TargetSemantics,
+                    allowPartialFiles: false);
+                await VerifyPublishedManifestAsync(
+                    result.Target,
+                    manifest,
+                    request.TargetSemantics,
+                    cancellationToken);
+                await UpdateJobPhaseAsync(
+                    request.JobId,
+                    request.LeaseToken,
+                    MoveJobPhase.CleaningArtifacts,
+                    cancellationToken);
+                return;
+            }
+
+            var phase = await LoadJobPhaseAsync(request.JobId, cancellationToken);
+            if (phase < MoveJobPhase.CleaningArtifacts)
+            {
+                throw new MoveNeedsAttentionException(
+                    "The atomic recovery marker disappeared before durable artifact cleanup began.");
+            }
+
             return;
         }
 
@@ -103,7 +173,34 @@ internal sealed partial class AudiobookContentMoveService
                 "The completed recovery marker became a symbolic link or reparse point.");
         }
 
+        await UpdateJobPhaseAsync(
+            request.JobId,
+            request.LeaseToken,
+            MoveJobPhase.CleaningArtifacts,
+            cancellationToken);
+        faultInjector?.OnCompletedArtifactCleanup(
+            request.JobId,
+            CompletedArtifactCleanupFaultPoint.BeforeRecoveryMarkerDelete);
+        await EnsureLeaseOwnedAsync(request.JobId, request.LeaseToken, cancellationToken);
+        ValidateMoveTargetRoot(result.Target);
+        ValidateRecoveryMarker(
+            ReadRecoveryMarker(result.RecoveryMarkerPath),
+            request,
+            result.Source,
+            result.Target);
         File.Delete(result.RecoveryMarkerPath);
+    }
+
+    public async Task MarkCompletionRecordingAsync(
+        AudiobookContentMoveRequest request,
+        CancellationToken cancellationToken)
+    {
+        await EnsureLeaseOwnedAsync(request.JobId, request.LeaseToken, cancellationToken);
+        await UpdateJobPhaseAsync(
+            request.JobId,
+            request.LeaseToken,
+            MoveJobPhase.RecordingCompletion,
+            cancellationToken);
     }
 
     private static string? FindNearestExistingAncestor(string source)
@@ -122,10 +219,14 @@ internal sealed partial class AudiobookContentMoveService
         return null;
     }
 
-    private static void RemoveEmptyDirectoryTree(
+    private async Task RemoveEmptyDirectoryTreeAsync(
+        AudiobookContentMoveRequest request,
+        string source,
+        string target,
         string directory,
         string boundary,
-        FileSystemPathSemantics semantics)
+        FileSystemPathSemantics semantics,
+        CancellationToken cancellationToken)
     {
         var current = directory;
         while (Directory.Exists(current)
@@ -149,6 +250,10 @@ internal sealed partial class AudiobookContentMoveService
                 return;
             }
 
+            faultInjector?.OnMoveFinalization(
+                request.JobId,
+                MoveFinalizationFaultPoint.BeforeSourceAncestorDelete);
+            await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
             Directory.Delete(current, false);
             current = Path.GetDirectoryName(current) ?? boundary;
         }
@@ -176,10 +281,13 @@ internal sealed partial class AudiobookContentMoveService
         }
     }
 
-    private static void RemoveEmptySourceAncestors(
+    private async Task RemoveEmptySourceAncestorsAsync(
+        AudiobookContentMoveRequest request,
         string source,
+        string target,
         string? boundary,
-        FileSystemPathSemantics semantics)
+        FileSystemPathSemantics semantics,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(boundary))
         {
@@ -198,7 +306,14 @@ internal sealed partial class AudiobookContentMoveService
 
             if (Directory.Exists(current))
             {
-                RemoveEmptyDirectoryTree(current, fullBoundary, semantics);
+                await RemoveEmptyDirectoryTreeAsync(
+                    request,
+                    source,
+                    target,
+                    current,
+                    fullBoundary,
+                    semantics,
+                    cancellationToken);
                 return;
             }
 
