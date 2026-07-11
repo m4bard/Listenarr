@@ -87,6 +87,9 @@ internal sealed partial class AudiobookContentMoveService(
             targetSemantics,
             request.LeaseToken,
             cancellationToken);
+        ValidateMoveSourceRoot(source);
+        ValidateMoveTargetRoot(target);
+
         var targetInsideSource = IsSameOrInside(target, source, sourceSemantics);
         var sourceInsideTarget = IsSameOrInside(source, target, targetSemantics);
 
@@ -97,6 +100,7 @@ internal sealed partial class AudiobookContentMoveService(
         }
 
         if (!Directory.Exists(targetParent)) Directory.CreateDirectory(targetParent);
+        ValidateMoveTargetRoot(target);
 
         DeleteOwnedRecoveryMarkerWriteFiles(source, request, source, target);
         DeleteOwnedRecoveryMarkerWriteFiles(target, request, source, target);
@@ -134,71 +138,24 @@ internal sealed partial class AudiobookContentMoveService(
 
         try
         {
-            if (!targetInsideSource
-                && !sourceInsideTarget
-                && faultInjector == null
-                && request.DeleteEmptySource
-                && !IsSourceCleanupBoundary(source, request.SourceCleanupBoundary, sourceSemantics)
-                && !Directory.Exists(target)
-                && !Directory.Exists(tempName)
-                && recoveryStage == null)
+            var atomicResult = await TryMoveByAtomicRenameAsync(
+                request,
+                source,
+                target,
+                tempName,
+                targetInsideSource,
+                sourceInsideTarget,
+                recoveryStage,
+                sourceSemantics,
+                targetSemantics,
+                cancellationToken);
+            if (atomicResult != null)
             {
-                await EnsureLeaseOwnedAsync(request.JobId, request.LeaseToken, cancellationToken);
-                await ValidatePersistedMoveIdentityAsync(
-                    request.JobId,
-                    source,
-                    target,
-                    sourceSemantics,
-                    targetSemantics,
-                    request.LeaseToken,
-                    cancellationToken);
-                if (!Directory.Exists(source)
-                    || (File.GetAttributes(source) & FileAttributes.ReparsePoint) != 0
-                    || Directory.Exists(target))
-                {
-                    throw new MoveNeedsAttentionException(
-                        "Atomic rename preconditions changed after validation; no filesystem mutation was performed.");
-                }
-
-                var atomicMarkerPath = GetRecoveryMarkerPath(source, request.JobId);
-                WriteRecoveryMarker(
-                    source,
-                    request.JobId,
-                    source,
-                    target,
-                    AtomicRenameCompletedStage);
-                var renamed = false;
-                try
-                {
-                    Directory.Move(source, target);
-                    renamed = true;
-                }
-                catch (IOException)
-                {
-                    // Cross-device and unsupported atomic renames use the verified copy path.
-                    try
-                    {
-                        File.Delete(atomicMarkerPath);
-                    }
-                    catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
-                    {
-                        throw new MoveNeedsAttentionException(
-                            $"Atomic rename failed and its recovery marker could not be removed: {exception.Message}");
-                    }
-                }
-
-                if (renamed)
-                {
-                    await UpdateJobPhaseAsync(request.JobId, request.LeaseToken, MoveJobPhase.Finalizing, cancellationToken);
-                    return new AudiobookContentMoveResult(
-                        source,
-                        target,
-                        false,
-                        false,
-                        recoveryMarkerPath,
-                        SourceCleanupCompleted: true);
-                }
+                return atomicResult;
             }
+
+            ValidateMoveSourceRoot(source);
+            ValidateMoveTargetRoot(target);
 
             var manifest = persistedManifest.Count > 0
                 ? persistedManifest
@@ -258,6 +215,19 @@ internal sealed partial class AudiobookContentMoveService(
 
             if (useTemp)
             {
+                ValidateOwnedTempDirectory(
+                    tempName,
+                    targetParent,
+                    request,
+                    source,
+                    target);
+                ValidateMoveTargetRoot(target);
+                if (Directory.Exists(target))
+                {
+                    throw new MoveNeedsAttentionException(
+                        "The move target appeared before temporary publication.");
+                }
+
                 Directory.Move(tempName, target);
             }
 

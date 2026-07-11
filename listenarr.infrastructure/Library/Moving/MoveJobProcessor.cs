@@ -80,6 +80,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 var source = job.SourcePath;
                 AudiobookContentMoveResult? recoveredMove = null;
                 MoveCleanupBoundaryResolution? cleanupBoundaryResolution = null;
+                FileSystemPathSemantics? recoverySourceSemantics = null;
                 if (!string.IsNullOrWhiteSpace(source))
                 {
                     source = Path.GetFullPath(source);
@@ -96,6 +97,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         return;
                     }
 
+                    recoverySourceSemantics = recoverySourceResolution.Semantics;
                     cleanupBoundaryResolution = await cleanupBoundaryResolver.ResolveAsync(
                         source,
                         target,
@@ -148,23 +150,17 @@ namespace Listenarr.Infrastructure.Library.Moving
                 }
 
                 if (recoveredMove == null
-                    && !string.IsNullOrWhiteSpace(audiobook.BasePath)
-                    && Directory.Exists(target)
-                    && contentMoveService.IsSourceCleanupComplete(
+                    && await TryCompleteFinalizedMoveAsync(
+                        job,
+                        audiobook,
                         source,
                         target,
-                        targetResolution.Semantics)
-                    && FileSystemPathIdentity.AreEquivalent(
-                        Path.GetFullPath(audiobook.BasePath)
-                            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-                        target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-                        targetResolution.Semantics))
+                        recoverySourceSemantics,
+                        targetResolution.Semantics,
+                        cleanupBoundaryResolution,
+                        contentMoveService,
+                        stoppingToken))
                 {
-                    await UpdateJobStatusAsync(
-                        job,
-                        MoveJobStatus.Completed,
-                        cancellationToken: stoppingToken);
-                    metrics.Increment("worker.move.job.skipped");
                     return;
                 }
 
@@ -405,6 +401,11 @@ namespace Listenarr.Infrastructure.Library.Moving
                     await UpdateJobStatusAsync(job, MoveJobStatus.Completed, cancellationToken: stoppingToken);
                     metrics.Increment("worker.move.job.completed");
                     logger.LogInformation("Move job {JobId} completed: {Source} -> {Target}", job.Id, LogRedaction.SanitizeFilePath(source), LogRedaction.SanitizeFilePath(target));
+                    CleanupCompletedMoveArtifacts(
+                        contentMoveService,
+                        moveRequest,
+                        moveResult,
+                        job.Id);
                     // Completed move job — status updated and broadcasted where configured
                 }
                 catch (Exception ex) when (ex is PersistenceException or MoveLeaseLostException)

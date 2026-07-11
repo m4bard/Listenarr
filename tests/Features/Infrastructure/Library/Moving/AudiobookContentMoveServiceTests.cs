@@ -408,6 +408,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             service.FinalizeMove(request, result);
 
             Assert.True(Directory.Exists(source));
+            Assert.True(File.Exists(result.RecoveryMarkerPath));
+            service.CleanupCompletedMoveArtifacts(request, result);
             Assert.False(File.Exists(result.RecoveryMarkerPath));
             Assert.True(File.Exists(Path.Join(target, "book.m4b")));
         }
@@ -440,6 +442,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             service.FinalizeMove(request, result);
 
             Assert.False(Directory.Exists(oldTitle));
+            Assert.True(File.Exists(result.RecoveryMarkerPath));
+            service.CleanupCompletedMoveArtifacts(request, result);
             Assert.False(File.Exists(result.RecoveryMarkerPath));
             Assert.True(File.Exists(Path.Join(target, "Disc 01", "book.m4b")));
             Assert.True(Directory.Exists(sourceRoot));
@@ -494,6 +498,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             Assert.False(Directory.Exists(author));
             Assert.True(Directory.Exists(sourceRoot));
+            Assert.True(File.Exists(result.RecoveryMarkerPath));
+            service.CleanupCompletedMoveArtifacts(request, result);
             Assert.False(File.Exists(result.RecoveryMarkerPath));
         }
 
@@ -513,6 +519,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             service.FinalizeMove(request, result);
 
+            Assert.True(File.Exists(result.RecoveryMarkerPath));
+            service.CleanupCompletedMoveArtifacts(request, result);
             Assert.False(File.Exists(result.RecoveryMarkerPath));
             Assert.True(Directory.Exists(sourceParent));
             Assert.True(File.Exists(Path.Join(sourceParent, "keep.txt")));
@@ -751,6 +759,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 Path.GetDirectoryName(source)!,
                 $".listenarr-quarantine-{jobId:N}");
             Directory.CreateDirectory(quarantineRoot);
+            await WriteQuarantineOwnershipMarkerAsync(
+                quarantineRoot,
+                jobId,
+                source,
+                target);
             var destination = Path.Join(target, "book.m4b");
             var quarantineFile = Path.Join(quarantineRoot, "book.m4b");
             await File.WriteAllTextAsync(destination, "verified audio");
@@ -806,6 +819,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             Assert.True(resumed.SourceCleanupCompleted);
             Assert.False(File.Exists(quarantineFile));
+            Assert.False(Directory.Exists(quarantineRoot));
             Assert.False(Directory.Exists(source));
             await using var verification = await factory.CreateDbContextAsync();
             Assert.Equal(
@@ -888,6 +902,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 Path.GetDirectoryName(source)!,
                 $".listenarr-quarantine-{jobId:N}");
             Directory.CreateDirectory(quarantineRoot);
+            await WriteQuarantineOwnershipMarkerAsync(
+                quarantineRoot,
+                jobId,
+                source,
+                target);
             var sourceFile = Path.Join(source, "book.m4b");
             var destination = Path.Join(target, "book.m4b");
             var quarantineFile = Path.Join(quarantineRoot, "book.m4b");
@@ -1073,6 +1092,24 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 Sha256 = hash
             });
             await db.SaveChangesAsync();
+        }
+
+        private static Task WriteQuarantineOwnershipMarkerAsync(
+            string quarantineRoot,
+            Guid jobId,
+            string source,
+            string target)
+        {
+            var marker = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                Version = 1,
+                JobId = jobId,
+                Source = Path.GetFullPath(source),
+                Target = Path.GetFullPath(target)
+            });
+            return File.WriteAllTextAsync(
+                Path.Join(quarantineRoot, ".listenarr-quarantine-owner.json"),
+                marker);
         }
 
         private async Task<AudiobookContentMoveRequest> CreateLeasedMoveRequestAsync(

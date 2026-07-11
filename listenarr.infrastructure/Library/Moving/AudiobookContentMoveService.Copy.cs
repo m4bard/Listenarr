@@ -83,7 +83,8 @@ internal sealed partial class AudiobookContentMoveService
         IReadOnlyCollection<MoveJobEntry> manifest,
         Guid jobId,
         FileSystemPathSemantics targetSemantics,
-        ValidatedTempOwnership? tempOwnership = null)
+        ValidatedTempOwnership? tempOwnership = null,
+        bool allowPartialFiles = true)
     {
         if (!Directory.Exists(destinationRoot))
         {
@@ -148,7 +149,14 @@ internal sealed partial class AudiobookContentMoveService
                 continue;
             }
 
-            var expectedFile = file.EndsWith(partialSuffix, StringComparison.Ordinal)
+            var isPartialFile = file.EndsWith(partialSuffix, StringComparison.Ordinal);
+            if (isPartialFile && !allowPartialFiles)
+            {
+                throw new MoveNeedsAttentionException(
+                    $"Finalized destination contains an incomplete copy artifact: {Path.GetRelativePath(destinationRoot, file)}");
+            }
+
+            var expectedFile = isPartialFile
                 ? file[..^partialSuffix.Length]
                 : file;
             var key = FileSystemPathIdentity.CreateKey("move-target", expectedFile, targetSemantics);
