@@ -48,7 +48,7 @@ internal sealed partial class AudiobookContentMoveService
         var atomicMarkerPath = GetRecoveryMarkerPath(source, request.JobId);
         WriteRecoveryMarker(
             source,
-            request.JobId,
+            request,
             source,
             target,
             AtomicRenameCompletedStage);
@@ -68,12 +68,12 @@ internal sealed partial class AudiobookContentMoveService
         }
         catch (MoveNeedsAttentionException)
         {
-            DeleteFailedAtomicMarker(atomicMarkerPath, null);
+            DeleteFailedAtomicMarker(atomicMarkerPath, source, null);
             throw;
         }
         catch (IOException exception)
         {
-            DeleteFailedAtomicMarker(atomicMarkerPath, exception);
+            DeleteFailedAtomicMarker(atomicMarkerPath, source, exception);
             ValidateMoveTargetRoot(target);
             if (!Directory.Exists(source) || Directory.Exists(target))
             {
@@ -100,12 +100,29 @@ internal sealed partial class AudiobookContentMoveService
 
     private static void DeleteFailedAtomicMarker(
         string atomicMarkerPath,
+        string source,
         Exception? renameException)
     {
         try
         {
             if (File.Exists(atomicMarkerPath))
             {
+                ValidateMoveSourceRoot(source);
+                if (!FileSystemSafety.TryValidateMutationTarget(
+                        atomicMarkerPath,
+                        [source],
+                        out atomicMarkerPath,
+                        out var markerReason))
+                {
+                    throw new MoveNeedsAttentionException(markerReason);
+                }
+
+                if ((File.GetAttributes(atomicMarkerPath) & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new MoveNeedsAttentionException(
+                        "The failed atomic recovery marker became a symbolic link or reparse point.");
+                }
+
                 File.Delete(atomicMarkerPath);
             }
         }

@@ -67,10 +67,10 @@ namespace Listenarr.Infrastructure.Library.Moving
                         .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
                     target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
                     targetSemantics)
-                || !contentMoveService.IsSourceCleanupComplete(
+                || !AudiobookContentMoveService.CanAttemptFinalizedMoveVerification(
                     source,
                     target,
-                    targetSemantics))
+                    sourceSemantics.Value))
             {
                 return false;
             }

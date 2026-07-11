@@ -42,6 +42,12 @@ internal sealed partial class AudiobookContentMoveService
             request,
             source,
             target);
+        var quarantineOwnership = TryValidateExistingQuarantineDirectory(
+            source,
+            target,
+            request.JobId,
+            request.SourceSemantics,
+            request.TargetSemantics);
         ValidateExistingDestinationContents(
             source,
             target,
@@ -49,6 +55,7 @@ internal sealed partial class AudiobookContentMoveService
             request.JobId,
             request.TargetSemantics,
             tempOwnership,
+            quarantineOwnership,
             allowPartialFiles: false);
         await VerifyPublishedManifestAsync(
             target,
@@ -56,10 +63,6 @@ internal sealed partial class AudiobookContentMoveService
             request.TargetSemantics,
             cancellationToken);
 
-        if (!IsSourceCleanupComplete(source, target, request.TargetSemantics))
-        {
-            throw new MoveNeedsAttentionException(
-                "The finalized move source cleanup is incomplete or cannot be verified safely.");
-        }
+        VerifySourceCleanupState(request, source, target);
     }
 }

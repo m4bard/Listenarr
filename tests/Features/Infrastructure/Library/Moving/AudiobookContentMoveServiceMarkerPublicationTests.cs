@@ -78,6 +78,40 @@ public partial class AudiobookContentMoveServiceTests
     }
 
     [Fact]
+    public async Task MoveContentsAsync_RecoveryMarkerReplacedBeforeStageUpdate_IsPreservedAndRequiresAttention()
+    {
+        var source = FileService.GetTempDirectory("content-move-marker-swap-src");
+        var sourceFile = await FileService.GetFileAsync(source, "book.m4b", "verified audio");
+        var target = FileService.GetTempDirectory("content-move-marker-swap-dst");
+        var jobId = Guid.NewGuid();
+        var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
+        await PersistFileManifestAsync(jobId, "book.m4b", sourceFile);
+        await WriteRecoveryMarkerAsync(target, jobId, source, target, "copy-started");
+        var markerPath = Path.Join(target, $".listenarr-move-{jobId:N}.pending");
+        var replacement = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            Version = 1,
+            JobId = Guid.NewGuid(),
+            Source = Path.GetFullPath(source),
+            Target = Path.GetFullPath(target),
+            Stage = "copy-started"
+        });
+        var service = CreateMoveService(
+            new ReplaceRecoveryMarkerBeforePublication(markerPath, replacement));
+
+        var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+            service.MoveContentsAsync(request, CancellationToken.None));
+
+        Assert.Contains("different job", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(replacement, await File.ReadAllTextAsync(markerPath));
+        Assert.True(File.Exists(sourceFile));
+        Assert.Equal("verified audio", await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
+        Assert.Empty(Directory.EnumerateFiles(
+            target,
+            $".listenarr-move-{jobId:N}.pending.writing-*"));
+    }
+
+    [Fact]
     public async Task MoveContentsAsync_ReplacesExistingHiddenRecoveryMarkerAtomicallyOnWindows()
     {
         if (!OperatingSystem.IsWindows())
@@ -110,6 +144,26 @@ public partial class AudiobookContentMoveServiceTests
             _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
             TimeProvider.System,
             faultInjector);
+    }
+
+    private sealed class ReplaceRecoveryMarkerBeforePublication(
+        string markerPath,
+        string replacement) : IMoveFaultInjector
+    {
+        private bool _replaced;
+
+        public void OnRecoveryMarkerWrite(
+            Guid jobId,
+            RecoveryMarkerWriteFaultPoint faultPoint)
+        {
+            if (_replaced || faultPoint != RecoveryMarkerWriteFaultPoint.BeforePublication)
+            {
+                return;
+            }
+
+            File.WriteAllText(markerPath, replacement);
+            _replaced = true;
+        }
     }
 
     private sealed class RecoveryMarkerFaultInjector(

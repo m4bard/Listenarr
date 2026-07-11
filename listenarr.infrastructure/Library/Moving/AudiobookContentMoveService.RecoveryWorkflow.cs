@@ -59,12 +59,6 @@ internal sealed partial class AudiobookContentMoveService
         var recoveryStage = recoveryMarker.Stage;
         if (string.Equals(recoveryStage, AtomicRenameCompletedStage, StringComparison.Ordinal))
         {
-            if (recoveryMarker.IsLegacy)
-            {
-                throw new MoveNeedsAttentionException(
-                    "A legacy atomic rename marker cannot prove move ownership and requires operator review.");
-            }
-
             if (manifest.Count > 0)
             {
                 throw new MoveNeedsAttentionException(
@@ -88,11 +82,6 @@ internal sealed partial class AudiobookContentMoveService
 
         if (manifest.Count == 0)
         {
-            if (recoveryMarker.IsLegacy)
-            {
-                return null;
-            }
-
             throw new MoveNeedsAttentionException(
                 "A move recovery marker exists without a persisted manifest; destination ownership cannot be proven.");
         }
@@ -108,13 +97,21 @@ internal sealed partial class AudiobookContentMoveService
         }
 
         var tempOwnership = TryValidatePublishedTempOwnership(target, request, source, target);
+        var quarantineOwnership = TryValidateExistingQuarantineDirectory(
+            source,
+            target,
+            request.JobId,
+            sourceSemantics,
+            targetSemantics);
         ValidateExistingDestinationContents(
             source,
             target,
             manifest,
             request.JobId,
             targetSemantics,
-            tempOwnership);
+            tempOwnership,
+            quarantineOwnership,
+            allowPartialFiles: false);
         await VerifyPublishedManifestAsync(
             target,
             manifest,
@@ -123,13 +120,22 @@ internal sealed partial class AudiobookContentMoveService
 
         var targetInsideSource = IsSameOrInside(target, source, sourceSemantics);
         var sourceInsideTarget = IsSameOrInside(source, target, targetSemantics);
+        var sourceCleanupCompleted = string.Equals(
+            recoveryStage,
+            SourceCleanupCompletedStage,
+            StringComparison.Ordinal);
+        if (sourceCleanupCompleted)
+        {
+            VerifySourceCleanupState(request, source, target);
+        }
+
         return new AudiobookContentMoveResult(
             source,
             target,
             targetInsideSource,
             sourceInsideTarget,
             recoveryMarkerPath,
-            string.Equals(recoveryStage, SourceCleanupCompletedStage, StringComparison.Ordinal));
+            sourceCleanupCompleted);
     }
 
     public async Task<AudiobookContentMoveResult> ResumeSourceCleanupAsync(
@@ -163,9 +169,10 @@ internal sealed partial class AudiobookContentMoveService
             request.TargetSemantics,
             request.SourceCleanupBoundary,
             cancellationToken);
+        VerifySourceCleanupState(request, result.Source, result.Target);
         WriteRecoveryMarker(
             result.Target,
-            request.JobId,
+            request,
             result.Source,
             result.Target,
             SourceCleanupCompletedStage);

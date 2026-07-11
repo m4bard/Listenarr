@@ -13,6 +13,7 @@ internal sealed partial class AudiobookContentMoveService
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
         ValidatedTempOwnership? tempOwnership,
+        bool directCopyOwnershipValidated,
         CancellationToken cancellationToken)
     {
         ValidateExistingDestinationContents(
@@ -21,7 +22,9 @@ internal sealed partial class AudiobookContentMoveService
             manifest,
             jobId,
             targetSemantics,
-            tempOwnership);
+            tempOwnership,
+            quarantineOwnership: null,
+            allowPartialFiles: tempOwnership != null || directCopyOwnershipValidated);
 
         foreach (var manifestEntry in manifest.OrderBy(entry => entry.EntryType))
         {
@@ -53,7 +56,17 @@ internal sealed partial class AudiobookContentMoveService
                         $"Move destination directory is a symbolic link or reparse point: {manifestEntry.RelativePath}");
                 }
 
-                if (!Directory.Exists(destinationPath)) Directory.CreateDirectory(destinationPath);
+                if (!Directory.Exists(destinationPath))
+                {
+                    Directory.CreateDirectory(destinationPath);
+                    ValidateCopyMutationPath(destinationPath, copyDestination);
+                    if ((File.GetAttributes(destinationPath) & FileAttributes.ReparsePoint) != 0)
+                    {
+                        throw new MoveNeedsAttentionException(
+                            $"Move destination directory became linked during creation: {manifestEntry.RelativePath}");
+                    }
+                }
+
                 continue;
             }
 
@@ -67,12 +80,15 @@ internal sealed partial class AudiobookContentMoveService
             }
 
             await CopyFileWithRetryAsync(
+                source,
                 entry,
                 destinationPath,
                 manifestEntry,
                 jobId,
                 copyDestination,
                 tempOwnership != null,
+                tempOwnership != null || directCopyOwnershipValidated,
+                sourceSemantics,
                 cancellationToken);
         }
     }
@@ -84,6 +100,7 @@ internal sealed partial class AudiobookContentMoveService
         Guid jobId,
         FileSystemPathSemantics targetSemantics,
         ValidatedTempOwnership? tempOwnership = null,
+        ValidatedQuarantineOwnership? quarantineOwnership = null,
         bool allowPartialFiles = true)
     {
         if (!Directory.Exists(destinationRoot))
@@ -121,9 +138,14 @@ internal sealed partial class AudiobookContentMoveService
 
         foreach (var directory in directories)
         {
-            if (sourceInsideDestination
-                && (IsSameOrInside(directory, source, targetSemantics)
-                    || IsSameOrInside(source, directory, targetSemantics)))
+            if ((quarantineOwnership != null
+                    && IsSameOrInside(
+                        directory,
+                        quarantineOwnership.DirectoryPath,
+                        targetSemantics))
+                || (sourceInsideDestination
+                    && (IsSameOrInside(directory, source, targetSemantics)
+                        || IsSameOrInside(source, directory, targetSemantics))))
             {
                 continue;
             }
@@ -143,6 +165,11 @@ internal sealed partial class AudiobookContentMoveService
                     && FileSystemPathIdentity.AreEquivalent(
                         file,
                         tempOwnership.MarkerPath,
+                        targetSemantics))
+                || (quarantineOwnership != null
+                    && IsSameOrInside(
+                        file,
+                        quarantineOwnership.DirectoryPath,
                         targetSemantics))
                 || (sourceInsideDestination && IsSameOrInside(file, source, targetSemantics)))
             {
@@ -168,24 +195,59 @@ internal sealed partial class AudiobookContentMoveService
         }
     }
 
+    private static void RejectUnownedPartialArtifacts(
+        string target,
+        Guid jobId,
+        bool hasStructuredRecoveryMarker)
+    {
+        if (hasStructuredRecoveryMarker || !Directory.Exists(target))
+        {
+            return;
+        }
+
+        if (!FileSystemSafety.TryEnumerateTreeWithoutLinks(
+                target,
+                out var files,
+                out _,
+                out var reason))
+        {
+            throw new MoveNeedsAttentionException(reason);
+        }
+
+        var partialSuffix = $".listenarr-{jobId:N}.partial";
+        var partial = files.FirstOrDefault(path =>
+            path.EndsWith(partialSuffix, StringComparison.Ordinal));
+        if (partial != null)
+        {
+            throw new MoveNeedsAttentionException(
+                $"A job-shaped partial file exists without structured move ownership and was preserved: {Path.GetRelativePath(target, partial)}");
+        }
+    }
+
     private async Task CopyFileWithRetryAsync(
+        string sourceRoot,
         string sourceFile,
         string destinationFile,
         MoveJobEntry manifestEntry,
         Guid jobId,
         string destinationRoot,
         bool destinationIsJobOwnedTemp,
+        bool destinationHasStructuredOwnership,
+        FileSystemPathSemantics sourceSemantics,
         CancellationToken cancellationToken)
     {
+        ValidateCopyMutationPath(destinationFile, destinationRoot);
         var destinationDirectory = Path.GetDirectoryName(destinationFile);
         if (!string.IsNullOrEmpty(destinationDirectory) && !Directory.Exists(destinationDirectory))
         {
             Directory.CreateDirectory(destinationDirectory);
+            ValidateCopyMutationPath(destinationFile, destinationRoot);
         }
 
         var partialFile = destinationFile + $".listenarr-{jobId:N}.partial";
         for (var attempt = 1; attempt <= MaxCopyAttempts; attempt++)
         {
+            var partialExistedBeforeAttempt = File.Exists(partialFile);
             try
             {
                 if (!await FileMatchesManifestAsync(sourceFile, manifestEntry, cancellationToken))
@@ -194,29 +256,20 @@ internal sealed partial class AudiobookContentMoveService
                         $"Source file no longer matches the persisted move manifest: {manifestEntry.RelativePath}");
                 }
 
-                if (!FileSystemSafety.TryValidateMutationTarget(
-                    destinationFile,
-                    [destinationRoot],
-                    out destinationFile,
-                    out var destinationReason))
-                {
-                    throw new MoveNeedsAttentionException(destinationReason);
-                }
-
-                if (!FileSystemSafety.TryValidateMutationTarget(
-                    partialFile,
-                    [destinationRoot],
-                    out partialFile,
-                    out var partialReason))
-                {
-                    throw new MoveNeedsAttentionException(partialReason);
-                }
+                ValidateCopyMutationPath(destinationFile, destinationRoot);
+                ValidateCopyMutationPath(partialFile, destinationRoot);
 
                 if (File.Exists(destinationFile))
                 {
                     if (await FileMatchesManifestAsync(destinationFile, manifestEntry, cancellationToken))
                     {
-                        TryDeleteOwnedPartial(partialFile);
+                        await RemoveExistingPartialAsync(
+                            partialFile,
+                            destinationRoot,
+                            manifestEntry,
+                            destinationIsJobOwnedTemp,
+                            destinationHasStructuredOwnership,
+                            cancellationToken);
                         logger.LogInformation(
                             "Skipping copy for move job {JobId}; destination already matches the persisted manifest: {Destination}",
                             jobId,
@@ -230,51 +283,63 @@ internal sealed partial class AudiobookContentMoveService
                             $"Destination file differs from the move manifest and will not be overwritten: {Path.GetFileName(destinationFile)}");
                     }
 
-                    File.Delete(destinationFile);
+                    DeleteValidatedOwnedFile(destinationFile, destinationRoot);
                 }
 
                 if (File.Exists(partialFile))
                 {
+                    if (!destinationHasStructuredOwnership)
+                    {
+                        throw new MoveNeedsAttentionException(
+                            "A job-shaped partial file exists without structured move ownership.");
+                    }
+
+                    ValidateExistingOwnedFile(partialFile, destinationRoot);
                     if (await FileMatchesManifestAsync(partialFile, manifestEntry, cancellationToken))
                     {
+                        ValidateCopyMutationPath(destinationFile, destinationRoot);
+                        ValidateExistingOwnedFile(partialFile, destinationRoot);
                         File.Move(partialFile, destinationFile, overwrite: false);
                         return;
                     }
 
-                    TryDeleteOwnedPartial(partialFile);
+                    if (!destinationIsJobOwnedTemp)
+                    {
+                        throw new MoveNeedsAttentionException(
+                            $"A direct-copy partial file does not match the persisted manifest and was preserved: {Path.GetFileName(partialFile)}");
+                    }
+
+                    DeleteValidatedOwnedFile(partialFile, destinationRoot);
+                }
+
+                await ValidateSourceCopyPathAsync(
+                    sourceRoot,
+                    sourceFile,
+                    manifestEntry,
+                    sourceSemantics,
+                    cancellationToken);
+                ValidateCopyMutationPath(partialFile, destinationRoot);
+                if (File.Exists(partialFile) || Directory.Exists(partialFile))
+                {
+                    throw new MoveNeedsAttentionException(
+                        $"The partial copy destination appeared before copying: {Path.GetFileName(partialFile)}");
                 }
 
                 File.Copy(sourceFile, partialFile, false);
                 PreserveFileMetadata(sourceFile, partialFile);
                 if (!await FileMatchesManifestAsync(partialFile, manifestEntry, cancellationToken))
                 {
-                    TryDeleteOwnedPartial(partialFile);
+                    DeleteValidatedOwnedFile(partialFile, destinationRoot);
                     throw new IOException("Temporary move copy failed persisted-manifest verification.");
                 }
 
-                if (!FileSystemSafety.TryValidateMutationTarget(
-                        destinationFile,
-                        [destinationRoot],
-                        out destinationFile,
-                        out destinationReason)
-                    || !FileSystemSafety.TryValidateMutationTarget(
-                        partialFile,
-                        [destinationRoot],
-                        out partialFile,
-                        out partialReason))
-                {
-                    TryDeleteOwnedPartial(partialFile);
-                    throw new MoveNeedsAttentionException(
-                        string.IsNullOrWhiteSpace(destinationReason)
-                            ? partialReason
-                            : destinationReason);
-                }
-
+                ValidateCopyMutationPath(destinationFile, destinationRoot);
+                ValidateExistingOwnedFile(partialFile, destinationRoot);
                 if (File.Exists(destinationFile))
                 {
                     if (await FileMatchesManifestAsync(destinationFile, manifestEntry, cancellationToken))
                     {
-                        TryDeleteOwnedPartial(partialFile);
+                        DeleteValidatedOwnedFile(partialFile, destinationRoot);
                         return;
                     }
 
@@ -291,6 +356,11 @@ internal sealed partial class AudiobookContentMoveService
             }
             catch (IOException exception) when (attempt < MaxCopyAttempts)
             {
+                if (!partialExistedBeforeAttempt && File.Exists(partialFile))
+                {
+                    DeleteValidatedOwnedFile(partialFile, destinationRoot);
+                }
+
                 logger.LogWarning(
                     exception,
                     "IO error copying file {File} attempt {Attempt}",
@@ -304,56 +374,4 @@ internal sealed partial class AudiobookContentMoveService
         throw new IOException($"Failed to copy file after {MaxCopyAttempts} attempts: {sourceFile}");
     }
 
-    private static async Task<bool> FileMatchesManifestAsync(
-        string path,
-        MoveJobEntry manifestEntry,
-        CancellationToken cancellationToken)
-    {
-        if (!File.Exists(path)
-            || manifestEntry.EntryType != MoveJobEntryType.File
-            || new FileInfo(path).Length != manifestEntry.Length
-            || string.IsNullOrWhiteSpace(manifestEntry.Sha256))
-        {
-            return false;
-        }
-
-        return string.Equals(
-            await ComputeSha256Async(path, cancellationToken),
-            manifestEntry.Sha256,
-            StringComparison.Ordinal);
-    }
-
-    private static void TryDeleteOwnedPartial(string partialFile)
-    {
-        try
-        {
-            if (File.Exists(partialFile))
-            {
-                File.Delete(partialFile);
-            }
-        }
-        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
-        {
-            System.Diagnostics.Debug.WriteLine(
-                $"Suppressed move partial cleanup failure for '{partialFile}': {exception.Message}");
-        }
-    }
-
-    private void PreserveFileMetadata(string sourceFile, string destinationFile)
-    {
-        try
-        {
-            var attributes = File.GetAttributes(sourceFile);
-            File.SetAttributes(destinationFile, attributes);
-            File.SetLastWriteTimeUtc(destinationFile, File.GetLastWriteTimeUtc(sourceFile));
-            File.SetCreationTimeUtc(destinationFile, File.GetCreationTimeUtc(sourceFile));
-        }
-        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
-        {
-            logger.LogDebug(
-                exception,
-                "Non-fatal: failed to preserve attributes for {File}",
-                LogRedaction.SanitizeFilePath(sourceFile));
-        }
-    }
 }

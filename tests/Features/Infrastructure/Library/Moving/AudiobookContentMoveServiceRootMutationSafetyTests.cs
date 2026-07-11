@@ -150,8 +150,7 @@ public partial class AudiobookContentMoveServiceTests
             JobId = jobId,
             Source = Path.GetFullPath(source),
             Target = Path.GetFullPath(target),
-            Stage = "copy-started",
-            IsLegacy = false
+            Stage = "copy-started"
         });
         return File.WriteAllTextAsync(path, payload);
     }

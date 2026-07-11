@@ -235,13 +235,16 @@ public partial class AudiobookContentMoveServiceTests
         var marker = System.Text.Json.JsonSerializer.Serialize(new
         {
             Version = invalidField == "version" ? 2 : 1,
+            ArtifactType = "quarantine-directory",
             JobId = invalidField == "job" ? Guid.NewGuid() : jobId,
             Source = invalidField == "source"
                 ? Path.Join(Path.GetDirectoryName(source)!, "other-source")
                 : Path.GetFullPath(source),
             Target = invalidField == "target"
                 ? Path.Join(Path.GetDirectoryName(target)!, "other-target")
-                : Path.GetFullPath(target)
+                : Path.GetFullPath(target),
+            DirectoryPath = Path.GetFullPath(quarantineRoot),
+            OwnedArtifactType = (string?)null
         });
         return File.WriteAllTextAsync(markerPath, marker);
     }

@@ -143,9 +143,12 @@ public partial class AudiobookContentMoveServiceTests
             JsonSerializer.Serialize(new
             {
                 Version = 1,
+                ArtifactType = "temporary-directory",
                 JobId = jobId,
                 Source = Path.GetFullPath(source),
-                Target = Path.GetFullPath(target)
+                Target = Path.GetFullPath(target),
+                DirectoryPath = Path.GetFullPath(directory),
+                OwnedArtifactType = (string?)null
             }));
     }
 }
