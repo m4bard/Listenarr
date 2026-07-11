@@ -243,8 +243,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var target = FileService.GetTempDirectory("content-move-direct-retry-dst");
             await FileService.GetFileAsync(target, "book.m4b", "partial");
             var jobId = Guid.NewGuid();
-            await File.WriteAllTextAsync(
-                Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
+            await WriteRecoveryMarkerAsync(
+                target,
+                jobId,
+                source,
+                target,
                 "copy-started");
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
@@ -657,10 +660,12 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 "copy-complete");
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
 
-            var recoverable = await service.GetRecoverableMoveAsync(request);
+            var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+                service.GetRecoverableMoveAsync(request));
 
-            Assert.Null(recoverable);
+            Assert.Contains("obsolete pre-release", exception.Message, StringComparison.OrdinalIgnoreCase);
             Assert.True(File.Exists(Path.Join(source, "book.m4b")));
+            Assert.True(File.Exists(Path.Join(target, $".listenarr-move-{jobId:N}.pending")));
         }
 
         [Fact]
@@ -700,8 +705,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var target = FileService.GetTempDirectory("content-move-cancel-recovery-dst");
             var destination = await FileService.GetFileAsync(target, "book.m4b", "audio");
             var jobId = Guid.NewGuid();
-            await File.WriteAllTextAsync(
-                Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
+            await WriteRecoveryMarkerAsync(
+                target,
+                jobId,
+                source,
+                target,
                 "copy-complete");
             var hash = Convert.ToHexString(
                 System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(destination)));
@@ -1012,8 +1020,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var jobId = Guid.NewGuid();
             var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
             await PersistFileManifestAsync(jobId, "book.m4b", sourceFile);
-            await File.WriteAllTextAsync(
-                Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
+            await WriteRecoveryMarkerAsync(
+                target,
+                jobId,
+                source,
+                target,
                 "copy-started");
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
@@ -1036,8 +1047,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             await PersistFileManifestAsync(jobId, "book.m4b", sourceFile);
             var partial = Path.Join(target, $"book.m4b.listenarr-{jobId:N}.partial");
             await File.WriteAllTextAsync(partial, "verified audio");
-            await File.WriteAllTextAsync(
-                Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
+            await WriteRecoveryMarkerAsync(
+                target,
+                jobId,
+                source,
+                target,
                 "copy-started");
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
@@ -1050,7 +1064,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
-        public async Task MoveContentsAsync_InvalidOwnedPartial_IsReplacedFromManifestSource()
+        public async Task MoveContentsAsync_InvalidOwnedPartial_IsPreservedAndRequiresAttention()
         {
             var source = FileService.GetTempDirectory("content-move-invalid-partial-src");
             var sourceFile = await FileService.GetFileAsync(source, "book.m4b", "verified audio");
@@ -1060,16 +1074,21 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             await PersistFileManifestAsync(jobId, "book.m4b", sourceFile);
             var partial = Path.Join(target, $"book.m4b.listenarr-{jobId:N}.partial");
             await File.WriteAllTextAsync(partial, "invalid bytes");
-            await File.WriteAllTextAsync(
-                Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
+            await WriteRecoveryMarkerAsync(
+                target,
+                jobId,
+                source,
+                target,
                 "copy-started");
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
-            await service.MoveContentsAsync(request, CancellationToken.None);
+            var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+                service.MoveContentsAsync(request, CancellationToken.None));
 
-            Assert.False(File.Exists(partial));
-            Assert.Equal("verified audio", await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
-            Assert.False(Directory.Exists(source));
+            Assert.Contains("partial file does not match", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("invalid bytes", await File.ReadAllTextAsync(partial));
+            Assert.False(File.Exists(Path.Join(target, "book.m4b")));
+            Assert.True(Directory.Exists(source));
         }
 
         private async Task PersistFileManifestAsync(
@@ -1103,9 +1122,12 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var marker = System.Text.Json.JsonSerializer.Serialize(new
             {
                 Version = 1,
+                ArtifactType = "quarantine-directory",
                 JobId = jobId,
                 Source = Path.GetFullPath(source),
-                Target = Path.GetFullPath(target)
+                Target = Path.GetFullPath(target),
+                DirectoryPath = Path.GetFullPath(quarantineRoot),
+                OwnedArtifactType = (string?)null
             });
             return File.WriteAllTextAsync(
                 Path.Join(quarantineRoot, ".listenarr-quarantine-owner.json"),

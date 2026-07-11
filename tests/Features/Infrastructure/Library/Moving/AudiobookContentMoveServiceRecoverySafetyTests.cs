@@ -74,7 +74,7 @@ public partial class AudiobookContentMoveServiceTests
         var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
             service.GetRecoverableMoveAsync(request));
 
-        Assert.Contains("legacy atomic rename marker", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("obsolete pre-release", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.True(File.Exists(Path.Join(target, "book.m4b")));
     }
 
@@ -138,6 +138,58 @@ public partial class AudiobookContentMoveServiceTests
 
         Assert.Contains("could not be read safely", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.True(File.Exists(Path.Join(source, "book.m4b")));
+    }
+
+    [Fact]
+    public async Task GetRecoverableMoveAsync_LinkedRecoveryMarker_PreservesExternalMarker()
+    {
+        var source = FileService.GetTempDirectory("content-move-linked-marker-src");
+        await FileService.GetFileAsync(source, "book.m4b", "audio");
+        var target = FileService.GetTempDirectory("content-move-linked-marker-dst");
+        var external = FileService.GetTempDirectory("content-move-linked-marker-external");
+        var jobId = Guid.NewGuid();
+        var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
+        var externalMarker = Path.Join(external, "marker.json");
+        await File.WriteAllTextAsync(
+            externalMarker,
+            JsonSerializer.Serialize(new
+            {
+                Version = 1,
+                JobId = jobId,
+                Source = Path.GetFullPath(source),
+                Target = Path.GetFullPath(target),
+                Stage = "copy-started"
+            }));
+        var markerPath = Path.Join(target, $".listenarr-move-{jobId:N}.pending");
+        try
+        {
+            File.CreateSymbolicLink(markerPath, externalMarker);
+        }
+        catch (Exception exception) when (exception is
+            IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return;
+        }
+
+        try
+        {
+            var original = await File.ReadAllTextAsync(externalMarker);
+            var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+            var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+                service.GetRecoverableMoveAsync(request));
+
+            Assert.Contains("symbolic link or reparse point", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(original, await File.ReadAllTextAsync(externalMarker));
+            Assert.True(File.Exists(markerPath));
+            Assert.True(File.Exists(Path.Join(source, "book.m4b")));
+        }
+        finally
+        {
+            if (File.Exists(markerPath))
+            {
+                File.Delete(markerPath);
+            }
+        }
     }
 
     [Fact]

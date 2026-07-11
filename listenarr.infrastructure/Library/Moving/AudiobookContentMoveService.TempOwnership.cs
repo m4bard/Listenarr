@@ -1,23 +1,15 @@
-using System.Text.Json;
-using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Library.Moving;
 
 internal sealed partial class AudiobookContentMoveService
 {
-    private const int TempOwnershipMarkerVersion = 1;
     private const string TempOwnershipMarkerFileName = ".listenarr-temp-owner.json";
-
-    private sealed record MoveTempOwnershipMarker(
-        int Version,
-        Guid JobId,
-        string Source,
-        string Target);
 
     private sealed record ValidatedTempOwnership(
         string DirectoryPath,
-        string MarkerPath);
+        string MarkerPath,
+        MoveOwnershipMarker Marker);
 
     private ValidatedTempOwnership CreateOrValidateOwnedTempDirectory(
         string tempDirectory,
@@ -26,7 +18,21 @@ internal sealed partial class AudiobookContentMoveService
         string source,
         string target)
     {
-        if (Directory.Exists(tempDirectory))
+        var markerPath = Path.Join(tempDirectory, TempOwnershipMarkerFileName);
+        if (TryCompleteOwnedDirectoryCleanup(
+                tempDirectory,
+                markerPath,
+                TemporaryDirectoryArtifactType,
+                request.JobId,
+                source,
+                target,
+                request.SourceSemantics,
+                request.TargetSemantics,
+                request.TargetSemantics))
+        {
+            // A prior cleanup completed. A new temp directory may now be claimed.
+        }
+        else if (Directory.Exists(tempDirectory))
         {
             return ValidateOwnedTempDirectory(
                 tempDirectory,
@@ -42,33 +48,21 @@ internal sealed partial class AudiobookContentMoveService
                 "The move temporary path is occupied by a file and cannot be claimed safely.");
         }
 
+        ValidateMoveRootPath(tempDirectory, mustExist: false, "temporary directory");
         Directory.CreateDirectory(tempDirectory);
-        var markerPath = Path.Join(tempDirectory, TempOwnershipMarkerFileName);
+        ValidateExistingMoveDirectory(tempDirectory, "temporary directory");
+        var marker = CreateOwnershipMarker(
+            TemporaryDirectoryArtifactType,
+            request.JobId,
+            source,
+            target,
+            tempDirectory);
         try
         {
-            var marker = new MoveTempOwnershipMarker(
-                TempOwnershipMarkerVersion,
-                request.JobId,
-                Path.GetFullPath(source),
-                Path.GetFullPath(target));
-            var payload = JsonSerializer.SerializeToUtf8Bytes(marker);
-            using (var stream = new FileStream(
+            PublishOwnershipMarker(
                 markerPath,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: 4096,
-                FileOptions.WriteThrough))
-            {
-                stream.Write(payload);
-                stream.Flush(flushToDisk: true);
-            }
-
-            if (OperatingSystem.IsWindows())
-            {
-                File.SetAttributes(markerPath, FileAttributes.Hidden);
-            }
-
+                marker,
+                OwnershipMarkerKind.TemporaryDirectory);
             return ValidateOwnedTempDirectory(
                 tempDirectory,
                 targetParent,
@@ -78,28 +72,13 @@ internal sealed partial class AudiobookContentMoveService
         }
         catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
         {
-            try
-            {
-                if (Directory.Exists(tempDirectory)
-                    && !Directory.EnumerateFileSystemEntries(tempDirectory).Any())
-                {
-                    Directory.Delete(tempDirectory, recursive: false);
-                }
-            }
-            catch (Exception cleanupException) when (WorkerExceptionClassifier.IsNonFatal(cleanupException))
-            {
-                logger.LogWarning(
-                    cleanupException,
-                    "Failed to remove newly created empty temp directory for move job {JobId}",
-                    request.JobId);
-            }
-
+            TryRemoveNewEmptyOwnershipDirectory(tempDirectory, request.JobId, "temp");
             throw new MoveNeedsAttentionException(
                 $"The move temporary directory could not be claimed safely: {exception.Message}");
         }
     }
 
-    private static ValidatedTempOwnership ValidateOwnedTempDirectory(
+    private ValidatedTempOwnership ValidateOwnedTempDirectory(
         string tempDirectory,
         string targetParent,
         AudiobookContentMoveRequest request,
@@ -115,71 +94,24 @@ internal sealed partial class AudiobookContentMoveService
             throw new MoveNeedsAttentionException(tempReason);
         }
 
-        if (!Directory.Exists(safeTempDirectory)
-            || (File.GetAttributes(safeTempDirectory) & FileAttributes.ReparsePoint) != 0)
-        {
-            throw new MoveNeedsAttentionException(
-                "The move temporary directory is missing or is a symbolic link or reparse point.");
-        }
-
+        ValidateExistingMoveDirectory(safeTempDirectory, "temporary directory");
         var markerPath = Path.Join(safeTempDirectory, TempOwnershipMarkerFileName);
-        if (!FileSystemSafety.TryValidateMutationTarget(
-                markerPath,
-                [safeTempDirectory],
-                out markerPath,
-                out var markerReason))
-        {
-            throw new MoveNeedsAttentionException(markerReason);
-        }
-
-        if (!File.Exists(markerPath)
-            || (File.GetAttributes(markerPath) & FileAttributes.ReparsePoint) != 0)
-        {
-            throw new MoveNeedsAttentionException(
-                "The move temporary directory has no valid ownership marker.");
-        }
-
-        MoveTempOwnershipMarker? marker;
-        try
-        {
-            marker = JsonSerializer.Deserialize<MoveTempOwnershipMarker>(File.ReadAllText(markerPath));
-        }
-        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
-        {
-            throw new MoveNeedsAttentionException(
-                $"The move temporary ownership marker could not be read safely: {exception.Message}");
-        }
-
-        if (marker == null
-            || marker.Version != TempOwnershipMarkerVersion
-            || marker.JobId != request.JobId)
-        {
-            throw new MoveNeedsAttentionException(
-                "The move temporary directory is owned by another job or uses an unsupported marker version.");
-        }
-
-        try
-        {
-            if (!FileSystemPathIdentity.AreEquivalent(
-                    marker.Source,
-                    source,
-                    request.SourceSemantics)
-                || !FileSystemPathIdentity.AreEquivalent(
-                    marker.Target,
-                    target,
-                    request.TargetSemantics))
-            {
-                throw new MoveNeedsAttentionException(
-                    "The move temporary ownership marker does not match the persisted source and target.");
-            }
-        }
-        catch (ArgumentException)
-        {
-            throw new MoveNeedsAttentionException(
-                "The move temporary ownership marker contains an invalid source or target identity.");
-        }
-
-        return new ValidatedTempOwnership(safeTempDirectory, markerPath);
+        var expectedMarker = CreateOwnershipMarker(
+            TemporaryDirectoryArtifactType,
+            request.JobId,
+            source,
+            target,
+            tempDirectory);
+        var marker = RecoverOrReadOwnershipMarker(
+            markerPath,
+            expectedMarker,
+            request.SourceSemantics,
+            request.TargetSemantics,
+            request.TargetSemantics);
+        return new ValidatedTempOwnership(
+            safeTempDirectory,
+            markerPath,
+            marker);
     }
 
     private void TryDeleteOwnedTempDirectory(
@@ -189,33 +121,44 @@ internal sealed partial class AudiobookContentMoveService
         string source,
         string target)
     {
-        if (!Directory.Exists(tempDirectory))
-        {
-            return;
-        }
-
+        var markerPath = Path.Join(tempDirectory, TempOwnershipMarkerFileName);
         try
         {
+            if (TryCompleteOwnedDirectoryCleanup(
+                    tempDirectory,
+                    markerPath,
+                    TemporaryDirectoryArtifactType,
+                    request.JobId,
+                    source,
+                    target,
+                    request.SourceSemantics,
+                    request.TargetSemantics,
+                    request.TargetSemantics))
+            {
+                return;
+            }
+
+            if (!Directory.Exists(tempDirectory))
+            {
+                return;
+            }
+
             var ownership = ValidateOwnedTempDirectory(
                 tempDirectory,
                 targetParent,
                 request,
                 source,
                 target);
-            if (!FileSystemSafety.TryEnumerateTreeWithoutLinks(
-                    ownership.DirectoryPath,
-                    out _,
-                    out _,
-                    out var reason))
-            {
-                logger.LogWarning(
-                    "Preserved move temp directory for job {JobId} because it could not be traversed safely: {Reason}",
-                    request.JobId,
-                    reason);
-                return;
-            }
-
-            Directory.Delete(ownership.DirectoryPath, recursive: true);
+            DeleteOwnedDirectoryWithTombstone(
+                ownership.DirectoryPath,
+                ownership.MarkerPath,
+                TemporaryDirectoryArtifactType,
+                request.JobId,
+                source,
+                target,
+                request.SourceSemantics,
+                request.TargetSemantics,
+                request.TargetSemantics);
         }
         catch (MoveNeedsAttentionException exception)
         {
@@ -233,7 +176,7 @@ internal sealed partial class AudiobookContentMoveService
         }
     }
 
-    private static ValidatedTempOwnership? TryValidatePublishedTempOwnership(
+    private ValidatedTempOwnership? TryValidatePublishedTempOwnership(
         string destinationRoot,
         AudiobookContentMoveRequest request,
         string source,
@@ -247,22 +190,97 @@ internal sealed partial class AudiobookContentMoveService
 
         var destinationParent = Path.GetDirectoryName(destinationRoot)
             ?? throw new MoveNeedsAttentionException("The destination parent is unavailable.");
-        return ValidateOwnedTempDirectory(
-            destinationRoot,
+        var originalTempDirectory = Path.Join(
             destinationParent,
-            request,
+            Path.GetFileName(target) + ".tmp-" + request.JobId.ToString("N"));
+        if (!FileSystemSafety.TryValidateMutationTarget(
+                destinationRoot,
+                [destinationParent],
+                out var safeDestination,
+                out var destinationReason))
+        {
+            throw new MoveNeedsAttentionException(destinationReason);
+        }
+
+        ValidateExistingMoveDirectory(safeDestination, "published temporary directory");
+        var expectedMarker = CreateOwnershipMarker(
+            TemporaryDirectoryArtifactType,
+            request.JobId,
             source,
-            target);
+            target,
+            originalTempDirectory);
+        var marker = RecoverOrReadOwnershipMarker(
+            markerPath,
+            expectedMarker,
+            request.SourceSemantics,
+            request.TargetSemantics,
+            request.TargetSemantics);
+        return new ValidatedTempOwnership(
+            safeDestination,
+            markerPath,
+            marker);
     }
 
     private static void TryDeletePublishedTempOwnershipMarker(
-        ValidatedTempOwnership? ownership)
+        ValidatedTempOwnership? ownership,
+        AudiobookContentMoveRequest request)
     {
         if (ownership == null || !File.Exists(ownership.MarkerPath))
         {
             return;
         }
 
+        ValidateExistingMoveDirectory(
+            ownership.DirectoryPath,
+            "published temporary directory");
+        var marker = ReadOwnershipMarker(ownership.MarkerPath);
+        ValidateOwnershipMarker(
+            marker,
+            ownership.Marker,
+            request.SourceSemantics,
+            request.TargetSemantics,
+            request.TargetSemantics);
+        ValidateExistingMoveDirectory(
+            ownership.DirectoryPath,
+            "published temporary directory");
+        var currentMarker = ReadOwnershipMarker(ownership.MarkerPath);
+        ValidateOwnershipMarker(
+            currentMarker,
+            ownership.Marker,
+            request.SourceSemantics,
+            request.TargetSemantics,
+            request.TargetSemantics);
         File.Delete(ownership.MarkerPath);
+    }
+
+    private void TryRemoveNewEmptyOwnershipDirectory(
+        string directory,
+        Guid jobId,
+        string artifactName)
+    {
+        try
+        {
+            if (Directory.Exists(directory))
+            {
+                ValidateExistingMoveDirectory(
+                    directory,
+                    $"new {artifactName} directory");
+                if (!Directory.EnumerateFileSystemEntries(directory).Any())
+                {
+                    ValidateExistingMoveDirectory(
+                        directory,
+                        $"new {artifactName} directory");
+                    Directory.Delete(directory, recursive: false);
+                }
+            }
+        }
+        catch (Exception cleanupException) when (WorkerExceptionClassifier.IsNonFatal(cleanupException))
+        {
+            logger.LogWarning(
+                cleanupException,
+                "Failed to remove newly created empty {ArtifactName} directory for move job {JobId}",
+                artifactName,
+                jobId);
+        }
     }
 }

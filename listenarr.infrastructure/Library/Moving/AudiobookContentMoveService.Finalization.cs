@@ -52,7 +52,7 @@ internal sealed partial class AudiobookContentMoveService
             request,
             result.Source,
             result.Target);
-        TryDeletePublishedTempOwnershipMarker(tempOwnership);
+        TryDeletePublishedTempOwnershipMarker(tempOwnership, request);
     }
 
     public void CleanupCompletedMoveArtifacts(
@@ -72,7 +72,7 @@ internal sealed partial class AudiobookContentMoveService
 
         ValidateMoveTargetRoot(result.Target);
         var recoveryMarker = ReadRecoveryMarker(result.RecoveryMarkerPath);
-        if (recoveryMarker == null || recoveryMarker.IsLegacy)
+        if (recoveryMarker == null)
         {
             throw new MoveNeedsAttentionException(
                 "Completed move artifact cleanup requires a structured recovery marker.");
@@ -87,6 +87,22 @@ internal sealed partial class AudiobookContentMoveService
             result.RecoveryMarkerPath,
             result.Target,
             request.TargetSemantics);
+        ValidateMoveTargetRoot(result.Target);
+        ValidateRecoveryMarker(
+            ReadRecoveryMarker(result.RecoveryMarkerPath),
+            request,
+            result.Source,
+            result.Target);
+        ValidateRecoveryMarkerLocation(
+            result.RecoveryMarkerPath,
+            result.Target,
+            request.TargetSemantics);
+        if ((File.GetAttributes(result.RecoveryMarkerPath) & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new MoveNeedsAttentionException(
+                "The completed recovery marker became a symbolic link or reparse point.");
+        }
+
         File.Delete(result.RecoveryMarkerPath);
     }
 
@@ -116,9 +132,23 @@ internal sealed partial class AudiobookContentMoveService
             && !FileSystemPathIdentity.AreEquivalent(
                 current,
                 boundary,
-                semantics)
-            && !Directory.EnumerateFileSystemEntries(current).Any())
+                semantics))
         {
+            if (!FileSystemSafety.TryValidateMutationTarget(
+                    current,
+                    [boundary],
+                    out current,
+                    out var reason))
+            {
+                throw new MoveNeedsAttentionException(reason);
+            }
+
+            ValidateExistingMoveDirectory(current, "source ancestor cleanup directory");
+            if (Directory.EnumerateFileSystemEntries(current).Any())
+            {
+                return;
+            }
+
             Directory.Delete(current, false);
             current = Path.GetDirectoryName(current) ?? boundary;
         }

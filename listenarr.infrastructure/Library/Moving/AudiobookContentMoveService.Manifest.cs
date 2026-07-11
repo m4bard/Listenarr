@@ -270,6 +270,35 @@ internal sealed partial class AudiobookContentMoveService
                     throw new MoveNeedsAttentionException($"Source file disappeared before cleanup: {entry.RelativePath}");
                 }
 
+                quarantineOwnership = await RevalidateSourceToQuarantineMoveAsync(
+                    source,
+                    target,
+                    sourceFile,
+                    quarantineFile,
+                    quarantineRoot,
+                    sourceParent,
+                    jobId,
+                    leaseToken,
+                    entry,
+                    sourceSemantics,
+                    targetSemantics,
+                    cancellationToken);
+                faultInjector?.OnSourceCleanupMutation(
+                    jobId,
+                    SourceCleanupFaultPoint.BeforeSourceFileMove);
+                quarantineOwnership = await RevalidateSourceToQuarantineMoveAsync(
+                    source,
+                    target,
+                    sourceFile,
+                    quarantineFile,
+                    quarantineRoot,
+                    sourceParent,
+                    jobId,
+                    leaseToken,
+                    entry,
+                    sourceSemantics,
+                    targetSemantics,
+                    cancellationToken);
                 File.Move(sourceFile, quarantineFile, overwrite: false);
             }
 
@@ -277,10 +306,8 @@ internal sealed partial class AudiobookContentMoveService
             var quarantinedHash = await ComputeSha256Async(quarantineFile, cancellationToken);
             if (!string.Equals(quarantinedHash, entry.Sha256, StringComparison.Ordinal))
             {
-                ValidateQuarantineMutationPath(quarantineOwnership, quarantineFile);
-                TryRestoreQuarantinedFile(quarantineFile, sourceFile);
                 throw new MoveNeedsAttentionException(
-                    $"Quarantined source bytes changed before cleanup: {entry.RelativePath}");
+                    $"Quarantined source bytes changed before cleanup and were preserved: {entry.RelativePath}");
             }
 
             await VerifyPublishedManifestAsync(target, [entry], targetSemantics, cancellationToken);
@@ -290,7 +317,33 @@ internal sealed partial class AudiobookContentMoveService
                 entry.RelativePath,
                 MoveJobEntryCleanupState.Quarantined,
                 cancellationToken);
-            ValidateQuarantineMutationPath(quarantineOwnership, quarantineFile);
+            quarantineOwnership = await RevalidateQuarantineDeleteAsync(
+                source,
+                target,
+                quarantineFile,
+                quarantineRoot,
+                sourceParent,
+                jobId,
+                leaseToken,
+                entry,
+                sourceSemantics,
+                targetSemantics,
+                cancellationToken);
+            faultInjector?.OnSourceCleanupMutation(
+                jobId,
+                SourceCleanupFaultPoint.BeforeQuarantineFileDelete);
+            quarantineOwnership = await RevalidateQuarantineDeleteAsync(
+                source,
+                target,
+                quarantineFile,
+                quarantineRoot,
+                sourceParent,
+                jobId,
+                leaseToken,
+                entry,
+                sourceSemantics,
+                targetSemantics,
+                cancellationToken);
             File.Delete(quarantineFile);
             await UpdateCleanupStateAsync(
                 jobId,
@@ -317,7 +370,10 @@ internal sealed partial class AudiobookContentMoveService
                 && Directory.Exists(entry.Directory)
                 && !Directory.EnumerateFileSystemEntries(entry.Directory).Any()))
         {
-            Directory.Delete(directoryEntry.Directory!, false);
+            DeleteValidatedEmptySourceDirectory(
+                source,
+                directoryEntry.Directory!,
+                sourceSemantics);
         }
 
         if (deleteEmptySource
@@ -326,7 +382,7 @@ internal sealed partial class AudiobookContentMoveService
             && !IsSourceCleanupBoundary(source, sourceCleanupBoundary, sourceSemantics)
             && !Directory.EnumerateFileSystemEntries(source).Any())
         {
-            Directory.Delete(source, false);
+            DeleteValidatedEmptySourceDirectory(source, source, sourceSemantics);
         }
 
         // Quarantined files preserve their relative directory structure. Remove those
@@ -344,11 +400,19 @@ internal sealed partial class AudiobookContentMoveService
                 && Directory.Exists(quarantineDirectory)
                 && !Directory.EnumerateFileSystemEntries(quarantineDirectory).Any())
             {
-                Directory.Delete(quarantineDirectory, false);
+                DeleteValidatedEmptyQuarantineDirectory(
+                    quarantineOwnership,
+                    quarantineDirectory);
             }
         }
 
-        DeleteEmptyOwnedQuarantineDirectory(quarantineOwnership, sourceSemantics);
+        DeleteEmptyOwnedQuarantineDirectory(
+            quarantineOwnership,
+            jobId,
+            source,
+            target,
+            sourceSemantics,
+            targetSemantics);
     }
 
     private static void ResolveCleanupPaths(
@@ -407,23 +471,6 @@ internal sealed partial class AudiobookContentMoveService
             FileOptions.Asynchronous | FileOptions.SequentialScan);
         var hash = await SHA256.HashDataAsync(stream, cancellationToken);
         return Convert.ToHexString(hash);
-    }
-
-    private static void TryRestoreQuarantinedFile(string quarantineFile, string sourceFile)
-    {
-        try
-        {
-            if (File.Exists(quarantineFile) && !File.Exists(sourceFile))
-            {
-                var sourceDirectory = Path.GetDirectoryName(sourceFile);
-                if (!string.IsNullOrEmpty(sourceDirectory)) Directory.CreateDirectory(sourceDirectory);
-                File.Move(quarantineFile, sourceFile, overwrite: false);
-            }
-        }
-        catch (IOException)
-        {
-            // The quarantine is retained for operator inspection when restoration is uncertain.
-        }
     }
 
 }

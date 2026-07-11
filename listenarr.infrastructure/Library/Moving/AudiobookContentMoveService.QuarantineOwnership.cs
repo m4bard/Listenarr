@@ -1,23 +1,15 @@
-using System.Text.Json;
 using Listenarr.Domain.Common;
-using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Library.Moving;
 
 internal sealed partial class AudiobookContentMoveService
 {
-    private const int QuarantineOwnershipMarkerVersion = 1;
     private const string QuarantineOwnershipMarkerFileName = ".listenarr-quarantine-owner.json";
-
-    private sealed record MoveQuarantineOwnershipMarker(
-        int Version,
-        Guid JobId,
-        string Source,
-        string Target);
 
     private sealed record ValidatedQuarantineOwnership(
         string DirectoryPath,
-        string MarkerPath);
+        string MarkerPath,
+        MoveOwnershipMarker Marker);
 
     private ValidatedQuarantineOwnership CreateOrValidateOwnedQuarantineDirectory(
         string quarantineRoot,
@@ -28,7 +20,23 @@ internal sealed partial class AudiobookContentMoveService
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics)
     {
-        if (Directory.Exists(quarantineRoot))
+        var markerPath = Path.Join(
+            quarantineRoot,
+            QuarantineOwnershipMarkerFileName);
+        if (TryCompleteOwnedDirectoryCleanup(
+                quarantineRoot,
+                markerPath,
+                QuarantineDirectoryArtifactType,
+                jobId,
+                source,
+                target,
+                sourceSemantics,
+                targetSemantics,
+                sourceSemantics))
+        {
+            // A prior completed cleanup left durable tombstone evidence.
+        }
+        else if (Directory.Exists(quarantineRoot))
         {
             return ValidateOwnedQuarantineDirectory(
                 quarantineRoot,
@@ -48,32 +56,19 @@ internal sealed partial class AudiobookContentMoveService
 
         ValidateMoveRootPath(quarantineRoot, mustExist: false, "quarantine");
         Directory.CreateDirectory(quarantineRoot);
-        var markerPath = Path.Join(quarantineRoot, QuarantineOwnershipMarkerFileName);
+        ValidateExistingMoveDirectory(quarantineRoot, "quarantine directory");
+        var marker = CreateOwnershipMarker(
+            QuarantineDirectoryArtifactType,
+            jobId,
+            source,
+            target,
+            quarantineRoot);
         try
         {
-            var marker = new MoveQuarantineOwnershipMarker(
-                QuarantineOwnershipMarkerVersion,
-                jobId,
-                Path.GetFullPath(source),
-                Path.GetFullPath(target));
-            var payload = JsonSerializer.SerializeToUtf8Bytes(marker);
-            using (var stream = new FileStream(
+            PublishOwnershipMarker(
                 markerPath,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: 4096,
-                FileOptions.WriteThrough))
-            {
-                stream.Write(payload);
-                stream.Flush(flushToDisk: true);
-            }
-
-            if (OperatingSystem.IsWindows())
-            {
-                File.SetAttributes(markerPath, FileAttributes.Hidden);
-            }
-
+                marker,
+                OwnershipMarkerKind.QuarantineDirectory);
             return ValidateOwnedQuarantineDirectory(
                 quarantineRoot,
                 sourceParent,
@@ -85,28 +80,16 @@ internal sealed partial class AudiobookContentMoveService
         }
         catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
         {
-            try
-            {
-                if (Directory.Exists(quarantineRoot)
-                    && !Directory.EnumerateFileSystemEntries(quarantineRoot).Any())
-                {
-                    Directory.Delete(quarantineRoot, recursive: false);
-                }
-            }
-            catch (Exception cleanupException) when (WorkerExceptionClassifier.IsNonFatal(cleanupException))
-            {
-                logger.LogWarning(
-                    cleanupException,
-                    "Failed to remove newly created empty quarantine directory for move job {JobId}",
-                    jobId);
-            }
-
+            TryRemoveNewEmptyOwnershipDirectory(
+                quarantineRoot,
+                jobId,
+                "quarantine");
             throw new MoveNeedsAttentionException(
                 $"The move quarantine directory could not be claimed safely: {exception.Message}");
         }
     }
 
-    private static ValidatedQuarantineOwnership ValidateOwnedQuarantineDirectory(
+    private ValidatedQuarantineOwnership ValidateOwnedQuarantineDirectory(
         string quarantineRoot,
         string sourceParent,
         Guid jobId,
@@ -124,67 +107,89 @@ internal sealed partial class AudiobookContentMoveService
             throw new MoveNeedsAttentionException(quarantineReason);
         }
 
-        ValidateExistingMoveDirectory(safeQuarantineRoot, "quarantine directory");
-        var markerPath = Path.Join(safeQuarantineRoot, QuarantineOwnershipMarkerFileName);
-        if (!FileSystemSafety.TryValidateMutationTarget(
-                markerPath,
-                [safeQuarantineRoot],
-                out markerPath,
-                out var markerReason))
-        {
-            throw new MoveNeedsAttentionException(markerReason);
-        }
+        ValidateExistingMoveDirectory(
+            safeQuarantineRoot,
+            "quarantine directory");
+        var markerPath = Path.Join(
+            safeQuarantineRoot,
+            QuarantineOwnershipMarkerFileName);
+        var expectedMarker = CreateOwnershipMarker(
+            QuarantineDirectoryArtifactType,
+            jobId,
+            source,
+            target,
+            quarantineRoot);
+        var marker = RecoverOrReadOwnershipMarker(
+            markerPath,
+            expectedMarker,
+            sourceSemantics,
+            targetSemantics,
+            sourceSemantics);
 
-        if (!File.Exists(markerPath)
-            || (File.GetAttributes(markerPath) & FileAttributes.ReparsePoint) != 0)
-        {
-            throw new MoveNeedsAttentionException(
-                "The move quarantine directory has no valid ownership marker.");
-        }
-
-        MoveQuarantineOwnershipMarker? marker;
-        try
-        {
-            marker = JsonSerializer.Deserialize<MoveQuarantineOwnershipMarker>(
-                File.ReadAllText(markerPath));
-        }
-        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
-        {
-            throw new MoveNeedsAttentionException(
-                $"The move quarantine ownership marker could not be read safely: {exception.Message}");
-        }
-
-        if (marker == null
-            || marker.Version != QuarantineOwnershipMarkerVersion
-            || marker.JobId != jobId)
-        {
-            throw new MoveNeedsAttentionException(
-                "The move quarantine directory is owned by another job or uses an unsupported marker version.");
-        }
-
-        try
-        {
-            if (!FileSystemPathIdentity.AreEquivalent(marker.Source, source, sourceSemantics)
-                || !FileSystemPathIdentity.AreEquivalent(marker.Target, target, targetSemantics))
-            {
-                throw new MoveNeedsAttentionException(
-                    "The move quarantine ownership marker does not match the persisted source and target.");
-            }
-        }
-        catch (ArgumentException)
-        {
-            throw new MoveNeedsAttentionException(
-                "The move quarantine ownership marker contains an invalid source or target identity.");
-        }
-
-        var ownership = new ValidatedQuarantineOwnership(safeQuarantineRoot, markerPath);
+        var ownership = new ValidatedQuarantineOwnership(
+            safeQuarantineRoot,
+            markerPath,
+            marker);
         ValidateOwnedQuarantineTree(ownership);
         return ownership;
     }
 
-    private static void ValidateOwnedQuarantineTree(ValidatedQuarantineOwnership ownership)
+    private ValidatedQuarantineOwnership? TryValidateExistingQuarantineDirectory(
+        string source,
+        string target,
+        Guid jobId,
+        FileSystemPathSemantics sourceSemantics,
+        FileSystemPathSemantics targetSemantics)
     {
-        ValidateExistingMoveDirectory(ownership.DirectoryPath, "quarantine directory");
+        var sourceParent = Path.GetDirectoryName(Path.GetFullPath(source))
+            ?? throw new MoveNeedsAttentionException("The source parent is unavailable.");
+        var quarantineRoot = Path.Join(
+            sourceParent,
+            $".listenarr-quarantine-{jobId:N}");
+        var markerPath = Path.Join(
+            quarantineRoot,
+            QuarantineOwnershipMarkerFileName);
+        if (TryCompleteOwnedDirectoryCleanup(
+                quarantineRoot,
+                markerPath,
+                QuarantineDirectoryArtifactType,
+                jobId,
+                source,
+                target,
+                sourceSemantics,
+                targetSemantics,
+                sourceSemantics))
+        {
+            return null;
+        }
+
+        if (!Directory.Exists(quarantineRoot))
+        {
+            if (File.Exists(quarantineRoot))
+            {
+                throw new MoveNeedsAttentionException(
+                    "The move quarantine path is occupied by a file and cannot be validated safely.");
+            }
+
+            return null;
+        }
+
+        return ValidateOwnedQuarantineDirectory(
+            quarantineRoot,
+            sourceParent,
+            jobId,
+            source,
+            target,
+            sourceSemantics,
+            targetSemantics);
+    }
+
+    private static void ValidateOwnedQuarantineTree(
+        ValidatedQuarantineOwnership ownership)
+    {
+        ValidateExistingMoveDirectory(
+            ownership.DirectoryPath,
+            "quarantine directory");
         if (!FileSystemSafety.TryEnumerateTreeWithoutLinks(
                 ownership.DirectoryPath,
                 out _,
@@ -204,7 +209,7 @@ internal sealed partial class AudiobookContentMoveService
         if (!FileSystemSafety.TryValidateMutationTarget(
                 path,
                 [ownership.DirectoryPath],
-                out _,
+                out path,
                 out var reason))
         {
             throw new MoveNeedsAttentionException(reason);
@@ -218,9 +223,13 @@ internal sealed partial class AudiobookContentMoveService
         }
     }
 
-    private static void DeleteEmptyOwnedQuarantineDirectory(
+    private void DeleteEmptyOwnedQuarantineDirectory(
         ValidatedQuarantineOwnership ownership,
-        FileSystemPathSemantics sourceSemantics)
+        Guid jobId,
+        string source,
+        string target,
+        FileSystemPathSemantics sourceSemantics,
+        FileSystemPathSemantics targetSemantics)
     {
         if (!FileSystemSafety.TryEnumerateTreeWithoutLinks(
                 ownership.DirectoryPath,
@@ -250,8 +259,15 @@ internal sealed partial class AudiobookContentMoveService
                 "The completed move quarantine contains an unexpected non-empty directory.");
         }
 
-        // Ownership and link-free traversal are proven immediately above. Recursive
-        // deletion removes the marker and empty directory tree as one filesystem action.
-        Directory.Delete(ownership.DirectoryPath, recursive: true);
+        DeleteOwnedDirectoryWithTombstone(
+            ownership.DirectoryPath,
+            ownership.MarkerPath,
+            QuarantineDirectoryArtifactType,
+            jobId,
+            source,
+            target,
+            sourceSemantics,
+            targetSemantics,
+            sourceSemantics);
     }
 }
