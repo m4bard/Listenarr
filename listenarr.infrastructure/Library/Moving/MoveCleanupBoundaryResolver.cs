@@ -231,7 +231,8 @@ internal sealed class MoveCleanupBoundaryResolver(
                 [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
                 StringSplitOptions.RemoveEmptyEntries)
             .FirstOrDefault(segment => segment is not "." and not "..");
-        if (string.IsNullOrWhiteSpace(firstSegment))
+        if (string.IsNullOrWhiteSpace(firstSegment)
+            || Path.IsPathRooted(firstSegment))
         {
             return null;
         }

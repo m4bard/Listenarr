@@ -8,10 +8,7 @@ internal sealed partial class AudiobookContentMoveService
     private async Task<IReadOnlyList<MoveJobEntry>> LoadOrCreateManifestAsync(
         Guid jobId,
         MoveLeaseToken leaseToken,
-        string source,
-        string target,
-        bool targetInsideSource,
-        FileSystemPathSemantics sourceSemantics,
+        IReadOnlyList<ValidatedSourceEntry> validatedSourceEntries,
         CancellationToken cancellationToken)
     {
         var persisted = await LoadManifestAsync(jobId, cancellationToken);
@@ -20,12 +17,9 @@ internal sealed partial class AudiobookContentMoveService
             return persisted;
         }
 
-        var manifest = await SnapshotSourceAsync(
+        var manifest = await BuildManifestAsync(
             jobId,
-            source,
-            target,
-            targetInsideSource,
-            sourceSemantics,
+            validatedSourceEntries,
             cancellationToken);
         await PersistManifestAsync(jobId, leaseToken, manifest, cancellationToken);
         return manifest;
@@ -39,63 +33,13 @@ internal sealed partial class AudiobookContentMoveService
         FileSystemPathSemantics sourceSemantics,
         CancellationToken cancellationToken)
     {
-        if ((File.GetAttributes(source) & FileAttributes.ReparsePoint) != 0)
-        {
-            throw new MoveNeedsAttentionException("Move sources cannot be symlinks or reparse points.");
-        }
-
-        var entries = new List<MoveJobEntry>();
-        var pendingDirectories = new Stack<string>();
-        pendingDirectories.Push(source);
-        while (pendingDirectories.Count > 0)
-        {
-            var directory = pendingDirectories.Pop();
-            foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (targetInsideSource && IsSameOrInside(entry, target, sourceSemantics))
-                {
-                    continue;
-                }
-
-                var attributes = File.GetAttributes(entry);
-                if ((attributes & FileAttributes.ReparsePoint) != 0)
-                {
-                    throw new MoveNeedsAttentionException(
-                        $"Move entry '{Path.GetRelativePath(source, entry)}' is a symlink or reparse point.");
-                }
-
-                if (!FileSystemPathIdentity.TryGetRelativePathWithinBase(source, entry, sourceSemantics, out var relativePath))
-                {
-                    throw new MoveNeedsAttentionException("A source entry escaped the source root.");
-                }
-                if ((attributes & FileAttributes.Directory) != 0)
-                {
-                    entries.Add(new MoveJobEntry
-                    {
-                        MoveJobId = jobId,
-                        RelativePath = relativePath,
-                        EntryType = MoveJobEntryType.Directory,
-                        LastWriteTimeUtc = Directory.GetLastWriteTimeUtc(entry)
-                    });
-                    pendingDirectories.Push(entry);
-                    continue;
-                }
-
-                var fileInfo = new FileInfo(entry);
-                entries.Add(new MoveJobEntry
-                {
-                    MoveJobId = jobId,
-                    RelativePath = relativePath,
-                    EntryType = MoveJobEntryType.File,
-                    Length = fileInfo.Length,
-                    LastWriteTimeUtc = fileInfo.LastWriteTimeUtc,
-                    Sha256 = await ComputeSha256Async(entry, cancellationToken)
-                });
-            }
-        }
-
-        return entries;
+        var validatedEntries = ValidateSourceTreeForMove(
+            source,
+            target,
+            targetInsideSource,
+            sourceSemantics,
+            cancellationToken);
+        return await BuildManifestAsync(jobId, validatedEntries, cancellationToken);
     }
 
     internal static void ValidateTargetManifest(
