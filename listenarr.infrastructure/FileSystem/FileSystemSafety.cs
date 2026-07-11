@@ -183,6 +183,50 @@ internal static class FileSystemSafety
         }
     }
 
+    public static bool TryDeleteEmptyDirectory(
+        string directoryPath,
+        IEnumerable<string?> allowedRoots,
+        out string reason)
+    {
+        reason = string.Empty;
+        try
+        {
+            if (!TryValidateMutationTarget(
+                    directoryPath,
+                    allowedRoots,
+                    out var normalizedDirectory,
+                    out reason))
+            {
+                return false;
+            }
+
+            if (!Directory.Exists(normalizedDirectory))
+            {
+                return true;
+            }
+
+            if ((File.GetAttributes(normalizedDirectory) & FileAttributes.ReparsePoint) != 0)
+            {
+                reason = "Directory deletion was blocked because the target is a symbolic link or reparse point.";
+                return false;
+            }
+
+            if (Directory.EnumerateFileSystemEntries(normalizedDirectory).Any())
+            {
+                reason = "Directory deletion was blocked because the target is not empty.";
+                return false;
+            }
+
+            Directory.Delete(normalizedDirectory, recursive: false);
+            return true;
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+        {
+            reason = $"Directory deletion failed safely: {exception.GetType().Name}.";
+            return false;
+        }
+    }
+
     public static void DeleteEmptyDirectories(string rootPath)
     {
         try

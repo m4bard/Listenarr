@@ -92,10 +92,19 @@ namespace Listenarr.Infrastructure.Library.Moving
                 }
             }
 
+            var allowedMutationRoots = protectedRoots
+                .Where(root => IsSamePathOrWithin(folderPath, root, semantics))
+                .ToList();
+            if (allowedMutationRoots.Count == 0)
+            {
+                allowedMutationRoots.Add(folderPath);
+            }
+
             return new DeleteFolderTarget
             {
                 FolderPath = folderPath,
                 ProtectedRoots = protectedRoots,
+                AllowedMutationRoots = allowedMutationRoots,
                 Semantics = semantics
             };
         }
@@ -107,25 +116,29 @@ namespace Listenarr.Infrastructure.Library.Moving
                 return;
             }
 
-            try
-            {
-                // Contents were enumerated and deleted individually above. Refuse to
-                // remove anything that appeared concurrently after that snapshot.
-                Directory.Delete(deleteTarget.FolderPath, recursive: false);
-                result.DeletedFolder = true;
-                _logger.LogInformation("Deleted audiobook folder {FolderPath}", LogRedaction.SanitizeFilePath(deleteTarget.FolderPath));
-                await TryDeleteEmptyAuthorFolderAsync(
-                    audiobook,
+            // Contents were enumerated and deleted individually above. Revalidate every
+            // existing path component immediately before removing the now-empty folder.
+            if (!FileSystemSafety.TryDeleteEmptyDirectory(
                     deleteTarget.FolderPath,
-                    deleteTarget.ProtectedRoots,
-                    deleteTarget.Semantics,
-                    result);
-            }
-            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                    deleteTarget.AllowedMutationRoots,
+                    out var reason))
             {
                 result.Warnings.Add("Failed to delete the audiobook folder.");
-                _logger.LogWarning(ex, "Failed to delete audiobook folder {FolderPath}", LogRedaction.SanitizeFilePath(deleteTarget.FolderPath));
+                _logger.LogWarning(
+                    "Failed to safely delete audiobook folder {FolderPath}: {Reason}",
+                    LogRedaction.SanitizeFilePath(deleteTarget.FolderPath),
+                    LogRedaction.SanitizeText(reason));
+                return;
             }
+
+            result.DeletedFolder = true;
+            _logger.LogInformation("Deleted audiobook folder {FolderPath}", LogRedaction.SanitizeFilePath(deleteTarget.FolderPath));
+            await TryDeleteEmptyAuthorFolderAsync(
+                audiobook,
+                deleteTarget.FolderPath,
+                deleteTarget.ProtectedRoots,
+                deleteTarget.Semantics,
+                result);
         }
 
         private async Task TryDeleteEmptyAuthorFolderAsync(
@@ -182,17 +195,29 @@ namespace Listenarr.Infrastructure.Library.Moving
                 }
             }
 
-            try
+            var allowedMutationRoots = protectedRoots
+                .Where(root => IsSamePathOrWithin(parentFolder, root, semantics))
+                .ToList();
+            if (allowedMutationRoots.Count == 0)
             {
-                Directory.Delete(parentFolder, recursive: false);
-                result.DeletedParentFolder = true;
-                _logger.LogInformation("Deleted empty parent author folder {FolderPath}", LogRedaction.SanitizeFilePath(parentFolder));
+                allowedMutationRoots.Add(parentFolder);
             }
-            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+
+            if (!FileSystemSafety.TryDeleteEmptyDirectory(
+                    parentFolder,
+                    allowedMutationRoots,
+                    out var reason))
             {
                 result.Warnings.Add("Failed to delete the empty author folder.");
-                _logger.LogWarning(ex, "Failed to delete empty parent author folder {FolderPath}", LogRedaction.SanitizeFilePath(parentFolder));
+                _logger.LogWarning(
+                    "Failed to safely delete empty parent author folder {FolderPath}: {Reason}",
+                    LogRedaction.SanitizeFilePath(parentFolder),
+                    LogRedaction.SanitizeText(reason));
+                return;
             }
+
+            result.DeletedParentFolder = true;
+            _logger.LogInformation("Deleted empty parent author folder {FolderPath}", LogRedaction.SanitizeFilePath(parentFolder));
         }
 
         private async Task<HashSet<string>> GetProtectedRootPathsAsync()

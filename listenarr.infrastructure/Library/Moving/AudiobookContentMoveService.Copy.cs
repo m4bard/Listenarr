@@ -68,6 +68,7 @@ internal sealed partial class AudiobookContentMoveService
             await CopyFileWithRetryAsync(
                 entry,
                 destinationPath,
+                manifestEntry,
                 jobId,
                 copyDestination,
                 destinationIsJobOwnedTemp,
@@ -155,6 +156,7 @@ internal sealed partial class AudiobookContentMoveService
     private async Task CopyFileWithRetryAsync(
         string sourceFile,
         string destinationFile,
+        MoveJobEntry manifestEntry,
         Guid jobId,
         string destinationRoot,
         bool destinationIsJobOwnedTemp,
@@ -171,6 +173,12 @@ internal sealed partial class AudiobookContentMoveService
         {
             try
             {
+                if (!await FileMatchesManifestAsync(sourceFile, manifestEntry, cancellationToken))
+                {
+                    throw new MoveNeedsAttentionException(
+                        $"Source file no longer matches the persisted move manifest: {manifestEntry.RelativePath}");
+                }
+
                 if (!FileSystemSafety.TryValidateMutationTarget(
                     destinationFile,
                     [destinationRoot],
@@ -191,11 +199,11 @@ internal sealed partial class AudiobookContentMoveService
 
                 if (File.Exists(destinationFile))
                 {
-                    if (await FileSystemSafety.FilesHaveSameContentAsync(sourceFile, destinationFile, cancellationToken))
+                    if (await FileMatchesManifestAsync(destinationFile, manifestEntry, cancellationToken))
                     {
                         TryDeleteOwnedPartial(partialFile);
                         logger.LogInformation(
-                            "Skipping copy for move job {JobId}; destination already has identical content: {Destination}",
+                            "Skipping copy for move job {JobId}; destination already matches the persisted manifest: {Destination}",
                             jobId,
                             LogRedaction.SanitizeFilePath(destinationFile));
                         return;
@@ -210,18 +218,46 @@ internal sealed partial class AudiobookContentMoveService
                     File.Delete(destinationFile);
                 }
 
-                TryDeleteOwnedPartial(partialFile);
+                if (File.Exists(partialFile))
+                {
+                    if (await FileMatchesManifestAsync(partialFile, manifestEntry, cancellationToken))
+                    {
+                        File.Move(partialFile, destinationFile, overwrite: false);
+                        return;
+                    }
+
+                    TryDeleteOwnedPartial(partialFile);
+                }
+
                 File.Copy(sourceFile, partialFile, false);
                 PreserveFileMetadata(sourceFile, partialFile);
-                if (!await FileSystemSafety.FilesHaveSameContentAsync(sourceFile, partialFile, cancellationToken))
+                if (!await FileMatchesManifestAsync(partialFile, manifestEntry, cancellationToken))
                 {
                     TryDeleteOwnedPartial(partialFile);
-                    throw new IOException("Temporary move copy failed byte verification.");
+                    throw new IOException("Temporary move copy failed persisted-manifest verification.");
+                }
+
+                if (!FileSystemSafety.TryValidateMutationTarget(
+                        destinationFile,
+                        [destinationRoot],
+                        out destinationFile,
+                        out destinationReason)
+                    || !FileSystemSafety.TryValidateMutationTarget(
+                        partialFile,
+                        [destinationRoot],
+                        out partialFile,
+                        out partialReason))
+                {
+                    TryDeleteOwnedPartial(partialFile);
+                    throw new MoveNeedsAttentionException(
+                        string.IsNullOrWhiteSpace(destinationReason)
+                            ? partialReason
+                            : destinationReason);
                 }
 
                 if (File.Exists(destinationFile))
                 {
-                    if (await FileSystemSafety.FilesHaveSameContentAsync(sourceFile, destinationFile, cancellationToken))
+                    if (await FileMatchesManifestAsync(destinationFile, manifestEntry, cancellationToken))
                     {
                         TryDeleteOwnedPartial(partialFile);
                         return;
@@ -251,6 +287,25 @@ internal sealed partial class AudiobookContentMoveService
         }
 
         throw new IOException($"Failed to copy file after {MaxCopyAttempts} attempts: {sourceFile}");
+    }
+
+    private static async Task<bool> FileMatchesManifestAsync(
+        string path,
+        MoveJobEntry manifestEntry,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(path)
+            || manifestEntry.EntryType != MoveJobEntryType.File
+            || new FileInfo(path).Length != manifestEntry.Length
+            || string.IsNullOrWhiteSpace(manifestEntry.Sha256))
+        {
+            return false;
+        }
+
+        return string.Equals(
+            await ComputeSha256Async(path, cancellationToken),
+            manifestEntry.Sha256,
+            StringComparison.Ordinal);
     }
 
     private static bool IsJobOwnedTempDirectory(string destinationRoot, Guid jobId) =>
