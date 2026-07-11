@@ -150,6 +150,23 @@ replace_once(
   ): Promise<{ message: string; audiobook: Audiobook }> {
 """,
 )
+replace_once(
+    "fe/src/components/domain/audiobook/EditAudiobookModal.vue",
+    """  Audiobook,
+  AudiobookSeriesMembership,
+""",
+    """  Audiobook,
+  AudiobookUpdateRequest,
+  AudiobookSeriesMembership,
+""",
+)
+replace_once(
+    "fe/src/components/domain/audiobook/EditAudiobookModal.vue",
+    """    const updates: Partial<Audiobook> = {}
+""",
+    """    const updates: AudiobookUpdateRequest = {}
+""",
+)
 
 write(
     "tests/Features/Api/Features/Library/LibraryUpdateWorkflowTests.cs",
