@@ -446,7 +446,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
-        public async Task ProcessJobAsync_FilesystemMoveAlreadyCompleted_FinalizesDatabaseState()
+        public async Task ProcessJobAsync_AtomicMarkerWithRecreatedSource_MarksNeedsAttention()
         {
             var src = FileService.GetTempDirectory("move-processor-recovery-src");
             await FileService.GetFileAsync(src, "book.m4b", "audio");
@@ -479,16 +479,16 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var updatedJob = await queue.GetJobAsync(job.Id);
             Assert.NotNull(updatedJob);
-            Assert.Equal(MoveJobStatus.Completed, updatedJob!.Status);
+            Assert.Equal(MoveJobStatus.NeedsAttention, updatedJob!.Status);
 
             using var verificationScope = _provider.CreateScope();
             var verificationRepository = verificationScope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
             var updatedAudiobook = await verificationRepository.GetByIdAsync(audiobook.Id);
             Assert.NotNull(updatedAudiobook);
-            Assert.Equal(dst, updatedAudiobook!.BasePath);
+            Assert.Equal(src, updatedAudiobook!.BasePath);
             Assert.True(File.Exists(Path.Join(dst, "book.m4b")));
             Assert.Equal("do not delete", await File.ReadAllTextAsync(Path.Join(src, "new-content.txt")));
-            Assert.Empty(Directory.EnumerateFiles(dst, ".listenarr-move-*.pending"));
+            Assert.Single(Directory.EnumerateFiles(dst, ".listenarr-move-*.pending"));
         }
 
         [Fact]

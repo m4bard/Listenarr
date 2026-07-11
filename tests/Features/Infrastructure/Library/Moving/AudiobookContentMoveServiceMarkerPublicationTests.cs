@@ -1,0 +1,130 @@
+using Microsoft.EntityFrameworkCore;
+
+namespace Listenarr.Tests.Features.Infrastructure.Library.Moving;
+
+public partial class AudiobookContentMoveServiceTests
+{
+    [Theory]
+    [InlineData(nameof(RecoveryMarkerWriteFaultPoint.BeforeTemporaryFileCreation))]
+    [InlineData(nameof(RecoveryMarkerWriteFaultPoint.DuringJsonWrite))]
+    [InlineData(nameof(RecoveryMarkerWriteFaultPoint.DuringFlush))]
+    [InlineData(nameof(RecoveryMarkerWriteFaultPoint.AfterTemporaryFileWritten))]
+    [InlineData(nameof(RecoveryMarkerWriteFaultPoint.BeforePublication))]
+    public async Task MoveContentsAsync_RecoveryMarkerPublicationFailure_PreservesPreviousMarker(
+        string faultPointName)
+    {
+        var faultPoint = Enum.Parse<RecoveryMarkerWriteFaultPoint>(faultPointName);
+        var source = FileService.GetTempDirectory($"content-move-marker-{faultPoint}-src");
+        var sourceFile = await FileService.GetFileAsync(source, "book.m4b", "verified audio");
+        var target = FileService.GetTempDirectory($"content-move-marker-{faultPoint}-dst");
+        var jobId = Guid.NewGuid();
+        var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
+        await PersistFileManifestAsync(jobId, "book.m4b", sourceFile);
+        await WriteRecoveryMarkerAsync(target, jobId, source, target, "copy-started");
+        var markerPath = Path.Join(target, $".listenarr-move-{jobId:N}.pending");
+        var previousMarker = await File.ReadAllTextAsync(markerPath);
+        var injector = new RecoveryMarkerFaultInjector(faultPoint);
+        var service = CreateMoveService(injector);
+
+        await Assert.ThrowsAnyAsync<IOException>(() =>
+            service.MoveContentsAsync(request, CancellationToken.None));
+
+        Assert.Equal(previousMarker, await File.ReadAllTextAsync(markerPath));
+        Assert.Contains("copy-started", await File.ReadAllTextAsync(markerPath));
+        Assert.Empty(Directory.EnumerateFiles(target, $".listenarr-move-{jobId:N}.pending.writing-*"));
+        Assert.True(File.Exists(sourceFile));
+
+        var retryService = _provider.GetRequiredService<AudiobookContentMoveService>();
+        await retryService.MoveContentsAsync(request, CancellationToken.None);
+        Assert.False(Directory.Exists(source));
+        Assert.Equal("verified audio", await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
+    }
+
+    [Fact]
+    public async Task MoveContentsAsync_RecoveryMarkerTempCleanupFailure_LeavesNonAuthoritativeOrphan()
+    {
+        var source = FileService.GetTempDirectory("content-move-marker-cleanup-src");
+        var sourceFile = await FileService.GetFileAsync(source, "book.m4b", "verified audio");
+        var target = FileService.GetTempDirectory("content-move-marker-cleanup-dst");
+        var jobId = Guid.NewGuid();
+        var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
+        await PersistFileManifestAsync(jobId, "book.m4b", sourceFile);
+        await WriteRecoveryMarkerAsync(target, jobId, source, target, "copy-started");
+        var markerPath = Path.Join(target, $".listenarr-move-{jobId:N}.pending");
+        var previousMarker = await File.ReadAllTextAsync(markerPath);
+        var injector = new RecoveryMarkerFaultInjector(
+            RecoveryMarkerWriteFaultPoint.BeforePublication,
+            RecoveryMarkerWriteFaultPoint.BeforeTemporaryFileDeletion);
+        var service = CreateMoveService(injector);
+
+        var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+            service.MoveContentsAsync(request, CancellationToken.None));
+
+        Assert.Contains("could not be restored cleanly", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(previousMarker, await File.ReadAllTextAsync(markerPath));
+        var orphan = Assert.Single(
+            Directory.EnumerateFiles(target, $".listenarr-move-{jobId:N}.pending.writing-*"));
+        Assert.NotEmpty(await File.ReadAllTextAsync(orphan));
+
+        var recoveryService = _provider.GetRequiredService<AudiobookContentMoveService>();
+        var recovery = await recoveryService.GetRecoverableMoveAsync(request);
+        Assert.Null(recovery);
+        Assert.True(File.Exists(sourceFile));
+
+        await recoveryService.MoveContentsAsync(request, CancellationToken.None);
+        Assert.False(Directory.Exists(source));
+        Assert.False(File.Exists(orphan));
+        Assert.Equal("verified audio", await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
+    }
+
+    [Fact]
+    public async Task MoveContentsAsync_ReplacesExistingHiddenRecoveryMarkerAtomicallyOnWindows()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var source = FileService.GetTempDirectory("content-move-hidden-marker-src");
+        var sourceFile = await FileService.GetFileAsync(source, "book.m4b", "verified audio");
+        var target = FileService.GetTempDirectory("content-move-hidden-marker-dst");
+        var jobId = Guid.NewGuid();
+        var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
+        await PersistFileManifestAsync(jobId, "book.m4b", sourceFile);
+        await WriteRecoveryMarkerAsync(target, jobId, source, target, "copy-started");
+        var markerPath = Path.Join(target, $".listenarr-move-{jobId:N}.pending");
+        File.SetAttributes(markerPath, File.GetAttributes(markerPath) | FileAttributes.Hidden);
+
+        var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+        await service.MoveContentsAsync(request, CancellationToken.None);
+
+        Assert.False(Directory.Exists(source));
+        Assert.Contains("source-cleanup-complete", await File.ReadAllTextAsync(markerPath));
+        Assert.True((File.GetAttributes(markerPath) & FileAttributes.Hidden) != 0);
+    }
+
+    private AudiobookContentMoveService CreateMoveService(IMoveFaultInjector faultInjector)
+    {
+        return new AudiobookContentMoveService(
+            _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+            _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+            TimeProvider.System,
+            faultInjector);
+    }
+
+    private sealed class RecoveryMarkerFaultInjector(
+        params RecoveryMarkerWriteFaultPoint[] faultPoints) : IMoveFaultInjector
+    {
+        private readonly HashSet<RecoveryMarkerWriteFaultPoint> _faultPoints = [.. faultPoints];
+
+        public void OnRecoveryMarkerWrite(
+            Guid jobId,
+            RecoveryMarkerWriteFaultPoint faultPoint)
+        {
+            if (_faultPoints.Contains(faultPoint))
+            {
+                throw new IOException($"Injected recovery marker failure at {faultPoint}.");
+            }
+        }
+    }
+}
