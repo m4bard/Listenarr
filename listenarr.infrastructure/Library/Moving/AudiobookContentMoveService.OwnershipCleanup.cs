@@ -4,7 +4,7 @@ namespace Listenarr.Infrastructure.Library.Moving;
 
 internal sealed partial class AudiobookContentMoveService
 {
-    private void DeleteOwnedDirectoryWithTombstone(
+    private async Task DeleteOwnedDirectoryWithTombstoneAsync(
         string directoryPath,
         string markerPath,
         string ownedArtifactType,
@@ -13,7 +13,8 @@ internal sealed partial class AudiobookContentMoveService
         string target,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
-        FileSystemPathSemantics directorySemantics)
+        FileSystemPathSemantics directorySemantics,
+        Func<Task> authorizeMutation)
     {
         var fullDirectory = Path.GetFullPath(directoryPath);
         var tombstonePath = GetCleanupTombstonePath(
@@ -28,23 +29,25 @@ internal sealed partial class AudiobookContentMoveService
             fullDirectory,
             ownedArtifactType);
 
-        EnsureCleanupTombstone(
+        await EnsureCleanupTombstoneAsync(
             tombstonePath,
             expectedTombstone,
             sourceSemantics,
             targetSemantics,
-            directorySemantics);
-        CompleteOwnedDirectoryCleanup(
+            directorySemantics,
+            authorizeMutation);
+        await CompleteOwnedDirectoryCleanupAsync(
             fullDirectory,
             markerPath,
             tombstonePath,
             expectedTombstone,
             sourceSemantics,
             targetSemantics,
-            directorySemantics);
+            directorySemantics,
+            authorizeMutation);
     }
 
-    private bool TryCompleteOwnedDirectoryCleanup(
+    private async Task<bool> TryCompleteOwnedDirectoryCleanupAsync(
         string directoryPath,
         string markerPath,
         string ownedArtifactType,
@@ -53,7 +56,8 @@ internal sealed partial class AudiobookContentMoveService
         string target,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
-        FileSystemPathSemantics directorySemantics)
+        FileSystemPathSemantics directorySemantics,
+        Func<Task> authorizeMutation)
     {
         var fullDirectory = Path.GetFullPath(directoryPath);
         var tombstonePath = GetCleanupTombstonePath(
@@ -80,29 +84,33 @@ internal sealed partial class AudiobookContentMoveService
             target,
             fullDirectory,
             ownedArtifactType);
-        RecoverOrReadOwnershipMarker(
+        await authorizeMutation();
+        await RecoverOrReadOwnershipMarkerAsync(
             tombstonePath,
             expectedTombstone,
             sourceSemantics,
             targetSemantics,
-            directorySemantics);
-        CompleteOwnedDirectoryCleanup(
+            directorySemantics,
+            authorizeMutation);
+        await CompleteOwnedDirectoryCleanupAsync(
             fullDirectory,
             markerPath,
             tombstonePath,
             expectedTombstone,
             sourceSemantics,
             targetSemantics,
-            directorySemantics);
+            directorySemantics,
+            authorizeMutation);
         return true;
     }
 
-    private void EnsureCleanupTombstone(
+    private async Task EnsureCleanupTombstoneAsync(
         string tombstonePath,
         MoveOwnershipMarker expectedTombstone,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
-        FileSystemPathSemantics directorySemantics)
+        FileSystemPathSemantics directorySemantics,
+        Func<Task> authorizeMutation)
     {
         var parent = Path.GetDirectoryName(tombstonePath)
             ?? throw new MoveNeedsAttentionException("The cleanup tombstone parent is unavailable.");
@@ -113,28 +121,33 @@ internal sealed partial class AudiobookContentMoveService
                 SearchOption.TopDirectoryOnly).Any();
         if (!hasPublicationEvidence)
         {
-            PublishOwnershipMarker(
+            await authorizeMutation();
+            await PublishOwnershipMarkerAsync(
                 tombstonePath,
                 expectedTombstone,
-                OwnershipMarkerKind.CleanupTombstone);
+                OwnershipMarkerKind.CleanupTombstone,
+                authorizeMutation);
         }
 
-        RecoverOrReadOwnershipMarker(
+        await authorizeMutation();
+        await RecoverOrReadOwnershipMarkerAsync(
             tombstonePath,
             expectedTombstone,
             sourceSemantics,
             targetSemantics,
-            directorySemantics);
+            directorySemantics,
+            authorizeMutation);
     }
 
-    private void CompleteOwnedDirectoryCleanup(
+    private async Task CompleteOwnedDirectoryCleanupAsync(
         string directoryPath,
         string markerPath,
         string tombstonePath,
         MoveOwnershipMarker expectedTombstone,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
-        FileSystemPathSemantics directorySemantics)
+        FileSystemPathSemantics directorySemantics,
+        Func<Task> authorizeMutation)
     {
         var markerKind = string.Equals(
             expectedTombstone.OwnedArtifactType,
@@ -159,6 +172,13 @@ internal sealed partial class AudiobookContentMoveService
             sourceSemantics,
             targetSemantics,
             directorySemantics);
+
+        if (TryGetExistingPathAttributes(directoryPath, out var ownedPathAttributes)
+            && (ownedPathAttributes & FileAttributes.Directory) == 0)
+        {
+            throw new MoveNeedsAttentionException(
+                "The tombstoned owned directory path is occupied by a file and was preserved for operator review.");
+        }
 
         if (Directory.Exists(directoryPath))
         {
@@ -209,6 +229,7 @@ internal sealed partial class AudiobookContentMoveService
 
             foreach (var file in ownedFiles)
             {
+                await authorizeMutation();
                 ValidateOwnedCleanupEntry(file, directoryPath);
                 File.Delete(file);
             }
@@ -219,6 +240,8 @@ internal sealed partial class AudiobookContentMoveService
                 if (Directory.Exists(directory)
                     && !Directory.EnumerateFileSystemEntries(directory).Any())
                 {
+                    await authorizeMutation();
+                    ValidateOwnedCleanupEntry(directory, directoryPath);
                     Directory.Delete(directory, recursive: false);
                 }
             }
@@ -238,6 +261,8 @@ internal sealed partial class AudiobookContentMoveService
                     sourceSemantics,
                     targetSemantics,
                     directorySemantics);
+                await authorizeMutation();
+                ValidateOwnedCleanupEntry(markerPath, directoryPath);
                 File.Delete(markerPath);
             }
 
@@ -259,6 +284,8 @@ internal sealed partial class AudiobookContentMoveService
                     "The owned directory changed before final deletion.");
             }
 
+            await authorizeMutation();
+            ValidateExistingMoveDirectory(directoryPath, "owned cleanup directory");
             Directory.Delete(directoryPath, recursive: false);
         }
 
@@ -282,7 +309,36 @@ internal sealed partial class AudiobookContentMoveService
             sourceSemantics,
             targetSemantics,
             directorySemantics);
+        await authorizeMutation();
+        validatedTombstone = ReadOwnershipMarker(tombstonePath);
+        ValidateOwnershipMarker(
+            validatedTombstone,
+            expectedTombstone,
+            sourceSemantics,
+            targetSemantics,
+            directorySemantics);
         File.Delete(tombstonePath);
+    }
+
+    private static bool TryGetExistingPathAttributes(
+        string path,
+        out FileAttributes attributes)
+    {
+        try
+        {
+            attributes = File.GetAttributes(path);
+            return true;
+        }
+        catch (FileNotFoundException)
+        {
+            attributes = default;
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            attributes = default;
+            return false;
+        }
     }
 
     private static void ValidateOwnedCleanupEntry(

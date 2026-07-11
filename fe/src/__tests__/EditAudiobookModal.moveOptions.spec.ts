@@ -84,7 +84,7 @@ describe('EditAudiobookModal move options', () => {
     })
   })
 
-  it('Change without moving plus metadata should call move API before metadata update', async () => {
+  it('Change without moving should persist metadata and identifiers before the destination update', async () => {
     const wrapper = mount(EditAudiobookModal, {
       props: { isOpen: true, audiobook },
       attachTo: document.body,
@@ -98,6 +98,16 @@ describe('EditAudiobookModal move options', () => {
     ;(wrapper.vm as unknown).selectedRootId = 0
     ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\New Author\\New Book'
     ;(wrapper.vm as unknown).formData.title = 'Sample Updated'
+    ;(wrapper.vm as unknown).formData.identifiers = [
+      {
+        localKey: 'new-asin',
+        type: 'Asin',
+        value: 'B0TEST1234',
+        region: 'us',
+        isPrimary: true,
+        source: 'Manual',
+      },
+    ]
     await wrapper.vm.$nextTick()
 
     // Start save flow and resolve the in-component confirmation promise by
@@ -126,9 +136,46 @@ describe('EditAudiobookModal move options', () => {
     expect(updatePayload.title).toBe('Sample Updated')
     expect(Object.prototype.hasOwnProperty.call(updatePayload, 'basePath')).toBe(false)
     expect(Object.prototype.hasOwnProperty.call(updatePayload, 'imageUrl')).toBe(false)
-    expect(vi.mocked(apiService.moveAudiobook).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(apiService.updateAudiobook).mock.invocationCallOrder[0],
+    expect(apiService.updateAudiobookIdentifiers).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(apiService.updateAudiobook).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(apiService.updateAudiobookIdentifiers).mock.invocationCallOrder[0],
     )
+    expect(
+      vi.mocked(apiService.updateAudiobookIdentifiers).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(apiService.moveAudiobook).mock.invocationCallOrder[0])
+  })
+
+  it('reports partial success when metadata saves but the destination update fails', async () => {
+    const { apiService } = await import('@/services/api')
+    vi.mocked(apiService.moveAudiobook).mockRejectedValueOnce(new Error('queue unavailable'))
+    const wrapper = mount(EditAudiobookModal, {
+      props: { isOpen: true, audiobook },
+      attachTo: document.body,
+      global: { plugins: [(await import('pinia')).createPinia()] },
+    })
+
+    await new Promise((r) => setTimeout(r, 200))
+    ;(wrapper.vm as unknown).selectedRootId = 0
+    ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\New Author\\New Book'
+    ;(wrapper.vm as unknown).formData.title = 'Saved Before Move Failure'
+    await wrapper.vm.$nextTick()
+
+    const savePromise = (wrapper.vm as unknown).handleSave()
+    await new Promise((r) => setTimeout(r, 10))
+    const resolver = (wrapper.vm as unknown).moveConfirmResolver
+    if (resolver) resolver({ proceed: true, moveFiles: true, deleteEmptySource: true })
+    await savePromise
+
+    expect(apiService.updateAudiobook).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ title: 'Saved Before Move Failure' }),
+    )
+    expect(apiService.moveAudiobook).toHaveBeenCalledTimes(1)
+    expect(toastMocks.error).toHaveBeenCalledWith(
+      'Move failed',
+      'Your metadata changes were saved, but the destination update was not queued.',
+    )
+    expect(wrapper.emitted('saved')).toBeUndefined()
   })
 
   it('Destination-only change without moving should call move API and skip metadata update', async () => {

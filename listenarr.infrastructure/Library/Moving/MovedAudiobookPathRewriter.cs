@@ -9,30 +9,33 @@ namespace Listenarr.Infrastructure.Library.Moving;
 
 internal static class MovedAudiobookPathRewriter
 {
-    public static Task RewriteAsync(
-        Audiobook audiobook,
+    public static async Task RewriteAsync(
+        int audiobookId,
         string source,
         string target,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
         IAudiobookRepository audiobookRepository,
-        ILogger logger)
+        ILogger logger,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(audiobook);
         ArgumentNullException.ThrowIfNull(audiobookRepository);
         ArgumentNullException.ThrowIfNull(logger);
 
-        AudiobookPathReferenceRewriter.Rewrite(
-            audiobook,
-            source,
-            target,
-            sourceSemantics,
-            targetSemantics);
+        if (!await audiobookRepository.RewritePathReferencesAsync(
+                audiobookId,
+                source,
+                target,
+                sourceSemantics,
+                targetSemantics,
+                cancellationToken))
+        {
+            throw new MoveNeedsAttentionException(
+                "The audiobook disappeared before its moved path references could be persisted.");
+        }
 
         logger.LogInformation(
             "Rewrote stored path references for audiobook {AudiobookId} after physical move",
-            audiobook.Id);
-
-        return Task.CompletedTask;
+            audiobookId);
     }
 }

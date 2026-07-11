@@ -44,7 +44,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 cancellationToken);
         }
 
-        private async Task<bool> TryCompleteFinalizedMoveAsync(
+        private async Task<FinalizedMoveRecoveryOutcome> TryRecoverFinalizedMoveAsync(
             MoveJob job,
             Audiobook audiobook,
             string? source,
@@ -57,22 +57,17 @@ namespace Listenarr.Infrastructure.Library.Moving
         {
             if (string.IsNullOrWhiteSpace(source)
                 || !sourceSemantics.HasValue
-                || string.IsNullOrWhiteSpace(audiobook.BasePath)
                 || FileSystemPathIdentity.AreEquivalent(
                     source,
                     target,
                     sourceSemantics.Value)
-                || !FileSystemPathIdentity.AreEquivalent(
-                    Path.GetFullPath(audiobook.BasePath)
-                        .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-                    target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-                    targetSemantics)
+                || !HasFinalizedMoveEvidence(job, audiobook, target, targetSemantics)
                 || !AudiobookContentMoveService.CanAttemptFinalizedMoveVerification(
                     source,
                     target,
                     sourceSemantics.Value))
             {
-                return false;
+                return FinalizedMoveRecoveryOutcome.NotAttempted;
             }
 
             var finalizedRequest = new AudiobookContentMoveRequest(
@@ -102,36 +97,134 @@ namespace Listenarr.Infrastructure.Library.Moving
                     exception,
                     "Move job {JobId} could not prove markerless completion",
                     job.Id);
+                return FinalizedMoveRecoveryOutcome.HandledFailure;
+            }
+
+            var targetInsideSource = FileSystemPathIdentity.IsSameOrInside(
+                target,
+                source,
+                sourceSemantics.Value);
+            var sourceInsideTarget = FileSystemPathIdentity.IsSameOrInside(
+                source,
+                target,
+                targetSemantics);
+            return new FinalizedMoveRecoveryOutcome(
+                Handled: false,
+                new AudiobookContentMoveResult(
+                    source,
+                    target,
+                    targetInsideSource,
+                    sourceInsideTarget,
+                    Path.Join(target, $".listenarr-move-{job.Id:N}.pending"),
+                    SourceCleanupCompleted: true));
+        }
+
+        private static bool HasFinalizedMoveEvidence(
+            MoveJob job,
+            Audiobook audiobook,
+            string target,
+            FileSystemPathSemantics targetSemantics)
+        {
+            if (job.Phase >= MoveJobPhase.Published)
+            {
                 return true;
             }
 
-            await UpdateJobStatusAsync(
-                job,
-                MoveJobStatus.Completed,
-                cancellationToken: cancellationToken);
-            metrics.Increment("worker.move.job.completed");
-            logger.LogInformation(
-                "Move job {JobId} completed after markerless manifest verification",
-                job.Id);
-            return true;
+            return !string.IsNullOrWhiteSpace(audiobook.BasePath)
+                && FileSystemPathIdentity.AreEquivalent(
+                    Path.GetFullPath(audiobook.BasePath)
+                        .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                    target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                    targetSemantics);
         }
 
-        private void CleanupCompletedMoveArtifacts(
+        private sealed record FinalizedMoveRecoveryOutcome(
+            bool Handled,
+            AudiobookContentMoveResult? MoveResult)
+        {
+            public static FinalizedMoveRecoveryOutcome NotAttempted { get; } = new(false, null);
+            public static FinalizedMoveRecoveryOutcome HandledFailure { get; } = new(true, null);
+        }
+
+        private async Task<bool> TryFinalizeMoveAsync(
+            MoveJob job,
             AudiobookContentMoveService contentMoveService,
             AudiobookContentMoveRequest request,
             AudiobookContentMoveResult result,
-            Guid jobId)
+            CancellationToken cancellationToken)
         {
             try
             {
-                contentMoveService.CleanupCompletedMoveArtifacts(request, result);
+                await contentMoveService.FinalizeMoveAsync(
+                    request,
+                    result,
+                    cancellationToken);
+                return true;
             }
-            catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+            catch (Exception exception) when (exception is
+                MoveNeedsAttentionException or MoveLeaseLostException or PersistenceException)
             {
+                throw;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                await moveQueueService.IncrementAttemptAsync(
+                    job.Id,
+                    job.LeaseOwner!,
+                    job.LeaseGeneration,
+                    cancellationToken);
+                await UpdateJobStatusAsync(
+                    job,
+                    MoveJobStatus.RetryScheduled,
+                    $"Move finalization will be retried: {exception.Message}",
+                    cancellationToken);
+                metrics.Increment("worker.move.job.retry_scheduled");
                 logger.LogWarning(
                     exception,
-                    "Move job {JobId} completed, but owned recovery artifacts could not be removed",
-                    jobId);
+                    "Move job {JobId} could not finish source-boundary finalization and was scheduled for retry",
+                    job.Id);
+                return false;
+            }
+        }
+
+        private async Task<bool> TryCleanupCompletedMoveArtifactsAsync(
+            MoveJob job,
+            AudiobookContentMoveService contentMoveService,
+            AudiobookContentMoveRequest request,
+            AudiobookContentMoveResult result,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                await contentMoveService.CleanupCompletedMoveArtifactsAsync(
+                    request,
+                    result,
+                    cancellationToken);
+                return true;
+            }
+            catch (Exception exception) when (exception is
+                MoveNeedsAttentionException or MoveLeaseLostException or PersistenceException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                await moveQueueService.IncrementAttemptAsync(
+                    job.Id,
+                    job.LeaseOwner!,
+                    job.LeaseGeneration,
+                    cancellationToken);
+                await UpdateJobStatusAsync(
+                    job,
+                    MoveJobStatus.RetryScheduled,
+                    $"Owned move artifact cleanup will be retried: {exception.Message}",
+                    cancellationToken);
+                metrics.Increment("worker.move.job.retry_scheduled");
+                logger.LogWarning(
+                    exception,
+                    "Move job {JobId} could not remove its owned recovery artifacts and was scheduled for retry",
+                    job.Id);
+                return false;
             }
         }
 

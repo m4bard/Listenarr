@@ -384,7 +384,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             Assert.True(Directory.Exists(Path.Join(sourceRoot, "Author")));
 
-            service.FinalizeMove(request, result);
+            await service.FinalizeMoveAsync(request, result, CancellationToken.None);
 
             Assert.True(Directory.Exists(sourceRoot));
             Assert.False(Directory.Exists(Path.Join(sourceRoot, "Author")));
@@ -408,11 +408,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Assert.True(Directory.Exists(source));
             Assert.Empty(Directory.EnumerateFileSystemEntries(source));
 
-            service.FinalizeMove(request, result);
+            await service.FinalizeMoveAsync(request, result, CancellationToken.None);
 
             Assert.True(Directory.Exists(source));
             Assert.True(File.Exists(result.RecoveryMarkerPath));
-            service.CleanupCompletedMoveArtifacts(request, result);
+            await service.CleanupCompletedMoveArtifactsAsync(request, result, CancellationToken.None);
             Assert.False(File.Exists(result.RecoveryMarkerPath));
             Assert.True(File.Exists(Path.Join(target, "book.m4b")));
         }
@@ -442,11 +442,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Assert.Empty(Directory.EnumerateFileSystemEntries(oldTitle));
             Assert.True(File.Exists(result.RecoveryMarkerPath));
 
-            service.FinalizeMove(request, result);
+            await service.FinalizeMoveAsync(request, result, CancellationToken.None);
 
             Assert.False(Directory.Exists(oldTitle));
             Assert.True(File.Exists(result.RecoveryMarkerPath));
-            service.CleanupCompletedMoveArtifacts(request, result);
+            await service.CleanupCompletedMoveArtifactsAsync(request, result, CancellationToken.None);
             Assert.False(File.Exists(result.RecoveryMarkerPath));
             Assert.True(File.Exists(Path.Join(target, "Disc 01", "book.m4b")));
             Assert.True(Directory.Exists(sourceRoot));
@@ -466,8 +466,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var request = await CreateLeasedMoveRequestAsync(source, target);
             var result = await service.MoveContentsAsync(request, CancellationToken.None);
 
-            var exception = Assert.Throws<MoveNeedsAttentionException>(() =>
-                service.FinalizeMove(request, result));
+            var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+                service.FinalizeMoveAsync(request, result, CancellationToken.None));
 
             Assert.Contains("no source cleanup boundary", exception.Message, StringComparison.OrdinalIgnoreCase);
             Assert.True(File.Exists(result.RecoveryMarkerPath));
@@ -497,12 +497,12 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Assert.True(Directory.Exists(author));
             Assert.False(Directory.Exists(oldTitle));
 
-            service.FinalizeMove(request, result);
+            await service.FinalizeMoveAsync(request, result, CancellationToken.None);
 
             Assert.False(Directory.Exists(author));
             Assert.True(Directory.Exists(sourceRoot));
             Assert.True(File.Exists(result.RecoveryMarkerPath));
-            service.CleanupCompletedMoveArtifacts(request, result);
+            await service.CleanupCompletedMoveArtifactsAsync(request, result, CancellationToken.None);
             Assert.False(File.Exists(result.RecoveryMarkerPath));
         }
 
@@ -520,10 +520,10 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var request = await CreateLeasedMoveRequestAsync(source, target);
             var result = await service.MoveContentsAsync(request, CancellationToken.None);
 
-            service.FinalizeMove(request, result);
+            await service.FinalizeMoveAsync(request, result, CancellationToken.None);
 
             Assert.True(File.Exists(result.RecoveryMarkerPath));
-            service.CleanupCompletedMoveArtifacts(request, result);
+            await service.CleanupCompletedMoveArtifactsAsync(request, result, CancellationToken.None);
             Assert.False(File.Exists(result.RecoveryMarkerPath));
             Assert.True(Directory.Exists(sourceParent));
             Assert.True(File.Exists(Path.Join(sourceParent, "keep.txt")));

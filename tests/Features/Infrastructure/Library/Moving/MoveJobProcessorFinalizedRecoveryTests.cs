@@ -135,7 +135,52 @@ public partial class MoveJobProcessorTests
     }
 
     [Fact]
-    public async Task ProcessJobAsync_MarkerlessAtomicMove_RequiresAttention()
+    public async Task ProcessJobAsync_MarkerlessPublishedCopy_ResumesFullFinalization()
+    {
+        var source = FileService.GetTempDirectory("move-processor-markerless-unfinalized-src");
+        await FileService.GetFileAsync(source, "book.m4b", "verified audio");
+        var target = Path.Join(
+            FileService.GetTempPath(),
+            $"move-processor-markerless-unfinalized-dst-{Guid.NewGuid():N}");
+        var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+        {
+            Title = "Markerless Unfinalized Recovery",
+            BasePath = source
+        });
+        var (queue, job) = await CreateQueuedMoveJobAsync(
+            audiobook,
+            target,
+            source,
+            deleteEmptySource: false);
+        var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+        var request = CreateMoveRequest(source, target, job, deleteEmptySource: false);
+        var result = await service.MoveContentsAsync(request, CancellationToken.None);
+        File.Delete(result.RecoveryMarkerPath);
+        var persistedJob = await queue.GetJobAsync(job.Id);
+        Assert.NotNull(persistedJob);
+        Assert.Equal(MoveJobPhase.Finalizing, persistedJob!.Phase);
+        var processor = _provider.GetRequiredService<IMoveJobProcessor>();
+
+        await processor.ProcessJobAsync(persistedJob, CancellationToken.None);
+
+        Assert.Equal(
+            MoveJobStatus.Completed,
+            (await queue.GetJobAsync(job.Id))?.Status);
+        using var verificationScope = _provider.CreateScope();
+        var verificationRepository = verificationScope.ServiceProvider
+            .GetRequiredService<IAudiobookRepository>();
+        var updated = await verificationRepository.GetByIdAsync(audiobook.Id);
+        Assert.NotNull(updated);
+        Assert.Equal(Path.GetFullPath(target), Path.GetFullPath(updated!.BasePath!));
+        Assert.False(File.Exists(Path.Join(target, ".listenarr-temp-owner.json")));
+        Assert.False(File.Exists(result.RecoveryMarkerPath));
+        Assert.Single(
+            await _historyRepository.GetByCorrelationIdAsync($"move:{job.Id:N}"),
+            entry => entry.EventType == "Moved");
+    }
+
+    [Fact]
+    public async Task ProcessJobAsync_MarkerlessAtomicMove_RequiresAttentionBeforeCleanupCheckpoint()
     {
         var source = FileService.GetTempDirectory("move-processor-markerless-atomic-src");
         await FileService.GetFileAsync(source, "book.m4b", "audio");
@@ -153,7 +198,7 @@ public partial class MoveJobProcessorTests
         var result = await service.MoveContentsAsync(request, CancellationToken.None);
         audiobook.BasePath = target;
         await _audiobookRepository.UpdateAsync(audiobook);
-        service.FinalizeMove(request, result);
+        await service.FinalizeMoveAsync(request, result, CancellationToken.None);
         File.Delete(result.RecoveryMarkerPath);
         var processor = _provider.GetRequiredService<IMoveJobProcessor>();
 
@@ -187,7 +232,7 @@ public partial class MoveJobProcessorTests
         var result = await service.MoveContentsAsync(request, CancellationToken.None);
         audiobook.BasePath = target;
         await _audiobookRepository.UpdateAsync(audiobook);
-        service.FinalizeMove(request, result);
+        await service.FinalizeMoveAsync(request, result, CancellationToken.None);
         File.Delete(result.RecoveryMarkerPath);
         return new MarkerlessFinalizedCopyState(queue, job, source, target);
     }

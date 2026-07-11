@@ -96,13 +96,20 @@ internal sealed partial class AudiobookContentMoveService
             throw new MoveNeedsAttentionException("The move recovery stage is not recoverable.");
         }
 
-        var tempOwnership = TryValidatePublishedTempOwnership(target, request, source, target);
-        var quarantineOwnership = TryValidateExistingQuarantineDirectory(
+        var tempOwnership = await TryValidatePublishedTempOwnershipAsync(
+            target,
+            request,
+            source,
+            target,
+            cancellationToken);
+        var quarantineOwnership = await TryValidateExistingQuarantineDirectoryAsync(
             source,
             target,
             request.JobId,
             sourceSemantics,
-            targetSemantics);
+            targetSemantics,
+            request.LeaseToken,
+            cancellationToken);
         ValidateExistingDestinationContents(
             source,
             target,
@@ -170,12 +177,13 @@ internal sealed partial class AudiobookContentMoveService
             request.SourceCleanupBoundary,
             cancellationToken);
         VerifySourceCleanupState(request, result.Source, result.Target);
-        WriteRecoveryMarker(
+        await WriteRecoveryMarkerAsync(
             result.Target,
             request,
             result.Source,
             result.Target,
-            SourceCleanupCompletedStage);
+            SourceCleanupCompletedStage,
+            cancellationToken);
         return result with { SourceCleanupCompleted = true };
     }
 }

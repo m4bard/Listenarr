@@ -98,7 +98,7 @@ public partial class AudiobookContentMoveServiceTests
         Assert.False(Directory.Exists(tempName));
         Assert.True(File.Exists(Path.Join(target, "book.m4b")));
         Assert.Equal("verified audio", await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
-        service.FinalizeMove(request, result);
+        await service.FinalizeMoveAsync(request, result, CancellationToken.None);
         Assert.False(File.Exists(Path.Join(target, ".listenarr-temp-owner.json")));
     }
 

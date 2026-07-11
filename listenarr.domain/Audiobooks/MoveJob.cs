@@ -37,7 +37,9 @@ namespace Listenarr.Domain.Audiobooks
         Copying,
         Published,
         CleaningSource,
-        Finalizing
+        Finalizing,
+        CleaningArtifacts,
+        RecordingCompletion
     }
 
     public enum MoveFailureKind

@@ -170,11 +170,31 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 MoveJobStatus.Failed,
                 It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()), Times.Never);
-            Assert.Single(Directory.EnumerateFiles(
+            Assert.Empty(Directory.EnumerateFiles(
                 target,
                 $".listenarr-move-{job.Id:N}.pending",
                 SearchOption.TopDirectoryOnly));
+            var persistedJob = await durableQueue.GetJobAsync(job.Id);
+            Assert.Equal(MoveJobPhase.RecordingCompletion, persistedJob?.Phase);
             Assert.Empty(await _historyRepository.GetByEventTypeAsync("MoveFailed"));
+            Assert.Single(
+                await _historyRepository.GetByCorrelationIdAsync($"move:{job.Id:N}"),
+                entry => entry.EventType == "Moved");
+
+            var retryProcessor = _provider.GetRequiredService<IMoveJobProcessor>();
+            await retryProcessor.ProcessJobAsync(persistedJob!, CancellationToken.None);
+
+            var completedJob = await durableQueue.GetJobAsync(job.Id);
+            Assert.True(
+                completedJob?.Status == MoveJobStatus.Completed,
+                $"Expected completed replay, but got {completedJob?.Status}: {completedJob?.Error}");
+            Assert.Equal(MoveJobPhase.RecordingCompletion, completedJob?.Phase);
+            Assert.Single(
+                await _historyRepository.GetByCorrelationIdAsync($"move:{job.Id:N}"),
+                entry => entry.EventType == "Moved");
+            metrics.Verify(
+                service => service.Increment("worker.move.job.completed", It.IsAny<double>()),
+                Times.Once);
         }
 
         [Fact]

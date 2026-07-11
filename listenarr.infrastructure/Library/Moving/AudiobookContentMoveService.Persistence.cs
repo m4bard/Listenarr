@@ -175,6 +175,21 @@ internal sealed partial class AudiobookContentMoveService
             .ToList();
     }
 
+    private async Task<MoveJobPhase> LoadJobPhaseAsync(
+        Guid jobId,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var phase = await db.MoveJobs
+            .AsNoTracking()
+            .Where(job => job.Id == jobId)
+            .Select(job => (MoveJobPhase?)job.Phase)
+            .SingleOrDefaultAsync(cancellationToken);
+        return phase
+            ?? throw new MoveNeedsAttentionException(
+                "The move job disappeared before finalized recovery could be verified.");
+    }
+
     private async Task<List<MoveJobEntry>> LoadManifestAsync(
         Guid jobId,
         CancellationToken cancellationToken)
@@ -342,7 +357,10 @@ internal sealed partial class AudiobookContentMoveService
                     && candidate.LeaseExpiresAt > nowUtc,
                 cancellationToken);
             if (job == null) throw new MoveLeaseLostException(jobId, leaseToken.Generation);
-            job.Phase = phase;
+            if (job.Phase < phase)
+            {
+                job.Phase = phase;
+            }
             job.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(cancellationToken);
             return;
@@ -357,7 +375,9 @@ internal sealed partial class AudiobookContentMoveService
                 && candidate.LeaseExpiresAt > nowUtc)
             .ExecuteUpdateAsync(
                 updates => updates
-                    .SetProperty(job => job.Phase, phase)
+                    .SetProperty(
+                        job => job.Phase,
+                        job => job.Phase < phase ? phase : job.Phase)
                     .SetProperty(job => job.UpdatedAt, DateTime.UtcNow),
                 cancellationToken);
         if (affected != 1)

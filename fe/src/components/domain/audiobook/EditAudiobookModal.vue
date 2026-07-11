@@ -1872,6 +1872,21 @@ async function handleSave() {
 
     const hasNonIdentifierChanges = Object.keys(updates).length > 0
 
+    // Persist metadata before enqueueing an asynchronous physical move. The move worker
+    // reloads the current row for its narrow path rewrite, so this ordering prevents the
+    // worker from racing the edits submitted from this same dialog.
+    if (hasNonIdentifierChanges) {
+      await apiService.updateAudiobook(audiobook.id, updates)
+    }
+
+    if (identifiersChanged) {
+      await apiService.updateAudiobookIdentifiers(
+        audiobook.id,
+        formData.value.identifiers.map(toIdentifierWritePayload),
+      )
+      originalIdentifierRows.value = cloneIdentifierRows(formData.value.identifiers)
+    }
+
     if (basePathChanged) {
       try {
         const res = await apiService.moveAudiobook(audiobook.id, combined ?? '', {
@@ -1894,21 +1909,15 @@ async function handleSave() {
         }
       } catch (moveErr) {
         console.error('Failed to update destination:', moveErr)
-        toast.error('Move failed', 'Failed to update destination. Please try again.')
+        const relatedChangesSaved = hasNonIdentifierChanges || identifiersChanged
+        toast.error(
+          'Move failed',
+          relatedChangesSaved
+            ? 'Your metadata changes were saved, but the destination update was not queued.'
+            : 'Failed to update destination. Please try again.',
+        )
         return
       }
-    }
-
-    if (hasNonIdentifierChanges) {
-      await apiService.updateAudiobook(audiobook.id, updates)
-    }
-
-    if (identifiersChanged) {
-      await apiService.updateAudiobookIdentifiers(
-        audiobook.id,
-        formData.value.identifiers.map(toIdentifierWritePayload),
-      )
-      originalIdentifierRows.value = cloneIdentifierRows(formData.value.identifiers)
     }
 
     emit('saved')

@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Application.Mapping;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -149,8 +148,9 @@ namespace Listenarr.Infrastructure.Library.Moving
                     }
                 }
 
-                if (recoveredMove == null
-                    && await TryCompleteFinalizedMoveAsync(
+                if (recoveredMove == null)
+                {
+                    var finalizedRecovery = await TryRecoverFinalizedMoveAsync(
                         job,
                         audiobook,
                         source,
@@ -159,9 +159,13 @@ namespace Listenarr.Infrastructure.Library.Moving
                         targetResolution.Semantics,
                         cleanupBoundaryResolution,
                         contentMoveService,
-                        stoppingToken))
-                {
-                    return;
+                        stoppingToken);
+                    if (finalizedRecovery.Handled)
+                    {
+                        return;
+                    }
+
+                    recoveredMove = finalizedRecovery.MoveResult;
                 }
 
                 if (string.IsNullOrWhiteSpace(source))
@@ -276,136 +280,63 @@ namespace Listenarr.Infrastructure.Library.Moving
                     source = moveResult.Source;
                     target = moveResult.Target;
 
-                    await MovedAudiobookPathRewriter.RewriteAsync(
+                    using (var rewriteScope = scopeFactory.CreateScope())
+                    {
+                        var rewriteRepository = rewriteScope.ServiceProvider
+                            .GetRequiredService<IAudiobookRepository>();
+                        await MovedAudiobookPathRewriter.RewriteAsync(
+                            audiobook.Id,
+                            source,
+                            target,
+                            moveRequest.SourceSemantics,
+                            moveRequest.TargetSemantics,
+                            rewriteRepository,
+                            logger,
+                            stoppingToken);
+                    }
+
+                    using var currentAudiobookScope = scopeFactory.CreateScope();
+                    var currentAudiobookRepository = currentAudiobookScope.ServiceProvider
+                        .GetRequiredService<IAudiobookRepository>();
+                    audiobook = await currentAudiobookRepository.GetByIdAsync(audiobook.Id)
+                        ?? throw new MoveNeedsAttentionException(
+                            "The audiobook disappeared after its moved path references were persisted.");
+                    if (!await TryFinalizeMoveAsync(
+                            job,
+                            contentMoveService,
+                            moveRequest,
+                            moveResult,
+                            stoppingToken))
+                    {
+                        return;
+                    }
+
+                    if (!await TryCleanupCompletedMoveArtifactsAsync(
+                            job,
+                            contentMoveService,
+                            moveRequest,
+                            moveResult,
+                            stoppingToken))
+                    {
+                        return;
+                    }
+
+                    await contentMoveService.MarkCompletionRecordingAsync(
+                        moveRequest,
+                        stoppingToken);
+
+                    await RecordMoveCompletionAsync(
+                        job,
                         audiobook,
                         source,
                         target,
-                        moveRequest.SourceSemantics,
-                        moveRequest.TargetSemantics,
-                        audiobookRepository,
-                        logger);
-
-                    audiobook.BasePath = target;
-                    await audiobookRepository.UpdateAsync(audiobook);
-                    contentMoveService.FinalizeMove(moveRequest, moveResult);
-
-                    // Add history entry and send notifications for the move
-                    try
-                    {
-                        var notificationSent = false;
-                        var historyEntry = new History
-                        {
-                            AudiobookId = audiobook.Id,
-                            AudiobookTitle = audiobook.Title,
-                            EventType = "Moved",
-                            Message = $"Moved audiobook files from {source} to {target}",
-                            Source = "Move",
-                            Timestamp = DateTime.UtcNow,
-                            NotificationSent = false,
-                            Data = System.Text.Json.JsonSerializer.Serialize(new
-                            {
-                                JobId = job.Id,
-                                Source = source,
-                                Target = target
-                            })
-                        };
-
-                        var historyRepository = scope.ServiceProvider.GetRequiredService<IHistoryRepository>();
-
-                        // Send webhook notifications if configured
-                        try
-                        {
-                            var configurationService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
-                            var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
-                            var webhooks = await configurationService.GetWebhookConfigurationsAsync();
-                            foreach (var webhook in webhooks.Where(w => w.IsEnabled && w.Triggers.Contains("Moved")))
-                            {
-
-                                await notificationService.SendNotificationAsync(
-                                    "Moved",
-                                    new
-                                    {
-                                        AudiobookTitle = audiobook.Title,
-                                        Source = source,
-                                        Target = target,
-                                        Timestamp = DateTime.UtcNow
-                                    },
-                                    webhook.Url,
-                                    webhook.Triggers
-                                );
-                            }
-
-                            notificationSent = true;
-                        }
-                        catch (Exception notifyEx) when (notifyEx is not OperationCanceledException && notifyEx is not OutOfMemoryException && notifyEx is not StackOverflowException)
-                        {
-                            logger.LogWarning(notifyEx, "Failed to send move notification for {JobId}", job.Id);
-                        }
-
-                        historyEntry.NotificationSent = notificationSent;
-                        await historyRepository.AddAsync(historyEntry);
-                        logger.LogInformation("Added history entry for move job {JobId}", job.Id);
-
-                        // Send toast notification
-                        try
-                        {
-                            var message = !string.IsNullOrEmpty(audiobook.Title)
-                                ? $"Moved {audiobook.Title} to {target}"
-                                : $"Moved audiobook to {target}";
-
-                            await toastService.PublishToastAsync(
-                                "success",
-                                "Move Complete",
-                                message,
-                                timeoutMs: 5000);
-
-                            logger.LogDebug("Sent toast notification for move job {JobId}", job.Id);
-                        }
-                        catch (Exception toastEx) when (toastEx is not OperationCanceledException && toastEx is not OutOfMemoryException && toastEx is not StackOverflowException)
-                        {
-                            logger.LogDebug(toastEx, "Failed to send toast notification for move job {JobId}", job.Id);
-                        }
-
-                        // Enqueue a scan job and broadcast an immediate AudiobookUpdate so detail views update promptly
-                        try
-                        {
-                            var scanJobId = await scanQueueService.EnqueueScanAsync(audiobook, null);
-                            logger.LogInformation("Enqueued scan job {ScanJobId} for audiobook {AudiobookId} after move", scanJobId, audiobook.Id);
-
-                            // Load latest audiobook state and broadcast a full DTO so clients can update instantly without fetching
-                            try
-                            {
-                                var fresh = await audiobookRepository.GetByIdAsync(audiobook.Id);
-                                if (fresh != null)
-                                {
-                                    var audiobookDtoFull = AudiobookDtoFactory.BuildFromEntity(fresh);
-                                    await hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDtoFull);
-                                    logger.LogInformation("Broadcasted full AudiobookUpdate for AudiobookId {AudiobookId} after move job {JobId}", audiobook.Id, job.Id);
-                                }
-                            }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                            {
-                                logger.LogWarning(ex, "Failed to broadcast full AudiobookUpdate for AudiobookId {AudiobookId} after move job {JobId}", audiobook.Id, job.Id);
-                            }
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                        {
-                            logger.LogWarning(ex, "Failed to enqueue scan or broadcast AudiobookUpdate after move job {JobId}", job.Id);
-                        }
-                    }
-                    catch (Exception historyEx) when (historyEx is not OperationCanceledException && historyEx is not OutOfMemoryException && historyEx is not StackOverflowException)
-                    {
-                        logger.LogWarning(historyEx, "Failed to add history entry or send notifications for move job {JobId}", job.Id);
-                    }
+                        currentAudiobookRepository,
+                        scope.ServiceProvider,
+                        stoppingToken);
 
                     await UpdateJobStatusAsync(job, MoveJobStatus.Completed, cancellationToken: stoppingToken);
                     metrics.Increment("worker.move.job.completed");
                     logger.LogInformation("Move job {JobId} completed: {Source} -> {Target}", job.Id, LogRedaction.SanitizeFilePath(source), LogRedaction.SanitizeFilePath(target));
-                    CleanupCompletedMoveArtifacts(
-                        contentMoveService,
-                        moveRequest,
-                        moveResult,
-                        job.Id);
                     // Completed move job — status updated and broadcasted where configured
                 }
                 catch (Exception ex) when (ex is PersistenceException or MoveLeaseLostException)
