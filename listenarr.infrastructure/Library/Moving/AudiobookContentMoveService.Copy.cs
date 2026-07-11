@@ -12,6 +12,7 @@ internal sealed partial class AudiobookContentMoveService
         Guid jobId,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
+        ValidatedTempOwnership? tempOwnership,
         CancellationToken cancellationToken)
     {
         ValidateExistingDestinationContents(
@@ -19,8 +20,8 @@ internal sealed partial class AudiobookContentMoveService
             copyDestination,
             manifest,
             jobId,
-            targetSemantics);
-        var destinationIsJobOwnedTemp = IsJobOwnedTempDirectory(copyDestination, jobId);
+            targetSemantics,
+            tempOwnership);
 
         foreach (var manifestEntry in manifest.OrderBy(entry => entry.EntryType))
         {
@@ -71,7 +72,7 @@ internal sealed partial class AudiobookContentMoveService
                 manifestEntry,
                 jobId,
                 copyDestination,
-                destinationIsJobOwnedTemp,
+                tempOwnership != null,
                 cancellationToken);
         }
     }
@@ -81,7 +82,8 @@ internal sealed partial class AudiobookContentMoveService
         string destinationRoot,
         IReadOnlyCollection<MoveJobEntry> manifest,
         Guid jobId,
-        FileSystemPathSemantics targetSemantics)
+        FileSystemPathSemantics targetSemantics,
+        ValidatedTempOwnership? tempOwnership = null)
     {
         if (!Directory.Exists(destinationRoot))
         {
@@ -136,6 +138,11 @@ internal sealed partial class AudiobookContentMoveService
         foreach (var file in files)
         {
             if (FileSystemPathIdentity.AreEquivalent(file, markerPath, targetSemantics)
+                || (tempOwnership != null
+                    && FileSystemPathIdentity.AreEquivalent(
+                        file,
+                        tempOwnership.MarkerPath,
+                        targetSemantics))
                 || (sourceInsideDestination && IsSameOrInside(file, source, targetSemantics)))
             {
                 continue;
@@ -307,11 +314,6 @@ internal sealed partial class AudiobookContentMoveService
             manifestEntry.Sha256,
             StringComparison.Ordinal);
     }
-
-    private static bool IsJobOwnedTempDirectory(string destinationRoot, Guid jobId) =>
-        Path.GetFileName(destinationRoot).EndsWith(
-            $".tmp-{jobId:N}",
-            StringComparison.Ordinal);
 
     private static void TryDeleteOwnedPartial(string partialFile)
     {

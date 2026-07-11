@@ -47,6 +47,13 @@ internal sealed partial class AudiobookContentMoveService
             }
         }
 
+        var tempOwnership = TryValidatePublishedTempOwnership(
+            result.Target,
+            request,
+            result.Source,
+            result.Target);
+        TryDeletePublishedTempOwnershipMarker(tempOwnership);
+
         if (File.Exists(result.RecoveryMarkerPath))
         {
             File.Delete(result.RecoveryMarkerPath);

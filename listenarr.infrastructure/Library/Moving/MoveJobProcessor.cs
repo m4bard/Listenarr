@@ -46,7 +46,6 @@ namespace Listenarr.Infrastructure.Library.Moving
                 using var scope = scopeFactory.CreateScope();
                 var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
                 var rootFolderRepository = scope.ServiceProvider.GetRequiredService<IRootFolderRepository>();
-
                 var audiobook = await audiobookRepository.GetByIdAsync(job.AudiobookId);
                 if (audiobook == null)
                 {
@@ -56,7 +55,6 @@ namespace Listenarr.Infrastructure.Library.Moving
                 }
 
                 var rootFolders = await rootFolderRepository.GetAllAsync();
-
                 var requested = job.RequestedPath ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(requested))
                 {
@@ -64,7 +62,6 @@ namespace Listenarr.Infrastructure.Library.Moving
                     metrics.Increment("worker.move.job.failed");
                     return;
                 }
-
                 var target = Path.GetFullPath(requested);
                 var targetResolution = await semanticsResolver.ResolveAsync(
                     target,
@@ -114,22 +111,39 @@ namespace Listenarr.Infrastructure.Library.Moving
                         targetResolution.Semantics,
                         CreateLeaseToken(job),
                         cleanupBoundaryResolution.Boundary);
-                    var resumedMove = await contentMoveService.GetRecoverableMoveAsync(
-                        recoveryRequest,
-                        stoppingToken);
-                    if (resumedMove != null)
+                    try
                     {
-                        recoveredMove = resumedMove;
-                        logger.LogInformation(
-                            "Resuming move job {JobId} after its filesystem phase completed",
-                            job.Id);
+                        var resumedMove = await contentMoveService.GetRecoverableMoveAsync(
+                            recoveryRequest,
+                            stoppingToken);
+                        if (resumedMove != null)
+                        {
+                            recoveredMove = resumedMove;
+                            logger.LogInformation(
+                                "Resuming move job {JobId} after its filesystem phase completed",
+                                job.Id);
+                        }
+                        else if (!Directory.Exists(source))
+                        {
+                            logger.LogWarning(
+                                "Persisted source path {Source} for job {JobId} does not exist",
+                                LogRedaction.SanitizeFilePath(source),
+                                job.Id);
+                        }
                     }
-                    else if (!Directory.Exists(source))
+                    catch (MoveNeedsAttentionException exception)
                     {
+                        await UpdateJobStatusAsync(
+                            job,
+                            MoveJobStatus.NeedsAttention,
+                            exception.Message,
+                            stoppingToken);
+                        metrics.Increment("worker.move.job.needs_attention");
                         logger.LogWarning(
-                            "Persisted source path {Source} for job {JobId} does not exist",
-                            LogRedaction.SanitizeFilePath(source),
+                            exception,
+                            "Move job {JobId} has ambiguous or invalid recovery artifacts",
                             job.Id);
+                        return;
                     }
                 }
 
