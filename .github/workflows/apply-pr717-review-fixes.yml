@@ -209,8 +209,32 @@ jobs:
         run: npx prettier --write src/types/index.ts src/services/api.ts
 
       - name: Frontend type check
+        id: frontend-type-check
         working-directory: fe
-        run: npm run type-check
+        shell: bash
+        run: |
+          set +e
+          npm run type-check > ../frontend-type-check.log 2>&1
+          status=$?
+          cat ../frontend-type-check.log
+          exit "$status"
+
+      - name: Upload frontend type diagnostics
+        if: failure() && steps.frontend-type-check.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-type-errors
+          path: frontend-type-check.log
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Frontend lint
+        working-directory: fe
+        run: npm run lint:check
+
+      - name: Frontend format check
+        working-directory: fe
+        run: npm run format:check
 
       - name: Frontend unit tests
         working-directory: fe
