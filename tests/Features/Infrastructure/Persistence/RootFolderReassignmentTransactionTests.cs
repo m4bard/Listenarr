@@ -125,22 +125,26 @@ public sealed class RootFolderReassignmentTransactionTests : IAsyncLifetime
             db.Audiobooks.Add(audiobook);
             await db.SaveChangesAsync();
 
-            db.RootFolderRelocations.Add(new RootFolderRelocation
-            {
-                RootFolderId = sourceRoot.Id,
-                SourcePath = sourcePath,
-                TargetPath = targetPath,
-                DesiredName = "Historical relocation",
-                Status = RootFolderRelocationStatus.Completed,
-                CompletedAt = DateTime.UtcNow
-            });
-            await db.SaveChangesAsync();
+            var triggerSql =
+                """
+                CREATE TRIGGER prevent_root_reassignment_delete
+                BEFORE DELETE ON RootFolders
+                WHEN OLD.Id =
+                """
+                + sourceRoot.Id
+                + """
+
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced root delete failure');
+                END;
+                """;
+            await db.Database.ExecuteSqlRawAsync(triggerSql);
             sourceRootId = sourceRoot.Id;
             targetRootId = targetRoot.Id;
             audiobookId = audiobook.Id;
         }
 
-        await Assert.ThrowsAsync<DbUpdateException>(() =>
+        await Assert.ThrowsAsync<Listenarr.Application.Common.PersistenceException>(() =>
             _repository.ReassignAudiobooksAndRemoveAsync(
                 sourceRootId,
                 targetRootId,
@@ -155,6 +159,137 @@ public sealed class RootFolderReassignmentTransactionTests : IAsyncLifetime
         Assert.Equal(sourceBasePath, unchanged.BasePath);
         Assert.Equal(sourceFilePath, unchanged.FilePath);
         Assert.Equal(sourceFilePath, Assert.Single(unchanged.Files!).Path);
+    }
+
+    [Fact]
+    public async Task ReassignAudiobooksAndRemoveAsync_RootEqualReferencesRewriteAndRelativeReferencesRemain()
+    {
+        var sourcePath = Path.Join(Path.GetTempPath(), $"root-reassign-equal-source-{Guid.NewGuid():N}");
+        var targetPath = Path.Join(Path.GetTempPath(), $"root-reassign-equal-target-{Guid.NewGuid():N}");
+        int sourceRootId;
+        int targetRootId;
+        int audiobookId;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var sourceRoot = new RootFolder { Name = "Source", Path = sourcePath };
+            var targetRoot = new RootFolder { Name = "Target", Path = targetPath };
+            var audiobook = new Audiobook
+            {
+                Title = "Book",
+                BasePath = sourcePath,
+                FilePath = sourcePath,
+                ImageUrl = "https://example.com/cover.jpg",
+                Files = [new AudiobookFile { Path = Path.Join("disc-1", "chapter.mp3") }]
+            };
+            db.RootFolders.AddRange(sourceRoot, targetRoot);
+            db.Audiobooks.Add(audiobook);
+            await db.SaveChangesAsync();
+            sourceRootId = sourceRoot.Id;
+            targetRootId = targetRoot.Id;
+            audiobookId = audiobook.Id;
+        }
+
+        await _repository.ReassignAudiobooksAndRemoveAsync(
+            sourceRootId,
+            targetRootId,
+            FileSystemPathSemantics.CurrentHostDefault,
+            FileSystemPathSemantics.CurrentHostDefault);
+
+        await using var verification = await _factory.CreateDbContextAsync();
+        var updated = await verification.Audiobooks
+            .Include(audiobook => audiobook.Files)
+            .SingleAsync(audiobook => audiobook.Id == audiobookId);
+        Assert.Equal(targetPath, updated.BasePath);
+        Assert.Equal(targetPath, updated.FilePath);
+        Assert.Equal("https://example.com/cover.jpg", updated.ImageUrl);
+        Assert.Equal(Path.Join("disc-1", "chapter.mp3"), Assert.Single(updated.Files!).Path);
+    }
+
+    [Fact]
+    public async Task ReassignAudiobooksAndRemoveAsync_ActiveMoveInsideTransactionBlocksAllChanges()
+    {
+        var sourcePath = Path.Join(Path.GetTempPath(), $"root-reassign-active-source-{Guid.NewGuid():N}");
+        var targetPath = Path.Join(Path.GetTempPath(), $"root-reassign-active-target-{Guid.NewGuid():N}");
+        var sourceBasePath = Path.Join(sourcePath, "Book");
+        int sourceRootId;
+        int targetRootId;
+        int audiobookId;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var sourceRoot = new RootFolder { Name = "Source", Path = sourcePath };
+            var targetRoot = new RootFolder { Name = "Target", Path = targetPath };
+            var audiobook = new Audiobook { Title = "Book", BasePath = sourceBasePath };
+            db.RootFolders.AddRange(sourceRoot, targetRoot);
+            db.Audiobooks.Add(audiobook);
+            await db.SaveChangesAsync();
+            db.MoveJobs.Add(new MoveJob
+            {
+                AudiobookId = audiobook.Id,
+                SourcePath = sourceBasePath,
+                RequestedPath = Path.Join(targetPath, "Book"),
+                Status = MoveJobStatus.Running,
+                ActiveDeduplicationKey = $"test:{Guid.NewGuid():N}"
+            });
+            await db.SaveChangesAsync();
+            sourceRootId = sourceRoot.Id;
+            targetRootId = targetRoot.Id;
+            audiobookId = audiobook.Id;
+        }
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _repository.ReassignAudiobooksAndRemoveAsync(
+                sourceRootId,
+                targetRootId,
+                FileSystemPathSemantics.CurrentHostDefault,
+                FileSystemPathSemantics.CurrentHostDefault));
+
+        await using var verification = await _factory.CreateDbContextAsync();
+        Assert.NotNull(await verification.RootFolders.FindAsync(sourceRootId));
+        Assert.Equal(sourceBasePath, (await verification.Audiobooks.FindAsync(audiobookId))!.BasePath);
+    }
+
+    [Fact]
+    public async Task ReassignAudiobooksAndRemoveAsync_ActiveRelocationInsideTransactionBlocksAllChanges()
+    {
+        var sourcePath = Path.Join(Path.GetTempPath(), $"root-reassign-relocation-source-{Guid.NewGuid():N}");
+        var targetPath = Path.Join(Path.GetTempPath(), $"root-reassign-relocation-target-{Guid.NewGuid():N}");
+        var sourceBasePath = Path.Join(sourcePath, "Book");
+        int sourceRootId;
+        int targetRootId;
+        int audiobookId;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var sourceRoot = new RootFolder { Name = "Source", Path = sourcePath };
+            var targetRoot = new RootFolder { Name = "Target", Path = targetPath };
+            var audiobook = new Audiobook { Title = "Book", BasePath = sourceBasePath };
+            db.RootFolders.AddRange(sourceRoot, targetRoot);
+            db.Audiobooks.Add(audiobook);
+            await db.SaveChangesAsync();
+            db.RootFolderRelocations.Add(new RootFolderRelocation
+            {
+                RootFolderId = sourceRoot.Id,
+                ActiveRootFolderId = sourceRoot.Id,
+                SourcePath = sourcePath,
+                TargetPath = targetPath,
+                DesiredName = "Source",
+                Status = RootFolderRelocationStatus.Running
+            });
+            await db.SaveChangesAsync();
+            sourceRootId = sourceRoot.Id;
+            targetRootId = targetRoot.Id;
+            audiobookId = audiobook.Id;
+        }
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _repository.ReassignAudiobooksAndRemoveAsync(
+                sourceRootId,
+                targetRootId,
+                FileSystemPathSemantics.CurrentHostDefault,
+                FileSystemPathSemantics.CurrentHostDefault));
+
+        await using var verification = await _factory.CreateDbContextAsync();
+        Assert.NotNull(await verification.RootFolders.FindAsync(sourceRootId));
+        Assert.Equal(sourceBasePath, (await verification.Audiobooks.FindAsync(audiobookId))!.BasePath);
     }
 
     private sealed class TestDbContextFactory(DbContextOptions<ListenArrDbContext> options)

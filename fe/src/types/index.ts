@@ -684,6 +684,38 @@ export interface Audiobook {
   status?: AudiobookStatus
 }
 
+export interface AudiobookUpdateRequest {
+  title?: string
+  subtitle?: string
+  authors?: string[]
+  imageUrl?: string
+  publishYear?: string
+  publishedDate?: string
+  series?: string
+  seriesNumber?: string
+  seriesMemberships?: AudiobookSeriesMembership[]
+  description?: string
+  genres?: string[]
+  tags?: string[]
+  narrators?: string[]
+  isbn?: string[]
+  asin?: string
+  openLibraryId?: string
+  publisher?: string
+  language?: string
+  runtime?: number
+  edition?: string
+  version?: string
+  explicit?: boolean
+  abridged?: boolean
+  monitored?: boolean
+  filePath?: string
+  fileSize?: number
+  basePath?: string
+  quality?: string
+  qualityProfileId?: number
+}
+
 export interface History {
   id: number
   audiobookId?: number

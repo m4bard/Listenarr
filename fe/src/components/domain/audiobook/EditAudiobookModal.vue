@@ -767,6 +767,7 @@ import { apiService } from '@/services/api'
 import { logger } from '@/utils/logger'
 import type {
   Audiobook,
+  AudiobookUpdateRequest,
   AudiobookSeriesMembership,
   QualityProfile,
   AudiobookExternalIdentifier,
@@ -1773,7 +1774,7 @@ async function handleSave() {
     const normalizedRuntimeInput = normalizeNumericInput(formData.value.runtime)
     const baselineRuntimeInput = normalizeNumericInput(audiobook.runtime?.toString())
 
-    const updates: Partial<Audiobook> = {}
+    const updates: AudiobookUpdateRequest = {}
     if (formData.value.monitored !== Boolean(audiobook.monitored)) {
       updates.monitored = formData.value.monitored
     }

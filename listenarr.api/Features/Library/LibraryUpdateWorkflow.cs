@@ -51,6 +51,7 @@ namespace Listenarr.Api.Features.Library
 
             var legacyIdentifierFieldsTouched = false;
             var basePathRewritten = false;
+            var metadataUpdateRequested = HasMetadataUpdates(request);
 
             if (request.BasePath != null)
             {
@@ -144,12 +145,45 @@ namespace Listenarr.Api.Features.Library
                 AudiobookIdentifierMapper.SyncImportedIdentifiersFromLegacyFields(existingAudiobook);
             }
 
-            await _repo.UpdateAsync(existingAudiobook);
+            if (metadataUpdateRequested)
+            {
+                await _repo.UpdateAsync(existingAudiobook);
+            }
 
             _logger.LogInformation("Updated audiobook '{Title}' (ID: {Id})", LogRedaction.SanitizeText(existingAudiobook.Title), id);
 
             return new OkObjectResult(new { message = "Audiobook updated successfully", audiobook = existingAudiobook });
         }
+
+        private static bool HasMetadataUpdates(AudiobookUpdateRequest request) =>
+            request.Title != null
+            || request.Subtitle != null
+            || request.Authors != null
+            || request.ImageUrl != null
+            || request.PublishYear != null
+            || request.PublishedDate != null
+            || request.Series != null
+            || request.SeriesNumber != null
+            || request.SeriesMemberships != null
+            || request.Description != null
+            || request.Genres != null
+            || request.Tags != null
+            || request.Narrators != null
+            || request.Isbn != null
+            || request.Asin != null
+            || request.OpenLibraryId != null
+            || request.Publisher != null
+            || request.Language != null
+            || request.Runtime.HasValue
+            || request.Edition != null
+            || request.Version != null
+            || request.Explicit.HasValue
+            || request.Abridged.HasValue
+            || request.Monitored.HasValue
+            || request.FilePath != null
+            || request.FileSize.HasValue
+            || request.Quality != null
+            || request.QualityProfileId.HasValue;
 
         private static IActionResult ToApplicationExceptionResult(ListenarrApplicationException exception) =>
             exception switch

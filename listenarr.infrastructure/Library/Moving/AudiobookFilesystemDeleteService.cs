@@ -66,7 +66,7 @@ namespace Listenarr.Infrastructure.Library.Moving
 
             if (deleteTarget != null)
             {
-                var contentsDeleted = TryDeleteFolderContents(deleteTarget.FolderPath, result);
+                var contentsDeleted = TryDeleteFolderContents(deleteTarget, result);
 
                 if (deleteFolder && contentsDeleted)
                 {
@@ -93,6 +93,7 @@ namespace Listenarr.Infrastructure.Library.Moving
         {
             public required string FolderPath { get; init; }
             public required IReadOnlyCollection<string> ProtectedRoots { get; init; }
+            public required IReadOnlyCollection<string> AllowedMutationRoots { get; init; }
             public required FileSystemPathSemantics Semantics { get; init; }
         }
 
@@ -202,8 +203,11 @@ namespace Listenarr.Infrastructure.Library.Moving
             }
         }
 
-        private bool TryDeleteFolderContents(string folderPath, AudiobookFilesystemDeleteResult result)
+        private bool TryDeleteFolderContents(
+            DeleteFolderTarget deleteTarget,
+            AudiobookFilesystemDeleteResult result)
         {
+            var folderPath = deleteTarget.FolderPath;
             if (!Directory.Exists(folderPath))
             {
                 return true;
@@ -226,27 +230,20 @@ namespace Listenarr.Infrastructure.Library.Moving
 
             foreach (var filePath in files)
             {
-                TryDeleteFile(filePath, result, [folderPath]);
+                TryDeleteFile(filePath, result, deleteTarget.AllowedMutationRoots);
             }
 
             foreach (var directoryPath in directories.OrderByDescending(path => path.Length))
             {
-                try
+                if (!FileSystemSafety.TryDeleteEmptyDirectory(
+                        directoryPath,
+                        deleteTarget.AllowedMutationRoots,
+                        out var directoryReason))
                 {
-                    if (!Directory.Exists(directoryPath)
-                        || (File.GetAttributes(directoryPath) & FileAttributes.ReparsePoint) != 0)
-                    {
-                        continue;
-                    }
-
-                    if (!Directory.EnumerateFileSystemEntries(directoryPath).Any())
-                    {
-                        Directory.Delete(directoryPath, recursive: false);
-                    }
-                }
-                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
-                {
-                    _logger.LogDebug(ex, "Failed to remove nested audiobook directory {FolderPath}", LogRedaction.SanitizeFilePath(directoryPath));
+                    _logger.LogDebug(
+                        "Skipped nested audiobook directory delete for {FolderPath}: {Reason}",
+                        LogRedaction.SanitizeFilePath(directoryPath),
+                        LogRedaction.SanitizeText(directoryReason));
                 }
             }
 

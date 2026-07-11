@@ -23,6 +23,7 @@ import type {
   ApplicationSettings,
   ProwlarrImportConnectionSettings,
   Audiobook,
+  AudiobookUpdateRequest,
   History,
   Indexer,
   QueueItem,
@@ -1246,7 +1247,7 @@ class ApiService {
 
   async updateAudiobook(
     id: number,
-    audiobook: Partial<Audiobook>,
+    audiobook: AudiobookUpdateRequest,
   ): Promise<{ message: string; audiobook: Audiobook }> {
     return this.request<{ message: string; audiobook: Audiobook }>(`/library/${id}`, {
       method: 'PUT',
