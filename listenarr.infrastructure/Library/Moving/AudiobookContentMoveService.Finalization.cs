@@ -53,11 +53,41 @@ internal sealed partial class AudiobookContentMoveService
             result.Source,
             result.Target);
         TryDeletePublishedTempOwnershipMarker(tempOwnership);
+    }
 
-        if (File.Exists(result.RecoveryMarkerPath))
+    public void CleanupCompletedMoveArtifacts(
+        AudiobookContentMoveRequest request,
+        AudiobookContentMoveResult result)
+    {
+        if (!result.SourceCleanupCompleted)
         {
-            File.Delete(result.RecoveryMarkerPath);
+            throw new InvalidOperationException(
+                "Completed move artifacts cannot be cleaned before source cleanup completes.");
         }
+
+        if (!File.Exists(result.RecoveryMarkerPath))
+        {
+            return;
+        }
+
+        ValidateMoveTargetRoot(result.Target);
+        var recoveryMarker = ReadRecoveryMarker(result.RecoveryMarkerPath);
+        if (recoveryMarker == null || recoveryMarker.IsLegacy)
+        {
+            throw new MoveNeedsAttentionException(
+                "Completed move artifact cleanup requires a structured recovery marker.");
+        }
+
+        ValidateRecoveryMarker(
+            recoveryMarker,
+            request,
+            result.Source,
+            result.Target);
+        ValidateRecoveryMarkerLocation(
+            result.RecoveryMarkerPath,
+            result.Target,
+            request.TargetSemantics);
+        File.Delete(result.RecoveryMarkerPath);
     }
 
     private static string? FindNearestExistingAncestor(string source)

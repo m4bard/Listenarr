@@ -37,6 +37,7 @@ internal sealed partial class AudiobookContentMoveService
         string target,
         string stage)
     {
+        ValidateExistingMoveDirectory(markerDirectory, "recovery-marker directory");
         var markerPath = GetRecoveryMarkerPath(markerDirectory, jobId);
         if (!FileSystemSafety.TryValidateMutationTarget(
                 markerPath,
@@ -163,6 +164,7 @@ internal sealed partial class AudiobookContentMoveService
             return;
         }
 
+        ValidateExistingMoveDirectory(markerDirectory, "recovery-marker cleanup directory");
         var authoritativeMarkerPath = GetRecoveryMarkerPath(markerDirectory, request.JobId);
         var writeFilePrefix = Path.GetFileName(authoritativeMarkerPath) + ".writing-";
         foreach (var writePath in Directory.EnumerateFiles(

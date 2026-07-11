@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 using Listenarr.Domain.Common;
+using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Library.Moving
 {
@@ -41,6 +42,97 @@ namespace Listenarr.Infrastructure.Library.Moving
                 status,
                 error,
                 cancellationToken);
+        }
+
+        private async Task<bool> TryCompleteFinalizedMoveAsync(
+            MoveJob job,
+            Audiobook audiobook,
+            string? source,
+            string target,
+            FileSystemPathSemantics? sourceSemantics,
+            FileSystemPathSemantics targetSemantics,
+            MoveCleanupBoundaryResolution? cleanupBoundaryResolution,
+            AudiobookContentMoveService contentMoveService,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(source)
+                || !sourceSemantics.HasValue
+                || string.IsNullOrWhiteSpace(audiobook.BasePath)
+                || FileSystemPathIdentity.AreEquivalent(
+                    source,
+                    target,
+                    sourceSemantics.Value)
+                || !FileSystemPathIdentity.AreEquivalent(
+                    Path.GetFullPath(audiobook.BasePath)
+                        .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                    target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                    targetSemantics)
+                || !contentMoveService.IsSourceCleanupComplete(
+                    source,
+                    target,
+                    targetSemantics))
+            {
+                return false;
+            }
+
+            var finalizedRequest = new AudiobookContentMoveRequest(
+                source,
+                target,
+                job.Id,
+                job.DeleteEmptySource,
+                sourceSemantics.Value,
+                targetSemantics,
+                CreateLeaseToken(job),
+                cleanupBoundaryResolution?.Boundary);
+            try
+            {
+                await contentMoveService.VerifyFinalizedMoveAsync(
+                    finalizedRequest,
+                    cancellationToken);
+            }
+            catch (MoveNeedsAttentionException exception)
+            {
+                await UpdateJobStatusAsync(
+                    job,
+                    MoveJobStatus.NeedsAttention,
+                    exception.Message,
+                    cancellationToken);
+                metrics.Increment("worker.move.job.needs_attention");
+                logger.LogWarning(
+                    exception,
+                    "Move job {JobId} could not prove markerless completion",
+                    job.Id);
+                return true;
+            }
+
+            await UpdateJobStatusAsync(
+                job,
+                MoveJobStatus.Completed,
+                cancellationToken: cancellationToken);
+            metrics.Increment("worker.move.job.completed");
+            logger.LogInformation(
+                "Move job {JobId} completed after markerless manifest verification",
+                job.Id);
+            return true;
+        }
+
+        private void CleanupCompletedMoveArtifacts(
+            AudiobookContentMoveService contentMoveService,
+            AudiobookContentMoveRequest request,
+            AudiobookContentMoveResult result,
+            Guid jobId)
+        {
+            try
+            {
+                contentMoveService.CleanupCompletedMoveArtifacts(request, result);
+            }
+            catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+            {
+                logger.LogWarning(
+                    exception,
+                    "Move job {JobId} completed, but owned recovery artifacts could not be removed",
+                    jobId);
+            }
         }
 
         private static bool IsFilesystemRoot(string path, FileSystemPathSemantics semantics)

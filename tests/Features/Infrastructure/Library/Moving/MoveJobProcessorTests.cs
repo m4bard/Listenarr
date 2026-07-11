@@ -4,7 +4,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 {
     [Trait("Name", "MoveJobProcessorTests")]
     [Trait("Category", "BackgroundWorkers")]
-    public class MoveJobProcessorTests : BaseTests
+    public partial class MoveJobProcessorTests : BaseTests
     {
         private const string LeaseOwner = "test-worker";
         [Fact]
@@ -170,6 +170,10 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 MoveJobStatus.Failed,
                 It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()), Times.Never);
+            Assert.Single(Directory.EnumerateFiles(
+                target,
+                $".listenarr-move-{job.Id:N}.pending",
+                SearchOption.TopDirectoryOnly));
             Assert.Empty(await _historyRepository.GetByEventTypeAsync("MoveFailed"));
         }
 
@@ -519,7 +523,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
-        public async Task ProcessJobAsync_MissingSourceAndTarget_MarksJobFailed()
+        public async Task ProcessJobAsync_MissingSourceAndTargetWithTargetMetadata_MarksNeedsAttention()
         {
             var src = Path.Join(FileService.GetTempPath(), $"move-processor-missing-src-{Guid.NewGuid():N}");
             var dst = Path.Join(FileService.GetTempPath(), $"move-processor-missing-dst-{Guid.NewGuid():N}");
@@ -533,9 +537,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var processor = _provider.GetRequiredService<IMoveJobProcessor>();
             await processor.ProcessJobAsync(job, CancellationToken.None);
 
-            var failedJob = await queue.GetJobAsync(job.Id);
-            Assert.NotNull(failedJob);
-            Assert.Equal(MoveJobStatus.Failed, failedJob!.Status);
+            var updatedJob = await queue.GetJobAsync(job.Id);
+            Assert.NotNull(updatedJob);
+            Assert.Equal(MoveJobStatus.NeedsAttention, updatedJob!.Status);
         }
 
         [Fact]

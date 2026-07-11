@@ -145,6 +145,24 @@ internal sealed partial class AudiobookContentMoveService
             throw new MoveNeedsAttentionException(quarantineReason);
         }
 
+        ValidatedQuarantineOwnership? quarantineOwnership = null;
+        if (Directory.Exists(quarantineRoot))
+        {
+            quarantineOwnership = ValidateOwnedQuarantineDirectory(
+                quarantineRoot,
+                sourceParent,
+                jobId,
+                source,
+                target,
+                sourceSemantics,
+                targetSemantics);
+        }
+        else if (File.Exists(quarantineRoot))
+        {
+            throw new MoveNeedsAttentionException(
+                "The move quarantine path is occupied by a file and cannot be used safely.");
+        }
+
         var expectedAtSource = new List<MoveJobEntry>();
         foreach (var directoryEntry in manifest
             .Where(entry => entry.EntryType == MoveJobEntryType.Directory)
@@ -162,6 +180,11 @@ internal sealed partial class AudiobookContentMoveService
             && entry.CleanupState != MoveJobEntryCleanupState.Deleted))
         {
             ResolveCleanupPaths(source, quarantineRoot, entry.RelativePath, sourceSemantics, out var sourceFile, out var quarantineFile);
+            if (quarantineOwnership != null)
+            {
+                ValidateQuarantineMutationPath(quarantineOwnership, quarantineFile);
+            }
+
             if (File.Exists(sourceFile))
             {
                 if (File.Exists(quarantineFile))
@@ -217,13 +240,21 @@ internal sealed partial class AudiobookContentMoveService
         }
 
         await VerifyPublishedManifestAsync(target, manifest, targetSemantics, cancellationToken);
-        Directory.CreateDirectory(quarantineRoot);
+        quarantineOwnership ??= CreateOrValidateOwnedQuarantineDirectory(
+            quarantineRoot,
+            sourceParent,
+            jobId,
+            source,
+            target,
+            sourceSemantics,
+            targetSemantics);
         foreach (var entry in manifest.Where(entry =>
             entry.EntryType == MoveJobEntryType.File
             && entry.CleanupState != MoveJobEntryCleanupState.Deleted))
         {
             cancellationToken.ThrowIfCancellationRequested();
             ResolveCleanupPaths(source, quarantineRoot, entry.RelativePath, sourceSemantics, out var sourceFile, out var quarantineFile);
+            ValidateQuarantineMutationPath(quarantineOwnership, quarantineFile);
 
             var quarantineDirectory = Path.GetDirectoryName(quarantineFile);
             if (!string.IsNullOrEmpty(quarantineDirectory))
@@ -231,6 +262,7 @@ internal sealed partial class AudiobookContentMoveService
                 Directory.CreateDirectory(quarantineDirectory);
             }
 
+            ValidateQuarantineMutationPath(quarantineOwnership, quarantineFile);
             if (!File.Exists(quarantineFile))
             {
                 if (!File.Exists(sourceFile))
@@ -241,9 +273,11 @@ internal sealed partial class AudiobookContentMoveService
                 File.Move(sourceFile, quarantineFile, overwrite: false);
             }
 
+            ValidateQuarantineMutationPath(quarantineOwnership, quarantineFile);
             var quarantinedHash = await ComputeSha256Async(quarantineFile, cancellationToken);
             if (!string.Equals(quarantinedHash, entry.Sha256, StringComparison.Ordinal))
             {
+                ValidateQuarantineMutationPath(quarantineOwnership, quarantineFile);
                 TryRestoreQuarantinedFile(quarantineFile, sourceFile);
                 throw new MoveNeedsAttentionException(
                     $"Quarantined source bytes changed before cleanup: {entry.RelativePath}");
@@ -256,6 +290,7 @@ internal sealed partial class AudiobookContentMoveService
                 entry.RelativePath,
                 MoveJobEntryCleanupState.Quarantined,
                 cancellationToken);
+            ValidateQuarantineMutationPath(quarantineOwnership, quarantineFile);
             File.Delete(quarantineFile);
             await UpdateCleanupStateAsync(
                 jobId,
@@ -313,7 +348,7 @@ internal sealed partial class AudiobookContentMoveService
             }
         }
 
-        RemoveEmptyDirectoryTree(quarantineRoot, sourceParent, sourceSemantics);
+        DeleteEmptyOwnedQuarantineDirectory(quarantineOwnership, sourceSemantics);
     }
 
     private static void ResolveCleanupPaths(
