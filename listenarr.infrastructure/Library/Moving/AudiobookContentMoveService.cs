@@ -40,9 +40,23 @@ internal sealed record AudiobookContentMoveResult(
 
 internal sealed class MoveNeedsAttentionException(string message) : IOException(message);
 
+internal enum RecoveryMarkerWriteFaultPoint
+{
+    BeforeTemporaryFileCreation,
+    DuringJsonWrite,
+    DuringFlush,
+    AfterTemporaryFileWritten,
+    BeforePublication,
+    BeforeTemporaryFileDeletion
+}
+
 internal interface IMoveFaultInjector
 {
-    Task AfterPublishedAsync(Guid jobId, CancellationToken cancellationToken);
+    Task AfterPublishedAsync(Guid jobId, CancellationToken cancellationToken) => Task.CompletedTask;
+
+    void OnRecoveryMarkerWrite(Guid jobId, RecoveryMarkerWriteFaultPoint faultPoint)
+    {
+    }
 }
 
 internal sealed partial class AudiobookContentMoveService(

@@ -5,7 +5,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 {
     [Trait("Name", "AudiobookContentMoveServiceTests")]
     [Trait("Category", "BackgroundWorkers")]
-    public class AudiobookContentMoveServiceTests : BaseTests
+    public partial class AudiobookContentMoveServiceTests : BaseTests
     {
         private const string TestLeaseOwner = "test-worker";
 
@@ -210,25 +210,29 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
-        public async Task MoveContentsAsync_JobTempContainsPartialFile_ReplacesItOnRetry()
+        public async Task MoveContentsAsync_UnmarkedJobShapedTempDirectory_IsPreservedAndRequiresAttention()
         {
             var source = FileService.GetTempDirectory("content-move-partial-src");
-            await FileService.GetFileAsync(source, "book.m4b", "complete audio");
+            var sourceFile = await FileService.GetFileAsync(source, "book.m4b", "complete audio");
             var target = Path.Join(FileService.GetTempPath(), $"content-move-partial-dst-{Guid.NewGuid():N}");
             var jobId = Guid.NewGuid();
             var targetParent = Path.GetDirectoryName(target)!;
             var tempName = Path.Join(targetParent, Path.GetFileName(target) + ".tmp-" + jobId.ToString("N"));
             Directory.CreateDirectory(tempName);
-            await File.WriteAllTextAsync(Path.Join(tempName, "book.m4b"), "partial");
+            var unrelatedFile = Path.Join(tempName, "book.m4b");
+            await File.WriteAllTextAsync(unrelatedFile, "unrelated bytes");
 
+            var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
-            await service.MoveContentsAsync(
-                await CreateLeasedMoveRequestAsync(source, target, jobId),
-                CancellationToken.None);
+            var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+                service.MoveContentsAsync(request, CancellationToken.None));
 
-            Assert.False(Directory.Exists(source));
-            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
-            Assert.Equal("complete audio", await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
+            Assert.Contains("ownership marker", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True(File.Exists(sourceFile));
+            Assert.Equal("complete audio", await File.ReadAllTextAsync(sourceFile));
+            Assert.True(Directory.Exists(tempName));
+            Assert.Equal("unrelated bytes", await File.ReadAllTextAsync(unrelatedFile));
+            Assert.False(Directory.Exists(target));
         }
 
         [Fact]
@@ -639,20 +643,13 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             var target = FileService.GetTempDirectory("content-move-legacy-marker-dst");
             await FileService.GetFileAsync(target, "book.m4b", "audio");
             var jobId = Guid.NewGuid();
+            var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
             await File.WriteAllTextAsync(
                 Path.Join(target, $".listenarr-move-{jobId:N}.pending"),
                 "copy-complete");
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
 
-            var recoverable = await service.GetRecoverableMoveAsync(
-                new AudiobookContentMoveRequest(
-                    source,
-                    target,
-                    jobId,
-                    true,
-                    FileSystemPathSemantics.CurrentHostDefault,
-                    FileSystemPathSemantics.CurrentHostDefault,
-                    LeaseToken(1)));
+            var recoverable = await service.GetRecoverableMoveAsync(request);
 
             Assert.Null(recoverable);
             Assert.True(File.Exists(Path.Join(source, "book.m4b")));
@@ -667,21 +664,21 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 FileService.GetTempPath(),
                 $"content-move-atomic-recovery-dst-{Guid.NewGuid():N}");
             var jobId = Guid.NewGuid();
+            var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
             await File.WriteAllTextAsync(
                 Path.Join(source, $".listenarr-move-{jobId:N}.pending"),
-                "atomic-rename-complete");
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    Version = 1,
+                    JobId = jobId,
+                    Source = Path.GetFullPath(source),
+                    Target = Path.GetFullPath(target),
+                    Stage = "atomic-rename-complete"
+                }));
             Directory.Move(source, target);
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
-            var result = await service.GetRecoverableMoveAsync(
-                new AudiobookContentMoveRequest(
-                    source,
-                    target,
-                    jobId,
-                    true,
-                    FileSystemPathSemantics.CurrentHostDefault,
-                    FileSystemPathSemantics.CurrentHostDefault,
-                    LeaseToken(1)));
+            var result = await service.GetRecoverableMoveAsync(request);
 
             Assert.NotNull(result);
             Assert.True(result.SourceCleanupCompleted);

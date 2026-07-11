@@ -56,6 +56,7 @@ public class LibraryController_DeleteLinkSafetyTests : BaseTests
         Assert.Contains(result.Warnings, warning =>
             warning.Contains("symbolic link", StringComparison.OrdinalIgnoreCase)
             || warning.Contains("reparse point", StringComparison.OrdinalIgnoreCase));
+        Directory.Delete(linkedDirectory, recursive: false);
     }
 
     [Fact]
