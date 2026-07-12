@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 namespace Listenarr.Tests.Features.Infrastructure.Library.Moving;
 
 public partial class MoveJobProcessorTests
@@ -14,6 +16,39 @@ public partial class MoveJobProcessorTests
             MoveJobStatus.Completed,
             (await state.Queue.GetJobAsync(state.Job.Id))?.Status);
         Assert.True(File.Exists(Path.Join(state.Target, "book.m4b")));
+    }
+
+    [Fact]
+    public async Task ProcessJobAsync_TransientMarkerlessVerificationFailure_SchedulesRetry()
+    {
+        var state = await CreateMarkerlessFinalizedCopyStateAsync();
+        var faultingService = new AudiobookContentMoveService(
+            _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+            _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+            TimeProvider.System,
+            new FailFinalizedVerificationOnce());
+        var processor = ActivatorUtilities.CreateInstance<MoveJobProcessor>(
+            _provider,
+            faultingService);
+
+        await processor.ProcessJobAsync(state.Job, CancellationToken.None);
+
+        var retryJob = await state.Queue.GetJobAsync(state.Job.Id);
+        Assert.NotNull(retryJob);
+        Assert.Equal(MoveJobStatus.RetryScheduled, retryJob!.Status);
+        Assert.NotNull(retryJob.NextAttemptAt);
+        await MakeRetryDueAsync(state.Job.Id);
+        var generation = await state.Queue.TryClaimJobAsync(state.Job.Id, LeaseOwner);
+        Assert.NotNull(generation);
+        retryJob.LeaseOwner = LeaseOwner;
+        retryJob.LeaseGeneration = generation.Value;
+
+        await _provider.GetRequiredService<IMoveJobProcessor>()
+            .ProcessJobAsync(retryJob, CancellationToken.None);
+
+        Assert.Equal(
+            MoveJobStatus.Completed,
+            (await state.Queue.GetJobAsync(state.Job.Id))?.Status);
     }
 
     [Fact]
@@ -180,7 +215,7 @@ public partial class MoveJobProcessorTests
     }
 
     [Fact]
-    public async Task ProcessJobAsync_MarkerlessAtomicMove_RequiresAttentionBeforeCleanupCheckpoint()
+    public async Task ProcessJobAsync_MarkerlessAtomicMove_WithPersistedManifest_Completes()
     {
         var source = FileService.GetTempDirectory("move-processor-markerless-atomic-src");
         await FileService.GetFileAsync(source, "book.m4b", "audio");
@@ -205,9 +240,55 @@ public partial class MoveJobProcessorTests
         await processor.ProcessJobAsync(job, CancellationToken.None);
 
         Assert.Equal(
-            MoveJobStatus.NeedsAttention,
+            MoveJobStatus.Completed,
             (await queue.GetJobAsync(job.Id))?.Status);
         Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+    }
+
+    [Theory]
+    [InlineData("deleted")]
+    [InlineData("empty")]
+    [InlineData("replaced")]
+    public async Task ProcessJobAsync_MarkerlessAtomicTargetChanged_RequiresAttention(
+        string mutation)
+    {
+        var source = FileService.GetTempDirectory($"move-processor-atomic-changed-{mutation}-src");
+        await FileService.GetFileAsync(source, "book.m4b", "original audio");
+        var target = Path.Join(
+            Path.GetDirectoryName(source)!,
+            $"move-processor-atomic-changed-{mutation}-dst-{Guid.NewGuid():N}");
+        var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+        {
+            Title = "Markerless Atomic Changed",
+            BasePath = source
+        });
+        var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, target, source);
+        var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+        var request = CreateMoveRequest(source, target, job, deleteEmptySource: true);
+        var result = await service.MoveContentsAsync(request, CancellationToken.None);
+        audiobook.BasePath = target;
+        await _audiobookRepository.UpdateAsync(audiobook);
+        await service.FinalizeMoveAsync(request, result, CancellationToken.None);
+        File.Delete(result.RecoveryMarkerPath);
+        Directory.Delete(target, recursive: true);
+        if (!string.Equals(mutation, "deleted", StringComparison.Ordinal))
+        {
+            Directory.CreateDirectory(target);
+            if (string.Equals(mutation, "replaced", StringComparison.Ordinal))
+            {
+                await File.WriteAllTextAsync(
+                    Path.Join(target, "replacement.txt"),
+                    "unrelated content");
+            }
+        }
+
+        await _provider.GetRequiredService<IMoveJobProcessor>()
+            .ProcessJobAsync(job, CancellationToken.None);
+
+        Assert.Equal(
+            MoveJobStatus.NeedsAttention,
+            (await queue.GetJobAsync(job.Id))?.Status);
+        Assert.False(File.Exists(Path.Join(target, "book.m4b")));
     }
 
     private async Task<MarkerlessFinalizedCopyState> CreateMarkerlessFinalizedCopyStateAsync()
@@ -280,6 +361,25 @@ public partial class MoveJobProcessorTests
         {
             System.Diagnostics.Debug.WriteLine(
                 $"Failed to remove processor test directory link '{linkPath}': {exception.Message}");
+        }
+    }
+
+    private sealed class FailFinalizedVerificationOnce : IMoveFaultInjector
+    {
+        private bool _failed;
+
+        public void OnFinalizedVerification(
+            Guid jobId,
+            FinalizedVerificationFaultPoint faultPoint)
+        {
+            if (_failed
+                || faultPoint != FinalizedVerificationFaultPoint.BeforeManifestVerification)
+            {
+                return;
+            }
+
+            _failed = true;
+            throw new IOException("Simulated transient target verification lock.");
         }
     }
 

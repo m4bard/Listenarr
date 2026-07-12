@@ -12,13 +12,14 @@ internal sealed partial class AudiobookContentMoveService
         bool targetInsideSource,
         bool sourceInsideTarget,
         string? recoveryStage,
+        IReadOnlyList<MoveJobEntry> manifest,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
         CancellationToken cancellationToken)
     {
         if (targetInsideSource
             || sourceInsideTarget
-            || faultInjector != null
+            || (faultInjector != null && !faultInjector.AllowAtomicRename)
             || !request.DeleteEmptySource
             || IsSourceCleanupBoundary(source, request.SourceCleanupBoundary, sourceSemantics)
             || Directory.Exists(target)
@@ -53,6 +54,7 @@ internal sealed partial class AudiobookContentMoveService
             target,
             AtomicRenameCompletedStage,
             cancellationToken);
+        var renameCompleted = false;
         try
         {
             // Recheck both roots after publishing the durable marker and immediately
@@ -66,7 +68,63 @@ internal sealed partial class AudiobookContentMoveService
                     "Atomic rename target appeared before publication; no directory was moved.");
             }
 
+            faultInjector?.OnAtomicRename(
+                request.JobId,
+                AtomicRenameFaultPoint.BeforeSourceRevalidation);
+            var currentSource = await SnapshotSourceAsync(
+                request.JobId,
+                source,
+                target,
+                targetInsideSource: false,
+                sourceSemantics,
+                cancellationToken,
+                atomicMarkerPath);
+            var expectedSource = manifest
+                .Where(entry => !IsRootManifestEntry(entry))
+                .ToList();
+            if (!ManifestMatches(expectedSource, currentSource, sourceSemantics))
+            {
+                throw new MoveNeedsAttentionException(
+                    "Source content changed after the atomic move was planned; the directory was not moved.");
+            }
+
+            await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
+            ValidateMoveSourceRoot(source);
+            ValidateMoveTargetRoot(target);
+            ValidateExistingRecoveryMarkerForStage(
+                source,
+                atomicMarkerPath,
+                request,
+                source,
+                target,
+                AtomicRenameCompletedStage);
+            if (Directory.Exists(target))
+            {
+                throw new MoveNeedsAttentionException(
+                    "Atomic rename target appeared immediately before publication; no directory was moved.");
+            }
+
             Directory.Move(source, target);
+            renameCompleted = true;
+            faultInjector?.OnAtomicRename(
+                request.JobId,
+                AtomicRenameFaultPoint.AfterDirectoryMoveBeforeVerification);
+            ValidateExistingDestinationContents(
+                source,
+                target,
+                manifest,
+                request.JobId,
+                targetSemantics,
+                allowPartialFiles: false);
+            await VerifyPublishedManifestAsync(
+                target,
+                manifest,
+                targetSemantics,
+                cancellationToken);
+            await UpdateCopyStateAsync(
+                request.JobId,
+                request.LeaseToken,
+                cancellationToken);
         }
         catch (MoveNeedsAttentionException)
         {
@@ -79,7 +137,9 @@ internal sealed partial class AudiobookContentMoveService
                 cancellationToken);
             throw;
         }
-        catch (IOException exception)
+        catch (Exception exception) when (
+            !renameCompleted
+            && exception is IOException or UnauthorizedAccessException)
         {
             await DeleteFailedAtomicMarkerAsync(
                 request,
@@ -142,11 +202,13 @@ internal sealed partial class AudiobookContentMoveService
 
                 await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
                 ValidateMoveSourceRoot(source);
-                ValidateRecoveryMarker(
-                    ReadRecoveryMarker(atomicMarkerPath),
+                ValidateExistingRecoveryMarkerForStage(
+                    source,
+                    atomicMarkerPath,
                     request,
                     source,
-                    target);
+                    target,
+                    AtomicRenameCompletedStage);
                 File.Delete(atomicMarkerPath);
             }
         }

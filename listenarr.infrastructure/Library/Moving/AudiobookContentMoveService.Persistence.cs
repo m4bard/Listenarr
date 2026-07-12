@@ -58,7 +58,8 @@ internal sealed partial class AudiobookContentMoveService
                     "Persisted move target identity does not match the requested filesystem operation.");
             }
         }
-        catch (ArgumentException)
+        catch (Exception exception) when (exception is
+            ArgumentException or InvalidOperationException or NotSupportedException or PathTooLongException)
         {
             throw new MoveNeedsAttentionException("Persisted move target identity is invalid.");
         }
@@ -69,8 +70,7 @@ internal sealed partial class AudiobookContentMoveService
             var hasRecoveryArtifacts = await db.MoveJobEntries.AnyAsync(
                     entry => entry.MoveJobId == jobId,
                     cancellationToken)
-                || File.Exists(GetRecoveryMarkerPath(target, jobId))
-                || File.Exists(GetRecoveryMarkerPath(source, jobId));
+                || HasLegacyFilesystemRecoveryArtifacts(source, target, jobId);
             if (hasRecoveryArtifacts)
             {
                 throw new MoveNeedsAttentionException(
@@ -126,7 +126,8 @@ internal sealed partial class AudiobookContentMoveService
                     "Persisted move source identity does not match the requested filesystem operation.");
             }
         }
-        catch (ArgumentException)
+        catch (Exception exception) when (exception is
+            ArgumentException or InvalidOperationException or NotSupportedException or PathTooLongException)
         {
             throw new MoveNeedsAttentionException("Persisted move source identity is invalid.");
         }
@@ -173,21 +174,6 @@ internal sealed partial class AudiobookContentMoveService
             .Where(entry => entry.MoveJobId == jobId)
             .OrderBy(entry => entry.Id)
             .ToList();
-    }
-
-    private async Task<MoveJobPhase> LoadJobPhaseAsync(
-        Guid jobId,
-        CancellationToken cancellationToken)
-    {
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var phase = await db.MoveJobs
-            .AsNoTracking()
-            .Where(job => job.Id == jobId)
-            .Select(job => (MoveJobPhase?)job.Phase)
-            .SingleOrDefaultAsync(cancellationToken);
-        return phase
-            ?? throw new MoveNeedsAttentionException(
-                "The move job disappeared before finalized recovery could be verified.");
     }
 
     private async Task<List<MoveJobEntry>> LoadManifestAsync(
@@ -361,7 +347,7 @@ internal sealed partial class AudiobookContentMoveService
             {
                 job.Phase = phase;
             }
-            job.UpdatedAt = DateTime.UtcNow;
+            job.UpdatedAt = nowUtc;
             await db.SaveChangesAsync(cancellationToken);
             return;
         }
@@ -378,7 +364,7 @@ internal sealed partial class AudiobookContentMoveService
                     .SetProperty(
                         job => job.Phase,
                         job => job.Phase < phase ? phase : job.Phase)
-                    .SetProperty(job => job.UpdatedAt, DateTime.UtcNow),
+                    .SetProperty(job => job.UpdatedAt, nowUtc),
                 cancellationToken);
         if (affected != 1)
         {

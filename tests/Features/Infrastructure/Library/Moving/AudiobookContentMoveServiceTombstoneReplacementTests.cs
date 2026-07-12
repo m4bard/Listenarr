@@ -27,18 +27,21 @@ public partial class AudiobookContentMoveServiceTests
         var quarantineRoot = Path.Join(
             sourceParent,
             $".listenarr-quarantine-{request.JobId:N}");
+        var cleanupDirectory = Path.Join(
+            sourceParent,
+            $".listenarr-quarantine-directory-{request.JobId:N}.cleanup-dir");
         var tombstonePath = Path.Join(
             sourceParent,
             $".listenarr-quarantine-directory-{request.JobId:N}.cleanup.json");
-        Directory.Delete(quarantineRoot, recursive: false);
         await File.WriteAllTextAsync(quarantineRoot, "replacement file");
         var service = _provider.GetRequiredService<AudiobookContentMoveService>();
 
         var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
             service.GetRecoverableMoveAsync(request, CancellationToken.None));
 
-        Assert.Contains("occupied by a file", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("recreated", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("replacement file", await File.ReadAllTextAsync(quarantineRoot));
+        Assert.True(Directory.Exists(cleanupDirectory));
         Assert.True(File.Exists(tombstonePath));
         Assert.True(File.Exists(Path.Join(target, "book.m4b")));
     }

@@ -21,6 +21,11 @@ namespace Listenarr.Application.Audiobooks.Contracts
     public sealed class MoveLeaseLostException(Guid jobId, int leaseGeneration)
         : InvalidOperationException($"Move job {jobId} no longer owns lease generation {leaseGeneration}.");
 
+    public sealed record MoveRetryScheduleResult(
+        MoveJobStatus Status,
+        int AttemptCount,
+        DateTimeOffset? NextAttemptAt);
+
     public interface IMoveQueueService
     {
         Task<Guid> EnqueueMoveAsync(
@@ -37,6 +42,12 @@ namespace Listenarr.Application.Audiobooks.Contracts
         Task<MoveQueueHealthSnapshot> GetQueueHealthAsync(CancellationToken cancellationToken = default);
         Task<MoveJob?> GetJobAsync(Guid id, CancellationToken cancellationToken = default);
         Task IncrementAttemptAsync(Guid id, string leaseOwner, int leaseGeneration, CancellationToken cancellationToken = default);
+        Task<MoveRetryScheduleResult> ScheduleRetryAsync(
+            Guid id,
+            string leaseOwner,
+            int leaseGeneration,
+            string error,
+            CancellationToken cancellationToken = default);
         Task UpdateJobStatusAsync(Guid id, string leaseOwner, int leaseGeneration, MoveJobStatus status, string? error = null, CancellationToken cancellationToken = default);
         System.Threading.Channels.ChannelReader<MoveJob> Reader { get; }
     }

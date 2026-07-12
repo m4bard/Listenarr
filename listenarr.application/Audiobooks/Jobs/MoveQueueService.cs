@@ -23,7 +23,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Audiobooks.Jobs
 {
-    public class MoveQueueService : IMoveQueueService
+    public partial class MoveQueueService : IMoveQueueService
     {
         private readonly Channel<MoveJob> _channel = Channel.CreateUnbounded<MoveJob>();
         private bool _identityKeysReconciled;
@@ -126,14 +126,24 @@ namespace Listenarr.Application.Audiobooks.Jobs
 
             var activeJobs = await _persistence.GetActiveAsync(cancellationToken);
             await _relocationService.ReconcileActiveAsync(cancellationToken);
-            foreach (var activeJob in activeJobs)
+            var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
+            var schedulableJobs = activeJobs.Where(job =>
+                    job.Status == MoveJobStatus.Queued
+                    || (job.Status == MoveJobStatus.RetryScheduled
+                        && (job.NextAttemptAt == null || job.NextAttemptAt <= nowUtc))
+                    || (job.Status == MoveJobStatus.Running
+                        && (job.LeaseExpiresAt == null || job.LeaseExpiresAt <= nowUtc)))
+                .ToList();
+            foreach (var activeJob in schedulableJobs)
             {
                 await ScheduleAsync(activeJob, cancellationToken);
             }
 
-            if (activeJobs.Count > 0)
+            if (schedulableJobs.Count > 0)
             {
-                _logger.LogInformation("Recovered {Count} active move jobs from persistence", activeJobs.Count);
+                _logger.LogInformation(
+                    "Recovered {Count} claimable move jobs from persistence",
+                    schedulableJobs.Count);
             }
         }
 
@@ -332,6 +342,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 job.Phase = MoveJobPhase.None;
                 job.Error = null;
                 job.FailureKind = MoveFailureKind.None;
+                job.AttemptCount = 0;
                 job.NextAttemptAt = null;
                 job.LeaseOwner = null;
                 job.LeaseExpiresAt = null;

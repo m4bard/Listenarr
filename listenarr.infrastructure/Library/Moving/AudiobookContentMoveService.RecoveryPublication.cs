@@ -30,7 +30,10 @@ internal sealed partial class AudiobookContentMoveService
             Path.GetFullPath(target),
             stage);
         var payload = JsonSerializer.SerializeToUtf8Bytes(marker);
-        var writePath = markerPath + $".writing-{Guid.NewGuid():N}";
+        var writePath = CreateMarkerWritePath(
+            markerPath,
+            request.JobId,
+            request.LeaseGeneration);
         FileAttributes? previousMarkerAttributes = null;
 
         faultInjector?.OnRecoveryMarkerWrite(
@@ -54,7 +57,6 @@ internal sealed partial class AudiobookContentMoveService
                 faultInjector?.OnRecoveryMarkerWrite(
                     request.JobId,
                     RecoveryMarkerWriteFaultPoint.DuringJsonWrite);
-                await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
                 stream.Write(payload.AsSpan(split));
                 faultInjector?.OnRecoveryMarkerWrite(
                     request.JobId,
@@ -78,12 +80,13 @@ internal sealed partial class AudiobookContentMoveService
                     File.GetAttributes(writePath) | FileAttributes.Hidden);
                 if (File.Exists(markerPath))
                 {
-                    ValidateExistingRecoveryMarker(
+                    ValidateExistingRecoveryMarkerForStage(
                         markerDirectory,
                         markerPath,
                         request,
                         source,
-                        target);
+                        target,
+                        stage);
                     previousMarkerAttributes = File.GetAttributes(markerPath);
                     await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
                     File.SetAttributes(
@@ -98,12 +101,13 @@ internal sealed partial class AudiobookContentMoveService
                 markerPath);
             if (File.Exists(markerPath))
             {
-                ValidateExistingRecoveryMarker(
+                ValidateExistingRecoveryMarkerForStage(
                     markerDirectory,
                     markerPath,
                     request,
                     source,
-                    target);
+                    target,
+                    stage);
             }
 
             await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
@@ -111,6 +115,16 @@ internal sealed partial class AudiobookContentMoveService
                 markerDirectory,
                 writePath,
                 markerPath);
+            if (File.Exists(markerPath))
+            {
+                ValidateExistingRecoveryMarkerForStage(
+                    markerDirectory,
+                    markerPath,
+                    request,
+                    source,
+                    target,
+                    stage);
+            }
             File.Move(writePath, markerPath, overwrite: true);
         }
         catch (Exception exception) when (exception is MoveLeaseLostException or PersistenceException)
@@ -169,13 +183,29 @@ internal sealed partial class AudiobookContentMoveService
                 cleanupException = temporaryCleanupException;
             }
 
-            if (restorationException != null || cleanupException != null)
+            if (exception is MoveNeedsAttentionException)
+            {
+                throw;
+            }
+
+            if (restorationException is MoveNeedsAttentionException
+                || cleanupException is MoveNeedsAttentionException)
             {
                 throw new MoveNeedsAttentionException(
-                    $"Recovery marker publication failed and recovery state could not be restored cleanly. "
+                    $"Recovery marker publication failed and recovery state became ambiguous. "
                     + $"Publication error: {exception.Message}. "
                     + $"Attribute restoration error: {restorationException?.Message ?? "none"}. "
                     + $"Temporary cleanup error: {cleanupException?.Message ?? "none"}.");
+            }
+
+            if (restorationException != null || cleanupException != null)
+            {
+                throw new IOException(
+                    $"Recovery marker publication failed and its validated recovery state could not be restored cleanly. "
+                    + $"Publication error: {exception.Message}. "
+                    + $"Attribute restoration error: {restorationException?.Message ?? "none"}. "
+                    + $"Temporary cleanup error: {cleanupException?.Message ?? "none"}.",
+                    restorationException ?? cleanupException);
             }
 
             throw;

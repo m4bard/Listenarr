@@ -40,7 +40,7 @@ internal sealed partial class AudiobookContentMoveService
         public bool IsObsolete => ObsoleteStage != null;
     }
 
-    private async Task DeleteOwnedRecoveryMarkerWriteFilesAsync(
+    private async Task RecoverRecoveryMarkerWriteFilesAsync(
         string markerDirectory,
         AudiobookContentMoveRequest request,
         string source,
@@ -56,9 +56,10 @@ internal sealed partial class AudiobookContentMoveService
         var authoritativeMarkerPath = GetRecoveryMarkerPath(markerDirectory, request.JobId);
         var writeFilePrefix = Path.GetFileName(authoritativeMarkerPath) + ".writing-";
         foreach (var writePath in Directory.EnumerateFiles(
-            markerDirectory,
-            writeFilePrefix + "*",
-            SearchOption.TopDirectoryOnly))
+                markerDirectory,
+                writeFilePrefix + "*",
+                SearchOption.TopDirectoryOnly)
+            .ToList())
         {
             if (!FileSystemSafety.TryValidateMutationTarget(
                     writePath,
@@ -75,21 +76,48 @@ internal sealed partial class AudiobookContentMoveService
                     "A recovery-marker write-temporary file is a symbolic link or reparse point.");
             }
 
-            MoveRecoveryMarker? marker;
-            try
-            {
-                marker = JsonSerializer.Deserialize<MoveRecoveryMarker>(File.ReadAllText(safeWritePath));
-            }
-            catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+            if (!TryParseMarkerWriteIdentity(
+                    safeWritePath,
+                    authoritativeMarkerPath,
+                    out var writeIdentity)
+                || writeIdentity.JobId != request.JobId)
             {
                 throw new MoveNeedsAttentionException(
-                    $"A recovery-marker write-temporary file could not be validated safely: {exception.Message}");
+                    "A recovery-marker write-temporary filename does not match the active move job.");
             }
 
-            if (marker == null || !IsKnownRecoveryStage(marker.Stage))
+            var marker = TryReadRecoveryMarkerWriteFile(safeWritePath);
+            if (marker == null)
+            {
+                if (writeIdentity.LeaseGeneration >= request.LeaseGeneration)
+                {
+                    throw new MoveNeedsAttentionException(
+                        "A current or future-generation recovery-marker write file is truncated and was preserved.");
+                }
+
+                await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
+                ValidateRecoveryMarkerWritePath(safeWritePath, markerDirectory);
+                if (!TryParseMarkerWriteIdentity(
+                        safeWritePath,
+                        authoritativeMarkerPath,
+                        out var currentIdentity)
+                    || currentIdentity != writeIdentity)
+                {
+                    throw new MoveNeedsAttentionException(
+                        "A truncated recovery-marker write file changed before cleanup.");
+                }
+
+                File.Delete(safeWritePath);
+                logger.LogInformation(
+                    "Removed truncated predecessor recovery-marker write file for move job {JobId}",
+                    request.JobId);
+                continue;
+            }
+
+            if (writeIdentity.LeaseGeneration > request.LeaseGeneration)
             {
                 throw new MoveNeedsAttentionException(
-                    "A recovery-marker write-temporary file is invalid and was preserved for operator review.");
+                    "A future-generation recovery-marker write file was preserved.");
             }
 
             ValidateRecoveryMarker(
@@ -97,33 +125,47 @@ internal sealed partial class AudiobookContentMoveService
                 request,
                 source,
                 target);
-            ValidateExistingMoveDirectory(
-                markerDirectory,
-                "recovery-marker cleanup directory");
-            ValidateRecoveryMarkerWritePath(safeWritePath, markerDirectory);
-            var currentMarker = JsonSerializer.Deserialize<MoveRecoveryMarker>(
-                File.ReadAllText(safeWritePath));
-            if (currentMarker == null || !IsKnownRecoveryStage(currentMarker.Stage))
+            var authoritativeMarker = ReadRecoveryMarker(authoritativeMarkerPath);
+            ValidateRecoveryMarker(authoritativeMarker, request, source, target);
+            if (authoritativeMarker == null)
             {
-                throw new MoveNeedsAttentionException(
-                    "A recovery-marker write-temporary file changed before deletion.");
+                await WriteRecoveryMarkerAsync(
+                    markerDirectory,
+                    request,
+                    source,
+                    target,
+                    marker.Stage,
+                    cancellationToken);
+            }
+            else if (!string.Equals(
+                authoritativeMarker.Stage,
+                marker.Stage,
+                StringComparison.Ordinal))
+            {
+                if (CanAdvanceRecoveryStage(authoritativeMarker.Stage, marker.Stage))
+                {
+                    await WriteRecoveryMarkerAsync(
+                        markerDirectory,
+                        request,
+                        source,
+                        target,
+                        marker.Stage,
+                        cancellationToken);
+                }
+                else if (!CanAdvanceRecoveryStage(marker.Stage, authoritativeMarker.Stage))
+                {
+                    throw new MoveNeedsAttentionException(
+                        "A recovery-marker write file belongs to an incompatible recovery workflow.");
+                }
+                // The authoritative marker is already at a later compatible stage. The
+                // predecessor write file is redundant and can be removed below.
             }
 
-            ValidateRecoveryMarker(
-                new ParsedRecoveryMarker(currentMarker, ObsoleteStage: null),
-                request,
-                source,
-                target);
             await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
             ValidateRecoveryMarkerWritePath(safeWritePath, markerDirectory);
-            currentMarker = JsonSerializer.Deserialize<MoveRecoveryMarker>(
-                File.ReadAllText(safeWritePath));
-            if (currentMarker == null || !IsKnownRecoveryStage(currentMarker.Stage))
-            {
-                throw new MoveNeedsAttentionException(
+            var currentMarker = TryReadRecoveryMarkerWriteFile(safeWritePath)
+                ?? throw new MoveNeedsAttentionException(
                     "A recovery-marker write-temporary file changed before deletion.");
-            }
-
             ValidateRecoveryMarker(
                 new ParsedRecoveryMarker(currentMarker, ObsoleteStage: null),
                 request,
@@ -136,7 +178,60 @@ internal sealed partial class AudiobookContentMoveService
         }
     }
 
+    private static MoveRecoveryMarker? TryReadRecoveryMarkerWriteFile(string writePath)
+    {
+        try
+        {
+            var marker = JsonSerializer.Deserialize<MoveRecoveryMarker>(
+                File.ReadAllText(writePath));
+            return marker != null && IsKnownRecoveryStage(marker.Stage)
+                ? marker
+                : null;
+        }
+        catch (Exception exception) when (exception is
+            JsonException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     private void ValidateExistingRecoveryMarker(
+        string markerDirectory,
+        string markerPath,
+        AudiobookContentMoveRequest request,
+        string source,
+        string target)
+    {
+        _ = ReadValidatedExistingRecoveryMarker(
+            markerDirectory,
+            markerPath,
+            request,
+            source,
+            target);
+    }
+
+    private void ValidateExistingRecoveryMarkerForStage(
+        string markerDirectory,
+        string markerPath,
+        AudiobookContentMoveRequest request,
+        string source,
+        string target,
+        string candidateStage)
+    {
+        var existing = ReadValidatedExistingRecoveryMarker(
+            markerDirectory,
+            markerPath,
+            request,
+            source,
+            target);
+        if (!CanAdvanceRecoveryStage(existing.Stage, candidateStage))
+        {
+            throw new MoveNeedsAttentionException(
+                "The existing recovery marker is already at a later or incompatible stage.");
+        }
+    }
+
+    private ParsedRecoveryMarker ReadValidatedExistingRecoveryMarker(
         string markerDirectory,
         string markerPath,
         AudiobookContentMoveRequest request,
@@ -160,11 +255,10 @@ internal sealed partial class AudiobookContentMoveService
                 "The existing recovery marker is missing or linked.");
         }
 
-        ValidateRecoveryMarker(
-            ReadRecoveryMarker(markerPath),
-            request,
-            source,
-            target);
+        var parsed = ReadRecoveryMarker(markerPath)
+            ?? throw new MoveNeedsAttentionException("The existing recovery marker disappeared.");
+        ValidateRecoveryMarker(parsed, request, source, target);
+        return parsed;
     }
 
     private static void ValidateNewRecoveryMarkerWritePath(
@@ -343,6 +437,32 @@ internal sealed partial class AudiobookContentMoveService
                     ? "Move recovery marker is not located inside the persisted target directory."
                     : reason);
         }
+    }
+
+    private static bool CanAdvanceRecoveryStage(string currentStage, string candidateStage)
+    {
+        if (string.Equals(currentStage, candidateStage, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (string.Equals(currentStage, AtomicRenameCompletedStage, StringComparison.Ordinal)
+            || string.Equals(candidateStage, AtomicRenameCompletedStage, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        static int GetOrder(string stage) => stage switch
+        {
+            CopyStartedStage => 0,
+            CopyCompletedStage => 1,
+            SourceCleanupCompletedStage => 2,
+            _ => -1
+        };
+
+        var currentOrder = GetOrder(currentStage);
+        var candidateOrder = GetOrder(candidateStage);
+        return currentOrder >= 0 && candidateOrder > currentOrder;
     }
 
     private static bool IsKnownRecoveryStage(string? stage) =>

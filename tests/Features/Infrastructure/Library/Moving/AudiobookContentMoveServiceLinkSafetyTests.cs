@@ -146,6 +146,102 @@ public partial class AudiobookContentMoveServiceTests
     }
 
     [Fact]
+    public async Task MoveContentsAsync_AtomicSourceChangesAfterPlanning_DoesNotMoveDirectory()
+    {
+        var source = FileService.GetTempDirectory("content-move-atomic-drift-src");
+        await FileService.GetFileAsync(source, "book.m4b", "audio");
+        var target = Path.Join(
+            Path.GetDirectoryName(source)!,
+            $"content-move-atomic-drift-dst-{Guid.NewGuid():N}");
+        var request = await CreateLeasedMoveRequestAsync(source, target);
+        var service = new AudiobookContentMoveService(
+            _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+            _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+            TimeProvider.System,
+            new AddAtomicSourceFileBeforeRevalidation(source));
+
+        var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+            service.MoveContentsAsync(request, CancellationToken.None));
+
+        Assert.Contains("changed after the atomic move was planned", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(Directory.Exists(source));
+        Assert.True(File.Exists(Path.Join(source, "book.m4b")));
+        Assert.True(File.Exists(Path.Join(source, "arrived-late.txt")));
+        Assert.False(Directory.Exists(target));
+    }
+
+    [Fact]
+    public async Task MoveContentsAsync_AtomicVerificationIoFailure_PreservesRecoverableState()
+    {
+        var source = FileService.GetTempDirectory("content-move-atomic-verify-retry-src");
+        await FileService.GetFileAsync(source, "book.m4b", "audio");
+        var target = Path.Join(
+            Path.GetDirectoryName(source)!,
+            $"content-move-atomic-verify-retry-dst-{Guid.NewGuid():N}");
+        var request = await CreateLeasedMoveRequestAsync(source, target);
+        var service = new AudiobookContentMoveService(
+            _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+            _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+            TimeProvider.System,
+            new ThrowAfterAtomicDirectoryMove());
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            service.MoveContentsAsync(request, CancellationToken.None));
+
+        var markerPath = Path.Join(
+            target,
+            $".listenarr-move-{request.JobId:N}.pending");
+        Assert.False(Directory.Exists(source));
+        Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        Assert.True(File.Exists(markerPath));
+        var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
+        await using (var db = await factory.CreateDbContextAsync())
+        {
+            var job = await db.MoveJobs.SingleAsync(candidate => candidate.Id == request.JobId);
+            job.LeaseOwner = "atomic-recovery-worker";
+            job.LeaseGeneration++;
+            job.LeaseExpiresAt = DateTime.UtcNow.AddMinutes(5);
+            await db.SaveChangesAsync();
+            request = request with
+            {
+                LeaseToken = new MoveLeaseToken(job.LeaseOwner, job.LeaseGeneration)
+            };
+        }
+
+        var recovered = await _provider.GetRequiredService<AudiobookContentMoveService>()
+            .GetRecoverableMoveAsync(request, CancellationToken.None);
+
+        Assert.NotNull(recovered);
+        Assert.True(recovered!.SourceCleanupCompleted);
+        Assert.Equal(markerPath, recovered.RecoveryMarkerPath);
+    }
+
+    [Fact]
+    public async Task MoveContentsAsync_AtomicAccessFailureBeforeRename_FallsBackWithoutStaleMarker()
+    {
+        var source = FileService.GetTempDirectory("content-move-atomic-access-src");
+        await FileService.GetFileAsync(source, "book.m4b", "audio");
+        var target = Path.Join(
+            Path.GetDirectoryName(source)!,
+            $"content-move-atomic-access-dst-{Guid.NewGuid():N}");
+        var request = await CreateLeasedMoveRequestAsync(source, target);
+        var service = new AudiobookContentMoveService(
+            _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+            _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+            TimeProvider.System,
+            new DenyAtomicRenameBeforeSourceRevalidation());
+
+        var result = await service.MoveContentsAsync(request, CancellationToken.None);
+
+        Assert.True(result.SourceCleanupCompleted);
+        Assert.False(Directory.Exists(source));
+        Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        Assert.False(File.Exists(Path.Join(
+            source,
+            $".listenarr-move-{request.JobId:N}.pending")));
+    }
+
+    [Fact]
     public async Task MoveContentsAsync_NormalSameVolumeSource_UsesAtomicRename()
     {
         var source = FileService.GetTempDirectory("content-move-atomic-normal-src");
@@ -164,7 +260,53 @@ public partial class AudiobookContentMoveServiceTests
         Assert.True(File.Exists(result.RecoveryMarkerPath));
         var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
         await using var db = await factory.CreateDbContextAsync();
-        Assert.False(await db.MoveJobEntries.AnyAsync(entry => entry.MoveJobId == jobId));
+        Assert.True(await db.MoveJobEntries.AnyAsync(entry => entry.MoveJobId == jobId));
+    }
+
+    private sealed class DenyAtomicRenameBeforeSourceRevalidation : IMoveFaultInjector
+    {
+        public bool AllowAtomicRename => true;
+
+        public void OnAtomicRename(
+            Guid jobId,
+            AtomicRenameFaultPoint faultPoint)
+        {
+            if (faultPoint == AtomicRenameFaultPoint.BeforeSourceRevalidation)
+            {
+                throw new UnauthorizedAccessException("Simulated atomic rename access denial.");
+            }
+        }
+    }
+
+    private sealed class ThrowAfterAtomicDirectoryMove : IMoveFaultInjector
+    {
+        public bool AllowAtomicRename => true;
+
+        public void OnAtomicRename(
+            Guid jobId,
+            AtomicRenameFaultPoint faultPoint)
+        {
+            if (faultPoint == AtomicRenameFaultPoint.AfterDirectoryMoveBeforeVerification)
+            {
+                throw new IOException("Simulated transient verification failure.");
+            }
+        }
+    }
+
+    private sealed class AddAtomicSourceFileBeforeRevalidation(
+        string source) : IMoveFaultInjector
+    {
+        public bool AllowAtomicRename => true;
+
+        public void OnAtomicRename(
+            Guid jobId,
+            AtomicRenameFaultPoint faultPoint)
+        {
+            if (faultPoint == AtomicRenameFaultPoint.BeforeSourceRevalidation)
+            {
+                File.WriteAllText(Path.Join(source, "arrived-late.txt"), "new content");
+            }
+        }
     }
 
     private static bool TryCreateDirectoryLink(string linkPath, string targetPath)

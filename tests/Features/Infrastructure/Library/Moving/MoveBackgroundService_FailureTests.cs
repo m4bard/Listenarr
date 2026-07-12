@@ -22,7 +22,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
     public class MoveBackgroundService_FailureTests : BaseTests
     {
         [Fact(Timeout = 20000)]
-        public async Task MoveBackgroundService_Fails_WhenFileLocked_IncrementsAttemptCount()
+        public async Task MoveBackgroundService_TargetOccupiedByFile_RequiresAttentionWithoutRetry()
         {
             var moveQueue = _provider.GetRequiredService<IMoveQueueService>();
             var bg = _provider.GetRequiredService<MoveBackgroundService>();
@@ -41,25 +41,27 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var jobId = await moveQueue.EnqueueMoveAsync(ab.Id, dst, src);
 
-            // Wait for job to fail
-            var failed = false;
+            // Wait for the deterministic target conflict to require operator attention.
+            MoveJob? persisted = null;
             for (int i = 0; i < 60; i++)
             {
-                var job = await moveQueue.GetJobAsync(jobId);
-                if (job?.Status == MoveJobStatus.Failed)
+                persisted = await moveQueue.GetJobAsync(jobId);
+                if (persisted?.Status == MoveJobStatus.NeedsAttention)
                 {
-                    failed = true; break;
+                    break;
                 }
+
                 await Task.Delay(200, CancellationToken.None);
             }
 
             await bg.StopAsync(CancellationToken.None);
 
-            Assert.True(failed, "Move job did not fail as expected when file was locked");
-
-            // Check attempt count incremented in DB
-            var dbJob = await _moveJobRepository.GetByIdAsync(jobId);
-            Assert.True(dbJob.AttemptCount > 0, "AttemptCount was not incremented on failure");
+            Assert.NotNull(persisted);
+            Assert.Equal(MoveJobStatus.NeedsAttention, persisted!.Status);
+            Assert.Equal(0, persisted.AttemptCount);
+            Assert.Null(persisted.NextAttemptAt);
+            Assert.Null(persisted.LeaseOwner);
+            Assert.Null(persisted.LeaseExpiresAt);
         }
     }
 }

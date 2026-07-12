@@ -14,9 +14,14 @@ internal sealed partial class AudiobookContentMoveService
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
         FileSystemPathSemantics directorySemantics,
+        MoveLeaseToken leaseToken,
         Func<Task> authorizeMutation)
     {
         var fullDirectory = Path.GetFullPath(directoryPath);
+        var cleanupDirectory = GetCleanupDirectoryPath(
+            fullDirectory,
+            ownedArtifactType,
+            jobId);
         var tombstonePath = GetCleanupTombstonePath(
             fullDirectory,
             ownedArtifactType,
@@ -26,8 +31,9 @@ internal sealed partial class AudiobookContentMoveService
             jobId,
             source,
             target,
-            fullDirectory,
-            ownedArtifactType);
+            cleanupDirectory,
+            ownedArtifactType,
+            fullDirectory);
 
         await EnsureCleanupTombstoneAsync(
             tombstonePath,
@@ -35,10 +41,19 @@ internal sealed partial class AudiobookContentMoveService
             sourceSemantics,
             targetSemantics,
             directorySemantics,
+            leaseToken,
             authorizeMutation);
-        await CompleteOwnedDirectoryCleanupAsync(
+        var prepared = await PrepareOwnedDirectoryCleanupAsync(
             fullDirectory,
             markerPath,
+            expectedTombstone,
+            sourceSemantics,
+            targetSemantics,
+            directorySemantics,
+            authorizeMutation);
+        await CompleteOwnedDirectoryCleanupAsync(
+            prepared.DirectoryPath,
+            prepared.MarkerPath,
             tombstonePath,
             expectedTombstone,
             sourceSemantics,
@@ -57,9 +72,14 @@ internal sealed partial class AudiobookContentMoveService
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
         FileSystemPathSemantics directorySemantics,
+        MoveLeaseToken leaseToken,
         Func<Task> authorizeMutation)
     {
         var fullDirectory = Path.GetFullPath(directoryPath);
+        var cleanupDirectory = GetCleanupDirectoryPath(
+            fullDirectory,
+            ownedArtifactType,
+            jobId);
         var tombstonePath = GetCleanupTombstonePath(
             fullDirectory,
             ownedArtifactType,
@@ -82,19 +102,37 @@ internal sealed partial class AudiobookContentMoveService
             jobId,
             source,
             target,
-            fullDirectory,
-            ownedArtifactType);
+            cleanupDirectory,
+            ownedArtifactType,
+            fullDirectory);
         await authorizeMutation();
-        await RecoverOrReadOwnershipMarkerAsync(
-            tombstonePath,
+        try
+        {
+            await RecoverOrReadOwnershipMarkerAsync(
+                tombstonePath,
+                expectedTombstone,
+                sourceSemantics,
+                targetSemantics,
+                directorySemantics,
+                leaseToken,
+                authorizeMutation);
+        }
+        catch (InterruptedOwnershipPublicationException)
+        {
+            return false;
+        }
+
+        var prepared = await PrepareOwnedDirectoryCleanupAsync(
+            fullDirectory,
+            markerPath,
             expectedTombstone,
             sourceSemantics,
             targetSemantics,
             directorySemantics,
             authorizeMutation);
         await CompleteOwnedDirectoryCleanupAsync(
-            fullDirectory,
-            markerPath,
+            prepared.DirectoryPath,
+            prepared.MarkerPath,
             tombstonePath,
             expectedTombstone,
             sourceSemantics,
@@ -110,6 +148,7 @@ internal sealed partial class AudiobookContentMoveService
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
         FileSystemPathSemantics directorySemantics,
+        MoveLeaseToken leaseToken,
         Func<Task> authorizeMutation)
     {
         var parent = Path.GetDirectoryName(tombstonePath)
@@ -126,17 +165,40 @@ internal sealed partial class AudiobookContentMoveService
                 tombstonePath,
                 expectedTombstone,
                 OwnershipMarkerKind.CleanupTombstone,
+                leaseToken,
                 authorizeMutation);
         }
 
         await authorizeMutation();
-        await RecoverOrReadOwnershipMarkerAsync(
-            tombstonePath,
-            expectedTombstone,
-            sourceSemantics,
-            targetSemantics,
-            directorySemantics,
-            authorizeMutation);
+        try
+        {
+            await RecoverOrReadOwnershipMarkerAsync(
+                tombstonePath,
+                expectedTombstone,
+                sourceSemantics,
+                targetSemantics,
+                directorySemantics,
+                leaseToken,
+                authorizeMutation);
+        }
+        catch (InterruptedOwnershipPublicationException)
+        {
+            await authorizeMutation();
+            await PublishOwnershipMarkerAsync(
+                tombstonePath,
+                expectedTombstone,
+                OwnershipMarkerKind.CleanupTombstone,
+                leaseToken,
+                authorizeMutation);
+            await RecoverOrReadOwnershipMarkerAsync(
+                tombstonePath,
+                expectedTombstone,
+                sourceSemantics,
+                targetSemantics,
+                directorySemantics,
+                leaseToken,
+                authorizeMutation);
+        }
     }
 
     private async Task CompleteOwnedDirectoryCleanupAsync(
@@ -157,13 +219,33 @@ internal sealed partial class AudiobookContentMoveService
             : OwnershipMarkerKind.QuarantineDirectory;
         var tombstoneParent = Path.GetDirectoryName(Path.GetFullPath(tombstonePath))
             ?? throw new MoveNeedsAttentionException("The cleanup tombstone parent is unavailable.");
+        var originalOwnedDirectory = expectedTombstone.OwnedDirectoryPath
+            ?? throw new MoveNeedsAttentionException(
+                "The cleanup tombstone has no original owned directory identity.");
         var expectedDirectoryMarker = CreateOwnershipMarker(
             expectedTombstone.OwnedArtifactType
                 ?? throw new MoveNeedsAttentionException("The cleanup tombstone has no owned artifact type."),
             expectedTombstone.JobId,
             expectedTombstone.Source,
             expectedTombstone.Target,
-            directoryPath);
+            originalOwnedDirectory);
+        try
+        {
+            if (!FileSystemPathIdentity.AreEquivalent(
+                    directoryPath,
+                    expectedTombstone.DirectoryPath,
+                    directorySemantics))
+            {
+                throw new MoveNeedsAttentionException(
+                    "The cleanup directory does not match the persisted tombstone identity.");
+            }
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or InvalidOperationException or NotSupportedException or PathTooLongException)
+        {
+            throw new MoveNeedsAttentionException(
+                "The cleanup tombstone contains an invalid cleanup directory identity.");
+        }
         ValidateExistingMoveDirectory(tombstoneParent, "cleanup tombstone directory");
         var tombstone = ReadOwnershipMarker(tombstonePath);
         ValidateOwnershipMarker(
@@ -263,6 +345,13 @@ internal sealed partial class AudiobookContentMoveService
                     directorySemantics);
                 await authorizeMutation();
                 ValidateOwnedCleanupEntry(markerPath, directoryPath);
+                directoryMarker = ReadOwnershipMarker(markerPath);
+                ValidateOwnershipMarker(
+                    directoryMarker,
+                    expectedDirectoryMarker,
+                    sourceSemantics,
+                    targetSemantics,
+                    directorySemantics);
                 File.Delete(markerPath);
             }
 
@@ -285,7 +374,14 @@ internal sealed partial class AudiobookContentMoveService
             }
 
             await authorizeMutation();
+            RejectRecreatedOriginalOwnedPath(expectedTombstone);
             ValidateExistingMoveDirectory(directoryPath, "owned cleanup directory");
+            if (Directory.EnumerateFileSystemEntries(directoryPath).Any())
+            {
+                throw new MoveNeedsAttentionException(
+                    "The owned cleanup directory changed during final authorization.");
+            }
+
             Directory.Delete(directoryPath, recursive: false);
         }
 
@@ -310,6 +406,7 @@ internal sealed partial class AudiobookContentMoveService
             targetSemantics,
             directorySemantics);
         await authorizeMutation();
+        RejectRecreatedOriginalOwnedPath(expectedTombstone);
         validatedTombstone = ReadOwnershipMarker(tombstonePath);
         ValidateOwnershipMarker(
             validatedTombstone,

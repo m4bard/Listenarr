@@ -2,6 +2,9 @@ using Listenarr.Domain.Common;
 
 namespace Listenarr.Infrastructure.Library.Moving;
 
+internal sealed class AudiobookPathRewriteException(string message)
+    : InvalidOperationException(message);
+
 internal static class AudiobookPathReferenceRewriter
 {
     public static void Rewrite(
@@ -91,7 +94,7 @@ internal static class AudiobookPathReferenceRewriter
                 sourceSemantics,
                 out var relativePath))
         {
-            throw new InvalidOperationException(
+            throw new AudiobookPathRewriteException(
                 $"Stored audiobook path '{path}' could not be mapped to the new base path.");
         }
 
@@ -109,7 +112,7 @@ internal static class AudiobookPathReferenceRewriter
                 targetSemantics,
                 out var rewrittenPath))
         {
-            throw new InvalidOperationException(
+            throw new AudiobookPathRewriteException(
                 $"Stored audiobook path '{path}' could not be mapped to the new base path.");
         }
 

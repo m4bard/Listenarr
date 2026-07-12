@@ -4,6 +4,8 @@ namespace Listenarr.Infrastructure.Library.Moving;
 
 internal sealed partial class AudiobookContentMoveService
 {
+    private const string RootManifestRelativePath = "";
+
     private sealed record ValidatedSourceEntry(
         string FullPath,
         string RelativePath,
@@ -15,7 +17,8 @@ internal sealed partial class AudiobookContentMoveService
         string target,
         bool targetInsideSource,
         FileSystemPathSemantics sourceSemantics,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? ownedRecoveryMarkerPath = null)
     {
         if (!Directory.Exists(source))
         {
@@ -44,6 +47,15 @@ internal sealed partial class AudiobookContentMoveService
                 var entryName = Path.GetFileName(entry);
                 if (IsReservedMoveArtifactName(entryName))
                 {
+                    if (!string.IsNullOrWhiteSpace(ownedRecoveryMarkerPath)
+                        && FileSystemPathIdentity.AreEquivalent(
+                            entry,
+                            ownedRecoveryMarkerPath,
+                            sourceSemantics))
+                    {
+                        continue;
+                    }
+
                     throw new MoveNeedsAttentionException(
                         $"Move source contains a reserved Listenarr recovery artifact that must be resolved before moving: {Path.GetRelativePath(source, entry)}");
                 }
@@ -82,6 +94,13 @@ internal sealed partial class AudiobookContentMoveService
         return entries;
     }
 
+    private static bool IsRootManifestEntry(MoveJobEntry entry) =>
+        entry.EntryType == MoveJobEntryType.Directory
+        && string.Equals(
+            entry.RelativePath,
+            RootManifestRelativePath,
+            StringComparison.Ordinal);
+
     private static bool IsReservedMoveArtifactName(string name) =>
         name.StartsWith(".listenarr-move-", StringComparison.Ordinal)
         || name.StartsWith(".listenarr-quarantine-", StringComparison.Ordinal)
@@ -94,9 +113,24 @@ internal sealed partial class AudiobookContentMoveService
     private static async Task<List<MoveJobEntry>> BuildManifestAsync(
         Guid jobId,
         IReadOnlyList<ValidatedSourceEntry> validatedEntries,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool includeRootProofWhenEmpty = false)
     {
-        var manifest = new List<MoveJobEntry>(validatedEntries.Count);
+        var manifest = new List<MoveJobEntry>(
+            includeRootProofWhenEmpty
+                ? Math.Max(validatedEntries.Count, 1)
+                : validatedEntries.Count);
+        if (includeRootProofWhenEmpty && validatedEntries.Count == 0)
+        {
+            manifest.Add(new MoveJobEntry
+            {
+                MoveJobId = jobId,
+                RelativePath = RootManifestRelativePath,
+                EntryType = MoveJobEntryType.Directory
+            });
+            return manifest;
+        }
+
         foreach (var entry in validatedEntries)
         {
             cancellationToken.ThrowIfCancellationRequested();

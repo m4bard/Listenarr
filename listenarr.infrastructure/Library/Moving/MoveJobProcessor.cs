@@ -30,7 +30,8 @@ namespace Listenarr.Infrastructure.Library.Moving
         IHubContext<DownloadHub> hubContext,
         IAppMetricsService metrics,
         IFileSystemSemanticsResolver semanticsResolver,
-        IMoveCleanupBoundaryResolver cleanupBoundaryResolver) : IMoveJobProcessor
+        IMoveCleanupBoundaryResolver cleanupBoundaryResolver,
+        TimeProvider timeProvider) : IMoveJobProcessor
     {
         public async Task ProcessJobAsync(MoveJob job, CancellationToken stoppingToken)
         {
@@ -72,6 +73,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         MoveJobStatus.NeedsAttention,
                         targetResolution.Reason ?? "Target filesystem identity is unavailable.",
                         stoppingToken);
+                    metrics.Increment("worker.move.job.needs_attention");
                     return;
                 }
 
@@ -93,6 +95,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                             MoveJobStatus.NeedsAttention,
                             recoverySourceResolution.Reason ?? "Source filesystem identity is unavailable.",
                             stoppingToken);
+                        metrics.Increment("worker.move.job.needs_attention");
                         return;
                     }
 
@@ -146,6 +149,16 @@ namespace Listenarr.Infrastructure.Library.Moving
                             job.Id);
                         return;
                     }
+                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                    {
+                        await ScheduleTransientRetryAsync(
+                            job,
+                            $"Move recovery verification will be retried: {exception.Message}",
+                            exception,
+                            "Move job {JobId} could not verify its recovery target",
+                            stoppingToken);
+                        return;
+                    }
                 }
 
                 if (recoveredMove == null)
@@ -184,6 +197,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         MoveJobStatus.NeedsAttention,
                         "Persisted source path does not exist and cannot be recovered",
                         stoppingToken);
+                    metrics.Increment("worker.move.job.needs_attention");
                     return;
                 }
 
@@ -205,6 +219,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                         MoveJobStatus.NeedsAttention,
                         sourceResolution.Reason ?? "Source filesystem identity is unavailable.",
                         stoppingToken);
+                    metrics.Increment("worker.move.job.needs_attention");
                     return;
                 }
 
@@ -325,14 +340,19 @@ namespace Listenarr.Infrastructure.Library.Moving
                         moveRequest,
                         stoppingToken);
 
-                    await RecordMoveCompletionAsync(
-                        job,
-                        audiobook,
-                        source,
-                        target,
-                        currentAudiobookRepository,
-                        scope.ServiceProvider,
-                        stoppingToken);
+                    if (!await TryRecordMoveCompletionAsync(
+                            job,
+                            audiobook,
+                            source,
+                            target,
+                            currentAudiobookRepository,
+                            scope.ServiceProvider,
+                            contentMoveService,
+                            moveRequest,
+                            stoppingToken))
+                    {
+                        return;
+                    }
 
                     await UpdateJobStatusAsync(job, MoveJobStatus.Completed, cancellationToken: stoppingToken);
                     metrics.Increment("worker.move.job.completed");
@@ -353,6 +373,15 @@ namespace Listenarr.Infrastructure.Library.Moving
                     metrics.Increment("worker.move.job.needs_attention");
                     logger.LogWarning(ex, "Move job {JobId} requires operator attention", job.Id);
                 }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    await ScheduleTransientRetryAsync(
+                        job,
+                        $"Move filesystem work will be retried: {ex.Message}",
+                        ex,
+                        "Move job {JobId} encountered a transient filesystem failure",
+                        stoppingToken);
+                }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     // Increment attempt count for the job on failure
@@ -372,7 +401,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                             EventType = "MoveFailed",
                             Message = $"Move failed: {ex.Message}",
                             Source = "Move",
-                            Timestamp = DateTime.UtcNow,
+                            Timestamp = timeProvider.GetUtcNow().UtcDateTime,
                             NotificationSent = false,
                             Data = System.Text.Json.JsonSerializer.Serialize(new { JobId = job.Id, Error = ex.Message })
                         };

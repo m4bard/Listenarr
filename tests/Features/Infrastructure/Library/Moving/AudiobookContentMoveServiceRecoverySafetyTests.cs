@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Tests.Features.Infrastructure.Library.Moving;
 
@@ -40,6 +41,62 @@ public partial class AudiobookContentMoveServiceTests
         Assert.Null(result);
         Assert.True(Directory.Exists(source));
         Assert.False(Directory.Exists(target));
+    }
+
+    [Fact]
+    public async Task MoveContentsAsync_AuthoritativeAtomicMarkerBeforeRename_ResumesSafely()
+    {
+        var source = FileService.GetTempDirectory("content-move-atomic-before-resume-src");
+        await FileService.GetFileAsync(source, "book.m4b", "audio");
+        var target = Path.Join(
+            Path.GetDirectoryName(source)!,
+            $"content-move-atomic-before-resume-dst-{Guid.NewGuid():N}");
+        var jobId = Guid.NewGuid();
+        var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
+        await WriteRecoveryMarkerAsync(
+            source,
+            jobId,
+            source,
+            target,
+            "atomic-rename-complete");
+
+        var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+        var result = await service.MoveContentsAsync(request, CancellationToken.None);
+
+        Assert.True(result.SourceCleanupCompleted);
+        Assert.False(Directory.Exists(source));
+        Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        Assert.True(File.Exists(result.RecoveryMarkerPath));
+        var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
+        await using var db = await factory.CreateDbContextAsync();
+        Assert.NotEmpty(await db.MoveJobEntries
+            .Where(entry => entry.MoveJobId == jobId)
+            .ToListAsync());
+    }
+
+    [Fact]
+    public async Task MoveContentsAsync_SourceAtomicMarkerWithExistingTarget_RequiresAttention()
+    {
+        var source = FileService.GetTempDirectory("content-move-atomic-conflict-src");
+        await FileService.GetFileAsync(source, "book.m4b", "source audio");
+        var target = FileService.GetTempDirectory("content-move-atomic-conflict-dst");
+        await FileService.GetFileAsync(target, "operator-note.txt", "preserve me");
+        var jobId = Guid.NewGuid();
+        var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
+        await WriteRecoveryMarkerAsync(
+            source,
+            jobId,
+            source,
+            target,
+            "atomic-rename-complete");
+
+        var service = _provider.GetRequiredService<AudiobookContentMoveService>();
+        var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+            service.MoveContentsAsync(request, CancellationToken.None));
+
+        Assert.Contains("conflicts with existing target", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(File.Exists(Path.Join(source, "book.m4b")));
+        Assert.Equal("preserve me", await File.ReadAllTextAsync(Path.Join(target, "operator-note.txt")));
     }
 
     [Fact]
@@ -101,7 +158,7 @@ public partial class AudiobookContentMoveServiceTests
     }
 
     [Fact]
-    public async Task GetRecoverableMoveAsync_AtomicMarkerWithPersistedManifest_RequiresAttention()
+    public async Task GetRecoverableMoveAsync_AtomicMarkerWithPersistedManifest_Recovers()
     {
         var source = FileService.GetTempDirectory("content-move-atomic-manifest-src");
         var sourceFile = await FileService.GetFileAsync(source, "book.m4b", "audio");
@@ -113,10 +170,10 @@ public partial class AudiobookContentMoveServiceTests
         Directory.Move(source, target);
 
         var service = _provider.GetRequiredService<AudiobookContentMoveService>();
-        var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
-            service.GetRecoverableMoveAsync(request));
+        var recovered = await service.GetRecoverableMoveAsync(request);
 
-        Assert.Contains("persisted copy manifest", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(recovered);
+        Assert.True(recovered.SourceCleanupCompleted);
         Assert.True(File.Exists(Path.Join(target, "book.m4b")));
     }
 

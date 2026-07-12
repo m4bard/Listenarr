@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Listenarr.Domain.Common;
 
 namespace Listenarr.Infrastructure.Library.Moving;
@@ -20,7 +19,8 @@ internal sealed partial class AudiobookContentMoveService
         var manifest = await BuildManifestAsync(
             jobId,
             validatedSourceEntries,
-            cancellationToken);
+            cancellationToken,
+            includeRootProofWhenEmpty: true);
         await PersistManifestAsync(jobId, leaseToken, manifest, cancellationToken);
         return manifest;
     }
@@ -31,14 +31,16 @@ internal sealed partial class AudiobookContentMoveService
         string target,
         bool targetInsideSource,
         FileSystemPathSemantics sourceSemantics,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? ownedRecoveryMarkerPath = null)
     {
         var validatedEntries = ValidateSourceTreeForMove(
             source,
             target,
             targetInsideSource,
             sourceSemantics,
-            cancellationToken);
+            cancellationToken,
+            ownedRecoveryMarkerPath);
         return await BuildManifestAsync(jobId, validatedEntries, cancellationToken);
     }
 
@@ -50,6 +52,22 @@ internal sealed partial class AudiobookContentMoveService
         var identities = new Dictionary<string, MoveJobEntry>(StringComparer.Ordinal);
         foreach (var entry in manifest)
         {
+            if (IsRootManifestEntry(entry))
+            {
+                var rootKey = FileSystemPathIdentity.CreateKey(
+                    "move-target",
+                    target,
+                    targetSemantics);
+                if (identities.ContainsKey(rootKey))
+                {
+                    throw new MoveNeedsAttentionException(
+                        "The manifest contains duplicate destination-root proof entries.");
+                }
+
+                identities.Add(rootKey, entry);
+                continue;
+            }
+
             if (Path.IsPathRooted(entry.RelativePath))
             {
                 throw new MoveNeedsAttentionException("A manifest entry must be relative to the destination root.");
@@ -83,6 +101,17 @@ internal sealed partial class AudiobookContentMoveService
     {
         foreach (var entry in manifest)
         {
+            if (IsRootManifestEntry(entry))
+            {
+                if (!Directory.Exists(destinationRoot))
+                {
+                    throw new MoveNeedsAttentionException(
+                        "Published destination root is missing.");
+                }
+
+                continue;
+            }
+
             if (!FileSystemPathIdentity.TryResolveRelativePathWithinBase(
                 destinationRoot,
                 entry.RelativePath,
@@ -130,11 +159,13 @@ internal sealed partial class AudiobookContentMoveService
         var sourceExists = Directory.Exists(source);
         if (sourceExists && IsFilesystemRoot(source, sourceSemantics))
         {
-            throw new IOException("Source path became invalid before cleanup.");
+            throw new MoveNeedsAttentionException(
+                "Source path became invalid before cleanup.");
         }
 
         var sourceParent = Path.GetDirectoryName(source)
-            ?? throw new IOException("Source parent path is unavailable.");
+            ?? throw new MoveNeedsAttentionException(
+                "Source parent path is unavailable.");
         var quarantineRoot = Path.Join(sourceParent, $".listenarr-quarantine-{jobId:N}");
         if (!FileSystemSafety.TryValidateMutationTarget(
             quarantineRoot,
@@ -157,7 +188,7 @@ internal sealed partial class AudiobookContentMoveService
         ValidatedQuarantineOwnership? quarantineOwnership = null;
         if (Directory.Exists(quarantineRoot))
         {
-            quarantineOwnership = await ValidateOwnedQuarantineDirectoryAsync(
+            quarantineOwnership = await CreateOrValidateOwnedQuarantineDirectoryAsync(
                 quarantineRoot,
                 sourceParent,
                 jobId,
@@ -177,6 +208,7 @@ internal sealed partial class AudiobookContentMoveService
         var expectedAtSource = new List<MoveJobEntry>();
         foreach (var directoryEntry in manifest
             .Where(entry => entry.EntryType == MoveJobEntryType.Directory)
+            .Where(entry => !IsRootManifestEntry(entry))
             .Where(entry => FileSystemPathIdentity.TryResolveRelativePathWithinBase(
                 source,
                 entry.RelativePath,
@@ -250,6 +282,21 @@ internal sealed partial class AudiobookContentMoveService
                 "Source content changed after the move was planned; cleanup was blocked.");
         }
 
+        var publishedTempOwnership = await TryValidatePublishedTempOwnershipAsync(
+            target,
+            cleanupRequest,
+            source,
+            target,
+            cancellationToken);
+        ValidateExistingDestinationContents(
+            source,
+            target,
+            manifest,
+            jobId,
+            targetSemantics,
+            publishedTempOwnership,
+            quarantineOwnership,
+            allowPartialFiles: false);
         await VerifyPublishedManifestAsync(target, manifest, targetSemantics, cancellationToken);
         quarantineOwnership ??= await CreateOrValidateOwnedQuarantineDirectoryAsync(
             quarantineRoot,
@@ -295,6 +342,8 @@ internal sealed partial class AudiobookContentMoveService
                     jobId,
                     leaseToken,
                     entry,
+                    manifest,
+                    publishedTempOwnership,
                     sourceSemantics,
                     targetSemantics,
                     cancellationToken);
@@ -311,6 +360,8 @@ internal sealed partial class AudiobookContentMoveService
                     jobId,
                     leaseToken,
                     entry,
+                    manifest,
+                    publishedTempOwnership,
                     sourceSemantics,
                     targetSemantics,
                     cancellationToken);
@@ -341,6 +392,8 @@ internal sealed partial class AudiobookContentMoveService
                 jobId,
                 leaseToken,
                 entry,
+                manifest,
+                publishedTempOwnership,
                 sourceSemantics,
                 targetSemantics,
                 cancellationToken);
@@ -356,6 +409,8 @@ internal sealed partial class AudiobookContentMoveService
                 jobId,
                 leaseToken,
                 entry,
+                manifest,
+                publishedTempOwnership,
                 sourceSemantics,
                 targetSemantics,
                 cancellationToken);
@@ -370,6 +425,7 @@ internal sealed partial class AudiobookContentMoveService
 
         foreach (var directoryEntry in manifest
             .Where(entry => entry.EntryType == MoveJobEntryType.Directory)
+            .Where(entry => !IsRootManifestEntry(entry))
             .OrderByDescending(entry => entry.RelativePath.Length)
             .Select(entry => new
             {
@@ -407,6 +463,7 @@ internal sealed partial class AudiobookContentMoveService
         // removing the quarantine root itself.
         foreach (var directoryEntry in manifest
             .Where(entry => entry.EntryType == MoveJobEntryType.Directory)
+            .Where(entry => !IsRootManifestEntry(entry))
             .OrderByDescending(entry => entry.RelativePath.Length))
         {
             if (FileSystemPathIdentity.TryResolveRelativePathWithinBase(
@@ -434,64 +491,6 @@ internal sealed partial class AudiobookContentMoveService
             targetSemantics,
             leaseToken,
             cancellationToken);
-    }
-
-    private static void ResolveCleanupPaths(
-        string source,
-        string quarantineRoot,
-        string relativePath,
-        FileSystemPathSemantics semantics,
-        out string sourceFile,
-        out string quarantineFile)
-    {
-        if (!FileSystemPathIdentity.TryResolveRelativePathWithinBase(
-            source,
-            relativePath,
-            semantics,
-            out sourceFile)
-            || !FileSystemPathIdentity.TryResolveRelativePathWithinBase(
-                quarantineRoot,
-                relativePath,
-                semantics,
-                out quarantineFile))
-        {
-            throw new MoveNeedsAttentionException("A manifest entry escaped its cleanup boundary.");
-        }
-    }
-
-    private static bool ManifestMatches(
-        IReadOnlyCollection<MoveJobEntry> expected,
-        IReadOnlyCollection<MoveJobEntry> current,
-        FileSystemPathSemantics semantics)
-    {
-        if (expected.Count != current.Count)
-        {
-            return false;
-        }
-
-        var currentByPath = current.ToDictionary(
-            entry => entry.RelativePath,
-            semantics.Comparer);
-        return expected.All(entry =>
-            currentByPath.TryGetValue(entry.RelativePath, out var currentEntry)
-            && currentEntry.EntryType == entry.EntryType
-            && currentEntry.Length == entry.Length
-            && string.Equals(currentEntry.Sha256, entry.Sha256, StringComparison.Ordinal));
-    }
-
-    private static async Task<string> ComputeSha256Async(
-        string path,
-        CancellationToken cancellationToken)
-    {
-        await using var stream = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize: 128 * 1024,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var hash = await SHA256.HashDataAsync(stream, cancellationToken);
-        return Convert.ToHexString(hash);
     }
 
 }

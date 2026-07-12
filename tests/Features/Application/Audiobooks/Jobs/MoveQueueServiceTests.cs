@@ -505,6 +505,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                 Phase = MoveJobPhase.CleaningSource,
                 Error = "verification failed",
                 FailureKind = MoveFailureKind.Verification,
+                AttemptCount = MoveTimingPolicy.MaxTransientAttempts,
                 NextAttemptAt = future.UtcDateTime,
                 LeaseOwner = "worker",
                 LeaseExpiresAt = future.UtcDateTime
@@ -524,6 +525,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
             Assert.Equal(MoveJobPhase.None, job.Phase);
             Assert.Null(job.Error);
             Assert.Equal(MoveFailureKind.None, job.FailureKind);
+            Assert.Equal(0, job.AttemptCount);
             Assert.Null(job.NextAttemptAt);
             Assert.Null(job.LeaseOwner);
             Assert.Null(job.LeaseExpiresAt);
@@ -534,6 +536,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
                     && persisted.Phase == MoveJobPhase.None
                     && persisted.Error == null
                     && persisted.FailureKind == MoveFailureKind.None
+                    && persisted.AttemptCount == 0
                     && persisted.NextAttemptAt == null
                     && persisted.LeaseOwner == null
                     && persisted.LeaseExpiresAt == null

@@ -26,6 +26,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
     {
         private readonly ConcurrentDictionary<Guid, ScanJob> _jobs = new();
         private readonly Channel<ScanJob> _channel = Channel.CreateUnbounded<ScanJob>();
+        private readonly SemaphoreSlim _enqueueGate = new(1, 1);
         private readonly ILogger<ScanQueueService> _logger;
         private readonly IFileSystemSemanticsResolver _semanticsResolver;
 
@@ -43,68 +44,117 @@ namespace Listenarr.Application.Audiobooks.Jobs
             string? correlationId = null,
             string? downloadId = null)
         {
-            // Deduplicate: if there's already a job for the same audiobook and path that is
-            // queued/processing/completed, return that job id instead of creating a duplicate.
+            return await EnqueueScanCoreAsync(
+                audiobook,
+                path,
+                correlationId,
+                downloadId,
+                stillPending: null)
+                ?? throw new InvalidOperationException("A normal scan enqueue was unexpectedly canceled.");
+        }
+
+        public Task<Guid?> EnqueueRecoveredScanAsync(
+            Audiobook audiobook,
+            string correlationId,
+            Func<Task<bool>> stillPending) =>
+            EnqueueScanCoreAsync(
+                audiobook,
+                path: null,
+                correlationId,
+                downloadId: null,
+                stillPending);
+
+        private async Task<Guid?> EnqueueScanCoreAsync(
+            Audiobook audiobook,
+            string? path,
+            string? correlationId,
+            string? downloadId,
+            Func<Task<bool>>? stillPending)
+        {
+            var pathSemantics = !string.IsNullOrWhiteSpace(path)
+                ? await ResolvePathSemanticsAsync(path)
+                : null;
+            await _enqueueGate.WaitAsync();
             try
             {
-                var pathSemantics = !string.IsNullOrWhiteSpace(path)
-                    ? await ResolvePathSemanticsAsync(path)
-                    : null;
-                var matchingJobs = _jobs.Values.Where(job =>
+                if (stillPending != null && !await stillPending())
                 {
-                    if (job.AudiobookId != audiobook.Id) return false;
-                    var bothNull = job.Path == null && path == null;
-                    var bothMatch = job.Path != null
-                        && path != null
-                        && AreEquivalentPaths(job.Path, path, pathSemantics);
-                    return bothNull || bothMatch;
-                });
-
-                // A correlation id identifies one completion handoff. Replays within the
-                // current process must reuse that scan even when it already completed;
-                // explicit rescans omit the correlation id and retain active-only dedupe.
-                var correlated = !string.IsNullOrWhiteSpace(correlationId)
-                    ? matchingJobs.FirstOrDefault(job => string.Equals(
-                        job.CorrelationId,
-                        correlationId,
-                        StringComparison.Ordinal))
-                    : null;
-                if (correlated != null)
-                {
-                    _logger.LogInformation(
-                        "Found correlated scan job {JobId} for audiobook {AudiobookId}; reusing completion handoff",
-                        correlated.Id,
-                        audiobook.Id);
-                    return correlated.Id;
+                    return null;
                 }
 
-                var active = matchingJobs.FirstOrDefault(job =>
-                    string.Equals(job.Status, "Queued", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(job.Status, "Processing", StringComparison.OrdinalIgnoreCase));
-                if (active != null)
+                // Deduplicate against active jobs while holding the same gate used to
+                // publish new jobs. This keeps immediate move dispatch and outbox replay
+                // from both observing an empty correlation and enqueueing duplicate scans.
+                try
                 {
-                    _logger.LogInformation("Found active scan job {JobId} for audiobook {AudiobookId} (path: {Path}) with status {Status}; deduping and returning existing job id", active.Id, audiobook.Id, LogRedaction.SanitizeFilePath(path), active.Status);
-                    return active.Id;
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                // If dedupe check fails for any reason, fall back to enqueueing a new job
-                _logger.LogWarning(ex, "Failed while checking existing scan jobs for dedupe; will enqueue new job");
-            }
+                    var matchingJobs = _jobs.Values.Where(job =>
+                    {
+                        if (job.AudiobookId != audiobook.Id) return false;
+                        var bothNull = job.Path == null && path == null;
+                        var bothMatch = job.Path != null
+                            && path != null
+                            && AreEquivalentPaths(job.Path, path, pathSemantics);
+                        return bothNull || bothMatch;
+                    });
 
-            var job = new ScanJob
+                    // A correlation id identifies one active completion handoff. Durable
+                    // terminal history decides whether an outbox replay is finished; this
+                    // in-memory queue only deduplicates jobs that can still be processed.
+                    var correlated = !string.IsNullOrWhiteSpace(correlationId)
+                        ? matchingJobs.FirstOrDefault(job => string.Equals(
+                            job.CorrelationId,
+                            correlationId,
+                            StringComparison.Ordinal))
+                        : null;
+                    if (correlated != null
+                        && (string.Equals(
+                                correlated.Status,
+                                "Queued",
+                                StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(
+                                correlated.Status,
+                                "Processing",
+                                StringComparison.OrdinalIgnoreCase)))
+                    {
+                        _logger.LogInformation(
+                            "Found active correlated scan job {JobId} for audiobook {AudiobookId}; reusing completion handoff",
+                            correlated.Id,
+                            audiobook.Id);
+                        return correlated.Id;
+                    }
+
+                    var active = matchingJobs.FirstOrDefault(job =>
+                        string.Equals(job.Status, "Queued", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(job.Status, "Processing", StringComparison.OrdinalIgnoreCase));
+                    if (active != null)
+                    {
+                        _logger.LogInformation("Found active scan job {JobId} for audiobook {AudiobookId} (path: {Path}) with status {Status}; deduping and returning existing job id", active.Id, audiobook.Id, LogRedaction.SanitizeFilePath(path), active.Status);
+                        return active.Id;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    // If dedupe check fails for any reason, fall back to enqueueing a new job.
+                    _logger.LogWarning(ex, "Failed while checking existing scan jobs for dedupe; will enqueue new job");
+                }
+
+                var job = new ScanJob
+                {
+                    AudiobookId = audiobook.Id,
+                    Path = path,
+                    CorrelationId = correlationId,
+                    DownloadId = downloadId
+                };
+                _jobs[job.Id] = job;
+                _logger.LogInformation("Enqueueing scan job {JobId} for audiobook {AudiobookId} (path: {Path})", job.Id, audiobook.Id, LogRedaction.SanitizeFilePath(path));
+                await _channel.Writer.WriteAsync(job);
+                _logger.LogInformation("Scan job {JobId} written to channel", job.Id);
+                return job.Id;
+            }
+            finally
             {
-                AudiobookId = audiobook.Id,
-                Path = path,
-                CorrelationId = correlationId,
-                DownloadId = downloadId
-            };
-            _jobs[job.Id] = job;
-            _logger.LogInformation("Enqueueing scan job {JobId} for audiobook {AudiobookId} (path: {Path})", job.Id, audiobook.Id, LogRedaction.SanitizeFilePath(path));
-            await _channel.Writer.WriteAsync(job);
-            _logger.LogInformation("Scan job {JobId} written to channel", job.Id);
-            return job.Id;
+                _enqueueGate.Release();
+            }
         }
 
         public bool TryGetJob(Guid id, out ScanJob? job) => _jobs.TryGetValue(id, out job);
@@ -113,11 +163,44 @@ namespace Listenarr.Application.Audiobooks.Jobs
 
         public void UpdateJobStatus(Guid id, string status, string? error = null, int? found = null, int? created = null)
         {
+            _enqueueGate.Wait();
+            try
+            {
+                UpdateJobStatusCore(id, status, error);
+            }
+            finally
+            {
+                _enqueueGate.Release();
+            }
+        }
+
+        public async Task CommitTerminalJobStatusAsync(
+            Guid jobId,
+            Func<Task<(string Status, string? Error)>> persistTerminalState,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(persistTerminalState);
+            await _enqueueGate.WaitAsync(cancellationToken);
+            try
+            {
+                // Recovered enqueue uses this same gate while checking durable terminal
+                // history. Commit the history and authoritative in-memory status together
+                // so replay cannot enqueue between those two state transitions.
+                var terminalState = await persistTerminalState();
+                UpdateJobStatusCore(jobId, terminalState.Status, terminalState.Error);
+            }
+            finally
+            {
+                _enqueueGate.Release();
+            }
+        }
+
+        private void UpdateJobStatusCore(Guid id, string status, string? error)
+        {
             if (_jobs.TryGetValue(id, out var job))
             {
                 job.Status = status;
                 job.Error = error;
-                // store optional counters in the Error field or extend ScanJob if needed; keep simple for now
                 _jobs[id] = job;
                 _logger.LogInformation("Updated scan job {JobId} status to {Status}", id, status);
             }
@@ -129,30 +212,56 @@ namespace Listenarr.Application.Audiobooks.Jobs
 
         public async Task<Guid?> RequeueScanAsync(Guid jobId)
         {
-            if (!_jobs.TryGetValue(jobId, out var job))
+            await _enqueueGate.WaitAsync();
+            try
             {
-                _logger.LogWarning("Attempted to requeue unknown scan job {JobId}", jobId);
-                return null;
-            }
+                if (!_jobs.TryGetValue(jobId, out var job))
+                {
+                    _logger.LogWarning("Attempted to requeue unknown scan job {JobId}", jobId);
+                    return null;
+                }
 
-            // Allow requeue for Failed jobs or Completed (explicit re-run)
-            if (!CanRequeueJobStatus(job.Status))
-            {
-                _logger.LogInformation("Scan job {JobId} has status {Status} and cannot be requeued", jobId, job.Status);
-                return null;
-            }
+                // Allow requeue for Failed jobs or Completed (explicit re-run).
+                if (!CanRequeueJobStatus(job.Status))
+                {
+                    _logger.LogInformation("Scan job {JobId} has status {Status} and cannot be requeued", jobId, job.Status);
+                    return null;
+                }
 
-            var newJob = new ScanJob
+                var pathSemantics = !string.IsNullOrWhiteSpace(job.Path)
+                    ? await ResolvePathSemanticsAsync(job.Path)
+                    : null;
+                var activeReplacement = _jobs.Values.FirstOrDefault(candidate =>
+                    candidate.Id != job.Id
+                    && candidate.AudiobookId == job.AudiobookId
+                    && string.Equals(candidate.CorrelationId, job.CorrelationId, StringComparison.Ordinal)
+                    && ((candidate.Path == null && job.Path == null)
+                        || (candidate.Path != null
+                            && job.Path != null
+                            && AreEquivalentPaths(candidate.Path, job.Path, pathSemantics)))
+                    && (string.Equals(candidate.Status, "Queued", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(candidate.Status, "Processing", StringComparison.OrdinalIgnoreCase)));
+                if (activeReplacement != null)
+                {
+                    return activeReplacement.Id;
+                }
+
+                var newJob = new ScanJob
+                {
+                    AudiobookId = job.AudiobookId,
+                    Path = job.Path,
+                    CorrelationId = job.CorrelationId,
+                    DownloadId = job.DownloadId
+                };
+                _jobs[newJob.Id] = newJob;
+                _logger.LogInformation("Requeueing scan job {OldJobId} as new job {NewJobId} for audiobook {AudiobookId}", jobId, newJob.Id, job.AudiobookId);
+                await _channel.Writer.WriteAsync(newJob);
+                return newJob.Id;
+            }
+            finally
             {
-                AudiobookId = job.AudiobookId,
-                Path = job.Path,
-                CorrelationId = job.CorrelationId,
-                DownloadId = job.DownloadId
-            };
-            _jobs[newJob.Id] = newJob;
-            _logger.LogInformation("Requeueing scan job {OldJobId} as new job {NewJobId} for audiobook {AudiobookId}", jobId, newJob.Id, job.AudiobookId);
-            await _channel.Writer.WriteAsync(newJob);
-            return newJob.Id;
+                _enqueueGate.Release();
+            }
         }
 
         private async Task<FileSystemPathSemantics?> ResolvePathSemanticsAsync(string path)

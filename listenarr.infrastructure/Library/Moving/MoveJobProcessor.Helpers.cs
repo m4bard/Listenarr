@@ -99,6 +99,16 @@ namespace Listenarr.Infrastructure.Library.Moving
                     job.Id);
                 return FinalizedMoveRecoveryOutcome.HandledFailure;
             }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                await ScheduleTransientRetryAsync(
+                    job,
+                    $"Finalized move verification will be retried: {exception.Message}",
+                    exception,
+                    "Move job {JobId} could not verify its published target",
+                    cancellationToken);
+                return FinalizedMoveRecoveryOutcome.HandledFailure;
+            }
 
             var targetInsideSource = FileSystemPathIdentity.IsSameOrInside(
                 target,
@@ -168,21 +178,12 @@ namespace Listenarr.Infrastructure.Library.Moving
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                await moveQueueService.IncrementAttemptAsync(
-                    job.Id,
-                    job.LeaseOwner!,
-                    job.LeaseGeneration,
-                    cancellationToken);
-                await UpdateJobStatusAsync(
+                await ScheduleTransientRetryAsync(
                     job,
-                    MoveJobStatus.RetryScheduled,
                     $"Move finalization will be retried: {exception.Message}",
-                    cancellationToken);
-                metrics.Increment("worker.move.job.retry_scheduled");
-                logger.LogWarning(
                     exception,
-                    "Move job {JobId} could not finish source-boundary finalization and was scheduled for retry",
-                    job.Id);
+                    "Move job {JobId} could not finish source-boundary finalization",
+                    cancellationToken);
                 return false;
             }
         }
@@ -209,23 +210,87 @@ namespace Listenarr.Infrastructure.Library.Moving
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                await moveQueueService.IncrementAttemptAsync(
-                    job.Id,
-                    job.LeaseOwner!,
-                    job.LeaseGeneration,
-                    cancellationToken);
-                await UpdateJobStatusAsync(
+                await ScheduleTransientRetryAsync(
                     job,
-                    MoveJobStatus.RetryScheduled,
                     $"Owned move artifact cleanup will be retried: {exception.Message}",
-                    cancellationToken);
-                metrics.Increment("worker.move.job.retry_scheduled");
-                logger.LogWarning(
                     exception,
-                    "Move job {JobId} could not remove its owned recovery artifacts and was scheduled for retry",
-                    job.Id);
+                    "Move job {JobId} could not remove its owned recovery artifacts",
+                    cancellationToken);
                 return false;
             }
+        }
+
+        private async Task<bool> TryRecordMoveCompletionAsync(
+            MoveJob job,
+            Audiobook audiobook,
+            string source,
+            string target,
+            IAudiobookRepository audiobookRepository,
+            IServiceProvider serviceProvider,
+            AudiobookContentMoveService contentMoveService,
+            AudiobookContentMoveRequest moveRequest,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                await RecordMoveCompletionAsync(
+                    job,
+                    audiobook,
+                    source,
+                    target,
+                    audiobookRepository,
+                    serviceProvider,
+                    contentMoveService,
+                    moveRequest,
+                    cancellationToken);
+                return true;
+            }
+            catch (Exception exception) when (exception is
+                MoveNeedsAttentionException or MoveLeaseLostException or PersistenceException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+            {
+                await ScheduleTransientRetryAsync(
+                    job,
+                    $"Move completion handoff will be retried: {exception.Message}",
+                    exception,
+                    "Move job {JobId} could not persist its required completion handoffs",
+                    cancellationToken);
+                return false;
+            }
+        }
+
+        private async Task ScheduleTransientRetryAsync(
+            MoveJob job,
+            string error,
+            Exception exception,
+            string logMessage,
+            CancellationToken cancellationToken)
+        {
+            var result = await moveQueueService.ScheduleRetryAsync(
+                job.Id,
+                job.LeaseOwner!,
+                job.LeaseGeneration,
+                error,
+                cancellationToken);
+            if (result.Status == MoveJobStatus.NeedsAttention)
+            {
+                metrics.Increment("worker.move.job.needs_attention");
+                logger.LogWarning(
+                    exception,
+                    logMessage + " and exhausted its transient retry limit",
+                    job.Id);
+                return;
+            }
+
+            metrics.Increment("worker.move.job.retry_scheduled");
+            logger.LogWarning(
+                exception,
+                logMessage + " and was scheduled for retry at {NextAttemptAt}",
+                job.Id,
+                result.NextAttemptAt);
         }
 
         private static bool IsFilesystemRoot(string path, FileSystemPathSemantics semantics)

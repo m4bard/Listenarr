@@ -114,6 +114,36 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
         }
 
         [Fact]
+        public async Task ProcessJobAsync_MoveScanWithMissingBasePath_RecordsTerminalFailure()
+        {
+            var missingBasePath = Path.Join(
+                Path.GetTempPath(),
+                $"scan-processor-move-missing-{Guid.NewGuid():N}");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Missing Move Scan")
+                .WithBasePath(missingBasePath)
+                .Build());
+            var queue = Assert.IsType<ScanQueueService>(
+                _provider.GetRequiredService<IScanQueueService>());
+            const string correlationId = "move:missing-base-path";
+            var jobId = await queue.EnqueueScanAsync(
+                audiobook,
+                correlationId: correlationId);
+            Assert.True(queue.Reader.TryRead(out var job));
+            Assert.Equal(jobId, job.Id);
+
+            await _provider.GetRequiredService<IScanJobProcessor>()
+                .ProcessJobAsync(job, CancellationToken.None);
+
+            Assert.True(queue.TryGetJob(job.Id, out var updatedJob));
+            Assert.Equal("Failed", updatedJob!.Status);
+            var correlated = await _historyRepository.GetByCorrelationIdAsync(correlationId);
+            Assert.Single(correlated, entry =>
+                entry.EventType == HistoryEvents.ScanFailed
+                && entry.Outcome == HistoryOutcome.Failed);
+        }
+
+        [Fact]
         public async Task ProcessJobAsync_CanceledToken_ThrowsBeforeStateChange()
         {
             var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
@@ -128,6 +158,54 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
 
             Assert.True(queue.TryGetJob(job.Id, out var updatedJob));
             Assert.Equal("Queued", updatedJob!.Status);
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_ReplayedMoveScan_DoesNotDuplicateTerminalHistory()
+        {
+            var basePath = FileService.GetTempDirectory("scan-processor-move-replay");
+            await FileService.GetFileAsync(basePath, "Move Replay Book.m4b", "audio");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Move Replay Book")
+                .WithBasePath(basePath)
+                .Build());
+            var (_, job) = await CreateQueuedScanJobAsync(
+                audiobook,
+                correlationId: "move:scan-replay");
+
+            var processor = _provider.GetRequiredService<IScanJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var history = await _historyRepository.GetByCorrelationIdAsync("move:scan-replay");
+            Assert.Single(history, entry =>
+                entry.EventType == HistoryEvents.ScanCompleted
+                && entry.Outcome == HistoryOutcome.Succeeded);
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_ReplayedMoveScanFailure_DoesNotDuplicateTerminalHistory()
+        {
+            var missingBasePath = Path.Join(
+                Path.GetTempPath(),
+                $"scan-processor-move-failure-{Guid.NewGuid():N}");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Move Failure Replay")
+                .WithBasePath(missingBasePath)
+                .Build());
+            var (_, job) = await CreateQueuedScanJobAsync(
+                audiobook,
+                correlationId: "move:scan-failure-replay");
+
+            var processor = _provider.GetRequiredService<IScanJobProcessor>();
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var history = await _historyRepository.GetByCorrelationIdAsync(
+                "move:scan-failure-replay");
+            Assert.Single(history, entry =>
+                entry.EventType == HistoryEvents.ScanFailed
+                && entry.Outcome == HistoryOutcome.Failed);
         }
 
         [Fact]
@@ -151,10 +229,74 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
             Assert.Single(files);
         }
 
-        private async Task<(ScanQueueService Queue, ScanJob Job)> CreateQueuedScanJobAsync(Audiobook audiobook)
+        [Fact]
+        public async Task ProcessJobAsync_AudiobookDeletedBeforeCompletion_MarksMoveScanFailed()
+        {
+            var basePath = FileService.GetTempDirectory("scan-processor-deleted-during-scan");
+            var audiobook = new AudiobookBuilder()
+                .WithId(808)
+                .WithTitle("Deleted During Scan")
+                .WithBasePath(basePath)
+                .Build();
+            var audiobookRepository = new Mock<IAudiobookRepository>();
+            audiobookRepository.SetupSequence(repository => repository.GetByIdAsync(audiobook.Id))
+                .ReturnsAsync(audiobook)
+                .ReturnsAsync((Audiobook?)null);
+            var fileRepository = new Mock<IAudiobookFileRepository>();
+            fileRepository.Setup(repository => repository.GetByAudiobookIdAsync(
+                    audiobook.Id,
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync([]);
+            var historyRepository = new Mock<IHistoryRepository>();
+            historyRepository.Setup(repository => repository.GetByCorrelationIdAsync(
+                    "move:deleted-during-scan",
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync([]);
+            historyRepository.Setup(repository => repository.AddAsync(
+                    It.IsAny<History>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync((History entry, CancellationToken _) => entry);
+            await using var services = new ServiceCollection()
+                .AddSingleton(audiobookRepository.Object)
+                .AddSingleton(fileRepository.Object)
+                .AddSingleton(historyRepository.Object)
+                .BuildServiceProvider();
+            var queue = Assert.IsType<ScanQueueService>(
+                _provider.GetRequiredService<IScanQueueService>());
+            var jobId = await queue.EnqueueScanAsync(
+                audiobook,
+                correlationId: "move:deleted-during-scan");
+            Assert.True(queue.Reader.TryRead(out var job));
+            Assert.Equal(jobId, job.Id);
+            var processor = new ScanJobProcessor(
+                queue,
+                services.GetRequiredService<IServiceScopeFactory>(),
+                _provider.GetRequiredService<ILogger<ScanJobProcessor>>(),
+                _provider.GetRequiredService<IHubContext<DownloadHub>>(),
+                _provider.GetRequiredService<IAppMetricsService>(),
+                _provider.GetRequiredService<IFileSystemSemanticsResolver>());
+
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            Assert.True(queue.TryGetJob(job.Id, out var updatedJob));
+            Assert.Equal("Failed", updatedJob!.Status);
+            Assert.Equal("Audiobook disappeared before scan completion", updatedJob.Error);
+            historyRepository.Verify(repository => repository.AddAsync(
+                It.Is<History>(entry =>
+                    entry.EventType == HistoryEvents.ScanFailed
+                    && entry.Outcome == HistoryOutcome.Failed
+                    && entry.CorrelationId == "move:deleted-during-scan"),
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        private async Task<(ScanQueueService Queue, ScanJob Job)> CreateQueuedScanJobAsync(
+            Audiobook audiobook,
+            string? correlationId = null)
         {
             var queue = Assert.IsType<ScanQueueService>(_provider.GetRequiredService<IScanQueueService>());
-            var jobId = await queue.EnqueueScanAsync(audiobook);
+            var jobId = await queue.EnqueueScanAsync(
+                audiobook,
+                correlationId: correlationId);
             Assert.True(queue.Reader.TryRead(out var job));
             Assert.Equal(jobId, job.Id);
             return (queue, job);

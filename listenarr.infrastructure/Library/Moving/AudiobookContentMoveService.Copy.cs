@@ -30,13 +30,20 @@ internal sealed partial class AudiobookContentMoveService
         foreach (var manifestEntry in manifest.OrderBy(entry => entry.EntryType))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (IsRootManifestEntry(manifestEntry))
+            {
+                ValidateExistingMoveDirectory(copyDestination, "copy destination root");
+                continue;
+            }
+
             if (!FileSystemPathIdentity.TryResolveRelativePathWithinBase(
                 copyDestination,
                 manifestEntry.RelativePath,
                 targetSemantics,
                 out var destinationPath))
             {
-                throw new IOException($"Move entry destination escaped target root: {manifestEntry.RelativePath}");
+                throw new MoveNeedsAttentionException(
+                    $"Move entry destination escaped target root: {manifestEntry.RelativePath}");
             }
 
             if (!FileSystemSafety.TryValidateMutationTarget(
@@ -64,6 +71,7 @@ internal sealed partial class AudiobookContentMoveService
                         source,
                         target,
                         cancellationToken);
+                    ValidateCopyMutationPath(destinationPath, copyDestination);
                     Directory.CreateDirectory(destinationPath);
                     ValidateCopyMutationPath(destinationPath, copyDestination);
                     if ((File.GetAttributes(destinationPath) & FileAttributes.ReparsePoint) != 0)
@@ -82,7 +90,8 @@ internal sealed partial class AudiobookContentMoveService
                 sourceSemantics,
                 out var entry))
             {
-                throw new IOException($"Move entry escaped source root: {manifestEntry.RelativePath}");
+                throw new MoveNeedsAttentionException(
+                    $"Move entry escaped source root: {manifestEntry.RelativePath}");
             }
 
             await CopyFileWithRetryAsync(
@@ -127,6 +136,15 @@ internal sealed partial class AudiobookContentMoveService
         var expectedPaths = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in manifest)
         {
+            if (IsRootManifestEntry(entry))
+            {
+                expectedPaths.Add(FileSystemPathIdentity.CreateKey(
+                    "move-target",
+                    destinationRoot,
+                    targetSemantics));
+                continue;
+            }
+
             if (!FileSystemPathIdentity.TryResolveRelativePathWithinBase(
                 destinationRoot,
                 entry.RelativePath,
@@ -249,6 +267,7 @@ internal sealed partial class AudiobookContentMoveService
         if (!string.IsNullOrEmpty(destinationDirectory) && !Directory.Exists(destinationDirectory))
         {
             await EnsureMutationAuthorizedAsync(request, sourceRoot, target, cancellationToken);
+            ValidateCopyMutationPath(destinationFile, destinationRoot);
             Directory.CreateDirectory(destinationDirectory);
             ValidateCopyMutationPath(destinationFile, destinationRoot);
         }
@@ -309,7 +328,20 @@ internal sealed partial class AudiobookContentMoveService
                     if (await FileMatchesManifestAsync(partialFile, manifestEntry, cancellationToken))
                     {
                         await EnsureMutationAuthorizedAsync(request, sourceRoot, target, cancellationToken);
+                        faultInjector?.OnCopyMutation(
+                            request.JobId,
+                            CopyMutationFaultPoint.BeforePartialPublication);
                         ValidateCopyMutationPath(destinationFile, destinationRoot);
+                        ValidateExistingOwnedFile(partialFile, destinationRoot);
+                        if (!await FileMatchesManifestAsync(
+                                partialFile,
+                                manifestEntry,
+                                cancellationToken))
+                        {
+                            throw new MoveNeedsAttentionException(
+                                $"The partial copy changed before publication: {Path.GetFileName(partialFile)}");
+                        }
+
                         ValidateExistingOwnedFile(partialFile, destinationRoot);
                         File.Move(partialFile, destinationFile, overwrite: false);
                         return;
@@ -371,6 +403,20 @@ internal sealed partial class AudiobookContentMoveService
                 }
 
                 await EnsureMutationAuthorizedAsync(request, sourceRoot, target, cancellationToken);
+                faultInjector?.OnCopyMutation(
+                    request.JobId,
+                    CopyMutationFaultPoint.BeforePartialPublication);
+                ValidateExistingOwnedFile(partialFile, destinationRoot);
+                if (!await FileMatchesManifestAsync(
+                        partialFile,
+                        manifestEntry,
+                        cancellationToken))
+                {
+                    throw new MoveNeedsAttentionException(
+                        $"The partial copy changed before publication: {Path.GetFileName(partialFile)}");
+                }
+
+                ValidateExistingOwnedFile(partialFile, destinationRoot);
                 File.Move(partialFile, destinationFile, overwrite: false);
                 return;
             }

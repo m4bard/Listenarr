@@ -33,7 +33,7 @@ internal sealed partial class AudiobookContentMoveService
                 FileAccess.Write,
                 FileShare.None,
                 MoveCopyBufferSize,
-                FileOptions.Asynchronous | FileOptions.WriteThrough);
+                FileOptions.Asynchronous);
 
             var bytesSinceLeaseCheck = 0L;
             var leaseCheckTimer = Stopwatch.StartNew();
@@ -85,7 +85,6 @@ internal sealed partial class AudiobookContentMoveService
                 sourceRoot,
                 target,
                 cancellationToken);
-            await destinationStream.FlushAsync(cancellationToken);
             destinationStream.Flush(flushToDisk: true);
         }
         finally

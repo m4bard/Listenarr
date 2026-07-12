@@ -58,6 +58,36 @@ public partial class AudiobookContentMoveServiceTests
     }
 
     [Fact]
+    public async Task MoveContentsAsync_UnownedTargetEntryAppearsBeforeSourceMove_PreservesSource()
+    {
+        var source = FileService.GetTempDirectory("content-move-unowned-target-cleanup-src");
+        await FileService.GetFileAsync(source, "book.m4b", "verified audio");
+        var target = Path.Join(
+            FileService.GetTempPath(),
+            $"content-move-unowned-target-cleanup-dst-{Guid.NewGuid():N}");
+        var request = await CreateLeasedMoveRequestAsync(source, target);
+        var service = new AudiobookContentMoveService(
+            _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+            _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+            TimeProvider.System,
+            new AddUnownedTargetEntryBeforeSourceMove(target));
+
+        var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+            service.MoveContentsAsync(request, CancellationToken.None));
+
+        Assert.Contains("unowned file", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(File.Exists(Path.Join(source, "book.m4b")));
+        Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        Assert.Equal(
+            "preserve me",
+            await File.ReadAllTextAsync(Path.Join(target, "operator-note.txt")));
+        var quarantineRoot = Path.Join(
+            Path.GetDirectoryName(source)!,
+            $".listenarr-quarantine-{request.JobId:N}");
+        Assert.False(File.Exists(Path.Join(quarantineRoot, "book.m4b")));
+    }
+
+    [Fact]
     public async Task MoveContentsAsync_TargetFileReplacedBeforeQuarantineDelete_PreservesQuarantineAndExternalFile()
     {
         var capabilityRoot = FileService.GetTempDirectory("content-move-target-race-capability");
@@ -116,6 +146,25 @@ public partial class AudiobookContentMoveServiceTests
             {
                 File.Delete(linkedTargetFile);
             }
+        }
+    }
+
+    private sealed class AddUnownedTargetEntryBeforeSourceMove(
+        string target) : IMoveFaultInjector
+    {
+        private bool _added;
+
+        public void OnSourceCleanupMutation(
+            Guid jobId,
+            SourceCleanupFaultPoint faultPoint)
+        {
+            if (_added || faultPoint != SourceCleanupFaultPoint.BeforeSourceFileMove)
+            {
+                return;
+            }
+
+            File.WriteAllText(Path.Join(target, "operator-note.txt"), "preserve me");
+            _added = true;
         }
     }
 

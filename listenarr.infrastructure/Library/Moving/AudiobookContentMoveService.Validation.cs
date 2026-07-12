@@ -33,7 +33,7 @@ internal sealed partial class AudiobookContentMoveService
             .Any(entry => !(sourceInsideTarget && IsTargetEntryAllowedBySourceSubtree(entry, source, semantics)));
         if (targetHasBlockingContent)
         {
-            throw new IOException(sourceInsideTarget
+            throw new MoveNeedsAttentionException(sourceInsideTarget
                 ? "Destination contains unrelated content outside the source subtree"
                 : "Target directory already exists and contains files");
         }

@@ -476,6 +476,46 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
         Assert.Equal("Superseded by reconciliation.", currentJob.Error);
     }
 
+    [Theory]
+    [InlineData("reconcile")]
+    [InlineData("health")]
+    [InlineData("requeue")]
+    [InlineData("claim")]
+    [InlineData("heartbeat")]
+    public async Task ProviderFailure_IsTranslatedToPersistenceException(string operation)
+    {
+        var unavailablePath = Path.Join(
+            Path.GetTempPath(),
+            "listenarr-tests",
+            $"missing-{Guid.NewGuid():N}",
+            "move.db");
+        var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+            .UseSqlite($"Data Source={unavailablePath};Mode=ReadWrite;Pooling=False")
+            .Options;
+        var persistence = new EfMoveQueuePersistence(
+            new TestDbContextFactory(options),
+            BuildSemanticsResolver());
+        var job = CreateJob("v2:move:42:s:unavailable");
+        var now = DateTimeOffset.UtcNow;
+
+        Task operationTask = operation switch
+        {
+            "reconcile" => persistence.ReconcileIdentityKeysAsync(),
+            "health" => persistence.GetHealthAsync(now),
+            "requeue" => persistence.RequeueAsync(job),
+            "claim" => persistence.TryClaimAsync(job.Id, "worker-a", now, now.AddMinutes(2)),
+            "heartbeat" => persistence.HeartbeatAsync(
+                job.Id,
+                "worker-a",
+                1,
+                now,
+                now.AddMinutes(2)),
+            _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
+        };
+
+        await Assert.ThrowsAsync<PersistenceException>(() => operationTask);
+    }
+
     [Fact]
     public async Task RequeueAsync_PersistsResetRetryAndLeaseState()
     {
@@ -497,6 +537,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
         job.Phase = MoveJobPhase.None;
         job.Error = null;
         job.FailureKind = MoveFailureKind.None;
+        job.AttemptCount = 0;
         job.NextAttemptAt = null;
         job.LeaseOwner = null;
         job.LeaseExpiresAt = null;
@@ -514,7 +555,7 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
         Assert.Null(persisted.LeaseExpiresAt);
         Assert.Equal("v2:move:42:s:requeue-reset-new", persisted.ActiveDeduplicationKey);
         Assert.Equal(3, persisted.LeaseGeneration);
-        Assert.Equal(2, persisted.AttemptCount);
+        Assert.Equal(0, persisted.AttemptCount);
     }
 
     private EfMoveQueuePersistence CreatePersistence(IFileSystemSemanticsResolver? resolver = null) =>

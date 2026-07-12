@@ -22,6 +22,7 @@ internal static class WorkerRegistrationExtensions
         services.AddSingleton<IWorkerCycleRunner, WorkerCycleRunner>();
 
         services.AddSingleton<IScanQueueService, ScanQueueService>();
+        services.AddSingleton<MoveScanHandoffRecoveryService>();
         AddProcessor<ScanJobProcessor, IScanJobProcessor>(services);
         services.AddHostedService<ScanBackgroundService>();
 

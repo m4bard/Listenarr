@@ -11,8 +11,8 @@ internal sealed partial class AudiobookContentMoveService
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var source = Path.GetFullPath(request.Source);
-        var target = Path.GetFullPath(request.Target);
+        var source = NormalizeMoveDirectoryEndpoint(request.Source);
+        var target = NormalizeMoveDirectoryEndpoint(request.Target);
         var recoveryMarkerPath = GetRecoveryMarkerPath(target, request.JobId);
         var sourceSemantics = request.SourceSemantics;
         var targetSemantics = request.TargetSemantics;
@@ -25,6 +25,18 @@ internal sealed partial class AudiobookContentMoveService
             sourceSemantics,
             targetSemantics,
             request.LeaseToken,
+            cancellationToken);
+        await RecoverRecoveryMarkerWriteFilesAsync(
+            source,
+            request,
+            source,
+            target,
+            cancellationToken);
+        await RecoverRecoveryMarkerWriteFilesAsync(
+            target,
+            request,
+            source,
+            target,
             cancellationToken);
 
         var recoveryMarker = ReadRecoveryMarker(recoveryMarkerPath);
@@ -59,18 +71,34 @@ internal sealed partial class AudiobookContentMoveService
         var recoveryStage = recoveryMarker.Stage;
         if (string.Equals(recoveryStage, AtomicRenameCompletedStage, StringComparison.Ordinal))
         {
-            if (manifest.Count > 0)
-            {
-                throw new MoveNeedsAttentionException(
-                    "An atomic rename marker cannot be combined with a persisted copy manifest.");
-            }
-
             if (Directory.Exists(source))
             {
                 throw new MoveNeedsAttentionException(
                     "Both source and target exist for an atomic rename marker; completion cannot be proven and no files were changed.");
             }
 
+            if (manifest.Count == 0)
+            {
+                throw new MoveNeedsAttentionException(
+                    "An atomic rename marker exists without a persisted manifest; target contents cannot be proven.");
+            }
+
+            faultInjector?.OnFinalizedVerification(
+                request.JobId,
+                FinalizedVerificationFaultPoint.BeforeManifestVerification);
+            ValidateTargetManifest(target, manifest, targetSemantics);
+            ValidateExistingDestinationContents(
+                source,
+                target,
+                manifest,
+                request.JobId,
+                targetSemantics,
+                allowPartialFiles: false);
+            await VerifyPublishedManifestAsync(
+                target,
+                manifest,
+                targetSemantics,
+                cancellationToken);
             return new AudiobookContentMoveResult(
                 source,
                 target,
@@ -96,6 +124,9 @@ internal sealed partial class AudiobookContentMoveService
             throw new MoveNeedsAttentionException("The move recovery stage is not recoverable.");
         }
 
+        faultInjector?.OnFinalizedVerification(
+            request.JobId,
+            FinalizedVerificationFaultPoint.BeforeManifestVerification);
         var tempOwnership = await TryValidatePublishedTempOwnershipAsync(
             target,
             request,
