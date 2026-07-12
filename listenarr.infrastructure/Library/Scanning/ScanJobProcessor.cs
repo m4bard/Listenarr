@@ -76,6 +76,12 @@ namespace Listenarr.Infrastructure.Library.Scanning
                 if (audiobook == null)
                 {
                     _logger.LogWarning("Audiobook {Id} not found for scan job {JobId}", job.AudiobookId, job.Id);
+                    await RecordMoveScanFailureAsync(
+                        historyRepository,
+                        job,
+                        audiobook: null,
+                        "Audiobook not found",
+                        stoppingToken);
                     _metrics.Increment("worker.scan.job.skipped");
                     return;
                 }
@@ -118,16 +124,17 @@ namespace Listenarr.Infrastructure.Library.Scanning
                         "Audiobook BasePath is unavailable for scan job {JobId}: {Path}. Leaving tracked files unchanged.",
                         job.Id,
                         LogRedaction.SanitizeFilePath(scanRoot));
-                    try { _queue.UpdateJobStatus(job.Id, "Failed", "BasePath unavailable"); }
-                    catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
-                    {
-                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                    }
                     try { await _hubContext.Clients.All.SendAsync("ScanJobUpdate", new { jobId = job.Id.ToString(), audiobookId = job.AudiobookId, status = "Failed", error = "BasePath unavailable", failedAt = DateTime.UtcNow }); }
                     catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException)
                     {
                         System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                     }
+                    await RecordMoveScanFailureAsync(
+                        historyRepository,
+                        job,
+                        audiobook,
+                        "BasePath unavailable",
+                        stoppingToken);
                     _metrics.Increment("worker.scan.job.failed");
                     return;
                 }
@@ -135,6 +142,12 @@ namespace Listenarr.Infrastructure.Library.Scanning
                 if (string.IsNullOrEmpty(scanRoot) || !Directory.Exists(scanRoot))
                 {
                     _logger.LogWarning("Scan path not found for job {JobId}: {Path}", job.Id, LogRedaction.SanitizeFilePath(scanRoot));
+                    await RecordMoveScanFailureAsync(
+                        historyRepository,
+                        job,
+                        audiobook,
+                        "Scan path not found",
+                        stoppingToken);
                     _metrics.Increment("worker.scan.job.skipped");
                     return;
                 }
@@ -148,6 +161,12 @@ namespace Listenarr.Infrastructure.Library.Scanning
                         "Scan job {JobId} blocked because filesystem identity is unavailable: {Reason}",
                         job.Id,
                         semanticsResolution.Reason);
+                    await RecordMoveScanFailureAsync(
+                        historyRepository,
+                        job,
+                        audiobook,
+                        semanticsResolution.Reason ?? "Filesystem identity unavailable",
+                        stoppingToken);
                     _metrics.Increment("worker.scan.job.skipped");
                     return;
                 }
@@ -350,50 +369,76 @@ namespace Listenarr.Infrastructure.Library.Scanning
                 await NotifyAvailableAsync(audiobook, createdFiles);
 
                 var updated = await audiobookRepository.GetByIdAsync(audiobook.Id);
-                if (updated != null)
+                if (updated == null)
                 {
-                    // Build an authoritative Audiobook DTO and broadcast it
-                    var audiobookDto = AudiobookDtoFactory.BuildFromEntity(updated);
-                    await _hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDto);
-                    await _hubContext.Clients.All.SendAsync("ScanJobUpdate", new { jobId = job.Id.ToString(), audiobookId = job.AudiobookId, status = "Completed", found = foundFiles.Count, created = createdFiles, completedAt = DateTime.UtcNow });
-                    _logger.LogInformation("Broadcasted AudiobookUpdate for AudiobookId {AudiobookId} after scan job {JobId}", audiobook.Id, job.Id);
+                    const string error = "Audiobook disappeared before scan completion";
+                    _logger.LogWarning(
+                        "Audiobook {AudiobookId} disappeared before scan job {JobId} could complete",
+                        audiobook.Id,
+                        job.Id);
+                    await RecordMoveScanFailureAsync(
+                        historyRepository,
+                        job,
+                        audiobook,
+                        error,
+                        stoppingToken);
+                    _metrics.Increment("worker.scan.job.failed");
+                    return;
+                }
 
-                    // Mark job as completed in queue to prevent deduplication issues
+                // Build an authoritative Audiobook DTO and broadcast it
+                var audiobookDto = AudiobookDtoFactory.BuildFromEntity(updated);
+                await _hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDto);
+                await _hubContext.Clients.All.SendAsync("ScanJobUpdate", new { jobId = job.Id.ToString(), audiobookId = job.AudiobookId, status = "Completed", found = foundFiles.Count, created = createdFiles, completedAt = DateTime.UtcNow });
+                _logger.LogInformation("Broadcasted AudiobookUpdate for AudiobookId {AudiobookId} after scan job {JobId}", audiobook.Id, job.Id);
+
+                var terminalStatusHandled = await RecordScanCompletionAsync(
+                    historyRepository,
+                    job,
+                    audiobook,
+                    foundFiles.Count,
+                    createdFiles,
+                    scanRoot,
+                    stoppingToken);
+                if (!terminalStatusHandled)
+                {
                     try { _queue.UpdateJobStatus(job.Id, "Completed"); }
                     catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException)
                     {
                         System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                     }
-                    await historyRepository.AddAsync(new History
-                    {
-                        AudiobookId = audiobook.Id,
-                        AudiobookTitle = audiobook.Title,
-                        SourceTitle = audiobook.Title,
-                        DownloadId = job.DownloadId,
-                        EventType = HistoryEvents.ScanCompleted,
-                        Outcome = HistoryOutcome.Succeeded,
-                        Source = "LibraryScan",
-                        Message = $"Library scan completed: {foundFiles.Count} found, {createdFiles} created",
-                        Timestamp = DateTime.UtcNow,
-                        CorrelationId = job.CorrelationId ?? job.Id.ToString("N"),
-                        Data = JsonSerializer.Serialize(new
-                        {
-                            ScanJobId = job.Id,
-                            Found = foundFiles.Count,
-                            Created = createdFiles,
-                            Path = scanRoot
-                        })
-                    }, stoppingToken);
-                    _metrics.Increment("worker.scan.job.completed");
                 }
+                _metrics.Increment("worker.scan.job.completed");
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Error processing scan job {JobId}", job.Id);
-                try { _queue.UpdateJobStatus(job.Id, "Failed", ex.Message); }
-                catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException)
+                var terminalStatusHandled = false;
+                try
                 {
-                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    using var historyScope = _scopeFactory.CreateScope();
+                    var historyRepository = historyScope.ServiceProvider.GetRequiredService<IHistoryRepository>();
+                    var audiobookRepository = historyScope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                    var audiobook = await audiobookRepository.GetByIdAsync(job.AudiobookId);
+                    terminalStatusHandled = await RecordScanFailureHistoryAsync(
+                        historyRepository,
+                        job,
+                        audiobook,
+                        ex.Message,
+                        stoppingToken);
+                }
+                catch (Exception historyException) when (historyException is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+                {
+                    _logger.LogDebug(historyException, "Unable to record failed scan history for job {JobId}", job.Id);
+                }
+
+                if (!terminalStatusHandled)
+                {
+                    try { _queue.UpdateJobStatus(job.Id, "Failed", ex.Message); }
+                    catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException)
+                    {
+                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    }
                 }
                 try { await _hubContext.Clients.All.SendAsync("ScanJobUpdate", new { jobId = job.Id.ToString(), audiobookId = job.AudiobookId, status = "Failed", error = ex.Message, failedAt = DateTime.UtcNow }); }
                 catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException)
@@ -401,32 +446,6 @@ namespace Listenarr.Infrastructure.Library.Scanning
                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                 }
                 _metrics.Increment("worker.scan.job.failed");
-                try
-                {
-                    using var historyScope = _scopeFactory.CreateScope();
-                    var historyRepository = historyScope.ServiceProvider.GetRequiredService<IHistoryRepository>();
-                    var audiobookRepository = historyScope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
-                    var audiobook = await audiobookRepository.GetByIdAsync(job.AudiobookId);
-                    await historyRepository.AddAsync(new History
-                    {
-                        AudiobookId = job.AudiobookId,
-                        AudiobookTitle = audiobook?.Title,
-                        SourceTitle = audiobook?.Title,
-                        DownloadId = job.DownloadId,
-                        EventType = HistoryEvents.ScanFailed,
-                        Outcome = HistoryOutcome.Failed,
-                        Source = "LibraryScan",
-                        Message = "Library scan failed",
-                        Error = ex.Message,
-                        Timestamp = DateTime.UtcNow,
-                        CorrelationId = job.CorrelationId ?? job.Id.ToString("N"),
-                        Data = JsonSerializer.Serialize(new { ScanJobId = job.Id, job.Path })
-                    }, stoppingToken);
-                }
-                catch (Exception historyException) when (historyException is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
-                {
-                    _logger.LogDebug(historyException, "Unable to record failed scan history for job {JobId}", job.Id);
-                }
             }
         }
 

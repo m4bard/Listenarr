@@ -17,7 +17,8 @@ internal sealed partial class AudiobookContentMoveService
         string Source,
         string Target,
         string DirectoryPath,
-        string? OwnedArtifactType = null);
+        string? OwnedArtifactType = null,
+        string? OwnedDirectoryPath = null);
 
     private MoveOwnershipMarker CreateOwnershipMarker(
         string artifactType,
@@ -25,7 +26,8 @@ internal sealed partial class AudiobookContentMoveService
         string source,
         string target,
         string directoryPath,
-        string? ownedArtifactType = null) =>
+        string? ownedArtifactType = null,
+        string? ownedDirectoryPath = null) =>
         new(
             OwnershipMarkerVersion,
             artifactType,
@@ -33,7 +35,10 @@ internal sealed partial class AudiobookContentMoveService
             Path.GetFullPath(source),
             Path.GetFullPath(target),
             Path.GetFullPath(directoryPath),
-            ownedArtifactType);
+            ownedArtifactType,
+            string.IsNullOrWhiteSpace(ownedDirectoryPath)
+                ? null
+                : Path.GetFullPath(ownedDirectoryPath));
 
     private async Task<MoveOwnershipMarker> RecoverOrReadOwnershipMarkerAsync(
         string markerPath,
@@ -41,6 +46,7 @@ internal sealed partial class AudiobookContentMoveService
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
         FileSystemPathSemantics directorySemantics,
+        MoveLeaseToken leaseToken,
         Func<Task> authorizeMutation)
     {
         var markerDirectory = Path.GetDirectoryName(Path.GetFullPath(markerPath))
@@ -62,52 +68,103 @@ internal sealed partial class AudiobookContentMoveService
                 sourceSemantics,
                 targetSemantics,
                 directorySemantics,
+                leaseToken,
                 authorizeMutation);
             return marker;
         }
 
-        var writeFiles = Directory.EnumerateFiles(
-                markerDirectory,
-                Path.GetFileName(markerPath) + ".writing-*",
-                SearchOption.TopDirectoryOnly)
-            .ToList();
-        if (writeFiles.Count != 1)
+        var validWrites = new List<(string Path, MoveOwnershipMarker Marker)>();
+        var discardedTruncatedPredecessor = false;
+        foreach (var writePath in Directory.EnumerateFiles(
+            markerDirectory,
+            Path.GetFileName(markerPath) + ".writing-*",
+            SearchOption.TopDirectoryOnly))
         {
-            throw new MoveNeedsAttentionException(
-                writeFiles.Count == 0
-                    ? "The owned directory has no valid ownership marker."
-                    : "The owned directory has multiple incomplete ownership marker publications.");
+            ValidateOwnershipMarkerWritePath(writePath, markerDirectory);
+            if (!TryParseMarkerWriteIdentity(writePath, markerPath, out var writeIdentity)
+                || writeIdentity.JobId != expected.JobId)
+            {
+                throw new MoveNeedsAttentionException(
+                    "An ownership-marker write filename does not match the active move job.");
+            }
+
+            if (writeIdentity.LeaseGeneration > leaseToken.Generation)
+            {
+                throw new MoveNeedsAttentionException(
+                    "A future-generation ownership-marker write file was preserved.");
+            }
+
+            var recovered = TryReadOwnershipMarkerWriteFile(writePath);
+            if (recovered == null)
+            {
+                if (writeIdentity.LeaseGeneration >= leaseToken.Generation)
+                {
+                    throw new MoveNeedsAttentionException(
+                        "A current or future-generation ownership-marker write file is truncated and was preserved.");
+                }
+
+                await authorizeMutation();
+                ValidateOwnershipMarkerWritePath(writePath, markerDirectory);
+                if (!TryParseMarkerWriteIdentity(writePath, markerPath, out var currentIdentity)
+                    || currentIdentity != writeIdentity)
+                {
+                    throw new MoveNeedsAttentionException(
+                        "A truncated ownership-marker write file changed before cleanup.");
+                }
+
+                File.Delete(writePath);
+                discardedTruncatedPredecessor = true;
+                continue;
+            }
+
+            ValidateOwnershipMarker(
+                recovered,
+                expected,
+                sourceSemantics,
+                targetSemantics,
+                directorySemantics);
+            validWrites.Add((writePath, recovered));
         }
 
-        var writePath = writeFiles[0];
-        ValidateOwnershipMarkerWritePath(writePath, markerDirectory);
-        var recovered = ReadOwnershipMarker(writePath);
-        ValidateOwnershipMarker(
-            recovered,
-            expected,
-            sourceSemantics,
-            targetSemantics,
-            directorySemantics);
+        if (validWrites.Count == 0)
+        {
+            if (discardedTruncatedPredecessor)
+            {
+                throw new InterruptedOwnershipPublicationException(
+                    "A truncated predecessor ownership marker was removed; the empty owned directory must be reclaimed.");
+            }
+
+            throw new MoveNeedsAttentionException(
+                "The owned directory has no valid ownership marker.");
+        }
+
+        if (validWrites.Count != 1)
+        {
+            throw new MoveNeedsAttentionException(
+                "The owned directory has multiple incomplete ownership marker publications.");
+        }
+
+        var (validWritePath, validMarker) = validWrites[0];
         if (OperatingSystem.IsWindows())
         {
             await authorizeMutation();
-            ValidateOwnershipMarkerWritePath(writePath, markerDirectory);
+            ValidateOwnershipMarkerWritePath(validWritePath, markerDirectory);
             File.SetAttributes(
-                writePath,
-                File.GetAttributes(writePath) | FileAttributes.Hidden);
+                validWritePath,
+                File.GetAttributes(validWritePath) | FileAttributes.Hidden);
         }
 
         ValidateOwnershipMarkerPublicationPaths(
             markerDirectory,
-            writePath,
+            validWritePath,
             markerPath);
         await authorizeMutation();
         ValidateOwnershipMarkerPublicationPaths(
             markerDirectory,
-            writePath,
+            validWritePath,
             markerPath);
-        File.Move(writePath, markerPath, overwrite: false);
-        return recovered;
+        File.Move(validWritePath, markerPath, overwrite: false);
+        return validMarker;
     }
 
     private static MoveOwnershipMarker ReadOwnershipMarker(string markerPath)
@@ -143,6 +200,20 @@ internal sealed partial class AudiobookContentMoveService
         }
     }
 
+    private static MoveOwnershipMarker? TryReadOwnershipMarkerWriteFile(string writePath)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<MoveOwnershipMarker>(
+                File.ReadAllText(writePath));
+        }
+        catch (Exception exception) when (exception is
+            JsonException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     private static void ValidateOwnershipMarker(
         MoveOwnershipMarker marker,
         MoveOwnershipMarker expected,
@@ -153,7 +224,8 @@ internal sealed partial class AudiobookContentMoveService
         if (marker.Version != OwnershipMarkerVersion
             || marker.JobId != expected.JobId
             || !string.Equals(marker.ArtifactType, expected.ArtifactType, StringComparison.Ordinal)
-            || !string.Equals(marker.OwnedArtifactType, expected.OwnedArtifactType, StringComparison.Ordinal))
+            || !string.Equals(marker.OwnedArtifactType, expected.OwnedArtifactType, StringComparison.Ordinal)
+            || (marker.OwnedDirectoryPath == null) != (expected.OwnedDirectoryPath == null))
         {
             throw new MoveNeedsAttentionException(
                 "The owned directory is owned by another job, artifact type, or unsupported marker version.");
@@ -166,7 +238,13 @@ internal sealed partial class AudiobookContentMoveService
                 || !FileSystemPathIdentity.AreEquivalent(
                     marker.DirectoryPath,
                     expected.DirectoryPath,
-                    directorySemantics))
+                    directorySemantics)
+                || (marker.OwnedDirectoryPath != null
+                    && expected.OwnedDirectoryPath != null
+                    && !FileSystemPathIdentity.AreEquivalent(
+                        marker.OwnedDirectoryPath,
+                        expected.OwnedDirectoryPath,
+                        directorySemantics)))
             {
                 throw new MoveNeedsAttentionException(
                     "The ownership marker does not match the persisted source, target, or owned directory.");
@@ -186,6 +264,7 @@ internal sealed partial class AudiobookContentMoveService
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
         FileSystemPathSemantics directorySemantics,
+        MoveLeaseToken leaseToken,
         Func<Task> authorizeMutation)
     {
         var markerDirectory = Path.GetDirectoryName(markerPath)
@@ -196,15 +275,34 @@ internal sealed partial class AudiobookContentMoveService
             SearchOption.TopDirectoryOnly))
         {
             ValidateOwnershipMarkerWritePath(writePath, markerDirectory);
-            var writeMarker = ReadOwnershipMarker(writePath);
-            ValidateOwnershipMarker(
-                writeMarker,
-                expected,
-                sourceSemantics,
-                targetSemantics,
-                directorySemantics);
-            ValidateOwnershipMarkerWritePath(writePath, markerDirectory);
-            writeMarker = ReadOwnershipMarker(writePath);
+            if (!TryParseMarkerWriteIdentity(writePath, markerPath, out var writeIdentity)
+                || writeIdentity.JobId != expected.JobId)
+            {
+                throw new MoveNeedsAttentionException(
+                    "An ownership-marker write filename does not match the active move job.");
+            }
+
+            if (writeIdentity.LeaseGeneration > leaseToken.Generation)
+            {
+                throw new MoveNeedsAttentionException(
+                    "A future-generation ownership-marker write file was preserved.");
+            }
+
+            var writeMarker = TryReadOwnershipMarkerWriteFile(writePath);
+            if (writeMarker == null)
+            {
+                if (writeIdentity.LeaseGeneration >= leaseToken.Generation)
+                {
+                    throw new MoveNeedsAttentionException(
+                        "A current or future-generation ownership-marker write file is truncated and was preserved.");
+                }
+
+                await authorizeMutation();
+                ValidateOwnershipMarkerWritePath(writePath, markerDirectory);
+                File.Delete(writePath);
+                continue;
+            }
+
             ValidateOwnershipMarker(
                 writeMarker,
                 expected,
@@ -213,7 +311,9 @@ internal sealed partial class AudiobookContentMoveService
                 directorySemantics);
             await authorizeMutation();
             ValidateOwnershipMarkerWritePath(writePath, markerDirectory);
-            writeMarker = ReadOwnershipMarker(writePath);
+            writeMarker = TryReadOwnershipMarkerWriteFile(writePath)
+                ?? throw new MoveNeedsAttentionException(
+                    "An ownership-marker write file changed before deletion.");
             ValidateOwnershipMarker(
                 writeMarker,
                 expected,
@@ -288,6 +388,18 @@ internal sealed partial class AudiobookContentMoveService
             throw new MoveNeedsAttentionException(
                 "An ownership-marker temporary file is missing or linked.");
         }
+    }
+
+    private static string GetCleanupDirectoryPath(
+        string directoryPath,
+        string ownedArtifactType,
+        Guid jobId)
+    {
+        var parent = Path.GetDirectoryName(Path.GetFullPath(directoryPath))
+            ?? throw new MoveNeedsAttentionException("The owned directory parent is unavailable.");
+        return Path.Join(
+            parent,
+            $".listenarr-{ownedArtifactType}-{jobId:N}.cleanup-dir");
     }
 
     private static string GetCleanupTombstonePath(

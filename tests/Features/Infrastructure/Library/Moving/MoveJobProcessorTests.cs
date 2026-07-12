@@ -1,4 +1,5 @@
 using Listenarr.Tests.Common;
+using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 {
@@ -362,7 +363,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
-        public async Task ProcessJobAsync_TargetContainsFiles_MarksJobFailed()
+        public async Task ProcessJobAsync_TargetContainsFiles_RequiresAttention()
         {
             var src = FileService.GetTempDirectory("move-processor-fail-src");
             await FileService.GetFileAsync(src, "book.m4b", "audio");
@@ -376,12 +377,12 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var updatedJob = await queue.GetJobAsync(job.Id);
             Assert.NotNull(updatedJob);
-            Assert.Equal(MoveJobStatus.Failed, updatedJob!.Status);
-            Assert.Equal(1, updatedJob.AttemptCount);
+            Assert.Equal(MoveJobStatus.NeedsAttention, updatedJob!.Status);
+            Assert.Equal(0, updatedJob.AttemptCount);
             Assert.True(Directory.Exists(src));
 
             var metricsMock = _provider.GetRequiredService<Mock<IAppMetricsService>>();
-            metricsMock.Verify(m => m.Increment("worker.move.job.failed", It.IsAny<double>()), Times.Once);
+            metricsMock.Verify(m => m.Increment("worker.move.job.needs_attention", It.IsAny<double>()), Times.Once);
         }
 
         [Fact]
@@ -389,8 +390,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         {
             var src = FileService.GetTempDirectory("move-processor-stale-attempt-src");
             await FileService.GetFileAsync(src, "book.m4b", "audio");
-            var dst = FileService.GetTempDirectory("move-processor-stale-attempt-dst");
-            await FileService.GetFileAsync(dst, "existing.txt", "blocked");
+            var dst = Path.Join(
+                FileService.GetTempPath(),
+                $"move-processor-stale-attempt-dst-{Guid.NewGuid():N}");
             var audiobook = await _audiobookRepository.AddAsync(new Audiobook
             {
                 Title = "Move Processor Stale Attempt",
@@ -412,9 +414,15 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                     job.LeaseGeneration,
                     It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new MoveLeaseLostException(job.Id, job.LeaseGeneration));
+            var contentMoveService = new AudiobookContentMoveService(
+                _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+                _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+                TimeProvider.System,
+                new ThrowUnexpectedAfterPublish());
             var processor = ActivatorUtilities.CreateInstance<MoveJobProcessor>(
                 _provider,
-                queue.Object);
+                queue.Object,
+                contentMoveService);
 
             await Assert.ThrowsAsync<MoveLeaseLostException>(() => processor.ProcessJobAsync(
                 job,
@@ -614,6 +622,15 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
             Assert.Equal(MoveJobStatus.Completed, updatedJob!.Status);
             Assert.Equal(Path.GetFullPath(source), updatedJob.SourcePath);
             Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        }
+
+        private sealed class ThrowUnexpectedAfterPublish : IMoveFaultInjector
+        {
+            public Task AfterPublishedAsync(
+                Guid jobId,
+                CancellationToken cancellationToken) =>
+                Task.FromException(new InvalidOperationException(
+                    "Simulated unexpected post-publication failure."));
         }
 
         private static async Task PrepareJobForProcessingAsync(IMoveQueueService queue, MoveJob job)

@@ -12,7 +12,8 @@ internal sealed partial class AudiobookContentMoveService
         var fullTarget = Path.GetFullPath(target);
         if (File.Exists(fullTarget) && !Directory.Exists(fullTarget))
         {
-            throw new IOException("The move target path is occupied by a file.");
+            throw new MoveNeedsAttentionException(
+                "The move target path is occupied by a file.");
         }
 
         ValidateMoveRootPath(fullTarget, mustExist: false, "target");

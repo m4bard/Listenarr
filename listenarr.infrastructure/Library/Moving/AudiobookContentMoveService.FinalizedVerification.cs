@@ -9,8 +9,8 @@ internal sealed partial class AudiobookContentMoveService
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var source = Path.GetFullPath(request.Source);
-        var target = Path.GetFullPath(request.Target);
+        var source = NormalizeMoveDirectoryEndpoint(request.Source);
+        var target = NormalizeMoveDirectoryEndpoint(request.Target);
         await EnsureLeaseOwnedAsync(request.JobId, request.LeaseToken, cancellationToken);
         await ValidatePersistedMoveIdentityAsync(
             request.JobId,
@@ -32,27 +32,13 @@ internal sealed partial class AudiobookContentMoveService
         var manifest = await LoadManifestAsync(request.JobId, cancellationToken);
         if (manifest.Count == 0)
         {
-            var phase = await LoadJobPhaseAsync(request.JobId, cancellationToken);
-            if (phase < MoveJobPhase.CleaningArtifacts)
-            {
-                throw new MoveNeedsAttentionException(
-                    "A markerless atomic move cannot be verified before durable artifact cleanup begins.");
-            }
-
-            if (!FileSystemSafety.TryEnumerateTreeWithoutLinks(
-                    target,
-                    out _,
-                    out _,
-                    out var reason))
-            {
-                throw new MoveNeedsAttentionException(
-                    $"The finalized atomic target could not be verified safely: {reason}");
-            }
-
-            VerifySourceCleanupState(request, source, target);
-            return;
+            throw new MoveNeedsAttentionException(
+                "A markerless finalized move cannot be verified without a persisted manifest.");
         }
 
+        faultInjector?.OnFinalizedVerification(
+            request.JobId,
+            FinalizedVerificationFaultPoint.BeforeManifestVerification);
         ValidateTargetManifest(target, manifest, request.TargetSemantics);
         var tempOwnership = await TryValidatePublishedTempOwnershipAsync(
             target,

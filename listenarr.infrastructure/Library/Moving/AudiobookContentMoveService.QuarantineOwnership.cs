@@ -35,6 +35,7 @@ internal sealed partial class AudiobookContentMoveService
                 sourceSemantics,
                 targetSemantics,
                 sourceSemantics,
+                leaseToken,
                 () => EnsureMutationAuthorizedAsync(
                     jobId,
                     leaseToken,
@@ -44,20 +45,50 @@ internal sealed partial class AudiobookContentMoveService
                     targetSemantics,
                     cancellationToken)))
         {
+            if (Directory.Exists(quarantineRoot) || File.Exists(quarantineRoot))
+            {
+                throw new MoveNeedsAttentionException(
+                    "The original move quarantine path was recreated during cleanup and was preserved.");
+            }
+
             // A prior completed cleanup left durable tombstone evidence.
         }
         else if (Directory.Exists(quarantineRoot))
         {
-            return await ValidateOwnedQuarantineDirectoryAsync(
-                quarantineRoot,
-                sourceParent,
-                jobId,
-                source,
-                target,
-                sourceSemantics,
-                targetSemantics,
-                leaseToken,
-                cancellationToken);
+            try
+            {
+                return await ValidateOwnedQuarantineDirectoryAsync(
+                    quarantineRoot,
+                    sourceParent,
+                    jobId,
+                    source,
+                    target,
+                    sourceSemantics,
+                    targetSemantics,
+                    leaseToken,
+                    cancellationToken);
+            }
+            catch (InterruptedOwnershipPublicationException)
+            {
+                await EnsureMutationAuthorizedAsync(
+                    jobId,
+                    leaseToken,
+                    source,
+                    target,
+                    sourceSemantics,
+                    targetSemantics,
+                    cancellationToken);
+                ValidateExistingMoveDirectory(
+                    quarantineRoot,
+                    "interrupted quarantine directory");
+                if (Directory.EnumerateFileSystemEntries(quarantineRoot).Any())
+                {
+                    throw new MoveNeedsAttentionException(
+                        "An interrupted quarantine ownership publication left unexpected content.");
+                }
+
+                Directory.Delete(quarantineRoot, recursive: false);
+            }
         }
 
         if (File.Exists(quarantineRoot))
@@ -75,6 +106,7 @@ internal sealed partial class AudiobookContentMoveService
             sourceSemantics,
             targetSemantics,
             cancellationToken);
+        ValidateMoveRootPath(quarantineRoot, mustExist: false, "quarantine");
         Directory.CreateDirectory(quarantineRoot);
         ValidateExistingMoveDirectory(quarantineRoot, "quarantine directory");
         var marker = CreateOwnershipMarker(
@@ -97,6 +129,7 @@ internal sealed partial class AudiobookContentMoveService
                 markerPath,
                 marker,
                 OwnershipMarkerKind.QuarantineDirectory,
+                leaseToken,
                 () => EnsureMutationAuthorizedAsync(
                     jobId,
                     leaseToken,
@@ -118,6 +151,26 @@ internal sealed partial class AudiobookContentMoveService
         }
         catch (Exception exception) when (exception is MoveLeaseLostException or PersistenceException)
         {
+            throw;
+        }
+        catch (MoveNeedsAttentionException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            await TryRemoveNewEmptyOwnershipDirectoryAsync(
+                quarantineRoot,
+                jobId,
+                "quarantine",
+                () => EnsureMutationAuthorizedAsync(
+                    jobId,
+                    leaseToken,
+                    source,
+                    target,
+                    sourceSemantics,
+                    targetSemantics,
+                    cancellationToken));
             throw;
         }
         catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
@@ -177,6 +230,7 @@ internal sealed partial class AudiobookContentMoveService
             sourceSemantics,
             targetSemantics,
             sourceSemantics,
+            leaseToken,
             () => EnsureMutationAuthorizedAsync(
                 jobId,
                 leaseToken,
@@ -221,6 +275,7 @@ internal sealed partial class AudiobookContentMoveService
                 sourceSemantics,
                 targetSemantics,
                 sourceSemantics,
+                leaseToken,
                 () => EnsureMutationAuthorizedAsync(
                     jobId,
                     leaseToken,
@@ -343,6 +398,7 @@ internal sealed partial class AudiobookContentMoveService
             sourceSemantics,
             targetSemantics,
             sourceSemantics,
+            leaseToken,
             () => EnsureMutationAuthorizedAsync(
                 jobId,
                 leaseToken,

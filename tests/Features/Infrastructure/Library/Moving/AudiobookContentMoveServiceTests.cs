@@ -340,7 +340,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
             var request = await CreateLeasedMoveRequestAsync(source, target);
-            var ex = await Assert.ThrowsAsync<IOException>(() => service.MoveContentsAsync(request, CancellationToken.None));
+            var ex = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+                service.MoveContentsAsync(request, CancellationToken.None));
 
             Assert.Contains("unrelated content", ex.Message);
             Assert.True(File.Exists(Path.Join(source, "book.m4b")));
@@ -577,7 +578,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
             var request = await CreateLeasedMoveRequestAsync(source, target);
-            var ex = await Assert.ThrowsAsync<IOException>(() => service.MoveContentsAsync(request, CancellationToken.None));
+            var ex = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+                service.MoveContentsAsync(request, CancellationToken.None));
 
             Assert.Contains("contains files", ex.Message);
             Assert.True(Directory.Exists(source));
@@ -615,7 +617,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
 
             var service = _provider.GetRequiredService<AudiobookContentMoveService>();
             var request = await CreateLeasedMoveRequestAsync(source, target);
-            var ex = await Assert.ThrowsAsync<IOException>(() => service.MoveContentsAsync(request, CancellationToken.None));
+            var ex = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+                service.MoveContentsAsync(request, CancellationToken.None));
 
             Assert.Contains("contains files", ex.Message);
             Assert.True(Directory.Exists(source));
@@ -647,6 +650,30 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         }
 
         [Fact]
+        public async Task MoveContentsAsync_TargetChangesAfterPublish_BlocksSourceCleanup()
+        {
+            var source = FileService.GetTempDirectory("content-move-target-drift-src");
+            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var target = Path.Join(
+                FileService.GetTempPath(),
+                $"content-move-target-drift-dst-{Guid.NewGuid():N}");
+            var service = new AudiobookContentMoveService(
+                _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+                _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+                TimeProvider.System,
+                new AddTargetFileAfterPublish(target));
+
+            var request = await CreateLeasedMoveRequestAsync(source, target);
+            var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+                service.MoveContentsAsync(request, CancellationToken.None));
+
+            Assert.Contains("unowned file", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True(File.Exists(Path.Join(source, "book.m4b")));
+            Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+            Assert.True(File.Exists(Path.Join(target, "arrived-late.txt")));
+        }
+
+        [Fact]
         public async Task LegacyCopyCompleteMarker_WithoutManifest_NeverAuthorizesDeletion()
         {
             var source = FileService.GetTempDirectory("content-move-legacy-marker-src");
@@ -672,12 +699,13 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
         public async Task AtomicRenameMarker_RecoversBeforePhasePersistence()
         {
             var source = FileService.GetTempDirectory("content-move-atomic-recovery-src");
-            await FileService.GetFileAsync(source, "book.m4b", "audio");
+            var sourceFile = await FileService.GetFileAsync(source, "book.m4b", "audio");
             var target = Path.Join(
                 FileService.GetTempPath(),
                 $"content-move-atomic-recovery-dst-{Guid.NewGuid():N}");
             var jobId = Guid.NewGuid();
             var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
+            await PersistFileManifestAsync(jobId, "book.m4b", sourceFile);
             await File.WriteAllTextAsync(
                 Path.Join(source, $".listenarr-move-{jobId:N}.pending"),
                 System.Text.Json.JsonSerializer.Serialize(new
@@ -1177,6 +1205,15 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving
                 File.WriteAllTextAsync(
                     Path.Join(source, "arrived-late.txt"),
                     "new content",
+                    cancellationToken);
+        }
+
+        private sealed class AddTargetFileAfterPublish(string target) : IMoveFaultInjector
+        {
+            public Task AfterPublishedAsync(Guid jobId, CancellationToken cancellationToken) =>
+                File.WriteAllTextAsync(
+                    Path.Join(target, "arrived-late.txt"),
+                    "new target content",
                     cancellationToken);
         }
     }

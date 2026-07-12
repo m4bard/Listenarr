@@ -30,19 +30,41 @@ internal sealed partial class AudiobookContentMoveService
                 request.SourceSemantics,
                 request.TargetSemantics,
                 request.TargetSemantics,
+                request.LeaseToken,
                 () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken)))
         {
+            if (Directory.Exists(tempDirectory) || File.Exists(tempDirectory))
+            {
+                throw new MoveNeedsAttentionException(
+                    "The original move temporary path was recreated during cleanup and was preserved.");
+            }
+
             // A prior cleanup completed. A new temp directory may now be claimed.
         }
         else if (Directory.Exists(tempDirectory))
         {
-            return await ValidateOwnedTempDirectoryAsync(
-                tempDirectory,
-                targetParent,
-                request,
-                source,
-                target,
-                cancellationToken);
+            try
+            {
+                return await ValidateOwnedTempDirectoryAsync(
+                    tempDirectory,
+                    targetParent,
+                    request,
+                    source,
+                    target,
+                    cancellationToken);
+            }
+            catch (InterruptedOwnershipPublicationException)
+            {
+                await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
+                ValidateExistingMoveDirectory(tempDirectory, "interrupted temporary directory");
+                if (Directory.EnumerateFileSystemEntries(tempDirectory).Any())
+                {
+                    throw new MoveNeedsAttentionException(
+                        "An interrupted temporary ownership publication left unexpected content.");
+                }
+
+                Directory.Delete(tempDirectory, recursive: false);
+            }
         }
 
         if (File.Exists(tempDirectory))
@@ -53,6 +75,7 @@ internal sealed partial class AudiobookContentMoveService
 
         ValidateMoveRootPath(tempDirectory, mustExist: false, "temporary directory");
         await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
+        ValidateMoveRootPath(tempDirectory, mustExist: false, "temporary directory");
         Directory.CreateDirectory(tempDirectory);
         ValidateExistingMoveDirectory(tempDirectory, "temporary directory");
         var marker = CreateOwnershipMarker(
@@ -68,6 +91,7 @@ internal sealed partial class AudiobookContentMoveService
                 markerPath,
                 marker,
                 OwnershipMarkerKind.TemporaryDirectory,
+                request.LeaseToken,
                 () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken));
             return await ValidateOwnedTempDirectoryAsync(
                 tempDirectory,
@@ -79,6 +103,19 @@ internal sealed partial class AudiobookContentMoveService
         }
         catch (Exception exception) when (exception is MoveLeaseLostException or PersistenceException)
         {
+            throw;
+        }
+        catch (MoveNeedsAttentionException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            await TryRemoveNewEmptyOwnershipDirectoryAsync(
+                tempDirectory,
+                request.JobId,
+                "temp",
+                () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken));
             throw;
         }
         catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
@@ -124,6 +161,7 @@ internal sealed partial class AudiobookContentMoveService
             request.SourceSemantics,
             request.TargetSemantics,
             request.TargetSemantics,
+            request.LeaseToken,
             () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken));
         return new ValidatedTempOwnership(
             safeTempDirectory,
@@ -153,6 +191,7 @@ internal sealed partial class AudiobookContentMoveService
                     request.SourceSemantics,
                     request.TargetSemantics,
                     request.TargetSemantics,
+                    request.LeaseToken,
                     () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken)))
             {
                 return;
@@ -181,6 +220,7 @@ internal sealed partial class AudiobookContentMoveService
                 request.SourceSemantics,
                 request.TargetSemantics,
                 request.TargetSemantics,
+                request.LeaseToken,
                 () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken));
         }
         catch (MoveLeaseLostException)
@@ -247,6 +287,7 @@ internal sealed partial class AudiobookContentMoveService
             request.SourceSemantics,
             request.TargetSemantics,
             request.TargetSemantics,
+            request.LeaseToken,
             () => EnsureMutationAuthorizedAsync(request, source, target, cancellationToken));
         return new ValidatedTempOwnership(
             safeDestination,

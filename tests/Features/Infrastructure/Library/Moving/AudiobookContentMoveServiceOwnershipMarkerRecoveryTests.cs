@@ -28,8 +28,9 @@ public partial class AudiobookContentMoveServiceTests
                 OwnershipMarkerKind.TemporaryDirectory,
                 faultPoint));
 
-        await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+        var publicationException = await Assert.ThrowsAnyAsync<IOException>(() =>
             faultingService.MoveContentsAsync(request, CancellationToken.None));
+        Assert.IsNotType<MoveNeedsAttentionException>(publicationException);
 
         Assert.True(Directory.Exists(source));
         Assert.False(Directory.Exists(target));
@@ -53,8 +54,9 @@ public partial class AudiobookContentMoveServiceTests
         var faultingService = CreateOwnershipFaultingService(
             OwnershipMarkerKind.TemporaryDirectory);
 
-        await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+        var publicationException = await Assert.ThrowsAnyAsync<IOException>(() =>
             faultingService.MoveContentsAsync(request, CancellationToken.None));
+        Assert.IsNotType<MoveNeedsAttentionException>(publicationException);
 
         Assert.True(Directory.Exists(source));
         var service = _provider.GetRequiredService<AudiobookContentMoveService>();
@@ -77,8 +79,9 @@ public partial class AudiobookContentMoveServiceTests
         var faultingService = CreateOwnershipFaultingService(
             OwnershipMarkerKind.QuarantineDirectory);
 
-        await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+        var publicationException = await Assert.ThrowsAnyAsync<IOException>(() =>
             faultingService.MoveContentsAsync(request, CancellationToken.None));
+        Assert.IsNotType<MoveNeedsAttentionException>(publicationException);
 
         var quarantineRoot = Path.Join(
             Path.GetDirectoryName(source)!,
@@ -106,6 +109,7 @@ public partial class AudiobookContentMoveServiceTests
     }
 
     [Theory]
+    [InlineData((int)OwnershipCleanupFaultPoint.BeforeCleanupDirectoryMove)]
     [InlineData((int)OwnershipCleanupFaultPoint.BeforeOwnershipMarkerDelete)]
     [InlineData((int)OwnershipCleanupFaultPoint.BeforeDirectoryDelete)]
     [InlineData((int)OwnershipCleanupFaultPoint.BeforeTombstoneDelete)]
@@ -132,12 +136,19 @@ public partial class AudiobookContentMoveServiceTests
         var quarantineRoot = Path.Join(
             sourceParent,
             $".listenarr-quarantine-{request.JobId:N}");
+        var cleanupDirectory = Path.Join(
+            sourceParent,
+            $".listenarr-quarantine-directory-{request.JobId:N}.cleanup-dir");
         var tombstonePath = Path.Join(
             sourceParent,
             $".listenarr-quarantine-directory-{request.JobId:N}.cleanup.json");
         Assert.Equal(
-            faultPoint != OwnershipCleanupFaultPoint.BeforeTombstoneDelete,
+            faultPoint == OwnershipCleanupFaultPoint.BeforeCleanupDirectoryMove,
             Directory.Exists(quarantineRoot));
+        Assert.Equal(
+            faultPoint is OwnershipCleanupFaultPoint.BeforeOwnershipMarkerDelete
+                or OwnershipCleanupFaultPoint.BeforeDirectoryDelete,
+            Directory.Exists(cleanupDirectory));
         Assert.True(File.Exists(tombstonePath));
         Assert.False(Directory.Exists(source));
         Assert.True(File.Exists(Path.Join(target, "book.m4b")));
@@ -155,7 +166,51 @@ public partial class AudiobookContentMoveServiceTests
 
         Assert.True(completed.SourceCleanupCompleted);
         Assert.False(Directory.Exists(quarantineRoot));
+        Assert.False(Directory.Exists(cleanupDirectory));
         Assert.False(File.Exists(tombstonePath));
+        Assert.False(Directory.Exists(source));
+        Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+    }
+
+    [Theory]
+    [InlineData((int)OwnershipCleanupFaultPoint.BeforeDirectoryDelete)]
+    [InlineData((int)OwnershipCleanupFaultPoint.BeforeTombstoneDelete)]
+    public async Task MoveContentsAsync_OriginalOwnedPathRecreatedDuringCleanup_PreservesEvidence(
+        int faultPointValue)
+    {
+        var faultPoint = (OwnershipCleanupFaultPoint)faultPointValue;
+        var source = FileService.GetTempDirectory("content-move-cleanup-recreated-path-src");
+        await FileService.GetFileAsync(source, "book.m4b", "verified audio");
+        var target = Path.Join(
+            FileService.GetTempPath(),
+            $"content-move-cleanup-recreated-path-dst-{Guid.NewGuid():N}");
+        var request = await CreateLeasedMoveRequestAsync(source, target);
+        var sourceParent = Path.GetDirectoryName(source)!;
+        var quarantineRoot = Path.Join(
+            sourceParent,
+            $".listenarr-quarantine-{request.JobId:N}");
+        var cleanupDirectory = Path.Join(
+            sourceParent,
+            $".listenarr-quarantine-directory-{request.JobId:N}.cleanup-dir");
+        var tombstonePath = Path.Join(
+            sourceParent,
+            $".listenarr-quarantine-directory-{request.JobId:N}.cleanup.json");
+        var service = new AudiobookContentMoveService(
+            _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+            _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+            TimeProvider.System,
+            new RecreateOwnedPathDuringCleanup(quarantineRoot, faultPoint));
+
+        var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+            service.MoveContentsAsync(request, CancellationToken.None));
+
+        Assert.Contains("recreated", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(Directory.Exists(quarantineRoot));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(quarantineRoot));
+        Assert.Equal(
+            faultPoint == OwnershipCleanupFaultPoint.BeforeDirectoryDelete,
+            Directory.Exists(cleanupDirectory));
+        Assert.True(File.Exists(tombstonePath));
         Assert.False(Directory.Exists(source));
         Assert.True(File.Exists(Path.Join(target, "book.m4b")));
     }
@@ -183,9 +238,13 @@ public partial class AudiobookContentMoveServiceTests
         var quarantineRoot = Path.Join(
             sourceParent,
             $".listenarr-quarantine-{request.JobId:N}");
+        var cleanupDirectory = Path.Join(
+            sourceParent,
+            $".listenarr-quarantine-directory-{request.JobId:N}.cleanup-dir");
         var tombstonePath = Path.Join(
             sourceParent,
             $".listenarr-quarantine-directory-{request.JobId:N}.cleanup.json");
+        Directory.CreateDirectory(quarantineRoot);
         var unexpectedFile = await FileService.GetFileAsync(
             quarantineRoot,
             "operator-note.txt",
@@ -195,10 +254,11 @@ public partial class AudiobookContentMoveServiceTests
         var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
             service.GetRecoverableMoveAsync(request, CancellationToken.None));
 
-        Assert.Contains("unexpected content", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("recreated", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("preserve me", await File.ReadAllTextAsync(unexpectedFile));
         Assert.True(File.Exists(tombstonePath));
         Assert.True(Directory.Exists(quarantineRoot));
+        Assert.True(Directory.Exists(cleanupDirectory));
         Assert.True(File.Exists(Path.Join(target, "book.m4b")));
     }
 
@@ -209,6 +269,29 @@ public partial class AudiobookContentMoveServiceTests
             _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
             TimeProvider.System,
             new OwnershipPublicationFaultInjector(markerKind));
+
+    private sealed class RecreateOwnedPathDuringCleanup(
+        string originalDirectory,
+        OwnershipCleanupFaultPoint expectedFaultPoint) : IMoveFaultInjector
+    {
+        private bool _recreated;
+
+        public void OnOwnershipCleanup(
+            Guid jobId,
+            OwnershipMarkerKind markerKind,
+            OwnershipCleanupFaultPoint faultPoint)
+        {
+            if (_recreated
+                || markerKind != OwnershipMarkerKind.QuarantineDirectory
+                || faultPoint != expectedFaultPoint)
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(originalDirectory);
+            _recreated = true;
+        }
+    }
 
     private sealed class OwnershipCleanupFaultInjector(
         OwnershipCleanupFaultPoint expectedFaultPoint) : IMoveFaultInjector

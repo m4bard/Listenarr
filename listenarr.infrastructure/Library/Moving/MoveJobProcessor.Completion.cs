@@ -13,58 +13,161 @@ internal partial class MoveJobProcessor
         string target,
         IAudiobookRepository audiobookRepository,
         IServiceProvider serviceProvider,
+        AudiobookContentMoveService contentMoveService,
+        AudiobookContentMoveRequest moveRequest,
         CancellationToken cancellationToken)
     {
         var correlationId = $"move:{job.Id:N}";
-        try
-        {
-            var historyRepository = serviceProvider.GetRequiredService<IHistoryRepository>();
-            var existingHistory = await historyRepository.GetByCorrelationIdAsync(
-                correlationId,
-                cancellationToken);
-            if (!existingHistory.Any(entry =>
-                    string.Equals(entry.EventType, "Moved", StringComparison.Ordinal)))
+        var historyRepository = serviceProvider.GetRequiredService<IHistoryRepository>();
+        await contentMoveService.MarkCompletionRecordingAsync(
+            moveRequest,
+            cancellationToken);
+
+        contentMoveService.OnCompletionHandoff(
+            job.Id,
+            CompletionHandoffFaultPoint.BeforeHistoryPersist);
+        await contentMoveService.MarkCompletionRecordingAsync(
+            moveRequest,
+            cancellationToken);
+        var moveHistoryWrite = await historyRepository.GetOrAddLeasedMoveHistoryAsync(
+            new History
             {
-                var notificationSent = await TrySendMoveWebhooksAsync(
-                    job,
-                    audiobook,
-                    source,
-                    target,
-                    serviceProvider);
-                await historyRepository.AddAsync(new History
+                AudiobookId = audiobook.Id,
+                AudiobookTitle = audiobook.Title,
+                EventType = "Moved",
+                Message = $"Moved audiobook files from {source} to {target}",
+                Source = "Move",
+                Timestamp = timeProvider.GetUtcNow().UtcDateTime,
+                NotificationSent = false,
+                CorrelationId = correlationId,
+                Data = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    JobId = job.Id,
+                    Source = source,
+                    Target = target
+                })
+            },
+            job.Id,
+            job.LeaseOwner!,
+            job.LeaseGeneration,
+            timeProvider.GetUtcNow(),
+            cancellationToken);
+        var moveHistory = moveHistoryWrite.Entry;
+        if (moveHistoryWrite.Created)
+        {
+            logger.LogInformation("Added history entry for move job {JobId}", job.Id);
+        }
+
+        if (moveHistoryWrite.Created)
+        {
+            var notificationSent = await TrySendMoveWebhooksAsync(
+                job,
+                audiobook,
+                source,
+                target,
+                serviceProvider);
+            if (notificationSent)
+            {
+                moveHistory.NotificationSent = true;
+                try
+                {
+                    await historyRepository.UpdateAsync(moveHistory, cancellationToken);
+                }
+                catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+                {
+                    logger.LogWarning(
+                        exception,
+                        "Move history was recorded but its notification flag could not be updated for job {JobId}",
+                        job.Id);
+                }
+            }
+
+            await TryPublishMoveToastAsync(job, audiobook, target);
+        }
+
+        await contentMoveService.MarkCompletionRecordingAsync(
+            moveRequest,
+            cancellationToken);
+        var completionHistory = await historyRepository.GetByCorrelationIdAsync(
+            correlationId,
+            cancellationToken);
+        var terminalScanExists = completionHistory.Any(entry =>
+            (string.Equals(entry.EventType, HistoryEvents.ScanCompleted, StringComparison.Ordinal)
+                && entry.Outcome == HistoryOutcome.Succeeded)
+            || (string.Equals(entry.EventType, HistoryEvents.ScanFailed, StringComparison.Ordinal)
+                && entry.Outcome == HistoryOutcome.Failed));
+        if (!terminalScanExists)
+        {
+            await contentMoveService.MarkCompletionRecordingAsync(
+                moveRequest,
+                cancellationToken);
+            await historyRepository.GetOrAddLeasedMoveHistoryAsync(
+                new History
                 {
                     AudiobookId = audiobook.Id,
                     AudiobookTitle = audiobook.Title,
-                    EventType = "Moved",
-                    Message = $"Moved audiobook files from {source} to {target}",
+                    SourceTitle = audiobook.Title,
+                    EventType = HistoryEvents.ScanQueued,
+                    Outcome = HistoryOutcome.Requested,
                     Source = "Move",
-                    Timestamp = DateTime.UtcNow,
-                    NotificationSent = notificationSent,
+                    Message = "Post-move library scan requested",
+                    Timestamp = timeProvider.GetUtcNow().UtcDateTime,
                     CorrelationId = correlationId,
                     Data = System.Text.Json.JsonSerializer.Serialize(new
                     {
-                        JobId = job.Id,
-                        Source = source,
+                        MoveJobId = job.Id,
+                        AudiobookId = audiobook.Id,
                         Target = target
                     })
-                }, cancellationToken);
-                logger.LogInformation("Added history entry for move job {JobId}", job.Id);
-                await TryPublishMoveToastAsync(job, audiobook, target);
+                },
+                job.Id,
+                job.LeaseOwner!,
+                job.LeaseGeneration,
+                timeProvider.GetUtcNow(),
+                cancellationToken);
+            try
+            {
+                await contentMoveService.MarkCompletionRecordingAsync(
+                    moveRequest,
+                    cancellationToken);
+                contentMoveService.OnCompletionHandoff(
+                    job.Id,
+                    CompletionHandoffFaultPoint.BeforeScanEnqueue);
+                await contentMoveService.MarkCompletionRecordingAsync(
+                    moveRequest,
+                    cancellationToken);
+                var scanJobId = await scanQueueService.EnqueueScanAsync(
+                    audiobook,
+                    path: null,
+                    correlationId);
+                logger.LogInformation(
+                    "Enqueued scan job {ScanJobId} for audiobook {AudiobookId} after move",
+                    scanJobId,
+                    audiobook.Id);
             }
-
-            await TryEnqueueMoveScanAndBroadcastAsync(
-                job,
-                audiobook,
-                audiobookRepository,
-                correlationId);
+            catch (Exception exception) when (exception is MoveLeaseLostException or PersistenceException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+            {
+                logger.LogWarning(
+                    exception,
+                    "Durable scan handoff for move job {JobId} was recorded but immediate dispatch failed; background recovery will retry it",
+                    job.Id);
+            }
         }
-        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+        else
         {
-            logger.LogWarning(
-                exception,
-                "Failed to record one or more best-effort completion side effects for move job {JobId}",
+            logger.LogInformation(
+                "Skipped replaying terminal scan handoff for move job {JobId}",
                 job.Id);
         }
+
+        await TryBroadcastAudiobookUpdateAsync(
+            job,
+            audiobook,
+            audiobookRepository);
     }
 
     private async Task<bool> TrySendMoveWebhooksAsync(
@@ -89,7 +192,7 @@ internal partial class MoveJobProcessor
                         AudiobookTitle = audiobook.Title,
                         Source = source,
                         Target = target,
-                        Timestamp = DateTime.UtcNow
+                        Timestamp = timeProvider.GetUtcNow().UtcDateTime
                     },
                     webhook.Url,
                     webhook.Triggers);
@@ -133,39 +236,31 @@ internal partial class MoveJobProcessor
         }
     }
 
-    private async Task TryEnqueueMoveScanAndBroadcastAsync(
+    private async Task TryBroadcastAudiobookUpdateAsync(
         MoveJob job,
         Audiobook audiobook,
-        IAudiobookRepository audiobookRepository,
-        string correlationId)
+        IAudiobookRepository audiobookRepository)
     {
         try
         {
-            var scanJobId = await scanQueueService.EnqueueScanAsync(
-                audiobook,
-                path: null,
-                correlationId);
-            logger.LogInformation(
-                "Enqueued scan job {ScanJobId} for audiobook {AudiobookId} after move",
-                scanJobId,
-                audiobook.Id);
-
             var fresh = await audiobookRepository.GetByIdAsync(audiobook.Id);
-            if (fresh != null)
+            if (fresh == null)
             {
-                var audiobookDtoFull = AudiobookDtoFactory.BuildFromEntity(fresh);
-                await hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDtoFull);
-                logger.LogInformation(
-                    "Broadcasted full AudiobookUpdate for AudiobookId {AudiobookId} after move job {JobId}",
-                    audiobook.Id,
-                    job.Id);
+                return;
             }
+
+            var audiobookDtoFull = AudiobookDtoFactory.BuildFromEntity(fresh);
+            await hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDtoFull);
+            logger.LogInformation(
+                "Broadcasted full AudiobookUpdate for AudiobookId {AudiobookId} after move job {JobId}",
+                audiobook.Id,
+                job.Id);
         }
         catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
         {
             logger.LogWarning(
                 exception,
-                "Failed to enqueue scan or broadcast AudiobookUpdate after move job {JobId}",
+                "Failed to broadcast AudiobookUpdate after move job {JobId}",
                 job.Id);
         }
     }

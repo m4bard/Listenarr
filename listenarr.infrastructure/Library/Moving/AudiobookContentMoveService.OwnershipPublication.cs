@@ -8,6 +8,7 @@ internal sealed partial class AudiobookContentMoveService
         string markerPath,
         MoveOwnershipMarker marker,
         OwnershipMarkerKind markerKind,
+        MoveLeaseToken leaseToken,
         Func<Task> authorizeMutation)
     {
         var markerDirectory = Path.GetDirectoryName(Path.GetFullPath(markerPath))
@@ -29,7 +30,10 @@ internal sealed partial class AudiobookContentMoveService
         }
 
         var payload = JsonSerializer.SerializeToUtf8Bytes(marker);
-        var writePath = markerPath + $".writing-{Guid.NewGuid():N}";
+        var writePath = CreateMarkerWritePath(
+            markerPath,
+            marker.JobId,
+            leaseToken.Generation);
         faultInjector?.OnOwnershipMarkerWrite(
             marker.JobId,
             markerKind,
@@ -53,7 +57,6 @@ internal sealed partial class AudiobookContentMoveService
                     marker.JobId,
                     markerKind,
                     OwnershipMarkerWriteFaultPoint.DuringJsonWrite);
-                await authorizeMutation();
                 stream.Write(payload.AsSpan(split));
                 faultInjector?.OnOwnershipMarkerWrite(
                     marker.JobId,
@@ -121,12 +124,26 @@ internal sealed partial class AudiobookContentMoveService
                 cleanupException = temporaryCleanupException;
             }
 
-            if (cleanupException != null)
+            if (exception is MoveNeedsAttentionException)
+            {
+                throw;
+            }
+
+            if (cleanupException is MoveNeedsAttentionException)
             {
                 throw new MoveNeedsAttentionException(
-                    $"Ownership marker publication failed and its temporary file could not be removed. "
+                    $"Ownership marker publication failed and its temporary file became ambiguous. "
                     + $"Publication error: {exception.Message}. "
                     + $"Temporary cleanup error: {cleanupException.Message}.");
+            }
+
+            if (cleanupException != null)
+            {
+                throw new IOException(
+                    $"Ownership marker publication failed and its validated temporary file could not be removed. "
+                    + $"Publication error: {exception.Message}. "
+                    + $"Temporary cleanup error: {cleanupException.Message}.",
+                    cleanupException);
             }
 
             throw;

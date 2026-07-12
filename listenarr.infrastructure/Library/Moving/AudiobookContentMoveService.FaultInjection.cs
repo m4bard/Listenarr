@@ -1,0 +1,151 @@
+namespace Listenarr.Infrastructure.Library.Moving;
+
+internal enum RecoveryMarkerWriteFaultPoint
+{
+    BeforeTemporaryFileCreation,
+    DuringJsonWrite,
+    DuringFlush,
+    AfterTemporaryFileWritten,
+    BeforePublication,
+    BeforeTemporaryFileDeletion
+}
+
+internal enum OwnershipMarkerKind
+{
+    TemporaryDirectory,
+    QuarantineDirectory,
+    CleanupTombstone
+}
+
+internal enum OwnershipMarkerWriteFaultPoint
+{
+    BeforeTemporaryFileCreation,
+    DuringJsonWrite,
+    DuringFlush,
+    AfterTemporaryFileWritten,
+    BeforePublication,
+    BeforeTemporaryFileDeletion
+}
+
+internal enum SourceCleanupFaultPoint
+{
+    BeforeSourceFileMove,
+    BeforeQuarantineFileDelete
+}
+
+internal enum CopyMutationFaultPoint
+{
+    AfterChunkWritten,
+    BeforePartialPublication
+}
+
+internal enum AtomicRenameFaultPoint
+{
+    BeforeSourceRevalidation,
+    AfterDirectoryMoveBeforeVerification
+}
+
+internal enum TempPublicationFaultPoint
+{
+    BeforeFinalValidation
+}
+
+internal enum OwnershipCleanupFaultPoint
+{
+    BeforeCleanupDirectoryMove,
+    BeforeOwnershipMarkerDelete,
+    BeforeDirectoryDelete,
+    BeforeTombstoneDelete
+}
+
+internal enum CompletedArtifactCleanupFaultPoint
+{
+    BeforeRecoveryMarkerDelete,
+    BeforeFinalDestinationOwnershipValidation
+}
+
+internal enum MoveFinalizationFaultPoint
+{
+    BeforeSourceAncestorDelete
+}
+
+internal enum CompletionHandoffFaultPoint
+{
+    BeforeHistoryPersist,
+    BeforeScanEnqueue
+}
+
+internal enum FinalizedVerificationFaultPoint
+{
+    BeforeManifestVerification
+}
+
+internal interface IMoveFaultInjector
+{
+    bool AllowAtomicRename => false;
+
+    Task AfterPublishedAsync(Guid jobId, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
+    void OnAtomicRename(Guid jobId, AtomicRenameFaultPoint faultPoint)
+    {
+    }
+
+    void OnTempPublication(Guid jobId, TempPublicationFaultPoint faultPoint)
+    {
+    }
+
+    void OnRecoveryMarkerWrite(
+        Guid jobId,
+        RecoveryMarkerWriteFaultPoint faultPoint)
+    {
+    }
+
+    void OnOwnershipMarkerWrite(
+        Guid jobId,
+        OwnershipMarkerKind markerKind,
+        OwnershipMarkerWriteFaultPoint faultPoint)
+    {
+    }
+
+    void OnSourceCleanupMutation(
+        Guid jobId,
+        SourceCleanupFaultPoint faultPoint)
+    {
+    }
+
+    void OnCopyMutation(Guid jobId, CopyMutationFaultPoint faultPoint)
+    {
+    }
+
+    void OnOwnershipCleanup(
+        Guid jobId,
+        OwnershipMarkerKind markerKind,
+        OwnershipCleanupFaultPoint faultPoint)
+    {
+    }
+
+    void OnCompletedArtifactCleanup(
+        Guid jobId,
+        CompletedArtifactCleanupFaultPoint faultPoint)
+    {
+    }
+
+    void OnMoveFinalization(
+        Guid jobId,
+        MoveFinalizationFaultPoint faultPoint)
+    {
+    }
+
+    void OnCompletionHandoff(
+        Guid jobId,
+        CompletionHandoffFaultPoint faultPoint)
+    {
+    }
+
+    void OnFinalizedVerification(
+        Guid jobId,
+        FinalizedVerificationFaultPoint faultPoint)
+    {
+    }
+}

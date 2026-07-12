@@ -40,108 +40,6 @@ internal sealed record AudiobookContentMoveResult(
 
 internal sealed class MoveNeedsAttentionException(string message) : IOException(message);
 
-internal enum RecoveryMarkerWriteFaultPoint
-{
-    BeforeTemporaryFileCreation,
-    DuringJsonWrite,
-    DuringFlush,
-    AfterTemporaryFileWritten,
-    BeforePublication,
-    BeforeTemporaryFileDeletion
-}
-
-internal enum OwnershipMarkerKind
-{
-    TemporaryDirectory,
-    QuarantineDirectory,
-    CleanupTombstone
-}
-
-internal enum OwnershipMarkerWriteFaultPoint
-{
-    BeforeTemporaryFileCreation,
-    DuringJsonWrite,
-    DuringFlush,
-    AfterTemporaryFileWritten,
-    BeforePublication,
-    BeforeTemporaryFileDeletion
-}
-
-internal enum SourceCleanupFaultPoint
-{
-    BeforeSourceFileMove,
-    BeforeQuarantineFileDelete
-}
-
-internal enum CopyMutationFaultPoint
-{
-    AfterChunkWritten
-}
-
-internal enum OwnershipCleanupFaultPoint
-{
-    BeforeOwnershipMarkerDelete,
-    BeforeDirectoryDelete,
-    BeforeTombstoneDelete
-}
-
-internal enum CompletedArtifactCleanupFaultPoint
-{
-    BeforeRecoveryMarkerDelete
-}
-
-internal enum MoveFinalizationFaultPoint
-{
-    BeforeSourceAncestorDelete
-}
-
-internal interface IMoveFaultInjector
-{
-    Task AfterPublishedAsync(Guid jobId, CancellationToken cancellationToken) => Task.CompletedTask;
-
-    void OnRecoveryMarkerWrite(Guid jobId, RecoveryMarkerWriteFaultPoint faultPoint)
-    {
-    }
-
-    void OnOwnershipMarkerWrite(
-        Guid jobId,
-        OwnershipMarkerKind markerKind,
-        OwnershipMarkerWriteFaultPoint faultPoint)
-    {
-    }
-
-    void OnSourceCleanupMutation(
-        Guid jobId,
-        SourceCleanupFaultPoint faultPoint)
-    {
-    }
-
-    void OnCopyMutation(
-        Guid jobId,
-        CopyMutationFaultPoint faultPoint)
-    {
-    }
-
-    void OnOwnershipCleanup(
-        Guid jobId,
-        OwnershipMarkerKind markerKind,
-        OwnershipCleanupFaultPoint faultPoint)
-    {
-    }
-
-    void OnCompletedArtifactCleanup(
-        Guid jobId,
-        CompletedArtifactCleanupFaultPoint faultPoint)
-    {
-    }
-
-    void OnMoveFinalization(
-        Guid jobId,
-        MoveFinalizationFaultPoint faultPoint)
-    {
-    }
-}
-
 internal sealed partial class AudiobookContentMoveService(
     ILogger<AudiobookContentMoveService> logger,
     IDbContextFactory<ListenArrDbContext> dbContextFactory,
@@ -149,6 +47,11 @@ internal sealed partial class AudiobookContentMoveService(
     IMoveFaultInjector? faultInjector = null)
 {
     private const int MaxCopyAttempts = 5;
+
+    internal void OnCompletionHandoff(
+        Guid jobId,
+        CompletionHandoffFaultPoint faultPoint) =>
+        faultInjector?.OnCompletionHandoff(jobId, faultPoint);
 
     public async Task<AudiobookContentMoveResult> MoveContentsAsync(
         AudiobookContentMoveRequest request,
@@ -158,8 +61,8 @@ internal sealed partial class AudiobookContentMoveService(
         cancellationToken.ThrowIfCancellationRequested();
         await EnsureLeaseOwnedAsync(request.JobId, request.LeaseToken, cancellationToken);
 
-        var source = Path.GetFullPath(request.Source);
-        var target = Path.GetFullPath(request.Target);
+        var source = NormalizeMoveDirectoryEndpoint(request.Source);
+        var target = NormalizeMoveDirectoryEndpoint(request.Target);
         var sourceSemantics = request.SourceSemantics;
         var targetSemantics = request.TargetSemantics;
         await ValidatePersistedMoveIdentityAsync(
@@ -170,6 +73,14 @@ internal sealed partial class AudiobookContentMoveService(
             targetSemantics,
             request.LeaseToken,
             cancellationToken);
+        if (IsFilesystemRoot(source, sourceSemantics)
+            || IsFilesystemRoot(target, targetSemantics)
+            || FileSystemPathIdentity.AreEquivalent(source, target, sourceSemantics))
+        {
+            throw new MoveNeedsAttentionException(
+                "Move source and target must be distinct non-root directories.");
+        }
+
         ValidateMoveSourceRoot(source);
         ValidateMoveTargetRoot(target);
 
@@ -179,41 +90,62 @@ internal sealed partial class AudiobookContentMoveService(
         var targetParent = Path.GetDirectoryName(target);
         if (string.IsNullOrEmpty(targetParent))
         {
-            throw new IOException("Invalid target path");
+            throw new MoveNeedsAttentionException("Invalid target path");
         }
 
         if (!Directory.Exists(targetParent))
         {
             await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
+            ValidateMoveRootPath(targetParent, mustExist: false, "target parent");
             Directory.CreateDirectory(targetParent);
         }
         ValidateMoveTargetRoot(target);
 
         await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
-        await DeleteOwnedRecoveryMarkerWriteFilesAsync(
+        await RecoverRecoveryMarkerWriteFilesAsync(
             source,
             request,
             source,
             target,
             cancellationToken);
         await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
-        await DeleteOwnedRecoveryMarkerWriteFilesAsync(
+        await RecoverRecoveryMarkerWriteFilesAsync(
             target,
             request,
             source,
             target,
             cancellationToken);
 
+        var sourceRecoveryMarkerPath = GetRecoveryMarkerPath(source, request.JobId);
+        var sourceRecoveryMarker = ReadRecoveryMarker(sourceRecoveryMarkerPath);
+        ValidateRecoveryMarker(sourceRecoveryMarker, request, source, target);
+        if (sourceRecoveryMarker != null
+            && !string.Equals(
+                sourceRecoveryMarker.Stage,
+                AtomicRenameCompletedStage,
+                StringComparison.Ordinal))
+        {
+            throw new MoveNeedsAttentionException(
+                "A non-atomic recovery marker exists inside the move source and cannot be resumed safely.");
+        }
+
         var recoveryMarkerPath = GetRecoveryMarkerPath(target, request.JobId);
         var recoveryMarker = ReadRecoveryMarker(recoveryMarkerPath);
         ValidateRecoveryMarker(recoveryMarker, request, source, target);
+        if (sourceRecoveryMarker != null
+            && (recoveryMarker != null
+                || Directory.Exists(target)
+                || File.Exists(target)))
+        {
+            throw new MoveNeedsAttentionException(
+                "A source-side atomic recovery marker conflicts with existing target recovery state.");
+        }
+
         var recoveryStage = recoveryMarker?.Stage;
         var persistedManifest = await LoadManifestAsync(
             request.JobId,
             cancellationToken);
-        if (recoveryMarker != null
-            && persistedManifest.Count == 0
-            && !string.Equals(recoveryStage, AtomicRenameCompletedStage, StringComparison.Ordinal))
+        if (recoveryMarker != null && persistedManifest.Count == 0)
         {
             throw new MoveNeedsAttentionException(
                 "A move recovery marker exists without a persisted manifest; destination ownership cannot be proven.");
@@ -230,14 +162,29 @@ internal sealed partial class AudiobookContentMoveService(
             target,
             targetInsideSource,
             sourceSemantics,
-            cancellationToken);
+            cancellationToken,
+            sourceRecoveryMarker == null ? null : sourceRecoveryMarkerPath);
 
         var tempName = Path.Join(targetParent, Path.GetFileName(target) + ".tmp-" + request.JobId.ToString("N"));
         if (!FileSystemSafety.TryValidateMutationTarget(tempName, [targetParent], out tempName, out var tempReason))
         {
             logger.LogWarning("Blocked move temp path for job {JobId}: {Reason}", request.JobId, tempReason);
-            throw new IOException(tempReason);
+            throw new MoveNeedsAttentionException(tempReason);
         }
+
+        var manifest = persistedManifest.Count > 0
+            ? persistedManifest
+            : await LoadOrCreateManifestAsync(
+                request.JobId,
+                request.LeaseToken,
+                validatedSourceEntries,
+                cancellationToken);
+        ValidateTargetManifest(target, manifest, targetSemantics);
+        await UpdateJobPhaseAsync(
+            request.JobId,
+            request.LeaseToken,
+            MoveJobPhase.Planned,
+            cancellationToken);
 
         try
         {
@@ -249,6 +196,7 @@ internal sealed partial class AudiobookContentMoveService(
                 targetInsideSource,
                 sourceInsideTarget,
                 recoveryStage,
+                manifest,
                 sourceSemantics,
                 targetSemantics,
                 cancellationToken);
@@ -259,20 +207,6 @@ internal sealed partial class AudiobookContentMoveService(
 
             ValidateMoveSourceRoot(source);
             ValidateMoveTargetRoot(target);
-
-            var manifest = persistedManifest.Count > 0
-                ? persistedManifest
-                : await LoadOrCreateManifestAsync(
-                    request.JobId,
-                    request.LeaseToken,
-                    validatedSourceEntries,
-                    cancellationToken);
-            ValidateTargetManifest(target, manifest, targetSemantics);
-            await UpdateJobPhaseAsync(
-                request.JobId,
-                request.LeaseToken,
-                MoveJobPhase.Planned,
-                cancellationToken);
 
             // The move operation relocates the contents of the audiobook BasePath, not the
             // BasePath directory itself. Child destinations must copy directly and skip their
@@ -289,10 +223,23 @@ internal sealed partial class AudiobookContentMoveService(
                     target,
                     cancellationToken)
                 : null;
+            if (tempOwnership != null)
+            {
+                await RecoverRecoveryMarkerWriteFilesAsync(
+                    copyDestination,
+                    request,
+                    source,
+                    target,
+                    cancellationToken);
+            }
 
             if (!Directory.Exists(copyDestination))
             {
                 await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
+                ValidateMoveRootPath(
+                    copyDestination,
+                    mustExist: false,
+                    "copy destination");
                 Directory.CreateDirectory(copyDestination);
             }
             if (!useTemp && !resumingDirectCopy)
@@ -320,6 +267,15 @@ internal sealed partial class AudiobookContentMoveService(
                 directCopyOwnershipValidated: !useTemp,
                 cancellationToken);
 
+            ValidateExistingDestinationContents(
+                source,
+                copyDestination,
+                manifest,
+                request.JobId,
+                targetSemantics,
+                tempOwnership,
+                quarantineOwnership: null,
+                allowPartialFiles: false);
             await VerifyPublishedManifestAsync(copyDestination, manifest, targetSemantics, cancellationToken);
             await UpdateCopyStateAsync(request.JobId, request.LeaseToken, cancellationToken);
 
@@ -348,6 +304,10 @@ internal sealed partial class AudiobookContentMoveService(
                         "The move target appeared before temporary publication.");
                 }
 
+                await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
+                faultInjector?.OnTempPublication(
+                    request.JobId,
+                    TempPublicationFaultPoint.BeforeFinalValidation);
                 await ValidateOwnedTempDirectoryAsync(
                     tempName,
                     targetParent,
@@ -362,7 +322,6 @@ internal sealed partial class AudiobookContentMoveService(
                         "The move target appeared immediately before temporary publication.");
                 }
 
-                await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
                 Directory.Move(tempName, target);
             }
 
@@ -407,6 +366,24 @@ internal sealed partial class AudiobookContentMoveService(
         }
         catch (Exception exception) when (exception is MoveLeaseLostException or PersistenceException)
         {
+            throw;
+        }
+        catch (MoveNeedsAttentionException)
+        {
+            await TryDeleteOwnedTempDirectoryAsync(
+                tempName,
+                targetParent,
+                request,
+                source,
+                target,
+                cancellationToken);
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // The temp directory and its structured ownership marker are durable retry
+            // state. Preserve verified files so a transient failure resumes instead of
+            // restarting the entire copy.
             throw;
         }
         catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))

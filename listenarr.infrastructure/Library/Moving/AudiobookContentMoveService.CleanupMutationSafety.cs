@@ -14,6 +14,8 @@ internal sealed partial class AudiobookContentMoveService
         Guid jobId,
         MoveLeaseToken leaseToken,
         MoveJobEntry manifestEntry,
+        IReadOnlyCollection<MoveJobEntry> manifest,
+        ValidatedTempOwnership? publishedTempOwnership,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
         CancellationToken cancellationToken)
@@ -62,6 +64,16 @@ internal sealed partial class AudiobookContentMoveService
             targetSemantics,
             leaseToken,
             cancellationToken);
+        ValidateMoveTargetRoot(target);
+        ValidateExistingDestinationContents(
+            source,
+            target,
+            manifest,
+            jobId,
+            targetSemantics,
+            publishedTempOwnership,
+            ownership,
+            allowPartialFiles: false);
         ValidateQuarantineMutationPath(ownership, quarantineFile);
         if (File.Exists(quarantineFile) || Directory.Exists(quarantineFile))
         {
@@ -81,6 +93,8 @@ internal sealed partial class AudiobookContentMoveService
         Guid jobId,
         MoveLeaseToken leaseToken,
         MoveJobEntry manifestEntry,
+        IReadOnlyCollection<MoveJobEntry> manifest,
+        ValidatedTempOwnership? publishedTempOwnership,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics targetSemantics,
         CancellationToken cancellationToken)
@@ -104,6 +118,15 @@ internal sealed partial class AudiobookContentMoveService
             targetSemantics,
             leaseToken,
             cancellationToken);
+        ValidateExistingDestinationContents(
+            source,
+            target,
+            manifest,
+            jobId,
+            targetSemantics,
+            publishedTempOwnership,
+            ownership,
+            allowPartialFiles: false);
         ValidateQuarantineMutationPath(ownership, quarantineFile);
         if (!File.Exists(quarantineFile)
             || (File.GetAttributes(quarantineFile) & FileAttributes.ReparsePoint) != 0

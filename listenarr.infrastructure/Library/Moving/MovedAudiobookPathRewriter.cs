@@ -22,13 +22,23 @@ internal static class MovedAudiobookPathRewriter
         ArgumentNullException.ThrowIfNull(audiobookRepository);
         ArgumentNullException.ThrowIfNull(logger);
 
-        if (!await audiobookRepository.RewritePathReferencesAsync(
+        bool rewritten;
+        try
+        {
+            rewritten = await audiobookRepository.RewritePathReferencesAsync(
                 audiobookId,
                 source,
                 target,
                 sourceSemantics,
                 targetSemantics,
-                cancellationToken))
+                cancellationToken);
+        }
+        catch (AudiobookPathRewriteException exception)
+        {
+            throw new MoveNeedsAttentionException(exception.Message);
+        }
+
+        if (!rewritten)
         {
             throw new MoveNeedsAttentionException(
                 "The audiobook disappeared before its moved path references could be persisted.");

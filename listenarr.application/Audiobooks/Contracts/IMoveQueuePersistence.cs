@@ -53,6 +53,17 @@ public interface IMoveQueuePersistence
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
 
+    Task<MoveRetryScheduleResult?> ScheduleRetryAsync(
+        Guid id,
+        string leaseOwner,
+        int leaseGeneration,
+        int expectedAttemptCount,
+        DateTimeOffset updatedAt,
+        DateTimeOffset nextAttemptAt,
+        int maxAttempts,
+        string error,
+        CancellationToken cancellationToken = default);
+
     Task<int?> TryClaimAsync(
         Guid id,
         string leaseOwner,

@@ -47,6 +47,69 @@ namespace Listenarr.Tests.Features.Infrastructure.ActivityHistory.Persistence
             Assert.Equal(HistoryEvents.ImportRetry, page.Records[1].EventType);
         }
 
+        [Fact]
+        public async Task DeleteAllAsync_PreservesOnlyPendingMoveScanHandoffs()
+        {
+            _db.History.AddRange(
+                new History
+                {
+                    CorrelationId = "move:pending",
+                    EventType = HistoryEvents.ScanQueued,
+                    Outcome = HistoryOutcome.Requested,
+                    Source = "Move"
+                },
+                Entry("ordinary", HistoryEvents.Imported, HistoryOutcome.Succeeded, DateTime.UtcNow));
+            await _db.SaveChangesAsync();
+
+            await _repository.DeleteAllAsync();
+
+            var remaining = await _db.History.AsNoTracking().ToListAsync();
+            var handoff = Assert.Single(remaining);
+            Assert.Equal("move:pending", handoff.CorrelationId);
+        }
+
+        [Fact]
+        public async Task DeleteAsync_PendingMoveScanHandoff_IsProtected()
+        {
+            var handoff = new History
+            {
+                CorrelationId = "move:protected",
+                EventType = HistoryEvents.ScanQueued,
+                Outcome = HistoryOutcome.Requested,
+                Source = "Move"
+            };
+            _db.History.Add(handoff);
+            await _db.SaveChangesAsync();
+
+            Assert.False(await _repository.DeleteAsync(handoff.Id));
+            Assert.True(await _db.History.AnyAsync(history => history.Id == handoff.Id));
+        }
+
+        [Fact]
+        public async Task DeleteAsync_TerminalScan_RemovesCompletedMoveHandoffToo()
+        {
+            var handoff = new History
+            {
+                CorrelationId = "move:terminal",
+                EventType = HistoryEvents.ScanQueued,
+                Outcome = HistoryOutcome.Requested,
+                Source = "Move"
+            };
+            var terminal = new History
+            {
+                CorrelationId = "move:terminal",
+                EventType = HistoryEvents.ScanCompleted,
+                Outcome = HistoryOutcome.Succeeded,
+                Source = "LibraryScan"
+            };
+            _db.History.AddRange(handoff, terminal);
+            await _db.SaveChangesAsync();
+
+            Assert.True(await _repository.DeleteAsync(terminal.Id));
+            Assert.False(await _db.History.AnyAsync(history =>
+                history.CorrelationId == "move:terminal"));
+        }
+
         private static History Entry(string correlationId, string eventType, HistoryOutcome outcome, DateTime timestamp) =>
             new()
             {

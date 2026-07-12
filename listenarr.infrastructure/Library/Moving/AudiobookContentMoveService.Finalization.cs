@@ -101,42 +101,47 @@ internal sealed partial class AudiobookContentMoveService
                 "Completed move artifacts cannot be cleaned before source cleanup completes.");
         }
 
+        VerifySourceCleanupState(request, result.Source, result.Target);
+        var manifest = await LoadManifestAsync(request.JobId, cancellationToken);
+        if (manifest.Count == 0)
+        {
+            throw new MoveNeedsAttentionException(
+                "Completed move artifact cleanup requires a persisted manifest.");
+        }
+
+        ValidateTargetManifest(
+            result.Target,
+            manifest,
+            request.TargetSemantics);
+        var publishedTempOwnership = await TryValidatePublishedTempOwnershipAsync(
+            result.Target,
+            request,
+            result.Source,
+            result.Target,
+            cancellationToken);
+        ValidateExistingDestinationContents(
+            result.Source,
+            result.Target,
+            manifest,
+            request.JobId,
+            request.TargetSemantics,
+            publishedTempOwnership,
+            quarantineOwnership: null,
+            allowPartialFiles: false);
+        await VerifyPublishedManifestAsync(
+            result.Target,
+            manifest,
+            request.TargetSemantics,
+            cancellationToken);
+        VerifySourceCleanupState(request, result.Source, result.Target);
+
         if (!File.Exists(result.RecoveryMarkerPath))
         {
-            var manifest = await LoadManifestAsync(request.JobId, cancellationToken);
-            if (manifest.Count > 0)
-            {
-                ValidateTargetManifest(
-                    result.Target,
-                    manifest,
-                    request.TargetSemantics);
-                ValidateExistingDestinationContents(
-                    result.Source,
-                    result.Target,
-                    manifest,
-                    request.JobId,
-                    request.TargetSemantics,
-                    allowPartialFiles: false);
-                await VerifyPublishedManifestAsync(
-                    result.Target,
-                    manifest,
-                    request.TargetSemantics,
-                    cancellationToken);
-                await UpdateJobPhaseAsync(
-                    request.JobId,
-                    request.LeaseToken,
-                    MoveJobPhase.CleaningArtifacts,
-                    cancellationToken);
-                return;
-            }
-
-            var phase = await LoadJobPhaseAsync(request.JobId, cancellationToken);
-            if (phase < MoveJobPhase.CleaningArtifacts)
-            {
-                throw new MoveNeedsAttentionException(
-                    "The atomic recovery marker disappeared before durable artifact cleanup began.");
-            }
-
+            await UpdateJobPhaseAsync(
+                request.JobId,
+                request.LeaseToken,
+                MoveJobPhase.CleaningArtifacts,
+                cancellationToken);
             return;
         }
 
@@ -181,8 +186,41 @@ internal sealed partial class AudiobookContentMoveService
         faultInjector?.OnCompletedArtifactCleanup(
             request.JobId,
             CompletedArtifactCleanupFaultPoint.BeforeRecoveryMarkerDelete);
+        VerifySourceCleanupState(request, result.Source, result.Target);
         await EnsureLeaseOwnedAsync(request.JobId, request.LeaseToken, cancellationToken);
         ValidateMoveTargetRoot(result.Target);
+        var finalTempOwnership = await TryValidatePublishedTempOwnershipAsync(
+            result.Target,
+            request,
+            result.Source,
+            result.Target,
+            cancellationToken);
+        ValidateExistingDestinationContents(
+            result.Source,
+            result.Target,
+            manifest,
+            request.JobId,
+            request.TargetSemantics,
+            finalTempOwnership,
+            quarantineOwnership: null,
+            allowPartialFiles: false);
+        await VerifyPublishedManifestAsync(
+            result.Target,
+            manifest,
+            request.TargetSemantics,
+            cancellationToken);
+        faultInjector?.OnCompletedArtifactCleanup(
+            request.JobId,
+            CompletedArtifactCleanupFaultPoint.BeforeFinalDestinationOwnershipValidation);
+        ValidateExistingDestinationContents(
+            result.Source,
+            result.Target,
+            manifest,
+            request.JobId,
+            request.TargetSemantics,
+            finalTempOwnership,
+            quarantineOwnership: null,
+            allowPartialFiles: false);
         ValidateRecoveryMarker(
             ReadRecoveryMarker(result.RecoveryMarkerPath),
             request,
@@ -254,6 +292,12 @@ internal sealed partial class AudiobookContentMoveService
                 request.JobId,
                 MoveFinalizationFaultPoint.BeforeSourceAncestorDelete);
             await EnsureMutationAuthorizedAsync(request, source, target, cancellationToken);
+            ValidateExistingMoveDirectory(current, "source ancestor cleanup directory");
+            if (Directory.EnumerateFileSystemEntries(current).Any())
+            {
+                return;
+            }
+
             Directory.Delete(current, false);
             current = Path.GetDirectoryName(current) ?? boundary;
         }

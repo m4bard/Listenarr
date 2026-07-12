@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using System.Data.Common;
 using Listenarr.Domain.Common;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,21 +23,30 @@ public partial class AudiobookRepository
         FileSystemPathSemantics targetSemantics,
         CancellationToken ct = default)
     {
-        var audiobook = await _db.Audiobooks
-            .Include(candidate => candidate.Files)
-            .SingleOrDefaultAsync(candidate => candidate.Id == audiobookId, ct);
-        if (audiobook == null)
+        try
         {
-            return false;
-        }
+            var audiobook = await _db.Audiobooks
+                .Include(candidate => candidate.Files)
+                .SingleOrDefaultAsync(candidate => candidate.Id == audiobookId, ct);
+            if (audiobook == null)
+            {
+                return false;
+            }
 
-        AudiobookPathReferenceRewriter.Rewrite(
-            audiobook,
-            sourceBasePath,
-            targetBasePath,
-            sourceSemantics,
-            targetSemantics);
-        await _db.SaveChangesAsync(ct);
-        return true;
+            AudiobookPathReferenceRewriter.Rewrite(
+                audiobook,
+                sourceBasePath,
+                targetBasePath,
+                sourceSemantics,
+                targetSemantics);
+            await _db.SaveChangesAsync(ct);
+            return true;
+        }
+        catch (Exception exception) when (exception is DbUpdateException or DbException)
+        {
+            throw new PersistenceException(
+                "Failed to persist moved audiobook path references.",
+                exception);
+        }
     }
 }

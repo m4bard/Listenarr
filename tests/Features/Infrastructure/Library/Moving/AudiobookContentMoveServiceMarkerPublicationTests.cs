@@ -57,9 +57,10 @@ public partial class AudiobookContentMoveServiceTests
             RecoveryMarkerWriteFaultPoint.BeforeTemporaryFileDeletion);
         var service = CreateMoveService(injector);
 
-        var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+        var exception = await Assert.ThrowsAnyAsync<IOException>(() =>
             service.MoveContentsAsync(request, CancellationToken.None));
 
+        Assert.IsNotType<MoveNeedsAttentionException>(exception);
         Assert.Contains("could not be restored cleanly", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(previousMarker, await File.ReadAllTextAsync(markerPath));
         var orphan = Assert.Single(
@@ -68,12 +69,17 @@ public partial class AudiobookContentMoveServiceTests
 
         var recoveryService = _provider.GetRequiredService<AudiobookContentMoveService>();
         var recovery = await recoveryService.GetRecoverableMoveAsync(request);
-        Assert.Null(recovery);
+        Assert.NotNull(recovery);
+        Assert.False(recovery!.SourceCleanupCompleted);
         Assert.True(File.Exists(sourceFile));
-
-        await recoveryService.MoveContentsAsync(request, CancellationToken.None);
-        Assert.False(Directory.Exists(source));
         Assert.False(File.Exists(orphan));
+
+        var completed = await recoveryService.ResumeSourceCleanupAsync(
+            request,
+            recovery,
+            CancellationToken.None);
+        Assert.True(completed.SourceCleanupCompleted);
+        Assert.False(Directory.Exists(source));
         Assert.Equal("verified audio", await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
     }
 
@@ -109,6 +115,37 @@ public partial class AudiobookContentMoveServiceTests
         Assert.Empty(Directory.EnumerateFiles(
             target,
             $".listenarr-move-{jobId:N}.pending.writing-*"));
+    }
+
+    [Fact]
+    public async Task MoveContentsAsync_RecoveryMarkerAdvancedBeforeStageUpdate_IsPreserved()
+    {
+        var source = FileService.GetTempDirectory("content-move-marker-advanced-src");
+        var sourceFile = await FileService.GetFileAsync(source, "book.m4b", "verified audio");
+        var target = FileService.GetTempDirectory("content-move-marker-advanced-dst");
+        var jobId = Guid.NewGuid();
+        var request = await CreateLeasedMoveRequestAsync(source, target, jobId);
+        await PersistFileManifestAsync(jobId, "book.m4b", sourceFile);
+        await WriteRecoveryMarkerAsync(target, jobId, source, target, "copy-started");
+        var markerPath = Path.Join(target, $".listenarr-move-{jobId:N}.pending");
+        var replacement = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            Version = 1,
+            JobId = jobId,
+            Source = Path.GetFullPath(source),
+            Target = Path.GetFullPath(target),
+            Stage = "source-cleanup-complete"
+        });
+        var service = CreateMoveService(
+            new ReplaceRecoveryMarkerBeforePublication(markerPath, replacement));
+
+        var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
+            service.MoveContentsAsync(request, CancellationToken.None));
+
+        Assert.Contains("later or incompatible stage", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(replacement, await File.ReadAllTextAsync(markerPath));
+        Assert.True(File.Exists(sourceFile));
+        Assert.True(File.Exists(Path.Join(target, "book.m4b")));
     }
 
     [Fact]

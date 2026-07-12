@@ -25,7 +25,16 @@ namespace Listenarr.Application.Audiobooks.Contracts
             string? path = null,
             string? correlationId = null,
             string? downloadId = null);
+        Task<Guid?> EnqueueRecoveredScanAsync(
+            Audiobook audiobook,
+            string correlationId,
+            Func<Task<bool>> stillPending);
         Task<Guid?> RequeueScanAsync(Guid jobId);
+        Task CommitTerminalJobStatusAsync(
+            Guid jobId,
+            Func<Task<(string Status, string? Error)>> persistTerminalState,
+            CancellationToken cancellationToken = default);
+        System.Threading.Channels.ChannelReader<ScanJob> Reader { get; }
         bool TryGetJob(Guid id, out ScanJob? job);
         void UpdateJobStatus(Guid id, string status, string? error = null, int? found = null, int? created = null);
     }

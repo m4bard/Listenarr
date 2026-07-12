@@ -132,11 +132,15 @@ public partial class AudiobookContentMoveServiceTests
         var quarantineRoot = Path.Join(
             sourceParent,
             $".listenarr-quarantine-{request.JobId:N}");
+        var cleanupDirectory = Path.Join(
+            sourceParent,
+            $".listenarr-quarantine-directory-{request.JobId:N}.cleanup-dir");
         var tombstonePath = Path.Join(
             sourceParent,
             $".listenarr-quarantine-directory-{request.JobId:N}.cleanup.json");
-        Assert.True(Directory.Exists(quarantineRoot));
-        Assert.Empty(Directory.EnumerateFileSystemEntries(quarantineRoot));
+        Assert.False(Directory.Exists(quarantineRoot));
+        Assert.True(Directory.Exists(cleanupDirectory));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(cleanupDirectory));
         Assert.True(File.Exists(tombstonePath));
         Assert.False(Directory.Exists(source));
         Assert.True(File.Exists(Path.Join(target, "book.m4b")));
@@ -156,6 +160,7 @@ public partial class AudiobookContentMoveServiceTests
 
         Assert.True(completed.SourceCleanupCompleted);
         Assert.False(Directory.Exists(quarantineRoot));
+        Assert.False(Directory.Exists(cleanupDirectory));
         Assert.False(File.Exists(tombstonePath));
     }
 

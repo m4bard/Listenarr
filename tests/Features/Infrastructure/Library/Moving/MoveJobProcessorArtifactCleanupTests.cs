@@ -36,6 +36,9 @@ public partial class MoveJobProcessorTests
         var markerPath = Path.Join(target, $".listenarr-move-{job.Id:N}.pending");
         Assert.True(File.Exists(markerPath));
         Assert.Empty(await _historyRepository.GetByCorrelationIdAsync($"move:{job.Id:N}"));
+        Assert.NotNull(retryJob.NextAttemptAt);
+        Assert.Null(await queue.TryClaimJobAsync(job.Id, LeaseOwner));
+        await MakeRetryDueAsync(job.Id);
 
         var retryGeneration = await queue.TryClaimJobAsync(job.Id, LeaseOwner);
         Assert.NotNull(retryGeneration);
@@ -50,6 +53,115 @@ public partial class MoveJobProcessorTests
         Assert.Single(
             await _historyRepository.GetByCorrelationIdAsync($"move:{job.Id:N}"),
             entry => entry.EventType == "Moved");
+    }
+
+    [Fact]
+    public async Task ProcessJobAsync_SourceRecreatedBeforeMarkerDelete_RequiresAttentionAndPreservesMarker()
+    {
+        var source = FileService.GetTempDirectory("move-processor-recreated-source-src");
+        await FileService.GetFileAsync(source, "book.m4b", "audio");
+        var target = Path.Join(
+            FileService.GetTempPath(),
+            $"move-processor-recreated-source-dst-{Guid.NewGuid():N}");
+        var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+        {
+            Title = "Recreated Source",
+            BasePath = source
+        });
+        var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, target, source);
+        var faultingContentMoveService = new AudiobookContentMoveService(
+            _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+            _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+            TimeProvider.System,
+            new RecreateSourceBeforeMarkerDelete(source));
+        var processor = ActivatorUtilities.CreateInstance<MoveJobProcessor>(
+            _provider,
+            faultingContentMoveService);
+
+        await processor.ProcessJobAsync(job, CancellationToken.None);
+
+        var persisted = await queue.GetJobAsync(job.Id);
+        Assert.NotNull(persisted);
+        Assert.Equal(MoveJobStatus.NeedsAttention, persisted!.Status);
+        Assert.Equal(
+            "preserve me",
+            await File.ReadAllTextAsync(Path.Join(source, "operator-note.txt")));
+        Assert.True(File.Exists(Path.Join(
+            target,
+            $".listenarr-move-{job.Id:N}.pending")));
+    }
+
+    [Fact]
+    public async Task ProcessJobAsync_TargetChangesBeforeMarkerDelete_RequiresAttentionAndPreservesMarker()
+    {
+        var source = FileService.GetTempDirectory("move-processor-mutated-target-src");
+        await FileService.GetFileAsync(source, "book.m4b", "audio");
+        var target = Path.Join(
+            FileService.GetTempPath(),
+            $"move-processor-mutated-target-dst-{Guid.NewGuid():N}");
+        var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+        {
+            Title = "Mutated Target",
+            BasePath = source
+        });
+        var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, target, source);
+        var faultingContentMoveService = new AudiobookContentMoveService(
+            _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+            _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+            TimeProvider.System,
+            new MutateTargetBeforeMarkerDelete(target));
+        var processor = ActivatorUtilities.CreateInstance<MoveJobProcessor>(
+            _provider,
+            faultingContentMoveService);
+
+        await processor.ProcessJobAsync(job, CancellationToken.None);
+
+        var persisted = await queue.GetJobAsync(job.Id);
+        Assert.NotNull(persisted);
+        Assert.Equal(MoveJobStatus.NeedsAttention, persisted!.Status);
+        Assert.Equal(
+            "corrupted after cleanup validation",
+            await File.ReadAllTextAsync(Path.Join(target, "book.m4b")));
+        Assert.True(File.Exists(Path.Join(
+            target,
+            $".listenarr-move-{job.Id:N}.pending")));
+    }
+
+    [Fact]
+    public async Task ProcessJobAsync_UnownedFileAppearsAfterFinalHash_PreservesMarkerAndRequiresAttention()
+    {
+        var source = FileService.GetTempDirectory("move-processor-final-hash-race-src");
+        await FileService.GetFileAsync(source, "book.m4b", "audio");
+        var target = Path.Join(
+            FileService.GetTempPath(),
+            $"move-processor-final-hash-race-dst-{Guid.NewGuid():N}");
+        var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+        {
+            Title = "Final Hash Ownership Race",
+            BasePath = source
+        });
+        var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, target, source);
+        var contentMoveService = new AudiobookContentMoveService(
+            _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+            _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+            TimeProvider.System,
+            new AddUnownedFileAfterFinalHash(target));
+        var processor = ActivatorUtilities.CreateInstance<MoveJobProcessor>(
+            _provider,
+            contentMoveService);
+
+        await processor.ProcessJobAsync(job, CancellationToken.None);
+
+        var persisted = await queue.GetJobAsync(job.Id);
+        Assert.NotNull(persisted);
+        Assert.Equal(MoveJobStatus.NeedsAttention, persisted!.Status);
+        Assert.Equal(
+            "preserve me",
+            await File.ReadAllTextAsync(Path.Join(target, "operator-note.txt")));
+        Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+        Assert.True(File.Exists(Path.Join(
+            target,
+            $".listenarr-move-{job.Id:N}.pending")));
     }
 
     [Fact]
@@ -91,6 +203,9 @@ public partial class MoveJobProcessorTests
         Assert.Equal(MoveJobPhase.Finalizing, retryJob.Phase);
         Assert.True(Directory.Exists(sourceParent));
         Assert.True(File.Exists(Path.Join(target, $".listenarr-move-{job.Id:N}.pending")));
+        Assert.NotNull(retryJob.NextAttemptAt);
+        Assert.Null(await queue.TryClaimJobAsync(job.Id, LeaseOwner));
+        await MakeRetryDueAsync(job.Id);
 
         var retryGeneration = await queue.TryClaimJobAsync(job.Id, LeaseOwner);
         Assert.NotNull(retryGeneration);
@@ -103,6 +218,192 @@ public partial class MoveJobProcessorTests
         Assert.False(Directory.Exists(sourceParent));
         Assert.True(Directory.Exists(sourceRoot));
         Assert.False(File.Exists(Path.Join(target, $".listenarr-move-{job.Id:N}.pending")));
+    }
+
+    [Fact]
+    public async Task ProcessJobAsync_SourceAncestorReceivesContentDuringFinalization_PreservesItAndCompletes()
+    {
+        var sourceRoot = FileService.GetTempDirectory("move-processor-finalize-arrival-root");
+        var sourceParent = Path.Join(sourceRoot, "Author", "Old Title");
+        var source = Path.Join(sourceParent, "test");
+        Directory.CreateDirectory(source);
+        await FileService.GetFileAsync(source, "book.m4b", "audio");
+        var target = Path.Join(
+            FileService.GetTempPath(),
+            $"move-processor-finalize-arrival-dst-{Guid.NewGuid():N}");
+        await _rootFolderRepository.AddAsync(new RootFolder
+        {
+            Name = "Finalization Arrival Root",
+            Path = sourceRoot
+        });
+        var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+        {
+            Title = "Finalization Arrival",
+            BasePath = source
+        });
+        var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, target, source);
+        var contentMoveService = new AudiobookContentMoveService(
+            _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+            _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+            TimeProvider.System,
+            new AddFileBeforeSourceAncestorDelete(sourceParent));
+        var processor = ActivatorUtilities.CreateInstance<MoveJobProcessor>(
+            _provider,
+            contentMoveService);
+
+        await processor.ProcessJobAsync(job, CancellationToken.None);
+
+        var persisted = await queue.GetJobAsync(job.Id);
+        Assert.NotNull(persisted);
+        Assert.Equal(MoveJobStatus.Completed, persisted!.Status);
+        Assert.False(Directory.Exists(source));
+        Assert.True(Directory.Exists(sourceParent));
+        Assert.Equal(
+            "preserve me",
+            await File.ReadAllTextAsync(Path.Join(sourceParent, "operator-note.txt")));
+        Assert.True(File.Exists(Path.Join(target, "book.m4b")));
+    }
+
+    [Fact]
+    public async Task ProcessJobAsync_PersistentFinalizationFailure_StopsAtRetryLimit()
+    {
+        var sourceRoot = FileService.GetTempDirectory("move-processor-retry-limit-root");
+        var source = Path.Join(sourceRoot, "Author", "Title", "test");
+        Directory.CreateDirectory(source);
+        await FileService.GetFileAsync(source, "book.m4b", "audio");
+        var target = Path.Join(
+            FileService.GetTempPath(),
+            $"move-processor-retry-limit-dst-{Guid.NewGuid():N}");
+        await _rootFolderRepository.AddAsync(new RootFolder
+        {
+            Name = "Retry Limit Root",
+            Path = sourceRoot
+        });
+        var audiobook = await _audiobookRepository.AddAsync(new Audiobook
+        {
+            Title = "Retry Limit",
+            BasePath = source
+        });
+        var (queue, initialJob) = await CreateQueuedMoveJobAsync(audiobook, target, source);
+        var contentMoveService = new AudiobookContentMoveService(
+            _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
+            _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+            TimeProvider.System,
+            new AlwaysFailMoveFinalization());
+        var processor = ActivatorUtilities.CreateInstance<MoveJobProcessor>(
+            _provider,
+            contentMoveService);
+        var currentJob = initialJob;
+        var retryDelays = new List<TimeSpan>();
+
+        for (var attempt = 1; attempt <= MoveTimingPolicy.MaxTransientAttempts; attempt++)
+        {
+            await processor.ProcessJobAsync(currentJob, CancellationToken.None);
+            var persisted = await queue.GetJobAsync(initialJob.Id);
+            Assert.NotNull(persisted);
+            Assert.Equal(attempt, persisted!.AttemptCount);
+            if (attempt == MoveTimingPolicy.MaxTransientAttempts)
+            {
+                Assert.Equal(MoveJobStatus.NeedsAttention, persisted.Status);
+                Assert.Null(persisted.NextAttemptAt);
+                Assert.Null(persisted.LeaseOwner);
+                Assert.Null(persisted.LeaseExpiresAt);
+                Assert.Contains("retry limit exhausted", persisted.Error, StringComparison.OrdinalIgnoreCase);
+                break;
+            }
+
+            Assert.Equal(MoveJobStatus.RetryScheduled, persisted.Status);
+            Assert.NotNull(persisted.NextAttemptAt);
+            Assert.NotNull(persisted.UpdatedAt);
+            retryDelays.Add(persisted.NextAttemptAt!.Value - persisted.UpdatedAt!.Value);
+            await MakeRetryDueAsync(initialJob.Id);
+            var generation = await queue.TryClaimJobAsync(initialJob.Id, LeaseOwner);
+            Assert.NotNull(generation);
+            persisted.LeaseOwner = LeaseOwner;
+            persisted.LeaseGeneration = generation.Value;
+            currentJob = persisted;
+        }
+
+        Assert.Equal(
+            retryDelays.OrderBy(delay => delay).ToList(),
+            retryDelays);
+        Assert.All(retryDelays, delay =>
+            Assert.True(delay <= MoveTimingPolicy.MaxRetryDelay));
+        Assert.True(File.Exists(Path.Join(
+            target,
+            $".listenarr-move-{initialJob.Id:N}.pending")));
+    }
+
+    private async Task MakeRetryDueAsync(Guid jobId)
+    {
+        var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
+        await using var db = await factory.CreateDbContextAsync();
+        var job = await db.MoveJobs.SingleAsync(candidate => candidate.Id == jobId);
+        job.NextAttemptAt = DateTime.UtcNow.AddSeconds(-1);
+        await db.SaveChangesAsync();
+    }
+
+    private sealed class RecreateSourceBeforeMarkerDelete(
+        string source) : IMoveFaultInjector
+    {
+        private bool _recreated;
+
+        public void OnCompletedArtifactCleanup(
+            Guid jobId,
+            CompletedArtifactCleanupFaultPoint faultPoint)
+        {
+            if (_recreated
+                || faultPoint != CompletedArtifactCleanupFaultPoint.BeforeRecoveryMarkerDelete)
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(source);
+            File.WriteAllText(Path.Join(source, "operator-note.txt"), "preserve me");
+            _recreated = true;
+        }
+    }
+
+    private sealed class MutateTargetBeforeMarkerDelete(
+        string target) : IMoveFaultInjector
+    {
+        private bool _mutated;
+
+        public void OnCompletedArtifactCleanup(
+            Guid jobId,
+            CompletedArtifactCleanupFaultPoint faultPoint)
+        {
+            if (_mutated
+                || faultPoint != CompletedArtifactCleanupFaultPoint.BeforeRecoveryMarkerDelete)
+            {
+                return;
+            }
+
+            File.WriteAllText(
+                Path.Join(target, "book.m4b"),
+                "corrupted after cleanup validation");
+            _mutated = true;
+        }
+    }
+
+    private sealed class AddUnownedFileAfterFinalHash(
+        string target) : IMoveFaultInjector
+    {
+        private bool _added;
+
+        public void OnCompletedArtifactCleanup(
+            Guid jobId,
+            CompletedArtifactCleanupFaultPoint faultPoint)
+        {
+            if (_added
+                || faultPoint != CompletedArtifactCleanupFaultPoint.BeforeFinalDestinationOwnershipValidation)
+            {
+                return;
+            }
+
+            File.WriteAllText(Path.Join(target, "operator-note.txt"), "preserve me");
+            _added = true;
+        }
     }
 
     private sealed class FailCompletedArtifactCleanupOnce : IMoveFaultInjector
@@ -121,6 +422,39 @@ public partial class MoveJobProcessorTests
 
             _failed = true;
             throw new IOException("Simulated transient recovery marker lock.");
+        }
+    }
+
+    private sealed class AddFileBeforeSourceAncestorDelete(
+        string sourceParent) : IMoveFaultInjector
+    {
+        private bool _added;
+
+        public void OnMoveFinalization(
+            Guid jobId,
+            MoveFinalizationFaultPoint faultPoint)
+        {
+            if (_added
+                || faultPoint != MoveFinalizationFaultPoint.BeforeSourceAncestorDelete)
+            {
+                return;
+            }
+
+            File.WriteAllText(Path.Join(sourceParent, "operator-note.txt"), "preserve me");
+            _added = true;
+        }
+    }
+
+    private sealed class AlwaysFailMoveFinalization : IMoveFaultInjector
+    {
+        public void OnMoveFinalization(
+            Guid jobId,
+            MoveFinalizationFaultPoint faultPoint)
+        {
+            if (faultPoint == MoveFinalizationFaultPoint.BeforeSourceAncestorDelete)
+            {
+                throw new IOException("Simulated persistent source ancestor lock.");
+            }
         }
     }
 
