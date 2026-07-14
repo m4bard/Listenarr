@@ -20,7 +20,7 @@ public class MetadataConverters
         _requestContextAccessor = requestContextAccessor;
     }
 
-    internal static List<AudiobookSeriesMembership>? BuildSeriesMemberships(IEnumerable<AudibleSeries>? series)
+    private static List<AudiobookSeriesMembership>? BuildSeriesMemberships(IEnumerable<AudibleSeries>? series)
     {
         if (series == null)
         {
@@ -138,7 +138,34 @@ public class MetadataConverters
             Explicit = audnexusData.IsAdult ?? false
         };
 
-        metadata.SeriesMemberships = BuildSeriesMemberships(AudnexusSeriesMapper.ToAudibleSeries(audnexusData));
+        var audnexusSeriesMemberships = new List<AudiobookSeriesMembership>();
+        if (audnexusData.SeriesPrimary != null)
+        {
+            audnexusSeriesMemberships.Add(new AudiobookSeriesMembership
+            {
+                SeriesAsin = audnexusData.SeriesPrimary.Asin,
+                SeriesName = audnexusData.SeriesPrimary.Name,
+                SeriesNumber = audnexusData.SeriesPrimary.Position,
+                IsPrimary = true,
+                SortOrder = 0
+            });
+        }
+
+        if (audnexusData.SeriesSecondary != null)
+        {
+            audnexusSeriesMemberships.Add(new AudiobookSeriesMembership
+            {
+                SeriesAsin = audnexusData.SeriesSecondary.Asin,
+                SeriesName = audnexusData.SeriesSecondary.Name,
+                SeriesNumber = audnexusData.SeriesSecondary.Position,
+                IsPrimary = audnexusSeriesMemberships.Count == 0,
+                SortOrder = audnexusSeriesMemberships.Count
+            });
+        }
+
+        metadata.SeriesMemberships = audnexusSeriesMemberships.Count == 0
+            ? null
+            : AudiobookSeriesMembershipHelper.Normalize(audnexusSeriesMemberships);
         ApplyPrimarySeriesFields(metadata);
 
         if (metadata.SeriesMemberships != null && metadata.SeriesMemberships.Count > 0)
