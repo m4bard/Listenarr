@@ -33,8 +33,7 @@ internal static class ScanFileDiscovery
         foreach (var group in candidates.GroupBy(file => Path.GetDirectoryName(file) ?? string.Empty))
         {
             var directoryName = Path.GetFileName(group.Key) ?? string.Empty;
-            var groupHasMatch = group.Any(file =>
-                Matches(file, directoryName, titleToken, authorToken));
+            var groupHasMatch = group.Any(file => Matches(file, directoryName, titleToken));
             if (groupHasMatch)
             {
                 foundFiles.AddRange(group.Where(unique.Add));
@@ -42,7 +41,7 @@ internal static class ScanFileDiscovery
             }
 
             foreach (var file in group.Where(file =>
-                         Matches(file, directoryName: string.Empty, titleToken, authorToken)))
+                         Matches(file, directoryName: string.Empty, titleToken)))
             {
                 if (unique.Add(file))
                 {
@@ -103,20 +102,36 @@ internal static class ScanFileDiscovery
         return candidates;
     }
 
+    /// <summary>
+    /// Decides whether a file can be attributed to a specific audiobook from its path alone.
+    /// <para>
+    /// Only the TITLE can do this. The author names a shelf, not a book: in the usual
+    /// <c>{Author}/...</c> layout every file beneath an author's folder contains that author's
+    /// name, so accepting "the path contains the author" as a match attributes every book by
+    /// that author to whichever one is being scanned -- and the resulting common parent is the
+    /// author folder, which then becomes the audiobook's BasePath.
+    /// </para>
+    /// <para>
+    /// A path that carries neither the title nor anything else identifying is simply not
+    /// attributable by path, and is left for the embedded-tag pass to claim. Leaving a file
+    /// unmatched is recoverable; attaching it to the wrong book is not.
+    /// </para>
+    /// </summary>
     private static bool Matches(
         string file,
         string directoryName,
-        string titleToken,
-        string authorToken)
+        string titleToken)
     {
-        var fileNameMatchesTitle = !string.IsNullOrEmpty(titleToken)
-            && Path.GetFileNameWithoutExtension(file)
-                .Contains(titleToken, StringComparison.OrdinalIgnoreCase);
-        var filePathMatchesAuthor = !string.IsNullOrEmpty(authorToken)
-            && file.Contains(authorToken, StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(titleToken))
+        {
+            return false;
+        }
+
+        var fileNameMatchesTitle = Path.GetFileNameWithoutExtension(file)
+            .Contains(titleToken, StringComparison.OrdinalIgnoreCase);
         var directoryMatchesTitle = !string.IsNullOrEmpty(directoryName)
-            && !string.IsNullOrEmpty(titleToken)
             && directoryName.Contains(titleToken, StringComparison.OrdinalIgnoreCase);
-        return fileNameMatchesTitle || filePathMatchesAuthor || directoryMatchesTitle;
+
+        return fileNameMatchesTitle || directoryMatchesTitle;
     }
 }
