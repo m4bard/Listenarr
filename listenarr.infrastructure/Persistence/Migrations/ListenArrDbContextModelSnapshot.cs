@@ -598,6 +598,20 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("DirectoryObjectIdentity")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DirectoryObjectIdentityUnavailableReason")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("DirectoryObjectIdentityVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("ManagedRootFolderId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("OwnershipToken")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -650,6 +664,8 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ManagedRootFolderId");
 
                     b.HasIndex("OwnershipToken")
                         .IsUnique();
@@ -1131,6 +1147,17 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
+                    b.Property<string>("DirectoryObjectIdentity")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DirectoryObjectIdentityUnavailableReason")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("DirectoryObjectIdentityVersion")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsDefault")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER")
@@ -1244,6 +1271,17 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(16)
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetDirectoryObjectIdentity")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetDirectoryObjectIdentityUnavailableReason")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("TargetDirectoryObjectIdentityVersion")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("TargetPath")
                         .IsRequired()
