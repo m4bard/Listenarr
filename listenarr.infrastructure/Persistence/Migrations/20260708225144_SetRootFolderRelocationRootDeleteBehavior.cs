@@ -10,10 +10,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_RootFolderRelocations_RootFolders_RootFolderId",
-                table: "RootFolderRelocations");
-
             migrationBuilder.AddForeignKey(
                 name: "FK_RootFolderRelocations_RootFolders_RootFolderId",
                 table: "RootFolderRelocations",
@@ -29,14 +25,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
             migrationBuilder.DropForeignKey(
                 name: "FK_RootFolderRelocations_RootFolders_RootFolderId",
                 table: "RootFolderRelocations");
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_RootFolderRelocations_RootFolders_RootFolderId",
-                table: "RootFolderRelocations",
-                column: "RootFolderId",
-                principalTable: "RootFolders",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.Restrict);
         }
     }
 }
