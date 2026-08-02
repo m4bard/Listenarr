@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Listenarr.Application.Downloads.Import;
 
 public partial class DownloadImportService
@@ -50,10 +52,16 @@ public partial class DownloadImportService
                 Series = FirstNonEmpty(
                     audiobook.Series,
                     extractedMetadata?.Series),
+                // Parsed with InvariantCulture: the source value always uses '.' as the
+                // decimal separator, so parsing under the server's culture would read a
+                // position of "1.5" as 15 wherever '.' is the group separator.
                 SeriesPosition = !string.IsNullOrWhiteSpace(audiobook.SeriesNumber)
-                    && decimal.TryParse(audiobook.SeriesNumber, out var seriesPosition)
+                    && decimal.TryParse(audiobook.SeriesNumber, NumberStyles.Number, CultureInfo.InvariantCulture, out var seriesPosition)
                         ? seriesPosition
                         : extractedMetadata?.SeriesPosition,
+                SeriesPositionRaw = FirstNonEmpty(
+                    audiobook.SeriesNumber,
+                    extractedMetadata?.SeriesPositionRaw),
                 Year = !string.IsNullOrWhiteSpace(audiobook.PublishYear)
                     && int.TryParse(audiobook.PublishYear, out var year)
                         ? year
