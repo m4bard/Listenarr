@@ -326,6 +326,46 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.ToTable("Audiobooks");
                 });
 
+            modelBuilder.Entity("Listenarr.Domain.Audiobooks.AudiobookDeletionIntent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AudiobookId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("DeleteFolder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AudiobookId")
+                        .IsUnique()
+                        .HasFilter("\"State\" <> 'Completed'");
+
+                    b.HasIndex("UpdatedAt");
+
+                    b.HasIndex("AudiobookId", "State");
+
+                    b.ToTable("AudiobookDeletionIntents", (string)null);
+                });
+
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.AudiobookExternalIdentifier", b =>
                 {
                     b.Property<int>("Id")
@@ -2074,6 +2114,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(24)
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("AudiobookFileId")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int?>("AudiobookId")
                         .HasColumnType("INTEGER");
