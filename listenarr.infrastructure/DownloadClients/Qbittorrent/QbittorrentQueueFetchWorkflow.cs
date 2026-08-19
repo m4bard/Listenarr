@@ -9,7 +9,6 @@
  */
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Polly.CircuitBreaker;
 
 namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
 {
@@ -20,15 +19,9 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
         string clientType)
     {
         public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, List<string> ids, CancellationToken ct = default)
-            => (await GetQueueSnapshotAsync(client, ids, ct)).Items;
-
-        public async Task<DownloadClientQueueSnapshot> GetQueueSnapshotAsync(DownloadClientConfiguration client, List<string> ids, CancellationToken ct = default)
         {
             var items = new List<QueueItem>();
-            if (client == null) return DownloadClientQueueSnapshot.Complete(items);
-
-            // Cleared whenever the client may hold torrents that did not make it into items.
-            var isComplete = true;
+            if (client == null) return items;
 
             var isMonitorPoll = ids.Count > 0;
             var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
@@ -48,7 +41,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                     {
                         throw new DownloadClientAdapterPollingException(message, exception);
                     }
-                    return new DownloadClientQueueSnapshot(items, IsComplete: false);
+                    return items;
                 }
 
                 // Limit fields returned to reduce memory usage.
@@ -76,7 +69,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                     {
                         throw new DownloadClientAdapterPollingException(message);
                     }
-                    return new DownloadClientQueueSnapshot(items, IsComplete: false);
+                    return items;
                 }
 
                 var json = await torrentsResp.Content.ReadAsStringAsync(ct);
@@ -88,7 +81,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                     {
                         throw new DownloadClientAdapterPollingException(message);
                     }
-                    return new DownloadClientQueueSnapshot(items, IsComplete: false);
+                    return items;
                 }
 
                 var torrents = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(json);
@@ -100,7 +93,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                     {
                         throw new DownloadClientAdapterPollingException(message);
                     }
-                    return new DownloadClientQueueSnapshot(items, IsComplete: false);
+                    return items;
                 }
 
                 foreach (var torrent in torrents)
@@ -114,23 +107,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                     // loop and is caught only by the handler below, so torrents N..end are dropped
                     // while the poll still reports itself as a healthy live snapshot: the queue
                     // simply appears shorter, with nothing to say a row was lost.
-                    //
-                    // HttpRequestException is excluded on purpose. The per-torrent files request
-                    // sits inside this block, and a transport failure there means the client went
-                    // away mid-poll, not that this torrent is unreadable. Swallowing it would log
-                    // one warning per remaining torrent and hand the caller a short queue that
-                    // still claims to be a healthy live snapshot, which is the failure this guard
-                    // exists to stop. An error status from that request is already handled by the
-                    // IsSuccessStatusCode check and does not reach here.
-                    //
-                    // BrokenCircuitException is excluded for the same reason. When the client's
-                    // circuit breaker opens after the torrent list arrives, every files request
-                    // that follows is rejected with it, and it does not derive from
-                    // HttpRequestException.
                     try
                     {
                         List<Dictionary<string, JsonElement>> files = [];
-                        using var filesResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/files?hash={Uri.EscapeDataString(hash)}", ct);
+                        using var filesResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/files?hash={hash}", ct);
                         if (filesResp.IsSuccessStatusCode)
                         {
                             var filesJson = await filesResp.Content.ReadAsStringAsync(ct);
@@ -139,19 +119,13 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
 
                         items.Add(QbittorrentResponseMapper.MapQueueItem(torrent, client, files));
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not HttpRequestException && ex is not BrokenCircuitException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
-                        // Debug rather than Warning. A torrent whose fields the mapper cannot read
-                        // does not heal, so this fires once per torrent on every poll for as long
-                        // as the torrent sits in the client, and the operator has nothing to act
-                        // on. TransmissionQueueFetchWorkflow logs the same condition at Debug for
-                        // the same reason. The torrent's absence from the queue stays observable.
-                        logger.LogDebug(
+                        logger.LogWarning(
                             ex,
                             "Skipping unreadable qBittorrent torrent {TorrentHash} for client {ClientId}; the rest of the queue is unaffected",
                             LogRedaction.SanitizeText(hash),
                             LogRedaction.SanitizeText(client.Id));
-                        isComplete = false;
                     }
                 }
             }
@@ -166,13 +140,9 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 {
                     throw new DownloadClientAdapterPollingException("Error polling qBittorrent queue.", ex);
                 }
-
-                // Whatever was read before the failure is still returned for display, but it
-                // cannot stand for the whole queue.
-                isComplete = false;
             }
 
-            return new DownloadClientQueueSnapshot(FilterByIds(items, ids), isComplete);
+            return FilterByIds(items, ids);
         }
 
         private static List<QueueItem> FilterByIds(List<QueueItem> items, List<string> ids)
