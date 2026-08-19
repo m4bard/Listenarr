@@ -495,6 +495,103 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             Assert.Empty(items);
         }
 
+        // A queue response where the middle torrent carries `downloaded` in the given JSON token
+        // form. The torrents on either side of it are well formed, so anything missing from the
+        // result is attributable to the one bad field.
+        private static string QueueWithMalformedMiddleTorrent(string malformedDownloaded) => $$"""
+        [
+            {
+                "hash": "aaaa1111", "name": "First", "progress": 0.5, "size": 1000,
+                "downloaded": 500, "state": "downloading", "save_path": "/downloads/a"
+            },
+            {
+                "hash": "bbbb2222", "name": "Second", "progress": 0.5, "size": 1000,
+                "downloaded": {{malformedDownloaded}}, "state": "downloading", "save_path": "/downloads/b"
+            },
+            {
+                "hash": "cccc3333", "name": "Third", "progress": 0.5, "size": 1000,
+                "downloaded": 700, "state": "downloading", "save_path": "/downloads/c"
+            }
+        ]
+        """;
+
+        // qBittorrent documents `downloaded` as an integer, so the typed accessor reading it is
+        // correct about the normal case. It was not resilient about the abnormal one: any value
+        // arriving in another token form threw out of the mapper, out of the loop walking the
+        // response, and took every torrent after it with it. The poll still reported itself as a
+        // healthy live snapshot, so the queue just looked shorter than it was.
+        //
+        // "600.5" is a JSON number that is not an integer (FormatException from GetInt64) and
+        // "\"600\"" is a quoted one (InvalidOperationException). Both have to survive: the quoted
+        // form is the shape already reported against the NZBGet adapter in #618 and #619.
+        [Theory]
+        [InlineData("600.5")]
+        [InlineData("\"600\"")]
+        [InlineData("6e2")]
+        public async Task GetQueueAsync_WhenOneTorrentHasAnUnreadableNumericField_StillReturnsTheOthers(string malformedDownloaded)
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent(malformedDownloaded);
+            var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
+            var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
+
+            var items = await adapter.GetQueueAsync(_client);
+
+            // The torrent AFTER the unreadable one is the whole point. Asserting only that the
+            // list is non-empty would pass on the truncating behaviour, because the first torrent
+            // is mapped before anything throws.
+            Assert.Contains(items, item => item.Id == "cccc3333");
+            Assert.Equal(3, items.Count);
+        }
+
+        // Reading the value through a wider numeric type rather than giving up on it keeps a
+        // partly-downloaded torrent from being reported as having downloaded nothing, which would
+        // be a quieter wrong answer than the exception it replaces.
+        [Fact]
+        public async Task GetQueueAsync_WhenNumericFieldIsNotAnInteger_KeepsItsMagnitude()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("600.5");
+            var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
+            var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
+
+            var items = await adapter.GetQueueAsync(_client);
+
+            var second = Assert.Single(items, item => item.Id == "bbbb2222");
+            Assert.Equal(600, second.Downloaded);
+        }
+
+        // A torrent that cannot be read at all is still allowed to be dropped; what it may not do
+        // is take the rest of the response with it.
+        [Fact]
+        public async Task GetQueueAsync_WhenATorrentIsWhollyUnreadable_DropsOnlyThatTorrent()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = """
+            [
+                {
+                    "hash": "aaaa1111", "name": "First", "progress": 0.5, "size": 1000,
+                    "downloaded": 500, "state": "downloading", "save_path": "/downloads/a"
+                },
+                {
+                    "hash": "bbbb2222", "name": "Second", "progress": 0.5, "size": 1000,
+                    "downloaded": "not a number at all", "state": "downloading", "save_path": "/downloads/b"
+                },
+                {
+                    "hash": "cccc3333", "name": "Third", "progress": 0.5, "size": 1000,
+                    "downloaded": 700, "state": "downloading", "save_path": "/downloads/c"
+                }
+            ]
+            """;
+            var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
+            var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
+
+            var items = await adapter.GetQueueAsync(_client);
+
+            Assert.Contains(items, item => item.Id == "cccc3333");
+            Assert.Contains(items, item => item.Id == "aaaa1111");
+        }
+
         [Fact]
         public async Task MarkItemAsImportedAsync_SetsConfiguredPostImportCategory()
         {

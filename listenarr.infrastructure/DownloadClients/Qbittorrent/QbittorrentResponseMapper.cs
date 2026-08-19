@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Globalization;
 using System.Text.Json;
 
 namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
@@ -200,34 +201,109 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 : status;
         }
 
+        // The typed JsonElement accessors (GetString, GetInt64, GetDouble, GetInt32) all throw when
+        // the value they are handed is in a JSON token form they did not expect, and a throw here
+        // escapes MapQueueItem into whatever loop is walking the response. The readers below never
+        // throw for that reason: they accept the value in either token form, and fall back to the
+        // caller's default only when it genuinely cannot be read as a number at all.
+        //
+        // This is the same shape SabnzbdResponseMapper already uses for its own numeric fields, and
+        // the same class of defect reported for the NZBGet adapter in #618 and #619.
+
+        private static bool TryReadDouble(JsonElement element, out double value)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Number:
+                    return element.TryGetDouble(out value);
+                case JsonValueKind.String:
+                    return double.TryParse(element.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out value);
+                default:
+                    value = 0;
+                    return false;
+            }
+        }
+
+        // Integer fields fall back to reading through double so that a value which is numerically
+        // fine but not in plain-integer token form keeps its magnitude. Dropping to the default
+        // instead would report a partly-downloaded torrent as having downloaded nothing, which is a
+        // quieter wrong answer than the exception it replaces.
+        private static bool TryReadInt64(JsonElement element, out long value)
+        {
+            value = 0;
+
+            if (element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out value))
+            {
+                return true;
+            }
+
+            if (!TryReadDouble(element, out var asDouble))
+            {
+                return false;
+            }
+
+            if (double.IsNaN(asDouble) || asDouble < long.MinValue || asDouble > long.MaxValue)
+            {
+                return false;
+            }
+
+            value = (long)asDouble;
+            return true;
+        }
+
         private static string GetString(Dictionary<string, JsonElement> values, string key, string defaultValue = "")
         {
-            return values.TryGetValue(key, out var element) ? element.GetString() ?? defaultValue : defaultValue;
+            if (!values.TryGetValue(key, out var element))
+            {
+                return defaultValue;
+            }
+
+            return element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString() ?? defaultValue,
+                JsonValueKind.Null or JsonValueKind.Undefined => defaultValue,
+                // A number or boolean where a string was expected still has an unambiguous textual
+                // form. Using it keeps the torrent rather than discarding the row over it.
+                _ => element.ToString()
+            };
         }
 
         private static double GetDouble(Dictionary<string, JsonElement> values, string key, double defaultValue = 0)
         {
-            return values.TryGetValue(key, out var element) ? element.GetDouble() : defaultValue;
+            return values.TryGetValue(key, out var element) && TryReadDouble(element, out var value)
+                ? value
+                : defaultValue;
         }
 
         private static long GetInt64(Dictionary<string, JsonElement> values, string key, long defaultValue = 0)
         {
-            return values.TryGetValue(key, out var element) ? element.GetInt64() : defaultValue;
+            return values.TryGetValue(key, out var element) && TryReadInt64(element, out var value)
+                ? value
+                : defaultValue;
         }
 
         private static int? GetNullableInt32(Dictionary<string, JsonElement> values, string key)
         {
-            return values.TryGetValue(key, out var element) ? element.GetInt32() : null;
+            if (!values.TryGetValue(key, out var element) || !TryReadInt64(element, out var value))
+            {
+                return null;
+            }
+
+            return (int)Math.Clamp(value, int.MinValue, int.MaxValue);
         }
 
         private static long? GetNullableInt64(Dictionary<string, JsonElement> values, string key)
         {
-            return values.TryGetValue(key, out var element) ? element.GetInt64() : null;
+            return values.TryGetValue(key, out var element) && TryReadInt64(element, out var value)
+                ? value
+                : null;
         }
 
         private static double? GetNullableDouble(Dictionary<string, JsonElement> values, string key)
         {
-            return values.TryGetValue(key, out var element) ? element.GetDouble() : null;
+            return values.TryGetValue(key, out var element) && TryReadDouble(element, out var value)
+                ? value
+                : null;
         }
     }
 }
