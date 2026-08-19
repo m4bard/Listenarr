@@ -80,6 +80,7 @@ public sealed partial class ManualImportCompanionImporter
         FileSystemPathSemantics sourceSemantics,
         IReadOnlyDictionary<int, FileSystemSemanticsResolution> destinationResolutionsByAudiobook,
         IEnumerable<string> importBlacklist,
+        IReadOnlyCollection<RootFolder> rootFolders,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -264,12 +265,31 @@ public sealed partial class ManualImportCompanionImporter
                     continue;
                 }
 
+                // The managed boundary has to be a configured root folder: AuthorizeAsync matches the
+                // boundary against RootFolders by equivalence, not by containment. destinationRoot is
+                // the common parent of the destination paths this batch produced, so for the ordinary
+                // single-book import it is the book folder, which is never a root and is always
+                // refused. Select the boundary the same way the primary audio file's import does, so
+                // the companion and the audio it accompanies are authorized against the same root.
+                var companionBoundary = LibraryDirectoryOwnershipPlanning.SelectMostSpecificBoundary(
+                    destinationDirectory,
+                    rootFolders.Select(root => root.Path),
+                    destinationResolution.Semantics)
+                    ?? destinationResolution.BoundaryPath;
+                if (string.IsNullOrWhiteSpace(companionBoundary))
+                {
+                    _logger.LogWarning(
+                        "Skipping companion file {FilePath} because its destination has no managed ownership boundary",
+                        companionFile);
+                    continue;
+                }
+
                 if (publicationPlan.Mode
                     == FilePublicationExecutionMode.AdditiveCopyRetainSource)
                 {
                     await _directoryOwnershipStore.EnsureAdditiveHierarchyAsync(
                         destinationDirectory,
-                        destinationRoot,
+                        companionBoundary,
                         destinationResolution.Semantics,
                         cancellationToken);
                 }
@@ -277,7 +297,7 @@ public sealed partial class ManualImportCompanionImporter
                 {
                     await _directoryOwnershipStore.EnsureCreatedHierarchyAsync(
                         destinationDirectory,
-                        destinationRoot,
+                        companionBoundary,
                         destinationResolution.Semantics,
                         "manual-import-companion",
                         operationId,

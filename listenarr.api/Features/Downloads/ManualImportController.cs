@@ -311,6 +311,7 @@ public partial class ManualImportController : ControllerBase
                                 sourceSemantics,
                                 planningDestinationResolutions,
                                 appSettings.ImportBlacklistExtensions,
+                                rootFolders,
                                 operationToken);
                             _logger.LogInformation(
                                 "Manual import companion-file pass completed with {Count} imported companion file(s)",
