@@ -101,12 +101,13 @@ internal sealed partial class PinnedDirectoryCreation
     private static SafeFileHandle OpenRelativeFileForWriteUnix(
         SafeFileHandle parentHandle,
         string fileName,
-        string fullPath)
+        string fullPath,
+        bool readable = false)
     {
         var fd = OpenAt(
             parentHandle.DangerousGetHandle().ToInt32(),
             fileName,
-            GetUnixWriteExistingFlags(),
+            GetUnixWriteExistingFlags(readable),
             mode: 0);
         if (fd >= 0)
         {
@@ -148,7 +149,13 @@ internal sealed partial class PinnedDirectoryCreation
         ? 0x2 | 0x200 | 0x800 | 0x100 | 0x1000000
         : 0x2 | 0x40 | 0x80 | 0x20000 | 0x80000;
 
-    private static int GetUnixWriteExistingFlags() => OperatingSystem.IsMacOS()
-        ? 0x1 | 0x100 | 0x1000000
-        : 0x1 | 0x20000 | 0x80000;
+    // O_WRONLY, or O_RDWR when the caller has to read the file back through the same handle,
+    // plus O_NOFOLLOW and O_CLOEXEC in either case.
+    private static int GetUnixWriteExistingFlags(bool readable = false)
+    {
+        var access = readable ? 0x2 : 0x1;
+        return OperatingSystem.IsMacOS()
+            ? access | 0x100 | 0x1000000
+            : access | 0x20000 | 0x80000;
+    }
 }
