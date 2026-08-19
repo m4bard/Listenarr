@@ -38,6 +38,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
         private readonly IFileSystemSemanticsResolver _semanticsResolver;
         private readonly IFilesystemMutationCoordinator _mutationCoordinator;
         private readonly IAudiobookDeletionIntentProbe? _deletionIntentProbe;
+        private readonly IFileRegistrationRecoveryProbe? _fileRegistrationRecoveryProbe;
         private readonly IFileRenameRecoveryProbe? _fileRenameRecoveryProbe;
 
         public MoveQueueService(
@@ -49,6 +50,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
             IRootFolderRelocationService relocationService,
             IFilesystemMutationCoordinator mutationCoordinator,
             IAudiobookDeletionIntentProbe? deletionIntentProbe = null,
+            IFileRegistrationRecoveryProbe? fileRegistrationRecoveryProbe = null,
             IFileRenameRecoveryProbe? fileRenameRecoveryProbe = null)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -59,6 +61,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
             _mutationCoordinator = mutationCoordinator ?? throw new ArgumentNullException(nameof(mutationCoordinator));
             _relocationService = relocationService ?? throw new ArgumentNullException(nameof(relocationService));
             _deletionIntentProbe = deletionIntentProbe;
+            _fileRegistrationRecoveryProbe = fileRegistrationRecoveryProbe;
             _fileRenameRecoveryProbe = fileRenameRecoveryProbe;
         }
 
@@ -100,15 +103,37 @@ namespace Listenarr.Application.Audiobooks.Jobs
                 target,
                 command.TargetIdentity,
                 command.SourceEntries);
-            if (command.TargetBoundaryDirectoryObjectIdentityVersion <= 0
+            if (!MoveBoundaryAuthorization.TryResolveSourceBoundary(
+                    source,
+                    command.SourceIdentity,
+                    command.SourceCleanupBoundary,
+                    command.DeleteEmptySource,
+                    out var sourceAuthorizationBoundary,
+                    out var sourceAuthorizationReason))
+            {
+                throw new InvalidOperationException(
+                    $"The source mutation boundary is invalid: {sourceAuthorizationReason}");
+            }
+
+            if (command.SourceBoundaryDirectoryObjectIdentityVersion <= 0
+                || string.IsNullOrWhiteSpace(
+                    command.SourceBoundaryDirectoryObjectIdentity)
+                || command.TargetBoundaryDirectoryObjectIdentityVersion <= 0
                 || string.IsNullOrWhiteSpace(
                     command.TargetBoundaryDirectoryObjectIdentity))
             {
                 throw new InvalidOperationException(
-                    "A physical move requires durable target-boundary generation authorization.");
+                    "A physical move requires durable source- and target-boundary generation authorization.");
             }
 
+            var persistedSourceBoundary = command.SourceCleanupBoundary == null
+                ? null
+                : sourceAuthorizationBoundary;
             var persistedEntries = manifest.Entries.ToList();
+            persistedEntries.Add(
+                MoveManifestIdentity.CreateSourceBoundaryAuthorization(
+                    command.SourceBoundaryDirectoryObjectIdentityVersion,
+                    command.SourceBoundaryDirectoryObjectIdentity));
             persistedEntries.Add(
                 MoveManifestIdentity.CreateTargetBoundaryAuthorization(
                     command.TargetBoundaryDirectoryObjectIdentityVersion,
@@ -124,6 +149,10 @@ namespace Listenarr.Application.Audiobooks.Jobs
             MoveJob? jobToSchedule = null;
             var jobId = await _mutationCoordinator.ExecuteExclusiveAsync(async token =>
             {
+                await EnsureNonRelocationRecoveryAllowsMutationAsync(
+                    command.AudiobookId,
+                    allowActiveDeletionIntent: false,
+                    token);
                 await ThrowIfRelocationBoundaryProtectedAsync(
                     source,
                     command.SourceIdentity,
@@ -135,6 +164,10 @@ namespace Listenarr.Application.Audiobooks.Jobs
                     token);
                 if (existingDb != null)
                 {
+                    EnsureMatchingActiveExecutionOptions(
+                        existingDb,
+                        command,
+                        persistedSourceBoundary);
                     jobToSchedule = existingDb;
                     _logger.LogInformation(
                         "Found active move job {JobId} for audiobook {AudiobookId} to {Path}; deduping and returning existing job id",
@@ -154,7 +187,7 @@ namespace Listenarr.Application.Audiobooks.Jobs
                     EnqueuedAt = _timeProvider.GetUtcNow().UtcDateTime,
                     Status = MoveJobStatus.Queued,
                     SourcePath = source,
-                    SourceCleanupBoundary = command.SourceCleanupBoundary,
+                    SourceCleanupBoundary = persistedSourceBoundary,
                     DeleteEmptySource = command.DeleteEmptySource,
                     RelocationId = command.RelocationId,
                     Entries = persistedEntries
@@ -174,6 +207,10 @@ namespace Listenarr.Application.Audiobooks.Jobs
                         commitToken);
                     if (existingDb != null)
                     {
+                        EnsureMatchingActiveExecutionOptions(
+                            existingDb,
+                            command,
+                            persistedSourceBoundary);
                         jobToSchedule = existingDb;
                         return existingDb.Id;
                     }
@@ -419,75 +456,6 @@ namespace Listenarr.Application.Audiobooks.Jobs
             if (!incremented)
             {
                 throw new MoveLeaseLostException(id, leaseGeneration);
-            }
-        }
-
-        private PublicationGateEntry AcquirePublicationGate(Guid id)
-        {
-            lock (_publicationGateSync)
-            {
-                if (!_publicationGates.TryGetValue(id, out var entry))
-                {
-                    entry = new PublicationGateEntry();
-                    _publicationGates.Add(id, entry);
-                }
-
-                entry.References++;
-                return entry;
-            }
-        }
-
-        private void ReleasePublicationGate(Guid id, PublicationGateEntry entry)
-        {
-            lock (_publicationGateSync)
-            {
-                entry.References--;
-                if (entry.References == 0
-                    && _publicationGates.TryGetValue(id, out var current)
-                    && ReferenceEquals(current, entry))
-                {
-                    _publicationGates.Remove(id);
-                    entry.Gate.Dispose();
-                }
-            }
-        }
-
-        internal int PublicationGateCount
-        {
-            get
-            {
-                lock (_publicationGateSync)
-                {
-                    return _publicationGates.Count;
-                }
-            }
-        }
-
-        internal int GetPublicationGateReferenceCount(Guid id)
-        {
-            lock (_publicationGateSync)
-            {
-                return _publicationGates.TryGetValue(id, out var entry)
-                    ? entry.References
-                    : 0;
-            }
-        }
-
-        private sealed class PublicationGateEntry
-        {
-            public SemaphoreSlim Gate { get; } = new(1, 1);
-            public int References { get; set; }
-        }
-
-        private void LogStatusChange(Guid id, MoveJobStatus status, string? error)
-        {
-            if (status == MoveJobStatus.Failed && !string.IsNullOrWhiteSpace(error))
-            {
-                _logger.LogError("Move job {JobId} FAILED with error: {Error}", id, error);
-            }
-            else
-            {
-                _logger.LogInformation("Updated move job {JobId} status to {Status}", id, status);
             }
         }
 

@@ -12,6 +12,7 @@ internal partial class MoveJobProcessor
         string target,
         AudiobookContentMoveService contentMoveService,
         AudiobookContentMoveRequest moveRequest,
+        MarkerlessTargetVerificationLease? targetVerificationLease,
         Action<MovePostCommitContext> registerPostCommit,
         CancellationToken cancellationToken)
     {
@@ -19,8 +20,18 @@ internal partial class MoveJobProcessor
         contentMoveService.OnCompletionHandoff(
             job.Id,
             CompletionHandoffFaultPoint.BeforeHistoryPersist);
+        await contentMoveService.VerifyFinalizedMoveAsync(
+            moveRequest,
+            cancellationToken,
+            targetVerificationLease);
 
         var now = timeProvider.GetUtcNow();
+        if (targetVerificationLease == null)
+        {
+            throw new MoveNeedsAttentionException(
+                "Durable move completion requires a pinned target-generation verification lease.");
+        }
+
         var completion = await moveScanHandoffStore.CommitMoveCompletionAsync(
             new MoveCompletionCommit(
                 job.Id,
@@ -31,6 +42,14 @@ internal partial class MoveJobProcessor
                 source,
                 target,
                 now),
+            validationToken =>
+            {
+                contentMoveService.OnCompletionHandoff(
+                    job.Id,
+                    CompletionHandoffFaultPoint.BeforeCompletionCommitValidation);
+                return targetVerificationLease.ProbeCurrentPublicationsAsync(
+                    validationToken);
+            },
             cancellationToken);
 
         job.Status = MoveJobStatus.Completed;

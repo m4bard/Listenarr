@@ -12,9 +12,11 @@ public partial class DownloadImportService
         string managedBoundary,
         FileSystemPathSemantics semantics,
         Guid operationId,
+        FilePublicationSourceProof expectedSourceProof,
         int audiobookId,
         CancellationToken cancellationToken)
     {
+        expectedSourceProof.Validate();
         if (!await EnsureOwnedImportDestinationAsync(
                 source,
                 destination,
@@ -28,11 +30,21 @@ public partial class DownloadImportService
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        return await fileMover.PerformActionOn(
-            action,
-            source,
-            destination,
-            operationId);
+        return action == FileAction.Move
+            ? await fileMover.PerformActionOn(
+                action,
+                source,
+                destination,
+                operationId,
+                audiobookId,
+                FileMutationOwner.CompanionFile,
+                expectedSourceProof)
+            : await fileMover.PerformActionOn(
+                action,
+                source,
+                destination,
+                operationId,
+                expectedSourceProof);
     }
 
     private async Task<IAudiobookFileRegistrationLease?> PrepareOwnedFileActionForRegistrationAsync(
@@ -43,9 +55,11 @@ public partial class DownloadImportService
         FileSystemPathSemantics semantics,
         Guid operationId,
         string? expectedRegisteredPhysicalObjectIdentity,
+        FilePublicationSourceProof expectedSourceProof,
         int audiobookId,
         CancellationToken cancellationToken)
     {
+        expectedSourceProof.Validate();
         if (!await EnsureOwnedImportDestinationAsync(
                 source,
                 destination,
@@ -68,14 +82,36 @@ public partial class DownloadImportService
                 source,
                 destination,
                 operationId,
-                expectedRegisteredPhysicalObjectIdentity);
+                expectedRegisteredPhysicalObjectIdentity,
+                expectedSourceProof);
         }
 
         return await fileMover.PrepareActionForRegistrationAsync(
             action,
             source,
             destination,
-            operationId);
+            operationId,
+            expectedRegisteredPhysicalObjectIdentity: null,
+            expectedSourceProof);
+    }
+
+    private async Task<FilePublicationSourceProof?> ResolvePublishableSourceProofAsync(
+        string source,
+        CancellationToken cancellationToken)
+    {
+        var capability = await filePublicationSourceCapability.CheckAsync(
+            source,
+            cancellationToken);
+        if (capability.IsSupported && capability.SourceProof.HasValue)
+        {
+            return capability.SourceProof.Value;
+        }
+
+        logger.LogWarning(
+            "Blocked download import before destination creation because source publication capability is unavailable for {Source}: {Reason}",
+            LogRedaction.SanitizeFilePath(source),
+            LogRedaction.SanitizeText(capability.Reason));
+        return null;
     }
 
     private async Task<bool> EnsureOwnedImportDestinationAsync(

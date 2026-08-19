@@ -14,6 +14,7 @@ public partial class ManualImportController
         string fallbackBoundary,
         Guid operationId,
         string? expectedRegisteredPhysicalObjectIdentity,
+        FilePublicationSourceProof expectedSourceProof,
         CancellationToken cancellationToken)
     {
         var destinationDirectory = Path.GetDirectoryName(destination)
@@ -29,6 +30,8 @@ public partial class ManualImportController
             throw new InvalidOperationException(
                 "The manual import destination has no managed ownership boundary.");
         }
+
+        expectedSourceProof.Validate();
 
         await _directoryOwnershipStore.EnsureCreatedHierarchyAsync(
             destinationDirectory,
@@ -49,13 +52,16 @@ public partial class ManualImportController
                 source,
                 destination,
                 operationId,
-                expectedRegisteredPhysicalObjectIdentity);
+                expectedRegisteredPhysicalObjectIdentity,
+                expectedSourceProof);
         }
 
         return await _fileMover.PrepareActionForRegistrationAsync(
             action,
             source,
             destination,
-            operationId);
+            operationId,
+            expectedRegisteredPhysicalObjectIdentity: null,
+            expectedSourceProof);
     }
 }

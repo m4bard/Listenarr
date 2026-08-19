@@ -12,6 +12,7 @@ public partial class ManualImportController
         FileSystemPathSemantics sourceSemantics,
         ManualImportDestinationTracker destinationTracker,
         IDictionary<int, string> planningBasePaths,
+        IDictionary<int, FileSystemSemanticsResolution> planningDestinationResolutions,
         List<RootFolder> rootFolders,
         ApplicationSettings settings,
         bool hasMultipleFile,
@@ -63,10 +64,45 @@ public partial class ManualImportController
 
             if (action == FileAction.None)
             {
-                return ManualImportResultDto.SkippedResult(
-                    "No file action was requested.",
+                if (string.IsNullOrWhiteSpace(audiobook.BasePath))
+                {
+                    return ManualImportResultDto.FailureResult(
+                        "The audiobook has no existing library folder to register this file in place.",
+                        item.FullPath);
+                }
+
+                if (!FileSystemPathIdentity.StoredPathMayIdentifySamePath(
+                        audiobook.BasePath,
+                        sourceDirectory,
+                        sourceSemantics))
+                {
+                    return ManualImportResultDto.FailureResult(
+                        "The selected existing-file folder does not match the audiobook library folder.",
+                        item.FullPath);
+                }
+
+                var registered = await _audiobookScanService.RegisterExistingFileAsync(
+                    audiobook.Id,
+                    audiobook.BasePath,
                     item.FullPath,
-                    audiobook);
+                    "manual-import",
+                    cancellationToken);
+                return registered
+                    ? new ManualImportResultDto
+                    {
+                        Success = true,
+                        SourcePath = item.FullPath,
+                        DestinationPath = item.FullPath,
+                        Audiobook = audiobook
+                    }
+                    : new ManualImportResultDto
+                    {
+                        Success = false,
+                        Error = "The existing file could not be registered safely in place.",
+                        SourcePath = item.FullPath,
+                        DestinationPath = item.FullPath,
+                        Audiobook = audiobook
+                    };
             }
 
             if (!TryResolveManagedDestinationBasePath(
@@ -92,6 +128,22 @@ public partial class ManualImportController
                 planningBasePaths.Add(audiobook.Id, managedBasePath);
             }
 
+            var sourceCapability = await _filePublicationSourceCapability.CheckAsync(
+                item.FullPath,
+                cancellationToken);
+            if (!sourceCapability.IsSupported
+                || !sourceCapability.SourceProof.HasValue)
+            {
+                _logger.LogWarning(
+                    "Blocked manual import before metadata or destination planning because source publication capability is unavailable for {Source}: {Reason}",
+                    LogRedaction.SanitizeFilePath(item.FullPath),
+                    LogRedaction.SanitizeText(sourceCapability.Reason));
+                return ManualImportResultDto.FailureResult(
+                    "The file could not be published and registered safely.",
+                    item.FullPath);
+            }
+            var sourceProof = sourceCapability.SourceProof.Value;
+
             var metadata = await _metadataService.ExtractFileMetadataAsync(
                 item.FullPath);
             if (metadata == null)
@@ -101,9 +153,18 @@ public partial class ManualImportController
                     item.FullPath);
             }
 
-            var destinationResolution = await ResolveDestinationResolutionAsync(
-                managedBasePath,
-                cancellationToken);
+            if (!planningDestinationResolutions.TryGetValue(
+                    audiobook.Id,
+                    out var destinationResolution))
+            {
+                destinationResolution = await ResolveDestinationResolutionAsync(
+                    managedBasePath,
+                    rootFolders,
+                    cancellationToken);
+                planningDestinationResolutions.Add(
+                    audiobook.Id,
+                    destinationResolution);
+            }
             var destinationSemantics = destinationResolution.Semantics;
             var pathPlan = await _pathPlanner.GeneratePathAsync(
                 audiobook,
@@ -132,8 +193,9 @@ public partial class ManualImportController
 
             var destinationReservation =
                 await destinationTracker.PlanIdempotentOrUniqueAsync(
-                    item.FullPath,
+                    sourceProof,
                     destinationPath,
+                    destinationResolution,
                     cancellationToken);
             destinationPath = destinationReservation.Path;
             var authoritativeBasePath = pathPlan.AudiobookBasePath;
@@ -185,6 +247,7 @@ public partial class ManualImportController
                 action,
                 item.FullPath,
                 sourceSemantics,
+                sourceProof,
                 destinationPath,
                 destinationSemantics);
             using (var registrationLease =
@@ -198,6 +261,7 @@ public partial class ManualImportController
                     destinationResolution.BoundaryPath,
                     operationId,
                     ownership.ExistingFile?.PhysicalObjectIdentity,
+                    sourceProof,
                     cancellationToken))
             {
                 if (registrationLease == null

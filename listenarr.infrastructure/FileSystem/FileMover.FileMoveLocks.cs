@@ -284,13 +284,30 @@ public partial class FileMover
     private async ValueTask<FileMoveEndpoint?> ResolveFileMoveEndpointAsync(
         string path)
     {
-        var resolver = _semanticsResolver ?? new FileSystemSemanticsResolver();
-        var resolution = await resolver.ResolveAsync(path);
-        if (resolution.State != PathIdentityState.Valid
-            || resolution.Semantics.CaseSensitivity
-                == FileSystemCaseSensitivity.Unknown)
+        var managedRoot = await ResolveManagedRootPathAsync(path);
+        if (managedRoot.HasUnavailableOverlap)
         {
             return null;
+        }
+
+        FileSystemPathSemantics semantics;
+        if (managedRoot.Semantics.HasValue)
+        {
+            semantics = managedRoot.Semantics.Value;
+        }
+        else
+        {
+            var resolver = _semanticsResolver ?? new FileSystemSemanticsResolver();
+            var resolution = await resolver.ResolveAsync(
+                path,
+                FileSystemCaseSensitivityMode.Auto);
+            if (resolution.State != PathIdentityState.Valid
+                || resolution.Semantics.CaseSensitivity
+                    == FileSystemCaseSensitivity.Unknown)
+            {
+                return null;
+            }
+            semantics = resolution.Semantics;
         }
 
         var fullPath = Path.GetFullPath(path);
@@ -301,14 +318,14 @@ public partial class FileMover
 
         var canonicalPath = FileSystemPathIdentity.Canonicalize(
             fullPath,
-            resolution.Semantics.Syntax);
+            semantics.Syntax);
         if (!TryResolvePhysicalPath(canonicalPath, out var physical))
         {
             return null;
         }
 
         var identity = physical.ResolvedPath;
-        var lockIdentity = resolution.Semantics.CaseSensitivity
+        var lockIdentity = semantics.CaseSensitivity
                 == FileSystemCaseSensitivity.Insensitive
             ? identity.ToUpperInvariant()
             : identity;
@@ -324,6 +341,34 @@ public partial class FileMover
         && await PersistedPathMatchesEndpointAsync(
             journal.DestinationPath,
             gate.DestinationIdentity);
+
+    private static bool JournalParentGenerationsMatchGate(
+        FileMutationJournal journal,
+        FileMoveGateLease gate)
+    {
+        if (string.IsNullOrWhiteSpace(
+                journal.SourceParentDirectoryObjectIdentity)
+            || string.IsNullOrWhiteSpace(
+                journal.DestinationParentDirectoryObjectIdentity))
+        {
+            return false;
+        }
+
+        try
+        {
+            return gate.SourceParent.MatchesDirectoryObjectIdentity(
+                    journal.SourceParentDirectoryObjectIdentity)
+                && gate.DestinationParent.MatchesDirectoryObjectIdentity(
+                    journal.DestinationParentDirectoryObjectIdentity);
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or InvalidOperationException
+                or NotSupportedException or PlatformNotSupportedException
+                or System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
+    }
 
     private async Task<bool> PersistedPathMatchesEndpointAsync(
         string persistedPath,

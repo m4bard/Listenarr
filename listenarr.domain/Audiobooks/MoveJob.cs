@@ -76,10 +76,16 @@ namespace Listenarr.Domain.Audiobooks
         Retained
     }
 
+    public static class MoveIdentityProtocol
+    {
+        public const int Current = 2;
+    }
+
     public static class MoveExecutionProtocol
     {
         public const int PreDurableReleased = 0;
-        public const int MarkerlessDatabaseState = 1;
+        public const int TargetBoundaryMarkerlessDatabaseState = 1;
+        public const int MarkerlessDatabaseState = 2;
         public const int Current = MarkerlessDatabaseState;
 
         public static bool IsCurrent(int version) => version == Current;
@@ -115,7 +121,7 @@ namespace Listenarr.Domain.Audiobooks
         public int AttemptCount { get; set; } = 0;
         public DateTime? UpdatedAt { get; set; }
         public string? ActiveDeduplicationKey { get; set; }
-        public int IdentityKeyVersion { get; set; } = 1;
+        public int IdentityKeyVersion { get; set; } = MoveIdentityProtocol.Current;
         public string? LeaseOwner { get; set; }
         public DateTime? LeaseExpiresAt { get; set; }
         public int LeaseGeneration { get; set; }

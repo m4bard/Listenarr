@@ -34,10 +34,16 @@ internal sealed partial class AudiobookContentMoveService
             var targetVolumeAnchor = FindNearestExistingTargetAncestor(
                 targetParentPath);
 
-            using var sourceParent = PinnedDirectoryCreation.OpenPinnedBoundary(
-                sourceParentPath);
-            using var targetParent = PinnedDirectoryCreation.OpenPinnedBoundary(
-                targetVolumeAnchor);
+            using var sourceParent = OpenPinnedMoveBoundaryDescendant(
+                request,
+                sourceParentPath,
+                request.SourceSemantics,
+                sourceBoundary: true);
+            using var targetParent = OpenPinnedMoveBoundaryDescendant(
+                request,
+                targetVolumeAnchor,
+                request.TargetSemantics,
+                sourceBoundary: false);
             using var sourceEntry = sourceParent.TryOpenExistingFile(
                 Path.GetFileName(sourcePath),
                 requireDeleteAccess: false);
@@ -54,12 +60,21 @@ internal sealed partial class AudiobookContentMoveService
     private static string FindNearestExistingTargetAncestor(string targetParentPath)
     {
         var current = Path.GetFullPath(targetParentPath);
-        while (!Directory.Exists(current))
+        while (true)
         {
-            if (File.Exists(current))
+            if (TryGetMarkerlessPathAttributes(current, out var attributes))
             {
-                throw new MoveNeedsAttentionException(
-                    "A markerless target ancestor is occupied by a file.");
+                if ((attributes & FileAttributes.Directory) == 0)
+                {
+                    throw new MoveNeedsAttentionException(
+                        "A markerless target ancestor is occupied by a file.");
+                }
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new MoveNeedsAttentionException(
+                        "A markerless target ancestor became a link.");
+                }
+                break;
             }
 
             current = Path.GetDirectoryName(current)

@@ -14,6 +14,11 @@ namespace Listenarr.Infrastructure.Library.Moving
 {
     internal partial class MoveJobProcessor
     {
+        private static bool IsTransientFilesystemException(Exception exception) =>
+            exception is IOException or UnauthorizedAccessException
+            || exception is System.ComponentModel.Win32Exception native
+                && native.NativeErrorCode is 5 or 13 or 16 or 30 or 32 or 33;
+
         private async Task<PathIdentitySnapshot> GetRequiredIdentityAsync(
             MoveJob job,
             string path,
@@ -46,6 +51,12 @@ namespace Listenarr.Infrastructure.Library.Moving
                     identity.BoundaryPath,
                     FileSystemCaseSensitivityMode.Auto,
                     cancellationToken);
+                if (current.State == PathIdentityState.Unavailable)
+                {
+                    throw new IOException(
+                        current.Reason
+                            ?? $"The {(target ? "target" : "source")} filesystem semantics are temporarily unavailable.");
+                }
                 if (current.State != PathIdentityState.Valid
                     || current.Semantics.Syntax != identity.Syntax
                     || current.Semantics.CaseSensitivity != identity.CaseSensitivity)
@@ -53,9 +64,33 @@ namespace Listenarr.Infrastructure.Library.Moving
                     throw new MoveNeedsAttentionException(
                         $"The {(target ? "target" : "source")} filesystem identity changed after the move was queued.");
                 }
+                if (!current.HasDurableMutationSemanticsAuthority
+                    && !MoveRecoveryPolicy.HasFilesystemExecutionEvidence(job))
+                {
+                    throw new MoveNeedsAttentionException(
+                        $"The {(target ? "target" : "source")} filesystem case semantics are available only through a behavioral lookup probe. Select Sensitive or Insensitive explicitly for the root, then start a new move.");
+                }
             }
 
             return identity;
+        }
+
+        private static MoveCleanupBoundaryResolution GetPersistedCleanupBoundary(
+            MoveJob job)
+        {
+            if (string.IsNullOrWhiteSpace(job.SourceCleanupBoundary))
+            {
+                return new MoveCleanupBoundaryResolution(
+                    Boundary: null,
+                    MoveCleanupBoundaryKind.Unavailable,
+                    job.DeleteEmptySource
+                        ? "The current move protocol has no persisted source cleanup boundary."
+                        : "Source ancestor cleanup is disabled for this move.");
+            }
+
+            return new MoveCleanupBoundaryResolution(
+                job.SourceCleanupBoundary,
+                MoveCleanupBoundaryKind.Persisted);
         }
 
         private static MoveLeaseToken CreateLeaseToken(MoveJob job)
@@ -146,7 +181,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                     job.Id);
                 return FinalizedMoveRecoveryOutcome.HandledFailure;
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            catch (Exception exception) when (IsTransientFilesystemException(exception))
             {
                 await ScheduleTransientRetryAsync(
                     job,
@@ -248,7 +283,7 @@ namespace Listenarr.Infrastructure.Library.Moving
             {
                 throw;
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            catch (Exception exception) when (IsTransientFilesystemException(exception))
             {
                 await ScheduleTransientRetryAsync(
                     job,
@@ -282,7 +317,7 @@ namespace Listenarr.Infrastructure.Library.Moving
             {
                 throw;
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            catch (Exception exception) when (IsTransientFilesystemException(exception))
             {
                 await ScheduleTransientRetryAsync(
                     job,
@@ -303,6 +338,7 @@ namespace Listenarr.Infrastructure.Library.Moving
             string target,
             AudiobookContentMoveService contentMoveService,
             AudiobookContentMoveRequest moveRequest,
+            MarkerlessTargetVerificationLease? targetVerificationLease,
             Action<MovePostCommitContext> registerPostCommit,
             CancellationToken cancellationToken)
         {
@@ -315,6 +351,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                     target,
                     contentMoveService,
                     moveRequest,
+                    targetVerificationLease,
                     registerPostCommit,
                     cancellationToken);
                 return true;

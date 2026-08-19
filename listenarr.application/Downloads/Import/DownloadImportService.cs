@@ -24,6 +24,7 @@ namespace Listenarr.Application.Downloads.Import
         IFileNamingService fileNamingService,
         IMetadataService metadataService,
         IFileMover fileMover,
+        IFilePublicationSourceCapability filePublicationSourceCapability,
         IAudiobookFileService audiobookFileService,
         IArchiveExtractor archiveExtractor,
         IConfigurationService configurationService,
@@ -34,6 +35,7 @@ namespace Listenarr.Application.Downloads.Import
         IAudiobookRepository audiobookRepository,
         IFilesystemMutationCoordinator filesystemMutationCoordinator,
         IAudiobookOperationCoordinator audiobookOperationCoordinator,
+        IFileRegistrationRecoveryService fileRegistrationRecoveryService,
         IMoveQueueService moveQueueService,
         ILibraryDirectoryOwnershipStore directoryOwnershipStore,
         ILogger<DownloadImportService> logger) : IDownloadImportService
@@ -42,11 +44,22 @@ namespace Listenarr.Application.Downloads.Import
             Audiobook audiobook,
             List<string> files,
             CancellationToken ct,
-            DownloadImportOptions? options)
+            DownloadImportOptions? options,
+            IReadOnlyList<FileRegistrationRecoveryReceipt> recoveryReceipts)
         {
             if (string.IsNullOrEmpty(audiobook.BasePath))
             {
                 throw new InvalidOperationException($"Audiobook {audiobook.Id} basePath cannot be empty or null");
+            }
+
+            var (remainingFiles, recoveredResults) = await ConsumeRecoveredImportsAsync(
+                files,
+                recoveryReceipts,
+                ct);
+            files = remainingFiles;
+            if (files.Count == 0)
+            {
+                return recoveredResults;
             }
 
             var settings = await configurationService.GetApplicationSettingsAsync();
@@ -97,7 +110,7 @@ namespace Listenarr.Application.Downloads.Import
                     }
                 }
 
-                var results = new List<ImportResult>();
+                var results = recoveredResults;
                 var folderPattern = settings.FolderNamingPattern;
                 var candidateFiles = files.Where(file => !FileUtils.IsBlacklistedFile(file, settings.ImportBlacklistExtensions)).ToList();
                 var sourceRootPath = FileUtils.GetCommonDirectory(candidateFiles);
@@ -176,7 +189,21 @@ namespace Listenarr.Application.Downloads.Import
                                     continue;
                                 }
 
-                                var destinationReservation = await destinationPlanner.PlanIdempotentOrUniqueAsync(file, destination, usedDestinations, destinationSemantics, ct);
+                                var sourceProof =
+                                    await ResolvePublishableSourceProofAsync(
+                                        file,
+                                        ct);
+                                if (!sourceProof.HasValue)
+                                {
+                                    results.Add(ImportResult.ImportFailure(completedFileAction, file, destination));
+                                    continue;
+                                }
+                                var destinationReservation = await destinationPlanner.PlanIdempotentOrUniqueAsync(
+                                    sourceProof.Value,
+                                    destination,
+                                    usedDestinations,
+                                    destinationSemantics,
+                                    ct);
                                 destination = destinationReservation.Path;
                                 if (!await PerformOwnedFileActionAsync(
                                         completedFileAction,
@@ -190,8 +217,10 @@ namespace Listenarr.Application.Downloads.Import
                                             completedFileAction,
                                             file,
                                             fileSourceSemantics,
+                                            sourceProof.Value,
                                             destination,
                                             destinationSemantics),
+                                        sourceProof.Value,
                                         audiobook.Id,
                                         ct))
                                 {
@@ -212,6 +241,19 @@ namespace Listenarr.Application.Downloads.Import
 
                         try
                         {
+                            var sourceProof =
+                                await ResolvePublishableSourceProofAsync(
+                                    file,
+                                    ct);
+                            if (!sourceProof.HasValue)
+                            {
+                                results.Add(ImportResult.ImportFailure(
+                                    completedFileAction,
+                                    file,
+                                    audiobook.BasePath));
+                                continue;
+                            }
+
                             planByPath.TryGetValue(file, out var plan);
                             diskNumbersForNaming.TryGetValue(file, out var namingDiskNumber);
                             chapterNumbersForNaming.TryGetValue(file, out var namingChapterNumber);
@@ -304,7 +346,7 @@ namespace Listenarr.Application.Downloads.Import
                             while (true)
                             {
                                 destinationReservation = await destinationPlanner.PlanIdempotentOrUniqueAsync(
-                                    file,
+                                    sourceProof.Value,
                                     requestedDestination,
                                     usedDestinations,
                                     destinationSemantics,
@@ -355,6 +397,7 @@ namespace Listenarr.Application.Downloads.Import
                                 completedFileAction,
                                 file,
                                 fileSourceSemantics,
+                                sourceProof.Value,
                                 destination,
                                 destinationSemantics);
                             using var registrationLease =
@@ -366,6 +409,7 @@ namespace Listenarr.Application.Downloads.Import
                                     destinationSemantics,
                                     operationId,
                                     ownership.ExistingFile?.PhysicalObjectIdentity,
+                                    sourceProof.Value,
                                     audiobook.Id,
                                     ct);
                             if (registrationLease == null

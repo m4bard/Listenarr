@@ -20,20 +20,10 @@ internal sealed partial class AudiobookContentMoveService
                 "The markerless move has no persisted tracked-file source manifest.");
         }
 
-        if (Directory.Exists(target))
-        {
-            await TryRetireReplacedMarkerlessTargetOwnershipAsync(
-                request,
-                target,
-                cancellationToken);
-        }
-        var targetOwnership = Directory.Exists(target)
-            ? await LoadValidatedTargetDirectoryOwnershipAsync(
-                target,
-                request.TargetSemantics,
-                cancellationToken)
-            : null;
-        request = request with { TargetDirectoryOwnership = targetOwnership };
+        request = await WithValidatedTargetDirectoryOwnershipAsync(
+            request,
+            cancellationToken);
+        var targetOwnership = request.TargetDirectoryOwnership;
         var resumedCleanup = await TryResumeMarkerlessSourceCleanupAsync(
             request,
             source,
@@ -48,6 +38,7 @@ internal sealed partial class AudiobookContentMoveService
         }
 
         EnsureTargetCanReceiveContents(
+            request,
             source,
             target,
             sourceInsideTarget,
@@ -125,6 +116,7 @@ internal sealed partial class AudiobookContentMoveService
             cancellationToken);
 
         ValidateExistingDestinationContents(
+            request,
             source,
             target,
             manifest,
@@ -187,7 +179,7 @@ internal sealed partial class AudiobookContentMoveService
                 targetInsideSource,
                 sourceInsideTarget,
                 manifest,
-                targetVerificationLease.IsEmpty ? null : targetVerificationLease);
+                targetVerificationLease);
         }
         catch
         {
@@ -307,20 +299,37 @@ internal sealed partial class AudiobookContentMoveService
         {
             return null;
         }
-        if (!Directory.Exists(target))
+        if (!TryGetMarkerlessPathAttributes(target, out var targetAttributes))
         {
             throw new MoveNeedsAttentionException(
                 "The verified markerless move target is missing.");
+        }
+        if ((targetAttributes & FileAttributes.Directory) == 0
+            || (targetAttributes & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new MoveNeedsAttentionException(
+                "The verified markerless move target changed type or became a link.");
         }
 
         faultInjector?.OnFinalizedVerification(
             request.JobId,
             FinalizedVerificationFaultPoint.BeforeManifestVerification);
-        await VerifyMarkerlessTargetAsync(
-            request,
-            target,
-            manifest,
-            cancellationToken);
+        var targetVerificationLease = new MarkerlessTargetVerificationLease(
+            request.TargetSemantics);
+        try
+        {
+            await VerifyMarkerlessTargetAsync(
+                request,
+                target,
+                manifest,
+                cancellationToken,
+                targetVerificationLease: targetVerificationLease);
+        }
+        catch
+        {
+            targetVerificationLease.Dispose();
+            throw;
+        }
         var endpoints = await GetEndpointObjectIdentitiesAsync(
             request.JobId,
             cancellationToken);
@@ -334,6 +343,7 @@ internal sealed partial class AudiobookContentMoveService
             or MoveJobEntryCleanupState.Retained;
         if (!sourceEntriesComplete || !sourceRootComplete)
         {
+            targetVerificationLease.Dispose();
             return null;
         }
 
@@ -342,18 +352,31 @@ internal sealed partial class AudiobookContentMoveService
             target,
             files,
             request.TargetSemantics);
+        if (targetVerificationLease.IsEmpty)
+        {
+            targetVerificationLease.Dispose();
+            return new AudiobookContentMoveResult(
+                source,
+                target,
+                IsSameOrInside(target, source, request.SourceSemantics),
+                IsSameOrInside(source, target, request.TargetSemantics),
+                SourceCleanupCompleted: true,
+                identities);
+        }
+
         return new AudiobookContentMoveResult(
             source,
             target,
             IsSameOrInside(target, source, request.SourceSemantics),
             IsSameOrInside(source, target, request.TargetSemantics),
             SourceCleanupCompleted: true,
-            identities);
+            identities,
+            targetVerificationLease);
     }
 
     private static bool IsPhysicalManifestEntry(MoveJobEntry entry) =>
         !IsRootManifestEntry(entry)
-        && !MoveManifestIdentity.IsTargetBoundaryAuthorization(entry);
+        && !MoveManifestIdentity.IsBoundaryAuthorization(entry);
 
     private static string ResolveManifestPath(
         string root,
