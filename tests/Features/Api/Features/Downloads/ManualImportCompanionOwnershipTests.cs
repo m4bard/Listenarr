@@ -142,7 +142,15 @@ public sealed class ManualImportCompanionOwnershipTests : BaseTests
             {
                 [targetAudiobook.Id] = destinationResolution
             },
-            importBlacklist: []);
+            importBlacklist: [],
+            rootFolders: [
+                new RootFolder
+                {
+                    Id = 1,
+                    Name = "library",
+                    Path = Path.Join(testRoot, "library")
+                }
+            ]);
 
         Assert.Equal(0, imported);
         Assert.True(File.Exists(companionSource));
