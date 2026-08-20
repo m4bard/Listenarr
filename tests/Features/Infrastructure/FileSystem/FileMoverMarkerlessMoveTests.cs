@@ -104,6 +104,50 @@ public sealed class FileMoverMarkerlessMoveTests : BaseTests
     }
 
     [LinuxFact]
+    public async Task MoveFileAsync_ForcedCrossVolumeRefusalIsLoggedAboveInformation()
+    {
+        var scenario = await CreateScenarioAsync();
+        var logger = new LevelCapturingLogger();
+
+        Assert.False(await CreateMover(forceCrossVolume: true, logger: logger).MoveFileAsync(
+            scenario.Source,
+            scenario.Destination,
+            scenario.OperationId));
+
+        // The caller gets back a bare false, and nothing consumes FileMutationResult, so this
+        // log line is the only record that the requested move did not happen. At Information it
+        // sits at the same level as a successful move, which is how an operator ends up watching
+        // a file that never arrives with nothing in the log that looks like a problem.
+        var refusal = Assert.Single(
+            logger.Entries,
+            entry => entry.Message.Contains("Blocked", StringComparison.Ordinal));
+        Assert.Equal(LogLevel.Warning, refusal.Level);
+        Assert.Contains("cross-volume", refusal.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed record CapturedMutationLog(LogLevel Level, string Message);
+
+    private sealed class LevelCapturingLogger : ILogger<FileMover>
+    {
+        public List<CapturedMutationLog> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add(new CapturedMutationLog(logLevel, formatter(state, exception)));
+        }
+    }
+
+    [LinuxFact]
     public async Task MoveFileAsync_CaseDistinctRetryDoesNotAdoptJournal()
     {
         var scenario = await CreateScenarioAsync();
@@ -869,6 +913,7 @@ public sealed class FileMoverMarkerlessMoveTests : BaseTests
     private FileMover CreateMover(
         bool disableNativeRename = false,
         bool forceCrossVolume = false,
+        ILogger<FileMover>? logger = null,
         Func<Task>? afterJournalPlanned = null,
         Func<Task>? afterPublishedBeforeTargetState = null,
         Func<Task>? afterTargetCreatedBeforeState = null,
@@ -881,7 +926,7 @@ public sealed class FileMoverMarkerlessMoveTests : BaseTests
         var factory = _provider.GetRequiredService<
             IDbContextFactory<ListenArrDbContext>>();
         return new FileMover(
-            new NullLogger<FileMover>(),
+            logger ?? new NullLogger<FileMover>(),
             dbContextFactory: factory,
             timeProvider: TimeProvider.System)
         {

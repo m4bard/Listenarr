@@ -408,7 +408,15 @@ public partial class FileMover
     private void LogMutation(FileMutationOutcome outcome, FileAction action, string source, string? destination, string? reason = null)
     {
         var result = new FileMutationResult(outcome, action, source, destination, reason);
-        _logger.LogInformation(
+        // Blocked and Failed mean the requested action did not happen, and the caller only gets
+        // back a bool, so this line is the sole record that anything went wrong. Logging it at
+        // Information put it at the same level as a successful move, which is how a refused
+        // cross-volume move reads as silence to anyone watching at the default level.
+        var level = outcome is FileMutationOutcome.Blocked or FileMutationOutcome.Failed
+            ? LogLevel.Warning
+            : LogLevel.Information;
+        _logger.Log(
+            level,
             "File mutation {Outcome}: {Action} {Source} -> {Destination}. Reason: {Reason}",
             result.Outcome,
             result.Action,
