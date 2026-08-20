@@ -96,5 +96,107 @@ namespace Listenarr.Tests.Features.Api.Features.Images
                 // Best-effort test cleanup; ignore cleanup failures.
             }
         }
+
+        // The test above returns the AudibleBookResponse directly, and its own comment says that is
+        // to avoid "anonymous envelope issues". But an anonymous envelope is what the production
+        // service actually returns, so dodging it leaves the fallback covered only in the one shape
+        // that never exercises the unwrap. This covers the other one.
+        //
+        // The anonymous type here is emitted internal to this test assembly, and the workflow that
+        // unwraps it lives in Listenarr.Api, so the accessibility relationship is the same one that
+        // exists in production between Listenarr.Application and Listenarr.Api.
+        [Fact]
+        public async Task GetImage_FallbackEnvelopeIsAnonymousType_StillFindsTheImageUrl()
+        {
+            var identifier = "BTESTASIN";
+            var relativePath = $"config/cache/images/temp/{identifier}.jpg";
+            var imageUrl = "https://audnexus.covers/anonymous-envelope.jpg";
+
+            var mockImageCache = new Mock<IImageCacheService>();
+            mockImageCache
+                .Setup(m => m.DownloadAndCacheImageAsync(imageUrl, identifier))
+                .ReturnsAsync(relativePath);
+            mockImageCache
+                .SetupSequence(m => m.GetCachedImagePathAsync(identifier))
+                .ReturnsAsync((string?)null)
+                .ReturnsAsync(relativePath);
+
+            using var httpClientForAudible = new System.Net.Http.HttpClient();
+            var audibleMock = new Mock<AudibleService>(
+                httpClientForAudible,
+                Mock.Of<ILogger<AudibleService>>());
+            audibleMock
+                .Setup(a => a.GetBookMetadataAsync(
+                    identifier,
+                    It.IsAny<string>(),
+                    It.IsAny<bool>(),
+                    It.IsAny<string?>()))
+                .ReturnsAsync((AudibleBookResponse?)null);
+
+            var mockMetadata = new Mock<IAudiobookMetadataService>();
+            mockMetadata
+                .Setup(m => m.GetAudibleMetadataAsync(
+                    identifier,
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
+                .ReturnsAsync((AudibleBookResponse?)null);
+            // The same envelope shape AudiobookMetadataService returns on its success path.
+            mockMetadata
+                .Setup(m => m.GetMetadataAsync(
+                    identifier,
+                    It.IsAny<string>(),
+                    It.IsAny<bool>()))
+                .ReturnsAsync((object)new
+                {
+                    metadata = new AudibleBookResponse { ImageUrl = imageUrl },
+                    source = "Audnexus",
+                    sourceUrl = "https://api.audnex.us"
+                });
+
+            var tempRoot = Path.Join(
+                Path.GetTempPath(),
+                "listenarr_test_contentroot_anonymous_envelope");
+            Directory.CreateDirectory(Path.Join(tempRoot, "config", "cache", "images", "temp"));
+            var fullPath = Path.Join(tempRoot, relativePath);
+            File.WriteAllText(fullPath, "fake image data");
+
+            var mockPathService = new Mock<IApplicationPathService>();
+            mockPathService.SetupGet(p => p.ContentRootPath).Returns(tempRoot);
+
+            var controller = new ImagesController(
+                mockImageCache.Object,
+                mockMetadata.Object,
+                audibleMock.Object,
+                Mock.Of<IAudnexusService>(),
+                Mock.Of<IAudiobookRepository>(),
+                Mock.Of<ILogger<ImagesController>>(),
+                mockPathService.Object,
+                new LocalFileSystem());
+            controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext()
+            };
+
+            var result = await controller.GetImage(identifier);
+
+            // The URL has to be recovered from inside the envelope for the downloader to be called
+            // at all. Reading it with `dynamic` throws RuntimeBinderException, which is not in the
+            // recoverable list, so it escapes the filtered catch and the controller returns 500
+            // having never reached the download.
+            mockImageCache.Verify(
+                m => m.DownloadAndCacheImageAsync(imageUrl, identifier),
+                Times.Once);
+            Assert.IsNotType<StatusCodeResult>(result);
+
+            try
+            {
+                File.Delete(fullPath);
+                Directory.Delete(Path.Join(tempRoot, "config", "cache", "images", "temp"), true);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                // Best-effort test cleanup; ignore cleanup failures.
+            }
+        }
     }
 }
