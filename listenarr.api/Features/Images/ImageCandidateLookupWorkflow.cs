@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 
+using System.Reflection;
 
 namespace Listenarr.Api.Features.Images
 {
@@ -337,9 +338,15 @@ namespace Listenarr.Api.Features.Images
                                     }
                                     else
                                     {
-                                        // Try dynamic access
-                                        dynamic env = metadataEnvelope;
-                                        object? mdObj = env.metadata;
+                                        // Not `dynamic`: the envelope is an anonymous type, emitted
+                                        // internal to Listenarr.Application, so the binder cannot
+                                        // see `metadata` from this assembly and throws. Reflection
+                                        // is how the inner object is read below, and how
+                                        // LibraryMetadataRescanWorkflow reads this same envelope.
+                                        object? mdObj = metadataEnvelope.GetType().GetProperty(
+                                                "metadata",
+                                                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
+                                            ?.GetValue(metadataEnvelope);
 
                                         // If it's already the Audible type, use it
                                         if (mdObj is AudibleBookResponse mdMeta)
