@@ -28,7 +28,7 @@ internal static class DownloadClientRegistrationExtensions
         // how Polly is meant to be used. A circuit breaker is not: its open/closed state and its
         // failure count live inside the policy instance. Sharing one gives all these clients a
         // single global breaker rather than one each, so a run of failures against any one of them
-        // stops polling for all of them. Each client type gets its own.
+        // stops polling for all of them. Each client gets its own.
         var retryPolicy = HttpPolicyExtensions.HandleTransientHttpError()
             .WaitAndRetryAsync(3, attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)));
 
@@ -229,16 +229,11 @@ internal static class DownloadClientRegistrationExtensions
                 sp.GetRequiredService<IHttpClientFactory>(),
                 DownloadClientTypes.Nzbget));
         services.AddScoped<NzbgetHistoryReader>();
-
-        // Warn-once state for failed history entries has to outlive the scoped workflow
-        // that reads it, or every poll would be a first sighting again.
-        services.AddSingleton<NzbgetFailedHistoryWarningTracker>();
         services.AddScoped<NzbgetHistoryEnrichmentWorkflow>(sp =>
             new NzbgetHistoryEnrichmentWorkflow(
                 sp.GetRequiredService<NzbgetHistoryReader>(),
                 sp.GetRequiredService<ILogger<NzbgetAdapter>>(),
-                sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<NzbgetFailedHistoryWarningTracker>()));
+                sp.GetRequiredService<TimeProvider>()));
         services.AddScoped<NzbgetConnectionTester>(sp =>
             new NzbgetConnectionTester(
                 sp.GetRequiredService<NzbgetXmlRpcClient>(),
