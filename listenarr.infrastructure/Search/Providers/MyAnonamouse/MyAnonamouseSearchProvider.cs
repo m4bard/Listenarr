@@ -124,7 +124,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                         await EnrichMyAnonamouseResultsAsync(indexer, results, enrichTop, mamId, httpClientToUse);
                     }
                 }
-                catch (Exception exEnrich) when (exEnrich is not OperationCanceledException && exEnrich is not OutOfMemoryException && exEnrich is not StackOverflowException)
+                catch (Exception exEnrich) when (WorkerExceptionClassifier.IsNonFatal(exEnrich))
                 {
                     _logger.LogWarning(exEnrich, "MyAnonamouse enrichment step failed");
                 }
@@ -132,7 +132,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                 _logger.LogInformation("MyAnonamouse returned {Count} results", results.Count);
                 return results;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex))
             {
                 _logger.LogError(ex, "Error searching MyAnonamouse indexer {Name}", indexer.Name);
                 return new List<IndexerSearchResult>();

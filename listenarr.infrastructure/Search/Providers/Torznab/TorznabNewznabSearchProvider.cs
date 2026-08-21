@@ -73,7 +73,7 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
             _logger.LogInformation("Indexer {Name} returned {Count} results", indexer.Name, results.Count);
             return results;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex))
         {
             _logger.LogError(ex, "Error searching Torznab/Newznab indexer {Name}", indexer.Name);
             return new List<IndexerSearchResult>();

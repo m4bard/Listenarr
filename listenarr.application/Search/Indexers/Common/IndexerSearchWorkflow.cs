@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Search.Indexers.Common;
@@ -78,7 +79,7 @@ public class IndexerSearchWorkflow
                 _logger.LogInformation("Found {Count} results from indexer {Name}", indexerResults.Count, indexer.Name);
                 return indexerResults;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex))
             {
                 _logger.LogError(ex, "Error searching indexer {Name} for query: {Query}", indexer.Name, query);
                 return new List<IndexerSearchResult>();
@@ -121,7 +122,7 @@ public class IndexerSearchWorkflow
             var idxResults = await SearchIndexerAsync(indexer, query, category, req);
             return idxResults.Select(SearchResultConverters.ToSearchResult).ToList();
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex))
         {
             _logger.LogError(ex, "Error searching indexer {ApiId} for query: {Query}", apiId, query);
             return new List<SearchResult>();
@@ -147,7 +148,7 @@ public class IndexerSearchWorkflow
             request = ApplyIndexerMamOptions(indexer, request);
             return await SearchIndexerAsync(indexer, query, category, request);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex))
         {
             _logger.LogError(ex, "Error searching indexer {ApiId} for query: {Query}", apiId, query);
             return new List<IndexerSearchResult>();
@@ -164,7 +165,7 @@ public class IndexerSearchWorkflow
             var response = await _httpClient.GetAsync(apiConfig.BaseUrl);
             return response.IsSuccessStatusCode;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex))
         {
             _logger.LogError(ex, "Error testing API connection for {ApiId}", apiId);
             return false;
@@ -228,7 +229,7 @@ public class IndexerSearchWorkflow
 
             return providerResults;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex))
         {
             _logger.LogError(ex, "Error searching indexer {Name}", indexer.Name);
             return new List<IndexerSearchResult>();

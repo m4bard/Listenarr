@@ -25,8 +25,15 @@ namespace Listenarr.Application.Common
     {
         public static bool IsNonFatal(Exception exception)
         {
-            return exception is not OperationCanceledException
-                && exception is not OutOfMemoryException
+            if (exception is OperationCanceledException)
+            {
+                // HttpClient surfaces its own configured Timeout as a TaskCanceledException whose
+                // InnerException is a TimeoutException. That is a failed request, not a caller or
+                // shutdown cancellation, so it stays non-fatal and can be logged and absorbed.
+                return exception.InnerException is TimeoutException;
+            }
+
+            return exception is not OutOfMemoryException
                 && exception is not StackOverflowException;
         }
     }

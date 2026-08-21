@@ -137,7 +137,7 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
             _logger.LogInformation("Internet Archive returned {Count} results", searchResults.Count);
             return searchResults;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex))
         {
             _logger.LogError(ex, "Error searching Internet Archive indexer {Name}", indexer.Name);
             return new List<IndexerSearchResult>();
