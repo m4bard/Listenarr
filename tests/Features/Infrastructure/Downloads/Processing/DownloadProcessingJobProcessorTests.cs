@@ -284,9 +284,15 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
                     [DirectDownloadMetadataKeys.DownloadType] = DirectDownloadMetadataKeys.ClientId
                 }
             });
-            var job = await _downloadProcessingJobRepository.AddAsync(new DownloadProcessingJobBuilder()
+            // Start with the retry budget spent, so this exercises the attempt that gives up.
+            // A failed publication is retried now rather than blocking on the first attempt, and
+            // the FailedResults contract below is written by the terminal attempt, which is the
+            // one this test is about.
+            var seed = new DownloadProcessingJobBuilder()
                 .WithDownload(download)
-                .Build());
+                .Build();
+            seed.RetryCount = seed.MaxRetries;
+            var job = await _downloadProcessingJobRepository.AddAsync(seed);
 
             await _provider.GetRequiredService<DownloadProcessingJobProcessor>()
                 .ProcessQueueAsync(CancellationToken.None);
@@ -622,6 +628,65 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
             Assert.Equal(DownloadStatus.Moved, (await _downloadRepository.GetByIdAsync(download.Id))!.Status);
             Assert.Equal(1, downloadClientGatewayMock.GetCallCount(nameof(downloadClientGatewayMock.GetQueueItemAsync)));
             Assert.Equal(2, downloadClientGatewayMock.GetCallCount(nameof(downloadClientGatewayMock.MarkItemAsImportedAsync)));
+        }
+
+        [Fact]
+        [Trait("Scenario", "FailedFileImportRetriesBeforeBlocking")]
+        public async Task Import_FileImportFailure_RetriesBeforeBlockingTheDownload()
+        {
+            // Arrange
+            var source = FileService.GetTempDirectory("failing-source");
+            var filePath = await FileService.GetFileAsync(source, "audiobook.mp3");
+            downloadClientGatewayMock.SourceFiles = [filePath];
+
+            var importService = new Mock<IDownloadImportService>();
+            importService
+                .Setup(service => service.ImportDownloadFilesAsync(
+                    It.IsAny<Audiobook>(),
+                    It.IsAny<List<string>>(),
+                    It.IsAny<CancellationToken>(),
+                    It.IsAny<DownloadImportOptions?>()))
+                .ReturnsAsync((Audiobook _, List<string> files, CancellationToken _, DownloadImportOptions? _) =>
+                    [ImportResult.ImportFailure(FileAction.Copy, files[0], files[0])]);
+            Init(builder => builder.WithSingleton<IDownloadImportService>(importService.Object));
+
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithAudiobook(await CreateAudiobook())
+                .WithDownloadClientConfiguration(await CreateDownloadClientConfiguration())
+                .WithPath(source)
+                .WithCompletedStatus(at: DateTime.UtcNow)
+                .Build());
+            var job = await _downloadProcessingJobRepository.AddAsync(new DownloadProcessingJobBuilder()
+                .WithDownload(download)
+                .Build());
+
+            // Act
+            var processor = _provider.GetRequiredService<DownloadProcessingJobProcessor>();
+            await processor.ProcessQueueAsync(CancellationToken.None);
+
+            // Assert: the first failure is retried, not treated as terminal
+            job = await _downloadProcessingJobRepository.GetByIdAsync(job.Id);
+            Assert.NotNull(job);
+            Assert.Equal(ProcessingJobStatus.Pending, job.Status);
+            Assert.Equal(1, job.RetryCount);
+
+            download = await _downloadRepository.FindAsync(download.Id);
+            Assert.NotNull(download);
+            Assert.Equal(DownloadStatus.ImportPending, download.Status);
+
+            // Act: spend the remaining attempts
+            job.RetryCount = job.MaxRetries;
+            await TestUtils.CancelJobRetryWait(_downloadProcessingJobRepository, job);
+            await processor.ProcessQueueAsync(CancellationToken.None);
+
+            // Assert: an import that keeps failing still ends up blocked
+            job = await _downloadProcessingJobRepository.GetByIdAsync(job.Id);
+            Assert.NotNull(job);
+            Assert.Equal(ProcessingJobStatus.Failed, job.Status);
+
+            download = await _downloadRepository.FindAsync(download.Id);
+            Assert.NotNull(download);
+            Assert.Equal(DownloadStatus.ImportBlocked, download.Status);
         }
     }
 }
