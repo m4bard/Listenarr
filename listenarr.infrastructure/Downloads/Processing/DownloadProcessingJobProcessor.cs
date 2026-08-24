@@ -318,9 +318,27 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                 var failedResults = results.Where(result => !result.Success).ToList();
                 if (failedResults.Count > 0)
                 {
-                    await FailImportAsync(job, downloadProcessingJobService, historyRepository, download, audiobook,
-                        correlationId, "Unable to import at least one file for the job (see the log entries)",
-                        cancellationToken, failedResults);
+                    // A file import can fail for reasons that clear on their own, such as a source
+                    // the download client is still holding open. Every other failure point in this
+                    // method takes the bounded retry path; this one did not, so a transient failure
+                    // ended the download permanently with RetryCount still zero.
+                    //
+                    // Retry while attempts remain, then fail exactly as before. The terminal call is
+                    // still FailImportAsync rather than letting ScheduleRetryAsync exhaust itself,
+                    // because only FailImportAsync records failedResults on the history entry and
+                    // that detail is worth keeping for the attempt that finally gives up.
+                    if (job.RetryCount < job.MaxRetries)
+                    {
+                        await ScheduleRetryAsync(job, downloadProcessingJobService, historyRepository, download, audiobook,
+                            correlationId, "Unable to import at least one file for the job (see the log entries)",
+                            cancellationToken);
+                    }
+                    else
+                    {
+                        await FailImportAsync(job, downloadProcessingJobService, historyRepository, download, audiobook,
+                            correlationId, "Unable to import at least one file for the job (see the log entries)",
+                            cancellationToken, failedResults);
+                    }
                     return;
                 }
 
