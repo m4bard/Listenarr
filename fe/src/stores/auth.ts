@@ -23,6 +23,7 @@ import { clearAllAuthData } from '@/utils/sessionDebug'
 import { errorTracking } from '@/services/errorTracking'
 import { getStartupConfigCached } from '@/services/startupConfigCache'
 import { getRouter } from '@/services/routerInstance'
+import { withUrlBase } from '@/utils/urlBase'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<{ authenticated: boolean; name?: string }>({ authenticated: false })
@@ -78,9 +79,9 @@ export const useAuthStore = defineStore('auth', () => {
       await router.replace({ name: 'login', query: { redirect } })
     } catch {
       try {
-        window.location.href = `/login?redirect=${encodeURIComponent(current)}`
+        window.location.href = withUrlBase(`/login?redirect=${encodeURIComponent(current)}`)
       } catch {
-        window.location.href = '/login'
+        window.location.href = withUrlBase('/login')
       }
     }
   }

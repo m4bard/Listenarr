@@ -7,3 +7,12 @@ declare module '*.vue' {
   const component: DefineComponent
   export default component
 }
+
+interface Window {
+  /**
+   * URL sub-path Listenarr is served under, injected into index.html by the backend before the
+   * entry module runs. Absent when serving from the site root. Read it through
+   * `@/utils/urlBase`, which normalizes the value, rather than touching it directly.
+   */
+  __listenarrUrlBase?: string
+}

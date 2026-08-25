@@ -19,7 +19,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import * as signalR from '@microsoft/signalr'
 import type { LogEntry } from '@/types'
 import { logger } from '@/utils/logger'
-import { API_BASE_PATH, API_ORIGIN } from '@/services/apiBase'
+import { API_BASE_PATH, buildHubUrl } from '@/services/apiBase'
 
 /**
  * Composable for real-time system logs via SignalR
@@ -41,7 +41,7 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
     isConnecting.value = true
 
     try {
-      const hubUrl = `${API_ORIGIN}/hubs/logs`
+      const hubUrl = buildHubUrl('/hubs/logs')
       const signalrOptions: signalR.IHttpConnectionOptions = {
         transport:
           signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.ServerSentEvents,
@@ -113,7 +113,9 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
 
   const loadInitialLogs = async () => {
     try {
-      const response = await fetch(`${API_ORIGIN}${API_BASE_PATH}/system/logs?limit=100`, {
+      // API_BASE_PATH carries the URL base already; prefixing API_ORIGIN as well would repeat it.
+      // In development that path is proxied to the API port, as every other request here is.
+      const response = await fetch(`${API_BASE_PATH}/system/logs?limit=100`, {
         credentials: 'include',
       })
       if (response.ok) {

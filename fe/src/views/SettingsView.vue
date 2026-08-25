@@ -408,6 +408,7 @@ import { useConfigurationStore } from '@/stores/configuration'
 import { useFilesystemReadinessStore } from '@/stores/filesystemReadiness'
 import { useAuthStore } from '@/stores/auth'
 import { sessionTokenManager } from '@/utils/sessionToken'
+import { withUrlBase } from '@/utils/urlBase'
 import type { ApiConfiguration, DownloadClientConfiguration, ApplicationSettings } from '@/types'
 import RootFoldersTab from '@/views/settings/RootFoldersTab.vue'
 import DownloadClientsTab from '@/views/settings/DownloadClientsTab.vue'
@@ -925,7 +926,9 @@ const saveSettings = async () => {
           try {
             await router.push({ name: 'login', query: { redirect, force: '1' } })
           } catch {
-            window.location.href = `/login?redirect=${encodeURIComponent(redirect)}&force=1`
+            window.location.href = withUrlBase(
+              `/login?redirect=${encodeURIComponent(redirect)}&force=1`,
+            )
           }
           return
         }

@@ -25,101 +25,11 @@ import type {
 import { sessionTokenManager } from '@/utils/sessionToken'
 import { setConnected, setLastError, setReconnectAttempts } from './signalrEvents'
 import { logger } from '@/utils/logger'
-import { API_BASE_URL } from '@/services/apiBase'
+import { buildHubWebSocketUrl } from '@/services/hubUrl'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 
 // SignalR client for real-time download updates
 // Using native WebSocket with fallback to long polling
-
-const API_SUFFIX_REGEX = /\/api(?:\/v\d+(?:\.\d+)?)?$/i
-const KNOWN_APP_ROUTE_PREFIXES = [
-  '/library-import',
-  '/audiobooks',
-  '/collection',
-  '/add-new',
-  '/activity',
-  '/wanted',
-  '/calendar',
-  '/downloads',
-  '/settings',
-  '/system',
-  '/logs',
-  '/login',
-]
-
-const stripApiSuffix = (value: string): string => value.replace(API_SUFFIX_REGEX, '')
-const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, '')
-const ensureLeadingSlash = (value: string): string => (value.startsWith('/') ? value : `/${value}`)
-
-const normalizePathPrefix = (value: string): string => {
-  const trimmed = trimTrailingSlash((value || '').trim())
-  if (!trimmed || trimmed === '/') return ''
-  return ensureLeadingSlash(trimmed)
-}
-
-const toWebSocketOrigin = (httpOrigin: string): string => {
-  const trimmed = (httpOrigin || '').trim()
-  if (!trimmed) return ''
-  if (trimmed.startsWith('https://')) return `wss://${trimmed.slice('https://'.length)}`
-  if (trimmed.startsWith('http://')) return `ws://${trimmed.slice('http://'.length)}`
-  return trimmed
-}
-
-const detectPathPrefixFromLocation = (): string => {
-  if (typeof window === 'undefined') return ''
-  const pathname = window.location?.pathname || '/'
-  if (!pathname || pathname === '/') return ''
-
-  for (const routePrefix of KNOWN_APP_ROUTE_PREFIXES) {
-    const idx = pathname.indexOf(routePrefix)
-    if (idx > 0) {
-      return normalizePathPrefix(pathname.slice(0, idx))
-    }
-    if (idx === 0) {
-      return ''
-    }
-  }
-
-  // Fallback for subpath root requests (e.g., /listenarr before router navigation).
-  const segments = pathname.split('/').filter(Boolean)
-  if (segments.length === 1) {
-    return normalizePathPrefix(`/${segments[0]}`)
-  }
-
-  return ''
-}
-
-const resolveHubHttpBase = (): { origin: string; pathPrefix: string } => {
-  const browserOrigin =
-    typeof window !== 'undefined' && window.location?.origin
-      ? window.location.origin
-      : 'http://localhost'
-
-  const candidates = [
-    (import.meta.env.VITE_API_BASE_URL || '').toString().trim(),
-    (API_BASE_URL || '').toString().trim(),
-  ]
-
-  for (const candidate of candidates) {
-    if (!candidate) continue
-    try {
-      const url = new URL(candidate, browserOrigin)
-      const pathPrefix = normalizePathPrefix(stripApiSuffix(url.pathname || '/'))
-      return { origin: url.origin || browserOrigin, pathPrefix }
-    } catch {
-      // Continue to next candidate.
-    }
-  }
-
-  return { origin: browserOrigin, pathPrefix: detectPathPrefixFromLocation() }
-}
-
-const buildHubWebSocketUrl = (hubPath: '/hubs/downloads' | '/hubs/settings'): string => {
-  const resolved = resolveHubHttpBase()
-  const origin = toWebSocketOrigin(resolved.origin)
-  const prefix = normalizePathPrefix(resolved.pathPrefix)
-  return `${origin}${prefix}${hubPath}`
-}
 
 const SENSITIVE_QUERY_KEYS = new Set(['access_token', 'token', 'apikey', 'api_key', 'x-api-key'])
 

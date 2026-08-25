@@ -31,6 +31,7 @@ public static class ListenarrPipeline
         app.UseListenarrExceptionHandler();
         app.UseForwardedHeaders();
         app.UseListenarrUrlBase();
+        app.UseListenarrIndexHtml();
         app.MapListenarrStaticAssets();
         app.UseRouting();
         app.UseMiddleware<RequestBodyLoggingMiddleware>();
@@ -39,7 +40,7 @@ public static class ListenarrPipeline
         app.UseAuthorization();
         app.MapControllers();
         mapRealtimeHubs(app);
-        app.MapFallbackToFile("index.html");
+        app.MapListenarrIndexHtmlFallback();
 
         return app;
     }

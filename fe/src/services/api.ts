@@ -77,8 +77,14 @@ import {
   EFFECTIVE_API_BASE,
 } from './apiBase'
 
-const getApiImageOrigin = (): string => (import.meta.env.DEV ? '' : API_ORIGIN)
-const getApiImagesBaseUrl = (): string => `${getApiImageOrigin()}${API_BASE_PATH}/images`
+/**
+ * Prefix for root-relative URLs that are not API paths, such as the image cache directory. In
+ * production API_ORIGIN is the configured URL base; in development the API sits on its own port
+ * and those paths are not proxied, so they are left alone as they always were.
+ */
+const getNonApiPathPrefix = (): string => (import.meta.env.DEV ? '' : API_ORIGIN)
+// API_BASE_PATH already carries the URL base, so it must not be prefixed with it again.
+const getApiImagesBaseUrl = (): string => `${API_BASE_PATH}/images`
 const buildApiImageUrl = (identifier: string, sourceUrl?: string): string => {
   let url = `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
   if (sourceUrl) {
@@ -1671,7 +1677,7 @@ class ApiService {
     }
 
     // Convert other relative URLs to absolute (no query-string auth tokens).
-    return `${getApiImageOrigin()}${imageUrl}`
+    return `${getNonApiPathPrefix()}${imageUrl}`
   }
 
   /**

@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { extname } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import type { ServerResponse } from 'node:http'
 
@@ -5,6 +7,39 @@ import { defineConfig } from 'vite'
 import type { PluginOption } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { visualizer } from 'rollup-plugin-visualizer'
+
+/**
+ * `vite preview` serves dist/ as-is, so with a relative build base a deep link such as
+ * /audiobooks/12 would resolve ./assets/... against /audiobooks/. In a real deployment the
+ * backend resolves that prefix, and this stands in for it so `npm run preview` and the Cypress
+ * e2e run keep working. The backend, not this, is the authority on the transform.
+ */
+const previewAssetPrefix = (): PluginOption => ({
+  name: 'listenarr:preview-asset-prefix',
+  configurePreviewServer(server) {
+    const indexPath = fileURLToPath(new URL('./dist/index.html', import.meta.url))
+
+    server.middlewares.use((req, res, next) => {
+      const path = (req.url || '/').split('?')[0] ?? '/'
+      const wantsDocument =
+        req.method === 'GET' &&
+        (req.headers.accept || '').includes('text/html') &&
+        (path === '/' || path === '/index.html' || extname(path) === '')
+
+      if (!wantsDocument || !existsSync(indexPath)) {
+        next()
+        return
+      }
+
+      const html = readFileSync(indexPath, 'utf8').replace(
+        /(\s(?:href|src)\s*=\s*)(["'])\.\/([^"'<>]*)\2/gi,
+        (_match, lead: string, quote: string, asset: string) => `${lead}${quote}/${asset}${quote}`,
+      )
+      res.setHeader('Content-Type', 'text/html; charset=utf-8')
+      res.end(html)
+    })
+  },
+})
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -14,8 +49,14 @@ export default defineConfig(({ mode }) => {
     process.env.ANALYZE === 'true'
 
   return {
+    // Emit document-relative asset references so one build artifact can be served from any URL
+    // sub-path. The backend resolves the prefix when it serves index.html; see
+    // ListenarrIndexHtmlStartup. Dynamically imported chunks resolve against import.meta.url and
+    // need nothing further.
+    base: './',
     plugins: [
       vue(),
+      previewAssetPrefix(),
       ...(analyzeBundle
         ? [
             (visualizer({

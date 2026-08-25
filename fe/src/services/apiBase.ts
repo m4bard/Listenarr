@@ -15,12 +15,25 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+import { getUrlBase } from '@/utils/urlBase'
+
 const DEFAULT_API_ROOT = '/api'
 const DEFAULT_API_VERSION = '1'
 const API_PREFIX_REGEX = /^\/api(?:\/v\d+(?:\.\d+)?)?/i
-const API_BASE_TEMPLATE = import.meta.env.DEV
-  ? DEFAULT_API_ROOT
-  : import.meta.env.VITE_API_BASE_URL || DEFAULT_API_ROOT
+
+/**
+ * The API root before the version segment is appended. Under a URL sub-path this has to carry
+ * the sub-path, because '/api' on its own would leave the proxy's prefix off every request. An
+ * explicitly configured VITE_API_BASE_URL still wins: it can name an entirely different host.
+ */
+const computeApiBaseTemplate = (): string => {
+  if (import.meta.env.DEV) return DEFAULT_API_ROOT
+
+  const configured = import.meta.env.VITE_API_BASE_URL
+  if (configured) return configured
+
+  return `${getUrlBase()}${DEFAULT_API_ROOT}`
+}
 
 const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, '')
 
@@ -73,7 +86,7 @@ export let API_VERSION = normalizeApiVersion(import.meta.env.VITE_API_VERSION)
 export let API_VERSION_SEGMENT = `v${API_VERSION}`
 
 const computeApiBaseUrl = (): string =>
-  buildVersionedApiBase(API_BASE_TEMPLATE, API_VERSION_SEGMENT)
+  buildVersionedApiBase(computeApiBaseTemplate(), API_VERSION_SEGMENT)
 const computeApiBasePath = (): string => toPath(API_BASE_URL)
 const computeEffectiveApiBase = (): string =>
   typeof window === 'undefined' && API_BASE_URL.startsWith('/')
@@ -126,6 +139,15 @@ export const applyApiVersionFromStartupConfig = (startupConfig: unknown): boolea
 
 export const buildApiPath = (endpoint: string): string =>
   `${API_BASE_PATH}${normalizeEndpoint(endpoint)}`
+
+/**
+ * Builds the URL of a SignalR hub. Hubs are mounted beside /api rather than under it, so the
+ * URL is the API base with its /api/vN suffix removed. Under a URL sub-path that leaves the
+ * sub-path in place, which is exactly what the hub needs; at the site root it collapses to the
+ * root-absolute path the hub had before.
+ */
+export const buildHubUrl = (hubPath: string): string =>
+  `${API_ORIGIN}${hubPath.startsWith('/') ? hubPath : `/${hubPath}`}`
 
 export const isApiImagesUrl = (url: string): boolean =>
   /\/api(?:\/v\d+(?:\.\d+)?)?\/images\//i.test(url || '')

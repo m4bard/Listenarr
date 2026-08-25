@@ -73,6 +73,7 @@ import Checkbox from '@/components/form/Checkbox.vue'
 import { apiService } from '@/services/api'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { withUrlBase } from '@/utils/urlBase'
 // Vite static import for the logo so bundler resolves the asset reliably
 
 export default defineComponent({
@@ -89,8 +90,10 @@ export default defineComponent({
     const router = useRouter()
 
     const auth = useAuthStore()
-    // The logo is placed in `fe/public/logo.png` and served from the app root.
-    const logoUrl = '/logo.png'
+    // The logo is placed in `fe/public/logo.png` and served from the app root. This is a script
+    // string rather than a template attribute, so the build does not rewrite it and the URL base
+    // has to be applied here.
+    const logoUrl = withUrlBase('/logo.png')
 
     onMounted(async () => {
       if (startupConfigChecked.value) return

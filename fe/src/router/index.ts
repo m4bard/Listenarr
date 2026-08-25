@@ -19,6 +19,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { getStartupConfigCached } from '@/services/startupConfigCache'
 import { logger } from '@/utils/logger'
+import { getUrlBase } from '@/utils/urlBase'
 import { setRouter } from '@/services/routerInstance'
 import type { StartupConfig } from '@/types'
 
@@ -157,7 +158,10 @@ export function preloadRoute(nameOrPath: string) {
 // symbols are not yet initialized when this module is first evaluated.
 export function createAppRouter() {
   const router = createRouter({
-    history: createWebHistory(import.meta.env.BASE_URL),
+    // import.meta.env.BASE_URL is './' in this build and means nothing to the history, so the
+    // base comes from the value the backend injected. vue-router only consults <base href> when
+    // this argument is falsy, and there is no such tag, hence the explicit '/'.
+    history: createWebHistory(getUrlBase() || '/'),
     routes,
   })
 

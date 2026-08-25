@@ -15,11 +15,16 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+import { withUrlBase } from '@/utils/urlBase'
+
+/**
+ * The backend serves the placeholder from the application root, so the URL is the injected URL
+ * base plus the filename. import.meta.env.BASE_URL is './' in this build and would resolve
+ * against whatever page happens to be open, which is why it is no longer read here.
+ */
 export function getPlaceholderUrl(): string {
   try {
-    const base = (import.meta.env.BASE_URL || '/') as string
-    const trimmed = base.endsWith('/') ? base : `${base}/`
-    return `${trimmed}placeholder.svg`
+    return withUrlBase('/placeholder.svg')
   } catch {
     return '/placeholder.svg'
   }
