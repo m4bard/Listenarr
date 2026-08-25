@@ -74,10 +74,14 @@ import {
   API_BASE_PATH,
   API_BASE_URL,
   API_ORIGIN,
+  API_PATH_PREFIX,
   EFFECTIVE_API_BASE,
 } from './apiBase'
 
 const getApiImageOrigin = (): string => (import.meta.env.DEV ? '' : API_ORIGIN)
+// Cached image files are served beside the API rather than under it, so a root-absolute stored
+// path needs the sub-path prefix that API_BASE_PATH already carries.
+const getBackendFileBase = (): string => `${getApiImageOrigin()}${API_PATH_PREFIX}`
 const getApiImagesBaseUrl = (): string => `${getApiImageOrigin()}${API_BASE_PATH}/images`
 const buildApiImageUrl = (identifier: string, sourceUrl?: string): string => {
   let url = `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
@@ -1671,7 +1675,7 @@ class ApiService {
     }
 
     // Convert other relative URLs to absolute (no query-string auth tokens).
-    return `${getApiImageOrigin()}${imageUrl}`
+    return `${getBackendFileBase()}${imageUrl}`
   }
 
   /**

@@ -95,19 +95,17 @@ const resolveHubHttpBase = (): { origin: string; pathPrefix: string } => {
       ? window.location.origin
       : 'http://localhost'
 
-  const candidates = [
-    (import.meta.env.VITE_API_BASE_URL || '').toString().trim(),
-    (API_BASE_URL || '').toString().trim(),
-  ]
-
-  for (const candidate of candidates) {
-    if (!candidate) continue
+  // API_BASE_URL already folds VITE_API_BASE_URL together with the base the document was served
+  // under. Reading the raw setting first, as this used to, throws the sub-path away, because the
+  // shipped .env.production sets it to a site-root path.
+  const candidate = (API_BASE_URL || '').toString().trim()
+  if (candidate) {
     try {
       const url = new URL(candidate, browserOrigin)
       const pathPrefix = normalizePathPrefix(stripApiSuffix(url.pathname || '/'))
       return { origin: url.origin || browserOrigin, pathPrefix }
     } catch {
-      // Continue to next candidate.
+      // Fall through to the location-derived prefix.
     }
   }
 
