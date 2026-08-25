@@ -157,7 +157,10 @@ export function preloadRoute(nameOrPath: string) {
 // symbols are not yet initialized when this module is first evaluated.
 export function createAppRouter() {
   const router = createRouter({
-    history: createWebHistory(import.meta.env.BASE_URL),
+    // Passing no base is deliberate. vue-router only consults the document's <base href> when its
+    // argument is falsy, and import.meta.env.BASE_URL is the literal './' under a relative build,
+    // which would make the history base '/.'. The server injects the real base into the shell.
+    history: createWebHistory(),
     routes,
   })
 
