@@ -14,6 +14,11 @@ export default defineConfig(({ mode }) => {
     process.env.ANALYZE === 'true'
 
   return {
+    // Emit asset URLs relative to the document instead of the site root, so one build can be
+    // mounted on a URL sub-path it knows nothing about. The backend injects a <base href> for the
+    // path base a request arrived under and every relative URL resolves against it. Vite
+    // substitutes '/' for a relative base on the dev server, so development is unaffected.
+    base: './',
     plugins: [
       vue(),
       ...(analyzeBundle
