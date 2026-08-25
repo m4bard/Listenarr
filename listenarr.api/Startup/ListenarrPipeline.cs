@@ -31,6 +31,11 @@ public static class ListenarrPipeline
         app.UseListenarrExceptionHandler();
         app.UseForwardedHeaders();
         app.UseListenarrUrlBase();
+
+        // The shell has to be rewritten both where the static file middleware would serve it and
+        // where the SPA fallback would, so the two registrations share one cached copy.
+        var spaIndex = app.CreateListenarrSpaIndex();
+        app.UseListenarrSpaIndex(spaIndex);
         app.MapListenarrStaticAssets();
         app.UseRouting();
         app.UseMiddleware<RequestBodyLoggingMiddleware>();
@@ -39,7 +44,7 @@ public static class ListenarrPipeline
         app.UseAuthorization();
         app.MapControllers();
         mapRealtimeHubs(app);
-        app.MapFallbackToFile("index.html");
+        app.MapListenarrSpaFallback(spaIndex);
 
         return app;
     }
