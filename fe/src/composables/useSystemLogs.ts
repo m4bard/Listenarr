@@ -19,7 +19,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import * as signalR from '@microsoft/signalr'
 import type { LogEntry } from '@/types'
 import { logger } from '@/utils/logger'
-import { API_BASE_PATH, API_ORIGIN } from '@/services/apiBase'
+import { API_BASE_PATH, API_ORIGIN, API_PATH_PREFIX } from '@/services/apiBase'
 
 /**
  * Composable for real-time system logs via SignalR
@@ -41,7 +41,9 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
     isConnecting.value = true
 
     try {
-      const hubUrl = `${API_ORIGIN}/hubs/logs`
+      // The hubs sit beside the API, not under it, so they take the path prefix on its own
+      // rather than the versioned API base.
+      const hubUrl = `${API_ORIGIN}${API_PATH_PREFIX}/hubs/logs`
       const signalrOptions: signalR.IHttpConnectionOptions = {
         transport:
           signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.ServerSentEvents,
