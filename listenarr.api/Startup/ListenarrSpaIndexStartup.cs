@@ -38,35 +38,26 @@ public static class ListenarrSpaIndexStartup
     internal const string IndexFileName = "index.html";
 
     /// <summary>
-    /// Builds the shell rewriter, or returns null when no <c>UrlBase</c> is configured so the
-    /// site-root deployment keeps serving index.html straight off the static file middleware.
+    /// Builds the shell rewriter. Always, including when no <c>UrlBase</c> is configured.
     /// </summary>
-    internal static SpaIndexHtml? CreateListenarrSpaIndex(this WebApplication app)
-    {
-        var configuredUrlBase = app.Services
-            .GetRequiredService<IStartupConfigService>()
-            .GetConfig()?
-            .UrlBase;
-
-        if (ListenarrUrlBaseStartup.NormalizeUrlBase(configuredUrlBase) is null)
-        {
-            return null;
-        }
-
-        return new SpaIndexHtml(app.Environment.WebRootFileProvider);
-    }
+    /// <remarks>
+    /// This deliberately does not skip the rewriter for a site-root deployment. The frontend is
+    /// built with a relative base, so the shell references its assets as <c>./assets/...</c>.
+    /// Served unmodified at a client-side route such as <c>/audiobooks/12</c>, those resolve
+    /// against the document URL and become <c>/audiobooks/assets/...</c>, which 404s. Every deep
+    /// link and every refresh would break, for every deployment rather than only proxied ones.
+    /// An unprefixed request gets <c>&lt;base href="/"&gt;</c>, which restores exactly the
+    /// resolution the site-root deployment had before.
+    /// </remarks>
+    internal static SpaIndexHtml CreateListenarrSpaIndex(this WebApplication app) =>
+        new(app.Environment.WebRootFileProvider);
 
     /// <summary>
     /// Intercepts the shell requests that the static file middleware would otherwise answer
     /// verbatim, namely the directory root and an explicit index.html.
     /// </summary>
-    internal static WebApplication UseListenarrSpaIndex(this WebApplication app, SpaIndexHtml? spaIndex)
+    internal static WebApplication UseListenarrSpaIndex(this WebApplication app, SpaIndexHtml spaIndex)
     {
-        if (spaIndex is null)
-        {
-            return app;
-        }
-
         app.Use(async (context, next) =>
         {
             if (!IsShellRequest(context.Request))
@@ -84,14 +75,8 @@ public static class ListenarrSpaIndexStartup
     /// <summary>
     /// Maps the SPA fallback that answers deep links such as <c>/example/audiobooks</c>.
     /// </summary>
-    internal static WebApplication MapListenarrSpaFallback(this WebApplication app, SpaIndexHtml? spaIndex)
+    internal static WebApplication MapListenarrSpaFallback(this WebApplication app, SpaIndexHtml spaIndex)
     {
-        if (spaIndex is null)
-        {
-            app.MapFallbackToFile(IndexFileName);
-            return app;
-        }
-
         app.MapFallback((RequestDelegate)spaIndex.WriteAsync);
         return app;
     }
