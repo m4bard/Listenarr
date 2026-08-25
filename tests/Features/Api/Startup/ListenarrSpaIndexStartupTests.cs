@@ -162,8 +162,11 @@ public sealed class ListenarrSpaIndexStartupTests : BaseTests
     }
 
     [Fact]
-    public async Task NoUrlBase_LeavesTheShellExactlyAsTheFrontendBuiltIt()
+    public async Task NoUrlBase_StillAnchorsTheShellAtTheSiteRoot_SoADeepLinkResolvesItsAssets()
     {
+        // The frontend is built with a relative base, so the shell asks for "./assets/...".
+        // Served unmodified at /audiobooks that resolves to /audiobooks/assets/..., which 404s.
+        // A site-root deployment needs the base tag just as much as a proxied one does.
         var webRoot = CreateWebRootWithShell();
         using var factory = new ListenarrWebApplicationFactory();
         using var withoutUrlBase = CreateFactory(factory, "/", webRoot);
@@ -173,9 +176,26 @@ public sealed class ListenarrSpaIndexStartupTests : BaseTests
         var atDeepLink = await client.GetAsync("/audiobooks");
 
         Assert.Equal(HttpStatusCode.OK, atRoot.StatusCode);
-        Assert.Equal(ShellHtml, await atRoot.Content.ReadAsStringAsync());
-        Assert.Equal(ShellHtml, await atDeepLink.Content.ReadAsStringAsync());
-        Assert.DoesNotContain("<base ", await atRoot.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, atDeepLink.StatusCode);
+
+        foreach (var response in new[] { atRoot, atDeepLink })
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Contains("<head><base href=\"/\">", body, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task NoUrlBase_ChangesNothingAboutTheShellExceptTheBaseTag()
+    {
+        var webRoot = CreateWebRootWithShell();
+        using var factory = new ListenarrWebApplicationFactory();
+        using var withoutUrlBase = CreateFactory(factory, "/", webRoot);
+        using var client = CreateClient(withoutUrlBase);
+
+        var body = await (await client.GetAsync("/")).Content.ReadAsStringAsync();
+
+        Assert.Equal(ShellHtml, body.Replace("<base href=\"/\">", string.Empty, StringComparison.Ordinal));
     }
 
     private string CreateWebRootWithShell()
