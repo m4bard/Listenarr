@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Runtime.InteropServices;
+using Listenarr.Tests.Common;
 
 // Aliased because `Listenarr.Tests.Features.Architecture` is an enclosing namespace here, and a
 // namespace member wins over the type of the same name.
@@ -25,7 +26,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
 {
     [Trait("Name", "FfprobePlatformDefaultsTests")]
     [Trait("Category", "FfmpegService")]
-    public class FfprobePlatformDefaultsTests
+    public class FfprobePlatformDefaultsTests : BaseTests
     {
         // Suffixes FfprobeArchiveExtractor dispatches on. A URL outside this set downloads fine and
         // then extracts nothing, which is the failure mode that hid the macOS bug: the install log
