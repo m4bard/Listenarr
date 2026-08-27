@@ -5,7 +5,7 @@ namespace Listenarr.Application.Downloads.Import;
 
 public partial class DownloadImportService
 {
-    private async Task<bool> PrepareRegisterAndCompletePublicationAsync(
+    private async Task<ImportResult?> PrepareRegisterAndCompletePublicationAsync(
         FilePublicationPlan publicationPlan,
         string source,
         string destination,
@@ -32,11 +32,15 @@ public partial class DownloadImportService
         using var registrationLease = preparation.RegistrationLease;
         if (registrationLease == null)
         {
-            return false;
+            return CreatePublicationFailureResult(
+                preparation,
+                source,
+                destination);
         }
 
-        var registered = publicationPlan.Mode
-                == FilePublicationExecutionMode.AdditiveCopyRetainSource
+        var registered = publicationPlan.Mode is
+                FilePublicationExecutionMode.AdditiveCopyRetainSource or
+                FilePublicationExecutionMode.CompatibilityCopyVerifiedCleanup
                 ? await audiobookFileService.RegisterCompatibilityPublicationAsync(
                     audiobook,
                     ownership,
@@ -51,7 +55,10 @@ public partial class DownloadImportService
                     cancellationToken);
         if (!registered)
         {
-            return false;
+            return CreatePublicationFailureResult(
+                publicationPlan,
+                source,
+                destination);
         }
 
         if (publicationPlan.EffectiveAction == FileAction.Move
@@ -64,7 +71,10 @@ public partial class DownloadImportService
             await audiobookFileService.RollbackPublishedGenerationIfStaleAsync(
                 audiobook,
                 registrationLease);
-            return false;
+            return CreatePublicationFailureResult(
+                publicationPlan,
+                source,
+                destination);
         }
 
         var completion = registrationLease.CompletePublication();
@@ -76,7 +86,7 @@ public partial class DownloadImportService
                 LogRedaction.SanitizeFilePath(destination));
         }
 
-        return true;
+        return null;
     }
 
     private Task<bool> RegisterPublishedImportAsync(

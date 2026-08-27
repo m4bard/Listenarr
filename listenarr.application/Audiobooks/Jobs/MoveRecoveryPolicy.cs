@@ -55,9 +55,8 @@ public static class MoveRecoveryPolicy
             return true;
         }
 
-        return job.CreatedDirectories.Any(directory => directory.State is
-            MoveCreatedDirectoryState.Created or
-            MoveCreatedDirectoryState.Retained);
+        return job.CreatedDirectories.Any(directory =>
+            directory.State != MoveCreatedDirectoryState.Planned);
     }
 
     public static bool BlocksFilesystemMutation(MoveJob job)
@@ -135,8 +134,11 @@ public static class MoveRecoveryPolicy
 
     private static bool HasCompletedMarkerlessRecoveryEvidence(MoveJob job)
     {
+        var completedCleanupState = job.SourceDirectoryCleanupState;
         if (!MoveExecutionProtocol.IsCurrent(job.ExecutionProtocolVersion)
-            || job.SourceDirectoryCleanupState != MoveJobEntryCleanupState.Deleted
+            || completedCleanupState is not (
+                MoveJobEntryCleanupState.Deleted
+                or MoveJobEntryCleanupState.Retained)
             || string.IsNullOrWhiteSpace(job.TargetDirectoryObjectIdentity)
             || string.IsNullOrWhiteSpace(job.RequestedPath))
         {
@@ -149,7 +151,7 @@ public static class MoveRecoveryPolicy
         if (fileEntries.Count == 0
             || fileEntries.Any(entry =>
                 entry.CopyState != MoveJobEntryCopyState.Verified
-                || entry.CleanupState != MoveJobEntryCleanupState.Deleted))
+                || entry.CleanupState != completedCleanupState))
         {
             return false;
         }

@@ -28,6 +28,15 @@ internal sealed partial class AudiobookContentMoveService
         string targetPath,
         IReadOnlyCollection<MoveJobEntry> manifest)
     {
+        if (request.ForceCopyAndRetainSource
+            && manifest
+                .Where(IsPhysicalManifestEntry)
+                .Any(entry => IsDestructiveCleanupState(entry.CleanupState)))
+        {
+            throw new MoveNeedsAttentionException(
+                "Forced source retention has contradictory destructive cleanup evidence.");
+        }
+
         var source = Path.GetFullPath(sourcePath);
         if (!AuthorizedSourceDirectoryExists(request, source))
         {
@@ -70,6 +79,17 @@ internal sealed partial class AudiobookContentMoveService
 
             if (entry.EntryType == MoveJobEntryType.File)
             {
+                if (entry.CleanupState == MoveJobEntryCleanupState.Retained)
+                {
+                    if (!TryGetExistingPathAttributes(sourceEntry, out var retainedAttributes)
+                        || (retainedAttributes & FileAttributes.Directory) != 0
+                        || (retainedAttributes & FileAttributes.ReparsePoint) != 0)
+                    {
+                        throw new MoveNeedsAttentionException(
+                            $"A retained source file is missing or changed type: {entry.RelativePath}");
+                    }
+                    continue;
+                }
                 if (TryGetExistingPathAttributes(sourceEntry, out _))
                 {
                     throw new MoveNeedsAttentionException(
@@ -82,6 +102,18 @@ internal sealed partial class AudiobookContentMoveService
             {
                 throw new MoveNeedsAttentionException(
                     "The persisted source manifest contains an unsupported entry type.");
+            }
+
+            if (entry.CleanupState == MoveJobEntryCleanupState.Retained)
+            {
+                if (!TryGetExistingPathAttributes(sourceEntry, out var retainedAttributes)
+                    || (retainedAttributes & FileAttributes.Directory) == 0
+                    || (retainedAttributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new MoveNeedsAttentionException(
+                        $"A retained source directory is missing or changed type: {entry.RelativePath}");
+                }
+                continue;
             }
 
             if (TryGetExistingPathAttributes(sourceEntry, out var attributes))

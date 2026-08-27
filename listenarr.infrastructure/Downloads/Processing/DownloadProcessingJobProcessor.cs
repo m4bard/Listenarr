@@ -301,10 +301,12 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     if (!string.IsNullOrEmpty(result.Message)) job.AddLogEntry(result.Message);
                 }
 
-                if (results.Any(result => !result.Success))
+                var failedResults = results.Where(result => !result.Success).ToList();
+                if (failedResults.Count > 0)
                 {
                     await FailImportAsync(job, downloadProcessingJobService, historyRepository, download, audiobook,
-                        correlationId, "Unable to import at least one file for the job (see the log entries)", cancellationToken);
+                        correlationId, "Unable to import at least one file for the job (see the log entries)",
+                        cancellationToken, failedResults);
                     return;
                 }
 
@@ -359,7 +361,7 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     }, cancellationToken);
                 }
 
-                job.JobData["SourceRetained"] = results.Any(result =>
+                job.JobData[Download.SourceRetainedMetadataKey] = results.Any(result =>
                     result.SourceDisposition
                         == ImportSourceDisposition.Retained);
                 job.SetCheckpoint("FilesImported", results.Count);
@@ -422,6 +424,12 @@ namespace Listenarr.Infrastructure.Downloads.Processing
             }
 
             var finalizationService = scope.ServiceProvider.GetRequiredService<IImportFinalizationService>();
+            bool? sourceRetained = job.TryGetJobDataString(
+                    Download.SourceRetainedMetadataKey,
+                    out var sourceRetainedValue)
+                && bool.TryParse(sourceRetainedValue, out var parsedSourceRetained)
+                    ? parsedSourceRetained
+                    : null;
             try
             {
                 await finalizationService.FinalizeAsync(
@@ -431,6 +439,7 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     audiobook.Title ?? download.Title,
                     client?.Id ?? download.DownloadClientId,
                     correlationId,
+                    sourceRetained,
                     new Dictionary<string, object>
                     {
                         ["JobId"] = job.Id,

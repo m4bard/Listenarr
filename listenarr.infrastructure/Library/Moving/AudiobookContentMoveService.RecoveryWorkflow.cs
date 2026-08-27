@@ -61,6 +61,11 @@ internal sealed partial class AudiobookContentMoveService
         request = await WithValidatedTargetDirectoryOwnershipAsync(
             request,
             cancellationToken);
+        if (request.ForceCopyAndRetainSource && !result.SourceRetained)
+        {
+            throw new MoveNeedsAttentionException(
+                "Forced source retention cannot accept a destructive recovery result.");
+        }
         if (result.SourceCleanupCompleted)
         {
             return result;
@@ -81,13 +86,24 @@ internal sealed partial class AudiobookContentMoveService
                 "Source cleanup is blocked because no persisted move manifest is available.");
         }
 
-        await DeleteMarkerlessSourceAsync(
-            request,
-            result.Source,
-            result.Target,
-            result.TargetInsideSource,
-            manifest,
-            cancellationToken);
+        if (result.SourceRetained)
+        {
+            await RetainMarkerlessSourceAsync(
+                request,
+                result.Target,
+                manifest,
+                cancellationToken);
+        }
+        else
+        {
+            await DeleteMarkerlessSourceAsync(
+                request,
+                result.Source,
+                result.Target,
+                result.TargetInsideSource,
+                manifest,
+                cancellationToken);
+        }
         VerifySourceCleanupState(
             request,
             result.Source,

@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
+using System.Runtime.Versioning;
 using System.Text;
 
 using Listenarr.Tests.Common;
@@ -668,6 +670,112 @@ public sealed class FileMoverMarkerlessRegistrationTests : BaseTests
         AssertNoLibraryArtifacts(scenario.Root);
     }
 
+    [Fact]
+    public async Task PrepareCompatibilityMove_VerifiedCleanup_RemainsRegistrationCommittedUntilBatchCoordinator()
+    {
+        var scenario = await CreateScenarioAsync("registration-compatible-verified-cleanup");
+        var mover = CreateMover();
+        var hash = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes("audio")));
+        var proof = new FilePublicationSourceProof(
+            $"content-only:{hash}",
+            5,
+            hash,
+            FilePublicationSourceAuthority.ContentOnly);
+        var batchId = Guid.NewGuid();
+        var plan = FilePublicationPlan.VerifiedCleanup(
+            batchId,
+            CompatibilityCleanupOwner.Listenarr,
+            sourceRootFolderId: null,
+            sourcePolicyRevision: null,
+            destinationRootFolderId: 87,
+            destinationPolicyRevision: 4,
+            sourceStorageContractRevision: null,
+            destinationStorageContractRevision: 9);
+
+        var preparation = await mover.PrepareActionForRegistrationDetailedAsync(
+            plan,
+            scenario.Source,
+            scenario.Destination,
+            scenario.OperationId,
+            expectedRegisteredPhysicalObjectIdentity: null,
+            proof);
+
+        Assert.True(preparation.IsSuccess, preparation.Message);
+        using var lease = Assert.IsAssignableFrom<IAudiobookFileRegistrationLease>(
+            preparation.RegistrationLease);
+        Assert.True(lease.PrepareCleanupRecovery(74));
+        Assert.Equal(
+            RegistrationPublicationCompletion.CommittedCleanupPending,
+            lease.CompletePublication());
+        Assert.Equal(
+            RegistrationPublicationCompletion.CommittedCleanupPending,
+            lease.CompletePublication());
+
+        Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Source));
+        Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Destination));
+        var factory = _provider.GetRequiredService<
+            IDbContextFactory<ListenArrDbContext>>();
+        await using var db = await factory.CreateDbContextAsync();
+        var journal = await db.CompatibilityFilePublicationJournals
+            .SingleAsync(candidate => candidate.OperationId == scenario.OperationId);
+        Assert.Equal(batchId, journal.BatchId);
+        Assert.Equal(CompatibilityCleanupOwner.Listenarr, journal.CleanupOwner);
+        Assert.Equal(74, journal.AudiobookId);
+        Assert.Equal(
+            CompatibilityFilePublicationState.RegistrationCommitted,
+            journal.State);
+    }
+
+    [Fact]
+    public async Task PrepareCompatibilityMove_BlockedLogIncludesFileContext()
+    {
+        var scenario = await CreateScenarioAsync(
+            "registration-compatible-blocked-log");
+        LogLevel? capturedLevel = null;
+        string? capturedMessage = null;
+        var logger = new Mock<ILogger<FileMover>>();
+        logger.Setup(candidate => candidate.Log(
+                It.IsAny<LogLevel>(),
+                It.IsAny<EventId>(),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception?>(),
+                (Func<It.IsAnyType, Exception?, string>)It.IsAny<object>()))
+            .Callback(new InvocationAction(invocation =>
+            {
+                capturedLevel = (LogLevel)invocation.Arguments[0];
+                capturedMessage = invocation.Arguments[2]?.ToString();
+            }));
+        var mover = CreateMover(
+            logger: logger.Object,
+            options: Options.Create(new FileMoverOptions
+            {
+                WeakPublicationMode = WeakPublicationMode.Disabled
+            }));
+        var hash = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes("audio")));
+        var proof = new FilePublicationSourceProof(
+            $"content-only:{hash}",
+            5,
+            hash,
+            FilePublicationSourceAuthority.ContentOnly);
+
+        var preparation = await mover.PrepareActionForRegistrationDetailedAsync(
+            FilePublicationPlan.Additive(FileAction.Move),
+            scenario.Source,
+            scenario.Destination,
+            scenario.OperationId,
+            expectedRegisteredPhysicalObjectIdentity: null,
+            proof);
+
+        Assert.False(preparation.IsSuccess);
+        Assert.Equal("compatibility_publication_disabled", preparation.ReasonCode);
+        Assert.Equal(LogLevel.Warning, capturedLevel);
+        Assert.NotNull(capturedMessage);
+        Assert.Contains(Path.GetFileName(scenario.Source), capturedMessage);
+        Assert.Contains(Path.GetFileName(scenario.Destination), capturedMessage);
+    }
+
     [NetworkStorageTheory]
     [InlineData(false)]
     [InlineData(true)]
@@ -743,6 +851,76 @@ public sealed class FileMoverMarkerlessRegistrationTests : BaseTests
                 CompatibilityFilePublicationState.Completed,
                 journal.State);
             Assert.Equal(isCompanionFile, journal.IsCompanionFile);
+        }
+        finally
+        {
+            if (Directory.Exists(scenarioRoot))
+            {
+                Directory.Delete(scenarioRoot, recursive: true);
+            }
+        }
+    }
+
+    [ForeignOwnedNetworkStorageFact]
+    [SupportedOSPlatform("linux")]
+    public async Task PreserveMarkerlessMetadata_OnNetworkStorage_FromForeignOwnedSource_KeepsOwnerWriteMode()
+    {
+        var providedRoot = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                NetworkStorageTheoryAttribute.PathEnvironmentVariable)!);
+        var source = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                ForeignOwnedNetworkStorageFactAttribute.SourcePathEnvironmentVariable)!);
+        var scenarioRoot = Path.Join(
+            providedRoot,
+            $"listenarr-foreign-source-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scenarioRoot);
+        var destination = Path.Join(scenarioRoot, "cover.jpg");
+
+        try
+        {
+            var sourceMode = File.GetUnixFileMode(source);
+            Assert.True(sourceMode.HasFlag(UnixFileMode.UserWrite));
+            Assert.Throws<UnauthorizedAccessException>(() =>
+            {
+                using var _ = new FileStream(
+                    source,
+                    FileMode.Open,
+                    FileAccess.Write,
+                    FileShare.Read);
+            });
+
+            using var sourceParent = PinnedDirectoryCreation
+                .OpenPinnedHierarchyNoFollow(
+                    Path.GetDirectoryName(source)!,
+                    createMissing: false);
+            using var destinationParent = PinnedDirectoryCreation
+                .OpenPinnedHierarchyNoFollow(
+                    scenarioRoot,
+                    createMissing: false);
+            using var sourceEntry = sourceParent
+                .OpenExistingFileForStableRead(Path.GetFileName(source));
+            using var destinationEntry = destinationParent
+                .CreateNewFile(Path.GetFileName(destination));
+            await using (var sourceStream = sourceEntry.OpenReadStream(
+                bufferSize: 128 * 1024,
+                asynchronous: false))
+            await using (var destinationStream = destinationEntry.OpenWriteStream(
+                bufferSize: 128 * 1024,
+                asynchronous: false))
+            {
+                await sourceStream.CopyToAsync(destinationStream);
+            }
+
+            sourceEntry.PreserveMarkerlessMetadataTo(destinationEntry);
+
+            var destinationMode = File.GetUnixFileMode(destination);
+            Assert.Equal(sourceMode, destinationMode);
+            Assert.True(destinationMode.HasFlag(UnixFileMode.UserWrite));
+            using var metadataStream = destinationEntry.OpenWriteStream(
+                bufferSize: 4096,
+                asynchronous: false);
+            Assert.True(metadataStream.CanWrite);
         }
         finally
         {
@@ -1725,12 +1903,15 @@ public sealed class FileMoverMarkerlessRegistrationTests : BaseTests
         Func<string, bool?>? readOnlyFileSystemProbe = null,
         IRootFolderRepository? rootFolderRepository = null,
         IRootFolderStorageHealthResolver? rootFolderStorageHealthResolver = null,
-        bool forceContentOnlySourceProof = false)
+        bool forceContentOnlySourceProof = false,
+        ILogger<FileMover>? logger = null,
+        IOptions<FileMoverOptions>? options = null)
     {
         var factory = _provider.GetRequiredService<
             IDbContextFactory<ListenArrDbContext>>();
         return new FileMover(
-            new NullLogger<FileMover>(),
+            logger ?? new NullLogger<FileMover>(),
+            options: options,
             dbContextFactory: factory,
             timeProvider: TimeProvider.System,
             readOnlyFileSystemProbe: readOnlyFileSystemProbe,
