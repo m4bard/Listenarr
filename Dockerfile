@@ -15,6 +15,10 @@ ENV ASPNETCORE_URLS=http://*:4545
 ENV DOCKER_ENV=true
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# Lets a locally built image say what it actually is. A patched build that
+# reports the stock version in its UI and its logs is the shortest route to
+# reporting a modified binary upstream by accident.
+ARG LISTENARR_VERSION=
 WORKDIR /src
 COPY ["Directory.Build.props", "./"]
 COPY ["Directory.Packages.props", "./"]
@@ -36,8 +40,9 @@ RUN apt-get update \
 	&& npm --version \
 	&& apt-get clean \
 	&& rm -rf /var/lib/apt/lists/*
-RUN dotnet build "Listenarr.Api.csproj" -c Release -o /app/build \
-	&& dotnet publish "Listenarr.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN VERSION_ARG=$( [ -n "$LISTENARR_VERSION" ] && echo "/p:Version=$LISTENARR_VERSION" || echo "" ) \
+	&& dotnet build "Listenarr.Api.csproj" -c Release -o /app/build $VERSION_ARG \
+	&& dotnet publish "Listenarr.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false $VERSION_ARG
 
 FROM base AS final
 WORKDIR /app
