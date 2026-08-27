@@ -443,7 +443,8 @@ public sealed class ManualImportCompanionImporterTests : BaseTests
                     [audiobook.Id] = destinationResolution
                 },
                 importBlacklist: [],
-                compatibilityBatchId: batchId);
+                compatibilityBatchId: batchId,
+                rootFolders: RootFoldersFor(testRoot));
 
             Assert.Equal(1, outcome.ImportedCount);
             Assert.True(outcome.Succeeded);
