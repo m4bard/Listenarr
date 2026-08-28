@@ -58,6 +58,20 @@ namespace Listenarr.Api.Features.Downloads
                 var result = await _downloadService.SearchAndDownloadAsync(request.AudiobookId);
                 return Ok(result);
             }
+            catch (DownloadClientRejectedReleaseException ex)
+            {
+                // The client refused this one release rather than failing to accept it,
+                // most often because it already holds the same release, grabbed earlier for
+                // another book the release also satisfies. Neither the client nor the
+                // release is broken, so this answers the same way the service does when no
+                // download client is available, rather than reporting a server error.
+                _logger.LogInformation(
+                    "Download client refused the release for audiobook {AudiobookId}: {Reason}",
+                    request.AudiobookId,
+                    ex.Message);
+
+                return Ok(new SearchAndDownloadResult { Success = false, Message = ex.Message });
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Error in search and download for audiobook {AudiobookId}", request.AudiobookId);
