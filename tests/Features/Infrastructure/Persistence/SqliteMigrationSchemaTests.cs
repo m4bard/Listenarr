@@ -44,6 +44,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260825021432_AddWeakStorageVerifiedCleanup";
     private const string EmbedCoverArtSettingMigrationId =
         "20260828190320_AddEmbedCoverArtInAudioFilesSetting";
+    private const string ReleaseBlocklistMigrationId =
+        "20260828191810_AddReleaseBlocklist";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -202,7 +204,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 FileMutationParentGenerationProofsMigrationId,
                 CompatibilityFilePublicationMigrationId,
                 WeakStorageVerifiedCleanupMigrationId,
-                EmbedCoverArtSettingMigrationId
+                EmbedCoverArtSettingMigrationId,
+                ReleaseBlocklistMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
