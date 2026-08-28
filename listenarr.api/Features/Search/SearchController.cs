@@ -368,6 +368,17 @@ namespace Listenarr.Api.Features.Search
                     return NotFound("No results found");
                 }
 
+                // Audible did not answer. Returning the empty result would be a 200 that
+                // says "this book is not in the catalogue", which is a different claim and
+                // one a caller acts on differently. 503 says try again instead.
+                if (result.ProviderUnavailable)
+                {
+                    _logger.LogWarning(
+                        "Audible did not answer for query: {Query}; reporting unavailable rather than zero matches",
+                        LogRedaction.SanitizeText(query));
+                    return StatusCode(503, "The Audible catalog did not respond. This is not a confirmed zero-match; retry shortly.");
+                }
+
                 return Ok(result);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
