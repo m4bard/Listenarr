@@ -283,6 +283,38 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
 
         [Fact]
         [Trait("Method", "RetryBlockedImport")]
+        [Trait("Scenario", "RetryBlockedImportActuallyQueuesTheImport")]
+        public async Task RetryBlockedImport_QueuesAProcessingJob()
+        {
+            // Clearing the blocked status is not a retry. Nothing watches that field, and the one
+            // thing that enqueues an import fires on the download client reporting completion,
+            // which has already happened and will not happen again. Without a job the download
+            // sits in ImportPending forever while the endpoint reports "Import retry queued".
+            await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithId("d-retry-queues")
+                .WithStartDate(DateTime.UtcNow.AddMinutes(-1))
+                .WithDownloadClientConfiguration(_client)
+                .WithBlockedStatus("RepeatedFailure")
+                .WithImportAttempts(3)
+                .WithBlockMessage("still failing")
+                .Build());
+
+            Assert.Empty(await _downloadProcessingJobRepository.GetByDownloadIdAsync("d-retry-queues"));
+
+            var controller = MockUtils.CreateDownloadsController(_provider);
+            var ok = Assert.IsType<OkObjectResult>(await controller.RetryBlockedImport("d-retry-queues"));
+
+            var jobId = ok.Value!.GetType().GetProperty("jobId")?.GetValue(ok.Value)?.ToString();
+            Assert.False(string.IsNullOrWhiteSpace(jobId));
+
+            var queued = await _downloadProcessingJobRepository.GetActiveByDownloadIdAsync("d-retry-queues");
+            Assert.NotNull(queued);
+            Assert.Equal(jobId, queued!.Id);
+            Assert.Equal(ProcessingJobStatus.Pending, queued.Status);
+        }
+
+        [Fact]
+        [Trait("Method", "RetryBlockedImport")]
         [Trait("Scenario", "RetryBlockedImportRejectsNonBlockedStatus")]
         public async Task RetryBlockedImport_NonBlocked_ReturnsBadRequest()
         {

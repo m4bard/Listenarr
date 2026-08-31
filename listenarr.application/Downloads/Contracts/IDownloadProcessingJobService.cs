@@ -31,6 +31,17 @@ namespace Listenarr.Application.Downloads.Contracts
         Task<string> EnqueueAsync(Download download);
 
         /// <summary>
+        /// Put a download back on the import queue after its job gave up.
+        ///
+        /// Separate from <see cref="EnqueueAsync"/> because that one is driven by the download
+        /// client reporting completion, and so requires the download to be Completed. A retry is
+        /// asked for later, when the download has already moved on to ImportPending, and it reuses
+        /// the existing job so the record of the earlier failures is not thrown away.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">When the download is not awaiting importation</exception>
+        Task<string> RequeueAsync(Download download);
+
+        /// <summary>
         /// Get the next pending job to process
         /// </summary>
         Task<DownloadProcessingJob?> GetNextJobAsync();
