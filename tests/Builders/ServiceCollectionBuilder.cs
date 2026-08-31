@@ -25,6 +25,7 @@ namespace Listenarr.Tests.Builders
         private string? _contentRootPath;
         private readonly List<ServiceDescriptor> _serviceDescriptors = new();
         private readonly List<Type> _serviceTypesToRemove = new();
+        private Action<DbContextOptionsBuilder>? _dbContextOptionsAction;
 
         public ServiceCollectionBuilder()
         {
@@ -108,6 +109,23 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        /// <summary>
+        /// Back the provider's DbContext with a migrated SQLite database on the
+        /// given open connection instead of EF InMemory. Use for regression
+        /// coverage that depends on real SQLite materialization semantics
+        /// (e.g. DateTimeKind round-trips), which InMemory cannot reproduce.
+        /// </summary>
+        public ServiceCollectionBuilder WithSqliteDatabase(
+            Microsoft.Data.Sqlite.SqliteConnection connection)
+        {
+            _dbContextOptionsAction = options => options.UseSqlite(
+                connection,
+                sqlite => sqlite.MigrationsAssembly(
+                    typeof(Listenarr.Infrastructure.Persistence.ListenArrDbContext)
+                        .Assembly.GetName().Name));
+            return this;
+        }
+
         public ServiceCollectionBuilder Without<TService>()
         {
             return Without(typeof(TService));
@@ -146,7 +164,8 @@ namespace Listenarr.Tests.Builders
             services.AddListenarrAdapters(configuration);
             services.AddListenarrHttpClients(configuration);
             services.AddListenarrInfrastructure(
-                options => options.UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()),
+                _dbContextOptionsAction
+                    ?? (options => options.UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())),
                 contentRootPath: _contentRootPath);
             var filesystemReadiness = new LibraryFilesystemReadiness();
             filesystemReadiness.MarkReady();
