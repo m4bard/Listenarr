@@ -211,7 +211,7 @@
 
     <!-- Grouped View -->
     <div v-else-if="groupBy !== 'books'" class="grouped-view">
-      <div class="grouped-grid">
+      <div v-if="viewMode === 'grid'" class="grouped-grid">
         <div
           v-for="collection in groupedCollections || []"
           :key="collection.name"
@@ -395,6 +395,45 @@
                 {{ collection.count }} book{{ collection.count !== 1 ? 's' : '' }}
               </p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="audiobooks-list grouped-list">
+        <div v-if="(groupedCollections || []).length > 0" class="list-header">
+          <div class="col-cover">Cover</div>
+          <div class="col-title">{{ groupBy === 'authors' ? 'Author' : 'Series' }}</div>
+          <div class="col-count">Books</div>
+        </div>
+        <div
+          v-for="collection in groupedCollections || []"
+          :key="`collection-list-${collection.name}`"
+          tabindex="0"
+          class="audiobook-list-item collection-list-item"
+          @keydown.enter="navigateToCollection(collection)"
+          @click="navigateToCollection(collection)"
+        >
+          <div class="list-thumb-container">
+            <img
+              class="list-thumb"
+              :src="
+                getProtectedImageSrc(
+                  groupBy === 'authors'
+                    ? getAuthorImageUrl(collection)
+                    : collection.coverUrls?.[0] || '',
+                  getPlaceholderUrl(),
+                )
+              "
+              :alt="collection.name"
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+          <div class="list-details">
+            <div class="audiobook-title">{{ safeText(collection.name) }}</div>
+          </div>
+          <div class="collection-list-count">
+            {{ collection.count }} book{{ collection.count !== 1 ? 's' : '' }}
           </div>
         </div>
       </div>
@@ -2804,6 +2843,19 @@ defineExpose({
 
 .menu-item:last-child {
   border-radius: 6px;
+}
+
+/* A collection row carries a cover, a name and a count. The book row's five-column
+   template leaves two of its columns empty here, so the grouped list sets its own. */
+.grouped-list .list-header,
+.collection-list-item {
+  grid-template-columns: 64px 1fr auto;
+}
+
+.collection-list-count {
+  color: #aaa;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .grouped-view {
