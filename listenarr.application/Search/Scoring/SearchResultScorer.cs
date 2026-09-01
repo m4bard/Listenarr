@@ -21,7 +21,7 @@ using System.Globalization;
 
 namespace Listenarr.Application.Search.Scoring
 {
-    public class SearchResultScorer
+    public partial class SearchResultScorer
     {
         private readonly IIndexerRepository? _indexerRepository;
         private readonly ILogger _logger;
@@ -105,40 +105,13 @@ namespace Listenarr.Application.Search.Scoring
             // Detect NZB/Usenet more broadly
             var isNzb = IsNzbResult(searchResult);
 
-            // The indexer is read before the size and age gates because all three depend on it.
-            // It also corrects isNzb from the indexer's own type, and that correction used to
-            // happen after the size gate had already run, so a Usenet result recognised only by
-            // its indexer type was size-checked despite the exemption just below.
-            int indexerRetention = 0;
-            int indexerMaximumSizeMb = 0;
-            int indexerMinimumAgeMinutes = 0;
-            if (searchResult.IndexerId.HasValue
-                && (_resolvedIndexers != null || _indexerRepository != null))
-            {
-                try
-                {
-                    var idx = _resolvedIndexers != null
-                        ? (_resolvedIndexers.TryGetValue(searchResult.IndexerId.Value, out var preresolved)
-                            ? preresolved
-                            : null)
-                        : await _indexerRepository!.GetByIdAsync(searchResult.IndexerId.Value);
-                    if (idx != null)
-                    {
-                        indexerRetention = idx.Retention;
-                        indexerMaximumSizeMb = idx.MaximumSize;
-                        indexerMinimumAgeMinutes = idx.MinimumAge;
-                        if (!isNzb && !string.IsNullOrWhiteSpace(idx.Type) && string.Equals(idx.Type, "Usenet", StringComparison.OrdinalIgnoreCase))
-                        {
-                            isNzb = true;
-                            _logger.LogDebug("Indexer {IndexerId} type '{Type}' detected as Usenet; applying NZB/Usenet exemptions", searchResult.IndexerId.Value, idx.Type);
-                        }
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                {
-                    _logger.LogDebug(ex, "Failed to fetch indexer settings for IndexerId {Id}", searchResult.IndexerId.Value);
-                }
-            }
+            // Everything the indexer contributes, resolved once. Lives in
+            // SearchResultScorer.IndexerContext.cs; see there for why it happens before the gates.
+            var indexerContext = await ResolveIndexerContextAsync(searchResult, isNzb);
+            isNzb = indexerContext.IsNzb;
+            var indexerRetention = indexerContext.RetentionDays;
+            var indexerMaximumSizeMb = indexerContext.MaximumSizeMb;
+            var indexerMinimumAgeMinutes = indexerContext.MinimumAgeMinutes;
 
             if (indexerMaximumSizeMb > 0 && searchResult.Size > (long)indexerMaximumSizeMb * 1024 * 1024)
             {
@@ -496,22 +469,5 @@ namespace Listenarr.Application.Search.Scoring
         private static bool ContainsVbrPreset(string qualityLower, string preset) => qualityLower.Contains(preset) || qualityLower.Contains($"-{preset}") || qualityLower.Contains($" {preset}");
         private static bool ContainsAnyBitrate(string qualityLower, params string[] bitrates) => bitrates.Any(b => qualityLower.Contains(b));
 
-        private static bool IsNzbResult(SearchResult r)
-        {
-            bool hasNzbUrl = !string.IsNullOrEmpty(r.NzbUrl);
-            bool isNzbType = string.Equals(r.DownloadType, "nzb", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(r.DownloadType, "usenet", StringComparison.OrdinalIgnoreCase);
-            bool indexerIndicatesNzb = !string.IsNullOrEmpty(r.IndexerImplementation)
-                && (r.IndexerImplementation.IndexOf("nzb", StringComparison.OrdinalIgnoreCase) >= 0
-                    || r.IndexerImplementation.IndexOf("usenet", StringComparison.OrdinalIgnoreCase) >= 0);
-            bool sourceIndicatesNzb = !string.IsNullOrEmpty(r.Source)
-                && r.Source.IndexOf("usenet", StringComparison.OrdinalIgnoreCase) >= 0;
-            bool urlIndicatesNzb = !string.IsNullOrEmpty(r.ResultUrl)
-                && (r.ResultUrl.EndsWith(".nzb", StringComparison.OrdinalIgnoreCase)
-                    || r.ResultUrl.IndexOf("/nzb", StringComparison.OrdinalIgnoreCase) >= 0);
-            bool torrentIndicatesNzb = !string.IsNullOrEmpty(r.TorrentUrl)
-                && r.TorrentUrl.EndsWith(".nzb", StringComparison.OrdinalIgnoreCase);
-            return hasNzbUrl || isNzbType || indexerIndicatesNzb || sourceIndicatesNzb || urlIndicatesNzb || torrentIndicatesNzb;
-        }
     }
 }
