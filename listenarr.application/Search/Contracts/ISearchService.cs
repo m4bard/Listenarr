@@ -15,8 +15,9 @@ namespace Listenarr.Application.Search.Contracts
         /// <param name="sortBy">Sort results by seeders, peers, size, or age</param>
         /// <param name="sortDirection">Sort direction (ascending or descending)</param>
         /// <param name="isAutomaticSearch">Whether this is an automatic search (affects logging)</param>
+        /// <param name="cancellationToken">Token signalled when the caller abandons the search.</param>
         /// <returns>List of search results from all configured indexers</returns>
-        Task<List<SearchResult>> SearchAsync(string query, string? category = null, List<string>? apiIds = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false);
+        Task<List<SearchResult>> SearchAsync(string query, string? category = null, List<string>? apiIds = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Performs intelligent search with metadata enrichment
@@ -39,12 +40,13 @@ namespace Listenarr.Application.Search.Contracts
         /// <param name="apiId">The API configuration ID to search</param>
         /// <param name="query">Search query string</param>
         /// <param name="category">Optional category filter</param>
+        /// <param name="cancellationToken">Token signalled when the caller abandons the search.</param>
         /// <returns>Search results from the specified API</returns>
-        Task<List<SearchResult>> SearchByApiAsync(string apiId, string query, string? category = null);
+        Task<List<SearchResult>> SearchByApiAsync(string apiId, string query, string? category = null, CancellationToken cancellationToken = default);
         /// <summary>
         /// Search a specific indexer and return raw indexer search results (IndexerSearchResult) for indexer-specific consumers.
         /// </summary>
-        Task<List<IndexerSearchResult>> SearchIndexerResultsAsync(string apiId, string query, string? category = null, SearchRequest? request = null);
+        Task<List<IndexerSearchResult>> SearchIndexerResultsAsync(string apiId, string query, string? category = null, SearchRequest? request = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Tests connectivity and authentication for a specific API
@@ -62,8 +64,9 @@ namespace Listenarr.Application.Search.Contracts
         /// <param name="sortDirection">Sort direction (ascending or descending)</param>
         /// <param name="isAutomaticSearch">Whether this is an automatic search</param>
         /// <param name="request">Optional request object to pass indexer-specific parameters</param>
+        /// <param name="cancellationToken">Token signalled when the caller abandons the search.</param>
         /// <returns>List of search results from indexers only</returns>
-        Task<List<IndexerSearchResult>> SearchIndexersAsync(string query, string? category = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, SearchRequest? request = null);
+        Task<List<IndexerSearchResult>> SearchIndexersAsync(string query, string? category = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, SearchRequest? request = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Gets all enabled metadata sources (Audible, Audnexus, OpenLibrary, etc.)

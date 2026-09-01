@@ -43,7 +43,8 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
         Indexer indexer,
         string query,
         string? category = null,
-        SearchRequest? request = null)
+        SearchRequest? request = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -58,20 +59,27 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
             var userAgent = $"Listenarr/{version} (+https://github.com/Listenarrs/listenarr)";
             requestMessage.Headers.UserAgent.ParseAdd(userAgent);
 
-            var response = await _httpClient.SendAsync(requestMessage);
+            var response = await _httpClient.SendAsync(requestMessage, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Indexer {Name} returned status {Status}", indexer.Name, response.StatusCode);
                 return new List<IndexerSearchResult>();
             }
 
-            var xmlContent = await response.Content.ReadAsStringAsync();
+            var xmlContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
             // Parse Torznab/Newznab XML response
             var results = await ParseTorznabResponseAsync(xmlContent, indexer);
 
             _logger.LogInformation("Indexer {Name} returned {Count} results", indexer.Name, results.Count);
             return results;
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // HttpClient.Timeout surfaces as a TaskCanceledException even though the caller never
+            // cancelled. Treat it as this indexer failing, not as the whole search being abandoned.
+            _logger.LogError(ex, "Timed out searching Torznab/Newznab indexer {Name}", indexer.Name);
+            return new List<IndexerSearchResult>();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {

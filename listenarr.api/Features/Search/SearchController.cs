@@ -310,7 +310,7 @@ namespace Listenarr.Api.Features.Search
 
                 // Support MyAnonamouse query string toggles (mamFilter, mamSearchInDescription, mamSearchInSeries, mamSearchInFilenames, mamLanguage, mamFreeleechWedge)
                 var req = new SearchRequest { MyAnonamouse = SearchMamOptionsReader.FromQuery(Request.Query) };
-                var results = await _searchService.SearchIndexersAsync(query, category, sortBy, sortDirection, isAutomaticSearch, req);
+                var results = await _searchService.SearchIndexersAsync(query, category, sortBy, sortDirection, isAutomaticSearch, req, HttpContext.RequestAborted);
                 foreach (var result in results)
                 {
                     AttachDownloadReference(result);
@@ -439,7 +439,7 @@ namespace Listenarr.Api.Features.Search
 
                 // Use the raw indexer results when the caller expects indexer-specific fields. SearchIndexerResultsAsync will
                 // apply any MyAnonamouse options found in the indexer's AdditionalSettings if no explicit request was supplied.
-                var idxResults = await _searchService.SearchIndexerResultsAsync(apiId, query, category, request);
+                var idxResults = await _searchService.SearchIndexerResultsAsync(apiId, query, category, request, HttpContext.RequestAborted);
 
                 // If the underlying indexer implementation indicates MyAnonamouse (set on results by SearchIndexerAsync), return Prowlarr-like DTO shape
                 if (idxResults.Count > 0 && !string.IsNullOrWhiteSpace(idxResults[0].IndexerImplementation) && string.Equals(idxResults[0].IndexerImplementation, "MyAnonamouse", StringComparison.OrdinalIgnoreCase))

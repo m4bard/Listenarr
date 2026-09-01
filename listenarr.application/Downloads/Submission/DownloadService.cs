@@ -117,7 +117,7 @@ namespace Listenarr.Application.Downloads.Submission
             return await Task.FromResult(new List<ReprocessResult>());
         }
 
-        public async Task<SearchAndDownloadResult> SearchAndDownloadAsync(int audiobookId)
+        public async Task<SearchAndDownloadResult> SearchAndDownloadAsync(int audiobookId, CancellationToken cancellationToken = default)
         {
             // Get the audiobook
             var audiobook = await audiobookRepository.GetByIdAsync(audiobookId);
@@ -147,7 +147,7 @@ namespace Listenarr.Application.Downloads.Submission
             // Search using the working search service. This is an automatic search (triggered
             // by the background/manual 'search-and-download' endpoint), so set isAutomaticSearch
             // to true to ensure only indexers are queried (no Amazon/Audible scraping).
-            var searchResults = await searchService.SearchAsync(searchQuery, isAutomaticSearch: true);
+            var searchResults = await searchService.SearchAsync(searchQuery, isAutomaticSearch: true, cancellationToken: cancellationToken);
 
             if (searchResults == null || !searchResults.Any())
             {

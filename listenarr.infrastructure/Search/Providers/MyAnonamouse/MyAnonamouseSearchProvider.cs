@@ -44,7 +44,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
             _indexerRepository = indexerRepository ?? throw new ArgumentNullException(nameof(indexerRepository));
         }
 
-        public async Task<List<IndexerSearchResult>> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null)
+        public async Task<List<IndexerSearchResult>> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -82,7 +82,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("MyAnonamouse returned status {Status}", response.StatusCode);
-                    var errorContent = await response.Content.ReadAsStringAsync();
+                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
                     _logger.LogWarning("MyAnonamouse error response: {Content}", LogRedaction.RedactText(errorContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
                     return new List<IndexerSearchResult>();
                 }
@@ -108,7 +108,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                     _logger.LogDebug(exMam, "Failed to persist updated mam_id from MyAnonamouse response");
                 }
 
-                var jsonResponse = await response.Content.ReadAsStringAsync();
+                var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogDebug("MyAnonamouse raw response: {Response}", jsonResponse);
                 var results = MyAnonamouseResponseParser.Parse(jsonResponse, indexer, _logger);
 

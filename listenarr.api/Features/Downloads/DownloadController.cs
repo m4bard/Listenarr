@@ -55,7 +55,7 @@ namespace Listenarr.Api.Features.Downloads
         {
             try
             {
-                var result = await _downloadService.SearchAndDownloadAsync(request.AudiobookId);
+                var result = await _downloadService.SearchAndDownloadAsync(request.AudiobookId, HttpContext.RequestAborted);
                 return Ok(result);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

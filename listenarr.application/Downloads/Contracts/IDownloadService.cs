@@ -19,8 +19,9 @@ namespace Listenarr.Application.Downloads.Contracts
         /// Searches for an audiobook and automatically downloads the best result
         /// </summary>
         /// <param name="audiobookId">The audiobook ID to search and download</param>
+        /// <param name="cancellationToken">Token signalled when the caller abandons the search.</param>
         /// <returns>Search and download result details</returns>
-        Task<SearchAndDownloadResult> SearchAndDownloadAsync(int audiobookId);
+        Task<SearchAndDownloadResult> SearchAndDownloadAsync(int audiobookId, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Sends a search result to a download client

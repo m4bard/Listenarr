@@ -37,11 +37,13 @@ namespace Listenarr.Application.Search.Contracts
         /// <param name="query">The search query.</param>
         /// <param name="category">Optional category filter.</param>
         /// <param name="request">Optional additional request context.</param>
+        /// <param name="cancellationToken">Token signalled when the caller abandons the search.</param>
         /// <returns>List of search results from the indexer.</returns>
         Task<List<IndexerSearchResult>> SearchAsync(
             Indexer indexer,
             string query,
             string? category = null,
-            SearchRequest? request = null);
+            SearchRequest? request = null,
+            CancellationToken cancellationToken = default);
     }
 }

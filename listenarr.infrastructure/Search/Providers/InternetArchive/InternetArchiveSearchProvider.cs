@@ -49,7 +49,8 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
         Indexer indexer,
         string query,
         string? category = null,
-        SearchRequest? request = null)
+        SearchRequest? request = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -115,14 +116,14 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                     queryIndex,
                     queryPlan.Queries.Count);
 
-                using var response = await _httpClient.GetAsync(searchUrl);
+                using var response = await _httpClient.GetAsync(searchUrl, cancellationToken);
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Internet Archive returned status {Status}", response.StatusCode);
                     continue;
                 }
 
-                var jsonResponse = await response.Content.ReadAsStringAsync();
+                var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogDebug("Internet Archive response length: {Length}", jsonResponse.Length);
 
                 var queryResults = await ParseInternetArchiveSearchResponse(

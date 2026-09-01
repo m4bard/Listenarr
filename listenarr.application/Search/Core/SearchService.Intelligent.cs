@@ -388,14 +388,14 @@ namespace Listenarr.Application.Search.Core
             }
         }
 
-        public async Task<List<SearchResult>> SearchByApiAsync(string apiId, string query, string? category = null)
+        public async Task<List<SearchResult>> SearchByApiAsync(string apiId, string query, string? category = null, CancellationToken cancellationToken = default)
         {
-            return await _indexerSearchWorkflow.SearchByApiAsync(apiId, query, category);
+            return await _indexerSearchWorkflow.SearchByApiAsync(apiId, query, category, cancellationToken);
         }
 
-        public async Task<List<IndexerSearchResult>> SearchIndexerResultsAsync(string apiId, string query, string? category = null, SearchRequest? request = null)
+        public async Task<List<IndexerSearchResult>> SearchIndexerResultsAsync(string apiId, string query, string? category = null, SearchRequest? request = null, CancellationToken cancellationToken = default)
         {
-            return await _indexerSearchWorkflow.SearchIndexerResultsAsync(apiId, query, category, request);
+            return await _indexerSearchWorkflow.SearchIndexerResultsAsync(apiId, query, category, request, cancellationToken);
         }
 
         public async Task<bool> TestApiConnectionAsync(string apiId)

@@ -54,7 +54,8 @@ public class IndexerSearchWorkflow
         SearchSortBy sortBy = SearchSortBy.Seeders,
         SearchSortDirection sortDirection = SearchSortDirection.Descending,
         bool isAutomaticSearch = false,
-        SearchRequest? request = null)
+        SearchRequest? request = null,
+        CancellationToken cancellationToken = default)
     {
         var results = new List<IndexerSearchResult>();
         var indexers = await _indexerRepository.GetEnabledAsync(isAutomaticSearch);
@@ -74,9 +75,16 @@ public class IndexerSearchWorkflow
                 _logger.LogInformation("Searching indexer {Name} ({Type}) for query: {Query}", indexer.Name, indexer.Type, query);
                 var perIndexerRequest = ApplyIndexerMamOptions(indexer, request);
 
-                var indexerResults = await SearchIndexerAsync(indexer, query, category, perIndexerRequest);
+                var indexerResults = await SearchIndexerAsync(indexer, query, category, perIndexerRequest, cancellationToken);
                 _logger.LogInformation("Found {Count} results from indexer {Name}", indexerResults.Count, indexer.Name);
                 return indexerResults;
+            }
+            catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                // One indexer timing out internally must not fail the Task.WhenAll below and take
+                // every other indexer's results with it.
+                _logger.LogError(ex, "Timed out searching indexer {Name} for query: {Query}", indexer.Name, query);
+                return new List<IndexerSearchResult>();
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -96,7 +104,7 @@ public class IndexerSearchWorkflow
         return results.OrderByDescending(r => r.Seeders ?? 0).ThenByDescending(r => r.PublishedDate).ToList();
     }
 
-    public async Task<List<SearchResult>> SearchByApiAsync(string apiId, string query, string? category = null)
+    public async Task<List<SearchResult>> SearchByApiAsync(string apiId, string query, string? category = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -118,7 +126,7 @@ public class IndexerSearchWorkflow
             var mamOpts = _additionalSettingsParser.ParseMamOptions(indexer.AdditionalSettings);
             if (mamOpts != null) req.MyAnonamouse = mamOpts;
 
-            var idxResults = await SearchIndexerAsync(indexer, query, category, req);
+            var idxResults = await SearchIndexerAsync(indexer, query, category, req, cancellationToken);
             return idxResults.Select(SearchResultConverters.ToSearchResult).ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -132,7 +140,8 @@ public class IndexerSearchWorkflow
         string apiId,
         string query,
         string? category = null,
-        SearchRequest? request = null)
+        SearchRequest? request = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -145,7 +154,7 @@ public class IndexerSearchWorkflow
             }
 
             request = ApplyIndexerMamOptions(indexer, request);
-            return await SearchIndexerAsync(indexer, query, category, request);
+            return await SearchIndexerAsync(indexer, query, category, request, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
@@ -201,7 +210,8 @@ public class IndexerSearchWorkflow
         Indexer indexer,
         string query,
         string? category = null,
-        SearchRequest? request = null)
+        SearchRequest? request = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -220,13 +230,20 @@ public class IndexerSearchWorkflow
                 return new List<IndexerSearchResult>();
             }
 
-            var providerResults = await provider.SearchAsync(indexer, query, category, request);
+            var providerResults = await provider.SearchAsync(indexer, query, category, request, cancellationToken);
             foreach (var r in providerResults.Where(r => string.IsNullOrWhiteSpace(r.Source)))
             {
                 r.Source = fallbackName;
             }
 
             return providerResults;
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // A provider's HttpClient.Timeout, not the caller giving up: log and yield nothing so
+            // the remaining indexers still contribute.
+            _logger.LogError(ex, "Timed out searching indexer {Name}", indexer.Name);
+            return new List<IndexerSearchResult>();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
