@@ -24,8 +24,11 @@ public partial class FileMover : IFilePublicationSourceCapability
                     "The source path does not identify a file beneath a directory.");
             }
 
+            // Resolved for the purpose of opening the file, and for nothing else. The caller
+            // still receives the path it passed in, so root containment, retirement policy and
+            // every other decision downstream see exactly what they saw before.
             using var anchor = PinnedDirectoryCreation.OpenPinnedHierarchyNoFollow(
-                parent,
+                ResolveSymlinkedAncestors(parent),
                 createMissing: false);
             var openOutcome = anchor.TryOpenExistingFileWithOutcome(
                 fileName,
@@ -162,5 +165,57 @@ public partial class FileMover : IFilePublicationSourceCapability
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The physical path of an existing directory, with any symlinked component replaced by what
+    /// it points at.
+    /// </summary>
+    /// <remarks>
+    /// The pinned walk opens every segment with O_NOFOLLOW so a component cannot be substituted
+    /// between the check and the use. On a destination, or a lock directory, that is load bearing:
+    /// a swapped link redirects a write outside the configured boundary, which
+    /// FileOperation_LinkedLockDirectoryAncestor_DoesNotCreateOutsideBoundary pins. On a source it
+    /// buys less. The operation is a read and a hash, the resulting proof is an inode and a content
+    /// digest, and both describe the object rather than the route taken to it. Resolving here does
+    /// not weaken that proof.
+    ///
+    /// What it does cost is the guarantee that the route itself cannot change, so this is
+    /// deliberately narrow: only the source capability walk resolves, only for opening, and the
+    /// resolved path is never returned or used for a policy decision.
+    ///
+    /// Readarr draws the same line, in
+    /// src/NzbDrone.Mono/Disk/SymbolicLinkResolver.cs, resolving the real path where physical
+    /// identity matters and letting the OS follow links elsewhere.
+    /// </remarks>
+    private static string ResolveSymlinkedAncestors(string directory)
+    {
+        try
+        {
+            var resolved = Directory.ResolveLinkTarget(directory, returnFinalTarget: true);
+            if (resolved != null)
+            {
+                return resolved.FullName;
+            }
+
+            var parent = Path.GetDirectoryName(directory);
+            if (string.IsNullOrEmpty(parent) || parent == directory)
+            {
+                return directory;
+            }
+
+            var resolvedParent = ResolveSymlinkedAncestors(parent);
+            return resolvedParent == parent
+                ? directory
+                : Path.Join(resolvedParent, Path.GetFileName(directory));
+        }
+        catch (Exception exception) when (exception is
+            IOException or UnauthorizedAccessException or NotSupportedException
+                or System.Security.SecurityException)
+        {
+            // Unreadable or cyclic. Hand back what we were given and let the pinned walk report
+            // it, which now names the exception rather than swallowing it.
+            return directory;
+        }
     }
 }
