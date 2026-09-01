@@ -345,8 +345,14 @@ public sealed class FileMoverMarkerlessRegistrationTests : BaseTests
 
         var result = await capability.CheckAsync(source);
 
-        Assert.False(result.IsSupported);
-        Assert.NotNull(result.Reason);
+        // CHANGED BY THIS BRANCH. This previously asserted Unsupported. A source reached through a
+        // symlinked directory is now published, because the capability proof is an inode and a
+        // content digest, which identify the object rather than the route, and resolving the route
+        // does not weaken them. The write-side boundary is untouched: a linked lock directory or a
+        // linked destination ancestor still fails closed, which
+        // FileOperation_LinkedLockDirectoryAncestor_DoesNotCreateOutsideBoundary and
+        // PerformActionOn_LinkedApplicationLockAncestorFailsClosed still pin.
+        Assert.True(result.IsSupported, result.Reason);
         Assert.False(File.Exists(scenario.Destination));
     }
 
