@@ -221,11 +221,11 @@
                 <option value="low">Low</option>
                 <option value="normal">Normal</option>
                 <option value="high">High</option>
-                <option value="force">Very High</option>
+                <option value="force">Force</option>
               </select>
               <small
-                >Priority to give a download when it is sent to the client. Default leaves the
-                priority to SABnzbd's category; NZBGet is always sent Normal.</small
+                >Priority to give a download when it is sent to the client. Default leaves it to the
+                client's own category setting.</small
               >
             </div>
           </FormSection>
@@ -290,8 +290,9 @@
                 <option value="nosubfolder">Don't Create Subfolder</option>
               </select>
               <small
-                >Whether to use the original layout from the torrent, always create a subfolder, or
-                leave it to qBittorrent's own configured content layout (Default)</small
+                >Whether to use qBittorrent's configured content layout. Use qBittorrent's 4.3.2
+                layout if the original layout from the torrent cannot be used (Default = Original
+                layout)</small
               >
             </div>
           </FormSection>
@@ -434,20 +435,6 @@ const normalizeHost = (value: string): string => {
   return firstSlash >= 0 ? withoutTrailingSlashes.slice(0, firstSlash) : withoutTrailingSlashes
 }
 
-const PRIORITY_OPTIONS = ['default', 'low', 'normal', 'high', 'force'] as const
-
-// Stored rows still carry the values the old list offered. `last` and `first` are not in the new
-// list and are not in either planner's switch, so before this change both were sent as Normal by
-// SABnzbd and NZBGet alike. Reading them back as `normal` keeps the wire behaviour identical and
-// stops the select rendering with nothing chosen, which is what a value outside its own option
-// list does. Anything else unrecognised falls back the same way `default` always did.
-const normalizeRecentPriority = (stored: unknown): string => {
-  const value = typeof stored === 'string' ? stored.trim().toLowerCase() : ''
-  if (!value) return 'default'
-  if (value === 'last' || value === 'first') return 'normal'
-  return (PRIORITY_OPTIONS as readonly string[]).includes(value) ? value : 'default'
-}
-
 const isUsenet = computed(() => {
   return formData.value.type === 'sabnzbd' || formData.value.type === 'nzbget'
 })
@@ -535,7 +522,7 @@ watch(
         isEnabled: newClient.isEnabled,
         category: (settings?.category as string) || '',
         tags: (settings?.tags as string) || '',
-        recentPriority: normalizeRecentPriority(settings?.recentPriority),
+        recentPriority: (settings?.recentPriority as string) || 'default',
         removeCompletedDownloads:
           newClient.removeCompletedDownloads ||
           (settings?.removeCompletedDownloads as string) ||

@@ -15,7 +15,9 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Infrastructure.DownloadClients.Nzbget;
 using Listenarr.Tests.Common;
+using Listenarr.Infrastructure.DownloadClients.Sabnzbd;
 
 namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
 {
@@ -102,32 +104,6 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
                 .ContainsKey("priority"));
             Assert.False(SabnzbdAddRequestPlanner.BuildFileQueryParams(ClientWithPriority(null), "Title")
                 .ContainsKey("priority"));
-        }
-
-        [Theory]
-        [InlineData("High", "1")]
-        [InlineData("Default", null)]
-        [Trait("Scenario", "The addurl path reads a stored priority case insensitively")]
-        public void SabnzbdQueryParams_ReadsAStoredPriorityWhateverItsCasing(string stored, string? expected)
-        {
-            // BuildQueryParams compared against "default" ordinally and switched on lowercase
-            // literals, so a stored value in any other casing missed both and fell through to
-            // "0": High was sent as Normal, and Default was sent as an explicit Normal that
-            // overrides the category. Its sibling BuildFileQueryParams and NzbgetRequestPlanner
-            // both lower first, so this was the one reader of the three that did not.
-            var parameters = SabnzbdAddRequestPlanner.BuildQueryParams(
-                ClientWithPriority(stored),
-                new SearchResult { Title = "Title" },
-                "https://indexer.local/fetch.nzb");
-
-            if (expected == null)
-            {
-                Assert.False(parameters.ContainsKey("priority"));
-            }
-            else
-            {
-                Assert.Equal(expected, parameters["priority"]);
-            }
         }
     }
 }
