@@ -64,8 +64,8 @@ public sealed class FileMoverSymlinkedSourcePathTests : BaseTests
     }
 
     [DirectoryLinkFact]
-    [Trait("Scenario", "The refusal names the symlinked directory that caused it")]
-    public async Task CheckAsync_PathThroughSymlinkedDirectory_NamesTheLink()
+    [Trait("Scenario", "A source reached through a symlinked directory is publishable")]
+    public async Task CheckAsync_PathThroughSymlinkedDirectory_IsSupported()
     {
         var layout = CreateSymlinkedLayout("symlink-source-refused");
         Assert.True(File.Exists(layout.ViaSymlink), "the file must be reachable through the link");
@@ -75,17 +75,12 @@ public sealed class FileMoverSymlinkedSourcePathTests : BaseTests
 
         var result = await capability.CheckAsync(layout.ViaSymlink);
 
-        // Still refused. That is the intended boundary and this test does not argue with it.
-        Assert.False(result.IsSupported);
+        Assert.True(
+            result.IsSupported,
+            $"a source reached through a symlinked directory should be publishable: {result.Reason}");
 
-        // But the reason must now be actionable rather than a fixed sentence about generations.
-        Assert.Contains("symbolic link", result.Reason, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("configure the real path", result.Reason, StringComparison.OrdinalIgnoreCase);
-
-        // Both phrases above are literals in the format string, so they survive a build that
-        // captures no cause at all. These two do not: the linked segment comes from the walk and
-        // the type name comes from the caught exception, so an empty cause fails here.
-        Assert.Contains(Path.GetFileName(layout.Link), result.Reason, StringComparison.Ordinal);
-        Assert.Matches(@"\w+Exception: \S", result.Reason!);
+        // The proof still describes the object, which is the point: resolving the route does not
+        // weaken an inode plus content digest.
+        Assert.False(string.IsNullOrWhiteSpace(result.PhysicalObjectIdentity));
     }
 }
