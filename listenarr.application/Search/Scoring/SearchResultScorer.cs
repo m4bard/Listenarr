@@ -103,40 +103,13 @@ namespace Listenarr.Application.Search.Scoring
             // Detect NZB/Usenet more broadly
             var isNzb = IsNzbResult(searchResult);
 
-            // The indexer is read before the size and age gates because all three depend on it.
-            // It also corrects isNzb from the indexer's own type, and that correction used to
-            // happen after the size gate had already run, so a Usenet result recognised only by
-            // its indexer type was size-checked despite the exemption just below.
-            int indexerRetention = 0;
-            int indexerMaximumSizeMb = 0;
-            int indexerMinimumAgeMinutes = 0;
-            if (searchResult.IndexerId.HasValue
-                && (_resolvedIndexers != null || _indexerRepository != null))
-            {
-                try
-                {
-                    var idx = _resolvedIndexers != null
-                        ? (_resolvedIndexers.TryGetValue(searchResult.IndexerId.Value, out var preresolved)
-                            ? preresolved
-                            : null)
-                        : await _indexerRepository!.GetByIdAsync(searchResult.IndexerId.Value);
-                    if (idx != null)
-                    {
-                        indexerRetention = idx.Retention;
-                        indexerMaximumSizeMb = idx.MaximumSize;
-                        indexerMinimumAgeMinutes = idx.MinimumAge;
-                        if (!isNzb && !string.IsNullOrWhiteSpace(idx.Type) && string.Equals(idx.Type, "Usenet", StringComparison.OrdinalIgnoreCase))
-                        {
-                            isNzb = true;
-                            _logger.LogDebug("Indexer {IndexerId} type '{Type}' detected as Usenet; applying NZB/Usenet exemptions", searchResult.IndexerId.Value, idx.Type);
-                        }
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                {
-                    _logger.LogDebug(ex, "Failed to fetch indexer settings for IndexerId {Id}", searchResult.IndexerId.Value);
-                }
-            }
+            // Everything the indexer contributes, resolved once. Lives in
+            // SearchResultScorer.IndexerContext.cs; see there for why it happens before the gates.
+            var indexerContext = await ResolveIndexerContextAsync(searchResult, isNzb);
+            isNzb = indexerContext.IsNzb;
+            var indexerRetention = indexerContext.RetentionDays;
+            var indexerMaximumSizeMb = indexerContext.MaximumSizeMb;
+            var indexerMinimumAgeMinutes = indexerContext.MinimumAgeMinutes;
 
             if (indexerMaximumSizeMb > 0 && searchResult.Size > (long)indexerMaximumSizeMb * 1024 * 1024)
             {
