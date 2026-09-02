@@ -360,6 +360,29 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
         }
 
         [Fact]
+        [Trait("Scenario", "A single ineligible download is refused, not thrown at the caller")]
+        public async Task ReprocessDownload_RefusesAnIneligibleDownloadWithoutThrowing()
+        {
+            Init();
+            await InitData();
+
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(_client)
+                .WithStatus(DownloadStatus.Downloading)
+                .Build());
+
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+
+            // EnqueueAsync throws its own precondition for a download that is not Completed. That
+            // reached the controller as an unhandled 500 and the request was retried four times.
+            var exception = await Record.ExceptionAsync(() => downloadService.ReprocessDownloadAsync(download.Id));
+            Assert.Null(exception);
+
+            var jobId = await downloadService.ReprocessDownloadAsync(download.Id);
+            Assert.Null(jobId);
+        }
+
+        [Fact]
         [Trait("Scenario", "Reprocessing an unknown download reports it rather than throwing")]
         public async Task ReprocessDownloads_ReportsAnUnknownDownloadAsAFailure()
         {
