@@ -48,6 +48,20 @@ namespace Listenarr.Application.Downloads.Submission
                 return null;
             }
 
+            // EnqueueAsync has its own precondition and throws InvalidOperationException for a
+            // download that is not Completed. Without this check that exception escapes to the
+            // controller as an unhandled 500, and the request is retried, so an ineligible download
+            // produced a crash rather than a refusal. The batch path already checked; this one did
+            // not, which is the whole of the defect.
+            if (!IsReprocessable(download.Status))
+            {
+                logger.LogInformation(
+                    "Reprocess refused for {DownloadId}: status is {Status}, not Completed or Moved",
+                    LogRedaction.SanitizeText(downloadId),
+                    download.Status);
+                return null;
+            }
+
             return await downloadProcessingJobService.EnqueueAsync(download);
         }
 
