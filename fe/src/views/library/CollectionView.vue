@@ -1021,7 +1021,10 @@ function matchesCurrentCollection(book: Audiobook): boolean {
 function mapLibraryItem(book: Audiobook): CollectionDisplayItem {
   // In a series collection a book may be matched via a non-primary membership, so show the
   // series name/number for THIS collection rather than the book's primary series.
-  const seriesContext = type.value === 'series' ? resolveSeriesForCollection(book) : null
+  // On a series page the membership matching this collection wins. Anywhere else, fall back to the
+  // book's own series, which is still membership-aware rather than the legacy column alone.
+  const seriesContext =
+    type.value === 'series' ? resolveSeriesForCollection(book) : resolveBookSeries(book)
   return {
     ...book,
     ...(seriesContext
@@ -1031,6 +1034,29 @@ function mapLibraryItem(book: Audiobook): CollectionDisplayItem {
     inLibrary: true,
     addMetadata: null,
   }
+}
+
+// The book's own series, preferring the membership table over the legacy single-series column.
+//
+// resolveSeriesForCollection answers a different question: which membership matches THIS
+// collection. That only works on a series page, where the collection name is a series name. On an
+// author page it can never match, so the author page fell back to `book.series`, which holds the
+// primary series only. A book whose membership in a non-primary series is the interesting one
+// therefore sorted under the wrong name, even though the memberships were already loaded on it.
+function resolveBookSeries(book: Audiobook): { seriesName: string; seriesNumber?: string } | null {
+  const memberships = book.seriesMemberships
+  if (memberships && memberships.length > 0) {
+    const ordered = [...memberships].sort((a, b) => {
+      if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1
+      return (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+    })
+    const chosen = ordered[0]
+    if (chosen?.seriesName) {
+      return { seriesName: chosen.seriesName, seriesNumber: chosen.seriesNumber }
+    }
+  }
+
+  return book.series ? { seriesName: book.series, seriesNumber: book.seriesNumber } : null
 }
 
 function resolveSeriesForCollection(
