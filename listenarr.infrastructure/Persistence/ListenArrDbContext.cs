@@ -124,6 +124,9 @@ namespace Listenarr.Infrastructure.Persistence
             // Apply configuration classes from this assembly to keep the DbContext small and focused.
             modelBuilder.ApplyConfigurationsFromAssembly(typeof(ListenArrDbContext).Assembly);
 
+            // After the configurations, so an explicit converter on a property wins over this one.
+            UtcDateTimeConverters.ApplyTo(modelBuilder);
+
             // Register commonly used indexes here for safety; prefer moving indexes into configuration classes.
             modelBuilder.Entity<Download>().HasIndex(d => d.Status);
             modelBuilder.Entity<Download>().HasIndex(d => d.DownloadClientId);
