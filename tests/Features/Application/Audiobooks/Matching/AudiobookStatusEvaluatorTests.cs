@@ -164,6 +164,23 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Matching
             Assert.Equal(AudiobookStatusEvaluator.QualityMatch, status);
         }
 
+        [Fact]
+        public void ComputeStatus_ReturnsQualityMatch_ForARealEncoderBitrateJustUnderTheCutoff()
+        {
+            // Every other test here uses an exactly round bitrate, which is why this class passes
+            // while a real library does not. An encoder asked for 256kbps reports something a little
+            // under it, and that used to drop the file a whole tier and report a mismatch.
+            var profile = CreateProfile(cutoffQuality: "256kbps", preferredFormats: new List<string> { "m4b" });
+            var files = new List<AudiobookFormatSummary>
+            {
+                new() { Format = "m4b", Bitrate = 255_000 }
+            };
+
+            var status = AudiobookStatusEvaluator.ComputeStatus(false, true, null, profile, files);
+
+            Assert.Equal(AudiobookStatusEvaluator.QualityMatch, status);
+        }
+
         private static QualityProfile CreateProfile(string cutoffQuality, List<string> preferredFormats)
         {
             return new QualityProfile
