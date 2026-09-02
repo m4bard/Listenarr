@@ -591,4 +591,91 @@ describe('ActivityView', () => {
     expect(vm.allActivityItems[0]?.status).toBe('completed')
     expect(vm.allActivityItems[0]?.title).toBe('Artemis')
   })
+
+  it('defaults the queue to the soonest ETA first, with unknown ETAs last', async () => {
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => [
+        { id: 'slow', title: 'Slow', status: 'Downloading', progress: 10, eta: 900 },
+        { id: 'none', title: 'NoEta', status: 'Downloading', progress: 5 },
+        { id: 'soon', title: 'Soon', status: 'Downloading', progress: 90, eta: 30 },
+      ]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
+    mockMoveJobsStore()
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as { sortedQueue: { id: string }[]; sortKey: string }
+
+    // The sibling apps default to time remaining ascending, so the row finishing next is on top.
+    expect(vm.sortKey).toBe('eta')
+    expect(vm.sortedQueue.map((item) => item.id)).toEqual(['soon', 'slow', 'none'])
+  })
+
+  it('keeps a missing value last when the sort direction is reversed', async () => {
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => [
+        { id: 'slow', title: 'Slow', status: 'Downloading', progress: 10, eta: 900 },
+        { id: 'none', title: 'NoEta', status: 'Downloading', progress: 5 },
+        { id: 'soon', title: 'Soon', status: 'Downloading', progress: 90, eta: 30 },
+      ]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
+    mockMoveJobsStore()
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as {
+      sortedQueue: { id: string }[]
+      toggleSort: (key: string) => void
+    }
+
+    vm.toggleSort('eta')
+    await wrapper.vm.$nextTick()
+
+    // Reversed, so the longest ETA leads. The row with no ETA still sorts last rather than being
+    // promoted to the top by the flip: an unknown ETA is not the longest one.
+    expect(vm.sortedQueue.map((item) => item.id)).toEqual(['slow', 'soon', 'none'])
+  })
+
+  it('sorts by when an item was added, which was previously not reachable from the page', async () => {
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => [
+        {
+          id: 'newer',
+          title: 'Newer',
+          status: 'Downloading',
+          progress: 1,
+          addedAt: '2026-09-02T12:00:00Z',
+        },
+        {
+          id: 'older',
+          title: 'Older',
+          status: 'Downloading',
+          progress: 1,
+          addedAt: '2026-09-01T12:00:00Z',
+        },
+      ]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
+    mockMoveJobsStore()
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as {
+      sortedQueue: { id: string }[]
+      toggleSort: (key: string) => void
+    }
+
+    vm.toggleSort('added')
+    await wrapper.vm.$nextTick()
+
+    expect(vm.sortedQueue.map((item) => item.id)).toEqual(['older', 'newer'])
+  })
 })

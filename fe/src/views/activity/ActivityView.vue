@@ -58,12 +58,24 @@
       @scroll="updateVisibleRange"
     >
       <div class="queue-header">
-        <div class="col-title">Title</div>
-        <div class="col-quality">Quality</div>
-        <div class="col-language">Language</div>
-        <div class="col-progress">Progress</div>
-        <div class="col-eta">ETA</div>
-        <div class="col-status">Status</div>
+        <div
+          v-for="column in sortableColumns"
+          :key="column.key"
+          :class="[column.cssClass, 'sortable', { active: sortKey === column.key }]"
+          role="button"
+          tabindex="0"
+          :aria-sort="
+            sortKey === column.key ? (sortAscending ? 'ascending' : 'descending') : 'none'
+          "
+          @click="toggleSort(column.key)"
+          @keydown.enter="toggleSort(column.key)"
+          @keydown.space.prevent="toggleSort(column.key)"
+        >
+          {{ column.label }}
+          <span v-if="sortKey === column.key" class="sort-indicator">{{
+            sortAscending ? 'v' : '^'
+          }}</span>
+        </div>
         <div class="col-actions"></div>
       </div>
       <div
@@ -126,6 +138,7 @@
               <span v-if="item.eta" class="eta-text">{{ formatEta(item.eta) }}</span>
               <span v-else class="muted">-</span>
             </div>
+            <div class="col-added">{{ formatAddedAt(item.addedAt) }}</div>
             <div class="col-status">
               <span :class="['status-badge', item.status]">
                 {{ formatStatus(item.status) }}
@@ -402,10 +415,10 @@ const updateActivityLayoutMode = () => {
 
 const visibleQueueItems = computed(() => {
   if (!useVirtualActivityList.value) {
-    return filteredQueue.value
+    return sortedQueue.value
   }
 
-  return filteredQueue.value.slice(visibleRange.value.start, visibleRange.value.end)
+  return sortedQueue.value.slice(visibleRange.value.start, visibleRange.value.end)
 })
 
 const updateVisibleRange = () => {
@@ -629,6 +642,76 @@ const filteredQueue = computed(() => {
     )
   })
 })
+
+// Sorting. The sibling apps default their queue to time remaining ascending, so the row that
+// finishes next is the row at the top, and every column header is clickable. Listenarr already had
+// the ETA column and the addedAt value; neither was reachable from the page.
+const sortableColumns = [
+  { key: 'title', label: 'Title', cssClass: 'col-title' },
+  { key: 'quality', label: 'Quality', cssClass: 'col-quality' },
+  { key: 'language', label: 'Language', cssClass: 'col-language' },
+  { key: 'progress', label: 'Progress', cssClass: 'col-progress' },
+  { key: 'eta', label: 'ETA', cssClass: 'col-eta' },
+  { key: 'added', label: 'Added', cssClass: 'col-added' },
+  { key: 'status', label: 'Status', cssClass: 'col-status' },
+] as const
+
+type SortKey = (typeof sortableColumns)[number]['key']
+
+const sortKey = ref<SortKey>('eta')
+const sortAscending = ref(true)
+
+function toggleSort(key: SortKey) {
+  if (sortKey.value === key) {
+    sortAscending.value = !sortAscending.value
+    return
+  }
+  sortKey.value = key
+  sortAscending.value = true
+}
+
+function sortValue(item: QueueItem, key: SortKey): string | number | null {
+  switch (key) {
+    case 'eta':
+      return item.eta ?? null
+    case 'progress':
+      return item.progress ?? null
+    case 'added':
+      return item.addedAt ? Date.parse(item.addedAt) || null : null
+    case 'title':
+      return (getDisplayTitle(item) || '').toLowerCase()
+    default: {
+      const value = item[key]
+      return typeof value === 'string' ? value.toLowerCase() : null
+    }
+  }
+}
+
+const sortedQueue = computed(() => {
+  const key = sortKey.value
+  const direction = sortAscending.value ? 1 : -1
+
+  return [...filteredQueue.value].sort((left, right) => {
+    const a = sortValue(left, key)
+    const b = sortValue(right, key)
+
+    // A row with no value for this column sorts last whichever way the column is pointing. An
+    // unknown ETA is not "finishing soonest", and flipping the direction should not make it so.
+    if (a === null && b === null) return 0
+    if (a === null) return 1
+    if (b === null) return -1
+
+    if (a === b) return 0
+    return (a < b ? -1 : 1) * direction
+  })
+})
+
+function formatAddedAt(value: string | undefined): string {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return parsed.toLocaleString()
+}
 
 const refreshQueue = async () => {
   loading.value = true
@@ -919,8 +1002,27 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns:
     minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)
-    minmax(0, 1fr) 40px;
+    minmax(0, 1fr) minmax(0, 1fr) 40px;
   align-items: center;
+}
+
+.queue-header .sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.queue-header .sortable:hover,
+.queue-header .sortable:focus-visible {
+  color: var(--brand-500);
+}
+
+.queue-header .sortable.active {
+  color: var(--brand-500);
+}
+
+.sort-indicator {
+  font-size: 0.75em;
+  margin-left: 0.25rem;
 }
 
 .queue-header {
