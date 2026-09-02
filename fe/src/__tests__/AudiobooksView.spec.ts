@@ -302,15 +302,20 @@ describe('AudiobooksView Grouping', () => {
 
     const groupedCollections = vm.groupedCollections ?? []
     expect(groupedCollections).toHaveLength(2)
+    // seriesCount is part of an author collection now. Asserted rather than loosened to toMatchObject
+    // so that an unexpected extra field still fails this.
     expect(groupedCollections.find((g) => g.name === 'Author A')).toEqual({
       name: 'Author A',
       count: 2,
       coverUrl: undefined,
+      // Two books, both in Series 1, so the distinct-series count is 1 rather than 2.
+      seriesCount: 1,
     })
     expect(groupedCollections.find((g) => g.name === 'Author B')).toEqual({
       name: 'Author B',
       count: 1,
       coverUrl: undefined,
+      seriesCount: 1,
     })
 
     // Default sorting when grouped by authors should be author-last ascending
@@ -977,5 +982,67 @@ describe('AudiobooksView Grouping', () => {
     }
     await wrapper.vm.$nextTick()
     expect(wrapper.find('.series-bottom-placard').exists()).toBe(true)
+  })
+
+  it('counts distinct series per author, membership-aware and deduplicated', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', name: 'library', component: AudiobooksView }],
+    })
+    await router.push('/')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 1,
+        title: 'Book 1',
+        authors: ['Author A'],
+        series: 'Publication Order',
+        seriesMemberships: [
+          { seriesName: 'Publication Order', isPrimary: true },
+          { seriesName: 'Chronological Order', isPrimary: false },
+        ],
+        files: [],
+      },
+      {
+        id: 2,
+        title: 'Book 2',
+        authors: ['Author A'],
+        series: 'Publication Order',
+        seriesMemberships: [{ seriesName: 'Publication Order', isPrimary: true }],
+        files: [],
+      },
+      { id: 3, title: 'Standalone', authors: ['Author B'], files: [] },
+    ] as unknown as import('@/types').Audiobook[]
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobooksView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'CustomSelect',
+        ],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const vm = getVm(wrapper)
+    await vm.setGroupBy?.('authors')
+    await wrapper.vm.$nextTick()
+
+    const groups = vm.groupedCollections ?? []
+    // Two books across two distinct series, one of which is a non-primary membership the legacy
+    // column does not mention.
+    expect(groups.find((g) => g.name === 'Author A')?.seriesCount).toBe(2)
+    // A standalone book belongs to no series.
+    expect(groups.find((g) => g.name === 'Author B')?.seriesCount).toBe(0)
   })
 })
