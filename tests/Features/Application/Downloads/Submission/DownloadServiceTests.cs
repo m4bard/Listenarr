@@ -337,5 +337,98 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             downloadRepository.Verify(r => r.UpdateAsync(It.IsAny<Download>()), Times.Never);
             notificationService.VerifyNoOtherCalls();
         }
-    }
+    
+        [Fact]
+        [Trait("Scenario", "Reprocessing a completed download enqueues a job")]
+        public async Task ReprocessDownload_EnqueuesAJobAndReturnsItsId()
+        {
+            Init();
+            await InitData();
+
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(_client)
+                .WithCompletedStatus(at: DateTime.UtcNow)
+                .Build());
+
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var jobId = await downloadService.ReprocessDownloadAsync(download.Id);
+
+            Assert.False(string.IsNullOrWhiteSpace(jobId));
+
+            var jobs = await _downloadProcessingJobRepository.GetByDownloadIdAsync(download.Id);
+            Assert.NotEmpty(jobs);
+        }
+
+        [Fact]
+        [Trait("Scenario", "Reprocessing an unknown download reports it rather than throwing")]
+        public async Task ReprocessDownloads_ReportsAnUnknownDownloadAsAFailure()
+        {
+            Init();
+            await InitData();
+
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var results = await downloadService.ReprocessDownloadsAsync(["no-such-download"]);
+
+            var result = Assert.Single(results);
+            Assert.False(result.Success);
+            Assert.Equal("not-found", result.Reason);
+        }
+
+        [Fact]
+        [Trait("Scenario", "A download still in flight is not reprocessed")]
+        public async Task ReprocessDownloads_RefusesADownloadThatHasNotCompleted()
+        {
+            Init();
+            await InitData();
+
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(_client)
+                .WithStatus(DownloadStatus.Downloading)
+                .Build());
+
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var results = await downloadService.ReprocessDownloadsAsync([download.Id]);
+
+            var result = Assert.Single(results);
+            Assert.False(result.Success);
+            Assert.Equal("not-completed", result.Reason);
+        }
+
+        [Fact]
+        [Trait("Scenario", "Reprocess-all selects by age and by whether an import already ran")]
+        public async Task ReprocessAll_SelectsOnlyEligibleDownloads()
+        {
+            Init();
+            await InitData();
+
+            var recent = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(_client)
+                .WithCompletedStatus(at: DateTime.UtcNow)
+                .Build());
+
+            var tooOld = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(_client)
+                .WithCompletedStatus(at: DateTime.UtcNow.AddDays(-90))
+                .Build());
+
+            var alreadyImported = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(_client)
+                .WithCompletedStatus(at: DateTime.UtcNow)
+                .Build());
+            alreadyImported.LastImportedAt = DateTime.UtcNow;
+            await _downloadRepository.UpdateAsync(alreadyImported);
+
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var results = await downloadService.ReprocessAllCompletedDownloadsAsync();
+
+            var ids = results.Select(result => result.DownloadId).ToList();
+            Assert.Contains(recent.Id, ids);
+            Assert.DoesNotContain(tooOld.Id, ids);
+            Assert.DoesNotContain(alreadyImported.Id, ids);
+
+            // The same call including already-processed downloads picks the imported one up.
+            var withProcessed = await downloadService.ReprocessAllCompletedDownloadsAsync(includeProcessed: true);
+            Assert.Contains(alreadyImported.Id, withProcessed.Select(result => result.DownloadId));
+        }
+}
 }
