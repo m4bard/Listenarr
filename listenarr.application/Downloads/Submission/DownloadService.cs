@@ -21,10 +21,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Downloads.Submission
 {
-    public class DownloadService(
+    public partial class DownloadService(
         IAudiobookRepository audiobookRepository,
         IConfigurationService configurationService,
         IDownloadRepository downloadRepository,
+        IDownloadProcessingJobService downloadProcessingJobService,
         ILogger<DownloadService> logger,
         IQualityProfileService qualityProfileService,
         ISearchService searchService,
@@ -88,34 +89,6 @@ namespace Listenarr.Application.Downloads.Submission
                 logger.LogError(ex, "Error during TestDownloadClientAsync for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
                 return (false, ex.Message, client);
             }
-        }
-
-        public async Task<string?> ReprocessDownloadAsync(string downloadId)
-        {
-            logger.LogInformation("ReprocessDownloadAsync called for {DownloadId}", LogRedaction.SanitizeText(downloadId));
-
-            // Placeholder: return null to indicate no job was created.
-            // Concrete implementation should enqueue a reprocess job and return its ID.
-            return await Task.FromResult<string?>(null);
-        }
-
-        public async Task<List<ReprocessResult>> ReprocessDownloadsAsync(List<string> downloadIds)
-        {
-            logger.LogInformation("ReprocessDownloadsAsync called for {Count} downloads", downloadIds?.Count ?? 0);
-
-            // Placeholder implementation: return empty results list.
-            // A full implementation should iterate downloadIds and invoke reprocessing,
-            // collecting per-download results.
-            return await Task.FromResult(new List<ReprocessResult>());
-        }
-
-        public async Task<List<ReprocessResult>> ReprocessAllCompletedDownloadsAsync(bool includeProcessed = false, TimeSpan? maxAge = null)
-        {
-            logger.LogInformation("ReprocessAllCompletedDownloadsAsync called includeProcessed={IncludeProcessed}, maxAge={MaxAge}", includeProcessed, maxAge);
-
-            // Placeholder implementation: no-op and return empty list.
-            // Full implementation should query completed downloads, apply filters and enqueue reprocess jobs.
-            return await Task.FromResult(new List<ReprocessResult>());
         }
 
         public async Task<SearchAndDownloadResult> SearchAndDownloadAsync(int audiobookId)
