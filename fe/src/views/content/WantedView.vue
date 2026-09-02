@@ -22,6 +22,28 @@
         <PhHeart />
         Wanted
       </h1>
+      <div class="wanted-tabs" role="tablist">
+        <button
+          class="wanted-tab"
+          :class="{ active: wantedMode === 'missing' }"
+          role="tab"
+          :aria-selected="wantedMode === 'missing'"
+          @click="wantedMode = 'missing'"
+        >
+          Missing
+          <span class="wanted-tab-count">{{ wantedAudiobooks.length }}</span>
+        </button>
+        <button
+          class="wanted-tab"
+          :class="{ active: wantedMode === 'cutoff' }"
+          role="tab"
+          :aria-selected="wantedMode === 'cutoff'"
+          @click="wantedMode = 'cutoff'"
+        >
+          Cutoff Unmet
+          <span class="wanted-tab-count">{{ cutoffUnmetAudiobooks.length }}</span>
+        </button>
+      </div>
       <div class="wanted-actions">
         <div class="filter-input-wrapper">
           <PhMagnifyingGlass class="filter-icon" />
@@ -42,7 +64,7 @@
         >
           <PhSpinner v-if="isSearchingAll" class="ph-spin" />
           <PhRobot v-else />
-          Search All
+          {{ wantedMode === 'cutoff' ? 'Search All (cutoff unmet)' : 'Search All (missing)' }}
         </button>
         <button class="btn btn-secondary" @click="openManualImport">
           <PhFolderPlus />
@@ -241,6 +263,7 @@ const configurationStore = useConfigurationStore()
 
 // Filter
 const filterText = ref('')
+const wantedMode = ref<'missing' | 'cutoff'>('missing')
 
 // Virtual scrolling setup
 const scrollContainer = ref<HTMLElement | null>(null)
@@ -381,6 +404,20 @@ const wantedAudiobooks = computed(() => {
   })
 })
 
+// Books below their profile cutoff. These can never appear in wantedAudiobooks: the server's
+// `wanted` flag is false for anything that has a file, and a book below cutoff has one. The status
+// this reads is already on the same payload the list is built from, so no extra request is needed.
+const cutoffUnmetAudiobooks = computed(() => {
+  return libraryStore.audiobooks.filter((audiobook) => {
+    if (!audiobook.monitored) return false
+    return audiobook.status === 'quality-mismatch'
+  })
+})
+
+const activeWanted = computed(() =>
+  wantedMode.value === 'cutoff' ? cutoffUnmetAudiobooks.value : wantedAudiobooks.value,
+)
+
 // Actionable wanted audiobooks: scoped to visible filter, excluding active downloads and in-flight searches (Issue #936)
 const actionableMissingWanted = computed(() => {
   return filteredWanted.value.filter(
@@ -391,14 +428,15 @@ const actionableMissingWanted = computed(() => {
 
 const confirmSearchAllMessage = computed(() => {
   const count = actionableMissingWanted.value.length
+  const bucket = wantedMode.value === 'cutoff' ? 'cutoff-unmet' : 'missing'
   if (count === 1) {
-    return 'Are you sure you want to search for 1 missing audiobook? This will send search requests to all indexers and download the best matches.'
+    return `Are you sure you want to search for 1 ${bucket} audiobook? This will send search requests to all indexers and download the best matches.`
   }
-  return `Are you sure you want to search for all ${count} missing audiobooks? This will send search requests to all indexers and download the best matches.`
+  return `Are you sure you want to search for all ${count} ${bucket} audiobooks? This will send search requests to all indexers and download the best matches.`
 })
 
 const filteredWanted = computed(() => {
-  const items = wantedAudiobooks.value
+  const items = activeWanted.value
   if (!filterText.value) return items
 
   const query = filterText.value.toLowerCase()
@@ -641,6 +679,34 @@ const markAsSkipped = async (item: Audiobook) => {
   color: #fa5252;
   width: 32px;
   height: 32px;
+}
+
+.wanted-tabs {
+  display: flex;
+  gap: 4px;
+  margin-right: auto;
+}
+
+.wanted-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 6px 12px;
+}
+
+.wanted-tab.active {
+  background-color: rgba(var(--brand-rgb), 0.12);
+  border-color: rgba(var(--brand-rgb), 0.35);
+  color: var(--brand-500);
+}
+
+.wanted-tab-count {
+  color: inherit;
+  margin-left: 6px;
+  opacity: 0.75;
 }
 
 .wanted-actions {
