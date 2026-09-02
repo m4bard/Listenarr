@@ -22,6 +22,28 @@
         <PhHeart />
         Wanted
       </h1>
+      <div class="wanted-tabs" role="tablist">
+        <button
+          class="wanted-tab"
+          :class="{ active: wantedMode === 'missing' }"
+          role="tab"
+          :aria-selected="wantedMode === 'missing'"
+          @click="wantedMode = 'missing'"
+        >
+          Missing
+          <span class="wanted-tab-count">{{ wantedAudiobooks.length }}</span>
+        </button>
+        <button
+          class="wanted-tab"
+          :class="{ active: wantedMode === 'cutoff' }"
+          role="tab"
+          :aria-selected="wantedMode === 'cutoff'"
+          @click="wantedMode = 'cutoff'"
+        >
+          Cutoff Unmet
+          <span class="wanted-tab-count">{{ cutoffUnmetAudiobooks.length }}</span>
+        </button>
+      </div>
       <div class="wanted-actions">
         <div class="filter-input-wrapper">
           <PhMagnifyingGlass class="filter-icon" />
@@ -37,11 +59,11 @@
         </div>
         <button
           class="btn btn-primary"
-          @click="searchMissing"
-          :disabled="categorizedWanted.missing.length === 0"
+          @click="searchActiveBucket"
+          :disabled="searchableInActiveBucket.length === 0"
         >
           <PhRobot />
-          Search All
+          {{ wantedMode === 'cutoff' ? 'Search All (cutoff unmet)' : 'Search All (missing)' }}
         </button>
         <button class="btn btn-secondary" @click="openManualImport">
           <PhFolderPlus />
@@ -228,6 +250,7 @@ const configurationStore = useConfigurationStore()
 
 // Filter
 const filterText = ref('')
+const wantedMode = ref<'missing' | 'cutoff'>('missing')
 
 // Virtual scrolling setup
 const scrollContainer = ref<HTMLElement | null>(null)
@@ -337,19 +360,38 @@ const wantedAudiobooks = computed(() => {
   })
 })
 
+// Books below their profile cutoff. These can never appear in wantedAudiobooks: the server's
+// `wanted` flag is false for anything that has a file, and a book below cutoff has one. The status
+// this reads is already on the same payload the list is built from, so no extra request is needed.
+const cutoffUnmetAudiobooks = computed(() => {
+  return libraryStore.audiobooks.filter((audiobook) => {
+    if (!audiobook.monitored) return false
+    return audiobook.status === 'quality-mismatch'
+  })
+})
+
+const activeWanted = computed(() =>
+  wantedMode.value === 'cutoff' ? cutoffUnmetAudiobooks.value : wantedAudiobooks.value,
+)
+
 // Categorize wanted audiobooks by their current search state
 const categorizedWanted = computed(() => {
   const all = wantedAudiobooks.value
-  const missingItems = all.filter((a) => !searching.value[a.id] && !searchResults.value[a.id])
+  const notYetSearched = (a: Audiobook) => !searching.value[a.id] && !searchResults.value[a.id]
 
   return {
     all,
-    missing: missingItems,
+    missing: all.filter(notYetSearched),
+    cutoffUnmet: cutoffUnmetAudiobooks.value.filter(notYetSearched),
   }
 })
 
+const searchableInActiveBucket = computed(() =>
+  wantedMode.value === 'cutoff' ? categorizedWanted.value.cutoffUnmet : categorizedWanted.value.missing,
+)
+
 const filteredWanted = computed(() => {
-  const items = wantedAudiobooks.value
+  const items = activeWanted.value
   if (!filterText.value) return items
 
   const query = filterText.value.toLowerCase()
@@ -438,10 +480,10 @@ function getStatusText(item: Audiobook): string {
   return 'Missing'
 }
 
-const searchMissing = async () => {
-  logger.debug('Automatic search for all missing audiobooks')
+const searchActiveBucket = async () => {
+  logger.debug(`Automatic search for all ${wantedMode.value} audiobooks`)
 
-  for (const audiobook of categorizedWanted.value.missing) {
+  for (const audiobook of searchableInActiveBucket.value) {
     await searchAudiobook(audiobook)
     await new Promise((resolve) => setTimeout(resolve, 1000))
   }
@@ -565,6 +607,34 @@ const markAsSkipped = async (item: Audiobook) => {
   color: #fa5252;
   width: 32px;
   height: 32px;
+}
+
+.wanted-tabs {
+  display: flex;
+  gap: 4px;
+  margin-right: auto;
+}
+
+.wanted-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 6px 12px;
+}
+
+.wanted-tab.active {
+  background-color: rgba(var(--brand-rgb), 0.12);
+  border-color: rgba(var(--brand-rgb), 0.35);
+  color: var(--brand-500);
+}
+
+.wanted-tab-count {
+  color: inherit;
+  margin-left: 6px;
+  opacity: 0.75;
 }
 
 .wanted-actions {
