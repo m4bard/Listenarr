@@ -1610,4 +1610,65 @@ describe('CollectionView', () => {
     expect(card.text()).toContain('#2')
     expect(card.text()).not.toContain('#5')
   })
+
+  it('shows an author page book under its membership series, not the legacy primary column', async () => {
+    if (
+      typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
+    ) {
+      ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
+        observe() {}
+        disconnect() {}
+      }
+    }
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/collection/:type/:name', name: 'collection', component: CollectionView },
+      ],
+    })
+    await router.push('/collection/authors/Author%20A')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    // The legacy column says "Publication Order". The membership table says the primary series is
+    // "Chronological Order". On a series page resolveSeriesForCollection would pick the membership
+    // matching that collection; on an author page there is no such match, and before this change
+    // the legacy column was used verbatim.
+    store.audiobooks = [
+      {
+        id: 1,
+        title: 'Book A',
+        authors: ['Author A'],
+        series: 'Publication Order',
+        seriesNumber: '4',
+        seriesMemberships: [
+          { seriesName: 'Publication Order', seriesNumber: '4', isPrimary: false, sortOrder: 1 },
+          { seriesName: 'Chronological Order', seriesNumber: '2', isPrimary: true, sortOrder: 0 },
+        ],
+        files: [],
+      },
+    ] as unknown as import('@/types').Audiobook[]
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(CollectionView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const vm = wrapper.vm as unknown as {
+      mapLibraryItem: (b: unknown) => { series?: string; seriesNumber?: string }
+    }
+    const mapped = vm.mapLibraryItem(store.audiobooks[0])
+
+    expect(mapped.series).toBe('Chronological Order')
+    expect(mapped.seriesNumber).toBe('2')
+  })
 })
