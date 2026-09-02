@@ -166,4 +166,94 @@ describe('WantedView image recache behavior', () => {
     expect(wrapper.find('.wanted-body.is-static').exists()).toBe(true)
     expect(wrapper.findAll('.wanted-row')).toHaveLength(30)
   })
+
+  it('surfaces a cutoff-unmet book that the wanted flag excludes', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const libraryStore = useLibraryStore()
+    // A book below its profile cutoff has a file, so the server's `wanted` flag is false and it
+    // never reaches the missing bucket. The status it needs is already on the same payload.
+    libraryStore.audiobooks = [
+      { id: 1, title: 'Missing Book', monitored: true, files: [], wanted: true },
+      {
+        id: 2,
+        title: 'Below Cutoff',
+        monitored: true,
+        wanted: false,
+        status: 'quality-mismatch',
+        files: [{ id: 9, path: '/library/below-cutoff.mp3' }],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    libraryStore.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(WantedView, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const vm = wrapper.vm as unknown as {
+      wantedAudiobooks: { id: number }[]
+      cutoffUnmetAudiobooks: { id: number }[]
+    }
+
+    expect(vm.wantedAudiobooks.map((a) => a.id)).toEqual([1])
+    expect(vm.cutoffUnmetAudiobooks.map((a) => a.id)).toEqual([2])
+  })
+
+  it('does not treat an unmonitored book below cutoff as cutoff unmet', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const libraryStore = useLibraryStore()
+    libraryStore.audiobooks = [
+      {
+        id: 3,
+        title: 'Unmonitored Below Cutoff',
+        monitored: false,
+        wanted: false,
+        status: 'quality-mismatch',
+        files: [{ id: 10, path: '/library/unmonitored.mp3' }],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    libraryStore.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(WantedView, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const vm = wrapper.vm as unknown as { cutoffUnmetAudiobooks: { id: number }[] }
+    expect(vm.cutoffUnmetAudiobooks).toHaveLength(0)
+  })
+
+  it('renders the cutoff-unmet bucket when the tab is switched', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const libraryStore = useLibraryStore()
+    libraryStore.audiobooks = [
+      { id: 1, title: 'Missing Book', monitored: true, files: [], wanted: true },
+      {
+        id: 2,
+        title: 'Below Cutoff',
+        monitored: true,
+        wanted: false,
+        status: 'quality-mismatch',
+        files: [{ id: 9, path: '/library/below-cutoff.mp3' }],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    libraryStore.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(WantedView, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const vm = wrapper.vm as unknown as {
+      wantedMode: string
+      filteredWanted: { id: number }[]
+    }
+
+    expect(vm.filteredWanted.map((a) => a.id)).toEqual([1])
+
+    vm.wantedMode = 'cutoff'
+    await wrapper.vm.$nextTick()
+
+    expect(vm.filteredWanted.map((a) => a.id)).toEqual([2])
+  })
 })
