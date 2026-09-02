@@ -402,5 +402,44 @@ namespace Listenarr.Tests.Features.Domain.Utils
 
             Assert.True(QualityMatcher.IsLabelBetter("AAC 320kbps", "AAC 256kbps", profile));
         }
-    }
+    
+        // ---- real encoder bitrates, which are never exactly the nominal tier ----------------
+
+        [Fact]
+        public void Match_FileJustUnderItsNominalTier_StillMatchesThatTier()
+        {
+            // A file encoded at "128kbps" AAC reports something like 127241 bps. NormalizeKbps
+            // rounds that to 127, and rung eligibility is `rung.BitrateKbps <= fileKbps`, so the
+            // 128 rung is excluded and the file drops to the tier below. Real encoders essentially
+            // never hit the nominal value exactly, so this affects almost every lossy file.
+            var profile = new QualityProfileBuilder()
+                .WithName("Standard")
+                .WithQuality("AAC 128kbps", 0, codec: "AAC", bitrate: 128)
+                .WithQuality("AAC 64kbps", 1, codec: "AAC", bitrate: 64)
+                .Build();
+            var file = new AudioQualityInput { Codec = "aac", BitrateBitsPerSecond = 127_241 };
+
+            var result = QualityMatcher.Match(file, profile);
+
+            Assert.True(result.IsMatch);
+            Assert.Equal("AAC 128kbps", result.Rung!.Quality);
+        }
+
+        [Fact]
+        public void Match_FileWellBelowATier_DoesNotGetPromotedToIt()
+        {
+            // The tolerance must not swallow a genuine tier gap: a 96kbps file is not 128kbps.
+            var profile = new QualityProfileBuilder()
+                .WithName("Standard")
+                .WithQuality("AAC 128kbps", 0, codec: "AAC", bitrate: 128)
+                .WithQuality("AAC 64kbps", 1, codec: "AAC", bitrate: 64)
+                .Build();
+            var file = new AudioQualityInput { Codec = "aac", BitrateBitsPerSecond = 96_000 };
+
+            var result = QualityMatcher.Match(file, profile);
+
+            Assert.True(result.IsMatch);
+            Assert.Equal("AAC 64kbps", result.Rung!.Quality);
+        }
+}
 }
