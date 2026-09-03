@@ -94,7 +94,12 @@ public class DownloadsController : ControllerBase
                 .ToList();
 
             var all = await _downloadRepository.GetAllAsync();
+            // Terminal failures bypass the enabled-client filter. Hiding a download whose client was
+            // since disabled or deleted is right while it is still live, because nothing can act on
+            // it; for a failed or blocked one it means a row that occupies the queue for good and
+            // cannot be seen, let alone removed. The active endpoint keeps the plain filter.
             var filtered = all.Where(d =>
+                d.IsTerminalFailure() ||
                 d.DownloadClientId == "DDL" ||
                 (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)));
 
@@ -353,7 +358,7 @@ public class DownloadsController : ControllerBase
         try
         {
             var all = await _downloadRepository.GetAllAsync();
-            var failedDownloads = all.Where(d => d.Status == DownloadStatus.Failed || d.Status == DownloadStatus.ImportBlocked).ToList();
+            var failedDownloads = all.Where(d => d.IsTerminalFailure()).ToList();
             foreach (var d in failedDownloads) await _downloadRepository.RemoveAsync(d.Id);
 
             _logger.LogInformation("Cleared {Count} failed downloads", failedDownloads.Count);

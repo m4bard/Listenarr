@@ -299,6 +299,51 @@ export const useDownloadsStore = defineStore('downloads', () => {
     }
   }
 
+  // Removal is not pushed over SignalR the way a status change is, so unlike cancelDownload
+  // these reload the list themselves. Without that the row stays on screen until the next
+  // manual refresh and looks as though the click did nothing.
+  const removeDownload = async (downloadId: string) => {
+    try {
+      await apiService.deleteDownload(downloadId)
+      await loadDownloads()
+    } catch (error) {
+      errorTracking.captureException(error as Error, {
+        component: 'DownloadsStore',
+        operation: 'removeDownload',
+        metadata: { downloadId },
+      })
+      throw error
+    }
+  }
+
+  const clearCompletedDownloads = async () => {
+    try {
+      const result = await apiService.clearCompletedDownloads()
+      await loadDownloads()
+      return result.count
+    } catch (error) {
+      errorTracking.captureException(error as Error, {
+        component: 'DownloadsStore',
+        operation: 'clearCompletedDownloads',
+      })
+      throw error
+    }
+  }
+
+  const clearFailedDownloads = async () => {
+    try {
+      const result = await apiService.clearFailedDownloads()
+      await loadDownloads()
+      return result.count
+    } catch (error) {
+      errorTracking.captureException(error as Error, {
+        component: 'DownloadsStore',
+        operation: 'clearFailedDownloads',
+      })
+      throw error
+    }
+  }
+
   const updateDownload = (updatedDownload: Download) => {
     const index = downloads.value.findIndex((d) => d.id === updatedDownload.id)
     if (index !== -1) {
@@ -326,6 +371,9 @@ export const useDownloadsStore = defineStore('downloads', () => {
     startDownload,
     cancelDownload,
     retryBlockedImport,
+    removeDownload,
+    clearCompletedDownloads,
+    clearFailedDownloads,
     updateDownload,
     cleanup,
   }
