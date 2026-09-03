@@ -92,8 +92,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
             // Completion notifications used to carry the internal name Imported in the NTFY Tags
             // header. They now carry book-completed, the name the settings screen subscribes to.
             // A subscription stored as Imported still matches, but an ntfy consumer filtering on
-            // the Imported tag has to filter on book-completed instead.
-            using var probe = WebhookDispatchProbe.ForWebhook(NtfyUrl, NotificationTriggers.BookCompleted);
+            // the Imported tag has to filter on book-completed instead. The provider comes from the
+            // stored Type, so the target is stored as ntfy rather than relying on the URL.
+            using var probe = WebhookDispatchProbe.ForWebhook(NtfyUrl, NotificationTriggers.BookCompleted, storedType: "Ntfy");
 
             await probe.Service.OnDownloadImportedAsync(ImportedDownload());
 
