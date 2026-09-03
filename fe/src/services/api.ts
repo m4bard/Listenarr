@@ -717,6 +717,25 @@ class ApiService {
     )
   }
 
+  // Removes the download record only. The route is shared with cancelDownload because the
+  // server does the same thing either way, but the intent differs: cancelling stops something
+  // in flight, whereas this clears a row for a download that has already stopped for good.
+  async deleteDownload(id: string): Promise<{ message: string; id: string }> {
+    return this.request<{ message: string; id: string }>(`/downloads/${id}`, { method: 'DELETE' })
+  }
+
+  async clearCompletedDownloads(): Promise<{ message: string; count: number }> {
+    return this.request<{ message: string; count: number }>('/downloads/completed', {
+      method: 'DELETE',
+    })
+  }
+
+  async clearFailedDownloads(): Promise<{ message: string; count: number }> {
+    return this.request<{ message: string; count: number }>('/downloads/failed', {
+      method: 'DELETE',
+    })
+  }
+
   async getCachedAnnounces(
     downloadId: string,
   ): Promise<{ downloadId: string; announces: string[] } | null> {
