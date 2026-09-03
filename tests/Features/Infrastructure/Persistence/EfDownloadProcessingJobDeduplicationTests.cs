@@ -61,7 +61,7 @@ public sealed class EfDownloadProcessingJobDeduplicationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DeleteCompletedBeforeAsync_WhenStatusesEmpty_DoesNothing()
+    public async Task DeleteOrphanedCompletedBeforeAsync_WhenStatusesEmpty_DoesNothing()
     {
         var repository = new EfDownloadProcessingJobRepository(_factory);
         var oldCompleted = CreateJob("download-cleanup").MarkAsCompleted();
@@ -69,7 +69,7 @@ public sealed class EfDownloadProcessingJobDeduplicationTests : IAsyncLifetime
 
         await repository.AddAsync(oldCompleted);
 
-        var removed = await repository.DeleteCompletedBeforeAsync(
+        var removed = await repository.DeleteOrphanedCompletedBeforeAsync(
             Array.Empty<ProcessingJobStatus>(),
             DateTime.UtcNow);
 
