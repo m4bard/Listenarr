@@ -94,7 +94,13 @@ namespace Listenarr.Api.Middleware
             // Serve SPA assets and client-side routes anonymously: if the request is not for an API or realtime hub,
             // let the static file middleware or SPA fallback handle it. This avoids returning 401 for '/'.
             // Keep API and hub routes protected.
-            if (!path.StartsWith("/api") && !path.StartsWith("/hubs"))
+            // Case-insensitive on purpose. ASP.NET route matching is case-insensitive by
+            // default, so "/API/v1/library" reaches the controller exactly as "/api/v1/library"
+            // does. An ordinal check here therefore did not decide "is this a static asset";
+            // it decided "was the caller willing to change one letter", and every other path
+            // comparison in this method already passes OrdinalIgnoreCase.
+            if (!path.StartsWith("/api", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("/hubs", StringComparison.OrdinalIgnoreCase))
             {
                 await _next(context);
                 return;
