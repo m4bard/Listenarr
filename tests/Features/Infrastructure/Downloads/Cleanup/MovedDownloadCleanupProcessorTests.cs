@@ -310,11 +310,16 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Cleanup
                 "retained-import-after-job-retention",
                 sourceRetained: true);
 
-            var completedJob = (await _downloadProcessingJobRepository.GetByIdAsync(job.Id))!;
-            completedJob.CompletedAt = DateTime.UtcNow.AddDays(-8);
-            await _downloadProcessingJobRepository.UpdateAsync(completedJob);
-            await _provider.GetRequiredService<IDownloadProcessingJobService>()
-                .CleanupOldJobsAsync(retentionDays: 7);
+            // The job rows are dropped directly rather than by running retention. Retention no longer
+            // sweeps a job while the download it explains is still present, so it cannot produce this
+            // state any more. The state itself is still reachable: rows swept by an older build, or by
+            // a run where the download was removed and later re-added, arrive here the same way. What
+            // this test is about is what the cleanup processor does once the detail has gone, not the
+            // route it took to go.
+            var db = _provider.GetRequiredService<ListenArrDbContext>();
+            db.DownloadProcessingJobs.RemoveRange(
+                db.DownloadProcessingJobs.Where(candidate => candidate.DownloadId == download.Id));
+            await db.SaveChangesAsync();
 
             Assert.Empty(await _downloadProcessingJobRepository.GetByDownloadIdAsync(download.Id));
 
