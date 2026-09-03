@@ -194,7 +194,11 @@
           </div>
         </div>
         <div class="logs-container">
-          <div v-for="log in recentLogs" :key="log.id" :class="['log-entry', log.level]">
+          <div
+            v-for="log in recentLogs"
+            :key="log.id"
+            :class="['log-entry', log.level.toLowerCase()]"
+          >
             <component :is="getLogIconComponent(log.level)" class="log-icon" />
             <span class="log-time">{{ formatLogTime(log.timestamp) }}</span>
             <span class="log-level">{{ log.level.toUpperCase() }}</span>
@@ -814,6 +818,10 @@ onMounted(() => {
   border-left: 3px solid #27ae60;
 }
 
+.log-entry.debug {
+  border-left: 3px solid #9b59b6;
+}
+
 .log-entry > i {
   font-size: 1.1rem;
 }
@@ -856,6 +864,14 @@ onMounted(() => {
   color: #27ae60;
 }
 
+.log-entry.debug > i {
+  color: #9b59b6;
+}
+
+.log-entry.debug .log-icon svg {
+  color: #9b59b6;
+}
+
 .log-time {
   color: #666;
   font-size: 0.8rem;
@@ -887,6 +903,11 @@ onMounted(() => {
 .log-entry.success .log-level {
   background: rgba(39, 174, 96, 0.15);
   color: #27ae60;
+}
+
+.log-entry.debug .log-level {
+  background: rgba(155, 89, 182, 0.15);
+  color: #9b59b6;
 }
 
 .log-message {
