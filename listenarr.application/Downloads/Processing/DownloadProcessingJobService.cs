@@ -167,12 +167,14 @@ namespace Listenarr.Application.Downloads.Processing
         {
             // Retention policy belongs in the application layer so repositories remain thin
             // persistence adapters and cannot silently widen cleanup to active jobs later.
+            // The cutoff is a floor rather than a deadline: a job is only swept once the download
+            // it explains has gone too, so a queue entry can never outlive its own failure detail.
             var cutoffUtc = timeProvider
                 .GetUtcNow()
                 .UtcDateTime
                 .AddDays(-retentionDays);
 
-            var removed = await jobRepository.DeleteCompletedBeforeAsync(
+            var removed = await jobRepository.DeleteOrphanedCompletedBeforeAsync(
                 TerminalCleanupStatuses,
                 cutoffUtc,
                 cancellationToken);
