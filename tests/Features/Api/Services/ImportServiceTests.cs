@@ -263,7 +263,11 @@ namespace Listenarr.Tests.Features.Api.Services
                 EnableMetadataProcessing = true,
                 FolderNamingPattern = "",
                 FileNamingPattern = "{Title}-{DiskNumber:00}",
-                ImportBlacklistExtensions = [".txt"]
+                // Deliberately uppercase against the lowercase "notes.txt" on disk. This
+                // fixture used to read [".txt"], which only ever asked the comparison in the
+                // form where an ordinal match already answered correctly, so it passed while
+                // a blacklisted ".TXT" was silently importing files.
+                ImportBlacklistExtensions = [".TXT"]
             });
 
             var audiobook = await CreateAudiobook();
