@@ -249,6 +249,17 @@ namespace Listenarr.Domain.Downloads
             return Status == DownloadStatus.ImportBlocked;
         }
 
+        /// <summary>
+        /// True when the download has stopped for good without importing. Nothing polls or retries
+        /// these, and no background sweep removes them, so they are the rows a user has to be able
+        /// to see and clear by hand. <see cref="DownloadStatus.Moved" /> is deliberately excluded:
+        /// it is also terminal, but the deferred-removal cleanup already deletes those records.
+        /// </summary>
+        public bool IsTerminalFailure()
+        {
+            return Status is DownloadStatus.Failed or DownloadStatus.ImportBlocked;
+        }
+
         public void AddBlockMessage(string message)
         {
             if (ImportBlockMessages == null)
