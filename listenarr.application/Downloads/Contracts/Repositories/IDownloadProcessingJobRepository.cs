@@ -43,7 +43,14 @@ namespace Listenarr.Application.Downloads.Contracts.Repositories
         /// Retention policy stays in the application service; the repository only performs the
         /// persistence operation so future contributors do not accidentally delete active jobs here.
         /// </summary>
-        Task<int> DeleteCompletedBeforeAsync(
+        /// <remarks>
+        /// A job is only eligible once the download it describes has itself been removed. A job holds
+        /// the per-attempt <c>ProcessingLog</c> that explains why an import failed, and the download
+        /// row is the only thing pointing at it, so sweeping the job first leaves a queue entry whose
+        /// cause has been deleted. Tying the two together means the explanation lives at least as long
+        /// as the record it explains, and terminal jobs still drain once their download is cleared.
+        /// </remarks>
+        Task<int> DeleteOrphanedCompletedBeforeAsync(
             IReadOnlyCollection<ProcessingJobStatus> statuses,
             DateTime cutoffUtc,
             CancellationToken cancellationToken = default);
