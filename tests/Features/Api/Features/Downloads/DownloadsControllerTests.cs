@@ -172,6 +172,44 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
         }
 
         [Fact]
+        [Trait("Method", "GetDownloads")]
+        [Trait("Scenario", "TerminalFailuresStayVisibleWhenTheirClientIsDisabled")]
+        public async Task GetDownloads_KeepsTerminalFailures_WhenClientDisabled()
+        {
+            var disabledClient = (await _downloadClientConfigurationRepository.GetAllAsync())
+                .Single(client => client.Id == "client-disabled");
+
+            await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithId("d-disabled-failed")
+                .WithStartDate(DateTime.UtcNow.AddMinutes(-1))
+                .WithDownloadClientConfiguration(disabledClient)
+                .WithStatus(DownloadStatus.Failed)
+                .Build());
+
+            await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithId("d-disabled-importblocked")
+                .WithStartDate(DateTime.UtcNow.AddMinutes(-1))
+                .WithDownloadClientConfiguration(disabledClient)
+                .WithStatus(DownloadStatus.ImportBlocked)
+                .Build());
+
+            var controller = MockUtils.CreateDownloadsController(_provider);
+            var action = await controller.GetDownloads();
+
+            var ok = Assert.IsType<OkObjectResult>(action.Result);
+            var payload = Assert.IsAssignableFrom<IEnumerable<object>>(ok.Value);
+            var ids = ExtractIds(payload);
+
+            // A download that has stopped for good is never polled or swept, so hiding it because
+            // its client was disabled leaves a row nothing in the application can reach.
+            Assert.Contains("d-disabled-failed", ids);
+            Assert.Contains("d-disabled-importblocked", ids);
+
+            // A live download on a disabled client is still hidden; nothing can act on it.
+            Assert.DoesNotContain("d-disabled", ids);
+        }
+
+        [Fact]
         [Trait("Method", "ClearFailedDownloads")]
         [Trait("Scenario", "ClearFailedRemovesFailedAndImportBlockedOnly")]
         public async Task ClearFailedDownloads_RemovesOnlyFailedAndImportBlocked()
