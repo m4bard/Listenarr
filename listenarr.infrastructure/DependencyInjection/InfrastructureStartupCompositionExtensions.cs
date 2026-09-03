@@ -80,6 +80,16 @@ public static class InfrastructureStartupCompositionExtensions
                     "[Startup] Normalized {Count} legacy move job row(s) after applying durable move migrations",
                     repairedPostMigrationData.MoveJobsRepaired);
             }
+            var repairedTriggerVocabulary =
+                NotificationTriggerVocabularyRepair.Normalize(ctx);
+            if (repairedTriggerVocabulary.LegacyChannelSelectionsRepaired > 0
+                || repairedTriggerVocabulary.PerWebhookSelectionsRepaired > 0)
+            {
+                Log.Logger.Warning(
+                    "[Startup] Normalized the notification trigger vocabulary in {LegacyCount} legacy settings row(s) and {WebhookCount} configured webhook(s)",
+                    repairedTriggerVocabulary.LegacyChannelSelectionsRepaired,
+                    repairedTriggerVocabulary.PerWebhookSelectionsRepaired);
+            }
             Log.Logger.Information("[Startup] EF Core migrations applied successfully");
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

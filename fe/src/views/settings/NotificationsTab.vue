@@ -319,7 +319,7 @@
           <FormSection title="Triggers" :icon="PhBell">
             <div class="webhook-triggers triggers-grid">
               <CheckboxCard
-                v-for="t in ['book-added', 'book-downloading', 'book-available', 'book-completed']"
+                v-for="t in perWebhookTriggerList"
                 :key="t"
                 :modelValue="webhookForm.triggers.includes(t)"
                 @update:modelValue="onToggleTriggerValue(t, $event)"
@@ -517,10 +517,14 @@ function generateUUID(): string {
 
 const getTriggerIcon = (trigger: string) => {
   const iconMap: Record<string, unknown> = {
-    'book-added': PhPlus,
-    'book-downloading': PhDownloadSimple,
-    'book-available': PhCheckCircle,
-    'book-completed': PhCircleWavyCheck,
+    Added: PhPlus,
+    Downloading: PhDownloadSimple,
+    Available: PhCheckCircle,
+    Completed: PhCircleWavyCheck,
+    Imported: PhCheckCircle,
+    Failed: PhXCircle,
+    Moved: PhPaperPlaneTilt,
+    System: PhInfo,
   }
   return iconMap[trigger] || PhBell
 }
@@ -541,16 +545,42 @@ const getWebhookTypeIcon = (type: string) => {
 
 const getTriggerClass = (trigger: string): string => {
   const classMap: Record<string, string> = {
-    'book-added': 'trigger-added',
-    'book-downloading': 'trigger-downloading',
-    'book-available': 'trigger-available',
-    'book-completed': 'trigger-completed',
+    Added: 'trigger-added',
+    Downloading: 'trigger-downloading',
+    Available: 'trigger-available',
+    Completed: 'trigger-completed',
+    Imported: 'trigger-imported',
+    Failed: 'trigger-failed',
+    Moved: 'trigger-moved',
+    System: 'trigger-system',
   }
   return classMap[trigger] || ''
 }
 
-// Return triggers in a consistent display order
-const orderedTriggerList = ['book-added', 'book-downloading', 'book-available', 'book-completed']
+// The triggers a production call site actually emits. 'Completed' and 'System' are canonical
+// names with no emitter, so offering either would be offering a checkbox that cannot fire.
+const perWebhookTriggerList = [
+  'Added',
+  'Downloading',
+  'Available',
+  'Imported',
+  'Failed',
+  'Moved',
+]
+
+// Return triggers in a consistent display order. This covers every canonical name, not just
+// the ones this form offers, so a selection stored before the vocabulary was settled still
+// renders on the webhook summary instead of disappearing.
+const orderedTriggerList = [
+  'Added',
+  'Downloading',
+  'Available',
+  'Imported',
+  'Failed',
+  'Moved',
+  'Completed',
+  'System',
+]
 
 const orderedTriggers = (triggers: string[] | undefined) => {
   if (!triggers || triggers.length === 0) return []
@@ -559,10 +589,14 @@ const orderedTriggers = (triggers: string[] | undefined) => {
 
 const formatTriggerName = (trigger: string): string => {
   const nameMap: Record<string, string> = {
-    'book-added': 'Book Added',
-    'book-downloading': 'Download Started',
-    'book-available': 'Download Complete',
-    'book-completed': 'Processing Complete',
+    Added: 'Book Added',
+    Downloading: 'Download Started',
+    Available: 'Files Available',
+    Completed: 'Processing Complete',
+    Imported: 'Download Imported',
+    Failed: 'Download Failed',
+    Moved: 'Files Moved',
+    System: 'System Message',
   }
   return nameMap[trigger] || trigger
 }
@@ -915,7 +949,7 @@ const testWebhook = async (webhook: (typeof webhooks.value)[0]) => {
   testingWebhook.value = webhook.id
   try {
     const payload = {
-      trigger: 'book-available',
+      trigger: 'Test',
       data: { message: 'Test notification from Listenarr UI' },
     }
     const response = await apiService.testNotification(
@@ -963,7 +997,7 @@ const testWebhookConfig = async () => {
   testingWebhookConfig.value = true
   try {
     const payload = {
-      trigger: 'book-available',
+      trigger: 'Test',
       data: { message: 'Test notification from Listenarr UI' },
     }
     const response = await apiService.testNotification(payload.trigger, payload.data)
@@ -1346,6 +1380,30 @@ defineExpose({ openWebhookForm })
 }
 
 .trigger-badge-small.trigger-completed {
+  background-color: rgba(255, 255, 255, 0.02);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.trigger-badge-small.trigger-imported {
+  background-color: rgba(76, 175, 80, 0.15);
+  color: #51cf66;
+  border-color: rgba(76, 175, 80, 0.3);
+}
+
+.trigger-badge-small.trigger-failed {
+  background-color: rgba(250, 82, 82, 0.15);
+  color: #ff8787;
+  border-color: rgba(250, 82, 82, 0.3);
+}
+
+.trigger-badge-small.trigger-moved {
+  background-color: rgba(77, 171, 247, 0.15);
+  color: #4dabf7;
+  border-color: rgba(77, 171, 247, 0.3);
+}
+
+.trigger-badge-small.trigger-system {
   background-color: rgba(255, 255, 255, 0.02);
   color: #fff;
   border-color: rgba(255, 255, 255, 0.12);

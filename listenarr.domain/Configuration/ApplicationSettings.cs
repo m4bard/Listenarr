@@ -121,7 +121,13 @@ namespace Listenarr.Domain.Configuration
         /// <summary>
         /// List of enabled notification triggers (legacy).
         /// </summary>
-        public List<string> EnabledNotificationTriggers { get; set; } = new() { "book-added", "book-downloading", "book-available", "book-completed" };
+        public List<string> EnabledNotificationTriggers { get; set; } = new()
+        {
+            NotificationTriggers.Added,
+            NotificationTriggers.Downloading,
+            NotificationTriggers.Available,
+            NotificationTriggers.Completed
+        };
 
         /// <summary>
         /// Multiple webhooks configuration (new format).

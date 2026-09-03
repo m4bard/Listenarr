@@ -38,7 +38,7 @@ namespace Listenarr.Tests.Features.Application.Notifications.Payloads
             var baseUrl = "https://listenarr.example.com";
 
             // Act
-            var node = adapter.CreateDiscordPayload("book-added", data, baseUrl);
+            var node = adapter.CreateDiscordPayload(NotificationTriggers.Added, data, baseUrl);
 
             // Assert
             Assert.NotNull(node);
@@ -83,7 +83,7 @@ namespace Listenarr.Tests.Features.Application.Notifications.Payloads
             };
 
             // Act
-            var (payload, attachment) = await adapter.CreateDiscordPayloadWithAttachmentAsync("book-added", data, "https://listenarr.example.com", httpClient, Mock.Of<IRequestContextAccessor>());
+            var (payload, attachment) = await adapter.CreateDiscordPayloadWithAttachmentAsync(NotificationTriggers.Added, data, "https://listenarr.example.com", httpClient, Mock.Of<IRequestContextAccessor>());
 
             // Assert
             Assert.NotNull(payload);

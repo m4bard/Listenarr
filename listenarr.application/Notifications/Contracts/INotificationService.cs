@@ -26,6 +26,15 @@ namespace Listenarr.Application.Notifications.Contracts
         Task SendSystemNotificationAsync(string title, string message);
 
         /// <summary>
+        /// Delivers a trigger to every channel subscribed to it: the legacy single webhook
+        /// addressed by <see cref="ApplicationSettings.WebhookUrl"/>, and every enabled entry of
+        /// <see cref="ApplicationSettings.Webhooks"/> whose trigger list contains it.
+        /// </summary>
+        /// <param name="trigger">The canonical event trigger name.</param>
+        /// <param name="data">The notification data payload.</param>
+        Task DispatchAsync(string trigger, object data);
+
+        /// <summary>
         /// Sends a notification to a specific webhook
         /// </summary>
         /// <param name="trigger">The event trigger name</param>

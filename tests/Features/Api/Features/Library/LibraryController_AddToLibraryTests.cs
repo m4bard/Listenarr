@@ -514,11 +514,9 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         {
             var notifications = new Mock<INotificationService>();
             notifications
-                .Setup(service => service.SendNotificationAsync(
+                .Setup(service => service.DispatchAsync(
                     It.IsAny<string>(),
-                    It.IsAny<object>(),
-                    It.IsAny<string>(),
-                    It.IsAny<List<string>>()))
+                    It.IsAny<object>()))
                 .ThrowsAsync(new HttpRequestException("webhook unavailable"));
             await ReinitializeAsync(builder =>
                 builder.WithSingleton<INotificationService>(notifications.Object));
@@ -540,11 +538,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             Assert.Equal("Added", history.EventType);
             Assert.Equal(audiobook.Id, history.AudiobookId);
             notifications.Verify(
-                service => service.SendNotificationAsync(
-                    "book-added",
-                    It.IsAny<object>(),
-                    It.IsAny<string>(),
-                    It.IsAny<List<string>>()),
+                service => service.DispatchAsync("Added", It.IsAny<object>()),
                 Times.Once);
         }
 
@@ -1061,7 +1055,14 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 .ThrowsAsync(new InvalidOperationException("Injected notification settings outage."));
             await ReinitializeAsync(builder => builder
                 .WithSingleton<IConfigurationService>(configurationService.Object));
+            // The emitter no longer resolves settings itself; it hands the trigger to the
+            // notification service, which addresses every subscribed channel. A settings outage
+            // therefore surfaces from the dispatch call rather than ahead of it, and must still
+            // leave the committed add alone.
             var notificationService = new Mock<INotificationService>(MockBehavior.Strict);
+            notificationService
+                .Setup(service => service.DispatchAsync(It.IsAny<string>(), It.IsAny<object>()))
+                .ThrowsAsync(new InvalidOperationException("Injected notification settings outage."));
             var workflow = new LibraryAddWorkflow(
                 _provider.GetRequiredService<IAudiobookRepository>(),
                 _provider.GetRequiredService<IImageCacheService>(),
@@ -1092,6 +1093,9 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             Assert.IsType<OkObjectResult>(result);
             var audiobook = Assert.Single(await _audiobookRepository.GetAllAsync());
             Assert.Single(await _historyRepository.GetByAudiobookIdAsync(audiobook.Id));
+            notificationService.Verify(
+                service => service.DispatchAsync("Added", It.IsAny<object>()),
+                Times.Once);
             notificationService.VerifyNoOtherCalls();
         }
 

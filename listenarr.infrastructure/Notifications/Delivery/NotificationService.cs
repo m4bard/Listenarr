@@ -43,19 +43,59 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
             _httpSender = new NotificationHttpSender(httpClient, httpClient, logger, AllowPrivateWebhookTargetsForCurrentRequest);
         }
 
-        // INotificationService interface stubs — webhook dispatch goes through SendNotificationAsync;
-        // these typed convenience methods delegate to the main webhook loop or no-op.
+        /// <summary>
+        /// Delivers a trigger to every channel subscribed to it.
+        /// <para>
+        /// Both channels are addressed here so that a trigger cannot reach one and not the other.
+        /// Each emitter used to name a single destination itself, which is how the events emitted
+        /// under the older vocabulary came to reach the legacy single webhook and never the
+        /// webhook list the settings UI writes to.
+        /// </para>
+        /// </summary>
+        public async Task DispatchAsync(string trigger, object data)
+        {
+            ArgumentNullException.ThrowIfNull(trigger);
+
+            var settings = await _configurationService.GetApplicationSettingsAsync();
+            await DeliverAsync(trigger, data, settings.WebhookUrl, settings.EnabledNotificationTriggers);
+
+            var webhooks = await _configurationService.GetWebhookConfigurationsAsync();
+            foreach (var webhook in (webhooks ?? []).Where(candidate =>
+                candidate.IsEnabled && (candidate.Triggers?.Contains(trigger) ?? false)))
+            {
+                await DeliverAsync(trigger, data, webhook.Url, webhook.Triggers);
+            }
+        }
+
+        // One unreachable webhook must not stop the rest of the fan-out.
+        private async Task DeliverAsync(string trigger, object data, string? url, List<string>? subscribedTriggers)
+        {
+            if (string.IsNullOrWhiteSpace(url) || subscribedTriggers == null)
+            {
+                return;
+            }
+
+            try
+            {
+                await SendNotificationAsync(trigger, data, url, subscribedTriggers);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Delivery of the {Trigger} notification to a configured webhook failed", trigger);
+            }
+        }
+
         public async Task OnDownloadImportedAsync(Download download)
         {
             try
             {
-                var webhooks = await _configurationService.GetWebhookConfigurationsAsync();
-                foreach (var wh in webhooks.Where(w => w.IsEnabled && w.Triggers.Contains("Imported")))
-                    await SendNotificationAsync("Imported", new { AudiobookTitle = download.Title, Timestamp = DateTime.UtcNow }, wh.Url, wh.Triggers);
+                await DispatchAsync(
+                    NotificationTriggers.Imported,
+                    new { AudiobookTitle = download.Title, Timestamp = DateTime.UtcNow });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogDebug(ex, "SendDownloadCompletedNotificationAsync failed for {Id}", download.Id);
+                _logger.LogDebug(ex, "OnDownloadImportedAsync failed for {Id}", download.Id);
             }
         }
 
@@ -63,23 +103,26 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
         {
             try
             {
-                var webhooks = await _configurationService.GetWebhookConfigurationsAsync();
-                foreach (var wh in webhooks.Where(w => w.IsEnabled && w.Triggers.Contains("Failed")))
-                    await SendNotificationAsync("Failed", new { AudiobookTitle = download.Title, Error = download.ErrorMessage, Timestamp = DateTime.UtcNow }, wh.Url, wh.Triggers);
+                await DispatchAsync(
+                    NotificationTriggers.Failed,
+                    new { AudiobookTitle = download.Title, Error = download.ErrorMessage, Timestamp = DateTime.UtcNow });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogDebug(ex, "SendDownloadFailedNotificationAsync failed for {Id}", download.Id);
+                _logger.LogDebug(ex, "OnDownloadFailedAsync failed for {Id}", download.Id);
             }
         }
 
+        // No production call site invokes this, so the System trigger is emitted by nothing. It is
+        // kept because it is on the interface, and it is recorded on NotificationTriggers so the
+        // settings UI does not offer a checkbox that cannot fire.
         public async Task SendSystemNotificationAsync(string title, string message)
         {
             try
             {
-                var webhooks = await _configurationService.GetWebhookConfigurationsAsync();
-                foreach (var wh in webhooks.Where(w => w.IsEnabled && w.Triggers.Contains("System")))
-                    await SendNotificationAsync("System", new { Title = title, Message = message, Timestamp = DateTime.UtcNow }, wh.Url, wh.Triggers);
+                await DispatchAsync(
+                    NotificationTriggers.System,
+                    new { Title = title, Message = message, Timestamp = DateTime.UtcNow });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

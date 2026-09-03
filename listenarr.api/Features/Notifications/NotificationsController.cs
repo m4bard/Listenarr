@@ -73,7 +73,11 @@ namespace Listenarr.Api.Features.Notifications
                     return StatusCode(500, new { success = false, message = "Server misconfiguration: notification service unavailable" });
                 }
 
-                await _notificationService.SendNotificationAsync("test", testData, settings.WebhookUrl, new List<string> { "test" });
+                await _notificationService.SendNotificationAsync(
+                    NotificationTriggers.Test,
+                    testData,
+                    settings.WebhookUrl,
+                    new List<string> { NotificationTriggers.Test });
 
                 return Ok(new { success = true, message = "Test notification sent successfully" });
             }

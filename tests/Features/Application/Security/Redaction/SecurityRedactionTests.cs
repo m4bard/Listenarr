@@ -29,9 +29,9 @@ namespace Listenarr.Tests.Features.Application.Security.Redaction
             Environment.SetEnvironmentVariable("LISTENARR_API_KEY", secret);
 
             var webhookUrl = "https://discord.com/api/webhooks/test";
-            var trigger = "book-added";
+            var trigger = NotificationTriggers.Added;
             var data = new { id = 1, title = "Redaction Test" };
-            var enabledTriggers = new List<string> { trigger };
+            var enabledTriggers = new List<string> { "Added" };
 
             string? capturedLog = null;
 

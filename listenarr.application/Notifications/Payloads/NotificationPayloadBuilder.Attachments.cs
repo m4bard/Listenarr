@@ -261,7 +261,7 @@ namespace Listenarr.Application.Notifications.Payloads
 
         private static string BuildDiscordContent(string trigger, string title, string author)
         {
-            if (string.Equals(trigger, "book-added", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(trigger, NotificationTriggers.Added, StringComparison.OrdinalIgnoreCase))
             {
                 if (!string.IsNullOrWhiteSpace(title) && !string.IsNullOrWhiteSpace(author))
                 {
@@ -276,7 +276,7 @@ namespace Listenarr.Application.Notifications.Payloads
                 return "A new audiobook has been added";
             }
 
-            if (string.Equals(trigger, "book-available", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(trigger, NotificationTriggers.Available, StringComparison.OrdinalIgnoreCase))
             {
                 if (!string.IsNullOrWhiteSpace(title) && !string.IsNullOrWhiteSpace(author))
                 {
@@ -291,7 +291,7 @@ namespace Listenarr.Application.Notifications.Payloads
                 return "An audiobook is now available";
             }
 
-            if (string.Equals(trigger, "book-downloading", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(trigger, NotificationTriggers.Downloading, StringComparison.OrdinalIgnoreCase))
             {
                 if (!string.IsNullOrWhiteSpace(title) && !string.IsNullOrWhiteSpace(author))
                 {

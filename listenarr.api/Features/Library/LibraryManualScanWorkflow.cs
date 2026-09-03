@@ -249,10 +249,6 @@ namespace Listenarr.Api.Features.Library
 
             try
             {
-                using var notificationScope = _scopeFactory.CreateScope();
-                var configService = notificationScope.ServiceProvider
-                    .GetRequiredService<IConfigurationService>();
-                var settings = await configService.GetApplicationSettingsAsync();
                 var availableData = new
                 {
                     id = audiobook.Id,
@@ -266,11 +262,9 @@ namespace Listenarr.Api.Features.Library
                     filesImported = createdCount,
                     totalFiles = updated?.Files?.Count ?? 0
                 };
-                await _notificationService.SendNotificationAsync(
-                    "book-available",
-                    availableData,
-                    settings.WebhookUrl,
-                    settings.EnabledNotificationTriggers);
+                await _notificationService.DispatchAsync(
+                    NotificationTriggers.Available,
+                    availableData);
             }
             catch (Exception exception) when (exception is not OperationCanceledException
                 && exception is not OutOfMemoryException
@@ -278,7 +272,7 @@ namespace Listenarr.Api.Features.Library
             {
                 _logger.LogWarning(
                     exception,
-                    "Failed to send book-available notification for audiobook {AudiobookId}",
+                    "Failed to send Available notification for audiobook {AudiobookId}",
                     audiobook.Id);
             }
         }

@@ -104,7 +104,8 @@ namespace Listenarr.Tests.Features.Application.Configuration.Core
             var settings = await svc.GetApplicationSettingsAsync();
             settings.OutputPath = testOutputPath;
             settings.ShowCompletedExternalDownloads = true;
-            settings.EnabledNotificationTriggers = ["book-added", "book-completed"];
+            settings.EnabledNotificationTriggers =
+                [NotificationTriggers.Added, NotificationTriggers.Completed];
             settings.Webhooks =
             [
                 new() { Name = "UnitWebhook", Url = "https://example.test/webhook", Type = "Zapier" }
@@ -117,7 +118,7 @@ namespace Listenarr.Tests.Features.Application.Configuration.Core
             Assert.Equal(testOutputPath, saved.OutputPath);
             Assert.True(saved.ShowCompletedExternalDownloads);
             Assert.NotNull(saved.EnabledNotificationTriggers);
-            Assert.Contains("book-completed", saved.EnabledNotificationTriggers);
+            Assert.Contains(NotificationTriggers.Completed, saved.EnabledNotificationTriggers);
             Assert.NotNull(saved.Webhooks);
             Assert.Single(saved.Webhooks!);
             Assert.Equal("UnitWebhook", saved.Webhooks![0].Name);
@@ -133,7 +134,7 @@ namespace Listenarr.Tests.Features.Application.Configuration.Core
             var afterPartial = await svc.GetApplicationSettingsAsync();
             Assert.Equal(partialUpdatePath, afterPartial.OutputPath);
             Assert.NotNull(afterPartial.EnabledNotificationTriggers);
-            Assert.Contains("book-completed", afterPartial.EnabledNotificationTriggers);
+            Assert.Contains(NotificationTriggers.Completed, afterPartial.EnabledNotificationTriggers);
             Assert.NotNull(afterPartial.Webhooks);
             Assert.Single(afterPartial.Webhooks!);
             Assert.Equal("UnitWebhook", afterPartial.Webhooks![0].Name);

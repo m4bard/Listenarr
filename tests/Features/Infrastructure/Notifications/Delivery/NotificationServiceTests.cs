@@ -33,7 +33,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         public void CreateDiscordPayload_IncludesTitleAuthorAndThumbnail_WhenAsinAndBaseProvided()
         {
             // Arrange
-            var trigger = "book-added";
+            var trigger = NotificationTriggers.Added;
             var data = new
             {
                 id = 123,
@@ -73,7 +73,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         public void CreateDiscordPayload_TruncatesLongFields_ToDiscordLimits()
         {
             // Arrange
-            var trigger = "book-added";
+            var trigger = NotificationTriggers.Added;
             var longTitle = new string('T', 300); // longer than 256
             var longAuthor = new string('A', 5000); // longer than 4096
             var data = new
@@ -113,7 +113,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         public void CreateDiscordPayload_IncludesPublisherYearImageAndFooter_WhenProvided()
         {
             // Arrange
-            var trigger = "book-added";
+            var trigger = NotificationTriggers.Added;
             var data = new
             {
                 title = "Metadata Book",
@@ -154,7 +154,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         public void CreateDiscordPayload_ConvertsRelativeImageUrlToAbsolute_WhenBaseUrlProvided()
         {
             // Arrange
-            var trigger = "book-added";
+            var trigger = NotificationTriggers.Added;
             var data = new
             {
                 title = "Relative Image Book",
@@ -193,7 +193,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         [Fact]
         public void CreateDiscordPayload_UsesDerivedBaseForThumbnail_WhenProvided()
         {
-            var trigger = "book-added";
+            var trigger = NotificationTriggers.Added;
             var data = new
             {
                 title = "Derived Base Book",
@@ -217,7 +217,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         [Fact]
         public void CreateDiscordPayload_EnforcesOverallEmbedLimit_TruncatesAsNeeded()
         {
-            var trigger = "book-added";
+            var trigger = NotificationTriggers.Added;
             // Create a very large description to exceed the 6000 char limit
             var desc = new string('D', 5000);
 
@@ -261,7 +261,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         public async Task SendNotificationAsync_PostsCorrectJsonToDiscordWebhook()
         {
             // Arrange
-            var trigger = "book-added";
+            var trigger = NotificationTriggers.Added;
             var data = new
             {
                 id = 123,
@@ -272,7 +272,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
                 year = "2023"
             };
             var webhookUrl = "https://discord.com/api/webhooks/test";
-            var enabledTriggers = new List<string> { trigger };
+            // Stated independently of `trigger` on purpose. Deriving this list from the
+            // trigger made `enabledTriggers.Contains(trigger)` true whatever the vocabulary was,
+            // so the gate under test could not fail. The literal pins the canonical spelling and
+            // cross-checks the constant against it.
+            var enabledTriggers = new List<string> { "Added" };
 
             // Mock HttpClient to capture the posted content
             string? capturedJson = null;
@@ -386,9 +390,13 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         [Fact]
         public async Task SendNotificationAsync_AllowsPrivateWebhook_WhenCallerIsIpv4MappedLoopback()
         {
-            var trigger = "book-added";
+            var trigger = NotificationTriggers.Added;
             var webhookUrl = "http://127.0.0.1:4545/webhook";
-            var enabledTriggers = new List<string> { trigger };
+            // Stated independently of `trigger` on purpose. Deriving this list from the
+            // trigger made `enabledTriggers.Contains(trigger)` true whatever the vocabulary was,
+            // so the gate under test could not fail. The literal pins the canonical spelling and
+            // cross-checks the constant against it.
+            var enabledTriggers = new List<string> { "Added" };
             var data = new { title = "Local Webhook Book" };
 
             HttpRequestMessage? capturedRequest = null;
@@ -442,7 +450,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         public async Task SendNotificationAsync_AttachesImageAndReferencesAttachmentInPayload()
         {
             // Arrange
-            var trigger = "book-added";
+            var trigger = NotificationTriggers.Added;
             var data = new
             {
                 id = 321,
@@ -452,7 +460,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
                 imageUrl = "https://listenarr.example.com/api/v1/images/BATTACH.jpg"
             };
             var webhookUrl = "https://discord.com/api/webhooks/test-attach";
-            var enabledTriggers = new List<string> { trigger };
+            // Stated independently of `trigger` on purpose. Deriving this list from the
+            // trigger made `enabledTriggers.Contains(trigger)` true whatever the vocabulary was,
+            // so the gate under test could not fail. The literal pins the canonical spelling and
+            // cross-checks the constant against it.
+            var enabledTriggers = new List<string> { "Added" };
 
             var capturedBodies = new List<string>();
 
