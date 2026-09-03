@@ -159,7 +159,8 @@ public class DownloadsController : ControllerBase
                 metadata = download.Metadata,
                 importBlockReason = download.ImportBlockReason,
                 importBlockMessages = download.ImportBlockMessages,
-                importAttempts = download.ImportAttempts
+                importAttempts = download.ImportAttempts,
+                archivedFailureDetail = download.ArchivedFailureDetail
             };
 
             return Ok(downloadObj);
@@ -373,7 +374,9 @@ public class DownloadsController : ControllerBase
                 // Sprint 2: Error handling and import blocking fields
                 importBlockReason = d.ImportBlockReason,
                 importBlockMessages = d.ImportBlockMessages,
-                importAttempts = d.ImportAttempts
+                importAttempts = d.ImportAttempts,
+                // Preserved when the processing job that held the per-attempt log was swept.
+                archivedFailureDetail = d.ArchivedFailureDetail
             };
         }).Cast<object>().ToList();
     }

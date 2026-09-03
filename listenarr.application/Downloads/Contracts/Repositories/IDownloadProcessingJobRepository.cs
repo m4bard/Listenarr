@@ -43,7 +43,14 @@ namespace Listenarr.Application.Downloads.Contracts.Repositories
         /// Retention policy stays in the application service; the repository only performs the
         /// persistence operation so future contributors do not accidentally delete active jobs here.
         /// </summary>
-        Task<int> DeleteCompletedBeforeAsync(
+        /// <remarks>
+        /// A failed job's explanation is copied onto the download it describes first, in the same
+        /// save. Nothing sweeps a failed or blocked download, so deleting the job on its own leaves
+        /// a queue entry whose cause is gone. Doing both in one save is what stops a crash between
+        /// the two from either losing the detail or writing it twice; the wording of the entry
+        /// belongs to the domain, so the repository only moves it.
+        /// </remarks>
+        Task<int> ArchiveAndDeleteCompletedBeforeAsync(
             IReadOnlyCollection<ProcessingJobStatus> statuses,
             DateTime cutoffUtc,
             CancellationToken cancellationToken = default);

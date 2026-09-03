@@ -2061,6 +2061,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.PrimitiveCollection<string>("ArchivedFailureDetail")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Artist")
                         .IsRequired()
                         .HasColumnType("TEXT");

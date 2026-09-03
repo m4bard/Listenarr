@@ -107,6 +107,13 @@ namespace Listenarr.Domain.Downloads
         public int ImportAttempts { get; set; } = 0;
 
         /// <summary>
+        /// Failure explanations carried over from processing jobs that have since been swept by
+        /// retention. The job holds the per-attempt ProcessingLog, and nothing removes a failed
+        /// download, so without this the row outlives every trace of why it is here.
+        /// </summary>
+        public List<string>? ArchivedFailureDetail { get; set; }
+
+        /// <summary>
         /// When the download was last imported successfully (for idempotency tracking)
         /// If null and Status=Moved, import happened but wasn't recorded
         /// </summary>

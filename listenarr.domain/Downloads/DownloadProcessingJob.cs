@@ -17,6 +17,7 @@
  */
 
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Text.Json;
 
 namespace Listenarr.Domain.Downloads
@@ -129,6 +130,12 @@ namespace Listenarr.Domain.Downloads
         /// Processing log entries
         /// </summary>
         public List<string> ProcessingLog { get; set; } = new();
+
+        /// <summary>
+        /// How many archived failure entries a download keeps. A download that fails the same way
+        /// every night would otherwise accumulate one entry per sweep for as long as it is kept.
+        /// </summary>
+        private const int MaxArchivedFailureEntries = 20;
 
         public string GetOrCreateCorrelationId()
         {
@@ -250,6 +257,44 @@ namespace Listenarr.Domain.Downloads
 
             AddLogEntry($"Scheduled for retry #{RetryCount} at {NextRetryAt}");
             return this;
+        }
+
+        /// <summary>
+        /// Copies this job's failure explanation onto the download it describes, so the record keeps
+        /// a reason once retention removes the job. Only a failed job has anything to explain; a
+        /// completed one is a no-op.
+        /// </summary>
+        /// <remarks>
+        /// This is a summary and not the whole story. The per-attempt <see cref="ProcessingLog" />
+        /// goes with the job, because every download list request loads the download row and a
+        /// chronically failing import would otherwise grow it without bound. The entry says how many
+        /// log lines went with it, so nobody reading one mistakes it for the full account.
+        /// </remarks>
+        public void ArchiveFailureDetailOnto(Download download)
+        {
+            ArgumentNullException.ThrowIfNull(download);
+
+            if (Status != ProcessingJobStatus.Failed)
+            {
+                return;
+            }
+
+            var endedAt = (CompletedAt ?? DateTime.UtcNow).ToString("u", CultureInfo.InvariantCulture);
+            var reason = string.IsNullOrWhiteSpace(ErrorMessage) ? "no reason recorded" : ErrorMessage;
+            var entry =
+                $"[{endedAt}] Processing job {Id} ({JobType}) failed after {RetryCount} retries: {reason}. "
+                + $"{ProcessingLog.Count} processing log entries were discarded with the job.";
+
+            download.ArchivedFailureDetail ??= [];
+            download.ArchivedFailureDetail.Add(entry);
+
+            var excess = download.ArchivedFailureDetail.Count - MaxArchivedFailureEntries;
+            if (excess > 0)
+            {
+                // Oldest first, so what survives is the most recent run of failures rather than
+                // whatever happened the first time the download was tried.
+                download.ArchivedFailureDetail.RemoveRange(0, excess);
+            }
         }
     }
 }

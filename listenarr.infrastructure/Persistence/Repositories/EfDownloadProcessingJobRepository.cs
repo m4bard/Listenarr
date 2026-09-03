@@ -161,7 +161,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             return result;
         }
 
-        public async Task<int> DeleteCompletedBeforeAsync(
+        public async Task<int> ArchiveAndDeleteCompletedBeforeAsync(
             IReadOnlyCollection<ProcessingJobStatus> statuses,
             DateTime cutoffUtc,
             CancellationToken cancellationToken = default)
@@ -191,11 +191,54 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                     return removed;
                 }
 
+                await ArchiveFailureDetailAsync(ctx, oldJobs, cancellationToken);
+
                 ctx.DownloadProcessingJobs.RemoveRange(oldJobs);
                 await ctx.SaveChangesAsync(cancellationToken);
 
                 removed += oldJobs.Count;
                 ctx.ChangeTracker.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Stages the failure explanation of every failed job in the batch onto the download it
+        /// describes. No save of its own: the caller's single SaveChanges covers the writes and the
+        /// deletes together, so the detail cannot be lost between them or preserved twice.
+        /// </summary>
+        private static async Task ArchiveFailureDetailAsync(
+            ListenArrDbContext ctx,
+            List<DownloadProcessingJob> batch,
+            CancellationToken cancellationToken)
+        {
+            // Only a failed job explains anything; a completed one has nothing worth keeping.
+            var failedJobs = batch
+                .Where(job => job.Status == ProcessingJobStatus.Failed)
+                .ToList();
+            if (failedJobs.Count == 0)
+            {
+                return;
+            }
+
+            var downloadIds = failedJobs
+                .Select(job => job.DownloadId)
+                .Distinct()
+                .ToList();
+
+            // Downloads already cleared by hand are simply absent, which is the case where there is
+            // nothing left to explain.
+            var downloads = await ctx.Downloads
+                .Where(download => downloadIds.Contains(download.Id))
+                .ToDictionaryAsync(download => download.Id, cancellationToken);
+
+            // The batch is ordered oldest first, so a download that failed repeatedly ends up with
+            // its entries in the order the failures happened.
+            foreach (var job in failedJobs)
+            {
+                if (downloads.TryGetValue(job.DownloadId, out var download))
+                {
+                    job.ArchiveFailureDetailOnto(download);
+                }
             }
         }
 

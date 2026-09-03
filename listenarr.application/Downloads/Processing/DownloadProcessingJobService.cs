@@ -133,7 +133,9 @@ namespace Listenarr.Application.Downloads.Processing
                 .UtcDateTime
                 .AddDays(-retentionDays);
 
-            var removed = await jobRepository.DeleteCompletedBeforeAsync(
+            // Each failed job's explanation is preserved on its download before the job goes, so a
+            // queue entry nothing else will ever remove does not end up with its cause deleted.
+            var removed = await jobRepository.ArchiveAndDeleteCompletedBeforeAsync(
                 TerminalCleanupStatuses,
                 cutoffUtc,
                 cancellationToken);
