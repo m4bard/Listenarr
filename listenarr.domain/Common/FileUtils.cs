@@ -152,10 +152,16 @@ namespace Listenarr.Domain.Common
                 return false;
             }
 
-            blacklistExtensions ??= [];
-            blacklistExtensions = blacklistExtensions.Append(".tmp");
+            // NormalizeExtensions builds an OrdinalIgnoreCase set. That matters here: the
+            // extension comes off disk with whatever casing the filesystem holds, while the
+            // blacklist values are user-typed, and callers hand this method a plain
+            // List<string> (ApplicationSettings spreads the normalized set into one, which
+            // drops the comparer). Comparing through a bare ToHashSet() was ordinal, so a
+            // blacklisted ".TXT" let "notes.txt" through.
+            var blacklist = NormalizeExtensions(blacklistExtensions);
+            blacklist.Add(".tmp");
 
-            return blacklistExtensions != null && blacklistExtensions.ToHashSet().Contains(extension);
+            return blacklist.Contains(extension);
         }
 
         /// <summary>
