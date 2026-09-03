@@ -147,4 +147,158 @@ describe('NotificationsTab', () => {
       expect(error.text()).toContain('valid URL')
     })
   })
+
+  describe('trigger vocabulary', () => {
+    // The backend gates a webhook row on Imported, Failed, Moved and System, but nothing
+    // in production raises System, so the UI offers the three that actually arrive.
+    // Offering anything else stores a subscription that dispatch never reads, which is the
+    // defect this suite exists to prevent recurring. WebhookTriggerVocabularyTests holds
+    // the matching assertion on the C# side.
+    const offeredTriggers = ['Imported', 'Failed', 'Moved']
+
+    async function mountWith(settings: unknown) {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+
+      const cfg = useConfigurationStore()
+      cfg.isLoading = false
+      cfg.applicationSettings = settings as never
+
+      const NotificationsTab = (await import('@/views/settings/NotificationsTab.vue')).default
+      return mount(NotificationsTab, {
+        props: { settings: settings as never },
+        global: { plugins: [pinia] },
+      })
+    }
+
+    it('offers exactly the triggers the notification dispatch reads', async () => {
+      const wrapper = await mountWith({ webhookUrl: '', webhooks: [] })
+      const vm = wrapper.vm as unknown as { openWebhookForm: () => void }
+      vm.openWebhookForm()
+      await wrapper.vm.$nextTick()
+
+      const offered = wrapper
+        .findAll('.webhook-triggers .checkbox-group')
+        .map((card) => card.text().trim())
+
+      expect(offered).toEqual(['Import Complete', 'Download Failed', 'Files Moved'])
+    })
+
+    it('offers no legacy trigger option that a webhook row cannot receive', async () => {
+      // The raw kebab values never reach the rendered DOM, so this asserts on the labels
+      // the old build showed for them. Checking the raw values would pass either way.
+      const wrapper = await mountWith({ webhookUrl: '', webhooks: [] })
+      const vm = wrapper.vm as unknown as { openWebhookForm: () => void }
+      vm.openWebhookForm()
+      await wrapper.vm.$nextTick()
+
+      const offered = wrapper
+        .findAll('.webhook-triggers .checkbox-group')
+        .map((card) => card.text().trim())
+
+      for (const retiredLabel of [
+        'Book Added',
+        'Download Started',
+        'Download Complete',
+        'Processing Complete',
+      ]) {
+        expect(offered).not.toContain(retiredLabel)
+      }
+      expect(offered).toHaveLength(offeredTriggers.length)
+    })
+
+    it('saves the selected trigger using the name dispatch gates on', async () => {
+      const settings = { version: 1, webhookUrl: '', webhooks: [] }
+      const wrapper = await mountWith(settings)
+      const cfg = useConfigurationStore()
+      const saved: unknown[] = []
+      cfg.saveApplicationSettings = vi.fn(async (payload) => {
+        saved.push(payload)
+        return { ...payload, version: payload.version + 1 }
+      })
+
+      const vm = wrapper.vm as unknown as { openWebhookForm: () => void }
+      vm.openWebhookForm()
+      await wrapper.vm.$nextTick()
+      await wrapper.find('#webhook-name').setValue('Imports')
+      await wrapper.find('#webhook-type').setValue('NTFY')
+      await wrapper.vm.$nextTick()
+      await wrapper.find('#webhook-url').setValue('https://ntfy.example/imports')
+      await wrapper.find('.webhook-triggers input[type="checkbox"]').setValue(true)
+      await wrapper.find('.webhook-modal form').trigger('submit')
+      await vi.waitFor(() => {
+        expect(saved).toHaveLength(1)
+      })
+
+      const payload = saved[0] as { webhooks: Array<{ triggers: string[] }> }
+      expect(payload.webhooks[0]?.triggers).toEqual(['Imported'])
+      expect(offeredTriggers).toContain(payload.webhooks[0]?.triggers[0])
+    })
+
+    it('surfaces a stored trigger this build cannot deliver rather than hiding it', async () => {
+      // A row left behind by an install that never ran the startup migration. The badge
+      // list used to filter unknown names out entirely, so the webhook looked healthy.
+      const wrapper = await mountWith({
+        webhookUrl: '',
+        webhooks: [
+          {
+            id: 'stale',
+            name: 'Stale webhook',
+            url: 'https://ntfy.example/stale',
+            type: 'NTFY',
+            triggers: ['book-added'],
+            isEnabled: true,
+          },
+        ],
+      })
+      await wrapper.vm.$nextTick()
+
+      const warning = wrapper.find('.trigger-warning')
+      expect(warning.exists()).toBe(true)
+      expect(warning.text()).toContain('book-added')
+      expect(warning.text()).toContain('Not delivered')
+    })
+
+    it('flags a stored System subscription, which is gated but never raised', async () => {
+      const wrapper = await mountWith({
+        webhookUrl: '',
+        webhooks: [
+          {
+            id: 'system',
+            name: 'System webhook',
+            url: 'https://ntfy.example/system',
+            type: 'NTFY',
+            triggers: ['System'],
+            isEnabled: true,
+          },
+        ],
+      })
+      await wrapper.vm.$nextTick()
+
+      const warning = wrapper.find('.trigger-warning')
+      expect(warning.exists()).toBe(true)
+      expect(warning.text()).toContain('System')
+    })
+
+    it('warns when a webhook has no triggers left to deliver', async () => {
+      const wrapper = await mountWith({
+        webhookUrl: '',
+        webhooks: [
+          {
+            id: 'empty',
+            name: 'Emptied webhook',
+            url: 'https://ntfy.example/empty',
+            type: 'NTFY',
+            triggers: [],
+            isEnabled: true,
+          },
+        ],
+      })
+      await wrapper.vm.$nextTick()
+
+      const warning = wrapper.find('.trigger-warning')
+      expect(warning.exists()).toBe(true)
+      expect(warning.text()).toContain('never fire')
+    })
+  })
 })

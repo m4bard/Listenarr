@@ -31,7 +31,7 @@ namespace Listenarr.Tests.Features.Application.Security.Redaction
             var webhookUrl = "https://discord.com/api/webhooks/test";
             var trigger = "book-added";
             var data = new { id = 1, title = "Redaction Test" };
-            var enabledTriggers = new List<string> { trigger };
+            var enabledTriggers = WebhookTriggerVocabulary.LegacyGlobal.ToList();
 
             string? capturedLog = null;
 

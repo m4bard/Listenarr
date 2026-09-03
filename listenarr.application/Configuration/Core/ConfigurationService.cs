@@ -195,7 +195,12 @@ namespace Listenarr.Application.Configuration.Core
                     {
                         foreach (var w in settings.Webhooks)
                         {
-                            w.Triggers = NormalizeTriggerList(w.Triggers) ?? new List<string>();
+                            // A webhook row is gated on WebhookTriggerVocabulary.DispatchGated, so a
+                            // client that still posts legacy global-webhook names would store a row
+                            // that never fires. Rewrite on the way in rather than persist that.
+                            w.Triggers = [.. WebhookTriggerVocabulary
+                                .Canonicalize(NormalizeTriggerList(w.Triggers))
+                                .Triggers];
                         }
                     }
                 }

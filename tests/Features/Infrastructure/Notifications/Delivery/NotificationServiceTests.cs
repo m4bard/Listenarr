@@ -272,7 +272,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
                 year = "2023"
             };
             var webhookUrl = "https://discord.com/api/webhooks/test";
-            var enabledTriggers = new List<string> { trigger };
+            var enabledTriggers = WebhookTriggerVocabulary.LegacyGlobal.ToList();
 
             // Mock HttpClient to capture the posted content
             string? capturedJson = null;
@@ -388,7 +388,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         {
             var trigger = "book-added";
             var webhookUrl = "http://127.0.0.1:4545/webhook";
-            var enabledTriggers = new List<string> { trigger };
+            var enabledTriggers = WebhookTriggerVocabulary.LegacyGlobal.ToList();
             var data = new { title = "Local Webhook Book" };
 
             HttpRequestMessage? capturedRequest = null;
@@ -452,7 +452,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
                 imageUrl = "https://listenarr.example.com/api/v1/images/BATTACH.jpg"
             };
             var webhookUrl = "https://discord.com/api/webhooks/test-attach";
-            var enabledTriggers = new List<string> { trigger };
+            var enabledTriggers = WebhookTriggerVocabulary.LegacyGlobal.ToList();
 
             var capturedBodies = new List<string>();
 

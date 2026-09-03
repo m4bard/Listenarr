@@ -68,6 +68,23 @@
                       <component :is="getTriggerIcon(trigger)" />
                     </span>
                   </div>
+                  <p
+                    v-if="unrecognisedTriggers(webhook.triggers).length > 0"
+                    class="trigger-warning"
+                  >
+                    <PhWarning />
+                    <span>
+                      Not delivered: {{ unrecognisedTriggers(webhook.triggers).join(', ') }}. Edit
+                      this webhook and choose from the current triggers.
+                    </span>
+                  </p>
+                  <p
+                    v-else-if="!webhook.triggers || webhook.triggers.length === 0"
+                    class="trigger-warning"
+                  >
+                    <PhWarning />
+                    <span>No triggers selected, so this webhook will never fire.</span>
+                  </p>
                 </div>
               </div>
             </div>
@@ -319,7 +336,7 @@
           <FormSection title="Triggers" :icon="PhBell">
             <div class="webhook-triggers triggers-grid">
               <CheckboxCard
-                v-for="t in ['book-added', 'book-downloading', 'book-available', 'book-completed']"
+                v-for="t in offeredTriggers"
                 :key="t"
                 :modelValue="webhookForm.triggers.includes(t)"
                 @update:modelValue="onToggleTriggerValue(t, $event)"
@@ -375,10 +392,8 @@ import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import {
   PhBell,
   PhBellSlash,
-  PhPlus,
   PhCheckCircle,
   PhXCircle,
-  PhCircleWavyCheck,
   PhToggleRight,
   PhToggleLeft,
   PhSpinner,
@@ -387,12 +402,13 @@ import {
   PhTrash,
   PhLink,
   PhX,
-  PhDownloadSimple,
   PhSlackLogo,
   PhDiscordLogo,
   PhTelegramLogo,
   PhPushPinSimple,
   PhInfo,
+  PhArrowsLeftRight,
+  PhWarning,
 } from '@phosphor-icons/vue'
 import { Modal, ModalHeader, ModalFooter } from '@/components/feedback'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
@@ -517,10 +533,9 @@ function generateUUID(): string {
 
 const getTriggerIcon = (trigger: string) => {
   const iconMap: Record<string, unknown> = {
-    'book-added': PhPlus,
-    'book-downloading': PhDownloadSimple,
-    'book-available': PhCheckCircle,
-    'book-completed': PhCircleWavyCheck,
+    Imported: PhCheckCircle,
+    Failed: PhXCircle,
+    Moved: PhArrowsLeftRight,
   }
   return iconMap[trigger] || PhBell
 }
@@ -541,28 +556,40 @@ const getWebhookTypeIcon = (type: string) => {
 
 const getTriggerClass = (trigger: string): string => {
   const classMap: Record<string, string> = {
-    'book-added': 'trigger-added',
-    'book-downloading': 'trigger-downloading',
-    'book-available': 'trigger-available',
-    'book-completed': 'trigger-completed',
+    Imported: 'trigger-imported',
+    Failed: 'trigger-failed',
+    Moved: 'trigger-moved',
   }
-  return classMap[trigger] || ''
+  return classMap[trigger] || 'trigger-unrecognised'
 }
 
-// Return triggers in a consistent display order
-const orderedTriggerList = ['book-added', 'book-downloading', 'book-available', 'book-completed']
+// The trigger names the notification dispatch gates a webhook row on AND that a
+// production call site actually raises. Anything else stored against a webhook is inert,
+// so these are the only options offered. "System" is gated but nothing calls
+// SendSystemNotificationAsync, so it is deliberately absent.
+const offeredTriggers = ['Imported', 'Failed', 'Moved']
 
+const isDeliverableTrigger = (trigger: string) => offeredTriggers.includes(trigger)
+
+// Deliverable triggers first, in a consistent order, then anything stored that this
+// build does not recognise. Filtering unknown names out would hide the one thing the
+// operator needs to see.
 const orderedTriggers = (triggers: string[] | undefined) => {
   if (!triggers || triggers.length === 0) return []
-  return orderedTriggerList.filter((t) => triggers.includes(t))
+  return [
+    ...offeredTriggers.filter((t) => triggers.includes(t)),
+    ...triggers.filter((t) => !isDeliverableTrigger(t)),
+  ]
 }
+
+const unrecognisedTriggers = (triggers: string[] | undefined) =>
+  (triggers ?? []).filter((t) => !isDeliverableTrigger(t))
 
 const formatTriggerName = (trigger: string): string => {
   const nameMap: Record<string, string> = {
-    'book-added': 'Book Added',
-    'book-downloading': 'Download Started',
-    'book-available': 'Download Complete',
-    'book-completed': 'Processing Complete',
+    Imported: 'Import Complete',
+    Failed: 'Download Failed',
+    Moved: 'Files Moved',
   }
   return nameMap[trigger] || trigger
 }
@@ -915,7 +942,7 @@ const testWebhook = async (webhook: (typeof webhooks.value)[0]) => {
   testingWebhook.value = webhook.id
   try {
     const payload = {
-      trigger: 'book-available',
+      trigger: 'Imported',
       data: { message: 'Test notification from Listenarr UI' },
     }
     const response = await apiService.testNotification(
@@ -963,7 +990,7 @@ const testWebhookConfig = async () => {
   testingWebhookConfig.value = true
   try {
     const payload = {
-      trigger: 'book-available',
+      trigger: 'Imported',
       data: { message: 'Test notification from Listenarr UI' },
     }
     const response = await apiService.testNotification(payload.trigger, payload.data)
@@ -1327,28 +1354,45 @@ defineExpose({ openWebhookForm })
   height: 14px;
 }
 
-.trigger-badge-small.trigger-added {
+.trigger-badge-small.trigger-imported {
   background-color: rgba(76, 175, 80, 0.15);
   color: #51cf66;
   border-color: rgba(76, 175, 80, 0.3);
 }
 
-.trigger-badge-small.trigger-downloading {
-  background-color: rgba(77, 171, 247, 0.15);
-  color: #4dabf7;
-  border-color: rgba(77, 171, 247, 0.3);
+.trigger-badge-small.trigger-failed {
+  background-color: rgba(250, 82, 82, 0.15);
+  color: #ff8787;
+  border-color: rgba(250, 82, 82, 0.3);
 }
 
-.trigger-badge-small.trigger-available {
+.trigger-badge-small.trigger-moved {
   background-color: rgba(156, 39, 176, 0.15);
   color: #b197fc;
   border-color: rgba(156, 39, 176, 0.3);
 }
 
-.trigger-badge-small.trigger-completed {
-  background-color: rgba(255, 255, 255, 0.02);
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.12);
+.trigger-badge-small.trigger-unrecognised {
+  background-color: rgba(255, 212, 59, 0.15);
+  color: #ffd43b;
+  border-color: rgba(255, 212, 59, 0.35);
+}
+
+.trigger-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #ffd43b;
+}
+
+.trigger-warning svg {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 0.1rem;
 }
 
 .webhook-title {

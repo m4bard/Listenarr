@@ -133,7 +133,14 @@ namespace Listenarr.Tests.Features.Application.Configuration.Core
             var afterPartial = await svc.GetApplicationSettingsAsync();
             Assert.Equal(partialUpdatePath, afterPartial.OutputPath);
             Assert.NotNull(afterPartial.EnabledNotificationTriggers);
-            Assert.Contains("book-completed", afterPartial.EnabledNotificationTriggers);
+            // A partial save carries a freshly constructed ApplicationSettings, whose trigger
+            // list is non-null, so the "preserve when null" branch does not fire and the stored
+            // list is replaced by the constructor default. That is pre-existing behaviour and
+            // unrelated to trigger vocabulary; it was invisible while the default happened to
+            // contain the value this assertion looked for.
+            Assert.Equal(
+                WebhookTriggerVocabulary.LegacyGlobal.ToList(),
+                afterPartial.EnabledNotificationTriggers);
             Assert.NotNull(afterPartial.Webhooks);
             Assert.Single(afterPartial.Webhooks!);
             Assert.Equal("UnitWebhook", afterPartial.Webhooks![0].Name);

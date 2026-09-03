@@ -306,12 +306,52 @@ namespace Listenarr.Application.Notifications.Payloads
                 return "An audiobook is downloading";
             }
 
+            var webhookRowContent = BuildWebhookRowDiscordContent(trigger, title, author);
+            if (webhookRowContent != null)
+            {
+                return webhookRowContent;
+            }
+
             if (!string.IsNullOrWhiteSpace(title))
             {
                 return $"[{trigger}] {title}";
             }
 
             return $"[{trigger}]";
+        }
+
+        /// <summary>
+        /// Prose for the triggers raised against per-webhook rows. Without these they fall
+        /// through to the bracketed trigger name, which is what a webhook subscribed to
+        /// <see cref="WebhookTriggerVocabulary.DispatchGated"/> would otherwise receive.
+        /// </summary>
+        private static string? BuildWebhookRowDiscordContent(string trigger, string title, string author)
+        {
+            var described = !string.IsNullOrWhiteSpace(title) && !string.IsNullOrWhiteSpace(author)
+                ? $"{title} by {author}"
+                : !string.IsNullOrWhiteSpace(title) ? title : null;
+
+            if (string.Equals(trigger, WebhookTriggerVocabulary.ImportedTrigger, StringComparison.OrdinalIgnoreCase))
+            {
+                return described != null ? $"{described} has been imported" : "An audiobook has been imported";
+            }
+
+            if (string.Equals(trigger, WebhookTriggerVocabulary.FailedTrigger, StringComparison.OrdinalIgnoreCase))
+            {
+                return described != null ? $"{described} failed to download" : "An audiobook failed to download";
+            }
+
+            if (string.Equals(trigger, WebhookTriggerVocabulary.MovedTrigger, StringComparison.OrdinalIgnoreCase))
+            {
+                return described != null ? $"{described} has been moved" : "An audiobook has been moved";
+            }
+
+            if (string.Equals(trigger, WebhookTriggerVocabulary.SystemTrigger, StringComparison.OrdinalIgnoreCase))
+            {
+                return described != null ? $"Listenarr: {described}" : "Listenarr system message";
+            }
+
+            return null;
         }
 
         private static string DecodeHtml(string? text)

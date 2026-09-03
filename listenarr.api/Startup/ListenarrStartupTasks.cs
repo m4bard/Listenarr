@@ -25,6 +25,7 @@ public static class ListenarrStartupTasks
     public static async Task RunListenarrStartupTasksAsync(this WebApplication app)
     {
         await app.MigrateLegacyOutputPathAsync();
+        await app.MigrateWebhookTriggersAsync();
         await app.WarnIfAuthenticationDisabledAsync();
     }
 
@@ -33,6 +34,13 @@ public static class ListenarrStartupTasks
     {
         using var scope = app.Services.CreateScope();
         var migrator = scope.ServiceProvider.GetRequiredService<ILegacyOutputPathMigrator>();
+        await migrator.MigrateAsync();
+    }
+
+    private static async Task MigrateWebhookTriggersAsync(this WebApplication app)
+    {
+        using var scope = app.Services.CreateScope();
+        var migrator = scope.ServiceProvider.GetRequiredService<IWebhookTriggerMigrator>();
         await migrator.MigrateAsync();
     }
 

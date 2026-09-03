@@ -29,6 +29,7 @@ public static class ListenarrWorkflowRegistration
         services.AddScoped<IRootFolderService, RootFolderService>();
         services.AddScoped<IAudiobookDestinationRewriteService, AudiobookDestinationRewriteService>();
         services.AddScoped<ILegacyOutputPathMigrator, LegacyOutputPathMigrator>();
+        services.AddScoped<IWebhookTriggerMigrator, WebhookTriggerMigrator>();
         services.AddMemoryCache();
 
         services.AddListenarrMetadataWorkflows();

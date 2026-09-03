@@ -119,9 +119,11 @@ namespace Listenarr.Domain.Configuration
         public string WebhookUrl { get; set; } = string.Empty;
 
         /// <summary>
-        /// List of enabled notification triggers (legacy).
+        /// List of enabled notification triggers for the legacy single webhook above.
+        /// Defaults to every legacy trigger that a production call site actually raises;
+        /// see <see cref="WebhookTriggerVocabulary.LegacyGlobal"/>.
         /// </summary>
-        public List<string> EnabledNotificationTriggers { get; set; } = new() { "book-added", "book-downloading", "book-available", "book-completed" };
+        public List<string> EnabledNotificationTriggers { get; set; } = new(WebhookTriggerVocabulary.LegacyGlobal);
 
         /// <summary>
         /// Multiple webhooks configuration (new format).
