@@ -134,6 +134,39 @@ namespace Listenarr.Tests.Features.Api.Middleware
             Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
         }
 
+        [Fact]
+        public async Task ProtectedEndpoint_Returns401_WhenTheApiSegmentIsNotLowercase()
+        {
+            // The enforcer decides "is this an API route?" with an ordinal StartsWith against
+            // the lowercase literals "/api" and "/hubs", while ASP.NET route matching is
+            // case-insensitive by default. So the controller still runs, but the gate in front
+            // of it does not recognise the path as protected and waves the request through.
+            //
+            // Every other path test in this file spells the segment lowercase, which is the only
+            // reason the existing coverage passes.
+            using var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.AddSingleton<IStartupConfigService>(sp =>
+                    {
+                        return new StartupConfigServiceMock(new StartupConfig { AuthenticationRequired = "Enabled" });
+                    });
+                });
+            });
+            var apiBasePath = ResolveApiBasePath(factory.Services);
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            foreach (var variant in new[] { "/API", "/Api", "/aPi" })
+            {
+                var path = variant + apiBasePath.Substring("/api".Length) + "/library";
+
+                var resp = await client.GetAsync(path);
+
+                Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+            }
+        }
+
         private static string ResolveApiBasePath(IServiceProvider services)
         {
             using var scope = services.CreateScope();
