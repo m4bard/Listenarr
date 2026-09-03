@@ -63,15 +63,15 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
                     continue;
                 }
 
-                await SendToTargetAsync(trigger, data, webhook.Url, webhook.Triggers);
+                await SendToTargetAsync(trigger, data, webhook.Url, webhook.Triggers, webhook.Type);
             }
         }
 
-        private async Task SendToTargetAsync(string trigger, object data, string url, List<string> enabledTriggers)
+        private async Task SendToTargetAsync(string trigger, object data, string url, List<string> enabledTriggers, string? webhookType = null)
         {
             try
             {
-                await SendNotificationAsync(trigger, data, url, enabledTriggers);
+                await SendNotificationAsync(trigger, data, url, enabledTriggers, webhookType);
             }
             catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)
             {
