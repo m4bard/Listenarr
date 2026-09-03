@@ -161,7 +161,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             return result;
         }
 
-        public async Task<int> DeleteCompletedBeforeAsync(
+        public async Task<int> DeleteOrphanedCompletedBeforeAsync(
             IReadOnlyCollection<ProcessingJobStatus> statuses,
             DateTime cutoffUtc,
             CancellationToken cancellationToken = default)
@@ -176,11 +176,14 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
             while (true)
             {
+                // The surviving-download check is a correlated EXISTS rather than a client-side
+                // filter so a large terminal queue never has to be pulled into memory to be excluded.
                 var oldJobs = await ctx.DownloadProcessingJobs
                     .Where(j =>
                         statuses.Contains(j.Status) &&
                         j.CompletedAt.HasValue &&
-                        j.CompletedAt < cutoffUtc)
+                        j.CompletedAt < cutoffUtc &&
+                        !ctx.Downloads.Any(d => d.Id == j.DownloadId))
                     .OrderBy(j => j.CompletedAt)
                     .ThenBy(j => j.Id)
                     .Take(CleanupBatchSize)
