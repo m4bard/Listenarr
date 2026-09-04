@@ -435,6 +435,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             return new string(value.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
         }
 
+
         public async Task SaveChangesAsync(System.Threading.CancellationToken ct = default)
         {
             await _db.SaveChangesAsync(ct);
