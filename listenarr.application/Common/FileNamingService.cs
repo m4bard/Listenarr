@@ -245,6 +245,15 @@ namespace Listenarr.Application.Common
                         renderedValue = value.ToString() ?? string.Empty;
                     }
 
+                    // Every caller that renders {Author} arrives here, whether it built its
+                    // variables from tagged audio, from Audible metadata or from the stored
+                    // audiobook, so this is the one place that can settle how a name is spelled
+                    // for all of them.
+                    if (string.Equals(variableName, "Author", StringComparison.OrdinalIgnoreCase))
+                    {
+                        renderedValue = AuthorNameUtils.CanonicalizeForPath(renderedValue);
+                    }
+
                     return SanitizePathComponent(renderedValue);
                 }
 
