@@ -17,7 +17,13 @@
 -->
 <template>
   <div class="api-key-input">
-    <input class="api-key-field" :value="apiKey" :type="show ? 'text' : 'password'" readonly />
+    <input
+      ref="keyField"
+      class="api-key-field"
+      :value="apiKey"
+      :type="show ? 'text' : 'password'"
+      readonly
+    />
     <button
       type="button"
       class="api-key-icon visibility-icon"
@@ -58,28 +64,71 @@ import { ref } from 'vue'
 import { PhCopy, PhCheck, PhArrowClockwise, PhEye, PhEyeSlash } from '@phosphor-icons/vue'
 import { apiService } from '@/services/api'
 import { showConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/services/toastService'
+import { errorTracking } from '@/services/errorTracking'
+import { copyTextToClipboard } from '@/utils/clipboard'
 
 const props = withDefaults(defineProps<{ apiKey?: string }>(), { apiKey: '' })
 const emit = defineEmits(['update:apiKey'])
 
+const toast = useToast()
 const copySuccess = ref(false)
 const show = ref(false)
+const keyField = ref<HTMLInputElement | null>(null)
 
 function toggleVisibility() {
   show.value = !show.value
 }
 
+function markCopied() {
+  copySuccess.value = true
+  setTimeout(() => {
+    copySuccess.value = false
+  }, 2000)
+}
+
+/**
+ * Last resort when the browser will not write to the clipboard at all: reveal the
+ * key and select it, so the user can copy it with the keyboard instead of reading
+ * it off the screen a character at a time.
+ */
+function offerKeyForManualCopy() {
+  show.value = true
+  const field = keyField.value
+  if (!field) return
+  field.focus()
+  field.select?.()
+}
+
+/**
+ * Copy a key and tell the user what happened either way. Returns whether the key
+ * reached the clipboard.
+ */
+async function copyKeyToClipboard(key: string, operation: string): Promise<boolean> {
+  let outcome: Awaited<ReturnType<typeof copyTextToClipboard>>
+  try {
+    outcome = await copyTextToClipboard(key)
+  } catch (e) {
+    errorTracking.captureException(e as Error, { component: 'ApiKeyControl', operation })
+    outcome = 'failed'
+  }
+
+  if (outcome === 'failed') {
+    toast.error(
+      'Copy failed',
+      'This browser would not let the page write to the clipboard. Browsers only allow that over HTTPS or on localhost. The key is selected below so you can copy it yourself.',
+    )
+    offerKeyForManualCopy()
+    return false
+  }
+
+  markCopied()
+  return true
+}
+
 async function onCopy() {
   if (!props.apiKey) return
-  try {
-    await navigator.clipboard.writeText(props.apiKey)
-    copySuccess.value = true
-    setTimeout(() => {
-      copySuccess.value = false
-    }, 2000)
-  } catch (e) {
-    console.error('Clipboard write failed', e)
-  }
+  await copyKeyToClipboard(props.apiKey, 'onCopy')
 }
 
 async function onRegenerate() {
@@ -88,31 +137,33 @@ async function onRegenerate() {
     'Regenerate API Key',
   )
   if (!confirmed) return
+
+  let newKey = ''
   try {
-    if (!props.apiKey) {
-      const res = await apiService.generateInitialApiKey()
-      if (res?.apiKey) {
-        emit('update:apiKey', res.apiKey)
-        await navigator.clipboard.writeText(res.apiKey)
-        copySuccess.value = true
-        setTimeout(() => {
-          copySuccess.value = false
-        }, 2000)
-      }
-    } else {
-      const res = await apiService.regenerateApiKey()
-      if (res?.apiKey) {
-        emit('update:apiKey', res.apiKey)
-        await navigator.clipboard.writeText(res.apiKey)
-        copySuccess.value = true
-        setTimeout(() => {
-          copySuccess.value = false
-        }, 2000)
-      }
-    }
+    const res = props.apiKey
+      ? await apiService.regenerateApiKey()
+      : await apiService.generateInitialApiKey()
+    newKey = res?.apiKey ?? ''
   } catch (e) {
-    console.error('Failed to (re)generate API key', e)
+    errorTracking.captureException(e as Error, {
+      component: 'ApiKeyControl',
+      operation: 'onRegenerate',
+    })
+    toast.error('Could not generate API key', 'The server did not return a new API key.')
+    return
   }
+
+  if (!newKey) {
+    toast.error('Could not generate API key', 'The server did not return a new API key.')
+    return
+  }
+
+  // The key is already live on the server, so publish it before touching the
+  // clipboard. Copying is a convenience that runs afterwards and reports its own
+  // failure: a clipboard error must never be reported as a failed regeneration,
+  // or the user regenerates again and invalidates the key they were just given.
+  emit('update:apiKey', newKey)
+  await copyKeyToClipboard(newKey, 'onRegenerate')
 }
 </script>
 
