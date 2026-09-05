@@ -53,7 +53,7 @@ type WantedVm = {
   selectAll: () => void
   clearSelection: () => void
   searchSelected: () => Promise<void>
-  searchMissing: () => Promise<void>
+  searchActiveBucket: () => Promise<void>
   categorizedWanted: { all: Audiobook[]; missing: Audiobook[] }
 }
 
@@ -171,7 +171,7 @@ describe('WantedView multi-select', () => {
 
     expect(vm.selectedCount).toBe(1)
 
-    await runSearch(vm.searchMissing())
+    await runSearch(vm.searchActiveBucket())
 
     // Search All is deliberately not scoped by either control. If this ever
     // reads the filter or the selection, that is a behaviour change that has to
