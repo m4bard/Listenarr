@@ -257,6 +257,7 @@ import { ref, computed, toRefs } from 'vue'
 import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import type { ApplicationSettings } from '@/types'
 import {
   PhRobot,
@@ -315,7 +316,14 @@ const copyInviteLink = async () => {
     return
   }
   try {
-    await navigator.clipboard.writeText(inviteLinkPreview.value)
+    const outcome = await copyTextToClipboard(inviteLinkPreview.value)
+    if (outcome === 'failed') {
+      toast.error(
+        'Copy failed',
+        'This browser would not let the page write to the clipboard. Browsers only allow that over HTTPS or on localhost.',
+      )
+      return
+    }
     toast.success('Copied', 'Invite link copied to clipboard.')
   } catch (err) {
     errorTracking.captureException(err as Error, {
