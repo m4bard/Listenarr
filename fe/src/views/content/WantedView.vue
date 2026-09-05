@@ -58,6 +58,23 @@
           </button>
         </div>
         <button
+          v-if="selectedCount > 0"
+          class="btn btn-secondary"
+          @click="clearSelection"
+          :disabled="searchSelectedRunning"
+        >
+          <PhX />
+          Clear Selection
+        </button>
+        <button
+          class="btn btn-primary"
+          @click="searchSelected"
+          :disabled="selectedCount === 0 || searchSelectedRunning"
+        >
+          <PhRobot />
+          Search Selected ({{ selectedCount }})
+        </button>
+        <button
           class="btn btn-primary"
           @click="searchActiveBucket"
           :disabled="searchableInActiveBucket.length === 0"
@@ -83,6 +100,17 @@
       @scroll="updateVisibleRange"
     >
       <div class="wanted-header">
+        <div class="col-select">
+          <div class="selection-checkbox">
+            <input
+              type="checkbox"
+              aria-label="Select all wanted audiobooks"
+              :checked="allWantedSelected"
+              :disabled="selectableWanted.length === 0"
+              @change="onSelectAllChange"
+            />
+          </div>
+        </div>
         <div class="col-poster"></div>
         <div class="col-title">Title</div>
         <div class="col-author">Author</div>
@@ -99,7 +127,26 @@
           :class="['wanted-body', { 'is-static': !useVirtualWantedList }]"
           :style="useVirtualWantedList ? { transform: `translateY(${topPadding}px)` } : undefined"
         >
-          <div v-for="item in visibleWanted" :key="item.id" class="wanted-row">
+          <div
+            v-for="item in visibleWanted"
+            :key="item.id"
+            class="wanted-row"
+            :class="{ selected: isSelected(item.id) }"
+          >
+            <div class="col-select">
+              <div class="selection-checkbox">
+                <input
+                  type="checkbox"
+                  :aria-label="`Select ${safeText(item.title)}`"
+                  :checked="isSelected(item.id)"
+                  :disabled="hasActiveDownload(item) || searchSelectedRunning"
+                  :title="
+                    hasActiveDownload(item) ? 'Already downloading' : 'Select for Search Selected'
+                  "
+                  @change="onSelectionCheckboxChange(item, $event)"
+                />
+              </div>
+            </div>
             <div class="col-poster">
               <img
                 class="row-poster"
@@ -241,6 +288,7 @@ import {
 import { logger } from '@/utils/logger'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useProtectedImages } from '@/composables/useProtectedImages'
+import { useRowSelection } from '@/composables/useRowSelection'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 
 const downloadsStore = useDownloadsStore()
@@ -314,6 +362,10 @@ const searchResults = ref<Record<number, string>>({})
 const showManualSearchModal = ref(false)
 const selectedAudiobook = ref<Audiobook | null>(null)
 const showManualImportModal = ref(false)
+const searchSelectedRunning = ref(false)
+// Set once when the view goes away, so a run in progress stops instead of
+// continuing to grab against a component that is no longer mounted.
+let searchSelectedAborted = false
 
 const syncWantedLayout = async () => {
   await nextTick()
@@ -340,6 +392,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  searchSelectedAborted = true
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', handleViewportResize)
   }
@@ -450,6 +503,41 @@ function getActiveDownload(item: Audiobook): Download | undefined {
   return activeDownloadsByAudiobook.value.get(item.id)
 }
 
+// Rows the user may tick. A book already downloading is excluded: searching it
+// again would send a second grab for a release that is already in flight, which
+// is the thing a per-row Search is careful not to do. Because this is derived
+// rather than pruned on an event, a book that starts downloading while ticked
+// drops out of the count on its own.
+const selectableWanted = computed(() =>
+  filteredWanted.value.filter((item) => !hasActiveDownload(item)),
+)
+
+const selectableWantedIds = computed(() => selectableWanted.value.map((item) => item.id))
+
+const {
+  selectedIds: selectedWantedIds,
+  selectedCount,
+  isSelected,
+  toggleSelection,
+  selectAll,
+  clearSelection,
+  allSelected: allWantedSelected,
+} = useRowSelection<number>(() => selectableWantedIds.value)
+
+function onSelectionCheckboxChange(item: Audiobook, event: Event) {
+  event.stopPropagation()
+  toggleSelection(item.id)
+}
+
+function onSelectAllChange(event: Event) {
+  event.stopPropagation()
+  if (allWantedSelected.value) {
+    clearSelection()
+  } else {
+    selectAll()
+  }
+}
+
 function getStatusClass(item: Audiobook): string {
   if (hasActiveDownload(item)) {
     return 'downloading'
@@ -486,6 +574,40 @@ const searchActiveBucket = async () => {
   for (const audiobook of searchableInActiveBucket.value) {
     await searchAudiobook(audiobook)
     await new Promise((resolve) => setTimeout(resolve, 1000))
+  }
+}
+
+const searchSelected = async () => {
+  // Read the ids once. The loop awaits, and the selection is derived from live
+  // data, so re-reading it each pass would let the set change mid-run.
+  const ids = [...selectedWantedIds.value]
+  if (ids.length === 0) return
+
+  const byId = new Map(wantedAudiobooks.value.map((item) => [item.id, item]))
+
+  logger.debug('Automatic search for selected audiobooks:', ids.length)
+  searchSelectedRunning.value = true
+  searchSelectedAborted = false
+
+  try {
+    for (const id of ids) {
+      if (searchSelectedAborted) return
+
+      const audiobook = byId.get(id)
+      if (!audiobook) continue
+
+      // Re-check rather than trusting the snapshot: an earlier pass in this same
+      // run, or a push from the downloads hub, may have started a download for
+      // this book since the ids were read.
+      if (hasActiveDownload(audiobook)) continue
+
+      await searchAudiobook(audiobook)
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
+
+    if (!searchSelectedAborted) clearSelection()
+  } finally {
+    searchSelectedRunning.value = false
   }
 }
 
@@ -726,9 +848,36 @@ const markAsSkipped = async (item: Audiobook) => {
 .wanted-row {
   display: grid;
   grid-template-columns:
-    48px minmax(0, 28fr) minmax(0, 20fr) minmax(0, 18fr) minmax(0, 10fr)
+    40px 48px minmax(0, 28fr) minmax(0, 20fr) minmax(0, 18fr) minmax(0, 10fr)
     minmax(0, 12fr) minmax(0, 12fr);
   align-items: center;
+}
+
+/* Selection cell, shared by the header and the rows */
+.col-select {
+  justify-content: center;
+}
+
+.selection-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.selection-checkbox input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #fa5252;
+}
+
+.selection-checkbox input[type='checkbox']:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.wanted-row.selected {
+  background-color: rgba(250, 82, 82, 0.08);
 }
 
 .wanted-header {
@@ -738,6 +887,10 @@ const markAsSkipped = async (item: Audiobook) => {
   background: #252525;
   padding: 0.65rem 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.wanted-header > .col-select {
+  padding: 0;
 }
 
 .wanted-header > div {
@@ -1053,7 +1206,7 @@ const markAsSkipped = async (item: Audiobook) => {
 
   /* Each row becomes a card */
   .wanted-row {
-    grid-template-columns: 40px 1fr auto;
+    grid-template-columns: auto 40px 1fr auto;
     grid-template-rows: auto auto;
     gap: 0.2rem 0.6rem;
     padding: 0.75rem;
@@ -1080,28 +1233,34 @@ const markAsSkipped = async (item: Audiobook) => {
     display: none;
   }
 
-  /* Row 1: Poster (spans 2 rows) | Title | Status */
-  .wanted-row .col-poster {
+  /* Row 1: Select (spans 2 rows) | Poster (spans 2 rows) | Title | Status */
+  .wanted-row .col-select {
     grid-column: 1;
     grid-row: 1 / 3;
     align-self: center;
   }
 
-  .wanted-row .col-title {
+  .wanted-row .col-poster {
     grid-column: 2;
+    grid-row: 1 / 3;
+    align-self: center;
+  }
+
+  .wanted-row .col-title {
+    grid-column: 3;
     grid-row: 1;
     min-width: 0;
   }
 
   .wanted-row .col-status {
-    grid-column: 3;
+    grid-column: 4;
     grid-row: 1;
     white-space: nowrap;
   }
 
   /* Row 2: Author | Actions */
   .wanted-row .col-author {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 2;
     min-width: 0;
   }
@@ -1115,7 +1274,7 @@ const markAsSkipped = async (item: Audiobook) => {
   }
 
   .wanted-row .col-actions {
-    grid-column: 3;
+    grid-column: 4;
     grid-row: 2;
     display: flex;
     justify-content: flex-end;

@@ -70,6 +70,37 @@
       </div>
     </div>
 
+    <div v-if="hasSelectableDownloads" class="downloads-selection-bar">
+      <label class="selection-checkbox select-all-label">
+        <input
+          type="checkbox"
+          aria-label="Select all cancellable downloads"
+          :checked="allCancellableSelected"
+          :disabled="cancellingSelected"
+          @change="onSelectAllChange"
+        />
+        <span>Select all cancellable</span>
+      </label>
+
+      <div class="selection-bar-actions">
+        <button
+          v-if="selectedCount > 0"
+          @click="clearSelection"
+          :disabled="cancellingSelected"
+          class="action-button btn"
+        >
+          Clear Selection
+        </button>
+        <button
+          @click="cancelSelected"
+          :disabled="selectedCount === 0 || cancellingSelected"
+          class="action-button cancel btn"
+        >
+          {{ cancellingSelected ? 'Canceling...' : `Cancel Selected (${selectedCount})` }}
+        </button>
+      </div>
+    </div>
+
     <div class="downloads-content">
       <EmptyState
         v-if="currentDownloads.length === 0"
@@ -102,9 +133,31 @@
             <div
               v-for="download in visibleDownloads"
               :key="download.id"
-              v-memo="[download.id, download.status, download.progress, isRemoving(download.id)]"
+              v-memo="[
+                download.id,
+                download.status,
+                download.progress,
+                isRemoving(download.id),
+                isSelected(download.id),
+              ]"
               class="download-card"
+              :class="{ selected: isSelected(download.id) }"
             >
+              <div class="selection-checkbox download-select">
+                <input
+                  type="checkbox"
+                  :aria-label="`Select ${download.title}`"
+                  :checked="isSelected(download.id)"
+                  :disabled="!isCancellable(download) || cancellingSelected"
+                  :title="
+                    isCancellable(download)
+                      ? 'Select for Cancel Selected'
+                      : 'Only a queued or downloading item can be canceled'
+                  "
+                  @change="onSelectionCheckboxChange(download, $event)"
+                />
+              </div>
+
               <div class="download-info">
                 <h3>{{ download.title }}</h3>
                 <p class="download-artist">{{ download.artist }}</p>
@@ -207,7 +260,8 @@ import { PhDownloadSimple, PhCheckCircle, PhXCircle } from '@phosphor-icons/vue'
 import InspectTorrentModal from '@/components/domain/download/InspectTorrentModal.vue'
 import { apiService } from '@/services/api'
 import { EmptyState, ProgressBar } from '@/components/base'
-import { showConfirm } from '@/composables/confirmService'
+import { useRowSelection } from '@/composables/useRowSelection'
+import { showConfirm } from '@/composables/useConfirm'
 
 const downloadsStore = useDownloadsStore()
 const toast = useToast()
@@ -266,6 +320,100 @@ const visibleDownloads = computed(() => {
 
   return currentDownloads.value.slice(visibleRange.value.start, visibleRange.value.end)
 })
+
+// The statuses the per-row Cancel button offers. Bulk cancel reads the same
+// list so the two paths cannot disagree about what is cancellable, which is the
+// way a batch action usually drifts from the single action it batches.
+const CANCELLABLE_STATUSES: ReadonlyArray<Download['status']> = ['Queued', 'Downloading']
+
+function isCancellable(download: Download): boolean {
+  return CANCELLABLE_STATUSES.includes(download.status)
+}
+
+const cancellableDownloadIds = computed(() =>
+  currentDownloads.value.filter(isCancellable).map((download) => download.id),
+)
+
+const {
+  selectedIds: selectedDownloadIds,
+  selectedCount,
+  isSelected,
+  toggleSelection,
+  selectAll,
+  clearSelection,
+  allSelected: allCancellableSelected,
+} = useRowSelection<string>(() => cancellableDownloadIds.value)
+
+const hasSelectableDownloads = computed(() => cancellableDownloadIds.value.length > 0)
+const cancellingSelected = ref(false)
+
+function onSelectionCheckboxChange(download: Download, event: Event) {
+  event.stopPropagation()
+  toggleSelection(download.id)
+}
+
+function onSelectAllChange(event: Event) {
+  event.stopPropagation()
+  if (allCancellableSelected.value) {
+    clearSelection()
+  } else {
+    selectAll()
+  }
+}
+
+const cancelSelected = async () => {
+  // Snapshot before the confirm: the hub keeps pushing while the dialog is up.
+  const ids = [...selectedDownloadIds.value]
+  if (ids.length === 0 || cancellingSelected.value) return
+
+  const ok = await showConfirm(
+    `Cancel ${ids.length} download${ids.length !== 1 ? 's' : ''}?`,
+    'Confirm Cancel',
+    { danger: true, confirmText: 'Cancel Downloads', cancelText: 'Keep Downloading' },
+  )
+  if (!ok) return
+
+  cancellingSelected.value = true
+  let cancelled = 0
+  const failed: string[] = []
+
+  try {
+    for (const id of ids) {
+      // A download can finish or fail while the loop runs. Re-check rather than
+      // sending a cancel for a row that is no longer in a cancellable state.
+      const current = downloadsStore.downloads.find((download) => download.id === id)
+      if (!current || !isCancellable(current)) continue
+
+      try {
+        await downloadsStore.cancelDownload(id)
+        cancelled += 1
+      } catch (error) {
+        failed.push(id)
+        errorTracking.captureException(error as Error, {
+          component: 'DownloadsView',
+          operation: 'cancelSelected',
+          metadata: { downloadId: id },
+        })
+      }
+    }
+  } finally {
+    cancellingSelected.value = false
+    clearSelection()
+  }
+
+  if (cancelled === 0 && failed.length === 0) {
+    // Everything picked had already finished or failed by the time its turn
+    // came round. Saying "canceled 0" would read as a failure; nothing happened.
+    toast.info('Nothing to cancel', 'Those downloads had already finished')
+  } else if (failed.length === 0) {
+    toast.success('Success', `Canceled ${cancelled} download${cancelled !== 1 ? 's' : ''}`)
+  } else {
+    toast.error(
+      'Partly canceled',
+      `Canceled ${cancelled}, failed to cancel ${failed.length}. See the log for details.`,
+    )
+  }
+}
 
 const updateVisibleRange = () => {
   if (!useVirtualDownloadsList.value) {
@@ -642,9 +790,58 @@ onBeforeUnmount(() => {
   padding: 1.5rem;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto;
   gap: 2rem;
   align-items: start;
+}
+
+.download-card.selected {
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.1),
+    inset 3px 0 0 #fa5252;
+}
+
+.downloads-selection-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.selection-bar-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.selection-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.selection-checkbox input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #fa5252;
+}
+
+.selection-checkbox input[type='checkbox']:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.select-all-label {
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.download-select {
+  align-self: center;
 }
 
 .download-info {
@@ -796,6 +993,19 @@ onBeforeUnmount(() => {
   .download-card {
     grid-template-columns: 1fr;
     gap: 1rem;
+  }
+
+  .download-select {
+    justify-content: flex-start;
+  }
+
+  .downloads-selection-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .selection-bar-actions .action-button {
+    flex: 1;
   }
 
   .download-actions {
