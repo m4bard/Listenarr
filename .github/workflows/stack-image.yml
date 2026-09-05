@@ -63,7 +63,23 @@ jobs:
           platforms: linux/amd64
           build-args: |
             LISTENARR_VERSION=${{ steps.version.outputs.value }}
+          # Dual tagging, standing policy.
+          #
+          # `current` MOVES and is for discovery only. `canary-<short-sha>` is
+          # immutable and is the only thing that may ever be pinned.
+          #
+          # A VALIDATION ROUND MUST NEVER NAME `current`, OR `canary`. Rounds pin
+          # by DIGEST. A moving tag changes under the person testing, so a round
+          # that names one silently asks two people to test two different images
+          # and neither finds out. If you are reading this because you are about
+          # to "simplify" a round to use a tag, that is the thing this comment
+          # exists to stop.
+          #
+          # `canary` is still published, deliberately. It predates this policy and
+          # the deployed compose file pulls it; dropping it would quietly freeze
+          # that deployment on whatever it last pulled rather than failing loudly.
           tags: |
+            ghcr.io/${{ github.repository_owner }}/listenarr-m4bard:current
             ghcr.io/${{ github.repository_owner }}/listenarr-m4bard:canary
             ghcr.io/${{ github.repository_owner }}/listenarr-m4bard:canary-${{ steps.version.outputs.short_sha }}
           labels: |
@@ -77,7 +93,10 @@ jobs:
 
       - name: Say what landed
         run: |
-          echo "published ghcr.io/${{ github.repository_owner }}/listenarr-m4bard:canary"
-          echo "  version reported by the app: ${{ steps.version.outputs.value }}"
-          echo "  immutable tag: canary-m4bard-${{ steps.version.outputs.short_sha }}"
+          echo "published ghcr.io/${{ github.repository_owner }}/listenarr-m4bard"
+          echo "  moving tags:  current, canary"
+          echo "  immutable:    canary-${{ steps.version.outputs.short_sha }}"
+          echo "  stamped version: ${{ steps.version.outputs.value }}"
+          echo "  NOTE: the running app truncates the +metadata and reports the base version."
+          echo "  Pin a round by DIGEST, never by any of these tags."
           echo "This is an UNOFFICIAL patched build. Do not use it to reproduce a bug for an upstream report."
