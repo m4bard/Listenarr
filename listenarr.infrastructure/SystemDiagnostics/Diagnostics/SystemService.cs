@@ -300,34 +300,16 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
 
                 if (!File.Exists(logFilePath))
                 {
-                    // Return some sample logs if file doesn't exist yet
+                    // Report the absence, the same way the empty-parse branch below does.
+                    // Both this list and the /system/logs/download export are read as a record
+                    // of what the application did, so an entry invented here is indistinguishable
+                    // from one the application actually wrote.
                     logs.Add(new LogEntry
                     {
-                        Timestamp = DateTime.UtcNow.AddMinutes(-5),
+                        Timestamp = DateTime.UtcNow,
                         Level = "Info",
-                        Message = "Listenarr application started",
-                        Source = "Application"
-                    });
-                    logs.Add(new LogEntry
-                    {
-                        Timestamp = DateTime.UtcNow.AddMinutes(-3),
-                        Level = "Info",
-                        Message = "Database connection established",
-                        Source = "Database"
-                    });
-                    logs.Add(new LogEntry
-                    {
-                        Timestamp = DateTime.UtcNow.AddMinutes(-2),
-                        Level = "Info",
-                        Message = "System health check completed successfully",
+                        Message = "No log file has been written yet",
                         Source = "System"
-                    });
-                    logs.Add(new LogEntry
-                    {
-                        Timestamp = DateTime.UtcNow.AddMinutes(-1),
-                        Level = "Info",
-                        Message = "Ready to accept requests",
-                        Source = "Application"
                     });
                     return logs;
                 }
