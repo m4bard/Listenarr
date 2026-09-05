@@ -454,13 +454,16 @@
             </div>
 
             <div class="list-badges">
+              <!--
+                Not interactive, and deliberately not announced as though it were:
+                the badge reports status and its own text is what a screen reader
+                should read. The click swallow is real, though. Without it a click
+                on the badge reaches the row handler and opens the audiobook.
+              -->
               <div
                 class="status-badge"
                 :class="getAudiobookStatus(audiobook)"
-                role="button"
-                tabindex="0"
                 @click.stop="() => {}"
-                :aria-label="`Status for ${audiobook.title}`"
               >
                 {{ statusText(getAudiobookStatus(audiobook)) }}
               </div>
@@ -3747,7 +3750,6 @@ defineExpose({
   font-weight: 500;
   color: #cfcfcf;
   margin-top: 0.5rem;
-  cursor: pointer;
   white-space: nowrap;
 }
 
@@ -4250,7 +4252,6 @@ defineExpose({
   font-weight: 500;
   color: #cfcfcf;
   margin-top: 0.5rem;
-  cursor: pointer;
   white-space: nowrap;
 }
 
