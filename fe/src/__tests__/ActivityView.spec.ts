@@ -834,4 +834,49 @@ describe('ActivityView', () => {
     expect(api.retryBlockedImport).toHaveBeenCalledTimes(2)
     expect(toasts.success.mock.calls[0][1]).toBe('Retried 2 of 2.')
   })
+  it('unchecking select all releases only the rows the filter is showing', async () => {
+    mockSignalR()
+    mockToasts()
+    mockApi({ getQueue: vi.fn(async () => [queueRow('q1'), queueRow('q2')]) })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as QueueSelectionVm & {
+      filterText: string
+      onSelectAll: (checked: boolean) => void
+    }
+
+    vm.toggleSelection('q1')
+    vm.toggleSelection('q2')
+    vm.filterText = 'q1'
+    await wrapper.vm.$nextTick()
+    vm.onSelectAll(false)
+
+    expect(Array.from(vm.selectedIds)).toEqual(['q2'])
+  })
+
+  it('a bulk run leaves the selected rows the filter is hiding alone', async () => {
+    mockSignalR()
+    mockToasts()
+    const api = mockApi({ getQueue: vi.fn(async () => [queueRow('q1'), queueRow('q2')]) })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as QueueSelectionVm & { filterText: string }
+
+    vm.toggleSelection('q1')
+    vm.toggleSelection('q2')
+    vm.filterText = 'q1'
+    await wrapper.vm.$nextTick()
+    await vm.removeSelected()
+    await flushPromises()
+
+    expect(api.removeFromQueue).toHaveBeenCalledTimes(1)
+    expect((api.removeFromQueue as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe('q1')
+    expect(Array.from(vm.selectedIds)).toEqual(['q2'])
+  })
 })
