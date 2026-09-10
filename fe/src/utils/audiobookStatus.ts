@@ -69,3 +69,13 @@ export function computeAudiobookStatus(
 
   return 'no-file'
 }
+
+/**
+ * The monitoring label for a row that may or may not be in the library. Rows the library
+ * does not hold report their availability instead of a monitoring state, because monitoring
+ * is a property of a library entry.
+ */
+export function formatMonitoringLabel(book: { inLibrary: boolean; monitored?: boolean }): string {
+  if (!book.inLibrary) return 'Not Added'
+  return book.monitored ? 'Monitored' : 'Unmonitored'
+}
