@@ -18,3 +18,5 @@
 // Download components barrel export
 export { default as DownloadClientFormModal } from './DownloadClientFormModal.vue'
 export { default as InspectTorrentModal } from './InspectTorrentModal.vue'
+export { default as QueueSelectCell } from './QueueSelectCell.vue'
+export { default as QueueToolbar } from './QueueToolbar.vue'
