@@ -16,5 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 // Collection components barrel export
+export { default as AuthorSeriesSection } from './AuthorSeriesSection.vue'
 export { default as BulkEditModal } from './BulkEditModal.vue'
 export { default as CustomFilterModal } from './CustomFilterModal.vue'
