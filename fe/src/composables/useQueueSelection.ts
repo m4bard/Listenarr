@@ -56,6 +56,11 @@ export function useQueueSelection() {
     selectedIds.value.clear()
   }
 
+  /** Release only the rows given, so a selection made under another filter is left standing. */
+  const deselectAll = (rows: SelectableRow[]): void => {
+    rows.forEach((row) => selectedIds.value.delete(row.id))
+  }
+
   const setSelection = (ids: Iterable<string>): void => {
     selectedIds.value = new Set(ids)
   }
@@ -77,6 +82,7 @@ export function useQueueSelection() {
     toggleSelection,
     selectAll,
     clearSelection,
+    deselectAll,
     setSelection,
     pruneSelection,
     selectedFrom,
