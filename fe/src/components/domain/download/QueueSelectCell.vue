@@ -30,7 +30,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -55,8 +55,18 @@ const applyIndeterminate = () => {
 onMounted(applyIndeterminate)
 watch(() => [props.indeterminate, props.checked], applyIndeterminate)
 
+// The input is a controlled checkbox (:checked="checked"), but Vue only patches a dynamic
+// prop binding when its value changes. If a click's emitted change does not alter the parent's
+// checked prop (for example, selecting all of an empty list), the browser's own click-driven
+// mutation is left standing. Restore the element from props on the next tick so it always
+// reflects the prop, not whatever the last click happened to do to the DOM.
 const onChange = (event: Event) => {
-  emit('change', (event.target as HTMLInputElement).checked)
+  const el = event.target as HTMLInputElement
+  emit('change', el.checked)
+  nextTick(() => {
+    if (box.value) box.value.checked = props.checked
+    applyIndeterminate()
+  })
 }
 </script>
 
