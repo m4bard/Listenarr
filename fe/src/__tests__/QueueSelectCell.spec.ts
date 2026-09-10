@@ -17,6 +17,7 @@
  */
 import { mount } from '@vue/test-utils'
 import { describe, it, expect } from 'vitest'
+import { nextTick } from 'vue'
 import QueueSelectCell from '@/components/domain/download/QueueSelectCell.vue'
 
 describe('QueueSelectCell', () => {
@@ -43,5 +44,14 @@ describe('QueueSelectCell', () => {
 
     await wrapper.setProps({ checked: true })
     expect((wrapper.get('input').element as HTMLInputElement).indeterminate).toBe(false)
+  })
+
+  it('reasserts its own checked prop after a click that does not change it', async () => {
+    const wrapper = mount(QueueSelectCell, { props: { label: 'Select all', checked: false } })
+    await wrapper.get('input').setValue(true)
+    await nextTick()
+
+    expect(wrapper.emitted('change')).toEqual([[true]])
+    expect((wrapper.get('input').element as HTMLInputElement).checked).toBe(false)
   })
 })
