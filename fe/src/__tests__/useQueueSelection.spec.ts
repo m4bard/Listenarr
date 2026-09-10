@@ -44,6 +44,13 @@ describe('useQueueSelection', () => {
     expect(selection.selectedCount.value).toBe(0)
   })
 
+  it('deselects only the rows it is given and keeps the rest', () => {
+    const selection = useQueueSelection()
+    selection.selectAll([row('a'), row('b'), row('c')])
+    selection.deselectAll([row('a'), row('c')])
+    expect(Array.from(selection.selectedIds.value)).toEqual(['b'])
+  })
+
   it('keeps a selection across a refresh and drops the ids that went away', () => {
     const selection = useQueueSelection()
     selection.selectAll([row('a'), row('b'), row('c')])
