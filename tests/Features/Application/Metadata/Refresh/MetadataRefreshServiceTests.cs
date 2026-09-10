@@ -125,6 +125,29 @@ public class MetadataRefreshServiceTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "ReportedCostIsPerBookNotPerRun")]
+    public async Task RefreshAsync_ReportsWhatThisBookCost_WhenTheRunHasAlreadySpent()
+    {
+        var metadata = new Mock<IAudiobookMetadataService>();
+        metadata
+            .Setup(m => m.GetMetadataAsync("B0SECONDBK", "us", false))
+            .ReturnsAsync(new AudiobookMetadataEnvelope(
+                new AudibleBookResponse { Asin = "B0SECONDBK", Title = "Refreshed Title" },
+                "Audible",
+                "https://example.invalid/product"));
+        var budget = new CountingBudget();
+        await budget.ChargeAsync(CancellationToken.None);
+        await budget.ChargeAsync(CancellationToken.None);
+
+        var result = await CreateService(BookWithAsin("B0SECONDBK"), metadata)
+            .RefreshAsync(1, budget, CancellationToken.None);
+
+        Assert.Equal(MetadataRefreshOutcome.Updated, result.Outcome);
+        Assert.Equal(1, result.RequestsSpent);
+        Assert.Equal(3, budget.RequestsSpent);
+    }
+
+    [Fact]
     [Trait("Scenario", "MultiRegionMissChargesPerRequest")]
     public async Task RefreshAsync_ChargesEveryRegion_WhenEarlierRegionsMiss()
     {

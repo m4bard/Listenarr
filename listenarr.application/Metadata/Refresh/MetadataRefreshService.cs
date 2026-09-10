@@ -64,6 +64,10 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(budget);
+
+        // The budget is the run's, so its counter is cumulative across every book the run has
+        // already touched. What this book cost is the difference either side of the walk.
+        var spentAtEntry = budget.RequestsSpent;
         cancellationToken.ThrowIfCancellationRequested();
 
         var audiobook = await _repository.GetByIdAsync(audiobookId);
@@ -71,7 +75,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
 
         if (audiobook == null)
         {
-            return new MetadataRefreshResult(MetadataRefreshOutcome.Failed, budget.RequestsSpent);
+            return new MetadataRefreshResult(MetadataRefreshOutcome.Failed, budget.RequestsSpent - spentAtEntry);
         }
 
         var expectedMetadataState = CreateMetadataStateFingerprint(audiobook);
@@ -92,7 +96,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
 
         if (!asinIdentifiers.Any() && !isbnIdentifiers.Any())
         {
-            return new MetadataRefreshResult(MetadataRefreshOutcome.Skipped, budget.RequestsSpent);
+            return new MetadataRefreshResult(MetadataRefreshOutcome.Skipped, budget.RequestsSpent - spentAtEntry);
         }
 
         var triedAsinKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -303,7 +307,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
 
         if (deferred || budgetExhausted)
         {
-            return new MetadataRefreshResult(MetadataRefreshOutcome.Deferred, budget.RequestsSpent);
+            return new MetadataRefreshResult(MetadataRefreshOutcome.Deferred, budget.RequestsSpent - spentAtEntry);
         }
 
         if (providerMetadata == null || string.IsNullOrWhiteSpace(resolvedAsin))
@@ -319,7 +323,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                 MaxIsbnConversionAttempts,
                 asinLookupAttemptCapHit || isbnConversionAttemptCapHit);
 
-            return new MetadataRefreshResult(MetadataRefreshOutcome.NotFound, budget.RequestsSpent);
+            return new MetadataRefreshResult(MetadataRefreshOutcome.NotFound, budget.RequestsSpent - spentAtEntry);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -344,12 +348,12 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
 
         if (applyResult.Status == MetadataRefreshApplyStatus.NotFound)
         {
-            return new MetadataRefreshResult(MetadataRefreshOutcome.Failed, budget.RequestsSpent);
+            return new MetadataRefreshResult(MetadataRefreshOutcome.Failed, budget.RequestsSpent - spentAtEntry);
         }
 
         if (applyResult.Status == MetadataRefreshApplyStatus.Conflict)
         {
-            return new MetadataRefreshResult(MetadataRefreshOutcome.Conflict, budget.RequestsSpent);
+            return new MetadataRefreshResult(MetadataRefreshOutcome.Conflict, budget.RequestsSpent - spentAtEntry);
         }
 
         var updatedAudiobook = applyResult.Audiobook!;
@@ -363,7 +367,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
 
         return new MetadataRefreshResult(
             MetadataRefreshOutcome.Updated,
-            budget.RequestsSpent,
+            budget.RequestsSpent - spentAtEntry,
             providerSource,
             resolvedAsin,
             resolvedRegion ?? "us");
