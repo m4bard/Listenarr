@@ -28,18 +28,18 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
         {
             var metadata = new AudibleBookMetadata
             {
-                Title = "A Princess of Mars",
-                Series = "Barsoom",
+                Title = "The Final Empire",
+                Series = "Mistborn",
                 SeriesNumber = "1",
-                SeriesAsin = "B007D0J4H0"
+                SeriesAsin = "SERIESONE"
             };
 
             var audiobook = metadata.ToAudiobook();
 
             var membership = Assert.Single(audiobook.SeriesMemberships!);
-            Assert.Equal("Barsoom", membership.SeriesName);
+            Assert.Equal("Mistborn", membership.SeriesName);
             Assert.Equal("1", membership.SeriesNumber);
-            Assert.Equal("B007D0J4H0", membership.SeriesAsin);
+            Assert.Equal("SERIESONE", membership.SeriesAsin);
             Assert.True(membership.IsPrimary);
         }
     }
