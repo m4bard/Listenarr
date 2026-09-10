@@ -50,6 +50,16 @@
       </div>
     </div>
 
+    <QueueToolbar
+      :selected="selectedRows"
+      :busy="bulkBusy"
+      @clear-selection="clearSelection"
+      @retry-selected="retrySelected"
+      @remove-selected="removeSelected"
+      @clear-completed="clearCompleted"
+      @clear-failed="clearFailed"
+    />
+
     <!-- Queue Grid -->
     <div
       v-if="filteredQueue.length > 0"
@@ -71,6 +81,23 @@
           @keydown.enter="toggleSort(column.key)"
           @keydown.space.prevent="toggleSort(column.key)"
         >
+          <!-- Select all lives in the first column's header. Its clicks and keys stop
+               here: the cell around it is the sort control, and ticking a box is not a
+               request to re-sort the queue. -->
+          <span
+            v-if="column.key === 'title'"
+            @click.stop
+            @keydown.enter.stop
+            @keydown.space.stop
+          >
+            <QueueSelectCell
+              :checked="allSelectableSelected"
+              :indeterminate="selectedIds.size > 0"
+              label="Select all downloads in view"
+              dataTest="queue-select-all"
+              @change="onSelectAll"
+            />
+          </span>
           {{ column.label }}
           <span v-if="sortKey === column.key" class="sort-indicator">{{
             sortAscending ? 'v' : '^'
@@ -96,10 +123,17 @@
               item.eta,
               item.downloadSpeed,
               item.downloadClient,
+              isSelected(item.id),
             ]"
             class="queue-row"
           >
             <div class="col-title">
+              <QueueSelectCell
+                v-if="item.canRemove"
+                :checked="isSelected(item.id)"
+                :label="`Select ${getDisplayTitle(item)}`"
+                @change="toggleSelection(item.id)"
+              />
               <div class="title-cell">
                 <RouterLink
                   v-if="item.audiobookId"
@@ -152,6 +186,12 @@
               </span>
             </div>
             <div class="col-actions">
+              <QueueRetryButton
+                class="btn-icon"
+                :downloadId="item.id"
+                :status="item.status"
+                @retried="refreshQueue"
+              />
               <button
                 v-if="item.canRemove"
                 class="btn-icon btn-danger-icon"
@@ -248,7 +288,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, unref } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, unref, watch } from 'vue'
 import {
   PhActivity,
   PhSpinner,
@@ -270,6 +310,11 @@ import { useDownloadsStore } from '@/stores/downloads'
 import { useLibraryStore } from '@/stores/library'
 import { useMoveJobsStore, type TrackedMoveJob } from '@/stores/moveJobs'
 import { EmptyState, LoadingState, ProgressBar } from '@/components/base'
+import { useQueueSelection } from '@/composables/useQueueSelection'
+import QueueToolbar from '@/components/domain/download/QueueToolbar.vue'
+import QueueSelectCell from '@/components/domain/download/QueueSelectCell.vue'
+import QueueRetryButton from '@/components/domain/download/QueueRetryButton.vue'
+import { runSequentially, summarizeBulk } from '@/components/domain/download/bulkQueueActions'
 import { useConfigurationStore } from '@/stores/configuration'
 import type { QueueClientStatus, QueueItem, QueueUpdatePayload, Download } from '@/types'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
@@ -783,6 +828,116 @@ const confirmRemove = async () => {
     removing.value = false
   }
 }
+
+// Queue management: selection, the toolbar's verbs, and the bulk runs behind them.
+const {
+  selectedIds,
+  isSelected,
+  toggleSelection,
+  selectAll,
+  clearSelection,
+  setSelection,
+  pruneSelection,
+  selectedFrom,
+} = useQueueSelection()
+
+const bulkBusy = ref(false)
+
+const selectableRows = computed(() => filteredQueue.value.filter((item) => item.canRemove))
+const selectedRows = computed(() => selectedFrom(filteredQueue.value))
+const allSelectableSelected = computed(
+  () =>
+    selectableRows.value.length > 0 && selectedRows.value.length === selectableRows.value.length,
+)
+
+// The poll and every SignalR update replace the list wholesale, so a selection only survives if
+// the ids that went away are dropped from it. Watching the merged list covers both paths.
+watch(allActivityItems, (rows) => pruneSelection(rows))
+
+const onSelectAll = (checked: boolean) => {
+  if (checked) selectAll(selectableRows.value)
+  else clearSelection()
+}
+
+// The same decision the single-row remove makes in confirmRemove, without editing it: a direct
+// download, or an id the client's queue no longer carries, is a Listenarr record only.
+const removeOne = async (item: QueueItem) => {
+  const isDdl =
+    isDirectDownload(item.downloadClientId) ||
+    (item.downloadClientType || '').toString().toUpperCase() === 'DDL'
+  if (isDdl || !queue.value.some((q) => q.id === item.id)) {
+    await apiService.cancelDownload(item.id)
+    return
+  }
+  await apiService.removeFromQueue(item.id, item.downloadClientId)
+}
+
+const runBulk = async (
+  verb: string,
+  action: (item: QueueItem) => Promise<unknown>,
+  operation: string,
+) => {
+  const rows = selectedRows.value
+  if (rows.length === 0) return
+
+  bulkBusy.value = true
+  const toast = useToast()
+  try {
+    const outcome = await runSequentially(rows, action, (row, error) => {
+      errorTracking.captureException(error as Error, {
+        component: 'ActivityView',
+        operation,
+        metadata: { downloadId: row.id },
+      })
+    })
+
+    // What failed stays selected, so a second attempt does not mean picking the rows out again.
+    setSelection(outcome.failed)
+
+    const summary = summarizeBulk(verb, outcome)
+    if (outcome.failed.length > 0) toast.warning('Partly done', summary)
+    else toast.success('Done', summary)
+
+    await refreshQueue()
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+const removeSelected = () => runBulk('Removed', removeOne, 'bulkRemoveFromQueue')
+
+const retrySelected = () =>
+  runBulk('Retried', (item) => apiService.retryBlockedImport(item.id), 'bulkRetryBlockedImport')
+
+const clearSweep = async (
+  label: string,
+  call: () => Promise<{ message: string; count: number }>,
+  operation: string,
+) => {
+  bulkBusy.value = true
+  const toast = useToast()
+  try {
+    const result = await call()
+    const noun = result.count === 1 ? 'download' : 'downloads'
+    toast.success(label, `${result.count} ${noun} cleared`)
+    await refreshQueue()
+  } catch (err) {
+    errorTracking.captureException(err as Error, { component: 'ActivityView', operation })
+    toast.error(label, (err as Error).message)
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+const clearCompleted = () =>
+  clearSweep(
+    'Clear completed',
+    () => apiService.clearCompletedDownloads(),
+    'clearCompletedDownloads',
+  )
+
+const clearFailed = () =>
+  clearSweep('Clear failed', () => apiService.clearFailedDownloads(), 'clearFailedDownloads')
 
 const formatStatus = (status: string): string => {
   const labels: Record<string, string> = {
