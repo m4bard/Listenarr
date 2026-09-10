@@ -225,6 +225,28 @@ public class MetadataRefreshServiceTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "OrdinaryTransientFailureSendsNoThrottleSignal")]
+    public async Task RefreshAsync_Defers_WithoutSignalling_WhenTheFailureIsNotPushback()
+    {
+        var metadata = new Mock<IAudiobookMetadataService>();
+        metadata
+            .Setup(m => m.GetMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), false))
+            .ThrowsAsync(new HttpRequestException("connection refused"));
+        var budget = new CountingBudget();
+
+        var result = await CreateService(BookWithAsin("B0REFUSEDX"), metadata)
+            .RefreshAsync(1, budget, CancellationToken.None);
+
+        // Retried and deferred like any transient fault, but the run's allowance is untouched:
+        // halving on a DNS failure would starve the walk within a couple of books.
+        Assert.Equal(MetadataRefreshOutcome.Deferred, result.Outcome);
+        Assert.Equal(0, budget.ThrottleSignals);
+        metadata.Verify(
+            m => m.GetMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), false),
+            Times.Exactly(3));
+    }
+
+    [Fact]
     [Trait("Scenario", "ExhaustedBudgetDefers")]
     public async Task RefreshAsync_Defers_WhenTheBudgetRefusesTheFirstRequest()
     {

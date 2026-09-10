@@ -63,6 +63,9 @@ public interface IMetadataRefreshBudget
     /// <summary>
     /// The provider pushed back. Halves what remains for the rest of the run, and waits out
     /// <paramref name="retryAfter"/> before the next grant when the provider named one.
+    /// Callers raise this for a 429 and nothing else: an ordinary transient fault is retried
+    /// without narrowing the run, because halving on every timeout empties the allowance in a
+    /// couple of books.
     /// </summary>
     void ApplyThrottleSignal(TimeSpan? retryAfter);
 }

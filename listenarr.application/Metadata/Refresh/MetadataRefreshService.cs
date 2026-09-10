@@ -163,7 +163,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         transientFailures++;
-                        budget.ApplyThrottleSignal(RetryAfterFrom(ex));
+                        SignalPushbackIfThrottled(budget, ex);
                         _logger.LogWarning(
                             ex,
                             "Metadata refresh lookup failed for audiobook {AudiobookId} ({Title}) ASIN {Asin} region {Region}, failure {Failure} of {Ceiling}",
@@ -232,7 +232,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     transientFailures++;
-                    budget.ApplyThrottleSignal(RetryAfterFrom(ex));
+                    SignalPushbackIfThrottled(budget, ex);
                     _logger.LogWarning(
                         ex,
                         "Metadata refresh ASIN conversion failed for audiobook {AudiobookId} ISBN {Isbn}, failure {Failure} of {Ceiling}",
@@ -373,16 +373,21 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
             resolvedRegion ?? "us");
     }
 
-    private static TimeSpan? RetryAfterFrom(Exception exception)
+    private static void SignalPushbackIfThrottled(IMetadataRefreshBudget budget, Exception exception)
     {
+        // Only a 429 is the provider asking for less. A DNS failure or a timeout is transient in a
+        // different way, and halving the allowance for one would ratchet a whole walk down to a
+        // request an hour inside a couple of books. Those still retry and still defer; they just
+        // do not narrow what is left of the run.
+        //
         // A provider that pushed back names a status; today the Audible client swallows it and
         // returns null instead, so this reads whatever a future client raises rather than
         // pretending the current one does.
         if (exception is not HttpRequestException { StatusCode: System.Net.HttpStatusCode.TooManyRequests } request)
         {
-            return null;
+            return;
         }
 
-        return request.Data["Retry-After"] is TimeSpan retryAfter ? retryAfter : null;
+        budget.ApplyThrottleSignal(request.Data["Retry-After"] is TimeSpan retryAfter ? retryAfter : null);
     }
 }
