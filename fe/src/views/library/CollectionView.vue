@@ -107,7 +107,7 @@
                 <div
                   class="series-hero-cover-item"
                   :class="{ 'is-not-added': !seriesHeroSinglePosterBook.inLibrary }"
-                  :style="getSeriesHeroCoverStyle(0, 1)"
+                  :style="seriesCoverMosaicStyle(0, 1)"
                 >
                   <img
                     :src="
@@ -127,7 +127,7 @@
                   :key="book.key"
                   class="series-hero-cover-item"
                   :class="{ 'is-not-added': !book.inLibrary }"
-                  :style="getSeriesHeroCoverStyle(index, seriesHeroPosterBooks.length)"
+                  :style="seriesCoverMosaicStyle(index, seriesHeroPosterBooks.length)"
                 >
                   <img
                     :src="getProtectedImageSrc(book.imageUrl, getPlaceholderUrl())"
@@ -476,7 +476,7 @@
                 :class="{ unmonitored: !audiobook.inLibrary || !audiobook.monitored }"
               >
                 <component :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash" />
-                {{ getMonitoringLabel(audiobook) }}
+                {{ formatMonitoringLabel(audiobook) }}
               </div>
             </div>
 
@@ -597,7 +597,7 @@
                     <component
                       :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash"
                     />
-                    {{ getMonitoringLabel(audiobook) }}
+                    {{ formatMonitoringLabel(audiobook) }}
                   </div>
                 </div>
               </div>
@@ -824,8 +824,13 @@ import type {
   SeriesCatalogResponse,
   SeriesLookupResponse,
 } from '@/types'
-import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobookStatus'
-import { safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
+import {
+  computeAudiobookStatus,
+  formatAudiobookStatus,
+  formatMonitoringLabel,
+} from '@/utils/audiobookStatus'
+import { seriesCoverMosaicStyle, seriesPositionSortKey } from '@/utils/seriesUtils'
+import { normalizeCollectionText, safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import {
   getPreferredSearchLanguageFilter,
@@ -945,16 +950,6 @@ const isCurrentSeriesMonitored = computed(() => Boolean(seriesMonitoringStatus.v
 const seriesMetadataContextLabel = computed(() => {
   return `${seriesRegionLabel.value} / ${seriesLanguageLabel.value}`
 })
-
-function normalizeCollectionText(value: string | undefined | null): string {
-  if (!value) return ''
-  return value
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
 
 function normalizeIdentifier(value: string | undefined | null): string {
   if (!value) return ''
@@ -1157,23 +1152,6 @@ function getSortValue(book: CollectionDisplayItem): string {
     default:
       return book.title || ''
   }
-}
-
-// Build a lexicographically-comparable key from a series position number so a plain string
-// sort (localeCompare) yields reading order. Each tier is led by a digit so the tiers sort
-// deterministically across locales (a leading symbol like "~" does NOT reliably sort after
-// digits — that was the original bug for missing positions):
-//   tier 1 = fully-numeric positions ("1", "2.5", "10"), ordered numerically via zero-padding;
-//   tier 2 = other non-empty positions ("1-2", "1a"), ordered by their text, after the numbers;
-//   tier 3 = missing positions, always sorted last.
-function seriesPositionSortKey(value: string | null | undefined): string {
-  const raw = (value || '').trim()
-  if (!raw) return '3'
-  if (/^\d+(\.\d+)?$/.test(raw)) {
-    const [intPart, fracPart = ''] = raw.split('.')
-    return `1${intPart.padStart(8, '0')}${fracPart ? `.${fracPart}` : ''}`
-  }
-  return `2${raw.toLowerCase()}`
 }
 
 const libraryCollectionAudiobooks = computed(() =>
@@ -1428,20 +1406,6 @@ const seriesHeroSingleBackgroundStyle = computed(() => ({
   )})`,
 }))
 
-function getSeriesHeroCoverStyle(index: number, count: number) {
-  const left = count <= 1 ? 25 : (index * 50) / Math.max(1, count - 1)
-  const zIndex = count <= 1 ? 1 : Math.max(1, 100 - index)
-
-  return {
-    width: '50%',
-    height: '100%',
-    top: '0%',
-    left: `${left}%`,
-    zIndex,
-    boxShadow: 'rgba(17, 17, 17, 0.4) 4px 0px 10px',
-    borderRadius: '12px',
-  }
-}
 const shouldShowAvailabilitySections = computed(
   () =>
     isMetadataCollection.value &&
@@ -2313,11 +2277,6 @@ function getAudiobookStatus(audiobook: CollectionDisplayItem): CollectionStatus 
   }
 
   return computeAudiobookStatus(audiobook, activeDownloadAudiobookIds.value)
-}
-
-function getMonitoringLabel(audiobook: CollectionDisplayItem): string {
-  if (!audiobook.inLibrary) return 'Not Added'
-  return audiobook.monitored ? 'Monitored' : 'Unmonitored'
 }
 
 function handleCheckboxKeydown(audiobook: CollectionDisplayItem, event: KeyboardEvent) {

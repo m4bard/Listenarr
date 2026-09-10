@@ -100,3 +100,39 @@ export function buildSeriesFields(entries: SeriesEntry[] | undefined | null): Se
       }
     : {}
 }
+
+// Build a lexicographically-comparable key from a series position number so a plain string
+// sort (localeCompare) yields reading order. Each tier is led by a digit so the tiers sort
+// deterministically across locales (a leading symbol like "~" does NOT reliably sort after
+// digits — that was the original bug for missing positions):
+//   tier 1 = fully-numeric positions ("1", "2.5", "10"), ordered numerically via zero-padding;
+//   tier 2 = other non-empty positions ("1-2", "1a"), ordered by their text, after the numbers;
+//   tier 3 = missing positions, always sorted last.
+export function seriesPositionSortKey(value: string | null | undefined): string {
+  const raw = (value || '').trim()
+  if (!raw) return '3'
+  if (/^\d+(\.\d+)?$/.test(raw)) {
+    const [intPart, fracPart = ''] = raw.split('.')
+    return `1${intPart.padStart(8, '0')}${fracPart ? `.${fracPart}` : ''}`
+  }
+  return `2${raw.toLowerCase()}`
+}
+
+/**
+ * Inline style for one cover in an overlapping series cover mosaic. The covers fan out
+ * across the left half of a 2:1 card, each one stacked under the cover before it.
+ */
+export function seriesCoverMosaicStyle(index: number, count: number) {
+  const left = count <= 1 ? 25 : (index * 50) / Math.max(1, count - 1)
+  const zIndex = count <= 1 ? 1 : Math.max(1, 100 - index)
+
+  return {
+    width: '50%',
+    height: '100%',
+    top: '0%',
+    left: `${left}%`,
+    zIndex,
+    boxShadow: 'rgba(17, 17, 17, 0.4) 4px 0px 10px',
+    borderRadius: '12px',
+  }
+}
