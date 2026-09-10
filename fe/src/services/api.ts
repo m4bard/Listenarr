@@ -788,6 +788,34 @@ class ApiService {
     })
   }
 
+  // Queue management. Appended as one block: this file is under a lot of open PRs, so a rebase
+  // should resolve as an addition rather than a merge of edited methods.
+  async clearCompletedDownloads(): Promise<{ message: string; count: number }> {
+    return this.request<{ message: string; count: number }>('/downloads/completed', {
+      method: 'DELETE',
+    })
+  }
+
+  // The endpoint sweeps ImportBlocked records as well as Failed ones, which the confirmation copy
+  // in QueueToolbar.vue has to say out loud until that is fixed upstream.
+  async clearFailedDownloads(): Promise<{ message: string; count: number }> {
+    return this.request<{ message: string; count: number }>('/downloads/failed', {
+      method: 'DELETE',
+    })
+  }
+
+  // jobId is optional because canary's controller returns message, id and status; our open #917
+  // adds the job id. If #917 lands first, delete this method and keep that one: two members of the
+  // same name in one class will not compile.
+  async retryBlockedImport(
+    id: string,
+  ): Promise<{ message: string; id: string; status: string; jobId?: string }> {
+    return this.request<{ message: string; id: string; status: string; jobId?: string }>(
+      `/downloads/${id}/retry-import`,
+      { method: 'POST' },
+    )
+  }
+
   // API Configuration
   async getApiConfigurations(): Promise<ApiConfiguration[]> {
     return this.request<ApiConfiguration[]>('/configuration/apis')
