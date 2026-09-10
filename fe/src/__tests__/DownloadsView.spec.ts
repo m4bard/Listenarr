@@ -111,3 +111,77 @@ describe('DownloadsView mobile virtualization', () => {
     wrapper.unmount()
   })
 })
+
+describe('DownloadsView retry action', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.clearAllMocks()
+  })
+
+  const mountWithDownloads = async (downloads: Array<Record<string, unknown>>) => {
+    vi.doMock('@/stores/downloads', () => ({
+      useDownloadsStore: () => ({
+        isLoading: false,
+        activeDownloads: downloads,
+        completedDownloads: [],
+        failedDownloads: [],
+        loadDownloads: vi.fn(async () => undefined),
+        cancelDownload: vi.fn(async () => undefined),
+      }),
+    }))
+    vi.doMock('@/services/toastService', () => ({
+      useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+    }))
+    vi.doMock('@/services/errorTracking', () => ({
+      errorTracking: { captureException: vi.fn() },
+    }))
+    vi.doMock('@/utils/logger', () => ({ logger: { warn: vi.fn() } }))
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        getCachedAnnounces: vi.fn(async () => ({ announces: [] })),
+        retryBlockedImport: vi.fn(async () => ({ message: 'queued' })),
+      },
+    }))
+
+    const { default: DownloadsView } = await import('@/views/activity/DownloadsView.vue')
+    const wrapper = mount(DownloadsView, {
+      global: {
+        stubs: {
+          CustomSelect: true,
+          EmptyState: true,
+          ProgressBar: true,
+          InspectTorrentModal: true,
+        },
+      },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    return wrapper
+  }
+
+  const download = (id: string, status: string) => ({
+    id,
+    title: id,
+    artist: 'Artist',
+    album: 'Album',
+    status,
+    progress: 100,
+    totalSize: 1024,
+    downloadedSize: 1024,
+    downloadClientId: 'qbittorrent',
+    startedAt: new Date().toISOString(),
+    finalPath: '',
+    errorMessage: '',
+  })
+
+  it('offers Retry on an import blocked download', async () => {
+    const wrapper = await mountWithDownloads([download('d1', 'ImportBlocked')])
+    expect(wrapper.find('[data-test="queue-retry"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('does not offer Retry on a failed download, which the endpoint would reject', async () => {
+    const wrapper = await mountWithDownloads([download('d2', 'Failed')])
+    expect(wrapper.find('[data-test="queue-retry"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})

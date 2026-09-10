@@ -138,13 +138,12 @@
                   Cancel
                 </button>
 
-                <button
-                  v-if="download.status === 'Failed'"
-                  @click="retryDownload()"
+                <QueueRetryButton
                   class="action-button retry btn"
-                >
-                  Retry
-                </button>
+                  :downloadId="download.id"
+                  :status="download.status"
+                  @retried="refreshDownloads"
+                />
 
                 <button
                   v-if="download.finalPath"
@@ -186,6 +185,7 @@ import { errorTracking } from '@/services/errorTracking'
 import { logger } from '@/utils/logger'
 import { PhDownloadSimple, PhCheckCircle, PhXCircle } from '@phosphor-icons/vue'
 import InspectTorrentModal from '@/components/domain/download/InspectTorrentModal.vue'
+import QueueRetryButton from '@/components/domain/download/QueueRetryButton.vue'
 import { apiService } from '@/services/api'
 import { EmptyState, ProgressBar } from '@/components/base'
 
@@ -333,13 +333,6 @@ const closeInspect = () => {
   inspectState.value.downloadId = ''
   inspectState.value.announces = null
   inspectState.value.loading = false
-}
-
-const retryDownload = async () => {
-  // For now, just show a message. In a real implementation,
-  // you would restart the download
-  // useToast expects (title, message)
-  toast.info('Coming Soon', 'Retry functionality will be implemented soon')
 }
 
 const openFolder = (path: string) => {
