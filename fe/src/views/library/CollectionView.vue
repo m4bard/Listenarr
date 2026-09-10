@@ -200,6 +200,14 @@
       </div>
     </section>
 
+    <AuthorSeriesSection
+      v-if="isAuthorCollection"
+      :books="audiobooks"
+      :region="authorCatalogRegion"
+      :language="preferredAuthorMonitoringLanguage"
+      @monitoring-changed="refreshLibrary"
+    />
+
     <!-- Top Toolbar -->
     <div
       class="toolbar"
@@ -801,6 +809,7 @@ import { errorTracking } from '@/services/errorTracking'
 import { useToast } from '@/services/toastService'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
+import AuthorSeriesSection from '@/components/domain/collection/AuthorSeriesSection.vue'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
