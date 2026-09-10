@@ -92,7 +92,7 @@
           >
             <QueueSelectCell
               :checked="allSelectableSelected"
-              :indeterminate="selectedIds.size > 0"
+              :indeterminate="selectedRows.length > 0"
               label="Select all downloads in view"
               dataTest="queue-select-all"
               @change="onSelectAll"
@@ -836,6 +836,7 @@ const {
   toggleSelection,
   selectAll,
   clearSelection,
+  deselectAll,
   setSelection,
   pruneSelection,
   selectedFrom,
@@ -854,9 +855,11 @@ const allSelectableSelected = computed(
 // the ids that went away are dropped from it. Watching the merged list covers both paths.
 watch(allActivityItems, (rows) => pruneSelection(rows))
 
+// The filter is a viewport, not a selection change, so select all and its opposite both act on
+// the rows in view and leave anything selected under another filter alone.
 const onSelectAll = (checked: boolean) => {
   if (checked) selectAll(selectableRows.value)
-  else clearSelection()
+  else deselectAll(selectableRows.value)
 }
 
 // The same decision the single-row remove makes in confirmRemove, without editing it: a direct
@@ -892,7 +895,10 @@ const runBulk = async (
     })
 
     // What failed stays selected, so a second attempt does not mean picking the rows out again.
-    setSelection(outcome.failed)
+    // Rows the run never saw, because a filter was hiding them, stay selected too.
+    const touched = new Set(rows.map((row) => row.id))
+    const untouched = Array.from(selectedIds.value).filter((id) => !touched.has(id))
+    setSelection([...untouched, ...outcome.failed])
 
     const summary = summarizeBulk(verb, outcome)
     if (outcome.failed.length > 0) toast.warning('Partly done', summary)
