@@ -730,6 +730,8 @@ class ApiService {
     })
   }
 
+  // The endpoint sweeps ImportBlocked records as well as Failed ones, which the confirmation copy
+  // in QueueToolbar.vue has to say out loud until that is fixed upstream.
   async clearFailedDownloads(): Promise<{ message: string; count: number }> {
     return this.request<{ message: string; count: number }>('/downloads/failed', {
       method: 'DELETE',
