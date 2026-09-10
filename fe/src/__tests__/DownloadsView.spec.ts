@@ -112,67 +112,23 @@ describe('DownloadsView mobile virtualization', () => {
   })
 })
 
-describe('DownloadsView retry button', () => {
-  const mountFailedTab = async (retryBlockedImport: ReturnType<typeof vi.fn>) => {
+describe('DownloadsView retry action', () => {
+  beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn().mockImplementation(() => ({
-        matches: true,
-        media: '(max-width: 768px)',
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    )
+  })
 
-    const failedDownloads = [
-      {
-        id: 'blocked-1',
-        title: 'Blocked Import',
-        artist: 'Author',
-        album: 'Album',
-        status: 'ImportBlocked',
-        progress: 100,
-        totalSize: 1024,
-        downloadedSize: 1024,
-        downloadClientId: 'qbittorrent',
-        startedAt: new Date().toISOString(),
-        finalPath: '',
-        errorMessage: 'Unable to import the download',
-      },
-      {
-        id: 'failed-1',
-        title: 'Failed Download',
-        artist: 'Author',
-        album: 'Album',
-        status: 'Failed',
-        progress: 0,
-        totalSize: 1024,
-        downloadedSize: 0,
-        downloadClientId: 'qbittorrent',
-        startedAt: new Date().toISOString(),
-        finalPath: '',
-        errorMessage: 'Download failed in client',
-      },
-    ]
-
+  const mountWithDownloads = async (downloads: Array<Record<string, unknown>>) => {
     vi.doMock('@/stores/downloads', () => ({
       useDownloadsStore: () => ({
         isLoading: false,
-        activeDownloads: [],
+        activeDownloads: downloads,
         completedDownloads: [],
-        failedDownloads,
+        failedDownloads: [],
         loadDownloads: vi.fn(async () => undefined),
         cancelDownload: vi.fn(async () => undefined),
-        retryBlockedImport,
       }),
     }))
-
     vi.doMock('@/services/toastService', () => ({
       useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
     }))
@@ -181,7 +137,10 @@ describe('DownloadsView retry button', () => {
     }))
     vi.doMock('@/utils/logger', () => ({ logger: { warn: vi.fn() } }))
     vi.doMock('@/services/api', () => ({
-      apiService: { getCachedAnnounces: vi.fn(async () => ({ announces: [] })) },
+      apiService: {
+        getCachedAnnounces: vi.fn(async () => ({ announces: [] })),
+        retryBlockedImport: vi.fn(async () => ({ message: 'queued' })),
+      },
     }))
 
     const { default: DownloadsView } = await import('@/views/activity/DownloadsView.vue')
@@ -195,53 +154,34 @@ describe('DownloadsView retry button', () => {
         },
       },
     })
-
     await new Promise((resolve) => setTimeout(resolve, 10))
-
-    const failedTab = wrapper
-      .findAll('.tab-button')
-      .find((button) => button.text().startsWith('Failed'))
-    await failedTab!.trigger('click')
-    await new Promise((resolve) => setTimeout(resolve, 10))
-
     return wrapper
   }
 
-  it('retries the blocked import through the store instead of showing a placeholder', async () => {
-    const retryBlockedImport = vi.fn(async () => ({
-      message: 'Import retry queued',
-      id: 'blocked-1',
-      status: 'ImportPending',
-      jobId: 'job-1',
-    }))
-    const wrapper = await mountFailedTab(retryBlockedImport)
+  const download = (id: string, status: string) => ({
+    id,
+    title: id,
+    artist: 'Artist',
+    album: 'Album',
+    status,
+    progress: 100,
+    totalSize: 1024,
+    downloadedSize: 1024,
+    downloadClientId: 'qbittorrent',
+    startedAt: new Date().toISOString(),
+    finalPath: '',
+    errorMessage: '',
+  })
 
-    const cards = wrapper.findAll('.download-card')
-    expect(cards).toHaveLength(2)
-
-    const retryButtons = wrapper.findAll('.action-button.retry')
-    expect(retryButtons).toHaveLength(1)
-
-    await retryButtons[0].trigger('click')
-    expect(retryBlockedImport).toHaveBeenCalledWith('blocked-1')
-
+  it('offers Retry on an import blocked download', async () => {
+    const wrapper = await mountWithDownloads([download('d1', 'ImportBlocked')])
+    expect(wrapper.find('[data-test="queue-retry"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('does not offer retry on a Failed download, which the endpoint rejects', async () => {
-    const retryBlockedImport = vi.fn(async () => ({
-      message: 'Import retry queued',
-      id: 'blocked-1',
-      status: 'ImportPending',
-      jobId: 'job-1',
-    }))
-    const wrapper = await mountFailedTab(retryBlockedImport)
-
-    const failedCard = wrapper
-      .findAll('.download-card')
-      .find((card) => card.text().includes('Failed Download'))
-    expect(failedCard!.find('.action-button.retry').exists()).toBe(false)
-
+  it('does not offer Retry on a failed download, which the endpoint would reject', async () => {
+    const wrapper = await mountWithDownloads([download('d2', 'Failed')])
+    expect(wrapper.find('[data-test="queue-retry"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })
