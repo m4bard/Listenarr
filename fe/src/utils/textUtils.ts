@@ -115,3 +115,18 @@ export function stripHtmlAndNormalize(text: string | undefined | null): string {
 
   return decodeHtmlEntities(raw)
 }
+
+/**
+ * Folds a name into a comparison key: accents removed, lower case, and every run of
+ * non-alphanumeric characters collapsed to a single space. Used wherever collection
+ * membership is decided by name rather than by an identifier.
+ */
+export function normalizeCollectionText(value: string | undefined | null): string {
+  if (!value) return ''
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
