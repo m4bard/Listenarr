@@ -29,6 +29,12 @@ public class MetadataRefreshCoordinatorTests : BaseTests
 
         public TaskCompletionSource? Gate { get; set; }
 
+        /// <summary>
+        /// How many provider requests came back with a verdict for a given book. One by default,
+        /// because most of these tests are about the gate rather than about the stamping rule.
+        /// </summary>
+        public Func<int, int> ProviderAnswers { get; set; } = _ => 1;
+
         /// <summary>Completes once the loop is inside its first book.</summary>
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -45,7 +51,10 @@ public class MetadataRefreshCoordinatorTests : BaseTests
             }
 
             await budget.ChargeAsync(cancellationToken);
-            return new MetadataRefreshResult(_outcomes(audiobookId), budget.RequestsSpent);
+            return new MetadataRefreshResult(
+                _outcomes(audiobookId),
+                budget.RequestsSpent,
+                ProviderAnswers: ProviderAnswers(audiobookId));
         }
     }
 
@@ -536,6 +545,34 @@ public class MetadataRefreshCoordinatorTests : BaseTests
         repository.Verify(
             r => r.GetAudiobooksDueForMetadataRefreshAsync(
                 It.IsAny<DateTime>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    [Trait("Scenario", "ASilentProviderDoesNotStampAMiss")]
+    public async Task RunToCompletionAsync_LeavesTheTimestampUnset_WhenNothingAnsweredForTheBook()
+    {
+        var (coordinator, service, repository) = Create(
+            [Candidate(1, "A"), Candidate(2, "A")],
+            _ => MetadataRefreshOutcome.NotFound);
+
+        // Book 1's walk was answered and came back empty; book 2's was never answered at all.
+        // Both report NotFound, and the outcome on its own cannot tell them apart.
+        service.ProviderAnswers = id => id == 1 ? 2 : 0;
+
+        var run = await coordinator.RunToCompletionAsync(
+            new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Library, null, Force: false),
+            CancellationToken.None);
+
+        Assert.NotNull(run);
+
+        // Stamping the second would hide it for the whole staleness window on the strength of a
+        // provider that never said anything, which is what a throttled sweep looks like.
+        repository.Verify(
+            r => r.StampMetadataRefreshAsync(1, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        repository.Verify(
+            r => r.StampMetadataRefreshAsync(2, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 

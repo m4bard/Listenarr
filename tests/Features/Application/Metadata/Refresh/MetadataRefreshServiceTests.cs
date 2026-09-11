@@ -202,6 +202,62 @@ public class MetadataRefreshServiceTests : BaseTests
         // monopolising the head of the queue.
         Assert.Equal(MetadataRefreshOutcome.NotFound, result.Outcome);
         Assert.Equal(2, budget.RequestsSpent);
+
+        // The count the caller stamps on. Reporting the outcome alone left the coordinator
+        // unable to tell this from a walk nothing ever answered.
+        Assert.Equal(2, result.ProviderAnswers);
+    }
+
+    [Fact]
+    [Trait("Scenario", "AnUnaskableBookIsSkippedNotMissing")]
+    public async Task RefreshAsync_ReturnsSkipped_WhenNoIdentifierCouldBeAskedAbout()
+    {
+        // An ISBN and no resolver wired: there is an identifier, so this is not the no-identifier
+        // case, but nothing is ever asked. Reporting NotFound claimed a provider verdict that no
+        // provider gave.
+        var book = new Audiobook
+        {
+            Id = 1,
+            Title = "Only An Isbn",
+            ExternalIdentifiers =
+            [
+                new AudiobookExternalIdentifier
+                {
+                    Type = AudiobookExternalIdentifierType.Isbn,
+                    ValueRaw = "9780000000001",
+                    ValueNormalized = "9780000000001",
+                    IsPrimary = true,
+                    Source = AudiobookExternalIdentifierSource.Manual
+                }
+            ]
+        };
+        var metadata = new Mock<IAudiobookMetadataService>();
+        var budget = new CountingBudget();
+
+        var result = await CreateService(book, metadata).RefreshAsync(1, budget, CancellationToken.None);
+
+        Assert.Equal(MetadataRefreshOutcome.Skipped, result.Outcome);
+        Assert.Equal(0, result.ProviderAnswers);
+        Assert.Equal(0, budget.RequestsSpent);
+    }
+
+    [Fact]
+    [Trait("Scenario", "SilenceIsNotAMiss")]
+    public async Task RefreshAsync_Defers_WhenEveryRequestWasMadeAndNoneWasAnswered()
+    {
+        var metadata = new Mock<IAudiobookMetadataService>();
+        metadata
+            .Setup(m => m.GetMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), false))
+            .ThrowsAsync(new HttpRequestException("connection refused"));
+        var budget = new CountingBudget();
+
+        var result = await CreateService(BookWithAsin("B0SILENTXX"), metadata)
+            .RefreshAsync(1, budget, CancellationToken.None);
+
+        // The walk ran out of regions the same way the NotFound case does. What separates them
+        // is that nothing ever answered, so there is no evidence the book is gone.
+        Assert.Equal(MetadataRefreshOutcome.Deferred, result.Outcome);
+        Assert.Equal(0, result.ProviderAnswers);
     }
 
     [Fact]

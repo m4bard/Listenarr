@@ -18,14 +18,18 @@ public enum MetadataRefreshOutcome
     /// <summary>Provider metadata was applied.</summary>
     Updated,
 
-    /// <summary>Nothing to ask about: no ASIN and no ISBN. Stamped so it leaves the queue head.</summary>
+    /// <summary>
+    /// Nothing was asked: no ASIN and no ISBN, or none of them usable and no resolver for the
+    /// ones that were. Stamped so it leaves the queue head. No provider had any part in it.
+    /// </summary>
     Skipped,
 
     /// <summary>
     /// Identifiers and regions exhausted and every one of them answered, all of them with
     /// nothing. Stamped; local metadata untouched. A walk that ended the same way but had a
-    /// transient failure somewhere in it is <see cref="Deferred"/>, because a provider that
-    /// would not answer is not evidence that the book is gone.
+    /// transient failure somewhere in it, or that got no answer at all, is
+    /// <see cref="Deferred"/>, because a provider that would not answer is not evidence that the
+    /// book is gone.
     /// </summary>
     NotFound,
 
@@ -46,12 +50,21 @@ public enum MetadataRefreshOutcome
 /// The result of refreshing one book, including what it cost. <c>RequestsSpent</c> is the
 /// provider requests this book alone consumed, not the run's running total.
 /// </summary>
+/// <remarks>
+/// <c>ProviderAnswers</c> is how many of this book's provider requests came back with a verdict
+/// rather than an exception. A caller may only stamp
+/// <see cref="MetadataRefreshOutcome.NotFound"/> when it is above zero: the provider answers
+/// null for a book it has never heard of and raises when it could not be asked, so an outcome
+/// reached with no answers is silence rather than absence, and stamping silence hides the book
+/// for the whole staleness window.
+/// </remarks>
 public sealed record MetadataRefreshResult(
     MetadataRefreshOutcome Outcome,
     int RequestsSpent,
     string? Source = null,
     string? Asin = null,
-    string? Region = null);
+    string? Region = null,
+    int ProviderAnswers = 0);
 
 /// <summary>
 /// The run's provider-request allowance. Charged once per provider request, inside the region

@@ -332,6 +332,7 @@ public sealed partial class MetadataRefreshCoordinator : IMetadataRefreshCoordin
                 using var scope = _scopeFactory.CreateScope();
                 var service = scope.ServiceProvider.GetRequiredService<IMetadataRefreshService>();
                 MetadataRefreshOutcome outcome;
+                var providerAnswers = 0;
                 try
                 {
                     var result = await service.RefreshAsync(
@@ -339,6 +340,7 @@ public sealed partial class MetadataRefreshCoordinator : IMetadataRefreshCoordin
                         runBudget,
                         cancellationToken);
                     outcome = result.Outcome;
+                    providerAnswers = result.ProviderAnswers;
                 }
                 catch (ApplicationConflictException ex)
                 {
@@ -367,9 +369,14 @@ public sealed partial class MetadataRefreshCoordinator : IMetadataRefreshCoordin
                 run.Record(outcome);
                 run.RequestsSpent = runBudget.RequestsSpent;
 
+                // Updated and Skipped are settled locally: one wrote provider metadata, the
+                // other never had a question to ask. NotFound is the only outcome that rests on
+                // the provider having answered, and it is stamped only when one did. A run that
+                // asked and got silence, whether from pushback or from a provider that was not
+                // there, leaves the timestamp unset and asks again next cycle.
                 if (outcome is MetadataRefreshOutcome.Updated
                     or MetadataRefreshOutcome.Skipped
-                    or MetadataRefreshOutcome.NotFound)
+                    || (outcome == MetadataRefreshOutcome.NotFound && providerAnswers > 0))
                 {
                     var repository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
                     await repository.StampMetadataRefreshAsync(

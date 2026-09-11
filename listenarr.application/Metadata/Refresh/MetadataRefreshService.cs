@@ -110,6 +110,14 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
         var budgetExhausted = false;
         var deferred = false;
 
+        // Provider requests that were made, and how many of those came back with a verdict
+        // rather than an exception. Nothing else in the walk can tell an absent book from an
+        // unreachable provider: the metadata service answers null for a book it has never heard
+        // of, and raises when it could not ask. So a walk that ends with nothing is only
+        // evidence about the book if something answered, and only then may it be stamped.
+        var providerCalls = 0;
+        var providerAnswers = 0;
+
         AudibleBookResponse? providerMetadata = null;
         string? providerSource = null;
         string? resolvedAsin = null;
@@ -156,7 +164,9 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
 
                     try
                     {
+                        providerCalls++;
                         metadataEnvelope = await _metadataService.GetMetadataAsync(normalizedAsin, regionValue, cache: false);
+                        providerAnswers++;
                         cancellationToken.ThrowIfCancellationRequested();
                         break;
                     }
@@ -236,7 +246,9 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
 
                 try
                 {
+                    providerCalls++;
                     var (success, asinFromIsbn, _) = await _asinLookupService.GetAsinFromIsbnAsync(isbnValue);
+                    providerAnswers++;
                     cancellationToken.ThrowIfCancellationRequested();
                     return success ? asinFromIsbn : null;
                 }
@@ -324,7 +336,10 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
 
         if (deferred || budgetExhausted)
         {
-            return new MetadataRefreshResult(MetadataRefreshOutcome.Deferred, budget.RequestsSpent - spentAtEntry);
+            return new MetadataRefreshResult(
+                MetadataRefreshOutcome.Deferred,
+                budget.RequestsSpent - spentAtEntry,
+                ProviderAnswers: providerAnswers);
         }
 
         if (providerMetadata == null || string.IsNullOrWhiteSpace(resolvedAsin))
@@ -342,13 +357,27 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
 
             // Every region and identifier is exhausted. Whether that is an absent book or an
             // unreachable provider is the difference between stamping the book for a month and
-            // trying it again next cycle, and a transient failure anywhere in the walk is what
-            // separates them.
+            // trying it again next cycle.
+            //
+            // Nothing was asked at all: every identifier failed to normalize, or the only ones
+            // present were ISBNs with no resolver wired. That is the same local determination
+            // Skipped already makes for a book with no identifiers, and no provider had any part
+            // in it, so it is reported that way rather than as a provider verdict.
+            if (providerCalls == 0)
+            {
+                return new MetadataRefreshResult(
+                    MetadataRefreshOutcome.Skipped,
+                    budget.RequestsSpent - spentAtEntry);
+            }
+
+            // Otherwise the walk only says something about the book if something answered. A run
+            // that asked and was never answered is deferred, whatever the shape of the silence.
             return new MetadataRefreshResult(
-                transientFailures > 0
+                transientFailures > 0 || providerAnswers == 0
                     ? MetadataRefreshOutcome.Deferred
                     : MetadataRefreshOutcome.NotFound,
-                budget.RequestsSpent - spentAtEntry);
+                budget.RequestsSpent - spentAtEntry,
+                ProviderAnswers: providerAnswers);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -395,7 +424,8 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
             budget.RequestsSpent - spentAtEntry,
             providerSource,
             resolvedAsin,
-            resolvedRegion ?? "us");
+            resolvedRegion ?? "us",
+            providerAnswers);
     }
 
     /// <summary>
