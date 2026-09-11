@@ -46,6 +46,17 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<List<int>> GetAudiobookIdsByAuthorNameAsync(
             string authorName,
             CancellationToken ct = default);
+
+        /// <summary>
+        /// The staleness predicate of the due query, restricted to the given ids and answered in
+        /// SQL. An author-scoped run filters its own books with this instead of pulling the whole
+        /// library's due set back to intersect it. Ordered by id; an empty input asks nothing.
+        /// </summary>
+        Task<List<int>> FilterAudiobookIdsDueForMetadataRefreshAsync(
+            IReadOnlyCollection<int> audiobookIds,
+            DateTime staleBefore,
+            CancellationToken ct = default);
+
         Task<bool> StampMetadataRefreshAsync(
             int audiobookId,
             DateTime refreshedAtUtc,

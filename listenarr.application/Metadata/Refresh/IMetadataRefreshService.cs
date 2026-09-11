@@ -21,13 +21,21 @@ public enum MetadataRefreshOutcome
     /// <summary>Nothing to ask about: no ASIN and no ISBN. Stamped so it leaves the queue head.</summary>
     Skipped,
 
-    /// <summary>Identifiers and regions exhausted, nothing returned. Stamped; local metadata untouched.</summary>
+    /// <summary>
+    /// Identifiers and regions exhausted and every one of them answered, all of them with
+    /// nothing. Stamped; local metadata untouched. A walk that ended the same way but had a
+    /// transient failure somewhere in it is <see cref="Deferred"/>, because a provider that
+    /// would not answer is not evidence that the book is gone.
+    /// </summary>
     NotFound,
 
     /// <summary>The book changed while the provider was answering. Not stamped; retried next cycle.</summary>
     Conflict,
 
-    /// <summary>Transient provider failure past the retry ceiling, or no budget. Not stamped.</summary>
+    /// <summary>
+    /// The provider pushed back, or a transient failure left some part of the walk unanswered,
+    /// or the run's allowance ran out. Not stamped, so the next cycle asks again.
+    /// </summary>
     Deferred,
 
     /// <summary>The book vanished, or the write was rejected.</summary>
@@ -63,9 +71,10 @@ public interface IMetadataRefreshBudget
     /// <summary>
     /// The provider pushed back. Halves what remains for the rest of the run, and waits out
     /// <paramref name="retryAfter"/> before the next grant when the provider named one.
-    /// Callers raise this for a 429 and nothing else: an ordinary transient fault is retried
-    /// without narrowing the run, because halving on every timeout empties the allowance in a
-    /// couple of books.
+    /// Raised for <see cref="MetadataProviderThrottledException"/>, and for an
+    /// <see cref="HttpRequestException"/> carrying <c>TooManyRequests</c>, and for nothing else:
+    /// an ordinary transient fault is retried without narrowing the run, because halving on
+    /// every timeout empties the allowance in a couple of books.
     /// </summary>
     void ApplyThrottleSignal(TimeSpan? retryAfter);
 }
@@ -80,6 +89,13 @@ public interface IMetadataRefreshBudget
 /// detail naming what has to be resolved first. Those two strings have no home on
 /// <see cref="MetadataRefreshResult"/>, and the API adapter reports them verbatim, so the
 /// exception is left to propagate rather than flattened into an outcome.
+/// <para>
+/// The retry ceiling is per book and per run, not per region: a book is retried in place at
+/// most twice, and the attempt that exceeds that moves the walk on to the next region or
+/// identifier rather than ending it, so every region still gets asked at least once. Pushback
+/// is the exception, and stops the book where it stands, because it is the provider asking for
+/// less rather than one region failing.
+/// </para>
 /// </remarks>
 public interface IMetadataRefreshService
 {

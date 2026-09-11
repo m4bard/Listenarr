@@ -197,6 +197,9 @@ public class MetadataRefreshServiceTests : BaseTests
         var result = await CreateService(BookWithAsin("B0NOTHINGX"), metadata)
             .RefreshAsync(1, budget, CancellationToken.None);
 
+        // NotFound and not Deferred: every region answered, and what they answered was that
+        // they have never heard of it. Nothing failed, so the book is stamped and stops
+        // monopolising the head of the queue.
         Assert.Equal(MetadataRefreshOutcome.NotFound, result.Outcome);
         Assert.Equal(2, budget.RequestsSpent);
     }
@@ -217,11 +220,36 @@ public class MetadataRefreshServiceTests : BaseTests
         var result = await CreateService(BookWithAsin("B0THROTTLE"), metadata)
             .RefreshAsync(1, budget, CancellationToken.None);
 
+        // Pushback stops the book where it stands rather than moving to the next region: the
+        // provider asked for less traffic, and uk is the same provider.
         Assert.Equal(MetadataRefreshOutcome.Deferred, result.Outcome);
         Assert.Equal(3, budget.ThrottleSignals);
+        Assert.Null(budget.LastRetryAfter);
         metadata.Verify(
             m => m.GetMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), false),
             Times.Exactly(3));
+    }
+
+    [Fact]
+    [Trait("Scenario", "ThrottledExceptionCarriesTheRetryAfter")]
+    public async Task RefreshAsync_PassesTheProvidersRetryAfter_ToTheBudget()
+    {
+        var metadata = new Mock<IAudiobookMetadataService>();
+        metadata
+            .Setup(m => m.GetMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), false))
+            .ThrowsAsync(new MetadataProviderThrottledException(
+                "slow down",
+                TimeSpan.FromSeconds(30)));
+        var budget = new CountingBudget();
+
+        var result = await CreateService(BookWithAsin("B0RETRYAFT"), metadata)
+            .RefreshAsync(1, budget, CancellationToken.None);
+
+        // The wait the provider named is the one thing an HttpRequestException cannot carry,
+        // which is why the signal has a type of its own.
+        Assert.Equal(MetadataRefreshOutcome.Deferred, result.Outcome);
+        Assert.Equal(3, budget.ThrottleSignals);
+        Assert.Equal(TimeSpan.FromSeconds(30), budget.LastRetryAfter);
     }
 
     [Fact]
@@ -241,9 +269,46 @@ public class MetadataRefreshServiceTests : BaseTests
         // halving on a DNS failure would starve the walk within a couple of books.
         Assert.Equal(MetadataRefreshOutcome.Deferred, result.Outcome);
         Assert.Equal(0, budget.ThrottleSignals);
+
+        // Three attempts on us, which is the per-book retry ceiling, then one on uk: the
+        // ceiling counts retries of the book, so the region it moves on to gets the single
+        // attempt the old endpoint always gave it.
+        metadata.Verify(
+            m => m.GetMetadataAsync("B0REFUSEDX", "us", false),
+            Times.Exactly(3));
+        metadata.Verify(
+            m => m.GetMetadataAsync("B0REFUSEDX", "uk", false),
+            Times.Once);
+    }
+
+    [Fact]
+    [Trait("Scenario", "ATransientFailureFallsThroughToTheNextRegion")]
+    public async Task RefreshAsync_AnswersFromTheNextRegion_WhenTheFirstOneKeepsFailing()
+    {
+        var metadata = new Mock<IAudiobookMetadataService>();
+        metadata
+            .Setup(m => m.GetMetadataAsync("B0REGIONFB", "us", false))
+            .ThrowsAsync(new HttpRequestException("connection refused"));
+        metadata
+            .Setup(m => m.GetMetadataAsync("B0REGIONFB", "uk", false))
+            .ReturnsAsync(new AudiobookMetadataEnvelope(
+                new AudibleBookResponse { Asin = "B0REGIONFB", Title = "Answered By The Second Region" },
+                "Audible",
+                "https://example.invalid/product"));
+        var budget = new CountingBudget();
+
+        var result = await CreateService(BookWithAsin("B0REGIONFB"), metadata)
+            .RefreshAsync(1, budget, CancellationToken.None);
+
+        // The endpoint this replaced moved to the next region on a transient failure. A book
+        // whose uk lookup answers must not come back 503 because a us connection would not
+        // open, which is what retrying one region to the ceiling and then deferring did.
+        Assert.Equal(MetadataRefreshOutcome.Updated, result.Outcome);
+        Assert.Equal("uk", result.Region);
+        Assert.Equal(4, budget.RequestsSpent);
         metadata.Verify(
             m => m.GetMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), false),
-            Times.Exactly(3));
+            Times.Exactly(4));
     }
 
     [Fact]

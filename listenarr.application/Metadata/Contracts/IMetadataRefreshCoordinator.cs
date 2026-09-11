@@ -59,6 +59,11 @@ public interface IMetadataRefreshCoordinator
     /// the run that comes out of it outlives the caller and is stopped through
     /// <see cref="Cancel"/>. A web request's token would otherwise end the run at the moment
     /// the response is written.
+    /// <para>
+    /// It does not outlive the process, though. The run's own source is linked to the host's
+    /// ApplicationStopping token, so a shutdown stops it at the next book boundary instead of
+    /// leaving it asking a provider it can no longer resolve for the rest of the library.
+    /// </para>
     /// </summary>
     Task<MetadataRefreshStartResult> StartAsync(
         MetadataRefreshScopeRequest request,

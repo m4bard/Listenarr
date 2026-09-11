@@ -29,15 +29,18 @@ namespace Listenarr.Api.Features.Library
         private const int MetadataRescanMaxRequestsPerWindow = 5;
 
         private readonly IMetadataRefreshService _refreshService;
+        private readonly IAudiobookRepository _repository;
         private readonly ILogger<LibraryMetadataRescanWorkflow> _logger;
         private readonly IMemoryCache? _memoryCache;
 
         public LibraryMetadataRescanWorkflow(
             IMetadataRefreshService refreshService,
+            IAudiobookRepository repository,
             ILogger<LibraryMetadataRescanWorkflow> logger,
             IMemoryCache? memoryCache = null)
         {
             _refreshService = refreshService ?? throw new ArgumentNullException(nameof(refreshService));
+            _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _logger = logger;
             _memoryCache = memoryCache;
         }
@@ -46,6 +49,14 @@ namespace Listenarr.Api.Features.Library
         {
             var cancellationToken = httpContext.RequestAborted;
             cancellationToken.ThrowIfCancellationRequested();
+
+            // Before the quota, not after it. Polling an id that no longer exists used to cost
+            // nothing; taking the window first meant five such polls armed the cooldown and shut
+            // the actor out over a book that was never there.
+            if (await _repository.GetByIdSnapshotAsync(id, cancellationToken) == null)
+            {
+                return new NotFoundObjectResult(new { message = "Audiobook not found" });
+            }
 
             if (_memoryCache != null &&
                 !TryConsumeMetadataRescanQuota(_memoryCache, httpContext, id, out var rateLimitMessage, out var retryAfterSeconds))
@@ -108,16 +119,29 @@ namespace Listenarr.Api.Features.Library
                     message = "The audiobook metadata changed during the rescan. Refresh and try again.",
                     code = "audiobook_metadata_changed"
                 }),
-                MetadataRefreshOutcome.Deferred => new ObjectResult(new
+                // A ProblemDetails body, because ServerErrorProblemDetailsFilter rewrites any
+                // result of 500 or above that is not already one, and a generic internal_error
+                // would hide the one thing this outcome exists to say.
+                MetadataRefreshOutcome.Deferred => new ObjectResult(BuildProviderUnavailableProblem())
                 {
-                    message = "The metadata provider is not answering. Try again shortly.",
-                    code = "metadata_provider_unavailable"
-                })
-                {
-                    StatusCode = StatusCodes.Status503ServiceUnavailable
+                    StatusCode = StatusCodes.Status503ServiceUnavailable,
+                    ContentTypes = { "application/problem+json" }
                 },
                 _ => new NotFoundObjectResult(new { message = "Audiobook not found" })
             };
+        }
+
+        private static ProblemDetails BuildProviderUnavailableProblem()
+        {
+            var problem = new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "Service unavailable",
+                Detail = "The metadata provider is not answering. Try again shortly."
+            };
+            problem.Extensions["code"] = "metadata_provider_unavailable";
+            problem.Extensions["message"] = "The metadata provider is not answering. Try again shortly.";
+            return problem;
         }
     }
 

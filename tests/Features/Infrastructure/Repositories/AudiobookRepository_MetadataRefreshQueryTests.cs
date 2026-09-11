@@ -129,6 +129,61 @@ public class AudiobookRepository_MetadataRefreshQueryTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "IdFilteredStalenessQuery")]
+    public async Task FilterIdsDueForRefresh_KeepsOnlyTheStaleOnesInTheIdSet()
+    {
+        using var context = new TestDb();
+        var now = new DateTime(2026, 9, 10, 12, 0, 0, DateTimeKind.Utc);
+        var stale = Book("Stale And In The Set", "One Author", now.AddDays(-100));
+        var fresh = Book("Fresh And In The Set", "One Author", now.AddDays(-1));
+        var outsideTheSet = Book("Stale But Not Asked About", "Two Author", null);
+        context.Db.Audiobooks.AddRange(stale, fresh, outsideTheSet);
+        await context.Db.SaveChangesAsync();
+        var repository = new AudiobookRepository(context.Db);
+
+        var due = await repository.FilterAudiobookIdsDueForMetadataRefreshAsync(
+            [stale.Id, fresh.Id],
+            now.AddDays(-30));
+
+        // The author scope used to fetch every due book in the library to intersect the ids.
+        // This asks the same question of three rows instead, and has to answer it the same way.
+        Assert.Equal([stale.Id], due);
+    }
+
+    [Fact]
+    [Trait("Scenario", "NeverRefreshedCountsAsDue")]
+    public async Task FilterIdsDueForRefresh_TakesABookThatHasNeverBeenRefreshed()
+    {
+        using var context = new TestDb();
+        var never = Book("Never Refreshed", "One Author", null);
+        context.Db.Audiobooks.Add(never);
+        await context.Db.SaveChangesAsync();
+        var repository = new AudiobookRepository(context.Db);
+
+        var due = await repository.FilterAudiobookIdsDueForMetadataRefreshAsync(
+            [never.Id],
+            DateTime.UtcNow.AddDays(-30));
+
+        Assert.Equal([never.Id], due);
+    }
+
+    [Fact]
+    [Trait("Scenario", "NoIdsAsksNothing")]
+    public async Task FilterIdsDueForRefresh_ReturnsEmpty_WithoutQuerying_ForAnEmptyIdSet()
+    {
+        using var context = new TestDb();
+        context.Db.Audiobooks.Add(Book("Would Be Due", "One Author", null));
+        await context.Db.SaveChangesAsync();
+        var repository = new AudiobookRepository(context.Db);
+
+        // An author nobody has any books for is the common case for this call, and it should
+        // not cost a query with an empty IN clause to find that out.
+        Assert.Empty(await repository.FilterAudiobookIdsDueForMetadataRefreshAsync(
+            [],
+            DateTime.UtcNow));
+    }
+
+    [Fact]
     [Trait("Scenario", "StampingRemovesABookFromTheQueue")]
     public async Task StampMetadataRefresh_SetsTheTimestamp_AndTheBookIsNoLongerDue()
     {

@@ -4,6 +4,7 @@
  */
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Tests.Common;
 
@@ -57,14 +58,39 @@ public class MetadataRefreshCycleTests : BaseTests, IDisposable
     private readonly SqliteConnection _connection;
     private readonly ManualClock _clock = new();
     private readonly List<DateTimeOffset> _providerCalls = [];
+    private readonly CancellationTokenSource _stopping = new();
 
     public MetadataRefreshCycleTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
+        // A named shared-cache database rather than DataSource=:memory:, with pooling off and
+        // one connection held open for the life of the instance. Two test instances running at
+        // once each got a database of their own either way, but the anonymous form gives every
+        // connection its own empty one, so anything that opened a second connection saw no
+        // rows at all and the failure looked like a missing book.
+        _connection = new SqliteConnection(
+            $"Data Source=file:refresh-cycle-{Guid.NewGuid():N}?mode=memory&cache=shared;Pooling=False");
         _connection.Open();
     }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose()
+    {
+        _stopping.Dispose();
+        _connection.Dispose();
+    }
+
+    /// <summary>Stands in for the host's lifetime; nothing here ever stops the application.</summary>
+    private sealed class StubApplicationLifetime(CancellationToken stopping) : IHostApplicationLifetime
+    {
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+
+        public CancellationToken ApplicationStopping => stopping;
+
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+
+        public void StopApplication()
+        {
+        }
+    }
 
     private ListenArrDbContext NewContext() => new(
         new DbContextOptionsBuilder<ListenArrDbContext>().UseSqlite(_connection).Options);
@@ -79,19 +105,19 @@ public class MetadataRefreshCycleTests : BaseTests, IDisposable
         Source = AudiobookExternalIdentifierSource.Manual
     };
 
-    private void SeedLibrary()
+    /// <summary>Seeds the three books and hands back their ids, in the order they were added.</summary>
+    private List<int> SeedLibrary()
     {
         using var db = NewContext();
         db.Database.EnsureCreated();
-        db.Audiobooks.AddRange(
-            new Audiobook
-            {
-                Title = "The Answered Book",
-                Authors = ["Corpus Author"],
-                ExternalIdentifiers = [Asin(AnsweringAsin)],
-                // The operator moved the primary off the provider's default. A refresh must
-                // repair the missing rows without reverting this.
-                SeriesMemberships =
+        var answered = new Audiobook
+        {
+            Title = "The Answered Book",
+            Authors = ["Corpus Author"],
+            ExternalIdentifiers = [Asin(AnsweringAsin)],
+            // The operator moved the primary off the provider's default. A refresh must
+            // repair the missing rows without reverting this.
+            SeriesMemberships =
                 [
                     new AudiobookSeriesMembership
                     {
@@ -101,20 +127,23 @@ public class MetadataRefreshCycleTests : BaseTests, IDisposable
                         SortOrder = 0
                     }
                 ]
-            },
-            new Audiobook
-            {
-                Title = "The Book With No Identifiers",
-                Authors = ["Corpus Author"],
-                ExternalIdentifiers = []
-            },
-            new Audiobook
-            {
-                Title = "The Book The Provider Forgot",
-                Authors = ["Other Author"],
-                ExternalIdentifiers = [Asin(SilentAsin)]
-            });
+        };
+        var withoutIdentifiers = new Audiobook
+        {
+            Title = "The Book With No Identifiers",
+            Authors = ["Corpus Author"],
+            ExternalIdentifiers = []
+        };
+        var forgotten = new Audiobook
+        {
+            Title = "The Book The Provider Forgot",
+            Authors = ["Other Author"],
+            ExternalIdentifiers = [Asin(SilentAsin)]
+        };
+
+        db.Audiobooks.AddRange(answered, withoutIdentifiers, forgotten);
         db.SaveChanges();
+        return [answered.Id, withoutIdentifiers.Id, forgotten.Id];
     }
 
     private IAudiobookMetadataService FakeProvider()
@@ -187,6 +216,7 @@ public class MetadataRefreshCycleTests : BaseTests, IDisposable
                     MinimumSpacingMs: 1000,
                     IntervalHours: 24)
             },
+            new StubApplicationLifetime(_stopping.Token),
             (delay, _) =>
             {
                 _clock.Advance(delay);
@@ -198,7 +228,7 @@ public class MetadataRefreshCycleTests : BaseTests, IDisposable
     [Trait("Scenario", "OneCycleOverASmallLibrary")]
     public async Task ScheduledCycle_SpendsOneRequestPerRegionTried_AndKeepsTheSpacingFloor()
     {
-        SeedLibrary();
+        var seeded = SeedLibrary();
         var coordinator = BuildCoordinator();
 
         var run = await coordinator.RunToCompletionAsync(
@@ -206,6 +236,15 @@ public class MetadataRefreshCycleTests : BaseTests, IDisposable
             CancellationToken.None);
 
         Assert.NotNull(run);
+        // The control: three rows went in, so a count of anything else means the run walked a
+        // database that is not the one the test seeded, and every assertion below is about
+        // nothing.
+        using (var db = NewContext())
+        {
+            Assert.Equal(3, await db.Audiobooks.CountAsync());
+        }
+
+        Assert.Equal(3, seeded.Count);
         Assert.Equal("Completed", run.Status);
         Assert.Equal(3, run.TotalBooks);
         Assert.Equal(3, run.Processed);
@@ -232,7 +271,7 @@ public class MetadataRefreshCycleTests : BaseTests, IDisposable
     [Trait("Scenario", "MembershipsRepairedPrimaryPreserved")]
     public async Task ScheduledCycle_RepairsMembershipsWithTheirIdentifiers_AndKeepsTheChosenPrimary()
     {
-        SeedLibrary();
+        var seeded = SeedLibrary();
         var coordinator = BuildCoordinator();
 
         await coordinator.RunToCompletionAsync(
@@ -240,9 +279,13 @@ public class MetadataRefreshCycleTests : BaseTests, IDisposable
             CancellationToken.None);
 
         using var db = NewContext();
+        // Counted before anything is looked up: a membership assertion that fails because the
+        // row is missing and one that fails because the repair did not happen read the same in
+        // the output, and only one of them is a bug in the code under test.
+        Assert.Equal(3, await db.Audiobooks.CountAsync());
         var book = await db.Audiobooks
             .Include(candidate => candidate.SeriesMemberships)
-            .SingleAsync(candidate => candidate.Title == "The Answered Book");
+            .SingleAsync(candidate => candidate.Id == seeded[0]);
 
         Assert.NotNull(book.SeriesMemberships);
         Assert.Equal(2, book.SeriesMemberships.Count);
@@ -260,7 +303,7 @@ public class MetadataRefreshCycleTests : BaseTests, IDisposable
     [Trait("Scenario", "TimestampsSettleTheQueue")]
     public async Task ScheduledCycle_StampsEverySettledBook_SoASecondCycleSpendsNothing()
     {
-        SeedLibrary();
+        var seeded = SeedLibrary();
         var coordinator = BuildCoordinator();
 
         await coordinator.RunToCompletionAsync(
@@ -277,8 +320,8 @@ public class MetadataRefreshCycleTests : BaseTests, IDisposable
         Assert.Equal(afterFirstCycle, _providerCalls.Count);
 
         using var db = NewContext();
-        Assert.All(
-            await db.Audiobooks.AsNoTracking().ToListAsync(),
-            book => Assert.NotNull(book.LastMetadataRefreshAt));
+        var books = await db.Audiobooks.AsNoTracking().ToListAsync();
+        Assert.Equal(seeded.Count, books.Count);
+        Assert.All(books, book => Assert.NotNull(book.LastMetadataRefreshAt));
     }
 }

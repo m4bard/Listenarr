@@ -83,6 +83,35 @@ public partial class AudiobookRepository
     }
 
     /// <summary>
+    /// The due query's staleness predicate over a given set of ids: one IN clause plus the same
+    /// null-or-older test. The author scope filters with this so it never materializes the whole
+    /// library's due set, and every row it does read is a single integer.
+    /// </summary>
+    public async Task<List<int>> FilterAudiobookIdsDueForMetadataRefreshAsync(
+        IReadOnlyCollection<int> audiobookIds,
+        DateTime staleBefore,
+        CancellationToken ct = default)
+    {
+        if (audiobookIds == null || audiobookIds.Count == 0)
+        {
+            return [];
+        }
+
+        // A List is what EF turns into an IN clause. An IReadOnlyCollection is not guaranteed to
+        // translate, and falling back to client evaluation here would defeat the point.
+        var ids = audiobookIds as List<int> ?? [.. audiobookIds];
+
+        return await _db.Audiobooks
+            .AsNoTracking()
+            .Where(audiobook => ids.Contains(audiobook.Id)
+                && (audiobook.LastMetadataRefreshAt == null
+                    || audiobook.LastMetadataRefreshAt < staleBefore))
+            .OrderBy(audiobook => audiobook.Id)
+            .Select(audiobook => audiobook.Id)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
     /// Records that a book has been through a refresh. Only called for outcomes that should not
     /// be tried again this staleness window; a deferral or a conflict leaves the value alone,
     /// because stamping a rate-limited miss would hide the book for a month.

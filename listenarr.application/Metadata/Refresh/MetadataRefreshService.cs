@@ -137,7 +137,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
 
                 triedAsinDebug.Add(new { asin = normalizedAsin, region = regionValue, via });
 
-                AudiobookMetadataEnvelope? metadataEnvelope;
+                AudiobookMetadataEnvelope? metadataEnvelope = null;
                 while (true)
                 {
                     if (asinLookupAttempts >= MaxAsinLookupAttempts)
@@ -163,7 +163,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         transientFailures++;
-                        SignalPushbackIfThrottled(budget, ex);
+                        var throttled = SignalPushbackIfThrottled(budget, ex);
                         _logger.LogWarning(
                             ex,
                             "Metadata refresh lookup failed for audiobook {AudiobookId} ({Title}) ASIN {Asin} region {Region}, failure {Failure} of {Ceiling}",
@@ -175,8 +175,19 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                             MaxTransientRetriesPerBook + 1);
                         if (transientFailures > MaxTransientRetriesPerBook)
                         {
-                            deferred = true;
-                            return false;
+                            // Pushback is about the provider and not about this region, so
+                            // asking it somewhere else is the one thing it has just asked us
+                            // not to do. The book waits for the next cycle instead.
+                            if (throttled)
+                            {
+                                deferred = true;
+                                return false;
+                            }
+
+                            // Any other fault belongs to the region. The endpoint has always
+                            // moved on to the next one, and a book whose uk lookup would have
+                            // answered must not be lost to a us connection that would not open.
+                            break;
                         }
                     }
                 }
@@ -232,7 +243,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     transientFailures++;
-                    SignalPushbackIfThrottled(budget, ex);
+                    var throttled = SignalPushbackIfThrottled(budget, ex);
                     _logger.LogWarning(
                         ex,
                         "Metadata refresh ASIN conversion failed for audiobook {AudiobookId} ISBN {Isbn}, failure {Failure} of {Ceiling}",
@@ -242,7 +253,13 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                         MaxTransientRetriesPerBook + 1);
                     if (transientFailures > MaxTransientRetriesPerBook)
                     {
-                        deferred = true;
+                        if (throttled)
+                        {
+                            deferred = true;
+                        }
+
+                        // Null moves the caller to the next ISBN unless deferred says stop, so
+                        // one unconvertible identifier no longer ends the walk for the rest.
                         return null;
                     }
                 }
@@ -323,7 +340,15 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                 MaxIsbnConversionAttempts,
                 asinLookupAttemptCapHit || isbnConversionAttemptCapHit);
 
-            return new MetadataRefreshResult(MetadataRefreshOutcome.NotFound, budget.RequestsSpent - spentAtEntry);
+            // Every region and identifier is exhausted. Whether that is an absent book or an
+            // unreachable provider is the difference between stamping the book for a month and
+            // trying it again next cycle, and a transient failure anywhere in the walk is what
+            // separates them.
+            return new MetadataRefreshResult(
+                transientFailures > 0
+                    ? MetadataRefreshOutcome.Deferred
+                    : MetadataRefreshOutcome.NotFound,
+                budget.RequestsSpent - spentAtEntry);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -373,21 +398,32 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
             resolvedRegion ?? "us");
     }
 
-    private static void SignalPushbackIfThrottled(IMetadataRefreshBudget budget, Exception exception)
+    /// <summary>
+    /// Narrows the run when the provider pushed back, and says whether it did. True also means
+    /// the book stops here rather than trying the next region: pushback is about the provider,
+    /// not about the region that reported it.
+    /// </summary>
+    private static bool SignalPushbackIfThrottled(IMetadataRefreshBudget budget, Exception exception)
     {
-        // Only a 429 is the provider asking for less. A DNS failure or a timeout is transient in a
-        // different way, and halving the allowance for one would ratchet a whole walk down to a
-        // request an hour inside a couple of books. Those still retry and still defer; they just
-        // do not narrow what is left of the run.
+        // Only pushback is the provider asking for less. A DNS failure or a timeout is transient
+        // in a different way, and halving the allowance for one would ratchet a whole walk down
+        // to a request an hour inside a couple of books. Those still retry and still defer; they
+        // just do not narrow what is left of the run.
         //
-        // A provider that pushed back names a status; today the Audible client swallows it and
-        // returns null instead, so this reads whatever a future client raises rather than
-        // pretending the current one does.
-        if (exception is not HttpRequestException { StatusCode: System.Net.HttpStatusCode.TooManyRequests } request)
+        // Two shapes are accepted. MetadataProviderThrottledException is the one a client should
+        // raise, and is the only one that can carry a Retry-After. A bare HttpRequestException
+        // carrying the status is what a client throwing from EnsureSuccessStatusCode produces,
+        // and is honoured so the halving does not depend on which of the two arrives first.
+        switch (exception)
         {
-            return;
+            case MetadataProviderThrottledException throttled:
+                budget.ApplyThrottleSignal(throttled.RetryAfter);
+                return true;
+            case HttpRequestException { StatusCode: System.Net.HttpStatusCode.TooManyRequests }:
+                budget.ApplyThrottleSignal(null);
+                return true;
+            default:
+                return false;
         }
-
-        budget.ApplyThrottleSignal(request.Data["Retry-After"] is TimeSpan retryAfter ? retryAfter : null);
     }
 }

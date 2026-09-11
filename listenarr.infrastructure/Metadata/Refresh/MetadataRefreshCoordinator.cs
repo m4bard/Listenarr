@@ -18,21 +18,25 @@ namespace Listenarr.Infrastructure.Metadata.Refresh;
 /// Single-run gate, in-memory run registry, and the per-book scope loop. A singleton, so every
 /// scoped dependency is resolved per book from a scope this class creates.
 /// </summary>
-public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, IDisposable
+public sealed partial class MetadataRefreshCoordinator : IMetadataRefreshCoordinator
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TimeProvider _timeProvider;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<MetadataRefreshCoordinator> _logger;
     private readonly MetadataRefreshOptionsHolder _optionsHolder;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly IHostApplicationLifetime _lifetime;
     private readonly Lock _stateGate = new();
 
     private MetadataRefreshRun? _active;
     private MetadataRefreshRun? _last;
     private CancellationTokenSource? _cancellation;
     private Task _inFlight = Task.CompletedTask;
-    private List<MetadataRefreshCandidate> _pending = [];
+
+    // The gate itself. A bool under _stateGate rather than a semaphore: every read and write of
+    // it already happens inside that lock, and the semaphore added a second disposable whose
+    // Release could land in a run's finally after disposal had already taken it away.
+    private bool _running;
 
     // Test seam only: production leaves it null and the budget uses Task.Delay. A fake clock
     // that never advances would otherwise make an integration test wait in real time.
@@ -44,6 +48,7 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
         ILoggerFactory loggerFactory,
         ILogger<MetadataRefreshCoordinator> logger,
         MetadataRefreshOptionsHolder optionsHolder,
+        IHostApplicationLifetime lifetime,
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
@@ -51,6 +56,7 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _logger = logger;
         _optionsHolder = optionsHolder ?? throw new ArgumentNullException(nameof(optionsHolder));
+        _lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
         _delayAsync = delayAsync;
     }
 
@@ -62,7 +68,9 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
     {
         // The run deliberately does not inherit the caller's token. A web request's token is
         // cancelled as soon as the response is written, which would kill the run this call
-        // exists to start; the caller stops it through Cancel instead.
+        // exists to start; the caller stops it through Cancel instead. It is linked to the
+        // host's stopping token all the same, because a run nobody is waiting on still has to
+        // stop when the process does.
         var admission = await AdmitAsync(request, linkToCaller: false, cancellationToken);
         if (admission.Run == null)
         {
@@ -71,7 +79,14 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
 
         var run = admission.Run;
         var token = admission.Token;
-        _inFlight = Task.Run(() => ExecuteAsync(run, request, token), CancellationToken.None);
+        var candidates = admission.Candidates;
+        lock (_stateGate)
+        {
+            _inFlight = Task.Run(
+                () => ExecuteAsync(run, request, candidates, token),
+                CancellationToken.None);
+        }
+
         return admission.Result;
     }
 
@@ -90,7 +105,7 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
             return null;
         }
 
-        await ExecuteAsync(admission.Run, request, admission.Token);
+        await ExecuteAsync(admission.Run, request, admission.Candidates, admission.Token);
         return admission.Run.ToSnapshot();
     }
 
@@ -117,6 +132,7 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
 
     public bool Cancel(Guid runId)
     {
+        CancellationTokenSource source;
         lock (_stateGate)
         {
             if (_active?.RunId != runId || _cancellation == null)
@@ -124,28 +140,25 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
                 return false;
             }
 
-            _cancellation.Cancel();
-            return true;
+            source = _cancellation;
         }
-    }
 
-    /// <summary>Test hook: waits for a background run started by StartAsync to settle.</summary>
-    public Task WaitForIdleAsync(TimeSpan timeout) => _inFlight.WaitAsync(timeout);
-
-    public void Dispose()
-    {
-        _cancellation?.Dispose();
-        _gate.Dispose();
+        // Cancelled outside the lock on purpose. A continuation waiting on the run token can
+        // complete inline on the cancelling thread, which would run the rest of the loop, its
+        // finally and all, on an API request thread that is still holding _stateGate.
+        source.Cancel();
+        return true;
     }
 
     /// <summary>
     /// The outcome of asking for the gate. A null Run means the gate was held and Result
-    /// carries the run holding it; otherwise Result is the admitted run and Token is the one
-    /// its loop must watch.
+    /// carries the run holding it; otherwise Result is the admitted run, Candidates is the list
+    /// of books it covers and Token is the one its loop must watch.
     /// </summary>
     private readonly record struct Admission(
         MetadataRefreshStartResult Result,
         MetadataRefreshRun? Run,
+        List<MetadataRefreshCandidate> Candidates,
         CancellationToken Token);
 
     private async Task<Admission> AdmitAsync(
@@ -158,28 +171,32 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
         MetadataRefreshRun run;
         CancellationToken token;
 
-        // Taking the gate and publishing the run happen under one lock, with a zero-timeout
-        // Wait that cannot block. Publishing after the scope query instead would leave a
-        // window, as wide as that query, in which the gate is held and no run is visible: on
-        // a cold process a second caller refused in that window would have found neither an
-        // active nor a previous run to report.
+        // Taking the gate and publishing the run happen under one lock. Publishing after the
+        // scope query instead would leave a window, as wide as that query, in which the gate is
+        // held and no run is visible: on a cold process a second caller refused in that window
+        // would have found neither an active nor a previous run to report.
         lock (_stateGate)
         {
-            if (!_gate.Wait(0))
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (_running)
             {
                 return new Admission(
                     new MetadataRefreshStartResult(false, (_active ?? _last)!.ToSnapshot()),
                     null,
+                    [],
                     CancellationToken.None);
             }
 
+            _running = true;
             run = new MetadataRefreshRun(request.Scope, _timeProvider.GetUtcNow().UtcDateTime);
             _active = run;
-            _pending = [];
             _cancellation?.Dispose();
             _cancellation = linkToCaller
-                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-                : new CancellationTokenSource();
+                ? CancellationTokenSource.CreateLinkedTokenSource(
+                    _lifetime.ApplicationStopping,
+                    cancellationToken)
+                : CancellationTokenSource.CreateLinkedTokenSource(_lifetime.ApplicationStopping);
             token = _cancellation.Token;
         }
 
@@ -187,12 +204,12 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
         {
             var candidates = await ResolveAsync(request, cancellationToken);
             run.SetTotal(candidates.Count);
-            lock (_stateGate)
-            {
-                _pending = candidates;
-            }
 
-            return new Admission(new MetadataRefreshStartResult(true, run.ToSnapshot()), run, token);
+            return new Admission(
+                new MetadataRefreshStartResult(true, run.ToSnapshot()),
+                run,
+                candidates,
+                token);
         }
         catch
         {
@@ -200,8 +217,7 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
             lock (_stateGate)
             {
                 _active = null;
-                _pending = [];
-                _gate.Release();
+                _running = false;
             }
 
             throw;
@@ -213,6 +229,17 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
         CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
+
+        // Read here, before staleBefore is computed and before the budget is built from the same
+        // holder. An API-triggered run would otherwise walk on the record defaults until the
+        // scheduled cycle wrote them, ten minutes away at best and never at all with hosted
+        // services off.
+        await MetadataRefreshOptionsLoader.LoadAsync(
+            scope.ServiceProvider,
+            _optionsHolder,
+            _logger,
+            cancellationToken);
+
         var repository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
         var staleBefore = request.Force
             ? DateTime.MaxValue
@@ -222,7 +249,7 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
         {
             var due = await repository.GetAudiobooksDueForMetadataRefreshAsync(
                 staleBefore,
-                int.MaxValue,
+                ScopeLimit(request.Scope),
                 cancellationToken);
             return GroupByAuthor(due);
         }
@@ -239,18 +266,27 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
         var ids = await repository.GetAudiobookIdsByAuthorNameAsync(author.AuthorName, cancellationToken);
         if (!request.Force)
         {
-            var due = await repository.GetAudiobooksDueForMetadataRefreshAsync(
+            ids = await repository.FilterAudiobookIdsDueForMetadataRefreshAsync(
+                ids,
                 staleBefore,
-                int.MaxValue,
                 cancellationToken);
-            var dueIds = due.Select(candidate => candidate.AudiobookId).ToHashSet();
-            ids = ids.Where(dueIds.Contains).ToList();
         }
 
         return ids
             .Select(id => new MetadataRefreshCandidate(id, author.AuthorName, null))
             .ToList();
     }
+
+    /// <summary>
+    /// How many books a run will admit to being about. A scheduled cycle cannot reach more than
+    /// its window can pay for, so taking the whole due set would report a total the cycle never
+    /// intended to finish and make every cycle over a large library look like a partial one. An
+    /// operator asking for an author or the library gets every book they asked about.
+    /// </summary>
+    private int ScopeLimit(MetadataRefreshRunScope scope) =>
+        scope == MetadataRefreshRunScope.Scheduled
+            ? Math.Max(1, Options.RequestsPerHour * Options.IntervalHours)
+            : int.MaxValue;
 
     /// <summary>
     /// An author's due books are taken together so their membership repairs land in one pass.
@@ -266,32 +302,43 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
     private async Task ExecuteAsync(
         MetadataRefreshRun run,
         MetadataRefreshScopeRequest request,
+        List<MetadataRefreshCandidate> candidates,
         CancellationToken cancellationToken)
     {
-        var budget = new MetadataRefreshBudget(
-            _timeProvider,
-            new MetadataRefreshBudgetOptions(
-                Options.RequestsPerHour,
-                Options.MinimumSpacingMs,
-                request.Scope == MetadataRefreshRunScope.Scheduled
-                    ? TimeSpan.FromHours(Options.IntervalHours)
-                    : null),
-            _loggerFactory.CreateLogger<MetadataRefreshBudget>(),
-            _delayAsync);
+        MetadataRefreshBudget? budget = null;
         var state = MetadataRefreshRunState.Completed;
 
         try
         {
-            foreach (var candidate in _pending)
+            // Inside the try, so a throw here still releases the gate and finishes the run
+            // rather than leaving _active set and the gate held for the life of the process.
+            var runBudget = new MetadataRefreshBudget(
+                _timeProvider,
+                new MetadataRefreshBudgetOptions(
+                    Options.RequestsPerHour,
+                    Options.MinimumSpacingMs,
+                    request.Scope == MetadataRefreshRunScope.Scheduled
+                        ? TimeSpan.FromHours(Options.IntervalHours)
+                        : null),
+                _loggerFactory.CreateLogger<MetadataRefreshBudget>(),
+                _delayAsync);
+            budget = runBudget;
+
+            for (var index = 0; index < candidates.Count; index++)
             {
+                var candidate = candidates[index];
                 cancellationToken.ThrowIfCancellationRequested();
 
                 using var scope = _scopeFactory.CreateScope();
                 var service = scope.ServiceProvider.GetRequiredService<IMetadataRefreshService>();
-                MetadataRefreshResult? result = null;
+                MetadataRefreshOutcome outcome;
                 try
                 {
-                    result = await service.RefreshAsync(candidate.AudiobookId, budget, cancellationToken);
+                    var result = await service.RefreshAsync(
+                        candidate.AudiobookId,
+                        runBudget,
+                        cancellationToken);
+                    outcome = result.Outcome;
                 }
                 catch (ApplicationConflictException ex)
                 {
@@ -302,12 +349,25 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
                         run.RunId,
                         candidate.AudiobookId,
                         ex.Code);
+                    outcome = MetadataRefreshOutcome.Conflict;
+                }
+                catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex))
+                {
+                    // One bad book is not a bad run. A malformed row, or a provider client
+                    // raising something nobody anticipated, used to end the walk and leave every
+                    // book behind it untouched; it now costs that book and nothing else.
+                    _logger.LogWarning(
+                        ex,
+                        "Metadata refresh run {RunId} failed audiobook {AudiobookId}",
+                        run.RunId,
+                        candidate.AudiobookId);
+                    outcome = MetadataRefreshOutcome.Failed;
                 }
 
-                run.Record(result?.Outcome ?? MetadataRefreshOutcome.Conflict);
-                run.RequestsSpent = budget.RequestsSpent;
+                run.Record(outcome);
+                run.RequestsSpent = runBudget.RequestsSpent;
 
-                if (result?.Outcome is MetadataRefreshOutcome.Updated
+                if (outcome is MetadataRefreshOutcome.Updated
                     or MetadataRefreshOutcome.Skipped
                     or MetadataRefreshOutcome.NotFound)
                 {
@@ -318,9 +378,16 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
                         cancellationToken);
                 }
 
-                if (budget.WindowClosed)
+                if (runBudget.WindowClosed)
                 {
                     // The rest keep their unset timestamps and stay at the head of the queue.
+                    // Saying so is what Truncated is for: a status consumer can tell a cycle
+                    // that finished its list from one the clock took the rest of it off.
+                    if (index < candidates.Count - 1)
+                    {
+                        state = MetadataRefreshRunState.Truncated;
+                    }
+
                     break;
                 }
             }
@@ -336,14 +403,13 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
         }
         finally
         {
-            run.RequestsSpent = budget.RequestsSpent;
+            run.RequestsSpent = budget?.RequestsSpent ?? 0;
             run.Finish(state, _timeProvider.GetUtcNow().UtcDateTime);
             lock (_stateGate)
             {
                 _last = run;
                 _active = null;
-                _pending = [];
-                _gate.Release();
+                _running = false;
             }
         }
     }

@@ -24,7 +24,15 @@ public enum MetadataRefreshRunState
     Running,
     Completed,
     Failed,
-    Cancelled
+    Cancelled,
+
+    /// <summary>
+    /// The run spent its window before it reached the end of its list. Every book it did reach
+    /// settled; the rest keep their unset timestamps and sit at the head of the next cycle's
+    /// queue. This is a cycle that finished, not one that failed, and the cycle line reports it
+    /// like any other.
+    /// </summary>
+    Truncated
 }
 
 /// <summary>A run as the status endpoint reports it.</summary>
