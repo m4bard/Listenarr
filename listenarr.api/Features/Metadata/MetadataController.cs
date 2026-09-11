@@ -159,12 +159,33 @@ namespace Listenarr.Api.Features.Metadata
         /// <summary>
         /// Resolve an ASIN from an ISBN value.
         /// </summary>
+        /// <remarks>
+        /// Three answers, not two. The lookup service raises when the provider did not answer,
+        /// because the scheduled refresh reads a false as a verdict on the identifier and stamps
+        /// the book for a month on the strength of it. An operator typing an ISBN into the UI is
+        /// owed the distinction too, and is owed it as a status rather than as a stack trace:
+        /// the ISBN really having no ASIN stays a 404, and a provider that would not answer
+        /// becomes a 503 that says to try again.
+        /// </remarks>
         [HttpGet("asin-from-isbn/{isbn}")]
         [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
         public async Task<IActionResult> GetAsinFromIsbn(string isbn, CancellationToken ct)
         {
-            var result = await _asinLookupService.GetAsinFromIsbnAsync(isbn, ct);
+            (bool Success, string? Asin, string? Error) result;
+            try
+            {
+                result = await _asinLookupService.GetAsinFromIsbnAsync(isbn, ct);
+            }
+            catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
+            {
+                _logger.LogWarning(ex, "Provider did not answer resolving an ASIN from an ISBN");
+                return StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    new { success = false, error = "The metadata provider did not answer; try again shortly" });
+            }
+
             if (!result.Success)
             {
                 return NotFound(new { success = false, error = result.Error ?? "ASIN not found" });
