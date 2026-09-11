@@ -18,6 +18,10 @@ public sealed class EfLibraryAddCommitStore(ListenArrDbContext db) : ILibraryAdd
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            // The second of the two places a book row is created. A new book has just been
+            // built from a provider fetch, so it is not stale, and going in with no timestamp
+            // would put it at the head of the refresh queue to be fetched again within hours.
+            AudiobookRepository.StampNewAudiobookRefreshTimestamp(audiobook);
             db.Audiobooks.Add(audiobook);
             await db.SaveChangesAsync(cancellationToken);
             history.AudiobookId = audiobook.Id;
