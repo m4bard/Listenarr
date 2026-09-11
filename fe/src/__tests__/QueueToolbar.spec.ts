@@ -17,6 +17,7 @@
  */
 import { mount } from '@vue/test-utils'
 import { describe, it, expect } from 'vitest'
+import { nextTick } from 'vue'
 import QueueToolbar from '@/components/domain/download/QueueToolbar.vue'
 import { ConfirmModal } from '@/components/feedback'
 
@@ -87,5 +88,29 @@ describe('QueueToolbar', () => {
     expect(
       (wrapper.findComponent(ConfirmModal).props('message') as string).toLowerCase(),
     ).toContain('every completed download')
+  })
+
+  it('closes the remove confirmation when the selection empties underneath it', async () => {
+    const wrapper = mountToolbar([{ id: 'a', status: 'downloading' }])
+    await wrapper.get('[data-test="queue-remove-selected"]').trigger('click')
+    expect(wrapper.findComponent(ConfirmModal).props('visible')).toBe(true)
+
+    await wrapper.setProps({ selected: [] })
+    await nextTick()
+
+    expect(wrapper.findComponent(ConfirmModal).props('visible')).toBe(false)
+    expect(wrapper.emitted('remove-selected')).toBeUndefined()
+  })
+
+  it('disables every toolbar button while a bulk run is busy', () => {
+    const wrapper = mount(QueueToolbar, {
+      props: { selected: [{ id: 'a', status: 'importblocked' }], busy: true },
+    })
+
+    const buttons = wrapper.findAll('.toolbar-btn')
+    expect(buttons).toHaveLength(5)
+    for (const button of buttons) {
+      expect(button.attributes('disabled')).toBeDefined()
+    }
   })
 })
