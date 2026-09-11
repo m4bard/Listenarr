@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Metadata.Faults;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Metadata.Audible
@@ -47,6 +48,14 @@ namespace Listenarr.Application.Metadata.Audible
                 }
 
                 return result;
+            }
+            catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
+            {
+                // Pushback and transport faults are the caller's business. Swallowed here they
+                // become the same null as "the provider has no such book", and the walk above
+                // this one has no way left to tell the two apart.
+                _logger.LogWarning(ex, "Audible did not answer for ASIN {Asin}", LogRedaction.SanitizeText(asin));
+                throw;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
