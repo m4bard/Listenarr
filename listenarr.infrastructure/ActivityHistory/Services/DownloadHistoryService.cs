@@ -245,7 +245,7 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
                 EventDate = DateTime.UtcNow,
                 DownloadClient = "Unknown",
                 DownloadClientId = clientId,
-                Protocol = DownloadProtocol.Torrent,
+                Protocol = await ResolveProtocolAsync(clientId, null),
                 Title = title,
                 ErrorMessage = errorMessage,
                 WasImported = false
@@ -268,7 +268,7 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
                 EventDate = DateTime.UtcNow,
                 DownloadClient = "Unknown",
                 DownloadClientId = clientId,
-                Protocol = DownloadProtocol.Torrent,
+                Protocol = await ResolveProtocolAsync(clientId, null),
                 Title = title,
                 WasImported = false
             };
@@ -288,7 +288,7 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
                 EventDate = DateTime.UtcNow,
                 DownloadClient = "Unknown",
                 DownloadClientId = clientId,
-                Protocol = DownloadProtocol.Torrent,
+                Protocol = await ResolveProtocolAsync(clientId, null),
                 Title = title,
                 WasImported = false
             };
@@ -308,7 +308,7 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
                 EventDate = DateTime.UtcNow,
                 DownloadClient = "Unknown",
                 DownloadClientId = clientId,
-                Protocol = DownloadProtocol.Torrent,
+                Protocol = await ResolveProtocolAsync(clientId, null),
                 Title = title,
                 WasImported = false
             };

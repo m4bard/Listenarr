@@ -250,6 +250,41 @@ namespace Listenarr.Tests.Features.Infrastructure.ActivityHistory.Services
             Assert.All(history, entry => Assert.Equal(DownloadProtocol.Usenet, entry.Protocol));
         }
 
+        // The remaining four Record methods carried the same hardcoded Torrent. Nothing about them
+        // is different, so leaving them would mean a history where some rows are right and some
+        // are wrong with no way to tell which.
+        [Theory]
+        [InlineData("sabnzbd", DownloadProtocol.Usenet)]
+        [InlineData("qbittorrent", DownloadProtocol.Torrent)]
+        public async Task RecordImportFailedAsync_RecordsTheProtocolTheClientSpeaks(
+            string clientType,
+            DownloadProtocol expected)
+        {
+            await GivenDownloadClient("client-1", clientType, expected);
+
+            await _service.RecordImportFailedAsync("abc123", "client-1", "Test Book", "denied");
+
+            Assert.Equal(expected, Assert.Single(_context.History).Protocol);
+        }
+
+        [Theory]
+        [InlineData("sabnzbd", DownloadProtocol.Usenet)]
+        [InlineData("qbittorrent", DownloadProtocol.Torrent)]
+        public async Task RecordPausedResumedRemoved_RecordTheProtocolTheClientSpeaks(
+            string clientType,
+            DownloadProtocol expected)
+        {
+            await GivenDownloadClient("client-1", clientType, expected);
+
+            await _service.RecordPausedAsync("abc123", "client-1", "Test Book");
+            await _service.RecordResumedAsync("abc123", "client-1", "Test Book");
+            await _service.RecordRemovedAsync("abc123", "client-1", "Test Book");
+
+            var rows = _context.History.ToList();
+            Assert.Equal(3, rows.Count);
+            Assert.All(rows, row => Assert.Equal(expected, row.Protocol));
+        }
+
         // Rows written before the column existed have no protocol, and guessing one for them would
         // be worse than saying we do not know.
         [Fact]
