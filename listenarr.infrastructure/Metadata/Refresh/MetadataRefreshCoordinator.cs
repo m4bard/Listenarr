@@ -60,34 +60,38 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
         MetadataRefreshScopeRequest request,
         CancellationToken cancellationToken)
     {
-        var admission = await AdmitAsync(request, cancellationToken);
-        if (!admission.Started)
+        // The run deliberately does not inherit the caller's token. A web request's token is
+        // cancelled as soon as the response is written, which would kill the run this call
+        // exists to start; the caller stops it through Cancel instead.
+        var admission = await AdmitAsync(request, linkToCaller: false, cancellationToken);
+        if (admission.Run == null)
         {
-            return admission;
+            return admission.Result;
         }
 
-        var run = _active!;
-        var token = _cancellation!.Token;
+        var run = admission.Run;
+        var token = admission.Token;
         _inFlight = Task.Run(() => ExecuteAsync(run, request, token), CancellationToken.None);
-        return admission;
+        return admission.Result;
     }
 
     public async Task<MetadataRefreshRunSnapshot?> RunToCompletionAsync(
         MetadataRefreshScopeRequest request,
         CancellationToken cancellationToken)
     {
-        var admission = await AdmitAsync(request, cancellationToken);
-        if (!admission.Started)
+        // The scheduled walk runs in its caller's context and should stop when the host does,
+        // so this one does take the caller's token.
+        var admission = await AdmitAsync(request, linkToCaller: true, cancellationToken);
+        if (admission.Run == null)
         {
             _logger.LogDebug(
                 "Metadata refresh cycle skipped; run {RunId} is already in flight",
-                admission.Run.RunId);
+                admission.Result.Run.RunId);
             return null;
         }
 
-        var run = _active!;
-        await ExecuteAsync(run, request, _cancellation!.Token);
-        return run.ToSnapshot();
+        await ExecuteAsync(admission.Run, request, admission.Token);
+        return admission.Run.ToSnapshot();
     }
 
     public MetadataRefreshRunSnapshot? Find(Guid runId)
@@ -134,38 +138,72 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
         _gate.Dispose();
     }
 
-    private async Task<MetadataRefreshStartResult> AdmitAsync(
+    /// <summary>
+    /// The outcome of asking for the gate. A null Run means the gate was held and Result
+    /// carries the run holding it; otherwise Result is the admitted run and Token is the one
+    /// its loop must watch.
+    /// </summary>
+    private readonly record struct Admission(
+        MetadataRefreshStartResult Result,
+        MetadataRefreshRun? Run,
+        CancellationToken Token);
+
+    private async Task<Admission> AdmitAsync(
         MetadataRefreshScopeRequest request,
+        bool linkToCaller,
         CancellationToken cancellationToken)
     {
-        if (!await _gate.WaitAsync(TimeSpan.Zero, cancellationToken))
+        cancellationToken.ThrowIfCancellationRequested();
+
+        MetadataRefreshRun run;
+        CancellationToken token;
+
+        // Taking the gate and publishing the run happen under one lock, with a zero-timeout
+        // Wait that cannot block. Publishing after the scope query instead would leave a
+        // window, as wide as that query, in which the gate is held and no run is visible: on
+        // a cold process a second caller refused in that window would have found neither an
+        // active nor a previous run to report.
+        lock (_stateGate)
         {
-            lock (_stateGate)
+            if (!_gate.Wait(0))
             {
-                return new MetadataRefreshStartResult(false, (_active ?? _last)!.ToSnapshot());
+                return new Admission(
+                    new MetadataRefreshStartResult(false, (_active ?? _last)!.ToSnapshot()),
+                    null,
+                    CancellationToken.None);
             }
+
+            run = new MetadataRefreshRun(request.Scope, _timeProvider.GetUtcNow().UtcDateTime);
+            _active = run;
+            _pending = [];
+            _cancellation?.Dispose();
+            _cancellation = linkToCaller
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : new CancellationTokenSource();
+            token = _cancellation.Token;
         }
 
         try
         {
             var candidates = await ResolveAsync(request, cancellationToken);
-            var run = new MetadataRefreshRun(
-                request.Scope,
-                candidates.Count,
-                _timeProvider.GetUtcNow().UtcDateTime);
+            run.SetTotal(candidates.Count);
             lock (_stateGate)
             {
-                _active = run;
-                _cancellation?.Dispose();
-                _cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 _pending = candidates;
             }
 
-            return new MetadataRefreshStartResult(true, run.ToSnapshot());
+            return new Admission(new MetadataRefreshStartResult(true, run.ToSnapshot()), run, token);
         }
         catch
         {
-            _gate.Release();
+            // The run never got as far as a book, so it is withdrawn rather than finished.
+            lock (_stateGate)
+            {
+                _active = null;
+                _pending = [];
+                _gate.Release();
+            }
+
             throw;
         }
     }
@@ -305,9 +343,8 @@ public sealed class MetadataRefreshCoordinator : IMetadataRefreshCoordinator, ID
                 _last = run;
                 _active = null;
                 _pending = [];
+                _gate.Release();
             }
-
-            _gate.Release();
         }
     }
 }

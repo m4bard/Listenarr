@@ -25,12 +25,16 @@ public class MetadataRefreshCoordinatorTests : BaseTests
 
         public TaskCompletionSource? Gate { get; set; }
 
+        /// <summary>Completes once the loop is inside its first book.</summary>
+        public TaskCompletionSource Entered { get; } = new();
+
         public async Task<MetadataRefreshResult> RefreshAsync(
             int audiobookId,
             IMetadataRefreshBudget budget,
             CancellationToken cancellationToken)
         {
             Seen.Add(audiobookId);
+            Entered.TrySetResult();
             if (Gate != null)
             {
                 await Gate.Task.WaitAsync(cancellationToken);
@@ -57,13 +61,24 @@ public class MetadataRefreshCoordinatorTests : BaseTests
                 It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
+        return (
+            Coordinator(service, repository.Object, Mock.Of<IMonitoredAuthorRepository>()),
+            service,
+            repository);
+    }
+
+    private static MetadataRefreshCoordinator Coordinator(
+        IMetadataRefreshService service,
+        IAudiobookRepository repository,
+        IMonitoredAuthorRepository authors)
+    {
         var services = new ServiceCollection();
-        services.AddScoped<IMetadataRefreshService>(_ => service);
-        services.AddScoped(_ => repository.Object);
-        services.AddScoped(_ => Mock.Of<IMonitoredAuthorRepository>());
+        services.AddScoped(_ => service);
+        services.AddScoped(_ => repository);
+        services.AddScoped(_ => authors);
         var provider = services.BuildServiceProvider();
 
-        var coordinator = new MetadataRefreshCoordinator(
+        return new MetadataRefreshCoordinator(
             provider.GetRequiredService<IServiceScopeFactory>(),
             TimeProvider.System,
             Mock.Of<ILoggerFactory>(factory =>
@@ -73,7 +88,6 @@ public class MetadataRefreshCoordinatorTests : BaseTests
             {
                 Current = new MetadataRefreshOptions(MinimumSpacingMs: 0)
             });
-        return (coordinator, service, repository);
     }
 
     private static MetadataRefreshCandidate Candidate(int id, string author) =>
@@ -200,6 +214,84 @@ public class MetadataRefreshCoordinatorTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "ARefusedStartSeesTheRunBeingAdmitted")]
+    public async Task StartAsync_ReportsTheRunStillResolving_WhenASecondCallerArrivesDuringTheLookup()
+    {
+        var service = new StubRefreshService(_ => MetadataRefreshOutcome.Updated);
+        var resolveEntered = new TaskCompletionSource();
+        var resolveGate = new TaskCompletionSource();
+        var repository = new Mock<IAudiobookRepository>();
+        repository
+            .Setup(r => r.GetAudiobooksDueForMetadataRefreshAsync(
+                It.IsAny<DateTime>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Returns(async Task<List<MetadataRefreshCandidate>> () =>
+            {
+                resolveEntered.TrySetResult();
+                await resolveGate.Task;
+                return [Candidate(1, "A")];
+            });
+        repository
+            .Setup(r => r.StampMetadataRefreshAsync(
+                It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var coordinator = Coordinator(
+            service,
+            repository.Object,
+            Mock.Of<IMonitoredAuthorRepository>());
+        var request = new MetadataRefreshScopeRequest(
+            MetadataRefreshRunScope.Library, null, Force: false);
+
+        var first = coordinator.StartAsync(request, CancellationToken.None);
+        await resolveEntered.Task;
+
+        // The gate is held and the scope query has not answered yet. On a cold process there
+        // is no previous run either, so the refusal has only the run being admitted to report.
+        var second = await coordinator.StartAsync(request, CancellationToken.None);
+        Assert.False(second.Started);
+
+        var current = coordinator.Current();
+        Assert.NotNull(current);
+        Assert.Equal("Running", current.Status);
+        Assert.Equal(second.Run.RunId, current.RunId);
+
+        resolveGate.SetResult();
+        var started = await first;
+        Assert.True(started.Started);
+        Assert.Equal(second.Run.RunId, started.Run.RunId);
+        Assert.Equal(1, started.Run.TotalBooks);
+
+        await coordinator.WaitForIdleAsync(TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    [Trait("Scenario", "ABackgroundRunOutlivesItsCaller")]
+    public async Task StartAsync_RunsToCompletion_WhenTheCallersTokenIsCancelledAfterAdmission()
+    {
+        var (coordinator, service, _) = Create(
+            [Candidate(1, "A"), Candidate(2, "A")],
+            _ => MetadataRefreshOutcome.Updated);
+        service.Gate = new TaskCompletionSource();
+        using var caller = new CancellationTokenSource();
+
+        var started = await coordinator.StartAsync(
+            new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Library, null, Force: false),
+            caller.Token);
+        Assert.True(started.Started);
+
+        // A web request's token is cancelled the moment its response is written, which is
+        // before the run it asked for has done anything. The run is not the caller's to end.
+        await service.Entered.Task;
+        await caller.CancelAsync();
+        service.Gate.SetResult();
+        await coordinator.WaitForIdleAsync(TimeSpan.FromSeconds(10));
+
+        var final = coordinator.Find(started.Run.RunId);
+        Assert.NotNull(final);
+        Assert.Equal("Completed", final.Status);
+        Assert.Equal([1, 2], service.Seen);
+    }
+
+    [Fact]
     [Trait("Scenario", "CancelStopsAtABookBoundary")]
     public async Task Cancel_StopsTheRun_WithoutStartingTheNextBook()
     {
@@ -212,6 +304,9 @@ public class MetadataRefreshCoordinatorTests : BaseTests
             new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Library, null, Force: false),
             CancellationToken.None);
 
+        // Without this the cancel can land before the loop enters its first book, and the
+        // assertion below would be measuring the scheduler rather than the book boundary.
+        await service.Entered.Task;
         Assert.True(coordinator.Cancel(started.Run.RunId));
         service.Gate.SetResult();
         await coordinator.WaitForIdleAsync(TimeSpan.FromSeconds(10));
@@ -252,21 +347,7 @@ public class MetadataRefreshCoordinatorTests : BaseTests
             .Setup(a => a.GetByIdAsync(3, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MonitoredAuthor { Id = 3, AuthorName = "Monitored Author" });
 
-        var services = new ServiceCollection();
-        services.AddScoped<IMetadataRefreshService>(_ => service);
-        services.AddScoped(_ => repository.Object);
-        services.AddScoped(_ => authors.Object);
-        var provider = services.BuildServiceProvider();
-        var coordinator = new MetadataRefreshCoordinator(
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            TimeProvider.System,
-            Mock.Of<ILoggerFactory>(factory =>
-                factory.CreateLogger(It.IsAny<string>()) == Mock.Of<ILogger>()),
-            Mock.Of<ILogger<MetadataRefreshCoordinator>>(),
-            new MetadataRefreshOptionsHolder
-            {
-                Current = new MetadataRefreshOptions(MinimumSpacingMs: 0)
-            });
+        var coordinator = Coordinator(service, repository.Object, authors.Object);
 
         var run = await coordinator.RunToCompletionAsync(
             new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Author, 3, Force: true),

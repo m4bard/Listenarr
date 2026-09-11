@@ -53,7 +53,13 @@ public sealed class MetadataRefreshOptionsHolder
 /// </summary>
 public interface IMetadataRefreshCoordinator
 {
-    /// <summary>Starts a run in the background and returns immediately.</summary>
+    /// <summary>
+    /// Starts a run in the background and returns immediately. The token bounds admission
+    /// only, so a caller may pass the one it already has: it can cancel the queue lookup, but
+    /// the run that comes out of it outlives the caller and is stopped through
+    /// <see cref="Cancel"/>. A web request's token would otherwise end the run at the moment
+    /// the response is written.
+    /// </summary>
     Task<MetadataRefreshStartResult> StartAsync(
         MetadataRefreshScopeRequest request,
         CancellationToken cancellationToken);

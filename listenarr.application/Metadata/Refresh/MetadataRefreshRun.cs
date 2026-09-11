@@ -48,11 +48,12 @@ public sealed record MetadataRefreshRunSnapshot(
 /// </summary>
 public sealed class MetadataRefreshRun
 {
-    public MetadataRefreshRun(MetadataRefreshRunScope scope, int totalBooks, DateTime startedAt)
+    private bool _totalAssigned;
+
+    public MetadataRefreshRun(MetadataRefreshRunScope scope, DateTime startedAt)
     {
         RunId = Guid.NewGuid();
         Scope = scope;
-        TotalBooks = totalBooks;
         StartedAt = startedAt;
     }
 
@@ -60,7 +61,12 @@ public sealed class MetadataRefreshRun
 
     public MetadataRefreshRunScope Scope { get; }
 
-    public int TotalBooks { get; }
+    /// <summary>
+    /// Zero until the scope has been resolved. The run is published before that query so a
+    /// caller refused at the gate always has a run to be told about, which is the only window
+    /// in which the count is not yet known.
+    /// </summary>
+    public int TotalBooks { get; private set; }
 
     public DateTime StartedAt { get; }
 
@@ -104,6 +110,24 @@ public sealed class MetadataRefreshRun
                 Failed++;
                 break;
         }
+    }
+
+    /// <summary>
+    /// Assigns the book count, once, while the run is still running. A setter would let a
+    /// later caller rewrite a finished run's total out from under a snapshot someone is
+    /// already holding.
+    /// </summary>
+    public void SetTotal(int totalBooks)
+    {
+        if (_totalAssigned || State != MetadataRefreshRunState.Running)
+        {
+            throw new InvalidOperationException(
+                "A run's book count is assigned once, before the run finishes.");
+        }
+
+        ArgumentOutOfRangeException.ThrowIfNegative(totalBooks);
+        _totalAssigned = true;
+        TotalBooks = totalBooks;
     }
 
     public void Finish(MetadataRefreshRunState state, DateTime completedAt)
