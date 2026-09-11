@@ -25,6 +25,11 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         string? BasePath,
         string? FilePath);
 
+    public sealed record MetadataRefreshCandidate(
+        int AudiobookId,
+        string? PrimaryAuthor,
+        DateTime? LastMetadataRefreshAt);
+
     public interface IAudiobookRepository
     {
         Task<List<Audiobook>> GetAllAsync();
@@ -33,6 +38,17 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
             CancellationToken ct = default);
         Task<List<AudiobookPathReferenceSnapshot>> GetOtherPathReferenceSnapshotsAsync(
             int audiobookId,
+            CancellationToken ct = default);
+        Task<List<MetadataRefreshCandidate>> GetAudiobooksDueForMetadataRefreshAsync(
+            DateTime staleBefore,
+            int limit,
+            CancellationToken ct = default);
+        Task<List<int>> GetAudiobookIdsByAuthorNameAsync(
+            string authorName,
+            CancellationToken ct = default);
+        Task<bool> StampMetadataRefreshAsync(
+            int audiobookId,
+            DateTime refreshedAtUtc,
             CancellationToken ct = default);
         Task<List<Audiobook>> GetLibraryAsync();
         Task<Dictionary<int, List<AudiobookSeriesMembership>>> GetAllSeriesMembershipsGroupedByAudiobookIdAsync(CancellationToken ct = default);
