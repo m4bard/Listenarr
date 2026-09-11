@@ -106,5 +106,43 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Rules
             Assert.Equal("Publication Order", primary?.SeriesName);
             Assert.Single(audiobook.SeriesMemberships!, m => m.IsPrimary);
         }
+
+        [Fact]
+        public void ApplyToAudiobookPreservingPrimary_KeepsTheProviderDefault_WhenTheChosenSeriesIsGone()
+        {
+            var audiobook = new Audiobook
+            {
+                Title = "A Book Whose Series Was Dropped",
+                SeriesMemberships =
+                [
+                    new AudiobookSeriesMembership
+                    {
+                        SeriesName = "The Retired Sequence",
+                        SeriesAsin = "B0RETIREDX",
+                        SeriesNumber = "3",
+                        IsPrimary = true,
+                        SortOrder = 0
+                    }
+                ]
+            };
+
+            AudiobookSeriesMembershipHelper.ApplyToAudiobookPreservingPrimary(
+                audiobook,
+                [
+                    new AudiobookSeriesMembership
+                    {
+                        SeriesName = "The Surviving Sequence",
+                        SeriesAsin = "B0SURVIVEA",
+                        SeriesNumber = "1",
+                        IsPrimary = true,
+                        SortOrder = 0
+                    }
+                ]);
+
+            var membership = Assert.Single(audiobook.SeriesMemberships!);
+            Assert.Equal("The Surviving Sequence", membership.SeriesName);
+            Assert.True(membership.IsPrimary);
+            Assert.Equal("The Surviving Sequence", audiobook.Series);
+        }
     }
 }
