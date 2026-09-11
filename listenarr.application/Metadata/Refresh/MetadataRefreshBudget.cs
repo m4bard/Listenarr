@@ -44,6 +44,15 @@ public sealed class MetadataRefreshBudget : IMetadataRefreshBudget
 {
     private const double SecondsPerHour = 3600d;
 
+    /// <summary>
+    /// How long the bucket must go without pushback before it gives half of a narrowing back.
+    /// An hour, because the bucket is priced in requests per hour and one quiet hour is the
+    /// smallest interval that says the provider is no longer complaining. The doc says the
+    /// budget halves "for the rest of the cycle", and a process that runs for weeks has many
+    /// cycles.
+    /// </summary>
+    internal static readonly TimeSpan PushbackRecoveryInterval = TimeSpan.FromHours(1);
+
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<MetadataRefreshBudget> _logger;
     private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
@@ -62,6 +71,12 @@ public sealed class MetadataRefreshBudget : IMetadataRefreshBudget
     private DateTimeOffset? _lastGrant;
     private DateTimeOffset? _notBefore;
     private int _spent;
+
+    // When pushback last halved the capacity, or null when the capacity is the operator's.
+    // Nothing else restores it: Reconfigure deliberately ignores a setting that has not
+    // changed, so without this a single 429 held a long-lived process at half rate until it
+    // was restarted, and two held it at a quarter.
+    private DateTimeOffset? _narrowedAt;
 
     public MetadataRefreshBudget(
         TimeProvider timeProvider,
@@ -106,7 +121,8 @@ public sealed class MetadataRefreshBudget : IMetadataRefreshBudget
     /// <remarks>
     /// A setting that has not changed is left alone rather than re-applied. Re-applying it would
     /// restore a capacity that pushback had halved, which would turn cancel-and-restart into a
-    /// way of clearing a 429 the provider had just sent.
+    /// way of clearing a 429 the provider had just sent. A halving is given back by quiet time
+    /// instead, in <see cref="PushbackRecoveryInterval"/> steps, which no caller can fake.
     /// </remarks>
     public void Reconfigure(int requestsPerHour, int minimumSpacingMs)
     {
@@ -125,6 +141,10 @@ public sealed class MetadataRefreshBudget : IMetadataRefreshBudget
             _configuredRequestsPerHour = wanted;
             _capacity = wanted;
             _tokens = Math.Min(_tokens, _capacity);
+
+            // The operator has just named the rate outright, so there is no narrowing left to
+            // ramp back from.
+            _narrowedAt = null;
         }
     }
 
@@ -188,6 +208,7 @@ public sealed class MetadataRefreshBudget : IMetadataRefreshBudget
             Refill(now);
             _capacity = Math.Max(1d, _capacity / 2d);
             _tokens = Math.Min(_tokens, _capacity);
+            _narrowedAt = now;
             if (retryAfter.HasValue && retryAfter.Value > TimeSpan.Zero)
             {
                 _notBefore = now + retryAfter.Value;
@@ -198,13 +219,47 @@ public sealed class MetadataRefreshBudget : IMetadataRefreshBudget
     private void Refill(DateTimeOffset now)
     {
         var elapsed = now - _lastRefill;
-        if (elapsed <= TimeSpan.Zero)
+        if (elapsed > TimeSpan.Zero)
+        {
+            _tokens = Math.Min(_capacity, _tokens + (elapsed.TotalSeconds * (_capacity / SecondsPerHour)));
+            _lastRefill = now;
+        }
+
+        // After the credit, never before it: the quiet time is earned at the rate that was in
+        // force while it elapsed, the same reasoning Reconfigure uses for a changed setting.
+        RecoverFromPushback(now);
+    }
+
+    /// <summary>
+    /// Gives the halving back one doubling per quiet interval, up to the operator's rate. A
+    /// narrowing is meant to last the cycle it happened in, not the life of the process.
+    /// </summary>
+    private void RecoverFromPushback(DateTimeOffset now)
+    {
+        if (_narrowedAt is null)
         {
             return;
         }
 
-        _tokens = Math.Min(_capacity, _tokens + (elapsed.TotalSeconds * (_capacity / SecondsPerHour)));
-        _lastRefill = now;
+        var quiet = now - _narrowedAt.Value;
+        if (quiet < PushbackRecoveryInterval)
+        {
+            return;
+        }
+
+        // Capped so a clock that jumped years cannot overflow the doubling; the result is
+        // clamped to the configured rate anyway.
+        var intervals = Math.Min(32d, Math.Floor(quiet / PushbackRecoveryInterval));
+        var widened = _capacity * Math.Pow(2d, intervals);
+        if (widened >= _configuredRequestsPerHour)
+        {
+            _capacity = _configuredRequestsPerHour;
+            _narrowedAt = null;
+            return;
+        }
+
+        _capacity = widened;
+        _narrowedAt = _narrowedAt.Value + (intervals * PushbackRecoveryInterval);
     }
 
     private TimeSpan WaitFrom(DateTimeOffset now)

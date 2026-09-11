@@ -238,6 +238,60 @@ public class MetadataRefreshBudgetTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "PushbackIsGivenBackByQuietTime")]
+    public async Task ApplyThrottleSignal_RampsTheCapacityBack_OneDoublingPerQuietHour()
+    {
+        var (budget, clock) = Create(new MetadataRefreshBudgetOptions(
+            RequestsPerHour: 64,
+            MinimumSpacingMs: 0));
+
+        async Task<TimeSpan> TimeOneTokenAsync()
+        {
+            var before = clock.GetUtcNow();
+            Assert.True(await budget.ChargeAsync(CancellationToken.None));
+            return clock.GetUtcNow() - before;
+        }
+
+        async Task DrainAsync(int tokens)
+        {
+            for (var i = 0; i < tokens; i++)
+            {
+                Assert.True(await budget.ChargeAsync(CancellationToken.None));
+            }
+        }
+
+        await DrainAsync(64);
+        budget.ApplyThrottleSignal(retryAfter: null);
+        budget.ApplyThrottleSignal(retryAfter: null);
+
+        // Two 429s take 64 an hour to 16, so a token costs 225 seconds.
+        Assert.InRange(await TimeOneTokenAsync(), TimeSpan.FromSeconds(224), TimeSpan.FromSeconds(226));
+
+        // Three quarters of an hour of quiet buys nothing. A narrowing that evaporated on the
+        // next request would be no narrowing at all.
+        clock.Advance(TimeSpan.FromMinutes(45));
+        await DrainAsync(12);
+        Assert.InRange(await TimeOneTokenAsync(), TimeSpan.FromSeconds(224), TimeSpan.FromSeconds(226));
+
+        // Past the hour, one doubling: 32 an hour, 112.5 seconds a token. Not a reset, because
+        // the second 429 is still being paid for.
+        clock.Advance(TimeSpan.FromHours(1));
+        await DrainAsync(16);
+        Assert.InRange(await TimeOneTokenAsync(), TimeSpan.FromSeconds(112), TimeSpan.FromSeconds(113));
+
+        // A second quiet hour returns the operator's rate. Before this, nothing but a process
+        // restart did, so one 429 held a long-uptime instance at half rate for good.
+        clock.Advance(TimeSpan.FromHours(1));
+        await DrainAsync(32);
+        Assert.InRange(await TimeOneTokenAsync(), TimeSpan.FromSeconds(56), TimeSpan.FromSeconds(57));
+
+        // And it stops at what the operator asked for rather than running past it.
+        clock.Advance(TimeSpan.FromHours(12));
+        await DrainAsync(64);
+        Assert.InRange(await TimeOneTokenAsync(), TimeSpan.FromSeconds(56), TimeSpan.FromSeconds(57));
+    }
+
+    [Fact]
     [Trait("Scenario", "RetryAfterIsHonoured")]
     public async Task ApplyThrottleSignal_WaitsOutRetryAfter_BeforeTheNextGrant()
     {
