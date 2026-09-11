@@ -40,6 +40,22 @@ namespace Listenarr.Infrastructure.Persistence
                 using var scope = provider.CreateScope();
                 var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
                 await audiobookRepository.NormalizeJsonColumnsAsync(stoppingToken);
+
+                // Here rather than in the migration that added the column, because migrations in
+                // this repository stay direct EF scaffolds and data repair lives on the startup
+                // path. It touches only rows with no refresh timestamp, so every start after the
+                // first writes nothing, and it runs well before the refresh walk's first cycle,
+                // which is ten minutes behind startup. That order matters: the rows it stamps are
+                // the ones that would otherwise be due immediately, and stamping them now is what
+                // buys an upgraded library its first staleness window.
+                var backfilled = await audiobookRepository.BackfillMetadataRefreshTimestampsAsync(stoppingToken);
+                if (backfilled > 0)
+                {
+                    logger.LogInformation(
+                        "StartupDbNormalizer: gave {Count} audiobook(s) a starting metadata refresh timestamp",
+                        backfilled);
+                }
+
                 logger.LogInformation("StartupDbNormalizer: normalization pass complete.");
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

@@ -192,6 +192,19 @@ public class SqliteMigrationSchemaTests : BaseTests
             .Where(id => string.CompareOrdinal(id, CanaryMigrationFrontierId) > 0)
             .ToArray();
 
+        // Pinned on their own rather than appended to the list below. That list is
+        // ordered and every branch that adds a migration has to extend its last line, so
+        // two of them in flight at once is a conflict in a file neither branch is about.
+        // Taking this branch's own out first leaves the check below exactly as strict:
+        // anything else unpinned still fails it.
+        string[] metadataRefreshMigrationIds =
+        [
+            "20260910120000_AddAudiobookLastMetadataRefreshAt",
+            "20260910121000_AddAudiobookLastMetadataRefreshAtIndex"
+        ];
+        Assert.All(metadataRefreshMigrationIds, id => Assert.Contains(id, postCanary));
+        postCanary = [.. postCanary.Except(metadataRefreshMigrationIds)];
+
         Assert.Equal(
             [
                 ProcessExecutionLogRepairId,
