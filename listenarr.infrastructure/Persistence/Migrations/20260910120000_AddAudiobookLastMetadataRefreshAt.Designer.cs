@@ -3,6 +3,7 @@ using System;
 using Listenarr.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    partial class ListenArrDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260910120000_AddAudiobookLastMetadataRefreshAt")]
+    partial class AddAudiobookLastMetadataRefreshAt
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
@@ -319,8 +322,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("LastMetadataRefreshAt");
 
                     b.HasIndex("LastSearchTime");
 
@@ -1853,9 +1854,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("DownloadCompletionStabilitySeconds")
                         .HasColumnType("INTEGER");
 
-                    b.Property<bool>("EmbedCoverArtInAudioFiles")
-                        .HasColumnType("INTEGER");
-
                     b.Property<bool>("EnableAmazonSearch")
                         .HasColumnType("INTEGER");
 
@@ -1954,41 +1952,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("ApplicationSettings");
-                });
-
-            modelBuilder.Entity("Listenarr.Domain.Downloads.BlockedRelease", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("AudiobookId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("BlockedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReleaseIdentifier")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("Size")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AudiobookId", "ReleaseIdentifier")
-                        .IsUnique();
-
-                    b.ToTable("BlockedReleases");
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Downloads.CompatibilityFilePublicationJournal", b =>
