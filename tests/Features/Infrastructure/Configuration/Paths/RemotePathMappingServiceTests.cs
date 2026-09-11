@@ -247,5 +247,18 @@ namespace Listenarr.Tests.Features.Infrastructure.Configuration.Paths
         // command interceptor to guarantee the reads genuinely overlap. The InMemory
         // provider used here completes reads synchronously as Task.WhenAll enumerates
         // them, so a burst scheduled on it cannot prove the per-operation context fix.
+        // The synchronous overload is the one contract the caller can get wrong, because it is the
+        // caller that supplies the mappings. Without the guard a null list reaches the foreach and
+        // throws NullReferenceException from inside the service, which says nothing about which
+        // argument was missing.
+        [Fact]
+        [Trait("Method", "TranslatePath")]
+        public void TranslatePath_NullMappings_ThrowsArgumentNullException()
+        {
+            var thrown = Assert.Throws<ArgumentNullException>(
+                () => remotePathMappingService.TranslatePath(null!, client, "/downloads/book.m4b"));
+
+            Assert.Equal("mappings", thrown.ParamName);
+        }
     }
 }
