@@ -35,6 +35,7 @@ global using Listenarr.Application.Metadata.Audible;
 global using Listenarr.Application.Metadata.Audnexus;
 global using Listenarr.Application.Metadata.Core;
 global using Listenarr.Application.Metadata.Contracts;
+global using Listenarr.Application.Metadata.Faults;
 global using Listenarr.Application.Metadata.Extraction;
 global using Listenarr.Application.Notifications.Diagnostics;
 global using Listenarr.Application.Notifications.Payloads;
