@@ -116,6 +116,14 @@ public partial class AudiobookRepository
     /// for. Non-ASCII characters are left out of the pattern rather than matched, because
     /// SQLite's <c>lower</c> is ASCII-only and folding them there would disagree with
     /// <c>ToLowerInvariant</c>.
+    /// <para>
+    /// A row whose author column is not valid JSON is kept rather than dropped. <c>json_each</c>
+    /// cannot expand one, but the value converter can still read it: it tolerates legacy bare
+    /// strings that begin with a digit or with t, f, n or -, wrapping them into a single-item
+    /// list. Such a row matches in C# and would have been discarded here, which is the one way
+    /// this narrowing could stop being a superset. There are few of them and they only appear on
+    /// upgraded databases, so they cost one extra row read each.
+    /// </para>
     /// </remarks>
     private async Task<List<int>?> NarrowAuthorCandidateIdsAsync(
         string normalizedTarget,
@@ -133,10 +141,12 @@ public partial class AudiobookRepository
                 SELECT a."Id" AS "Value"
                 FROM "Audiobooks" AS a
                 WHERE a."Authors" IS NOT NULL
-                  AND json_valid(a."Authors")
-                  AND EXISTS (
-                      SELECT 1 FROM json_each(a."Authors") AS j
-                      WHERE j."value" IS NOT NULL AND lower(j."value") LIKE {0}
+                  AND (
+                      NOT json_valid(a."Authors")
+                      OR EXISTS (
+                          SELECT 1 FROM json_each(a."Authors") AS j
+                          WHERE j."value" IS NOT NULL AND lower(j."value") LIKE {0}
+                      )
                   )
                 """,
                 pattern)

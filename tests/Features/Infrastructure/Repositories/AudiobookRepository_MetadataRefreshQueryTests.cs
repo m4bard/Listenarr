@@ -209,6 +209,34 @@ public class AudiobookRepository_MetadataRefreshQueryTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "AuthorMatchSurvivesALegacyBareStringAuthorColumn")]
+    public async Task IdsByAuthorName_StillMatches_WhenTheStoredAuthorListIsNotValidJson()
+    {
+        using var context = new TestDb();
+        context.Db.Audiobooks.AddRange(
+            Book("Legacy Row", "placeholder", null),
+            Book("Not Matching", "Someone Else", null));
+        await context.Db.SaveChangesAsync();
+
+        // What an upgraded database can still hold: a bare string written before the column was
+        // JSON. The value converter reads it, wrapping any value that starts with a digit or
+        // with t, f, n or - into a single-item list, so this row matches in C#.
+        var legacyId = context.Db.Audiobooks.Single(book => book.Title == "Legacy Row").Id;
+        await context.Db.Database.ExecuteSqlRawAsync(
+            """UPDATE "Audiobooks" SET "Authors" = '2001 Literary Trust' WHERE "Id" = {0}""",
+            legacyId);
+        context.Db.ChangeTracker.Clear();
+
+        var repository = new AudiobookRepository(context.Db);
+        var ids = await repository.GetAudiobookIdsByAuthorNameAsync("2001 Literary Trust");
+
+        // json_each cannot expand a bare string, so requiring json_valid dropped the row in SQL
+        // before the C# comparison ever saw it. That is the one way the narrowing could stop
+        // being a superset of what the exact match would have kept.
+        Assert.Equal([legacyId], ids);
+    }
+
+    [Fact]
     [Trait("Scenario", "IdFilteredStalenessQuery")]
     public async Task FilterIdsDueForRefresh_KeepsOnlyTheStaleOnesInTheIdSet()
     {
