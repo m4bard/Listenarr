@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Persistence.Repositories;
@@ -58,6 +59,16 @@ public partial class AudiobookRepository
     /// Ids of every book whose author list contains <paramref name="authorName"/> after the same
     /// normalization the monitored-author rows use.
     /// </summary>
+    /// <remarks>
+    /// Two queries, neither of which reads the whole table. The first expands the JSON author
+    /// list with <c>json_each</c> and narrows to the rows that could possibly match; the second
+    /// reads the author JSON of only those rows, and the exact comparison is still the C#
+    /// normalizer, which is the only thing that defines what a match is.
+    /// <para>
+    /// Reading every row's author JSON back to answer a question about one author cost the whole
+    /// table on every per-author trigger, and a deserialization per row on top of it.
+    /// </para>
+    /// </remarks>
     public async Task<List<int>> GetAudiobookIdsByAuthorNameAsync(
         string authorName,
         CancellationToken ct = default)
@@ -68,9 +79,19 @@ public partial class AudiobookRepository
             return [];
         }
 
-        // Materialize first: SQLite cannot translate list-property checks on our JSON columns.
-        var candidates = await _db.Audiobooks
-            .AsNoTracking()
+        var narrowed = await NarrowAuthorCandidateIdsAsync(target, ct);
+        if (narrowed is { Count: 0 })
+        {
+            return [];
+        }
+
+        var rows = _db.Audiobooks.AsNoTracking();
+        if (narrowed != null)
+        {
+            rows = rows.Where(audiobook => narrowed.Contains(audiobook.Id));
+        }
+
+        var candidates = await rows
             .Select(audiobook => new { audiobook.Id, audiobook.Authors })
             .ToListAsync(ct);
 
@@ -80,6 +101,68 @@ public partial class AudiobookRepository
             .Select(candidate => candidate.Id)
             .OrderBy(id => id)
             .ToList();
+    }
+
+    /// <summary>
+    /// Ids whose author list could contain <paramref name="normalizedTarget"/>, or null when the
+    /// target gives nothing to narrow on and the caller has to read the table after all.
+    /// </summary>
+    /// <remarks>
+    /// The normalizer only deletes characters and lowercases them; it never reorders or inserts.
+    /// So every ASCII letter and digit of the normalized target must appear, in that order, in
+    /// the lowercased stored value, which is what the <c>%a%b%c%</c> pattern asks. That makes the
+    /// result a superset and never drops a row the exact comparison would have kept, including
+    /// the punctuation-only differences ("A. Writer" against "a writer") the normalizer exists
+    /// for. Non-ASCII characters are left out of the pattern rather than matched, because
+    /// SQLite's <c>lower</c> is ASCII-only and folding them there would disagree with
+    /// <c>ToLowerInvariant</c>.
+    /// </remarks>
+    private async Task<List<int>?> NarrowAuthorCandidateIdsAsync(
+        string normalizedTarget,
+        CancellationToken ct)
+    {
+        var pattern = BuildAuthorSubsequencePattern(normalizedTarget);
+        if (pattern == null || !_db.Database.IsRelational())
+        {
+            return null;
+        }
+
+        return await _db.Database
+            .SqlQueryRaw<int>(
+                """
+                SELECT a."Id" AS "Value"
+                FROM "Audiobooks" AS a
+                WHERE a."Authors" IS NOT NULL
+                  AND json_valid(a."Authors")
+                  AND EXISTS (
+                      SELECT 1 FROM json_each(a."Authors") AS j
+                      WHERE j."value" IS NOT NULL AND lower(j."value") LIKE {0}
+                  )
+                """,
+                pattern)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// <c>%j%u%l%e%s%v%e%r%n%e%</c> for "jules verne". Null when the name carries no ASCII
+    /// letters or digits at all, which would make the pattern a bare wildcard.
+    /// </summary>
+    private static string? BuildAuthorSubsequencePattern(string normalizedTarget)
+    {
+        var pattern = new StringBuilder("%");
+        var usable = 0;
+        foreach (var character in normalizedTarget)
+        {
+            // Already lowercased by the normalizer. LIKE's own metacharacters cannot appear:
+            // the normalizer keeps only letters, digits and the spaces it puts between words.
+            if (character is (>= 'a' and <= 'z') or (>= '0' and <= '9'))
+            {
+                pattern.Append(character).Append('%');
+                usable++;
+            }
+        }
+
+        return usable == 0 ? null : pattern.ToString();
     }
 
     /// <summary>

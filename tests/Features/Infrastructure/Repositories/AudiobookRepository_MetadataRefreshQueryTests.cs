@@ -2,8 +2,10 @@
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  */
+using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Tests.Common;
 
@@ -18,17 +20,47 @@ namespace Listenarr.Tests.Features.Infrastructure.Repositories;
 [Trait("Category", "Infrastructure")]
 public class AudiobookRepository_MetadataRefreshQueryTests : BaseTests
 {
+    /// <summary>Records the SQL that actually reached SQLite, so a test can assert on it.</summary>
+    private sealed class CommandRecorder : DbCommandInterceptor
+    {
+        public List<string> Commands { get; } = [];
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result)
+        {
+            Commands.Add(command.CommandText);
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            Commands.Add(command.CommandText);
+            return ValueTask.FromResult(result);
+        }
+    }
+
     private sealed class TestDb : IDisposable
     {
         private readonly SqliteConnection _connection;
         public ListenArrDbContext Db { get; }
+
+        public CommandRecorder Recorder { get; } = new();
 
         public TestDb()
         {
             _connection = new SqliteConnection("DataSource=:memory:");
             _connection.Open();
             Db = new ListenArrDbContext(
-                new DbContextOptionsBuilder<ListenArrDbContext>().UseSqlite(_connection).Options);
+                new DbContextOptionsBuilder<ListenArrDbContext>()
+                    .UseSqlite(_connection)
+                    .AddInterceptors(Recorder)
+                    .Options);
             Db.Database.EnsureCreated();
         }
 
@@ -126,6 +158,54 @@ public class AudiobookRepository_MetadataRefreshQueryTests : BaseTests
                 "Matching",
                 context.Db.Audiobooks.Single(book => book.Id == id).Title,
                 StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("Scenario", "AuthorMatchIsNarrowedInTheDatabase")]
+    public async Task IdsByAuthorName_NarrowsInSql_RatherThanReadingEveryAuthorList()
+    {
+        using var context = new TestDb();
+        context.Db.Audiobooks.AddRange(
+            Book("Matching", "A. Writer", null),
+            Book("Not Matching", "Someone Else", null),
+            Book("Also Not Matching", "Another Person Entirely", null));
+        await context.Db.SaveChangesAsync();
+        var repository = new AudiobookRepository(context.Db);
+        context.Recorder.Commands.Clear();
+
+        var ids = await repository.GetAudiobookIdsByAuthorNameAsync("A Writer");
+
+        Assert.Single(ids);
+
+        // The match is narrowed by SQLite over the expanded JSON list.
+        Assert.Contains(context.Recorder.Commands, sql => sql.Contains("json_each", StringComparison.Ordinal));
+
+        // And nothing reads the author column of the whole table. Pulling every row back to
+        // deserialize its author JSON in memory cost the library on every per-author trigger.
+        Assert.DoesNotContain(
+            context.Recorder.Commands,
+            sql => sql.Contains("\"Authors\"", StringComparison.Ordinal)
+                && !sql.Contains("WHERE", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("Scenario", "AuthorMatchSurvivesNonAsciiNames")]
+    public async Task IdsByAuthorName_StillMatches_WhenTheNameIsNotAscii()
+    {
+        using var context = new TestDb();
+        context.Db.Audiobooks.AddRange(
+            Book("Accented", "JULES VÉRNE", null),
+            Book("Not Matching", "Someone Else", null));
+        await context.Db.SaveChangesAsync();
+        var repository = new AudiobookRepository(context.Db);
+
+        // SQLite's lower() is ASCII-only, so a pattern built from the accented character would
+        // disagree with ToLowerInvariant and silently drop this row. The narrowing leaves
+        // non-ASCII characters out and lets the C# normalizer decide.
+        var ids = await repository.GetAudiobookIdsByAuthorNameAsync("jules vérne");
+
+        Assert.Single(ids);
+        Assert.Equal("Accented", context.Db.Audiobooks.Single(book => book.Id == ids[0]).Title);
     }
 
     [Fact]
