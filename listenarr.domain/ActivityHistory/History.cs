@@ -118,6 +118,13 @@ namespace Listenarr.Domain.ActivityHistory
         /// Failure detail retained separately from the display message.
         /// </summary>
         public string? Error { get; set; }
+
+        /// <summary>
+        /// Transfer protocol the event belongs to. Null for rows written before the column
+        /// existed, and for events whose download client can no longer be resolved, so that an
+        /// unknown protocol reads as unknown rather than as the first member of the enum.
+        /// </summary>
+        public Listenarr.Domain.Downloads.DownloadProtocol? Protocol { get; set; }
     }
 
     public sealed class HistoryQuery
