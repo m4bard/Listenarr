@@ -164,9 +164,31 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
         public async Task<Audiobook> AddAsync(Audiobook audiobook)
         {
+            StampNewAudiobookRefreshTimestamp(audiobook);
             _db.Audiobooks.Add(audiobook);
             await _db.SaveChangesAsync();
             return audiobook;
+        }
+
+        /// <summary>
+        /// A book being written for the first time counts as just refreshed, because it is: the
+        /// metadata it is being created from was fetched from the provider moments ago.
+        /// </summary>
+        /// <remarks>
+        /// Without this a new book goes in with a null timestamp, which the refresh queue reads
+        /// as "never refreshed" and sorts to the very front. A book added on Tuesday is then
+        /// re-fetched on Tuesday, ahead of a library of books that have genuinely gone stale,
+        /// and the budget it spends doing it is budget those books do not get.
+        /// <para>
+        /// Set here and in the atomic add's commit store, the only two places a row is inserted.
+        /// Not in SaveChanges: stamping every Added entity would also stamp the rows a test or a
+        /// fixture inserts to stand for an upgraded library, which is the one case that has to
+        /// keep arriving with no timestamp.
+        /// </para>
+        /// </remarks>
+        internal static void StampNewAudiobookRefreshTimestamp(Audiobook audiobook)
+        {
+            audiobook.LastMetadataRefreshAt ??= DateTime.UtcNow;
         }
 
         public async Task<bool> DeleteByIdAsync(int id)
