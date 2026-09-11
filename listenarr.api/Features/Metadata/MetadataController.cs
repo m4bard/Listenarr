@@ -94,6 +94,7 @@ namespace Listenarr.Api.Features.Metadata
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
         public async Task<ActionResult<object>> GetMetadata(
             string asin,
             [FromQuery] string region = "us",
@@ -114,10 +115,24 @@ namespace Listenarr.Api.Features.Metadata
 
                 return Ok(result);
             }
+            catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
+            {
+                // Same three answers as the ISBN endpoint. A provider that would not answer is
+                // not a missing book, and is not a fault in this service either.
+                _logger.LogWarning(ex, "Provider did not answer fetching metadata for ASIN: {Asin}", LogRedaction.SanitizeText(asin));
+                return StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "The metadata provider did not answer; try again shortly");
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Error fetching metadata for ASIN: {Asin}", asin);
-                return StatusCode(500, $"Error fetching metadata: {ex.Message}");
+
+                // A fixed string, like the sibling endpoint below. ex.Message on this path is
+                // the provider client's own text, and a client that raises composes that text
+                // from the request it made: host, path and query string, and the query string
+                // holds the ASIN. None of that belongs in a response any API caller can read.
+                return StatusCode(500, "Error fetching metadata");
             }
         }
 
@@ -129,6 +144,7 @@ namespace Listenarr.Api.Features.Metadata
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
         public async Task<ActionResult<AudibleBookResponse>> GetAudibleMetadata(
             string asin,
             [FromQuery] string region = "us",
@@ -149,6 +165,13 @@ namespace Listenarr.Api.Features.Metadata
 
                 return Ok(result);
             }
+            catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
+            {
+                _logger.LogWarning(ex, "Provider did not answer fetching Audible metadata for ASIN: {Asin}", LogRedaction.SanitizeText(asin));
+                return StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "The metadata provider did not answer; try again shortly");
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Error fetching Audible metadata for ASIN: {Asin}", asin);
@@ -159,12 +182,33 @@ namespace Listenarr.Api.Features.Metadata
         /// <summary>
         /// Resolve an ASIN from an ISBN value.
         /// </summary>
+        /// <remarks>
+        /// Three answers, not two. The lookup service raises when the provider did not answer,
+        /// and an operator typing an ISBN into the UI is owed that distinction as a status
+        /// rather than as a stack trace: the ISBN really having no ASIN stays a 404, and a
+        /// provider that would not answer becomes a 503 that says to try again. A 404 for the
+        /// second case tells the operator the ISBN is wrong, which is a claim nothing had
+        /// established.
+        /// </remarks>
         [HttpGet("asin-from-isbn/{isbn}")]
         [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
         public async Task<IActionResult> GetAsinFromIsbn(string isbn, CancellationToken ct)
         {
-            var result = await _asinLookupService.GetAsinFromIsbnAsync(isbn, ct);
+            (bool Success, string? Asin, string? Error) result;
+            try
+            {
+                result = await _asinLookupService.GetAsinFromIsbnAsync(isbn, ct);
+            }
+            catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
+            {
+                _logger.LogWarning(ex, "Provider did not answer resolving an ASIN from an ISBN");
+                return StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    new { success = false, error = "The metadata provider did not answer; try again shortly" });
+            }
+
             if (!result.Success)
             {
                 return NotFound(new { success = false, error = result.Error ?? "ASIN not found" });
