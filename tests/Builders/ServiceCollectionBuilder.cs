@@ -198,7 +198,16 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<DownloadTypeResolver>();
             services.AddSingleton<DownloadClientSelector>();
             services.AddSingleton<DownloadCachedTorrentStore>();
-            services.AddSingleton<LibraryMetadataRescanWorkflow>();
+            // Scoped, matching ListenarrWorkflowRegistration. The rescan workflow captures a
+            // scoped IMetadataRefreshService and a scoped repository, so registering it as a
+            // singleton here gave the test container a captive dependency production does not
+            // have, and the shared DbContext that comes with one.
+            services.AddScoped<LibraryMetadataRescanWorkflow>();
+            services.AddScoped<LibraryMetadataRefreshWorkflow>();
+            // The refresh coordinator links every run to ApplicationStopping. The test container
+            // composes no host, so give it a lifetime that never stops; tests that need to
+            // observe shutdown register their own stub before building.
+            services.TryAddSingleton<Microsoft.Extensions.Hosting.IHostApplicationLifetime, TestApplicationLifetime>();
             services.AddSingleton<LibraryScanPathResolver>();
             services.AddSingleton<LibraryScanQueueWorkflow>();
             services.AddSingleton<LibraryAddWorkflow>();
@@ -303,6 +312,23 @@ namespace Listenarr.Tests.Builders
             {
                 services.Add(serviceDescriptor);
             }
+        }
+    }
+
+    /// <summary>
+    /// A host lifetime for the test container: the tokens never fire and StopApplication is a no-op,
+    /// because the test service collection composes no host to stop.
+    /// </summary>
+    internal sealed class TestApplicationLifetime : Microsoft.Extensions.Hosting.IHostApplicationLifetime
+    {
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+
+        public CancellationToken ApplicationStopping => CancellationToken.None;
+
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+
+        public void StopApplication()
+        {
         }
     }
 }
