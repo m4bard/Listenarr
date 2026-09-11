@@ -103,6 +103,11 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             // Performance indexes commonly used by queries
             builder.HasIndex(a => a.Monitored);
             builder.HasIndex(a => a.LastSearchTime);
+
+            // The refresh queue orders by this and takes the head of it, on every scheduled
+            // cycle and every API trigger. Without it that is a scan of the whole table and a
+            // sort, which is the same shape LastSearchTime has always been indexed for.
+            builder.HasIndex(a => a.LastMetadataRefreshAt);
         }
     }
 }
