@@ -711,6 +711,262 @@ namespace Listenarr.Tests.Features.Api
                 Times.Exactly(8));
         }
 
+        [Fact]
+        public async Task RescanMetadata_ProviderUnavailableInEveryRegion_Returns503()
+        {
+            const string asin = "B0UNREACH1";
+            var metadataMock = new Mock<IAudiobookMetadataService>();
+            metadataMock
+                .Setup(service => service.GetMetadataAsync(asin, It.IsAny<string>(), false))
+                .ThrowsAsync(new HttpRequestException("connection refused"));
+
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IAudiobookMetadataService>();
+                    services.AddSingleton(metadataMock.Object);
+                });
+            });
+
+            var audiobookId = await SeedBookWithAsinAsync(factory, "Unreachable Provider", asin);
+
+            using var client = factory.CreateClient();
+            var response = await PostRescanAsync(client, audiobookId);
+
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(
+                "metadata_provider_unavailable",
+                json.RootElement.GetProperty("code").GetString());
+        }
+
+        [Fact]
+        public async Task RescanMetadata_FirstRegionUnavailable_AnswersFromTheNextRegion()
+        {
+            const string asin = "B0WIREFALL";
+            var metadataMock = new Mock<IAudiobookMetadataService>();
+            metadataMock
+                .Setup(service => service.GetMetadataAsync(asin, "us", false))
+                .ThrowsAsync(new HttpRequestException("connection refused"));
+            metadataMock
+                .Setup(service => service.GetMetadataAsync(asin, "uk", false))
+                .ReturnsAsync(new AudiobookMetadataEnvelope(
+                    new AudibleBookResponse { Asin = asin, Title = "Answered By The Second Region" },
+                    "Audible",
+                    "https://api.audible.com"));
+
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IAudiobookMetadataService>();
+                    services.AddSingleton(metadataMock.Object);
+                });
+            });
+
+            var audiobookId = await SeedBookWithAsinAsync(factory, "Falls Through To UK", asin);
+
+            using var client = factory.CreateClient();
+            var response = await PostRescanAsync(client, audiobookId);
+
+            // The endpoint used to give up on the whole book once one region had failed to the
+            // retry ceiling, so this was a 503 for a book the provider was perfectly willing to
+            // answer about one region over.
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.True(response.IsSuccessStatusCode, $"{(int)response.StatusCode}: {body}");
+            using var json = JsonDocument.Parse(body);
+            Assert.Equal("uk", json.RootElement.GetProperty("region").GetString());
+            Assert.Equal("Metadata rescanned successfully", json.RootElement.GetProperty("message").GetString());
+        }
+
+        [Fact]
+        public async Task RescanMetadata_MissingAudiobook_Returns404Twice_WithoutSpendingTheQuota()
+        {
+            var factory = _factory.WithWebHostBuilder(builder => { });
+            int missingId;
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+                missingId = await db.Audiobooks.AnyAsync()
+                    ? await db.Audiobooks.MaxAsync(book => book.Id) + 5000
+                    : 5000;
+            }
+
+            using var client = factory.CreateClient();
+            var first = await PostRescanAsync(client, missingId);
+            var second = await PostRescanAsync(client, missingId);
+
+            // Consuming the quota before checking the book exists armed the fifteen-second
+            // cooldown on an id that was never there, so polling a deleted book locked the
+            // actor out of it.
+            Assert.Equal(HttpStatusCode.NotFound, first.StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, second.StatusCode);
+        }
+
+        [Fact]
+        public async Task StartMetadataRefresh_EmptyBody_IsAccepted_AndTheRunIdCanBeCancelled()
+        {
+            var gate = new RefreshGate();
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    // The coordinator, the workflow, the controller and the run registry are all
+                    // the real ones; only the per-book work is stubbed, so the trigger is tested
+                    // over the wire without walking whatever this class has seeded.
+                    services.RemoveAll<IMetadataRefreshService>();
+                    services.AddSingleton(gate);
+                    services.AddScoped<IMetadataRefreshService, GatedRefreshService>();
+                });
+            });
+
+            await SetMetadataRefreshEnabledAsync(factory, enabled: true);
+            try
+            {
+                await SeedBookWithAsinAsync(factory, "Refresh Trigger Target", "B0TRIGGERX");
+
+                using var client = factory.CreateClient();
+                var csrfToken = await GetAntiforgeryTokenAsync(client);
+                using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/library/refresh-metadata");
+                request.Headers.Add("X-XSRF-TOKEN", csrfToken);
+                var response = await client.SendAsync(request);
+
+                // No body at all binds the request record to null, which is the whole library
+                // with no force. A 400 here would mean the simplest call the UI can make does
+                // not work.
+                var body = await response.Content.ReadAsStringAsync();
+                Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+                using var json = JsonDocument.Parse(body);
+                var runId = json.RootElement.GetProperty("runId").GetGuid();
+                Assert.Equal("Library", json.RootElement.GetProperty("scope").GetString());
+
+                // Held inside its first book, so the cancel below has a run to cancel. Asserting
+                // "Accepted or NotFound" could not fail for the thing the name claims: a run
+                // that had already finished passed it without the cancel path being exercised.
+                await gate.Entered.Task.WaitAsync(TestTimeout);
+
+                using var cancelRequest = new HttpRequestMessage(
+                    HttpMethod.Delete,
+                    $"/api/v1/library/refresh-metadata/{runId}");
+                cancelRequest.Headers.Add("X-XSRF-TOKEN", csrfToken);
+                var cancel = await client.SendAsync(cancelRequest);
+
+                Assert.Equal(HttpStatusCode.Accepted, cancel.StatusCode);
+
+                // Joined before the test returns. The run is a background task over the class's
+                // shared SQLite fixture, and one still walking after the method ended was a trap
+                // for the next person to assert on a refresh timestamp.
+                gate.Release.SetResult();
+                var coordinator = (MetadataRefreshCoordinator)factory.Services
+                    .GetRequiredService<IMetadataRefreshCoordinator>();
+                await coordinator.WaitForIdleAsync(TestTimeout);
+
+                var status = await client.GetAsync($"/api/v1/library/refresh-metadata/{runId}");
+                using var statusJson = JsonDocument.Parse(await status.Content.ReadAsStringAsync());
+                Assert.Equal("Cancelled", statusJson.RootElement.GetProperty("status").GetString());
+            }
+            finally
+            {
+                await SetMetadataRefreshEnabledAsync(factory, enabled: false);
+            }
+        }
+
+        [Fact]
+        public async Task StartMetadataRefresh_Returns409_WhenTheFeatureIsTurnedOff()
+        {
+            // The feature ships on, so this one turns it off first. A trigger that ignored the
+            // setting gave an operator who had turned the feature off a button that walked the
+            // whole library anyway.
+            await SetMetadataRefreshEnabledAsync(_factory, false);
+            using var client = _factory.CreateClient();
+            var csrfToken = await GetAntiforgeryTokenAsync(client);
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/library/refresh-metadata");
+            request.Headers.Add("X-XSRF-TOKEN", csrfToken);
+
+            var response = await client.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Contains("metadata_refresh_disabled", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+            await SetMetadataRefreshEnabledAsync(_factory, true);
+        }
+
+        private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(30);
+
+        private static async Task SetMetadataRefreshEnabledAsync(
+            Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory,
+            bool enabled)
+        {
+            using var scope = factory.Services.CreateScope();
+            var configuration = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
+            var settings = await configuration.GetApplicationSettingsAsync();
+            settings.MetadataRefreshEnabled = enabled;
+            await configuration.SaveApplicationSettingsAsync(settings);
+        }
+
+        /// <summary>Holds the run inside its first book until the test lets it go.</summary>
+        private sealed class RefreshGate
+        {
+            public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        /// <summary>
+        /// Defers every book, so nothing stamps a refresh timestamp on the shared fixture, and
+        /// waits on the gate so the run is demonstrably in flight when the test cancels it.
+        /// </summary>
+        private sealed class GatedRefreshService : IMetadataRefreshService
+        {
+            private readonly RefreshGate _gate;
+
+            public GatedRefreshService(RefreshGate gate) => _gate = gate;
+
+            public async Task<MetadataRefreshResult> RefreshAsync(
+                int audiobookId,
+                IMetadataRefreshBudget budget,
+                CancellationToken cancellationToken)
+            {
+                _gate.Entered.TrySetResult();
+                await _gate.Release.Task.WaitAsync(cancellationToken);
+                return new MetadataRefreshResult(MetadataRefreshOutcome.Deferred, 0);
+            }
+        }
+
+        private static async Task<int> SeedBookWithAsinAsync(
+            Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory,
+            string title,
+            string asin)
+        {
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+            var audiobook = new Audiobook
+            {
+                Title = title,
+                Asin = asin,
+                // Explicitly stale, not left null. The startup backfill gives a null timestamp
+                // the current time, and a book seeded moments before it runs would come out not
+                // due, so a library-scoped trigger would find nothing to walk.
+                LastMetadataRefreshAt = DateTime.UtcNow.AddDays(-365),
+                ExternalIdentifiers =
+                [
+                    new AudiobookExternalIdentifier
+                    {
+                        Type = AudiobookExternalIdentifierType.Asin,
+                        ValueRaw = asin,
+                        ValueNormalized = asin,
+                        Region = "us",
+                        IsPrimary = true,
+                        Source = AudiobookExternalIdentifierSource.Manual
+                    }
+                ]
+            };
+            db.Audiobooks.Add(audiobook);
+            await db.SaveChangesAsync();
+            return audiobook.Id;
+        }
+
         private static async Task<HttpResponseMessage> PostRescanAsync(HttpClient client, int audiobookId)
         {
             var csrfToken = await GetAntiforgeryTokenAsync(client);
