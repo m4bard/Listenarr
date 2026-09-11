@@ -244,8 +244,8 @@ namespace Listenarr.Domain.Configuration
         public int MetadataRefreshIntervalHours { get; set; } = 24;
         public int MetadataRefreshStaleAfterDays { get; set; } = 30;
 
-        // Deliberately timid: the provider publishes no rate limit, the client does not
-        // recognise a 429, and this host has been rate-limited by another service already.
+        // Deliberately timid: the provider publishes no rate limit and the client does not
+        // recognise a 429, so the shipped budget stays well under any plausible ceiling.
         public int MetadataRefreshRequestsPerHour { get; set; } = 60;
         public int MetadataRefreshMinimumSpacingMs { get; set; } = 1000;
     }
