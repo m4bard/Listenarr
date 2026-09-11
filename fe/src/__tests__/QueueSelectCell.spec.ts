@@ -54,4 +54,11 @@ describe('QueueSelectCell', () => {
     expect(wrapper.emitted('change')).toEqual([[true]])
     expect((wrapper.get('input').element as HTMLInputElement).checked).toBe(false)
   })
+
+  it('renders the input disabled when the cell is disabled', () => {
+    const wrapper = mount(QueueSelectCell, {
+      props: { label: 'Select all downloads in view', disabled: true },
+    })
+    expect(wrapper.get('input').attributes('disabled')).toBeDefined()
+  })
 })
