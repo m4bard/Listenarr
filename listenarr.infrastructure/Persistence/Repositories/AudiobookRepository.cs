@@ -164,6 +164,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
         public async Task<Audiobook> AddAsync(Audiobook audiobook)
         {
+            StampNewAudiobookRefreshTimestamp(audiobook);
             _db.Audiobooks.Add(audiobook);
             await _db.SaveChangesAsync();
             return audiobook;
