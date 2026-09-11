@@ -38,6 +38,7 @@ internal static class MetadataRegistrationExtensions
         services.AddScoped<IMetadataService, MetadataService>();
         services.AddScoped<IAsinLookupService, AsinLookupService>();
         services.AddScoped<IAudiobookMetadataService, AudiobookMetadataService>();
+        services.AddScoped<IMetadataRefreshService, MetadataRefreshService>();
         services.AddScoped<IOpenLibraryService, OpenLibraryService>();
         services.AddSingleton<MetadataExtractionLimiter>();
         services.AddHttpClient("Ffmpeg");
