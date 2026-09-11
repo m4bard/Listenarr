@@ -46,6 +46,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260910120000_AddAudiobookLastMetadataRefreshAt";
     private const string MetadataRefreshSettingsMigrationId =
         "20260910120500_AddMetadataRefreshSettings";
+    private const string AudiobookLastMetadataRefreshAtIndexMigrationId =
+        "20260910121000_AddAudiobookLastMetadataRefreshAtIndex";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -205,7 +207,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 CompatibilityFilePublicationMigrationId,
                 WeakStorageVerifiedCleanupMigrationId,
                 AudiobookLastMetadataRefreshAtMigrationId,
-                MetadataRefreshSettingsMigrationId
+                MetadataRefreshSettingsMigrationId,
+                AudiobookLastMetadataRefreshAtIndexMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
@@ -391,6 +394,12 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.True(await IndexExistsAsync(connection, "IX_RootFolders_SingleDefault"));
         Assert.True(await IndexExistsAsync(connection, "IX_AudiobookFiles_PathOwnershipKey"));
         Assert.True(await IndexExistsAsync(connection, "IX_LibraryDirectoryOwnerships_PathOwnershipKey"));
+
+        // The refresh queue orders by this column and takes the head of it on every cycle and
+        // every API trigger. Unindexed that is a full scan and a sort, which is exactly the
+        // shape LastSearchTime next to it has always been indexed for.
+        Assert.True(await IndexExistsAsync(connection, "IX_Audiobooks_LastMetadataRefreshAt"));
+        Assert.True(await IndexExistsAsync(connection, "IX_Audiobooks_LastSearchTime"));
         Assert.True(await ForeignKeyHasDeleteActionAsync(
             connection,
             "LibraryDirectoryOwnerships",

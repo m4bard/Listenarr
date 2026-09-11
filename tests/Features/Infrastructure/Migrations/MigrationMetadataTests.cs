@@ -232,6 +232,13 @@ public class MigrationMetadataTests
             "20260910120000_AddAudiobookLastMetadataRefreshAt");
     }
 
+    [Fact]
+    public void AddAudiobookLastMetadataRefreshAtIndex_IsDiscoverableByEf()
+    {
+        AssertMigrationId<AddAudiobookLastMetadataRefreshAtIndex>(
+            "20260910121000_AddAudiobookLastMetadataRefreshAtIndex");
+    }
+
     private static MigrationBuilder BuildOperations(Migration migration, string methodName)
     {
         var builder = new MigrationBuilder("Microsoft.EntityFrameworkCore.Sqlite");
