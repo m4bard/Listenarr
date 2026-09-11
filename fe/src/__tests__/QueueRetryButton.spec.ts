@@ -19,7 +19,7 @@ import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mountButton = async (
-  props: { downloadId: string; status: string },
+  props: { downloadId: string; status: string; iconOnly?: boolean },
   retryImpl?: (id: string) => Promise<unknown>,
 ) => {
   const retryBlockedImport = vi.fn(retryImpl ?? (async () => ({ message: 'Import retry queued' })))
@@ -85,5 +85,23 @@ describe('QueueRetryButton', () => {
 
     expect(error).toHaveBeenCalledTimes(1)
     expect(wrapper.emitted('retried')).toBeUndefined()
+  })
+
+  it('keeps the icon and drops the label when iconOnly is set', async () => {
+    const labelled = await mountButton({ downloadId: 'd1', status: 'ImportBlocked' })
+    expect(labelled.wrapper.find('.queue-retry-label').exists()).toBe(true)
+    expect(labelled.wrapper.get('[data-test="queue-retry"]').classes()).not.toContain('icon-only')
+
+    vi.resetModules()
+    const { wrapper } = await mountButton({
+      downloadId: 'd1',
+      status: 'ImportBlocked',
+      iconOnly: true,
+    })
+
+    const button = wrapper.get('[data-test="queue-retry"]')
+    expect(button.find('.queue-retry-label').exists()).toBe(false)
+    expect(button.classes()).toContain('icon-only')
+    expect(button.attributes('title')).toBe('Retry the blocked import')
   })
 })
