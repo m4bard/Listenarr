@@ -43,4 +43,19 @@ public partial class LibraryController
     {
         return _metadataRefreshWorkflow.GetStatus(runId);
     }
+
+    /// <summary>Get the active metadata refresh run, or the most recent one.</summary>
+    [HttpGet("refresh-metadata")]
+    public IActionResult GetActiveMetadataRefreshRun()
+    {
+        return _metadataRefreshWorkflow.GetLatest();
+    }
+
+    /// <summary>Cancel a metadata refresh run.</summary>
+    /// <param name="runId">The run id returned when the refresh was accepted.</param>
+    [HttpDelete("refresh-metadata/{runId:guid}")]
+    public IActionResult CancelMetadataRefreshRun(Guid runId)
+    {
+        return _metadataRefreshWorkflow.Cancel(runId);
+    }
 }

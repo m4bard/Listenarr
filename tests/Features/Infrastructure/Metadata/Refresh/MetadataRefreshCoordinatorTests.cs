@@ -373,4 +373,56 @@ public class MetadataRefreshCoordinatorTests : BaseTests
         Assert.Equal("Completed", run.Status);
         Assert.Empty(service.Seen);
     }
+
+    [Fact]
+    [Trait("Scenario", "LibraryScopeReachesUnmonitoredAuthors")]
+    public async Task RunToCompletionAsync_TakesEveryDueBook_IncludingAuthorsNobodyMonitors()
+    {
+        // The per-author trigger keys on MonitoredAuthor rows, so this is the only path that
+        // reaches the rest of the library, which is where the stalest metadata tends to be.
+        var (coordinator, service, _) = Create(
+            [Candidate(1, "Monitored Author"), Candidate(2, "Nobody Monitors This One")],
+            _ => MetadataRefreshOutcome.Updated);
+
+        var run = await coordinator.RunToCompletionAsync(
+            new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Library, null, Force: true),
+            CancellationToken.None);
+
+        Assert.NotNull(run);
+        Assert.Equal("Library", run.Scope);
+        Assert.Equal([1, 2], service.Seen);
+    }
+
+    [Fact]
+    [Trait("Scenario", "ProgressAdvancesWhileRunning")]
+    public async Task Current_ReportsPartialProgress_WhileTheRunIsStillGoing()
+    {
+        var (coordinator, service, _) = Create(
+            [Candidate(1, "A"), Candidate(2, "A"), Candidate(3, "A")],
+            _ => MetadataRefreshOutcome.Updated);
+        service.Gate = new TaskCompletionSource();
+
+        var started = await coordinator.StartAsync(
+            new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Library, null, Force: true),
+            CancellationToken.None);
+        Assert.True(started.Started);
+        Assert.Equal(3, started.Run.TotalBooks);
+
+        // StartAsync returns before the background loop is scheduled, so without this the
+        // status read below races the loop rather than observing a run in flight.
+        await service.Entered.Task;
+
+        var running = coordinator.Current();
+        Assert.NotNull(running);
+        Assert.Equal("Running", running.Status);
+        Assert.Equal(3, running.TotalBooks);
+
+        service.Gate.SetResult();
+        await coordinator.WaitForIdleAsync(TimeSpan.FromSeconds(10));
+
+        var finished = coordinator.Current();
+        Assert.NotNull(finished);
+        Assert.Equal("Completed", finished.Status);
+        Assert.Equal(3, finished.Processed);
+    }
 }

@@ -64,6 +64,26 @@ public sealed class LibraryMetadataRefreshWorkflow
             : new OkObjectResult(Project(run));
     }
 
+    /// <summary>The active run, or the most recent one this process ran.</summary>
+    public IActionResult GetLatest()
+    {
+        var run = _coordinator.Current();
+        return run == null
+            ? new NotFoundObjectResult(new { message = "No metadata refresh has run since startup." })
+            : new OkObjectResult(Project(run));
+    }
+
+    /// <summary>
+    /// Asks a run to stop. Cancellation is cooperative and the book boundary is the cancellation
+    /// point, so a book already inside its exclusive section finishes.
+    /// </summary>
+    public IActionResult Cancel(Guid runId)
+    {
+        return _coordinator.Cancel(runId)
+            ? new AcceptedResult(string.Empty, new { message = "Metadata refresh cancelling", runId })
+            : new NotFoundObjectResult(new { message = "No active metadata refresh run with that id." });
+    }
+
     internal static MetadataRefreshRunStatusResponse Project(MetadataRefreshRunSnapshot run) => new(
         run.RunId,
         run.Scope,

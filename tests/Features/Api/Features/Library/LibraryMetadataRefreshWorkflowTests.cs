@@ -130,4 +130,88 @@ public class LibraryMetadataRefreshWorkflowTests : BaseTests
         Assert.IsType<NotFoundObjectResult>(
             new LibraryMetadataRefreshWorkflow(coordinator.Object).GetStatus(Guid.NewGuid()));
     }
+
+    [Fact]
+    [Trait("Scenario", "NoAuthorIdIsALibraryRun")]
+    public async Task StartAsync_AsksForALibraryScope_WhenNoAuthorIdIsGiven()
+    {
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+        coordinator
+            .Setup(c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MetadataRefreshStartResult(
+                true,
+                Snapshot(Guid.NewGuid(), scope: "Library", totalBooks: 1200)));
+
+        var result = await new LibraryMetadataRefreshWorkflow(coordinator.Object)
+            .StartAsync(new MetadataRefreshRequest(), CancellationToken.None);
+
+        coordinator.Verify(
+            c => c.StartAsync(
+                It.Is<MetadataRefreshScopeRequest>(request =>
+                    request.Scope == MetadataRefreshRunScope.Library
+                    && request.MonitoredAuthorId == null),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        var accepted = Assert.IsType<AcceptedResult>(result);
+        Assert.Equal(1200, Assert.IsType<MetadataRefreshRunResponse>(accepted.Value).TotalBooks);
+    }
+
+    [Fact]
+    [Trait("Scenario", "AnEmptyBodyIsALibraryRun")]
+    public async Task StartAsync_TreatsAMissingBody_AsALibraryRun()
+    {
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+        coordinator
+            .Setup(c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MetadataRefreshStartResult(true, Snapshot(Guid.NewGuid(), scope: "Library")));
+
+        await new LibraryMetadataRefreshWorkflow(coordinator.Object)
+            .StartAsync(null, CancellationToken.None);
+
+        coordinator.Verify(
+            c => c.StartAsync(
+                It.Is<MetadataRefreshScopeRequest>(request =>
+                    request.Scope == MetadataRefreshRunScope.Library && !request.Force),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    [Trait("Scenario", "LatestFallsBackToTheMostRecentRun")]
+    public void GetLatest_ReturnsTheActiveRun_OrTheMostRecentOne()
+    {
+        var runId = Guid.NewGuid();
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+        coordinator.Setup(c => c.Current()).Returns(Snapshot(runId, scope: "Library"));
+
+        var ok = Assert.IsType<OkObjectResult>(
+            new LibraryMetadataRefreshWorkflow(coordinator.Object).GetLatest());
+
+        Assert.Equal(runId, Assert.IsType<MetadataRefreshRunStatusResponse>(ok.Value).RunId);
+    }
+
+    [Fact]
+    [Trait("Scenario", "NoRunSinceStartupIs404")]
+    public void GetLatest_Returns404_WhenThisProcessHasRunNothing()
+    {
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+        coordinator.Setup(c => c.Current()).Returns((MetadataRefreshRunSnapshot?)null);
+
+        Assert.IsType<NotFoundObjectResult>(
+            new LibraryMetadataRefreshWorkflow(coordinator.Object).GetLatest());
+    }
+
+    [Fact]
+    [Trait("Scenario", "CancelAcceptsThenRefuses")]
+    public void Cancel_Returns202_WhenTheRunWasActive_And404_WhenItWasNot()
+    {
+        var runId = Guid.NewGuid();
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+        coordinator.Setup(c => c.Cancel(runId)).Returns(true);
+        coordinator.Setup(c => c.Cancel(It.Is<Guid>(id => id != runId))).Returns(false);
+        var workflow = new LibraryMetadataRefreshWorkflow(coordinator.Object);
+
+        Assert.IsType<AcceptedResult>(workflow.Cancel(runId));
+        Assert.IsType<NotFoundObjectResult>(workflow.Cancel(Guid.NewGuid()));
+    }
 }
