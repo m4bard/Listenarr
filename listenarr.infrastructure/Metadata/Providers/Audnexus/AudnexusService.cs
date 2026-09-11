@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -64,9 +65,36 @@ namespace Listenarr.Infrastructure.Metadata.Providers.Audnexus
 
                 if (!response.IsSuccessStatusCode)
                 {
+                    // The same division the Audible client draws, because the walk that calls
+                    // both cannot tell which one gave it the null. Only a provider that was
+                    // asked and says there is no such record may become null; every other
+                    // status means the request did not get an answer.
+                    if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
+                    {
+                        _logger.LogWarning("Audnexus has no record ({StatusCode}) for ASIN {Asin}",
+                            response.StatusCode, LogRedaction.SanitizeText(asin));
+                        return null;
+                    }
+
+                    if (response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.Forbidden)
+                    {
+                        var retryAfter = ReadRetryAfter(response);
+                        _logger.LogWarning(
+                            "Audnexus asked for less traffic ({StatusCode}) for ASIN {Asin}; retry after {RetryAfter}",
+                            response.StatusCode,
+                            LogRedaction.SanitizeText(asin),
+                            retryAfter?.ToString() ?? "unspecified");
+                        throw new MetadataProviderThrottledException(
+                            "Audnexus asked for less traffic",
+                            retryAfter);
+                    }
+
                     _logger.LogWarning("Audnexus API returned status code {StatusCode} for ASIN {Asin}",
                         response.StatusCode, LogRedaction.SanitizeText(asin));
-                    return null;
+                    throw new HttpRequestException(
+                        $"Audnexus did not answer (status {(int)response.StatusCode})",
+                        null,
+                        response.StatusCode);
                 }
 
                 var json = await response.Content.ReadAsStringAsync();
@@ -103,11 +131,61 @@ namespace Listenarr.Infrastructure.Metadata.Providers.Audnexus
 
                 return result;
             }
+            catch (MetadataProviderThrottledException)
+            {
+                // Raised above, inside this try, and the catch-all below would swallow it.
+                throw;
+            }
+            catch (HttpRequestException ex)
+            {
+                // A refused connection, a name that will not resolve, a status that was not an
+                // answer. None of them is evidence about the book.
+                _logger.LogWarning(ex, "Audnexus request failed for ASIN {Asin}", LogRedaction.SanitizeText(asin));
+                throw;
+            }
+            catch (TaskCanceledException ex)
+            {
+                // Rewrapped rather than rethrown, like the Audible client: a
+                // TaskCanceledException is an OperationCanceledException, and callers above read
+                // one of those as "you were asked to stop" rather than "the request did not
+                // arrive".
+                _logger.LogWarning(ex, "Audnexus request timed out for ASIN {Asin}", LogRedaction.SanitizeText(asin));
+                throw new HttpRequestException("The Audnexus request timed out", ex);
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
+                // Still null, deliberately. What is left here is a payload this service could
+                // not make sense of, which is a property of the record rather than of the
+                // provider, and it will be the same on the next attempt.
                 _logger.LogError(ex, "Error fetching metadata from Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
+        }
+
+        /// <summary>
+        /// The wait the provider named, in either of the two shapes RFC 9110 allows. Null when it
+        /// named none, or named one already in the past.
+        /// </summary>
+        private static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
+        {
+            var header = response.Headers.RetryAfter;
+            if (header == null)
+            {
+                return null;
+            }
+
+            if (header.Delta.HasValue)
+            {
+                return header.Delta.Value > TimeSpan.Zero ? header.Delta.Value : null;
+            }
+
+            if (header.Date.HasValue)
+            {
+                var wait = header.Date.Value - DateTimeOffset.UtcNow;
+                return wait > TimeSpan.Zero ? wait : null;
+            }
+
+            return null;
         }
 
         /// <summary>
