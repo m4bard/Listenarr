@@ -31,6 +31,31 @@ public class LibraryMetadataRefreshWorkflowTests : BaseTests
         new DateTime(2026, 9, 10, 12, 0, 0, DateTimeKind.Utc),
         null);
 
+    private static IConfigurationService Settings(bool enabled) =>
+        Mock.Of<IConfigurationService>(configuration =>
+            configuration.GetApplicationSettingsAsync() ==
+                Task.FromResult(new ApplicationSettings { MetadataRefreshEnabled = enabled }));
+
+    private static IConfigurationService EnabledSettings() => Settings(enabled: true);
+
+    [Fact]
+    [Trait("Scenario", "ATriggerRespectsTheSetting")]
+    public async Task StartAsync_Returns409_AndAsksTheCoordinatorForNothing_WhenRefreshIsTurnedOff()
+    {
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+
+        var result = await new LibraryMetadataRefreshWorkflow(coordinator.Object, Settings(enabled: false))
+            .StartAsync(new MetadataRefreshRequest(), CancellationToken.None);
+
+        // The setting gated the scheduled walk only, so turning the feature off left a button
+        // that started a library-wide run over every book in the library.
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        Assert.Contains("metadata_refresh_disabled", conflict.Value!.ToString(), StringComparison.Ordinal);
+        coordinator.Verify(
+            c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     [Fact]
     [Trait("Scenario", "AcceptedCarriesTheRunId")]
     public async Task StartAsync_Returns202_WithTheRunIdScopeAndTotal()
@@ -41,7 +66,7 @@ public class LibraryMetadataRefreshWorkflowTests : BaseTests
             .Setup(c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MetadataRefreshStartResult(true, Snapshot(runId)));
 
-        var result = await new LibraryMetadataRefreshWorkflow(coordinator.Object)
+        var result = await new LibraryMetadataRefreshWorkflow(coordinator.Object, EnabledSettings())
             .StartAsync(new MetadataRefreshRequest(AuthorId: 3), CancellationToken.None);
 
         var accepted = Assert.IsType<AcceptedResult>(result);
@@ -61,7 +86,7 @@ public class LibraryMetadataRefreshWorkflowTests : BaseTests
             .Setup(c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MetadataRefreshStartResult(true, Snapshot(Guid.NewGuid())));
 
-        await new LibraryMetadataRefreshWorkflow(coordinator.Object)
+        await new LibraryMetadataRefreshWorkflow(coordinator.Object, EnabledSettings())
             .StartAsync(new MetadataRefreshRequest(AuthorId: 7, Force: true), CancellationToken.None);
 
         coordinator.Verify(
@@ -84,7 +109,7 @@ public class LibraryMetadataRefreshWorkflowTests : BaseTests
             .Setup(c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MetadataRefreshStartResult(false, Snapshot(activeRunId, scope: "Scheduled")));
 
-        var result = await new LibraryMetadataRefreshWorkflow(coordinator.Object)
+        var result = await new LibraryMetadataRefreshWorkflow(coordinator.Object, EnabledSettings())
             .StartAsync(new MetadataRefreshRequest(AuthorId: 3), CancellationToken.None);
 
         var conflict = Assert.IsType<ConflictObjectResult>(result);
@@ -106,7 +131,7 @@ public class LibraryMetadataRefreshWorkflowTests : BaseTests
                 new DateTime(2026, 9, 10, 12, 0, 0, DateTimeKind.Utc),
                 new DateTime(2026, 9, 10, 12, 30, 0, DateTimeKind.Utc)));
 
-        var result = new LibraryMetadataRefreshWorkflow(coordinator.Object).GetStatus(runId);
+        var result = new LibraryMetadataRefreshWorkflow(coordinator.Object, EnabledSettings()).GetStatus(runId);
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var body = Assert.IsType<MetadataRefreshRunStatusResponse>(ok.Value);
@@ -128,7 +153,7 @@ public class LibraryMetadataRefreshWorkflowTests : BaseTests
         coordinator.Setup(c => c.Find(It.IsAny<Guid>())).Returns((MetadataRefreshRunSnapshot?)null);
 
         Assert.IsType<NotFoundObjectResult>(
-            new LibraryMetadataRefreshWorkflow(coordinator.Object).GetStatus(Guid.NewGuid()));
+            new LibraryMetadataRefreshWorkflow(coordinator.Object, EnabledSettings()).GetStatus(Guid.NewGuid()));
     }
 
     [Fact]
@@ -142,7 +167,7 @@ public class LibraryMetadataRefreshWorkflowTests : BaseTests
                 true,
                 Snapshot(Guid.NewGuid(), scope: "Library", totalBooks: 1200)));
 
-        var result = await new LibraryMetadataRefreshWorkflow(coordinator.Object)
+        var result = await new LibraryMetadataRefreshWorkflow(coordinator.Object, EnabledSettings())
             .StartAsync(new MetadataRefreshRequest(), CancellationToken.None);
 
         coordinator.Verify(
@@ -165,7 +190,7 @@ public class LibraryMetadataRefreshWorkflowTests : BaseTests
             .Setup(c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MetadataRefreshStartResult(true, Snapshot(Guid.NewGuid(), scope: "Library")));
 
-        await new LibraryMetadataRefreshWorkflow(coordinator.Object)
+        await new LibraryMetadataRefreshWorkflow(coordinator.Object, EnabledSettings())
             .StartAsync(null, CancellationToken.None);
 
         coordinator.Verify(
@@ -185,7 +210,7 @@ public class LibraryMetadataRefreshWorkflowTests : BaseTests
         coordinator.Setup(c => c.Current()).Returns(Snapshot(runId, scope: "Library"));
 
         var ok = Assert.IsType<OkObjectResult>(
-            new LibraryMetadataRefreshWorkflow(coordinator.Object).GetLatest());
+            new LibraryMetadataRefreshWorkflow(coordinator.Object, EnabledSettings()).GetLatest());
 
         Assert.Equal(runId, Assert.IsType<MetadataRefreshRunStatusResponse>(ok.Value).RunId);
     }
@@ -198,7 +223,7 @@ public class LibraryMetadataRefreshWorkflowTests : BaseTests
         coordinator.Setup(c => c.Current()).Returns((MetadataRefreshRunSnapshot?)null);
 
         Assert.IsType<NotFoundObjectResult>(
-            new LibraryMetadataRefreshWorkflow(coordinator.Object).GetLatest());
+            new LibraryMetadataRefreshWorkflow(coordinator.Object, EnabledSettings()).GetLatest());
     }
 
     [Fact]
@@ -209,7 +234,7 @@ public class LibraryMetadataRefreshWorkflowTests : BaseTests
         var coordinator = new Mock<IMetadataRefreshCoordinator>();
         coordinator.Setup(c => c.Cancel(runId)).Returns(true);
         coordinator.Setup(c => c.Cancel(It.Is<Guid>(id => id != runId))).Returns(false);
-        var workflow = new LibraryMetadataRefreshWorkflow(coordinator.Object);
+        var workflow = new LibraryMetadataRefreshWorkflow(coordinator.Object, EnabledSettings());
 
         Assert.IsType<AcceptedResult>(workflow.Cancel(runId));
         Assert.IsType<NotFoundObjectResult>(workflow.Cancel(Guid.NewGuid()));

@@ -240,7 +240,13 @@ namespace Listenarr.Domain.Configuration
 
         // Scheduled provider-metadata refresh. The interval says how often the walk wakes up;
         // the staleness age is what actually governs how often a given book is touched.
-        public bool MetadataRefreshEnabled { get; set; } = true;
+        //
+        // Off for the first release. Every existing row has a null LastMetadataRefreshAt, so the
+        // whole library is due the moment this is on, and the walk overwrites title, authors,
+        // narrators, genres, series and ASIN from whatever the provider says. Until now that
+        // only ever happened when somebody clicked rescan on one book. An upgrade is not
+        // consent, so an operator turns it on having read what it does.
+        public bool MetadataRefreshEnabled { get; set; } = false;
         public int MetadataRefreshIntervalHours { get; set; } = 24;
         public int MetadataRefreshStaleAfterDays { get; set; } = 30;
 

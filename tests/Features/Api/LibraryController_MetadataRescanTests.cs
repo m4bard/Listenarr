@@ -807,54 +807,127 @@ namespace Listenarr.Tests.Features.Api
         [Fact]
         public async Task StartMetadataRefresh_EmptyBody_IsAccepted_AndTheRunIdCanBeCancelled()
         {
+            var gate = new RefreshGate();
             var factory = _factory.WithWebHostBuilder(builder =>
             {
                 builder.ConfigureServices(services =>
                 {
                     // The coordinator, the workflow, the controller and the run registry are all
-                    // the real ones; only the per-book work is stubbed, so the run settles
-                    // quickly instead of walking whatever this class has seeded.
+                    // the real ones; only the per-book work is stubbed, so the trigger is tested
+                    // over the wire without walking whatever this class has seeded.
                     services.RemoveAll<IMetadataRefreshService>();
-                    services.AddScoped<IMetadataRefreshService, SkippingRefreshService>();
+                    services.AddSingleton(gate);
+                    services.AddScoped<IMetadataRefreshService, GatedRefreshService>();
                 });
             });
 
-            using var client = factory.CreateClient();
+            await SetMetadataRefreshEnabledAsync(factory, enabled: true);
+            try
+            {
+                await SeedBookWithAsinAsync(factory, "Refresh Trigger Target", "B0TRIGGERX");
+
+                using var client = factory.CreateClient();
+                var csrfToken = await GetAntiforgeryTokenAsync(client);
+                using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/library/refresh-metadata");
+                request.Headers.Add("X-XSRF-TOKEN", csrfToken);
+                var response = await client.SendAsync(request);
+
+                // No body at all binds the request record to null, which is the whole library
+                // with no force. A 400 here would mean the simplest call the UI can make does
+                // not work.
+                var body = await response.Content.ReadAsStringAsync();
+                Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+                using var json = JsonDocument.Parse(body);
+                var runId = json.RootElement.GetProperty("runId").GetGuid();
+                Assert.Equal("Library", json.RootElement.GetProperty("scope").GetString());
+
+                // Held inside its first book, so the cancel below has a run to cancel. Asserting
+                // "Accepted or NotFound" could not fail for the thing the name claims: a run
+                // that had already finished passed it without the cancel path being exercised.
+                await gate.Entered.Task.WaitAsync(TestTimeout);
+
+                using var cancelRequest = new HttpRequestMessage(
+                    HttpMethod.Delete,
+                    $"/api/v1/library/refresh-metadata/{runId}");
+                cancelRequest.Headers.Add("X-XSRF-TOKEN", csrfToken);
+                var cancel = await client.SendAsync(cancelRequest);
+
+                Assert.Equal(HttpStatusCode.Accepted, cancel.StatusCode);
+
+                // Joined before the test returns. The run is a background task over the class's
+                // shared SQLite fixture, and one still walking after the method ended was a trap
+                // for the next person to assert on a refresh timestamp.
+                gate.Release.SetResult();
+                var coordinator = (MetadataRefreshCoordinator)factory.Services
+                    .GetRequiredService<IMetadataRefreshCoordinator>();
+                await coordinator.WaitForIdleAsync(TestTimeout);
+
+                var status = await client.GetAsync($"/api/v1/library/refresh-metadata/{runId}");
+                using var statusJson = JsonDocument.Parse(await status.Content.ReadAsStringAsync());
+                Assert.Equal("Cancelled", statusJson.RootElement.GetProperty("status").GetString());
+            }
+            finally
+            {
+                await SetMetadataRefreshEnabledAsync(factory, enabled: false);
+            }
+        }
+
+        [Fact]
+        public async Task StartMetadataRefresh_Returns409_WhenTheFeatureIsTurnedOff()
+        {
+            // The shipped default. A trigger that ignored the setting gave an operator who had
+            // turned the feature off a button that walked the whole library anyway.
+            using var client = _factory.CreateClient();
             var csrfToken = await GetAntiforgeryTokenAsync(client);
             using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/library/refresh-metadata");
             request.Headers.Add("X-XSRF-TOKEN", csrfToken);
+
             var response = await client.SendAsync(request);
 
-            // No body at all binds the request record to null, which is the whole library with
-            // no force. A 400 here would mean the simplest call the UI can make does not work.
-            var body = await response.Content.ReadAsStringAsync();
-            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-            using var json = JsonDocument.Parse(body);
-            var runId = json.RootElement.GetProperty("runId").GetGuid();
-            Assert.Equal("Library", json.RootElement.GetProperty("scope").GetString());
-
-            using var cancelRequest = new HttpRequestMessage(
-                HttpMethod.Delete,
-                $"/api/v1/library/refresh-metadata/{runId}");
-            cancelRequest.Headers.Add("X-XSRF-TOKEN", csrfToken);
-            var cancel = await client.SendAsync(cancelRequest);
-
-            // Accepted if it is still going, NotFound if it already finished. Either is a
-            // sound answer; a 500 would mean the id the endpoint just handed out is one it
-            // cannot take back.
-            Assert.True(
-                cancel.StatusCode is HttpStatusCode.Accepted or HttpStatusCode.NotFound,
-                $"cancelling run {runId} answered {(int)cancel.StatusCode}");
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Contains("metadata_refresh_disabled", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         }
 
-        /// <summary>Settles every book immediately, so a wire test of the trigger is not a walk.</summary>
-        private sealed class SkippingRefreshService : IMetadataRefreshService
+        private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(30);
+
+        private static async Task SetMetadataRefreshEnabledAsync(
+            Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory,
+            bool enabled)
         {
-            public Task<MetadataRefreshResult> RefreshAsync(
+            using var scope = factory.Services.CreateScope();
+            var configuration = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
+            var settings = await configuration.GetApplicationSettingsAsync();
+            settings.MetadataRefreshEnabled = enabled;
+            await configuration.SaveApplicationSettingsAsync(settings);
+        }
+
+        /// <summary>Holds the run inside its first book until the test lets it go.</summary>
+        private sealed class RefreshGate
+        {
+            public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        /// <summary>
+        /// Defers every book, so nothing stamps a refresh timestamp on the shared fixture, and
+        /// waits on the gate so the run is demonstrably in flight when the test cancels it.
+        /// </summary>
+        private sealed class GatedRefreshService : IMetadataRefreshService
+        {
+            private readonly RefreshGate _gate;
+
+            public GatedRefreshService(RefreshGate gate) => _gate = gate;
+
+            public async Task<MetadataRefreshResult> RefreshAsync(
                 int audiobookId,
                 IMetadataRefreshBudget budget,
-                CancellationToken cancellationToken) =>
-                Task.FromResult(new MetadataRefreshResult(MetadataRefreshOutcome.Skipped, 0));
+                CancellationToken cancellationToken)
+            {
+                _gate.Entered.TrySetResult();
+                await _gate.Release.Task.WaitAsync(cancellationToken);
+                return new MetadataRefreshResult(MetadataRefreshOutcome.Deferred, 0);
+            }
         }
 
         private static async Task<int> SeedBookWithAsinAsync(

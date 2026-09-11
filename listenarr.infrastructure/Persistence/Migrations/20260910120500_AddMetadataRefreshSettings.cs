@@ -15,7 +15,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 table: "ApplicationSettings",
                 type: "INTEGER",
                 nullable: false,
-                defaultValue: true);
+                defaultValue: false);
 
             migrationBuilder.AddColumn<int>(
                 name: "MetadataRefreshIntervalHours",

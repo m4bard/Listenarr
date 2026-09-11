@@ -400,6 +400,15 @@ public class SqliteMigrationSchemaTests : BaseTests
         // shape LastSearchTime next to it has always been indexed for.
         Assert.True(await IndexExistsAsync(connection, "IX_Audiobooks_LastMetadataRefreshAt"));
         Assert.True(await IndexExistsAsync(connection, "IX_Audiobooks_LastSearchTime"));
+
+        // Off for existing installs, not just for new rows. Every book has a null refresh
+        // timestamp, so an upgrade that switched this on would find the whole library due and
+        // overwrite local metadata from the provider on the first cycle.
+        Assert.Equal("0", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshEnabled"));
+        Assert.Equal("24", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshIntervalHours"));
+        Assert.Equal("30", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshStaleAfterDays"));
+        Assert.Equal("60", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshRequestsPerHour"));
+        Assert.Equal("1000", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshMinimumSpacingMs"));
         Assert.True(await ForeignKeyHasDeleteActionAsync(
             connection,
             "LibraryDirectoryOwnerships",

@@ -27,16 +27,33 @@ namespace Listenarr.Api.Features.Library;
 public sealed class LibraryMetadataRefreshWorkflow
 {
     private readonly IMetadataRefreshCoordinator _coordinator;
+    private readonly IConfigurationService _configuration;
 
-    public LibraryMetadataRefreshWorkflow(IMetadataRefreshCoordinator coordinator)
+    public LibraryMetadataRefreshWorkflow(
+        IMetadataRefreshCoordinator coordinator,
+        IConfigurationService configuration)
     {
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
     }
 
     public async Task<IActionResult> StartAsync(
         MetadataRefreshRequest? request,
         CancellationToken cancellationToken)
     {
+        // The setting gated the scheduled walk and nothing else, so an operator who turned the
+        // feature off still had a button that started a library-wide run. Refused here rather
+        // than inside the coordinator so the caller is told which of the two 409s it got.
+        var settings = await _configuration.GetApplicationSettingsAsync();
+        if (!settings.MetadataRefreshEnabled)
+        {
+            return new ConflictObjectResult(new
+            {
+                message = "Metadata refresh is turned off in settings.",
+                code = "metadata_refresh_disabled"
+            });
+        }
+
         var effective = request ?? new MetadataRefreshRequest();
         var scope = effective.AuthorId.HasValue
             ? MetadataRefreshRunScope.Author
