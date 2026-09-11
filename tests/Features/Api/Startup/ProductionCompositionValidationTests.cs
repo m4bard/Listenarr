@@ -72,6 +72,8 @@ public sealed class ProductionCompositionValidationTests : BaseTests
                 typeof(UnmatchedScanProcessor),
                 typeof(IUnmatchedScanProcessor),
                 typeof(MetadataRescanService),
+                typeof(MetadataRefreshBackgroundService),
+                typeof(IMetadataRefreshCoordinator),
                 typeof(DownloadProcessingJobProcessor),
                 typeof(IDownloadImportProcessor),
                 typeof(UnmatchedScanBackgroundService)
@@ -115,6 +117,7 @@ public sealed class ProductionCompositionValidationTests : BaseTests
                 typeof(ScanBackgroundService),
                 typeof(MoveBackgroundService),
                 typeof(MetadataRescanService),
+                typeof(MetadataRefreshBackgroundService),
                 typeof(DownloadProcessingJobProcessor),
                 typeof(UnmatchedScanBackgroundService),
                 typeof(StartupDbNormalizer)
