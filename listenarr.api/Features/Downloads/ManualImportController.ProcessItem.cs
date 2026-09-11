@@ -374,18 +374,24 @@ public partial class ManualImportController
                     };
                 }
 
+                // Artwork is worth writing for a book that has no ASIN. Anything matched
+                // outside Audible is in that state, and gating the whole call on the ASIN
+                // made the cover art setting silently inert for all of them.
+                var hasImportTags = !string.IsNullOrWhiteSpace(audiobook.Asin)
+                    || !string.IsNullOrWhiteSpace(audiobook.ImageUrl);
+
                 // A hardlinked destination is the source's own inode, which a download client
                 // may still be seeding, so writing tags through it would rewrite the source too.
                 if (publicationPlan.EffectiveAction == FileAction.HardlinkCopy
-                    && !string.IsNullOrWhiteSpace(audiobook.Asin))
+                    && hasImportTags)
                 {
                     _logger.LogDebug(
-                        "Skipped ASIN tag enrichment for audiobook {AudiobookId} because {Path} was imported as a hardlink of its source",
+                        "Skipped tag enrichment for audiobook {AudiobookId} because {Path} was imported as a hardlink of its source",
                         audiobook.Id,
                         LogRedaction.SanitizeFilePath(destinationPath));
                 }
                 else if (registrationLease.HasDurablePhysicalObjectIdentity
-                    && !string.IsNullOrWhiteSpace(audiobook.Asin))
+                    && hasImportTags)
                 {
                     try
                     {
