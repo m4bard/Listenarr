@@ -25,6 +25,11 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         string? BasePath,
         string? FilePath);
 
+    public sealed record MetadataRefreshCandidate(
+        int AudiobookId,
+        string? PrimaryAuthor,
+        DateTime? LastMetadataRefreshAt);
+
     public interface IAudiobookRepository
     {
         Task<List<Audiobook>> GetAllAsync();
@@ -34,6 +39,41 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<List<AudiobookPathReferenceSnapshot>> GetOtherPathReferenceSnapshotsAsync(
             int audiobookId,
             CancellationToken ct = default);
+        Task<List<MetadataRefreshCandidate>> GetAudiobooksDueForMetadataRefreshAsync(
+            DateTime staleBefore,
+            int limit,
+            CancellationToken ct = default);
+        Task<List<int>> GetAudiobookIdsByAuthorNameAsync(
+            string authorName,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// The staleness predicate of the due query, restricted to the given ids and answered in
+        /// SQL. An author-scoped run filters its own books with this instead of pulling the whole
+        /// library's due set back to intersect it. Ordered by id; an empty input asks nothing.
+        /// </summary>
+        Task<List<int>> FilterAudiobookIdsDueForMetadataRefreshAsync(
+            IReadOnlyCollection<int> audiobookIds,
+            DateTime staleBefore,
+            CancellationToken ct = default);
+
+        Task<bool> StampMetadataRefreshAsync(
+            int audiobookId,
+            DateTime refreshedAtUtc,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// Gives every row that has never been refreshed the time of the backfill, and returns
+        /// how many rows it wrote.
+        /// </summary>
+        /// <remarks>
+        /// Idempotent, and a no-op on every start after the first: it only touches rows whose
+        /// timestamp is null. It exists because the refresh ships on, and a null timestamp reads
+        /// as "never refreshed", so without this every book in an upgraded library would be due
+        /// on the first cycle after the upgrade. Stamping the present buys the upgraded library
+        /// one full staleness window before any of it comes due.
+        /// </remarks>
+        Task<int> BackfillMetadataRefreshTimestampsAsync(CancellationToken ct = default);
         Task<List<Audiobook>> GetLibraryAsync();
         Task<Dictionary<int, List<AudiobookSeriesMembership>>> GetAllSeriesMembershipsGroupedByAudiobookIdAsync(CancellationToken ct = default);
         Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, CancellationToken ct = default);
