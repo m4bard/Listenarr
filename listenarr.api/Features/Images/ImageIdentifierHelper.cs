@@ -84,15 +84,27 @@ namespace Listenarr.Api.Features.Images
             return null;
         }
 
+        /// <summary>
+        /// Faults an image lookup may swallow and carry on from. A cover is decoration: every
+        /// one of these ends at the placeholder, which is a far better answer than an error page
+        /// where the book's art should be.
+        /// </summary>
+        /// <remarks>
+        /// The provider-fault predicate is asked rather than restated, so a client taught to
+        /// raise a new kind of "did not answer" cannot quietly start escaping here. Naming
+        /// <see cref="System.Net.Http.HttpRequestException"/> in the list was exactly that
+        /// mistake in miniature: it covered the fault shape that existed when the list was
+        /// written, and would have gone on covering only that one.
+        /// </remarks>
         public static bool IsRecoverableImageLookupException(Exception ex)
         {
-            return ex is System.IO.IOException
+            return MetadataProviderFaults.IsProviderUnavailable(ex)
+                || ex is System.IO.IOException
                 or UnauthorizedAccessException
                 or InvalidOperationException
                 or ArgumentException
                 or FormatException
                 or UriFormatException
-                or System.Net.Http.HttpRequestException
                 or System.Text.Json.JsonException;
         }
 
