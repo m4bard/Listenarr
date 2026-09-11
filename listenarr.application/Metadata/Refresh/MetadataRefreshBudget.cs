@@ -20,15 +20,26 @@ namespace Listenarr.Application.Metadata.Refresh;
 /// </summary>
 /// <param name="RequestsPerHour">Bucket capacity and refill rate.</param>
 /// <param name="MinimumSpacingMs">Floor between two grants, so a full bucket cannot burst.</param>
-/// <param name="RunWindow">How long this run may keep waiting. Null waits until cancelled.</param>
 public sealed record MetadataRefreshBudgetOptions(
     int RequestsPerHour = 60,
-    int MinimumSpacingMs = 1000,
-    TimeSpan? RunWindow = null);
+    int MinimumSpacingMs = 1000);
 
 /// <summary>
-/// A token bucket over provider requests, shared by every book in one run.
+/// A token bucket over provider requests, shared by every refresh run in the process.
 /// </summary>
+/// <remarks>
+/// One bucket, not one per run. A bucket built inside a run started full and granted its first
+/// request immediately, so POST the trigger, DELETE the run, POST it again was a fresh allowance
+/// every time, and a scheduled cycle plus one manual run inside an hour spent twice the
+/// operator's ceiling between them. An hourly ceiling that resets on every trigger is not a
+/// ceiling.
+/// <para>
+/// A run takes a view of this bucket through <see cref="BeginRun"/>. The view owns what is
+/// genuinely per run, which is the window it may keep waiting in and what it has spent; the
+/// tokens, the spacing floor and any pushback the provider asked for are the bucket's and
+/// outlive it.
+/// </para>
+/// </remarks>
 public sealed class MetadataRefreshBudget : IMetadataRefreshBudget
 {
     private const double SecondsPerHour = 3600d;
@@ -37,12 +48,16 @@ public sealed class MetadataRefreshBudget : IMetadataRefreshBudget
     private readonly ILogger<MetadataRefreshBudget> _logger;
     private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
     private readonly Lock _gate = new();
-    private readonly DateTimeOffset _startedAt;
-    private readonly TimeSpan? _runWindow;
-    private readonly TimeSpan _minimumSpacing;
 
+    private TimeSpan _minimumSpacing;
     private double _capacity;
     private double _tokens;
+
+    // What the operator's settings last said, so a reconfigure can tell a changed setting from
+    // the same setting read again. Re-applying the same number would undo a halving, and a run
+    // cancelled and restarted would clear the pushback the provider had just asked for.
+    private int _configuredRequestsPerHour;
+
     private DateTimeOffset _lastRefill;
     private DateTimeOffset? _lastGrant;
     private DateTimeOffset? _notBefore;
@@ -60,21 +75,15 @@ public sealed class MetadataRefreshBudget : IMetadataRefreshBudget
         _timeProvider = timeProvider;
         _logger = logger;
         _delayAsync = delayAsync ?? ((delay, token) => Task.Delay(delay, token));
-        _capacity = Math.Max(1d, options.RequestsPerHour);
+        _configuredRequestsPerHour = Math.Max(1, options.RequestsPerHour);
+        _capacity = _configuredRequestsPerHour;
         _tokens = _capacity;
         _minimumSpacing = TimeSpan.FromMilliseconds(Math.Max(0, options.MinimumSpacingMs));
-        _runWindow = options.RunWindow;
-        _startedAt = timeProvider.GetUtcNow();
-        _lastRefill = _startedAt;
+        _lastRefill = timeProvider.GetUtcNow();
     }
 
+    /// <summary>Requests granted since the process started, across every run.</summary>
     public int RequestsSpent => Volatile.Read(ref _spent);
-
-    /// <summary>
-    /// True once a charge has been refused because the next slot fell outside the run window.
-    /// The run is finished; the books it did not reach keep their unset timestamps.
-    /// </summary>
-    public bool WindowClosed { get; private set; }
 
     /// <summary>Whole tokens available right now, for the throttling log line.</summary>
     public int RemainingThisHour
@@ -89,7 +98,51 @@ public sealed class MetadataRefreshBudget : IMetadataRefreshBudget
         }
     }
 
-    public async Task<bool> ChargeAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Applies the operator's current settings to the shared bucket, without crediting it. Called
+    /// as each run is admitted, so a settings change takes effect on the next run rather than on
+    /// the next restart.
+    /// </summary>
+    /// <remarks>
+    /// A setting that has not changed is left alone rather than re-applied. Re-applying it would
+    /// restore a capacity that pushback had halved, which would turn cancel-and-restart into a
+    /// way of clearing a 429 the provider had just sent.
+    /// </remarks>
+    public void Reconfigure(int requestsPerHour, int minimumSpacingMs)
+    {
+        var wanted = Math.Max(1, requestsPerHour);
+        lock (_gate)
+        {
+            _minimumSpacing = TimeSpan.FromMilliseconds(Math.Max(0, minimumSpacingMs));
+            if (wanted == _configuredRequestsPerHour)
+            {
+                return;
+            }
+
+            // Credit what elapsed at the old rate before changing it, or a rate change would
+            // silently re-price time the bucket had already earned.
+            Refill(_timeProvider.GetUtcNow());
+            _configuredRequestsPerHour = wanted;
+            _capacity = wanted;
+            _tokens = Math.Min(_tokens, _capacity);
+        }
+    }
+
+    /// <summary>
+    /// A view of this bucket for one run. <paramref name="runWindow"/> is how long that run may
+    /// keep waiting for a slot; null waits until it is cancelled.
+    /// </summary>
+    public MetadataRefreshRunBudget BeginRun(TimeSpan? runWindow) =>
+        new(this, runWindow.HasValue ? _timeProvider.GetUtcNow() + runWindow.Value : null);
+
+    public Task<bool> ChargeAsync(CancellationToken cancellationToken) =>
+        ChargeAsync(deadline: null, cancellationToken);
+
+    /// <summary>
+    /// Waits for the next slot and takes it. False means the next slot falls after
+    /// <paramref name="deadline"/>, so the caller's run is out of time rather than out of tokens.
+    /// </summary>
+    internal async Task<bool> ChargeAsync(DateTimeOffset? deadline, CancellationToken cancellationToken)
     {
         while (true)
         {
@@ -111,9 +164,8 @@ public sealed class MetadataRefreshBudget : IMetadataRefreshBudget
                     return true;
                 }
 
-                if (_runWindow.HasValue && now + wait > _startedAt + _runWindow.Value)
+                if (deadline.HasValue && now + wait > deadline.Value)
                 {
-                    WindowClosed = true;
                     return false;
                 }
 
@@ -188,4 +240,44 @@ public sealed class MetadataRefreshBudget : IMetadataRefreshBudget
 
         return wait;
     }
+}
+
+/// <summary>
+/// One run's view of the shared bucket: the window it may wait in, and what it spent. Everything
+/// that has to survive the run, tokens and pushback included, stays on the bucket.
+/// </summary>
+public sealed class MetadataRefreshRunBudget : IMetadataRefreshBudget
+{
+    private readonly MetadataRefreshBudget _budget;
+    private readonly DateTimeOffset? _deadline;
+    private int _spent;
+
+    internal MetadataRefreshRunBudget(MetadataRefreshBudget budget, DateTimeOffset? deadline)
+    {
+        _budget = budget;
+        _deadline = deadline;
+    }
+
+    /// <summary>Requests this run granted, which is not what the shared bucket has spent.</summary>
+    public int RequestsSpent => Volatile.Read(ref _spent);
+
+    /// <summary>
+    /// True once a charge has been refused because the next slot fell outside the run window.
+    /// The run is finished; the books it did not reach keep their unset timestamps.
+    /// </summary>
+    public bool WindowClosed { get; private set; }
+
+    public async Task<bool> ChargeAsync(CancellationToken cancellationToken)
+    {
+        if (await _budget.ChargeAsync(_deadline, cancellationToken))
+        {
+            Interlocked.Increment(ref _spent);
+            return true;
+        }
+
+        WindowClosed = true;
+        return false;
+    }
+
+    public void ApplyThrottleSignal(TimeSpan? retryAfter) => _budget.ApplyThrottleSignal(retryAfter);
 }

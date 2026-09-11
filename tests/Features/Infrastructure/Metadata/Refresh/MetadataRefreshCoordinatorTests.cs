@@ -118,15 +118,22 @@ public class MetadataRefreshCoordinatorTests : BaseTests
         return repository;
     }
 
+    /// <summary>
+    /// A coordinator over a real budget. <paramref name="clock"/> and the delay hook are taken
+    /// together on purpose: a frozen clock with the real Task.Delay makes the budget's wait loop
+    /// spin for ever, and it only failed to hang here because one book fits in a sixty-token
+    /// bucket. Adding a book to any test that took the clock alone would have hung CI with no
+    /// xUnit timeout to stop it, so the helper no longer lets the two be separated.
+    /// </summary>
     private static MetadataRefreshCoordinator Coordinator(
         IMetadataRefreshService service,
         IAudiobookRepository repository,
         IMonitoredAuthorRepository authors,
         MetadataRefreshOptionsHolder? holder = null,
         IConfigurationService? configuration = null,
-        TimeProvider? timeProvider = null,
-        Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
-        IHostApplicationLifetime? lifetime = null)
+        ManualClock? clock = null,
+        IHostApplicationLifetime? lifetime = null,
+        ILogger<MetadataRefreshCoordinator>? logger = null)
     {
         var services = new ServiceCollection();
         services.AddScoped(_ => service);
@@ -141,16 +148,22 @@ public class MetadataRefreshCoordinatorTests : BaseTests
 
         return new MetadataRefreshCoordinator(
             provider.GetRequiredService<IServiceScopeFactory>(),
-            timeProvider ?? TimeProvider.System,
+            (TimeProvider?)clock ?? TimeProvider.System,
             Mock.Of<ILoggerFactory>(factory =>
                 factory.CreateLogger(It.IsAny<string>()) == Mock.Of<ILogger>()),
-            Mock.Of<ILogger<MetadataRefreshCoordinator>>(),
+            logger ?? Mock.Of<ILogger<MetadataRefreshCoordinator>>(),
             holder ?? new MetadataRefreshOptionsHolder
             {
                 Current = new MetadataRefreshOptions(MinimumSpacingMs: 0)
             },
             lifetime ?? new StubApplicationLifetime(),
-            delayAsync);
+            clock == null
+                ? null
+                : (delay, _) =>
+                {
+                    clock.Advance(delay);
+                    return Task.CompletedTask;
+                });
     }
 
     private static MetadataRefreshCandidate Candidate(int id, string author) =>
@@ -665,12 +678,7 @@ public class MetadataRefreshCoordinatorTests : BaseTests
                     RequestsPerHour: 1,
                     MinimumSpacingMs: 0)
             },
-            timeProvider: clock,
-            delayAsync: (delay, _) =>
-            {
-                clock.Advance(delay);
-                return Task.CompletedTask;
-            });
+            clock: clock);
 
         var run = await coordinator.RunToCompletionAsync(
             new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Scheduled, null, Force: false),
@@ -709,7 +717,7 @@ public class MetadataRefreshCoordinatorTests : BaseTests
             Mock.Of<IMonitoredAuthorRepository>(),
             holder,
             configuration.Object,
-            clock);
+            clock: clock);
 
         await coordinator.RunToCompletionAsync(
             new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Library, null, Force: false),
@@ -751,6 +759,168 @@ public class MetadataRefreshCoordinatorTests : BaseTests
         Assert.NotNull(run);
         Assert.Equal("Completed", run.Status);
         Assert.Equal(7, holder.Current.StaleAfterDays);
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception)));
+    }
+
+    [Fact]
+    [Trait("Scenario", "OneBucketAcrossRuns")]
+    public async Task ExecuteAsync_KeepsSpendingTheSameBucket_WhenARunIsRestarted()
+    {
+        var clock = new ManualClock();
+        var service = new StubRefreshService(_ => MetadataRefreshOutcome.Updated);
+        var coordinator = Coordinator(
+            service,
+            DueRepository([Candidate(1, "A"), Candidate(2, "A")]).Object,
+            Mock.Of<IMonitoredAuthorRepository>(),
+            new MetadataRefreshOptionsHolder
+            {
+                Current = new MetadataRefreshOptions(
+                    IntervalHours: 24,
+                    RequestsPerHour: 2,
+                    MinimumSpacingMs: 0)
+            },
+            clock: clock);
+
+        await coordinator.RunToCompletionAsync(
+            new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Library, null, Force: true),
+            CancellationToken.None);
+
+        // Two books at two an hour empties the bucket and costs no time: it started full.
+        var afterTheFirstRun = clock.GetUtcNow();
+
+        await coordinator.RunToCompletionAsync(
+            new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Library, null, Force: true),
+            CancellationToken.None);
+
+        // The second run has to wait half an hour for its first token. Building the bucket
+        // inside the run gave every trigger a full one, so POST, DELETE, POST again spent the
+        // operator's hourly ceiling as many times as the caller cared to ask.
+        Assert.True(
+            clock.GetUtcNow() - afterTheFirstRun >= TimeSpan.FromMinutes(29),
+            $"the second run waited {clock.GetUtcNow() - afterTheFirstRun}, so it got a fresh allowance");
+    }
+
+    [Fact]
+    [Trait("Scenario", "ALibraryRunIsWindowedToo")]
+    public async Task RunToCompletionAsync_EndsTruncated_WhenALibraryRunOutlivesItsWindow()
+    {
+        var clock = new ManualClock();
+        var service = new StubRefreshService(_ => MetadataRefreshOutcome.Updated);
+        var coordinator = Coordinator(
+            service,
+            DueRepository(
+                [Candidate(1, "A"), Candidate(2, "A"), Candidate(3, "A"), Candidate(4, "A")]).Object,
+            Mock.Of<IMonitoredAuthorRepository>(),
+            new MetadataRefreshOptionsHolder
+            {
+                Current = new MetadataRefreshOptions(
+                    IntervalHours: 1,
+                    RequestsPerHour: 1,
+                    MinimumSpacingMs: 0)
+            },
+            clock: clock);
+
+        var run = await coordinator.RunToCompletionAsync(
+            new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Library, null, Force: true),
+            CancellationToken.None);
+
+        // An unwindowed library run over a real library walks for days holding the single gate,
+        // and every scheduled cycle in that time finds it taken and does nothing. The books it
+        // did not reach keep their unset timestamps and stay at the head of the queue.
+        Assert.NotNull(run);
+        Assert.Equal("Truncated", run.Status);
+        Assert.True(
+            run.Processed < run.TotalBooks,
+            $"processed {run.Processed} of {run.TotalBooks}, so the window never closed");
+    }
+
+    [Fact]
+    [Trait("Scenario", "ASkippedCycleIsVisibleAtTheDefaultLevel")]
+    public async Task RunToCompletionAsync_LogsTheSkippedCycle_AtInformation()
+    {
+        var logger = new CapturingLogger<MetadataRefreshCoordinator>();
+        var service = new StubRefreshService(_ => MetadataRefreshOutcome.Updated);
+        var coordinator = Coordinator(
+            service,
+            DueRepository([Candidate(1, "A")]).Object,
+            Mock.Of<IMonitoredAuthorRepository>(),
+            logger: logger);
+        service.Gate = Signal();
+
+        var started = await coordinator.StartAsync(
+            new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Library, null, Force: true),
+            CancellationToken.None);
+        Assert.True(started.Started);
+        await service.Entered.Task.WaitAsync(TestTimeout);
+
+        var skipped = await coordinator.RunToCompletionAsync(
+            new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Scheduled, null, Force: false),
+            CancellationToken.None);
+
+        service.Gate.SetResult();
+        await coordinator.WaitForIdleAsync(TestTimeout);
+
+        // At Debug this said nothing an operator would ever see, so a library run that held the
+        // gate for days looked exactly like a scheduled walk that had nothing to do.
+        Assert.Null(skipped);
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Information
+                && entry.Message.StartsWith("Metadata refresh cycle skipped", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("Scenario", "AFailedAdmissionReleasesTheGate")]
+    public async Task StartAsync_ReleasesTheGate_WhenTheScopeQueryThrows()
+    {
+        var repository = DueRepository([]);
+        repository
+            .Setup(r => r.GetAudiobooksDueForMetadataRefreshAsync(
+                It.IsAny<DateTime>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("the database is not there"));
+        var service = new StubRefreshService(_ => MetadataRefreshOutcome.Updated);
+        var coordinator = Coordinator(
+            service,
+            repository.Object,
+            Mock.Of<IMonitoredAuthorRepository>());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => coordinator.StartAsync(
+                new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Library, null, Force: true),
+                CancellationToken.None));
+
+        // The gate is taken before the scope query, so a repository that throws while a run is
+        // being admitted is the one path that can wedge it for the life of the process and
+        // answer 409 to everything until a restart.
+        repository
+            .Setup(r => r.GetAudiobooksDueForMetadataRefreshAsync(
+                It.IsAny<DateTime>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new MetadataRefreshCandidate(1, "A", null)]);
+
+        var second = await coordinator.StartAsync(
+            new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Library, null, Force: true),
+            CancellationToken.None);
+        await coordinator.WaitForIdleAsync(TestTimeout);
+
+        Assert.True(second.Started);
+        Assert.Equal([1], service.Seen);
     }
 
     [Fact]

@@ -101,18 +101,115 @@ public class MetadataRefreshBudgetTests : BaseTests
     {
         var (budget, _) = Create(new MetadataRefreshBudgetOptions(
             RequestsPerHour: 60,
-            MinimumSpacingMs: 1000,
-            RunWindow: TimeSpan.FromSeconds(5)));
+            MinimumSpacingMs: 1000));
+        var run = budget.BeginRun(TimeSpan.FromSeconds(5));
         var granted = 0;
 
-        while (await budget.ChargeAsync(CancellationToken.None))
+        while (await run.ChargeAsync(CancellationToken.None))
         {
             granted++;
             Assert.True(granted < 100, "the run window never closed");
         }
 
         Assert.InRange(granted, 5, 7);
-        Assert.True(budget.WindowClosed);
+        Assert.True(run.WindowClosed);
+    }
+
+    [Fact]
+    [Trait("Scenario", "ASecondRunInheritsTheSpentBucket")]
+    public async Task BeginRun_DoesNotRefillTheBucket_WhenARunIsRestarted()
+    {
+        var (budget, _) = Create(new MetadataRefreshBudgetOptions(
+            RequestsPerHour: 10,
+            MinimumSpacingMs: 0));
+
+        var first = budget.BeginRun(TimeSpan.FromSeconds(1));
+        for (var i = 0; i < 10; i++)
+        {
+            Assert.True(await first.ChargeAsync(CancellationToken.None));
+        }
+
+        // Start, cancel, start again. A bucket built inside the run started full every time, so
+        // the operator's hourly ceiling bounded a run rather than an hour.
+        var second = budget.BeginRun(TimeSpan.FromSeconds(1));
+        Assert.False(await second.ChargeAsync(CancellationToken.None));
+        Assert.True(second.WindowClosed);
+        Assert.Equal(0, second.RequestsSpent);
+        Assert.Equal(10, budget.RequestsSpent);
+    }
+
+    [Fact]
+    [Trait("Scenario", "ARunReportsOnlyItsOwnSpend")]
+    public async Task BeginRun_CountsWhatThisRunSpent_NotWhatTheBucketHas()
+    {
+        var (budget, _) = Create(new MetadataRefreshBudgetOptions(
+            RequestsPerHour: 60,
+            MinimumSpacingMs: 0));
+
+        var first = budget.BeginRun(runWindow: null);
+        Assert.True(await first.ChargeAsync(CancellationToken.None));
+        Assert.True(await first.ChargeAsync(CancellationToken.None));
+
+        var second = budget.BeginRun(runWindow: null);
+        Assert.True(await second.ChargeAsync(CancellationToken.None));
+
+        // The status endpoint reports what the run cost, which stopped being the bucket's total
+        // the moment the bucket outlived the run.
+        Assert.Equal(2, first.RequestsSpent);
+        Assert.Equal(1, second.RequestsSpent);
+        Assert.Equal(3, budget.RequestsSpent);
+    }
+
+    [Fact]
+    [Trait("Scenario", "ARestartDoesNotClearPushback")]
+    public async Task Reconfigure_KeepsAHalvedCapacity_WhenTheSettingIsUnchanged()
+    {
+        var (budget, clock) = Create(new MetadataRefreshBudgetOptions(
+            RequestsPerHour: 60,
+            MinimumSpacingMs: 0));
+
+        for (var i = 0; i < 60; i++)
+        {
+            Assert.True(await budget.ChargeAsync(CancellationToken.None));
+        }
+
+        budget.ApplyThrottleSignal(retryAfter: null);
+
+        // The next run re-reads settings. Re-applying the same 60 would have restored the
+        // capacity the 429 had just halved, so cancelling and restarting would clear pushback.
+        budget.Reconfigure(requestsPerHour: 60, minimumSpacingMs: 0);
+
+        var beforeTheWait = clock.GetUtcNow();
+        Assert.True(await budget.BeginRun(runWindow: null).ChargeAsync(CancellationToken.None));
+        Assert.InRange(
+            clock.GetUtcNow() - beforeTheWait,
+            TimeSpan.FromSeconds(119),
+            TimeSpan.FromSeconds(121));
+    }
+
+    [Fact]
+    [Trait("Scenario", "AChangedSettingIsAdopted")]
+    public async Task Reconfigure_AdoptsTheOperatorsNewRate_WithoutCreditingTheBucket()
+    {
+        var (budget, clock) = Create(new MetadataRefreshBudgetOptions(
+            RequestsPerHour: 60,
+            MinimumSpacingMs: 0));
+
+        for (var i = 0; i < 60; i++)
+        {
+            Assert.True(await budget.ChargeAsync(CancellationToken.None));
+        }
+
+        // The operator halves the setting between runs. The bucket is still empty, and a token
+        // now takes two minutes rather than one.
+        budget.Reconfigure(requestsPerHour: 30, minimumSpacingMs: 0);
+
+        var beforeTheWait = clock.GetUtcNow();
+        Assert.True(await budget.BeginRun(runWindow: null).ChargeAsync(CancellationToken.None));
+        Assert.InRange(
+            clock.GetUtcNow() - beforeTheWait,
+            TimeSpan.FromSeconds(119),
+            TimeSpan.FromSeconds(121));
     }
 
     [Fact]

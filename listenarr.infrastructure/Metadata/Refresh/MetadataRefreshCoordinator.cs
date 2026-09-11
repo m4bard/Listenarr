@@ -33,6 +33,10 @@ public sealed partial class MetadataRefreshCoordinator : IMetadataRefreshCoordin
     private CancellationTokenSource? _cancellation;
     private Task _inFlight = Task.CompletedTask;
 
+    // One bucket for the process, not one per run. Built on the first run rather than in the
+    // constructor, because the operator's settings are not loaded until a run is admitted.
+    private MetadataRefreshBudget? _budget;
+
     // The gate itself. A bool under _stateGate rather than a semaphore: every read and write of
     // it already happens inside that lock, and the semaphore added a second disposable whose
     // Release could land in a run's finally after disposal had already taken it away.
@@ -83,7 +87,7 @@ public sealed partial class MetadataRefreshCoordinator : IMetadataRefreshCoordin
         lock (_stateGate)
         {
             _inFlight = Task.Run(
-                () => ExecuteAsync(run, request, candidates, token),
+                () => ExecuteAsync(run, candidates, token),
                 CancellationToken.None);
         }
 
@@ -99,13 +103,16 @@ public sealed partial class MetadataRefreshCoordinator : IMetadataRefreshCoordin
         var admission = await AdmitAsync(request, linkToCaller: true, cancellationToken);
         if (admission.Run == null)
         {
-            _logger.LogDebug(
+            // Information, not Debug. This is the line that says the scheduled walk did nothing
+            // this cycle, and an operator who triggered a library refresh and then wondered why
+            // the queue stopped moving for a day had no way of seeing it at the default level.
+            _logger.LogInformation(
                 "Metadata refresh cycle skipped; run {RunId} is already in flight",
                 admission.Result.Run.RunId);
             return null;
         }
 
-        await ExecuteAsync(admission.Run, request, admission.Candidates, admission.Token);
+        await ExecuteAsync(admission.Run, admission.Candidates, admission.Token);
         return admission.Run.ToSnapshot();
     }
 
@@ -289,6 +296,32 @@ public sealed partial class MetadataRefreshCoordinator : IMetadataRefreshCoordin
             : int.MaxValue;
 
     /// <summary>
+    /// The shared bucket, reconfigured from the settings this run was admitted with, and a view
+    /// of it bounded by the window this run may wait in.
+    /// </summary>
+    /// <remarks>
+    /// Every scope is windowed, including the ones an operator triggers. A library-wide run over
+    /// ten thousand books walks for the better part of a week at the shipped budget, and it holds
+    /// the single gate the whole time: every scheduled cycle in that week found the gate taken
+    /// and did nothing. A windowed run ends as Truncated with its unreached books still unstamped
+    /// and still at the head of the queue, which is where the scheduled walk will find them.
+    /// </remarks>
+    private MetadataRefreshRunBudget AcquireBudget()
+    {
+        var window = TimeSpan.FromHours(Math.Max(1, Options.IntervalHours));
+        lock (_stateGate)
+        {
+            _budget ??= new MetadataRefreshBudget(
+                _timeProvider,
+                new MetadataRefreshBudgetOptions(Options.RequestsPerHour, Options.MinimumSpacingMs),
+                _loggerFactory.CreateLogger<MetadataRefreshBudget>(),
+                _delayAsync);
+            _budget.Reconfigure(Options.RequestsPerHour, Options.MinimumSpacingMs);
+            return _budget.BeginRun(window);
+        }
+    }
+
+    /// <summary>
     /// An author's due books are taken together so their membership repairs land in one pass.
     /// First appearance decides an author's place, so the oldest-first ordering is preserved.
     /// </summary>
@@ -301,27 +334,17 @@ public sealed partial class MetadataRefreshCoordinator : IMetadataRefreshCoordin
 
     private async Task ExecuteAsync(
         MetadataRefreshRun run,
-        MetadataRefreshScopeRequest request,
         List<MetadataRefreshCandidate> candidates,
         CancellationToken cancellationToken)
     {
-        MetadataRefreshBudget? budget = null;
+        MetadataRefreshRunBudget? budget = null;
         var state = MetadataRefreshRunState.Completed;
 
         try
         {
             // Inside the try, so a throw here still releases the gate and finishes the run
             // rather than leaving _active set and the gate held for the life of the process.
-            var runBudget = new MetadataRefreshBudget(
-                _timeProvider,
-                new MetadataRefreshBudgetOptions(
-                    Options.RequestsPerHour,
-                    Options.MinimumSpacingMs,
-                    request.Scope == MetadataRefreshRunScope.Scheduled
-                        ? TimeSpan.FromHours(Options.IntervalHours)
-                        : null),
-                _loggerFactory.CreateLogger<MetadataRefreshBudget>(),
-                _delayAsync);
+            var runBudget = AcquireBudget();
             budget = runBudget;
 
             for (var index = 0; index < candidates.Count; index++)
