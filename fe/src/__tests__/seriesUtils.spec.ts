@@ -46,18 +46,21 @@ describe('looksLikeAsin', () => {
     expect(looksLikeAsin('  B01E633FQM  ')).toBe(true)
   })
 
-  // Placeholder series names, not identifiers, each exactly ten alphanumeric characters. A
-  // length-only check lets both through and the wizard then posts them as a seriesAsin.
-  it.each(['SeriesName', 'SeriesTest'])('rejects the ten-character series name %s', (name) => {
-    expect(looksLikeAsin(name)).toBe(false)
-  })
+  // These are series names, not identifiers, and each is exactly ten characters. A length-only
+  // check lets all three through and the wizard then posts them as a seriesAsin.
+  it.each(['Foundation', 'Bartimaeus', 'Peripheral'])(
+    'rejects the ten-character series name %s',
+    (name) => {
+      expect(looksLikeAsin(name)).toBe(false)
+    },
+  )
 
   it('rejects values that are the wrong length or the wrong prefix', () => {
     expect(looksLikeAsin('B01E633FQ')).toBe(false)
     expect(looksLikeAsin('B01E633FQMX')).toBe(false)
     expect(looksLikeAsin('A01E633FQM')).toBe(false)
     expect(looksLikeAsin('B1E633FQMX')).toBe(false)
-    expect(looksLikeAsin('1000000001')).toBe(false)
+    expect(looksLikeAsin('0143122754')).toBe(false)
     expect(looksLikeAsin('')).toBe(false)
     expect(looksLikeAsin(undefined)).toBe(false)
     expect(looksLikeAsin(null)).toBe(false)
@@ -74,13 +77,12 @@ describe('buildSeriesFields', () => {
 
   it('drops a ten-character series name standing in for an identifier', () => {
     // The search fallback copies the series name into `asin` when the ASIN re-fetch fails.
-    // The placeholder name is ten characters, so a length-only guard would store it as an
-    // identifier.
-    const fields = buildSeriesFields([{ asin: 'SeriesName', name: 'SeriesName', position: '1' }])
+    // Foundation is ten characters, so a length-only guard would store it as an identifier.
+    const fields = buildSeriesFields([{ asin: 'Foundation', name: 'Foundation', position: '1' }])
 
     expect(fields.seriesMemberships).toEqual([
       {
-        seriesName: 'SeriesName',
+        seriesName: 'Foundation',
         seriesNumber: '1',
         seriesAsin: undefined,
         isPrimary: true,
@@ -89,6 +91,6 @@ describe('buildSeriesFields', () => {
     ])
     expect(fields.seriesAsin).toBeUndefined()
     // The series itself is still kept; only the bogus identifier is dropped.
-    expect(fields.series).toBe('SeriesName')
+    expect(fields.series).toBe('Foundation')
   })
 })
