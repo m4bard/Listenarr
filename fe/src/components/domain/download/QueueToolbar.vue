@@ -25,6 +25,7 @@
         v-if="count > 0"
         class="toolbar-btn"
         data-test="queue-clear-selection"
+        :disabled="busy"
         @click="emit('clear-selection')"
       >
         Clear Selection
@@ -81,7 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ConfirmModal } from '@/components/feedback'
 import { isImportBlocked } from './queueStatus'
 
@@ -143,6 +144,12 @@ const confirmLabel = computed(() => (pending.value === 'remove' ? 'Remove' : 'Cl
 const ask = (what: Exclude<Pending, null>) => {
   pending.value = what
 }
+
+// A poll can empty the selection while the remove confirmation is open. Confirming then would
+// remove nothing and say it did, so the question goes away with the rows it was asking about.
+watch(count, (n) => {
+  if (n === 0 && pending.value === 'remove') pending.value = null
+})
 
 const onCancel = () => {
   pending.value = null
