@@ -27,39 +27,22 @@ namespace Listenarr.Api.Features.Library
         private const int MetadataRescanCooldownSeconds = 15;
         private const int MetadataRescanWindowMinutes = 10;
         private const int MetadataRescanMaxRequestsPerWindow = 5;
-        private const int MetadataRescanMaxAsinLookupAttempts = 8;
-        private const int MetadataRescanMaxIsbnConversionAttempts = 5;
 
-        private readonly IAudiobookMetadataService _metadataService;
-        private readonly MetadataConverters _metadataConverters;
-        private readonly IImageCacheService _imageCacheService;
-        private readonly IServiceScopeFactory _scopeFactory;
-        private readonly IAudiobookOperationCoordinator _audiobookOperationCoordinator;
-        private readonly IMoveQueueService _moveQueueService;
+        private readonly IMetadataRefreshService _refreshService;
+        private readonly IAudiobookRepository _repository;
         private readonly ILogger<LibraryMetadataRescanWorkflow> _logger;
         private readonly IMemoryCache? _memoryCache;
-        private readonly IAsinLookupService? _asinLookupService;
 
         public LibraryMetadataRescanWorkflow(
-            IAudiobookMetadataService metadataService,
-            MetadataConverters metadataConverters,
-            IImageCacheService imageCacheService,
-            IServiceScopeFactory scopeFactory,
-            IAudiobookOperationCoordinator audiobookOperationCoordinator,
-            IMoveQueueService moveQueueService,
+            IMetadataRefreshService refreshService,
+            IAudiobookRepository repository,
             ILogger<LibraryMetadataRescanWorkflow> logger,
-            IMemoryCache? memoryCache = null,
-            IAsinLookupService? asinLookupService = null)
+            IMemoryCache? memoryCache = null)
         {
-            _metadataService = metadataService;
-            _metadataConverters = metadataConverters;
-            _imageCacheService = imageCacheService;
-            _scopeFactory = scopeFactory;
-            _audiobookOperationCoordinator = audiobookOperationCoordinator ?? throw new ArgumentNullException(nameof(audiobookOperationCoordinator));
-            _moveQueueService = moveQueueService ?? throw new ArgumentNullException(nameof(moveQueueService));
+            _refreshService = refreshService ?? throw new ArgumentNullException(nameof(refreshService));
+            _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _logger = logger;
             _memoryCache = memoryCache;
-            _asinLookupService = asinLookupService;
         }
 
         public async Task<IActionResult> RescanAsync(int id, HttpContext httpContext)
@@ -67,18 +50,16 @@ namespace Listenarr.Api.Features.Library
             var cancellationToken = httpContext.RequestAborted;
             cancellationToken.ThrowIfCancellationRequested();
 
-            using var preflightScope = _scopeFactory.CreateScope();
-            var preflightRepository = preflightScope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
-            var audiobook = await preflightRepository.GetByIdAsync(id);
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (audiobook == null)
+            // Before the quota, not after it. Polling an id that no longer exists used to cost
+            // nothing; taking the window first meant five such polls armed the cooldown and shut
+            // the actor out over a book that was never there.
+            if (await _repository.GetByIdSnapshotAsync(id, cancellationToken) == null)
             {
                 return new NotFoundObjectResult(new { message = "Audiobook not found" });
             }
 
             if (_memoryCache != null &&
-                !TryConsumeMetadataRescanQuota(_memoryCache, httpContext, audiobook.Id, out var rateLimitMessage, out var retryAfterSeconds))
+                !TryConsumeMetadataRescanQuota(_memoryCache, httpContext, id, out var rateLimitMessage, out var retryAfterSeconds))
             {
                 try
                 {
@@ -99,262 +80,104 @@ namespace Listenarr.Api.Features.Library
                 };
             }
 
-            var expectedMetadataState = CreateMetadataStateFingerprint(audiobook);
-            var effectiveIdentifiers = AudiobookIdentifierMapper.GetEffectiveIdentifiers(audiobook);
-            var asinIdentifiers = effectiveIdentifiers
-                .Where(i => i.Type == AudiobookExternalIdentifierType.Asin)
-                .OrderByDescending(i => i.IsPrimary)
-                .ThenBy(i => i.Source)
-                .ThenBy(i => i.ValueNormalized)
-                .ToList();
-
-            var isbnIdentifiers = effectiveIdentifiers
-                .Where(i => i.Type == AudiobookExternalIdentifierType.Isbn)
-                .OrderByDescending(i => i.IsPrimary)
-                .ThenBy(i => i.Source)
-                .ThenBy(i => i.ValueNormalized)
-                .ToList();
-
-            if (!asinIdentifiers.Any() && !isbnIdentifiers.Any())
-            {
-                return new BadRequestObjectResult(new { message = "No ASIN or ISBN identifiers are available for metadata rescan." });
-            }
-
-            var triedAsinKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var triedAsinDebug = new List<object>();
-            var triedIsbnDebug = new List<string>();
-            var asinLookupAttempts = 0;
-            var isbnConversionAttempts = 0;
-            var asinLookupAttemptCapHit = false;
-            var isbnConversionAttemptCapHit = false;
-
-            AudibleBookResponse? providerMetadata = null;
-            string? providerSource = null;
-            string? resolvedAsin = null;
-            string? resolvedRegion = null;
-
-            async Task<bool> TryMetadataLookupByAsinAsync(string asin, string? preferredRegion, string via)
-            {
-                if (!AudiobookIdentifierNormalizer.TryNormalize(
-                        AudiobookExternalIdentifierType.Asin,
-                        asin,
-                        out var normalizedAsin,
-                        out _))
-                {
-                    return false;
-                }
-
-                foreach (var region in EnumerateMetadataRescanRegions(preferredRegion))
-                {
-                    var regionValue = string.IsNullOrWhiteSpace(region) ? "us" : region!;
-                    var key = $"{normalizedAsin}|{regionValue}";
-                    if (!triedAsinKeys.Add(key))
-                    {
-                        continue;
-                    }
-
-                    triedAsinDebug.Add(new { asin = normalizedAsin, region = regionValue, via });
-
-                    if (asinLookupAttempts >= MetadataRescanMaxAsinLookupAttempts)
-                    {
-                        asinLookupAttemptCapHit = true;
-                        return false;
-                    }
-
-                    asinLookupAttempts++;
-
-                    AudiobookMetadataEnvelope? metadataEnvelope;
-                    try
-                    {
-                        metadataEnvelope = await _metadataService.GetMetadataAsync(normalizedAsin, regionValue, cache: false);
-                        cancellationToken.ThrowIfCancellationRequested();
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                    {
-                        _logger.LogWarning(
-                            ex,
-                            "Metadata rescan lookup failed for audiobook {AudiobookId} ({Title}) ASIN {Asin} region {Region}",
-                            audiobook.Id,
-                            audiobook.Title,
-                            normalizedAsin,
-                            regionValue);
-                        continue;
-                    }
-
-                    if (metadataEnvelope == null)
-                    {
-                        continue;
-                    }
-
-                    providerMetadata = metadataEnvelope.Metadata;
-                    providerSource = metadataEnvelope.Source;
-                    resolvedAsin = string.IsNullOrWhiteSpace(metadataEnvelope.Metadata.Asin)
-                        ? normalizedAsin
-                        : metadataEnvelope.Metadata.Asin;
-                    resolvedRegion = regionValue;
-                    return true;
-                }
-
-                return false;
-            }
-
-            foreach (var asinIdentifier in asinIdentifiers)
-            {
-                var asinValue = FirstNonEmpty(asinIdentifier.ValueRaw, asinIdentifier.ValueNormalized);
-                if (string.IsNullOrWhiteSpace(asinValue)) continue;
-
-                if (await TryMetadataLookupByAsinAsync(asinValue, asinIdentifier.Region, "asin"))
-                {
-                    break;
-                }
-
-                if (asinLookupAttemptCapHit)
-                {
-                    break;
-                }
-            }
-
-            if (providerMetadata == null)
-            {
-                if (_asinLookupService == null)
-                {
-                    _logger.LogWarning("IAsinLookupService not available for ISBN fallback during metadata rescan of audiobook {AudiobookId}", audiobook.Id);
-                }
-
-                foreach (var isbnIdentifier in isbnIdentifiers)
-                {
-                    var isbnValue = FirstNonEmpty(isbnIdentifier.ValueNormalized, isbnIdentifier.ValueRaw);
-                    if (string.IsNullOrWhiteSpace(isbnValue)) continue;
-
-                    if (!triedIsbnDebug.Contains(isbnValue, StringComparer.OrdinalIgnoreCase))
-                    {
-                        triedIsbnDebug.Add(isbnValue);
-                    }
-
-                    try
-                    {
-                        if (isbnConversionAttempts >= MetadataRescanMaxIsbnConversionAttempts)
-                        {
-                            isbnConversionAttemptCapHit = true;
-                            break;
-                        }
-
-                        if (_asinLookupService == null)
-                        {
-                            continue;
-                        }
-
-                        isbnConversionAttempts++;
-                        var (success, asinFromIsbn, _) = await _asinLookupService.GetAsinFromIsbnAsync(isbnValue);
-                        cancellationToken.ThrowIfCancellationRequested();
-                        if (!success || string.IsNullOrWhiteSpace(asinFromIsbn))
-                        {
-                            continue;
-                        }
-
-                        if (await TryMetadataLookupByAsinAsync(asinFromIsbn, null, "isbn"))
-                        {
-                            break;
-                        }
-
-                        if (asinLookupAttemptCapHit)
-                        {
-                            break;
-                        }
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                    {
-                        _logger.LogWarning(
-                            ex,
-                            "Metadata rescan ASIN conversion failed for audiobook {AudiobookId} ISBN {Isbn}",
-                            audiobook.Id,
-                            isbnValue);
-                    }
-                }
-            }
-
-            if (providerMetadata == null || string.IsNullOrWhiteSpace(resolvedAsin))
-            {
-                _logger.LogDebug(
-                    "Metadata rescan found no metadata for audiobook {AudiobookId}. TriedAsins={TriedAsins}; TriedIsbns={TriedIsbns}; AsinLookups={AsinLookups}/{AsinCap}; IsbnConversions={IsbnConversions}/{IsbnCap}; Capped={Capped}",
-                    audiobook.Id,
-                    triedAsinDebug,
-                    triedIsbnDebug,
-                    asinLookupAttempts,
-                    MetadataRescanMaxAsinLookupAttempts,
-                    isbnConversionAttempts,
-                    MetadataRescanMaxIsbnConversionAttempts,
-                    asinLookupAttemptCapHit || isbnConversionAttemptCapHit);
-
-                return new NotFoundObjectResult(new
-                {
-                    message = "No metadata found using the available identifiers."
-                });
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            var convertedMetadata = _metadataConverters.ConvertAudibleToMetadata(
-                providerMetadata,
-                resolvedAsin,
-                string.IsNullOrWhiteSpace(providerSource) ? "Audible" : providerSource!);
-
-            MetadataRescanApplyResult applyResult;
+            MetadataRefreshResult result;
             try
             {
-                applyResult = await _audiobookOperationCoordinator.ExecuteExclusiveAsync(
-                    id,
-                    async token =>
-                    {
-                        await _moveQueueService.EnsureFilesystemMutationAllowedAsync(id, token);
-                        token.ThrowIfCancellationRequested();
-                        return await ApplyMetadataRescanResultAsync(
-                            id,
-                            convertedMetadata,
-                            expectedMetadataState,
-                            token);
-                    },
-                    cancellationToken);
+                result = await _refreshService.RefreshAsync(id, new UnlimitedMetadataRefreshBudget(), cancellationToken);
             }
             catch (ApplicationConflictException exception)
             {
+                // A blocked filesystem mutation names its own code and detail, which the refresh
+                // outcomes cannot carry. The endpoint has always reported that verbatim.
                 return new ConflictObjectResult(new
                 {
                     message = exception.SafeDetail,
                     code = exception.Code
                 });
             }
-            if (applyResult.Status == MetadataRescanApplyStatus.NotFound)
-            {
-                return new NotFoundObjectResult(new { message = "Audiobook not found" });
-            }
 
-            if (applyResult.Status == MetadataRescanApplyStatus.Conflict)
+            return result.Outcome switch
             {
-                return new ConflictObjectResult(new
+                MetadataRefreshOutcome.Updated => new OkObjectResult(new
+                {
+                    message = "Metadata rescanned successfully",
+                    audiobookId = id,
+                    source = result.Source,
+                    asin = result.Asin,
+                    region = result.Region
+                }),
+                MetadataRefreshOutcome.Skipped => new BadRequestObjectResult(new
+                {
+                    message = "No ASIN or ISBN identifiers are available for metadata rescan."
+                }),
+                // The book has identifiers; none of them could be turned into a question. The
+                // 400 above would tell the operator there are no identifiers, which is not true
+                // of this book, and this endpoint has always answered the case as a 404.
+                MetadataRefreshOutcome.Unusable => new NotFoundObjectResult(new
+                {
+                    message = "No metadata found using the available identifiers."
+                }),
+                MetadataRefreshOutcome.NotFound => new NotFoundObjectResult(new
+                {
+                    message = "No metadata found using the available identifiers."
+                }),
+                MetadataRefreshOutcome.Conflict => new ConflictObjectResult(new
                 {
                     message = "The audiobook metadata changed during the rescan. Refresh and try again.",
                     code = "audiobook_metadata_changed"
-                });
-            }
-
-            var updatedAudiobook = applyResult.Audiobook!;
-            _logger.LogInformation(
-                "Metadata rescan updated audiobook {AudiobookId} ({Title}) using {Source} ASIN {Asin} region {Region}",
-                updatedAudiobook.Id,
-                updatedAudiobook.Title,
-                providerSource ?? "unknown",
-                resolvedAsin,
-                resolvedRegion ?? "us");
-
-            return new OkObjectResult(new
-            {
-                message = "Metadata rescanned successfully",
-                audiobookId = updatedAudiobook.Id,
-                source = providerSource,
-                asin = resolvedAsin,
-                region = resolvedRegion
-            });
+                }),
+                // A ProblemDetails body, because ServerErrorProblemDetailsFilter rewrites any
+                // result of 500 or above that is not already one, and a generic internal_error
+                // would hide the one thing this outcome exists to say.
+                MetadataRefreshOutcome.Deferred => new ObjectResult(BuildProviderUnavailableProblem())
+                {
+                    StatusCode = StatusCodes.Status503ServiceUnavailable,
+                    ContentTypes = { "application/problem+json" }
+                },
+                _ => new NotFoundObjectResult(new { message = "Audiobook not found" })
+            };
         }
 
+        private static ProblemDetails BuildProviderUnavailableProblem()
+        {
+            var problem = new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "Service unavailable",
+                Detail = "The metadata provider is not answering. Try again shortly."
+            };
+            problem.Extensions["code"] = "metadata_provider_unavailable";
+            problem.Extensions["message"] = "The metadata provider is not answering. Try again shortly.";
+            return problem;
+        }
+    }
+
+    /// <summary>
+    /// The one-book endpoint is throttled per actor and per book by the cooldown above, not by the
+    /// run budget, so it grants every request and counts them for the response only.
+    /// </summary>
+    /// <remarks>
+    /// Known constraint, left as is: granting instantly means a book whose region keeps failing
+    /// makes its three attempts back to back rather than a second apart. A spacing floor here
+    /// would be a deliberate delay inside a request somebody is waiting on, and the per-actor
+    /// cooldown already bounds how often this endpoint can be reached at all. The background
+    /// walk, which is the caller that can make thousands of these, is spaced by the shared
+    /// bucket.
+    /// </remarks>
+    internal sealed class UnlimitedMetadataRefreshBudget : IMetadataRefreshBudget
+    {
+        private int _spent;
+
+        public int RequestsSpent => _spent;
+
+        public Task<bool> ChargeAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _spent);
+            return Task.FromResult(true);
+        }
+
+        public void ApplyThrottleSignal(TimeSpan? retryAfter)
+        {
+        }
     }
 }
