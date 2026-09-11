@@ -29,6 +29,7 @@ namespace Listenarr.Api.Features.Library
         private readonly ILibraryListService _libraryListService;
         private readonly LibraryAddWorkflow _addWorkflow;
         private readonly LibraryMetadataRescanWorkflow _metadataRescanWorkflow;
+        private readonly LibraryMetadataRefreshWorkflow _metadataRefreshWorkflow;
         private readonly LibraryScanPathResolver _scanPathResolver;
         private readonly LibraryScanQueueWorkflow _scanQueueWorkflow;
         private readonly LibraryManualScanWorkflow _manualScanWorkflow;
@@ -45,6 +46,7 @@ namespace Listenarr.Api.Features.Library
             ILibraryListService libraryListService,
             LibraryAddWorkflow addWorkflow,
             LibraryMetadataRescanWorkflow metadataRescanWorkflow,
+            LibraryMetadataRefreshWorkflow metadataRefreshWorkflow,
             LibraryScanPathResolver scanPathResolver,
             LibraryScanQueueWorkflow scanQueueWorkflow,
             LibraryManualScanWorkflow manualScanWorkflow,
@@ -60,6 +62,7 @@ namespace Listenarr.Api.Features.Library
             _libraryListService = libraryListService;
             _addWorkflow = addWorkflow;
             _metadataRescanWorkflow = metadataRescanWorkflow;
+            _metadataRefreshWorkflow = metadataRefreshWorkflow;
             _scanPathResolver = scanPathResolver;
             _scanQueueWorkflow = scanQueueWorkflow;
             _manualScanWorkflow = manualScanWorkflow;

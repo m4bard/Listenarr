@@ -2,8 +2,6 @@
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  */
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.Extensions.Caching.Memory;
 namespace Listenarr.Api.Features.Library
 {
@@ -19,7 +17,7 @@ namespace Listenarr.Api.Features.Library
             message = string.Empty;
             retryAfterSeconds = 0;
 
-            var actorKey = BuildMetadataRescanActorKey(httpContext);
+            var actorKey = LibraryRequestActorKey.Build(httpContext);
             var cacheKey = $"metadata-rescan-rate:{audiobookId}:{actorKey}";
             var now = DateTime.UtcNow;
 
@@ -71,33 +69,6 @@ namespace Listenarr.Api.Features.Library
                 });
 
             return true;
-        }
-
-        private static string BuildMetadataRescanActorKey(HttpContext? httpContext)
-        {
-            var user = httpContext?.User;
-            var userId =
-                user?.FindFirst("sub")?.Value ??
-                user?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ??
-                user?.Identity?.Name;
-
-            var remoteIp = httpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown";
-
-            var actorDescriptor = !string.IsNullOrWhiteSpace(userId)
-                ? $"user:{userId}|ip:{remoteIp}"
-                : $"ip:{remoteIp}";
-
-            return ComputeShortHash(actorDescriptor);
-        }
-
-        private static string ComputeShortHash(string? input)
-        {
-            if (string.IsNullOrEmpty(input))
-                return Guid.NewGuid().ToString("N").Substring(0, 12);
-
-            var bytes = Encoding.UTF8.GetBytes(input);
-            var hash = SHA1.HashData(bytes);
-            return BitConverter.ToString(hash).Replace("-", "").Substring(0, 16).ToLowerInvariant();
         }
 
         private sealed class MetadataRescanRateLimitState
