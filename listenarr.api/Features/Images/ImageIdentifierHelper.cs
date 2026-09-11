@@ -84,15 +84,28 @@ namespace Listenarr.Api.Features.Images
             return null;
         }
 
+        /// <summary>
+        /// Faults an image lookup may swallow and carry on from. A cover is decoration: every
+        /// one of these ends at the placeholder, which is a far better answer than an error page
+        /// where the book's art should be.
+        /// </summary>
+        /// <remarks>
+        /// The provider-fault predicate is asked rather than restated, so a client taught to
+        /// raise a new kind of "did not answer" cannot quietly start escaping here. That is
+        /// what happened when the Audible client learned to raise on a 429: the list named
+        /// <see cref="System.Net.Http.HttpRequestException"/> but knew nothing of
+        /// <see cref="MetadataProviderThrottledException"/>, so throttling stopped degrading to
+        /// the placeholder and started failing the request.
+        /// </remarks>
         public static bool IsRecoverableImageLookupException(Exception ex)
         {
-            return ex is System.IO.IOException
+            return MetadataProviderFaults.IsProviderUnavailable(ex)
+                || ex is System.IO.IOException
                 or UnauthorizedAccessException
                 or InvalidOperationException
                 or ArgumentException
                 or FormatException
                 or UriFormatException
-                or System.Net.Http.HttpRequestException
                 or System.Text.Json.JsonException;
         }
 
