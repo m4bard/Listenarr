@@ -15,6 +15,7 @@ namespace Listenarr.Tests.Features.Infrastructure.ActivityHistory.Services
     {
         private readonly ListenArrDbContext _context;
         private readonly DownloadHistoryService _service;
+        private readonly Mock<IDownloadClientAdapterFactory> _adapterFactory = new();
 
         public DownloadHistoryServiceTests()
         {
@@ -22,9 +23,30 @@ namespace Listenarr.Tests.Features.Infrastructure.ActivityHistory.Services
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;
             _context = new ListenArrDbContext(options);
+            _adapterFactory
+                .Setup(factory => factory.GetByType(It.IsAny<string>()))
+                .Throws(() => new InvalidOperationException("no adapter registered for this type"));
             _service = new DownloadHistoryService(
                 _context,
-                new Mock<ILogger<DownloadHistoryService>>().Object);
+                new Mock<ILogger<DownloadHistoryService>>().Object,
+                _adapterFactory.Object);
+        }
+
+        // Registers a download client of the given type and teaches the adapter factory what
+        // protocol that type speaks, which is the same pairing the queue and submission paths use.
+        private async Task GivenDownloadClient(string clientId, string type, DownloadProtocol protocol)
+        {
+            _context.DownloadClientConfigurations.Add(new DownloadClientConfiguration
+            {
+                Id = clientId,
+                Name = clientId,
+                Type = type
+            });
+            await _context.SaveChangesAsync();
+
+            var adapter = new Mock<IDownloadClientAdapter>();
+            adapter.SetupGet(a => a.Protocol).Returns(protocol);
+            _adapterFactory.Setup(factory => factory.GetByType(type)).Returns(adapter.Object);
         }
 
         [Fact]
@@ -196,5 +218,115 @@ namespace Listenarr.Tests.Features.Infrastructure.ActivityHistory.Services
         }
 
         public void Dispose() => _context.Dispose();
+
+        // Every one of these three methods wrote DownloadProtocol.Torrent regardless of the client,
+        // so a Usenet event was filed as a torrent. Torrent is also the zero member of the enum,
+        // which is why the wrong value was invisible: it is what an unset field reads as.
+        [Theory]
+        [InlineData("sabnzbd", DownloadProtocol.Usenet)]
+        [InlineData("nzbget", DownloadProtocol.Usenet)]
+        [InlineData("qbittorrent", DownloadProtocol.Torrent)]
+        [InlineData("transmission", DownloadProtocol.Torrent)]
+        public async Task RecordDownloadFailedAsync_RecordsTheProtocolTheClientSpeaks(
+            string clientType,
+            DownloadProtocol expected)
+        {
+            await GivenDownloadClient("client-1", clientType, expected);
+
+            await _service.RecordDownloadFailedAsync("abc123", "client-1", "Test Book", "refused");
+
+            Assert.Equal(expected, Assert.Single(_context.History).Protocol);
+        }
+
+        [Theory]
+        [InlineData("sabnzbd", DownloadProtocol.Usenet)]
+        [InlineData("qbittorrent", DownloadProtocol.Torrent)]
+        public async Task RecordDownloadCompleteAsync_RecordsTheProtocolTheClientSpeaks(
+            string clientType,
+            DownloadProtocol expected)
+        {
+            await GivenDownloadClient("client-1", clientType, expected);
+
+            await _service.RecordDownloadCompleteAsync("abc123", "client-1", "Test Book");
+
+            Assert.Equal(expected, Assert.Single(_context.History).Protocol);
+        }
+
+        [Theory]
+        [InlineData("sabnzbd", DownloadProtocol.Usenet)]
+        [InlineData("qbittorrent", DownloadProtocol.Torrent)]
+        public async Task RecordImportedAsync_RecordsTheProtocolTheClientSpeaks(
+            string clientType,
+            DownloadProtocol expected)
+        {
+            await GivenDownloadClient("client-1", clientType, expected);
+
+            await _service.RecordImportedAsync("abc123", "client-1", "Test Book");
+
+            Assert.Equal(expected, Assert.Single(_context.History).Protocol);
+        }
+
+        // A caller that knows the protocol is believed without a lookup, which is how the
+        // submission path already passes it to RecordGrabbedAsync.
+        [Fact]
+        public async Task RecordDownloadFailedAsync_PrefersTheProtocolTheCallerPasses()
+        {
+            await GivenDownloadClient("client-1", "qbittorrent", DownloadProtocol.Torrent);
+
+            await _service.RecordDownloadFailedAsync(
+                "abc123", "client-1", "Test Book", "refused", DownloadProtocol.Usenet);
+
+            Assert.Equal(DownloadProtocol.Usenet, Assert.Single(_context.History).Protocol);
+            _adapterFactory.Verify(factory => factory.GetByType(It.IsAny<string>()), Times.Never);
+        }
+
+        // A deleted client, or a type with no adapter, must read as unknown. Falling back to the
+        // enum's first member would be the original bug wearing a different hat.
+        [Fact]
+        public async Task RecordDownloadFailedAsync_UnresolvableClient_RecordsUnknownRatherThanTorrent()
+        {
+            await _service.RecordDownloadFailedAsync("abc123", "gone", "Test Book", "refused");
+
+            Assert.Equal(DownloadProtocol.Unknown, Assert.Single(_context.History).Protocol);
+        }
+
+        // The value has to survive the write and the read, or fixing the construction changes
+        // nothing observable. Before this it was dropped by the mapping and defaulted on the way
+        // back out, so every row read as Torrent whatever had been recorded.
+        [Fact]
+        public async Task GetHistoryAsync_ReturnsTheProtocolThatWasRecorded()
+        {
+            await GivenDownloadClient("client-1", "sabnzbd", DownloadProtocol.Usenet);
+
+            await _service.RecordGrabbedAsync("abc123", "client-1", "Test Book", DownloadProtocol.Usenet);
+            await _service.RecordImportedAsync("abc123", "client-1", "Test Book");
+
+            var history = await _service.GetHistoryAsync("abc123", "client-1");
+
+            Assert.All(history, entry => Assert.Equal(DownloadProtocol.Usenet, entry.Protocol));
+        }
+
+        // Rows written before the column existed have no protocol, and guessing one for them would
+        // be worse than saying we do not know.
+        [Fact]
+        public async Task GetHistoryAsync_RowWithNoProtocol_ReadsAsUnknown()
+        {
+            _context.History.Add(new History
+            {
+                DownloadId = "ABC123",
+                DownloadClientId = "client-1",
+                EventType = HistoryEvents.Grabbed,
+                Outcome = HistoryOutcome.Succeeded,
+                Timestamp = DateTime.UtcNow,
+                SourceTitle = "Test Book",
+                CorrelationId = "ABC123",
+                Protocol = null
+            });
+            await _context.SaveChangesAsync();
+
+            var entry = Assert.Single(await _service.GetHistoryAsync("abc123", "client-1"));
+
+            Assert.Equal(DownloadProtocol.Unknown, entry.Protocol);
+        }
     }
 }
