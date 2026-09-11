@@ -119,9 +119,13 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
         var providerCalls = 0;
         var providerAnswers = 0;
 
-        // Pushback is narrowed once per book, at the retry ceiling. Halving on every attempt
+        // Pushback narrows the run once per book, when it arrives. Halving on every attempt
         // took a run from sixty an hour to seven on the first book that got three 429s, and the
-        // design says the budget halves for the rest of the cycle, singular.
+        // design says the budget halves for the rest of the cycle, singular. Waiting for the
+        // retry ceiling instead was the opposite mistake: a 429 whose retry then succeeded
+        // narrowed nothing and dropped the Retry-After, so the walk went straight back at a
+        // provider that had just asked it not to. The once-per-book guard below is what keeps
+        // the halving singular; the ceiling never had to.
         var sawPushback = false;
         var pushbackSignalled = false;
         TimeSpan? pushbackRetryAfter = null;
@@ -146,6 +150,11 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
 
             sawPushback = true;
             pushbackRetryAfter = retryAfter ?? pushbackRetryAfter;
+
+            // The first piece of pushback this book saw is the one that narrows the run, and
+            // its Retry-After is the one honoured. A second 429 for the same book says nothing
+            // the first did not.
+            ApplyPushbackOnce();
         }
 
         AudibleBookResponse? providerMetadata = null;
@@ -224,7 +233,6 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                             // not to do. The book waits for the next cycle instead.
                             if (sawPushback)
                             {
-                                ApplyPushbackOnce();
                                 deferred = true;
                                 return false;
                             }
@@ -302,7 +310,6 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                     {
                         if (sawPushback)
                         {
-                            ApplyPushbackOnce();
                             deferred = true;
                         }
 
@@ -468,7 +475,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
     /// <summary>
     /// Says whether <paramref name="exception"/> is the provider asking for less, and how long it
     /// asked for if it said. Reading the signal is separate from acting on it: the run is
-    /// narrowed once per book, at the retry ceiling, not once per attempt.
+    /// narrowed once per book, on the first piece of pushback, not once per attempt.
     /// </summary>
     private static bool TryReadPushback(Exception exception, out TimeSpan? retryAfter)
     {

@@ -299,14 +299,52 @@ public class MetadataRefreshServiceTests : BaseTests
         // provider asked for less traffic, and uk is the same provider.
         Assert.Equal(MetadataRefreshOutcome.Deferred, result.Outcome);
 
-        // Once, at the ceiling. Signalling on every attempt halved the run's allowance three
-        // times over one book: sixty an hour became seven before the second book was reached,
-        // and the design says the budget halves for the rest of the cycle, singular.
+        // Once, on the first 429 of the book. Signalling on every attempt halved the run's
+        // allowance three times over one book: sixty an hour became seven before the second
+        // book was reached, and the design says the budget halves for the rest of the cycle,
+        // singular.
         Assert.Equal(1, budget.ThrottleSignals);
         Assert.Null(budget.LastRetryAfter);
         metadata.Verify(
             m => m.GetMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), false),
             Times.Exactly(3));
+    }
+
+    [Fact]
+    [Trait("Scenario", "PushbackNarrowsEvenWhenTheRetrySucceeds")]
+    public async Task RefreshAsync_NarrowsTheRun_WhenA429IsFollowedByASuccessfulRetry()
+    {
+        var metadata = new Mock<IAudiobookMetadataService>();
+        var attempts = 0;
+        metadata
+            .Setup(m => m.GetMetadataAsync("B0THENOKAY", "us", false))
+            .Returns(() =>
+            {
+                attempts++;
+                if (attempts == 1)
+                {
+                    throw new MetadataProviderThrottledException("slow down", TimeSpan.FromSeconds(45));
+                }
+
+                return Task.FromResult<AudiobookMetadataEnvelope?>(new AudiobookMetadataEnvelope(
+                    new AudibleBookResponse { Asin = "B0THENOKAY", Title = "Answered On The Retry" },
+                    "Audible",
+                    "https://example.invalid/product"));
+            });
+        var budget = new CountingBudget();
+
+        var result = await CreateService(BookWithAsin("B0THENOKAY"), metadata)
+            .RefreshAsync(1, budget, CancellationToken.None);
+
+        // The book is fine: the retry answered and the refresh applied.
+        Assert.Equal(MetadataRefreshOutcome.Updated, result.Outcome);
+        Assert.Equal(2, attempts);
+
+        // The run is not fine. Narrowing only at the retry ceiling meant a 429 that a retry
+        // recovered from narrowed nothing and dropped the wait the provider had named, so the
+        // walk went straight back at a host that had just asked it to stop.
+        Assert.Equal(1, budget.ThrottleSignals);
+        Assert.Equal(TimeSpan.FromSeconds(45), budget.LastRetryAfter);
     }
 
     [Fact]
