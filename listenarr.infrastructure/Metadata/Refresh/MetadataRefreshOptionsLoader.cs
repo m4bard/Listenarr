@@ -28,6 +28,14 @@ public static class MetadataRefreshOptionsLoader
     // Lower bounds keep a zero or a negative from meaning "as fast as possible". Upper bounds
     // are here because nothing else validates these: a spacing of a day or an interval of a year
     // does not slow the walk down, it stops it, and it does so silently.
+    //
+    // Known constraint, left as is: these clamp at use, not at save, so GET /settings echoes
+    // back whatever was stored and an operator who typed 100000 requests an hour is told 100000
+    // while the walk runs at 3600. Clamping on the way in is the right fix and it does not
+    // belong here: the bounds would have to move to the application layer beside
+    // ApplicationSettings, because ConfigurationService cannot reference infrastructure. That is
+    // a refactor of shared settings code rather than a change to this feature, so it is named
+    // here rather than done quietly.
     private const int MinIntervalHours = 1;
     private const int MaxIntervalHours = 168;
     private const int MinStaleAfterDays = 0;

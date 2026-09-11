@@ -25,6 +25,7 @@ namespace Listenarr.Application.Metadata.Refresh;
 /// </summary>
 public sealed partial class MetadataRefreshService : IMetadataRefreshService
 {
+    // Distinct identifier-and-region pairs a book may be looked for in, not HTTP requests.
     private const int MaxAsinLookupAttempts = 8;
     private const int MaxIsbnConversionAttempts = 5;
     private const int MaxTransientRetriesPerBook = 2;
@@ -118,6 +119,35 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
         var providerCalls = 0;
         var providerAnswers = 0;
 
+        // Pushback is narrowed once per book, at the retry ceiling. Halving on every attempt
+        // took a run from sixty an hour to seven on the first book that got three 429s, and the
+        // design says the budget halves for the rest of the cycle, singular.
+        var sawPushback = false;
+        var pushbackSignalled = false;
+        TimeSpan? pushbackRetryAfter = null;
+
+        void ApplyPushbackOnce()
+        {
+            if (pushbackSignalled)
+            {
+                return;
+            }
+
+            pushbackSignalled = true;
+            budget.ApplyThrottleSignal(pushbackRetryAfter);
+        }
+
+        void NotePushback(Exception exception)
+        {
+            if (!TryReadPushback(exception, out var retryAfter))
+            {
+                return;
+            }
+
+            sawPushback = true;
+            pushbackRetryAfter = retryAfter ?? pushbackRetryAfter;
+        }
+
         AudibleBookResponse? providerMetadata = null;
         string? providerSource = null;
         string? resolvedAsin = null;
@@ -145,17 +175,21 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
 
                 triedAsinDebug.Add(new { asin = normalizedAsin, region = regionValue, via });
 
+                // Counted once per identifier and region rather than once per HTTP attempt. The
+                // cap is there to bound how many places a book is looked for; charging a retry
+                // of the same place against it meant a flaky provider ran the book out of
+                // identifiers after three regions instead of eight.
+                if (asinLookupAttempts >= MaxAsinLookupAttempts)
+                {
+                    asinLookupAttemptCapHit = true;
+                    return false;
+                }
+
+                asinLookupAttempts++;
+
                 AudiobookMetadataEnvelope? metadataEnvelope = null;
                 while (true)
                 {
-                    if (asinLookupAttempts >= MaxAsinLookupAttempts)
-                    {
-                        asinLookupAttemptCapHit = true;
-                        return false;
-                    }
-
-                    asinLookupAttempts++;
-
                     if (!await budget.ChargeAsync(cancellationToken))
                     {
                         budgetExhausted = true;
@@ -173,7 +207,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         transientFailures++;
-                        var throttled = SignalPushbackIfThrottled(budget, ex);
+                        NotePushback(ex);
                         _logger.LogWarning(
                             ex,
                             "Metadata refresh lookup failed for audiobook {AudiobookId} ({Title}) ASIN {Asin} region {Region}, failure {Failure} of {Ceiling}",
@@ -188,8 +222,9 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                             // Pushback is about the provider and not about this region, so
                             // asking it somewhere else is the one thing it has just asked us
                             // not to do. The book waits for the next cycle instead.
-                            if (throttled)
+                            if (sawPushback)
                             {
+                                ApplyPushbackOnce();
                                 deferred = true;
                                 return false;
                             }
@@ -255,7 +290,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     transientFailures++;
-                    var throttled = SignalPushbackIfThrottled(budget, ex);
+                    NotePushback(ex);
                     _logger.LogWarning(
                         ex,
                         "Metadata refresh ASIN conversion failed for audiobook {AudiobookId} ISBN {Isbn}, failure {Failure} of {Ceiling}",
@@ -265,8 +300,9 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                         MaxTransientRetriesPerBook + 1);
                     if (transientFailures > MaxTransientRetriesPerBook)
                     {
-                        if (throttled)
+                        if (sawPushback)
                         {
+                            ApplyPushbackOnce();
                             deferred = true;
                         }
 
@@ -396,6 +432,7 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
                     audiobookId,
                     convertedMetadata,
                     expectedMetadataState,
+                    budget,
                     token);
             },
             cancellationToken);
@@ -429,12 +466,14 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
     }
 
     /// <summary>
-    /// Narrows the run when the provider pushed back, and says whether it did. True also means
-    /// the book stops here rather than trying the next region: pushback is about the provider,
-    /// not about the region that reported it.
+    /// Says whether <paramref name="exception"/> is the provider asking for less, and how long it
+    /// asked for if it said. Reading the signal is separate from acting on it: the run is
+    /// narrowed once per book, at the retry ceiling, not once per attempt.
     /// </summary>
-    private static bool SignalPushbackIfThrottled(IMetadataRefreshBudget budget, Exception exception)
+    private static bool TryReadPushback(Exception exception, out TimeSpan? retryAfter)
     {
+        retryAfter = null;
+
         // Only pushback is the provider asking for less. A DNS failure or a timeout is transient
         // in a different way, and halving the allowance for one would ratchet a whole walk down
         // to a request an hour inside a couple of books. Those still retry and still defer; they
@@ -447,10 +486,9 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
         switch (exception)
         {
             case MetadataProviderThrottledException throttled:
-                budget.ApplyThrottleSignal(throttled.RetryAfter);
+                retryAfter = throttled.RetryAfter;
                 return true;
             case HttpRequestException { StatusCode: System.Net.HttpStatusCode.TooManyRequests }:
-                budget.ApplyThrottleSignal(null);
                 return true;
             default:
                 return false;

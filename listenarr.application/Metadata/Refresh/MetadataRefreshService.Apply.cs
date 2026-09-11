@@ -28,6 +28,7 @@ public sealed partial class MetadataRefreshService
         int audiobookId,
         AudibleBookMetadata metadata,
         string expectedMetadataState,
+        IMetadataRefreshBudget budget,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -76,7 +77,13 @@ public sealed partial class MetadataRefreshService
                 MetadataRefreshApplyStatus.NotFound);
         }
 
-        if (!string.IsNullOrWhiteSpace(metadata.ImageUrl))
+        // A cover is a request to the provider's CDN like any other, one per updated book, and
+        // it was going out outside the counter and outside the spacing floor: a run at sixty an
+        // hour that updated every book it touched was making a hundred and twenty. A refusal
+        // here is the run's window closing, and the metadata is already written, so the book
+        // keeps the provider's own image URL exactly as it does when the move fails.
+        if (!string.IsNullOrWhiteSpace(metadata.ImageUrl)
+            && await budget.ChargeAsync(cancellationToken))
         {
             var publishedImageUrl =
                 await MoveMetadataImageToLibraryStorageAsync(

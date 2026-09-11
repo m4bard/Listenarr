@@ -62,7 +62,8 @@ public class MetadataRefreshServiceTests : BaseTests
     private static MetadataRefreshService CreateService(
         Audiobook? book,
         Mock<IAudiobookMetadataService> metadata,
-        Mock<IAudiobookRepository>? repositoryOverride = null)
+        Mock<IAudiobookRepository>? repositoryOverride = null,
+        IAsinLookupService? asinLookupService = null)
     {
         var repository = repositoryOverride ?? new Mock<IAudiobookRepository>();
         if (repositoryOverride == null)
@@ -99,8 +100,26 @@ public class MetadataRefreshServiceTests : BaseTests
             coordinator.Object,
             moveQueue.Object,
             Mock.Of<ILogger<MetadataRefreshService>>(),
-            asinLookupService: null);
+            asinLookupService);
     }
+
+    private static Audiobook BookWithIsbn(string isbn) => new()
+    {
+        Id = 1,
+        Title = "An Isbn And Nothing Else",
+        Authors = ["Test Author"],
+        ExternalIdentifiers =
+        [
+            new AudiobookExternalIdentifier
+            {
+                Type = AudiobookExternalIdentifierType.Isbn,
+                ValueRaw = isbn,
+                ValueNormalized = isbn,
+                IsPrimary = true,
+                Source = AudiobookExternalIdentifierSource.Manual
+            }
+        ]
+    };
 
     [Fact]
     [Trait("Scenario", "FirstRegionHitCostsOneRequest")]
@@ -279,7 +298,11 @@ public class MetadataRefreshServiceTests : BaseTests
         // Pushback stops the book where it stands rather than moving to the next region: the
         // provider asked for less traffic, and uk is the same provider.
         Assert.Equal(MetadataRefreshOutcome.Deferred, result.Outcome);
-        Assert.Equal(3, budget.ThrottleSignals);
+
+        // Once, at the ceiling. Signalling on every attempt halved the run's allowance three
+        // times over one book: sixty an hour became seven before the second book was reached,
+        // and the design says the budget halves for the rest of the cycle, singular.
+        Assert.Equal(1, budget.ThrottleSignals);
         Assert.Null(budget.LastRetryAfter);
         metadata.Verify(
             m => m.GetMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), false),
@@ -304,7 +327,7 @@ public class MetadataRefreshServiceTests : BaseTests
         // The wait the provider named is the one thing an HttpRequestException cannot carry,
         // which is why the signal has a type of its own.
         Assert.Equal(MetadataRefreshOutcome.Deferred, result.Outcome);
-        Assert.Equal(3, budget.ThrottleSignals);
+        Assert.Equal(1, budget.ThrottleSignals);
         Assert.Equal(TimeSpan.FromSeconds(30), budget.LastRetryAfter);
     }
 
@@ -381,6 +404,184 @@ public class MetadataRefreshServiceTests : BaseTests
         metadata.Verify(
             m => m.GetMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()),
             Times.Never);
+    }
+
+    [Fact]
+    [Trait("Scenario", "IsbnConvertsToAnAsinAndTheWalkContinues")]
+    public async Task RefreshAsync_ResolvesTheIsbn_ThenLooksTheAsinUp()
+    {
+        var metadata = new Mock<IAudiobookMetadataService>();
+        metadata
+            .Setup(m => m.GetMetadataAsync("B0FROMISBN", It.IsAny<string>(), false))
+            .ReturnsAsync(new AudiobookMetadataEnvelope(
+                new AudibleBookResponse { Asin = "B0FROMISBN", Title = "Found Through The Isbn" },
+                "Audible",
+                "https://example.invalid/product"));
+        var isbn = new Mock<IAsinLookupService>();
+        isbn
+            .Setup(a => a.GetAsinFromIsbnAsync("9780000000001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((true, "B0FROMISBN", (string?)null));
+        var budget = new CountingBudget();
+
+        var result = await CreateService(
+                BookWithIsbn("9780000000001"),
+                metadata,
+                asinLookupService: isbn.Object)
+            .RefreshAsync(1, budget, CancellationToken.None);
+
+        // The whole fallback had no coverage: every other test passes a null lookup service, so
+        // the conversion, its charge and the lookup that follows it were never run.
+        Assert.Equal(MetadataRefreshOutcome.Updated, result.Outcome);
+        Assert.Equal("B0FROMISBN", result.Asin);
+
+        // The conversion is a provider request and is charged like one, then the ASIN lookup.
+        Assert.Equal(2, budget.RequestsSpent);
+        Assert.Equal(2, result.ProviderAnswers);
+    }
+
+    [Fact]
+    [Trait("Scenario", "OneUnconvertibleIsbnDoesNotEndTheWalk")]
+    public async Task RefreshAsync_TriesTheNextIsbn_WhenTheFirstOneResolvesToNothing()
+    {
+        var book = BookWithIsbn("9780000000001");
+        book.ExternalIdentifiers.Add(new AudiobookExternalIdentifier
+        {
+            Type = AudiobookExternalIdentifierType.Isbn,
+            ValueRaw = "9780000000002",
+            ValueNormalized = "9780000000002",
+            IsPrimary = false,
+            Source = AudiobookExternalIdentifierSource.Manual
+        });
+
+        var metadata = new Mock<IAudiobookMetadataService>();
+        metadata
+            .Setup(m => m.GetMetadataAsync("B0SECONDIS", It.IsAny<string>(), false))
+            .ReturnsAsync(new AudiobookMetadataEnvelope(
+                new AudibleBookResponse { Asin = "B0SECONDIS", Title = "Found Through The Second Isbn" },
+                "Audible",
+                "https://example.invalid/product"));
+        var isbn = new Mock<IAsinLookupService>();
+        isbn
+            .Setup(a => a.GetAsinFromIsbnAsync("9780000000001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((false, (string?)null, "ASIN not found for ISBN"));
+        isbn
+            .Setup(a => a.GetAsinFromIsbnAsync("9780000000002", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((true, "B0SECONDIS", (string?)null));
+
+        var result = await CreateService(book, metadata, asinLookupService: isbn.Object)
+            .RefreshAsync(1, new CountingBudget(), CancellationToken.None);
+
+        Assert.Equal(MetadataRefreshOutcome.Updated, result.Outcome);
+        Assert.Equal("B0SECONDIS", result.Asin);
+    }
+
+    [Fact]
+    [Trait("Scenario", "AThrottledIsbnConversionDefersOnce")]
+    public async Task RefreshAsync_Defers_AndSignalsOnce_WhenTheIsbnConversionIsThrottled()
+    {
+        var isbn = new Mock<IAsinLookupService>();
+        isbn
+            .Setup(a => a.GetAsinFromIsbnAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new MetadataProviderThrottledException("slow down", TimeSpan.FromSeconds(45)));
+        var budget = new CountingBudget();
+
+        var result = await CreateService(
+                BookWithIsbn("9780000000001"),
+                new Mock<IAudiobookMetadataService>(),
+                asinLookupService: isbn.Object)
+            .RefreshAsync(1, budget, CancellationToken.None);
+
+        Assert.Equal(MetadataRefreshOutcome.Deferred, result.Outcome);
+        Assert.Equal(1, budget.ThrottleSignals);
+        Assert.Equal(TimeSpan.FromSeconds(45), budget.LastRetryAfter);
+        Assert.Equal(0, result.ProviderAnswers);
+    }
+
+    [Fact]
+    [Trait("Scenario", "TheCoverIsChargedToo")]
+    public async Task RefreshAsync_ChargesTheCoverDownload_AndSkipsIt_WhenTheBudgetRefuses()
+    {
+        var metadata = new Mock<IAudiobookMetadataService>();
+        metadata
+            .Setup(m => m.GetMetadataAsync("B0HASCOVER", "us", false))
+            .ReturnsAsync(new AudiobookMetadataEnvelope(
+                new AudibleBookResponse
+                {
+                    Asin = "B0HASCOVER",
+                    Title = "Refreshed Title",
+                    ImageUrl = "https://example.invalid/cover.jpg"
+                },
+                "Audible",
+                "https://example.invalid/product"));
+
+        var images = new Mock<IImageCacheService>();
+        images
+            .Setup(i => i.MoveToLibraryStorageAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync("images/library/cover.jpg");
+
+        // One token: the lookup takes it, so the cover download is refused.
+        var tight = new CountingBudget { GrantLimit = 1 };
+        var refused = await CreateServiceWithImages(BookWithAsin("B0HASCOVER"), metadata, images)
+            .RefreshAsync(1, tight, CancellationToken.None);
+
+        Assert.Equal(MetadataRefreshOutcome.Updated, refused.Outcome);
+        Assert.Equal(1, tight.RequestsSpent);
+        images.Verify(
+            i => i.MoveToLibraryStorageAsync(It.IsAny<string>(), It.IsAny<string>()),
+            Times.Never);
+
+        // With room for both, the cover goes out and it is counted. A run at sixty an hour that
+        // updated every book it touched was making a hundred and twenty requests an hour.
+        var roomy = new CountingBudget();
+        var allowed = await CreateServiceWithImages(BookWithAsin("B0HASCOVER"), metadata, images)
+            .RefreshAsync(1, roomy, CancellationToken.None);
+
+        Assert.Equal(MetadataRefreshOutcome.Updated, allowed.Outcome);
+        Assert.Equal(2, roomy.RequestsSpent);
+        images.Verify(
+            i => i.MoveToLibraryStorageAsync(It.IsAny<string>(), It.IsAny<string>()),
+            Times.Once);
+    }
+
+    private static MetadataRefreshService CreateServiceWithImages(
+        Audiobook book,
+        Mock<IAudiobookMetadataService> metadata,
+        Mock<IImageCacheService> images)
+    {
+        var repository = new Mock<IAudiobookRepository>();
+        repository.Setup(r => r.GetByIdAsync(It.IsAny<int>())).ReturnsAsync(book);
+        repository
+            .Setup(r => r.GetByIdSnapshotAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(book);
+        repository.Setup(r => r.UpdateAsync(It.IsAny<Audiobook>())).ReturnsAsync(true);
+        repository
+            .Setup(r => r.TryUpdateImageUrlAsync(
+                It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var coordinator = new Mock<IAudiobookOperationCoordinator>();
+        coordinator
+            .Setup(c => c.ExecuteExclusiveAsync(
+                It.IsAny<int>(),
+                It.IsAny<Func<CancellationToken, Task<MetadataRefreshApplyResult>>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<int, Func<CancellationToken, Task<MetadataRefreshApplyResult>>, CancellationToken>(
+                (_, work, token) => work(token));
+
+        var moveQueue = new Mock<IMoveQueueService>();
+        moveQueue
+            .Setup(m => m.EnsureFilesystemMutationAllowedAsync(
+                It.IsAny<int>(), It.IsAny<CancellationToken>(), It.IsAny<bool>()))
+            .Returns(Task.CompletedTask);
+
+        return new MetadataRefreshService(
+            repository.Object,
+            metadata.Object,
+            new MetadataConverters(imageCacheService: null, Mock.Of<ILogger<MetadataConverters>>()),
+            images.Object,
+            coordinator.Object,
+            moveQueue.Object,
+            Mock.Of<ILogger<MetadataRefreshService>>());
     }
 
     [Fact]

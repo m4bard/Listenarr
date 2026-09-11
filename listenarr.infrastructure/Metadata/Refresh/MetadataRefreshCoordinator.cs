@@ -86,6 +86,12 @@ public sealed partial class MetadataRefreshCoordinator : IMetadataRefreshCoordin
         var candidates = admission.Candidates;
         lock (_stateGate)
         {
+            // Checked again here, not only at admission. The scope query in between is awaited,
+            // so a DisposeAsync can run across it, capture _inFlight as already completed and
+            // wait on nothing while this line schedules a run behind it. Harmless today because
+            // the token is cancelled by then and Stop swallows what it finds, but the drain is
+            // supposed to mean that nothing is still inside a book.
+            ObjectDisposedException.ThrowIf(_disposed, this);
             _inFlight = Task.Run(
                 () => ExecuteAsync(run, candidates, token),
                 CancellationToken.None);
@@ -267,7 +273,12 @@ public sealed partial class MetadataRefreshCoordinator : IMetadataRefreshCoordin
             : null;
         if (author == null)
         {
-            return [];
+            // An id that names nobody is not an empty run. Accepting it handed the caller a run
+            // id, a total of zero and a Completed status, which reads as "that author's books
+            // are all up to date" rather than "there is no such author".
+            throw new ApplicationNotFoundException(
+                "monitored_author_not_found",
+                "No monitored author with that id.");
         }
 
         var ids = await repository.GetAudiobookIdsByAuthorNameAsync(author.AuthorName, cancellationToken);

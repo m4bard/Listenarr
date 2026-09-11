@@ -77,7 +77,7 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
                 logger,
                 coordinator.Object,
                 new MetadataRefreshOptionsHolder(),
-                ScopeFactoryFor(new ApplicationSettings()))
+                ScopeFactoryFor(EnabledSettings()))
             .RunCycleAsync(CancellationToken.None);
 
         Assert.Contains(
@@ -100,7 +100,7 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
                 new CapturingLogger<MetadataRefreshProcessor>(),
                 coordinator.Object,
                 new MetadataRefreshOptionsHolder(),
-                ScopeFactoryFor(new ApplicationSettings()))
+                ScopeFactoryFor(EnabledSettings()))
             .RunCycleAsync(CancellationToken.None);
 
         coordinator.Verify(
@@ -128,7 +128,7 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
                 logger,
                 coordinator.Object,
                 new MetadataRefreshOptionsHolder(),
-                ScopeFactoryFor(new ApplicationSettings()))
+                ScopeFactoryFor(EnabledSettings()))
             .RunCycleAsync(CancellationToken.None);
 
         Assert.DoesNotContain(logger.Entries, entry => entry.Level == LogLevel.Information);
@@ -166,7 +166,7 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
             Mock.Of<IMetadataRefreshProcessor>(),
             NoOpCycleRunner().Object,
             holder,
-            ScopeFactoryFor(new ApplicationSettings()));
+            ScopeFactoryFor(EnabledSettings()));
         await service.StartAsync(CancellationToken.None);
         Assert.NotNull(service.ExecuteTask);
         await service.ExecuteTask!.WaitAsync(TestTimeout);
@@ -221,7 +221,7 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
             processor,
             cycleRunner.Object,
             new MetadataRefreshOptionsHolder(),
-            ScopeFactoryFor(new ApplicationSettings()));
+            ScopeFactoryFor(EnabledSettings()));
         await service.StartAsync(CancellationToken.None);
         Assert.NotNull(service.ExecuteTask);
         await service.ExecuteTask!.WaitAsync(TestTimeout);
@@ -253,7 +253,7 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
             Mock.Of<IMetadataRefreshProcessor>(),
             cycleRunner.Object,
             holder,
-            ScopeFactoryFor(new ApplicationSettings()));
+            ScopeFactoryFor(EnabledSettings()));
         await service.StartAsync(CancellationToken.None);
         Assert.NotNull(service.ExecuteTask);
         await service.ExecuteTask!.WaitAsync(TestTimeout);
@@ -375,7 +375,7 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
                 logger,
                 coordinator.Object,
                 new MetadataRefreshOptionsHolder(),
-                ScopeFactoryFor(new ApplicationSettings()))
+                ScopeFactoryFor(EnabledSettings()))
             .RunCycleAsync(CancellationToken.None);
 
         // A window that closed early is a cycle that finished, not one that failed, and the
@@ -419,15 +419,23 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
         Assert.Equal(60000, holder.Current.MinimumSpacingMs);
     }
 
+    /// <summary>
+    /// The shipped settings with the feature turned on. It ships off, so a test about what a
+    /// cycle does has to say so, and a test about the default asserts the default instead.
+    /// </summary>
+    private static ApplicationSettings EnabledSettings() =>
+        new() { MetadataRefreshEnabled = true };
+
     [Fact]
     [Trait("Scenario", "ShippedDefaults")]
-    public void ApplicationSettings_ShipTheTimidBudget()
+    public void ApplicationSettings_ShipTheTimidBudget_AndShipItOff()
     {
         // 60 an hour with a one-second floor is deliberately conservative: the provider
-        // publishes no limit and the client does not recognise a 429.
+        // publishes no limit, and off by default because every existing book is due the moment
+        // this is on and the walk overwrites local metadata from the provider.
         var settings = new ApplicationSettings();
 
-        Assert.True(settings.MetadataRefreshEnabled);
+        Assert.False(settings.MetadataRefreshEnabled);
         Assert.Equal(24, settings.MetadataRefreshIntervalHours);
         Assert.Equal(30, settings.MetadataRefreshStaleAfterDays);
         Assert.Equal(60, settings.MetadataRefreshRequestsPerHour);

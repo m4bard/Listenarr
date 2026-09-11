@@ -98,6 +98,13 @@ public sealed class MetadataRefreshRun
     /// Records one book. A conflict is counted with the deferrals: like a deferral it leaves the
     /// timestamp unset and comes back next cycle, which is not what skipped means here.
     /// </summary>
+    /// <remarks>
+    /// Called from the run loop without the state lock, while a status request reads the
+    /// counters under it. That is deliberate and it is safe: each counter is an int, so a reader
+    /// sees a value that was true at some point during the run rather than a torn one, and a
+    /// progress number one book behind is what a progress number is. The terminal state is
+    /// different and is written under the lock by <see cref="Finish"/>.
+    /// </remarks>
     public void Record(MetadataRefreshOutcome outcome)
     {
         Processed++;

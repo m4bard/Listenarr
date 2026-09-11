@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Common.Exceptions;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library;
@@ -59,9 +60,22 @@ public sealed class LibraryMetadataRefreshWorkflow
             ? MetadataRefreshRunScope.Author
             : MetadataRefreshRunScope.Library;
 
-        var started = await _coordinator.StartAsync(
-            new MetadataRefreshScopeRequest(scope, effective.AuthorId, effective.Force),
-            cancellationToken);
+        MetadataRefreshStartResult started;
+        try
+        {
+            started = await _coordinator.StartAsync(
+                new MetadataRefreshScopeRequest(scope, effective.AuthorId, effective.Force),
+                cancellationToken);
+        }
+        catch (ApplicationNotFoundException exception)
+        {
+            return new NotFoundObjectResult(new
+            {
+                message = exception.SafeDetail,
+                code = exception.Code
+            });
+        }
+
         var body = new MetadataRefreshRunResponse(
             started.Run.RunId,
             started.Run.Scope,

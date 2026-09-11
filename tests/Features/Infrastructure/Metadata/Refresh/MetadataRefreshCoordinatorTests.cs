@@ -590,15 +590,58 @@ public class MetadataRefreshCoordinatorTests : BaseTests
     }
 
     [Fact]
-    [Trait("Scenario", "UnknownAuthorIsAnEmptyRun")]
-    public async Task RunToCompletionAsync_CompletesWithNothing_WhenTheAuthorIdIsUnknown()
+    [Trait("Scenario", "UnknownAuthorIsNotAnEmptyRun")]
+    public async Task RunToCompletionAsync_Raises_WhenTheAuthorIdIsUnknown()
     {
-        var (coordinator, service, _) = Create([], _ => MetadataRefreshOutcome.Updated);
+        // The author repository answers null and the due repository has books in it, so an
+        // empty result here cannot be mistaken for the queue simply being empty. The old shape
+        // of this test passed with the unknown-author guard deleted.
+        var repository = DueRepository([Candidate(1, "A")]);
+        var service = new StubRefreshService(_ => MetadataRefreshOutcome.Updated);
+        var coordinator = Coordinator(
+            service,
+            repository.Object,
+            Mock.Of<IMonitoredAuthorRepository>());
+
+        var thrown = await Assert.ThrowsAsync<ApplicationNotFoundException>(
+            () => coordinator.RunToCompletionAsync(
+                new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Author, 99, Force: false),
+                CancellationToken.None));
+
+        // Accepting the id handed the caller a run, a total of zero and a Completed status,
+        // which reads as "that author is up to date" rather than "there is no such author".
+        Assert.Equal("monitored_author_not_found", thrown.Code);
+        Assert.Empty(service.Seen);
+
+        // And the gate it took to get as far as the scope query is released again.
+        var after = await coordinator.StartAsync(
+            new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Library, null, Force: true),
+            CancellationToken.None);
+        await coordinator.WaitForIdleAsync(TestTimeout);
+        Assert.True(after.Started);
+    }
+
+    [Fact]
+    [Trait("Scenario", "AKnownAuthorWithNothingDueIsAnEmptyRun")]
+    public async Task RunToCompletionAsync_CompletesWithNothing_WhenTheAuthorHasNoDueBooks()
+    {
+        var authors = new Mock<IMonitoredAuthorRepository>();
+        authors
+            .Setup(a => a.GetByIdAsync(7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MonitoredAuthor { Id = 7, AuthorName = "Up To Date" });
+        var repository = DueRepository([]);
+        repository
+            .Setup(r => r.GetAudiobookIdsByAuthorNameAsync("Up To Date", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        var service = new StubRefreshService(_ => MetadataRefreshOutcome.Updated);
+        var coordinator = Coordinator(service, repository.Object, authors.Object);
 
         var run = await coordinator.RunToCompletionAsync(
-            new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Author, 99, Force: false),
+            new MetadataRefreshScopeRequest(MetadataRefreshRunScope.Author, 7, Force: false),
             CancellationToken.None);
 
+        // The control for the test above: an author who exists and has nothing due is still a
+        // completed run of zero books, and must not be confused with an id that names nobody.
         Assert.NotNull(run);
         Assert.Equal(0, run.TotalBooks);
         Assert.Equal("Completed", run.Status);

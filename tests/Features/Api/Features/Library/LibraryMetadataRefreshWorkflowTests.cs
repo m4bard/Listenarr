@@ -2,6 +2,7 @@
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  */
+using Listenarr.Application.Common.Exceptions;
 using Listenarr.Tests.Common;
 using Microsoft.AspNetCore.Mvc;
 
@@ -54,6 +55,26 @@ public class LibraryMetadataRefreshWorkflowTests : BaseTests
         coordinator.Verify(
             c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    [Trait("Scenario", "AnUnknownAuthorIs404")]
+    public async Task StartAsync_Returns404_WhenTheAuthorIdNamesNobody()
+    {
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+        coordinator
+            .Setup(c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ApplicationNotFoundException(
+                "monitored_author_not_found",
+                "No monitored author with that id."));
+
+        var result = await new LibraryMetadataRefreshWorkflow(coordinator.Object, EnabledSettings())
+            .StartAsync(new MetadataRefreshRequest(AuthorId: 99), CancellationToken.None);
+
+        // 202 with a total of zero reads as "that author is up to date", which is a different
+        // thing from an id that names nobody, and the caller could not tell the two apart.
+        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        Assert.Contains("monitored_author_not_found", notFound.Value!.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

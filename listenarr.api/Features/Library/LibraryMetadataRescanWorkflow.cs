@@ -149,6 +149,14 @@ namespace Listenarr.Api.Features.Library
     /// The one-book endpoint is throttled per actor and per book by the cooldown above, not by the
     /// run budget, so it grants every request and counts them for the response only.
     /// </summary>
+    /// <remarks>
+    /// Known constraint, left as is: granting instantly means a book whose region keeps failing
+    /// makes its three attempts back to back rather than a second apart. A spacing floor here
+    /// would be a deliberate delay inside a request somebody is waiting on, and the per-actor
+    /// cooldown already bounds how often this endpoint can be reached at all. The background
+    /// walk, which is the caller that can make thousands of these, is spaced by the shared
+    /// bucket.
+    /// </remarks>
     internal sealed class UnlimitedMetadataRefreshBudget : IMetadataRefreshBudget
     {
         private int _spent;
