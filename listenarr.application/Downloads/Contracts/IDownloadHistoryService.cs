@@ -61,21 +61,34 @@ namespace Listenarr.Application.Downloads.Contracts
         /// <summary>
         /// Record that a download completed successfully.
         /// </summary>
+        /// <param name="protocol">
+        /// Protocol the download used. Leave null and the implementation resolves it from the
+        /// download client configuration, which is what every caller that only holds a client id
+        /// should do.
+        /// </param>
         Task RecordDownloadCompleteAsync(string downloadId, string clientId, string title,
-            string? outputPath = null);
+            string? outputPath = null, DownloadProtocol? protocol = null);
 
         /// <summary>
         /// Record that a download failed.
         /// </summary>
+        /// <param name="protocol">
+        /// Protocol the download used. Leave null and the implementation resolves it from the
+        /// download client configuration.
+        /// </param>
         Task RecordDownloadFailedAsync(string downloadId, string clientId, string title,
-            string? errorMessage = null);
+            string? errorMessage = null, DownloadProtocol? protocol = null);
 
         /// <summary>
         /// Record that a download was imported successfully.
         /// Sets the WasImported flag for idempotency checking.
         /// </summary>
+        /// <param name="protocol">
+        /// Protocol the download used. Leave null and the implementation resolves it from the
+        /// download client configuration.
+        /// </param>
         Task RecordImportedAsync(string downloadId, string clientId, string title,
-            Guid? audiobookId = null);
+            Guid? audiobookId = null, DownloadProtocol? protocol = null);
 
         /// <summary>
         /// Record that an import failed and why.
