@@ -1,0 +1,265 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+using System.Text;
+using Microsoft.EntityFrameworkCore;
+
+namespace Listenarr.Infrastructure.Persistence.Repositories;
+
+public partial class AudiobookRepository
+{
+    /// <summary>
+    /// Books whose provider metadata has never been refreshed, or was refreshed before
+    /// <paramref name="staleBefore"/>. Never-refreshed first, then oldest first, so progress is
+    /// monotonic and needs no run-level bookkeeping.
+    /// </summary>
+    public async Task<List<MetadataRefreshCandidate>> GetAudiobooksDueForMetadataRefreshAsync(
+        DateTime staleBefore,
+        int limit,
+        CancellationToken ct = default)
+    {
+        if (limit <= 0)
+        {
+            return [];
+        }
+
+        // Authors is a JSON-backed list column, so the projection materializes the two scalar
+        // columns SQLite can order on and picks the primary author afterwards.
+        var rows = await _db.Audiobooks
+            .AsNoTracking()
+            .Where(audiobook => audiobook.LastMetadataRefreshAt == null
+                || audiobook.LastMetadataRefreshAt < staleBefore)
+            .OrderBy(audiobook => audiobook.LastMetadataRefreshAt.HasValue)
+            .ThenBy(audiobook => audiobook.LastMetadataRefreshAt)
+            .ThenBy(audiobook => audiobook.Id)
+            .Take(limit)
+            .Select(audiobook => new
+            {
+                audiobook.Id,
+                audiobook.Authors,
+                audiobook.LastMetadataRefreshAt
+            })
+            .ToListAsync(ct);
+
+        return rows
+            .Select(row => new MetadataRefreshCandidate(
+                row.Id,
+                row.Authors?.FirstOrDefault(author => !string.IsNullOrWhiteSpace(author)),
+                row.LastMetadataRefreshAt))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Ids of every book whose author list contains <paramref name="authorName"/> after the same
+    /// normalization the monitored-author rows use.
+    /// </summary>
+    /// <remarks>
+    /// Two queries, neither of which reads the whole table. The first expands the JSON author
+    /// list with <c>json_each</c> and narrows to the rows that could possibly match; the second
+    /// reads the author JSON of only those rows, and the exact comparison is still the C#
+    /// normalizer, which is the only thing that defines what a match is.
+    /// <para>
+    /// Reading every row's author JSON back to answer a question about one author cost the whole
+    /// table on every per-author trigger, and a deserialization per row on top of it.
+    /// </para>
+    /// </remarks>
+    public async Task<List<int>> GetAudiobookIdsByAuthorNameAsync(
+        string authorName,
+        CancellationToken ct = default)
+    {
+        var target = NormalizeAuthorName(authorName);
+        if (string.IsNullOrEmpty(target))
+        {
+            return [];
+        }
+
+        var narrowed = await NarrowAuthorCandidateIdsAsync(target, ct);
+        if (narrowed is { Count: 0 })
+        {
+            return [];
+        }
+
+        var rows = _db.Audiobooks.AsNoTracking();
+        if (narrowed != null)
+        {
+            rows = rows.Where(audiobook => narrowed.Contains(audiobook.Id));
+        }
+
+        var candidates = await rows
+            .Select(audiobook => new { audiobook.Id, audiobook.Authors })
+            .ToListAsync(ct);
+
+        return candidates
+            .Where(candidate => candidate.Authors != null
+                && candidate.Authors.Any(author => NormalizeAuthorName(author) == target))
+            .Select(candidate => candidate.Id)
+            .OrderBy(id => id)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Ids whose author list could contain <paramref name="normalizedTarget"/>, or null when the
+    /// target gives nothing to narrow on and the caller has to read the table after all.
+    /// </summary>
+    /// <remarks>
+    /// The normalizer only deletes characters and lowercases them; it never reorders or inserts.
+    /// So every ASCII letter and digit of the normalized target must appear, in that order, in
+    /// the lowercased stored value, which is what the <c>%a%b%c%</c> pattern asks. That makes the
+    /// result a superset and never drops a row the exact comparison would have kept, including
+    /// the punctuation-only differences ("A. Writer" against "a writer") the normalizer exists
+    /// for. Non-ASCII characters are left out of the pattern rather than matched, because
+    /// SQLite's <c>lower</c> is ASCII-only and folding them there would disagree with
+    /// <c>ToLowerInvariant</c>.
+    /// <para>
+    /// A row whose author column is not valid JSON is kept rather than dropped. <c>json_each</c>
+    /// cannot expand one, but the value converter can still read it: it tolerates legacy bare
+    /// strings that begin with a digit or with t, f, n or -, wrapping them into a single-item
+    /// list. Such a row matches in C# and would have been discarded here, which is the one way
+    /// this narrowing could stop being a superset. There are few of them and they only appear on
+    /// upgraded databases, so they cost one extra row read each.
+    /// </para>
+    /// </remarks>
+    private async Task<List<int>?> NarrowAuthorCandidateIdsAsync(
+        string normalizedTarget,
+        CancellationToken ct)
+    {
+        var pattern = BuildAuthorSubsequencePattern(normalizedTarget);
+        if (pattern == null || !_db.Database.IsRelational())
+        {
+            return null;
+        }
+
+        return await _db.Database
+            .SqlQueryRaw<int>(
+                """
+                SELECT a."Id" AS "Value"
+                FROM "Audiobooks" AS a
+                WHERE a."Authors" IS NOT NULL
+                  AND (
+                      NOT json_valid(a."Authors")
+                      OR EXISTS (
+                          SELECT 1 FROM json_each(a."Authors") AS j
+                          WHERE j."value" IS NOT NULL AND lower(j."value") LIKE {0}
+                      )
+                  )
+                """,
+                pattern)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// <c>%j%u%l%e%s%v%e%r%n%e%</c> for "jules verne". Null when the name carries no ASCII
+    /// letters or digits at all, which would make the pattern a bare wildcard.
+    /// </summary>
+    private static string? BuildAuthorSubsequencePattern(string normalizedTarget)
+    {
+        var pattern = new StringBuilder("%");
+        var usable = 0;
+        foreach (var character in normalizedTarget)
+        {
+            // Already lowercased by the normalizer. LIKE's own metacharacters cannot appear:
+            // the normalizer keeps only letters, digits and the spaces it puts between words.
+            if (character is (>= 'a' and <= 'z') or (>= '0' and <= '9'))
+            {
+                pattern.Append(character).Append('%');
+                usable++;
+            }
+        }
+
+        return usable == 0 ? null : pattern.ToString();
+    }
+
+    /// <summary>
+    /// The due query's staleness predicate over a given set of ids: one IN clause plus the same
+    /// null-or-older test. The author scope filters with this so it never materializes the whole
+    /// library's due set, and every row it does read is a single integer.
+    /// </summary>
+    public async Task<List<int>> FilterAudiobookIdsDueForMetadataRefreshAsync(
+        IReadOnlyCollection<int> audiobookIds,
+        DateTime staleBefore,
+        CancellationToken ct = default)
+    {
+        if (audiobookIds == null || audiobookIds.Count == 0)
+        {
+            return [];
+        }
+
+        // A List is what EF turns into an IN clause. An IReadOnlyCollection is not guaranteed to
+        // translate, and falling back to client evaluation here would defeat the point.
+        var ids = audiobookIds as List<int> ?? [.. audiobookIds];
+
+        return await _db.Audiobooks
+            .AsNoTracking()
+            .Where(audiobook => ids.Contains(audiobook.Id)
+                && (audiobook.LastMetadataRefreshAt == null
+                    || audiobook.LastMetadataRefreshAt < staleBefore))
+            .OrderBy(audiobook => audiobook.Id)
+            .Select(audiobook => audiobook.Id)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Records that a book has been through a refresh. Only called for outcomes that should not
+    /// be tried again this staleness window; a deferral or a conflict leaves the value alone,
+    /// because stamping a rate-limited miss would hide the book for a month.
+    /// </summary>
+    public async Task<bool> StampMetadataRefreshAsync(
+        int audiobookId,
+        DateTime refreshedAtUtc,
+        CancellationToken ct = default)
+    {
+        var updated = await _db.Audiobooks
+            .Where(audiobook => audiobook.Id == audiobookId)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(
+                    audiobook => audiobook.LastMetadataRefreshAt,
+                    refreshedAtUtc),
+                ct);
+
+        return updated > 0;
+    }
+
+    /// <summary>
+    /// Gives every never-refreshed row a starting timestamp taken from that book's own dates.
+    /// </summary>
+    /// <remarks>
+    /// A startup primitive rather than data repair inside the migration that adds the column:
+    /// migrations here stay direct EF scaffolds, and anything that touches rows belongs on the
+    /// startup path where it can be read, tested and run again.
+    /// <para>
+    /// What a row gets, in order of preference. The earliest CreatedAt among its files, which is
+    /// when this install first recorded the book and so stands in for when it was added. Failing
+    /// that its LastSearchTime, the only other per-book date there is, being the last time
+    /// Listenarr did dated work on its behalf. Failing both, now: such a row is treated as
+    /// refreshed at this start, so it comes due one staleness window later rather than at once.
+    /// </para>
+    /// <para>
+    /// The effect is that an upgraded library enters the refresh queue spread over however long
+    /// it was built, oldest first, instead of arriving all at once. Books older than the
+    /// staleness window still come due, which is the point of the feature; they arrive in an
+    /// order, and the run budget meters them.
+    /// </para>
+    /// </remarks>
+    public async Task<int> BackfillMetadataRefreshTimestampsAsync(CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+
+        return await _db.Audiobooks
+            .Where(audiobook => audiobook.LastMetadataRefreshAt == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(
+                    audiobook => audiobook.LastMetadataRefreshAt,
+                    audiobook => _db.AudiobookFiles
+                            .Where(file => file.AudiobookId == audiobook.Id)
+                            .Min(file => (DateTime?)file.CreatedAt)
+                        ?? audiobook.LastSearchTime
+                        ?? now),
+                ct);
+    }
+}
