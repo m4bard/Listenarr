@@ -200,6 +200,7 @@ public class SqliteMigrationSchemaTests : BaseTests
         string[] metadataRefreshMigrationIds =
         [
             "20260910120000_AddAudiobookLastMetadataRefreshAt",
+            "20260910120500_AddMetadataRefreshSettings",
             "20260910121000_AddAudiobookLastMetadataRefreshAtIndex"
         ];
         Assert.All(metadataRefreshMigrationIds, id => Assert.Contains(id, postCanary));
@@ -398,6 +399,22 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.True(await IndexExistsAsync(connection, "IX_RootFolders_SingleDefault"));
         Assert.True(await IndexExistsAsync(connection, "IX_AudiobookFiles_PathOwnershipKey"));
         Assert.True(await IndexExistsAsync(connection, "IX_LibraryDirectoryOwnerships_PathOwnershipKey"));
+
+        // The refresh queue orders by this column and takes the head of it on every cycle and
+        // every API trigger. Unindexed that is a full scan and a sort, which is exactly the
+        // shape LastSearchTime next to it has always been indexed for.
+        Assert.True(await IndexExistsAsync(connection, "IX_Audiobooks_LastMetadataRefreshAt"));
+        Assert.True(await IndexExistsAsync(connection, "IX_Audiobooks_LastSearchTime"));
+
+        // On, for new installs and upgrades alike. What makes that safe on an upgrade is the
+        // startup backfill of LastMetadataRefreshAt, not a default of off: an untouched null
+        // reads as never refreshed, and a library of those is due all at once with nothing to
+        // order it by. AudiobookRepository_MetadataRefreshQueryTests pins the backfill.
+        Assert.Equal("1", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshEnabled"));
+        Assert.Equal("24", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshIntervalHours"));
+        Assert.Equal("30", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshStaleAfterDays"));
+        Assert.Equal("60", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshRequestsPerHour"));
+        Assert.Equal("1000", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshMinimumSpacingMs"));
         Assert.True(await ForeignKeyHasDeleteActionAsync(
             connection,
             "LibraryDirectoryOwnerships",
