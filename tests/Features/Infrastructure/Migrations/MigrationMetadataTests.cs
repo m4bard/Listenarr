@@ -218,6 +218,27 @@ public class MigrationMetadataTests
             "Listenarr.Domain.Audiobooks.LibraryDirectoryOwnershipRetiredMarker"));
     }
 
+    [Fact]
+    public void AddMetadataRefreshSettings_IsDiscoverableByEf()
+    {
+        AssertMigrationId<AddMetadataRefreshSettings>(
+            "20260910120500_AddMetadataRefreshSettings");
+    }
+
+    [Fact]
+    public void AddAudiobookLastMetadataRefreshAt_IsDiscoverableByEf()
+    {
+        AssertMigrationId<AddAudiobookLastMetadataRefreshAt>(
+            "20260910120000_AddAudiobookLastMetadataRefreshAt");
+    }
+
+    [Fact]
+    public void AddAudiobookLastMetadataRefreshAtIndex_IsDiscoverableByEf()
+    {
+        AssertMigrationId<AddAudiobookLastMetadataRefreshAtIndex>(
+            "20260910121000_AddAudiobookLastMetadataRefreshAtIndex");
+    }
+
     private static MigrationBuilder BuildOperations(Migration migration, string methodName)
     {
         var builder = new MigrationBuilder("Microsoft.EntityFrameworkCore.Sqlite");
