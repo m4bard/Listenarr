@@ -40,6 +40,13 @@ internal static class MetadataRegistrationExtensions
         services.AddScoped<IAudiobookMetadataService, AudiobookMetadataService>();
         services.AddScoped<IMetadataRefreshService, MetadataRefreshService>();
         services.AddScoped<IOpenLibraryService, OpenLibraryService>();
+        // The coordinator gates every refresh entry point, including the foreground API trigger
+        // in LibraryController, so it is registered unconditionally here rather than inside
+        // AddFeatureWorkers: that registration is skipped whenever background hosted services
+        // are disabled (test hosts, and any future operator override), which would otherwise
+        // leave the library API unable to construct at all.
+        services.AddSingleton<MetadataRefreshOptionsHolder>();
+        services.AddSingleton<IMetadataRefreshCoordinator, MetadataRefreshCoordinator>();
         services.AddSingleton<MetadataExtractionLimiter>();
         services.AddHttpClient("Ffmpeg");
         services.AddSingleton<IFfmpegService>(provider =>
