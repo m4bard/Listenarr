@@ -19,13 +19,14 @@
   <button
     v-if="visible"
     class="queue-retry"
+    :class="{ 'icon-only': iconOnly }"
     data-test="queue-retry"
     :disabled="running"
     title="Retry the blocked import"
     @click="retry"
   >
     <PhArrowClockwise />
-    <span class="queue-retry-label">Retry</span>
+    <span v-if="!iconOnly" class="queue-retry-label">Retry</span>
   </button>
 </template>
 
@@ -37,7 +38,10 @@ import { errorTracking } from '@/services/errorTracking'
 import { useToast } from '@/services/toastService'
 import { isImportBlocked } from './queueStatus'
 
-const props = defineProps<{ downloadId: string; status: string }>()
+const props = withDefaults(
+  defineProps<{ downloadId: string; status: string; iconOnly?: boolean }>(),
+  { iconOnly: false },
+)
 const emit = defineEmits<{ (e: 'retried', id: string): void }>()
 
 const toast = useToast()
@@ -72,6 +76,31 @@ const retry = async () => {
   align-items: center;
   gap: 0.3rem;
   cursor: pointer;
+}
+
+/* The Activity grid gives its action buttons no chrome of their own, so the icon-only form
+   dresses itself the way the remove button beside it does. Every rule that could collide with a
+   host that dresses the button, as DownloadsView does with .action-button.retry, hangs off
+   .icon-only, which only the grid mount carries. Specificity alone would not settle it: padding,
+   border-radius, transition and the hover colour all tie there, and a tie is decided by whichever
+   stylesheet the browser loaded last. */
+.queue-retry.icon-only {
+  justify-content: center;
+  background: none;
+  border: none;
+  color: #868e96;
+  padding: 0.35rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.queue-retry.icon-only:hover:not(:disabled) {
+  color: #dee2e6;
+}
+
+.queue-retry.icon-only svg {
+  width: 16px;
+  height: 16px;
 }
 
 .queue-retry:disabled {
