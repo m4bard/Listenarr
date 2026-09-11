@@ -5,25 +5,33 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Listenarr.Tests.Features.Application.Metadata.Audible;
 
 /// <summary>
-/// A timeout and a genuine zero-match both produce an empty result set. These assert the
-/// two can still be told apart afterwards, which is the whole point: a caller that reads
-/// an empty list as "this book is not in the catalogue" is wrong half the time otherwise.
+/// A timeout and a genuine zero-match both used to produce an empty result set. These assert
+/// the two can still be told apart, which is the whole point: a caller that reads an empty
+/// list as "this book is not in the catalogue" is wrong half the time otherwise.
 /// </summary>
+/// <remarks>
+/// The fault cases raise, and are asserted as raising. They were written against #910's
+/// ProviderUnavailable flag, which the client's raise supersedes for every one of them: a
+/// caller of the book, author or chapter lookup gets the same distinction now, where the flag
+/// reached only this one workflow. The flag is still asserted where it still decides something,
+/// which is a 200 carrying a body this client could not read; that is a property of the record
+/// rather than of the provider, and the client keeps answering it with null.
+/// </remarks>
 [Trait("Name", "AudibleProviderUnavailableTests")]
 [Trait("Category", "Application")]
 public sealed class AudibleProviderUnavailableTests : BaseTests
 {
     [Fact]
-    public async Task SearchProductsDirectAsync_WhenAudibleDoesNotAnswer_MarksTheResultUnavailable()
+    public async Task SearchProductsDirectAsync_WhenAudibleDoesNotAnswer_RaisesRatherThanAnswerForIt()
     {
         var workflow = BuildWorkflow(new StallingHandler());
 
-        var result = await workflow.SearchProductsDirectAsync(
+        var fault = await Record.ExceptionAsync(() => workflow.SearchProductsDirectAsync(
             query: "any", title: null, author: null, narrator: null, publisher: null,
-            page: 1, limit: 10, region: "us", language: null, sortBy: "Relevance");
+            page: 1, limit: 10, region: "us", language: null, sortBy: "Relevance"));
 
-        Assert.True(result.ProviderUnavailable);
-        Assert.Empty(result.Results);
+        Assert.NotNull(fault);
+        Assert.True(MetadataProviderFaults.IsProviderUnavailable(fault));
     }
 
     [Fact]
@@ -50,11 +58,12 @@ public sealed class AudibleProviderUnavailableTests : BaseTests
         var handler = new StallingHandler();
         var workflow = BuildWorkflow(handler);
 
-        await workflow.SearchProductsDirectAsync(
+        var fault = await Record.ExceptionAsync(() => workflow.SearchProductsDirectAsync(
             query: null, title: "Les Mis\u00e9rables", author: null,
             narrator: null, publisher: null,
-            page: 1, limit: 10, region: "us", language: null, sortBy: "Relevance");
+            page: 1, limit: 10, region: "us", language: null, sortBy: "Relevance"));
 
+        Assert.NotNull(fault);
         Assert.Equal(1, handler.Requests);
     }
 
@@ -62,20 +71,21 @@ public sealed class AudibleProviderUnavailableTests : BaseTests
     [InlineData(500)]
     [InlineData(503)]
     [InlineData(429)]
-    public async Task SearchProductsDirectAsync_WhenAudibleRejectsTheCall_MarksTheResultUnavailable(int statusCode)
+    public async Task SearchProductsDirectAsync_WhenAudibleRejectsTheCall_Raises(int statusCode)
     {
         // A timeout is only one of the ways the call fails. A 5xx and a rate-limit answer are
-        // just as much "not known" as "not in the catalogue", and each of them also arrives as
-        // an empty result set. Only the timeout was covered, so a change to the client that
-        // turned a 500 into an empty document would have gone unnoticed.
+        // just as much "not known" as "not in the catalogue", so none of them may come back as
+        // an answer about the catalogue. The predicate is asserted rather than a concrete type
+        // because 429 raises pushback and the 5xx raise a request fault; what a caller has to
+        // be able to tell is that neither is a verdict on the book.
         var workflow = BuildWorkflow(new StatusCodeHandler((System.Net.HttpStatusCode)statusCode));
 
-        var result = await workflow.SearchProductsDirectAsync(
+        var fault = await Record.ExceptionAsync(() => workflow.SearchProductsDirectAsync(
             query: "any", title: null, author: null, narrator: null, publisher: null,
-            page: 1, limit: 10, region: "us", language: null, sortBy: "Relevance");
+            page: 1, limit: 10, region: "us", language: null, sortBy: "Relevance"));
 
-        Assert.True(result.ProviderUnavailable);
-        Assert.Empty(result.Results);
+        Assert.NotNull(fault);
+        Assert.True(MetadataProviderFaults.IsProviderUnavailable(fault));
     }
 
     [Fact]
@@ -92,17 +102,17 @@ public sealed class AudibleProviderUnavailableTests : BaseTests
     }
 
     [Fact]
-    public async Task SearchProductsDirectAsync_WhenTheRequestNeverLeaves_MarksTheResultUnavailable()
+    public async Task SearchProductsDirectAsync_WhenTheRequestNeverLeaves_Raises()
     {
         // Name resolution and connection refusal both surface as HttpRequestException.
         var workflow = BuildWorkflow(new TransportFailureHandler());
 
-        var result = await workflow.SearchProductsDirectAsync(
+        var fault = await Record.ExceptionAsync(() => workflow.SearchProductsDirectAsync(
             query: "any", title: null, author: null, narrator: null, publisher: null,
-            page: 1, limit: 10, region: "us", language: null, sortBy: "Relevance");
+            page: 1, limit: 10, region: "us", language: null, sortBy: "Relevance"));
 
-        Assert.True(result.ProviderUnavailable);
-        Assert.Empty(result.Results);
+        Assert.NotNull(fault);
+        Assert.True(MetadataProviderFaults.IsProviderUnavailable(fault));
     }
 
     private static AudibleProductSearchWorkflow BuildWorkflow(HttpMessageHandler handler)
