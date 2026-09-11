@@ -93,6 +93,7 @@
             <QueueSelectCell
               :checked="allSelectableSelected"
               :indeterminate="selectedRows.length > 0"
+              :disabled="selectableRows.length === 0"
               label="Select all downloads in view"
               dataTest="queue-select-all"
               @change="onSelectAll"
@@ -188,6 +189,7 @@
             <div class="col-actions">
               <QueueRetryButton
                 class="btn-icon"
+                iconOnly
                 :downloadId="item.id"
                 :status="item.status"
                 @retried="refreshQueue"
