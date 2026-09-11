@@ -103,8 +103,22 @@ namespace Listenarr.Api.Features.Configuration
         private static string JsonNameOf(PropertyInfo property)
             => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name;
 
-        private static bool TryGetProperty(JsonElement element, string name, out JsonElement value)
+        /// <summary>
+        /// Look a property up in a posted body under the same case rules the merge uses.
+        /// </summary>
+        /// <remarks>
+        /// Internal rather than private because the controller has to ask whether the body
+        /// mentions UrlBase before the merge runs, and asking that question a second way
+        /// would let the two disagree about which spellings count as mentioning it.
+        /// </remarks>
+        internal static bool TryGetProperty(JsonElement element, string name, out JsonElement value)
         {
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                value = default;
+                return false;
+            }
+
             if (element.TryGetProperty(name, out value))
             {
                 return true;
