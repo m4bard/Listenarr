@@ -78,6 +78,7 @@ public static class ListenarrWorkflowRegistration
     private static IServiceCollection AddListenarrControllerWorkflows(this IServiceCollection services)
     {
         services.AddScoped<LibraryMetadataRescanWorkflow>();
+        services.AddScoped<LibraryMetadataRefreshWorkflow>();
         services.AddScoped<LibraryScanPathResolver>();
         services.AddScoped<LibraryScanQueueWorkflow>();
         services.AddScoped<LibraryAddWorkflow>();
