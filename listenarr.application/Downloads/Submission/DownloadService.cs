@@ -50,9 +50,9 @@ namespace Listenarr.Application.Downloads.Submission
 
         // Track qBittorrent torrent cache for merging incremental updates (clientId -> (torrentHash -> QueueItem))
         private readonly Dictionary<string, Dictionary<string, QueueItem>> _qbittorrentTorrentCache = new();
-        public async Task<string> StartDownloadAsync(SearchResult searchResult, string downloadClientId, int? audiobookId = null)
+        public async Task<string> StartDownloadAsync(SearchResult searchResult, string downloadClientId, int? audiobookId = null, CancellationToken ct = default)
         {
-            return await SendToDownloadClientAsync(searchResult, downloadClientId, audiobookId);
+            return await SendToDownloadClientAsync(searchResult, downloadClientId, audiobookId, ct);
         }
 
         /// <summary>
@@ -226,18 +226,17 @@ namespace Listenarr.Application.Downloads.Submission
             };
         }
 
-        public async Task<string> SendToDownloadClientAsync(SearchResult searchResult, string? downloadClientId = null, int? audiobookId = null)
+        public async Task<string> SendToDownloadClientAsync(SearchResult searchResult, string? downloadClientId = null, int? audiobookId = null, CancellationToken ct = default)
         {
             return await SendToDownloadClientAsync(
-                TrustedDownloadCandidateFactory.Create(searchResult),
-                downloadClientId,
-                audiobookId);
+                TrustedDownloadCandidateFactory.Create(searchResult), downloadClientId, audiobookId, ct);
         }
 
         public async Task<string> SendToDownloadClientAsync(
             TrustedDownloadCandidate candidate,
             string? downloadClientId = null,
-            int? audiobookId = null)
+            int? audiobookId = null,
+            CancellationToken ct = default)
         {
             logger.LogInformation(
                 "Preparing trusted download '{Title}' using protocol {Protocol}, AudiobookId: {AudiobookId}",
@@ -335,18 +334,19 @@ namespace Listenarr.Application.Downloads.Submission
             DownloadClientSubmissionResult submissionResult;
             try
             {
-                submissionResult = await clientGateway.AddAsync(downloadClient, prepared);
+                submissionResult = await clientGateway.AddAsync(downloadClient, prepared, ct);
                 if (submissionResult == null || string.IsNullOrWhiteSpace(submissionResult.ExternalId))
                 {
                     throw new DownloadClientSubmissionException("The download client did not return a verified download identifier.");
                 }
             }
-            catch (OperationCanceledException)
+            // A request timeout surfaces as TaskCanceledException too, so only our own cancellation is quiet.
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 await RemoveProvisionalDownloadAsync(downloadId);
                 throw;
             }
-            catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+            catch (Exception exception) when (exception is not (OutOfMemoryException or StackOverflowException))
             {
                 await RemoveProvisionalDownloadAsync(downloadId);
 
