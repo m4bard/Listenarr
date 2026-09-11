@@ -76,6 +76,11 @@ namespace Listenarr.Domain.Audiobooks
         // Automatic search tracking
         public DateTime? LastSearchTime { get; set; }
 
+        // When provider metadata was last re-fetched for this book. Null means never. The
+        // scheduled refresh walks this ascending with nulls first, so it is also the only
+        // thing that survives a restart mid-run.
+        public DateTime? LastMetadataRefreshAt { get; set; }
+
         /// <summary>
         /// Create AudioMetadata from the Audiobook as a basic metadata for imported files
         /// </summary>
