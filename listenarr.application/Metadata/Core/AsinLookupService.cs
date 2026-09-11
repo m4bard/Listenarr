@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Metadata.Refresh;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Metadata.Core
@@ -86,6 +87,15 @@ namespace Listenarr.Application.Metadata.Core
             }
             catch (OperationCanceledException)
             {
+                throw;
+            }
+            catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
+            {
+                // A provider that pushed back or would not answer is not the same as an ISBN
+                // that resolves to nothing, and the two used to arrive as the same false. The
+                // scheduled refresh reads this as a verdict on the identifier, so a swallowed
+                // outage here stamps the book as checked.
+                _logger.LogWarning(ex, "Provider did not answer resolving ASIN from ISBN {Isbn}", normalizedIsbn);
                 throw;
             }
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)

@@ -20,9 +20,10 @@ namespace Listenarr.Application.Metadata.Refresh;
 /// dead until somebody remembers it exists. Teaching a client to push back is now a
 /// compile-time obligation with one obvious shape.
 /// <para>
-/// No client raises it yet. <c>AudibleApiClient</c> logs the status and returns null, so a 429
-/// still looks like a book the provider has never heard of; the refresh service also accepts an
-/// <see cref="HttpRequestException"/> carrying <c>TooManyRequests</c> so either producer works.
+/// <c>AudibleApiClient</c> raises it on a 429 and carries the Retry-After the response named.
+/// The refresh service also accepts an <see cref="HttpRequestException"/> carrying
+/// <c>TooManyRequests</c>, so a client that throws from <c>EnsureSuccessStatusCode</c> instead
+/// still narrows the run.
 /// </para>
 /// </remarks>
 public sealed class MetadataProviderThrottledException : Exception

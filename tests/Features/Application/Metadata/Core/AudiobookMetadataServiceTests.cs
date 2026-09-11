@@ -73,5 +73,75 @@ namespace Listenarr.Tests.Features.Application.Metadata.Core
             Assert.Equal("Test description", metadata.Description);
             Assert.True(metadata.Explicit);
         }
+
+        [Fact]
+        public async Task GetMetadataAsync_RaisesTheProviderFault_WhenNoSourceAnswered()
+        {
+            var (search, audible, audnexus) = TwoSources(out var httpClient);
+            using var _ = httpClient;
+            audible
+                .Setup(a => a.GetBookMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<string?>()))
+                .ThrowsAsync(new MetadataProviderThrottledException("slow down", TimeSpan.FromSeconds(30)));
+            audnexus
+                .Setup(a => a.GetBookMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>()))
+                .ReturnsAsync((AudnexusBookResponse?)null);
+
+            var service = new AudiobookMetadataService(
+                search.Object,
+                audible.Object,
+                audnexus.Object,
+                Mock.Of<ILogger<AudiobookMetadataService>>());
+
+            // Returning null here made the refresh walk read a throttled provider as a provider
+            // that had never heard of the book, which is the difference between asking again
+            // next cycle and stamping it as checked for the staleness window.
+            var thrown = await Assert.ThrowsAsync<MetadataProviderThrottledException>(
+                () => service.GetMetadataAsync("BTHROTTLED", "us", true));
+            Assert.Equal(TimeSpan.FromSeconds(30), thrown.RetryAfter);
+        }
+
+        [Fact]
+        public async Task GetMetadataAsync_PrefersASourceThatAnswers_OverAnEarlierFault()
+        {
+            var (search, audible, audnexus) = TwoSources(out var httpClient);
+            using var _ = httpClient;
+            audible
+                .Setup(a => a.GetBookMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<string?>()))
+                .ThrowsAsync(new HttpRequestException("connection refused"));
+            audnexus
+                .Setup(a => a.GetBookMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>()))
+                .ReturnsAsync(new AudnexusBookResponse { Asin = "BFALLBACK", Title = "Answered By The Second Source" });
+
+            var service = new AudiobookMetadataService(
+                search.Object,
+                audible.Object,
+                audnexus.Object,
+                Mock.Of<ILogger<AudiobookMetadataService>>());
+
+            // The fault is remembered, not raised on the spot: a second provider that does
+            // answer still wins, and only a walk that ends with nothing reports the failure.
+            var result = await service.GetMetadataAsync("BFALLBACK", "us", true);
+            Assert.NotNull(result);
+            Assert.Equal("Audnexus", result!.Source);
+        }
+
+        private static (Mock<ISearchService> Search, Mock<AudibleService> Audible, Mock<IAudnexusService> Audnexus)
+            TwoSources(out HttpClient httpClient)
+        {
+            httpClient = new HttpClient();
+            var search = new Mock<ISearchService>();
+            search
+                .Setup(s => s.GetEnabledMetadataSourcesAsync())
+                .ReturnsAsync(new List<ApiConfiguration>
+                {
+                    new() { Name = "Audible", BaseUrl = "https://api.audible.com", Priority = 1, IsEnabled = true },
+                    new() { Name = "Audnexus", BaseUrl = "https://api.audnex.us", Priority = 2, IsEnabled = true }
+                });
+
+            return (
+                search,
+                new Mock<AudibleService>(httpClient, Mock.Of<ILogger<AudibleService>>()),
+                new Mock<IAudnexusService>());
+        }
     }
 }

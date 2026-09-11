@@ -16,7 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Net;
 using System.Text.Json;
+using Listenarr.Application.Metadata.Refresh;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Metadata.Audible
@@ -80,6 +82,21 @@ namespace Listenarr.Application.Metadata.Audible
 
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
                 var response = await _httpClient.SendAsync(request, cts.Token);
+                if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                {
+                    // Raised rather than logged and flattened to null. A null here is read two
+                    // layers up as the provider saying it has never heard of the book, so a
+                    // throttled sweep used to stamp everything it touched as checked.
+                    var retryAfter = ReadRetryAfter(response);
+                    _logger.LogWarning(
+                        "Audible API asked for less traffic (429) for URL {Url}; retry after {RetryAfter}",
+                        url,
+                        retryAfter?.ToString() ?? "unspecified");
+                    throw new MetadataProviderThrottledException(
+                        $"Audible API returned 429 for {url}",
+                        retryAfter);
+                }
+
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Audible API returned status code {StatusCode} for URL {Url}", response.StatusCode, url);
@@ -91,14 +108,57 @@ namespace Listenarr.Application.Metadata.Audible
             }
             catch (TaskCanceledException ex)
             {
+                // Rewrapped, not rethrown. TaskCanceledException is an OperationCanceledException,
+                // and every caller between here and the refresh run treats one of those as "the
+                // run was asked to stop" rather than "this request did not arrive".
                 _logger.LogWarning(ex, "Audible API request timed out for URL: {Url}", url);
-                return null;
+                throw new HttpRequestException($"Audible API request timed out for {url}", ex);
+            }
+            catch (HttpRequestException ex)
+            {
+                // A transport fault propagates: a refused connection or a name that will not
+                // resolve is not evidence about the book, and the caller has to be able to tell
+                // the two apart.
+                _logger.LogWarning(ex, "Audible API request failed for URL: {Url}", url);
+                throw;
+            }
+            catch (MetadataProviderThrottledException)
+            {
+                // Raised a few lines up, inside this try. Without this the catch-all below would
+                // swallow the pushback the throw exists to report.
+                throw;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Error performing Audible API request for URL: {Url}", url);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// The wait the provider named, in either of the two shapes RFC 9110 allows. Null when it
+        /// named none, or named one already in the past.
+        /// </summary>
+        private static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
+        {
+            var header = response.Headers.RetryAfter;
+            if (header == null)
+            {
+                return null;
+            }
+
+            if (header.Delta.HasValue)
+            {
+                return header.Delta.Value > TimeSpan.Zero ? header.Delta.Value : null;
+            }
+
+            if (header.Date.HasValue)
+            {
+                var wait = header.Date.Value - DateTimeOffset.UtcNow;
+                return wait > TimeSpan.Zero ? wait : null;
+            }
+
+            return null;
         }
 
         public async Task<HttpResponseMessage?> GetWithTimeoutAsync(string url, int timeoutSeconds = 5)

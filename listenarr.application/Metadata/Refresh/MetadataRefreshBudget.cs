@@ -13,9 +13,10 @@ using Microsoft.Extensions.Logging;
 namespace Listenarr.Application.Metadata.Refresh;
 
 /// <summary>
-/// The shipped defaults are deliberately timid: the provider publishes no limit and the client
-/// does not recognise a 429, so 60 an hour with a one-second floor still clears a couple of
-/// thousand books inside a 30-day staleness target.
+/// The shipped defaults are deliberately timid: the provider publishes no limit, so 60 an hour
+/// with a one-second floor still clears a couple of thousand books inside a 30-day staleness
+/// target. The client does recognise a 429 and the run narrows itself when one arrives, but a
+/// default nobody has to notice is better than one that relies on the provider complaining.
 /// </summary>
 /// <param name="RequestsPerHour">Bucket capacity and refill rate.</param>
 /// <param name="MinimumSpacingMs">Floor between two grants, so a full bucket cannot burst.</param>

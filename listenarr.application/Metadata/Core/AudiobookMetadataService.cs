@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Metadata.Core
@@ -65,6 +66,14 @@ namespace Listenarr.Application.Metadata.Core
                 return null;
             }
 
+            // The first fault that stopped a source from answering, kept so a walk that ends with
+            // nothing can say which of the two nothings it was. A null return means every
+            // configured source answered and none of them had the book, and callers act on that:
+            // the scheduled refresh stamps such a book as checked and does not ask again for the
+            // whole staleness window. Swallowing a 429 or a refused connection into that same
+            // null is how a throttled sweep used to mark a library as checked.
+            Exception? providerFault = null;
+
             foreach (var source in metadataSources)
             {
                 try
@@ -109,6 +118,7 @@ namespace Listenarr.Application.Metadata.Core
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                         {
+                            providerFault ??= ex;
                             _logger.LogWarning(ex, "Audnexus lookup failed, trying next source");
                         }
                     }
@@ -129,9 +139,22 @@ namespace Listenarr.Application.Metadata.Core
                 }
                 catch (Exception sourceEx) when (sourceEx is not OperationCanceledException && sourceEx is not OutOfMemoryException && sourceEx is not StackOverflowException)
                 {
+                    providerFault ??= sourceEx;
                     _logger.LogWarning(sourceEx, "Failed to fetch metadata from {SourceName}, trying next source", source.Name);
                     continue;
                 }
+            }
+
+            if (providerFault != null)
+            {
+                // Still tried every source first, so a second provider that does answer wins.
+                // Only a walk that ended with no answer at all raises, and it raises the fault
+                // that started it rather than a manufactured one.
+                _logger.LogWarning(
+                    providerFault,
+                    "No source answered for ASIN {Asin}; reporting the provider failure rather than a miss",
+                    asin);
+                ExceptionDispatchInfo.Capture(providerFault).Throw();
             }
 
             _logger.LogWarning("No metadata found for ASIN: {Asin} from any configured source", asin);
