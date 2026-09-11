@@ -367,7 +367,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 }
 
                 if (!await automaticScoring.IsCurrentAsync(assessment, audiobook.Id, stoppingToken)) return 0;
-                await downloadService.StartDownloadAsync(topResult.SearchResult, downloadClientId, audiobook.Id);
+                await downloadService.StartDownloadAsync(topResult.SearchResult, downloadClientId, audiobook.Id, stoppingToken);
                 downloadsQueued++;
 
                 _logger.LogInformation("Queued download for audiobook '{Title}': {ResultTitle} (Score: {Score})",

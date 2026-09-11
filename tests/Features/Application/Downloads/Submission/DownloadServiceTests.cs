@@ -233,6 +233,101 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
         }
 
         [Fact]
+        public async Task SendToDownloadClientAsync_WhenTheClientRequestTimesOut_TakesTheFailurePath()
+        {
+            var timeout = new TaskCanceledException(
+                "The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.",
+                new TimeoutException());
+
+            var gatewayMock = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
+            gatewayMock
+                .Setup(g => g.AddAsync(
+                    It.Is<DownloadClientConfiguration>(client => client.Id == "qb-1"),
+                    It.IsAny<PreparedDownloadSubmission>(),
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(timeout);
+
+            var historyMock = new Mock<IDownloadHistoryService>();
+            var notificationMock = new Mock<INotificationService>(MockBehavior.Strict);
+            _services.AddSingleton(gatewayMock.Object);
+            _services.AddSingleton(historyMock.Object);
+            _services.AddSingleton(notificationMock.Object);
+
+            Init();
+            await InitData();
+            var initialDownloadCount = (await _downloadRepository.GetAllAsync()).Count;
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var searchResult = MagnetSearchResult();
+
+            // Nobody asked for cancellation, so the timeout must not be mistaken for one.
+            var thrown = await Assert.ThrowsAsync<DownloadClientSubmissionException>(
+                () => downloadService.SendToDownloadClientAsync(searchResult, _client.Id));
+
+            Assert.Same(timeout, thrown.InnerException);
+            Assert.Equal(initialDownloadCount, (await _downloadRepository.GetAllAsync()).Count);
+            historyMock.Verify(
+                h => h.RecordGrabbedAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<DownloadProtocol>(),
+                    It.IsAny<int?>()),
+                Times.Never);
+            gatewayMock.VerifyAll();
+            notificationMock.VerifyNoOtherCalls();
+        }
+
+        [Fact]
+        public async Task SendToDownloadClientAsync_WhenTheCallerCancels_StaysQuiet()
+        {
+            using var cts = new CancellationTokenSource();
+            await cts.CancelAsync();
+
+            var gatewayMock = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
+            gatewayMock
+                .Setup(g => g.AddAsync(
+                    It.Is<DownloadClientConfiguration>(client => client.Id == "qb-1"),
+                    It.IsAny<PreparedDownloadSubmission>(),
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new TaskCanceledException("Shutting down.", null, cts.Token));
+
+            var historyMock = new Mock<IDownloadHistoryService>();
+            var notificationMock = new Mock<INotificationService>(MockBehavior.Strict);
+            _services.AddSingleton(gatewayMock.Object);
+            _services.AddSingleton(historyMock.Object);
+            _services.AddSingleton(notificationMock.Object);
+
+            Init();
+            await InitData();
+            var initialDownloadCount = (await _downloadRepository.GetAllAsync()).Count;
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var searchResult = MagnetSearchResult();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => downloadService.SendToDownloadClientAsync(searchResult, _client.Id, null, cts.Token));
+
+            Assert.Equal(initialDownloadCount, (await _downloadRepository.GetAllAsync()).Count);
+            historyMock.Verify(
+                h => h.RecordDownloadFailedAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string?>()),
+                Times.Never);
+            gatewayMock.VerifyAll();
+            notificationMock.VerifyNoOtherCalls();
+        }
+
+        private static SearchResult MagnetSearchResult() => new()
+        {
+            Title = "Artemis",
+            Artist = "Andy Weir",
+            DownloadType = "Torrent",
+            MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+            Size = 123456789
+        };
+
+        [Fact]
         public async Task SendToDownloadClientAsync_WhenClientReturnsBlankExternalId_RemovesProvisionalDownloadAndDoesNotRecordGrab()
         {
             var gatewayMock = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
