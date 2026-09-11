@@ -82,6 +82,15 @@ public sealed partial class MetadataRefreshService
         // hour that updated every book it touched was making a hundred and twenty. A refusal
         // here is the run's window closing, and the metadata is already written, so the book
         // keeps the provider's own image URL exactly as it does when the move fails.
+        //
+        // The charge happens even when the move turns out to be served from cache and no
+        // request leaves the process, which overcharges the budget for that book. Left alone on
+        // purpose. Only the image cache knows whether it will fetch, and the nearest thing to
+        // asking it, GetCachedImagePathAsync, answers a different question: whether a copy
+        // exists under that key, not whether MoveToLibraryStorageAsync will go to the network
+        // for this URL. Skipping the charge on that answer would undercount real requests, and
+        // a budget that undercounts is worse than one that is occasionally pessimistic. A real
+        // fix belongs in the cache's own contract, where the two questions can be separated.
         if (!string.IsNullOrWhiteSpace(metadata.ImageUrl)
             && await budget.ChargeAsync(cancellationToken))
         {
