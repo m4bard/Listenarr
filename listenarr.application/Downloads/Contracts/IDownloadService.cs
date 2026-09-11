@@ -12,8 +12,9 @@ namespace Listenarr.Application.Downloads.Contracts
         /// <param name="searchResult">The search result to download</param>
         /// <param name="downloadClientId">ID of the download client to use</param>
         /// <param name="audiobookId">Optional audiobook ID to associate with download</param>
+        /// <param name="ct">Token that is cancelled when the caller is shutting down</param>
         /// <returns>Download ID</returns>
-        Task<string> StartDownloadAsync(SearchResult searchResult, string downloadClientId, int? audiobookId = null);
+        Task<string> StartDownloadAsync(SearchResult searchResult, string downloadClientId, int? audiobookId = null, CancellationToken ct = default);
 
         /// <summary>
         /// Searches for an audiobook and automatically downloads the best result
@@ -28,13 +29,15 @@ namespace Listenarr.Application.Downloads.Contracts
         /// <param name="searchResult">The search result to download</param>
         /// <param name="downloadClientId">Optional download client ID (uses default if not specified)</param>
         /// <param name="audiobookId">Optional audiobook ID to associate</param>
+        /// <param name="ct">Token that is cancelled when the caller is shutting down</param>
         /// <returns>Download ID</returns>
-        Task<string> SendToDownloadClientAsync(SearchResult searchResult, string? downloadClientId = null, int? audiobookId = null);
+        Task<string> SendToDownloadClientAsync(SearchResult searchResult, string? downloadClientId = null, int? audiobookId = null, CancellationToken ct = default);
 
         Task<string> SendToDownloadClientAsync(
             TrustedDownloadCandidate candidate,
             string? downloadClientId = null,
-            int? audiobookId = null);
+            int? audiobookId = null,
+            CancellationToken ct = default);
 
         /// <summary>
         /// Removes a download from the queue
