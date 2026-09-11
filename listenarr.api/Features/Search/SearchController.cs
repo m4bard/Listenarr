@@ -305,6 +305,14 @@ namespace Listenarr.Api.Features.Search
         /// <summary>
         /// Search the Audible catalog for audiobooks.
         /// </summary>
+        /// <remarks>
+        /// The one caller that should keep failing rather than degrade. An empty result list is
+        /// a claim about the catalog, and a provider that did not answer has made no such
+        /// claim, so this endpoint reports the outage. It reports it as a 503 rather than the
+        /// 500 a raised fault would otherwise become: a rate-limited host is not a bug in
+        /// Listenarr, and the caller is owed the difference, because for one of the two
+        /// retrying is the right move.
+        /// </remarks>
         [HttpGet("audible")]
         [ProducesResponseType(typeof(AudibleSearchResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -341,6 +349,13 @@ namespace Listenarr.Api.Features.Search
                 }
 
                 return Ok(result);
+            }
+            catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
+            {
+                _logger.LogWarning(ex, "Provider did not answer searching the Audible catalog for query: {Query}", LogRedaction.SanitizeText(query));
+                return StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "The metadata provider did not answer; try again shortly");
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
