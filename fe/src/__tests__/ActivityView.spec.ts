@@ -879,4 +879,91 @@ describe('ActivityView', () => {
     expect((api.removeFromQueue as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe('q1')
     expect(Array.from(vm.selectedIds)).toEqual(['q2'])
   })
+
+  it('removes a direct download through cancelDownload instead of the client queue', async () => {
+    mockSignalR()
+    mockToasts()
+    const api = mockApi({
+      getQueue: vi.fn(async () => [{ ...queueRow('ddl-1'), downloadClientType: 'DDL' }]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as QueueSelectionVm
+
+    vm.toggleSelection('ddl-1')
+    await vm.removeSelected()
+    await flushPromises()
+
+    expect(api.cancelDownload).toHaveBeenCalledTimes(1)
+    expect((api.cancelDownload as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe('ddl-1')
+    expect(api.removeFromQueue).not.toHaveBeenCalled()
+  })
+
+  it('cancels a store download that the client queue does not carry', async () => {
+    mockSignalR()
+    mockToasts()
+    const api = mockApi({ getQueue: vi.fn(async () => []) })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore({
+      activeDownloads: [
+        {
+          id: 'ext-1',
+          title: 'External',
+          status: 'Downloading',
+          progress: 40,
+          totalSize: 1000,
+          downloadedSize: 400,
+          downloadClientId: 'qb-1',
+          startedAt: new Date().toISOString(),
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as QueueSelectionVm & { allActivityItems: ActivityItem[] }
+
+    expect(vm.allActivityItems.map((item) => item.id)).toEqual(['ext-1'])
+
+    vm.toggleSelection('ext-1')
+    await vm.removeSelected()
+    await flushPromises()
+
+    expect(api.cancelDownload).toHaveBeenCalledTimes(1)
+    expect((api.cancelDownload as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe('ext-1')
+    expect(api.removeFromQueue).not.toHaveBeenCalled()
+  })
+
+  it('disables select all once the filter leaves no removable row', async () => {
+    mockSignalR()
+    mockToasts()
+    mockApi({ getQueue: vi.fn(async () => [queueRow('q1')]) })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
+    mockMoveJobsStore({
+      trackedJobs: [
+        {
+          jobId: 'job-1',
+          audiobookId: 42,
+          status: 'Running',
+          progress: 10,
+          phase: 'Copying',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as { filterText: string }
+
+    expect(wrapper.get('[data-test="queue-select-all"]').attributes('disabled')).toBeUndefined()
+
+    vm.filterText = 'library move'
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-test="queue-select-all"]').attributes('disabled')).toBeDefined()
+  })
 })
