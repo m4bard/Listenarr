@@ -483,6 +483,13 @@ export interface ApplicationSettings {
   enableOpenLibrarySearch?: boolean
   defaultSearchRegion?: string
   defaultSearchLanguage?: string
+
+  // Scheduled provider-metadata refresh
+  metadataRefreshEnabled?: boolean
+  metadataRefreshIntervalHours?: number
+  metadataRefreshStaleAfterDays?: number
+  metadataRefreshRequestsPerHour?: number
+  metadataRefreshMinimumSpacingMs?: number
 }
 
 export interface ProwlarrImportConnectionSettings {
