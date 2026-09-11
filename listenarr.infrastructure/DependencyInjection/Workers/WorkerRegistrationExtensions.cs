@@ -21,6 +21,9 @@ internal static class WorkerRegistrationExtensions
     {
         services.AddSingleton<IWorkerCycleRunner, WorkerCycleRunner>();
 
+        services.AddSingleton<MetadataRefreshOptionsHolder>();
+        services.AddSingleton<IMetadataRefreshCoordinator, MetadataRefreshCoordinator>();
+
         services.AddSingleton<IScanQueueService, ScanQueueService>();
         services.AddSingleton<MoveScanHandoffRecoveryService>();
         AddProcessor<ScanJobProcessor, IScanJobProcessor>(services);

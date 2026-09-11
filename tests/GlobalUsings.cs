@@ -96,6 +96,7 @@ global using Listenarr.Infrastructure.FileSystem;
 global using Listenarr.Infrastructure.Images.Cache;
 global using Listenarr.Infrastructure.Images.Jobs;
 global using Listenarr.Infrastructure.Metadata.Jobs;
+global using Listenarr.Infrastructure.Metadata.Refresh;
 global using Listenarr.Infrastructure.Metadata.Parsing;
 global using Listenarr.Infrastructure.Metadata.Providers.Audnexus;
 global using Listenarr.Infrastructure.HostedServices.Search;
