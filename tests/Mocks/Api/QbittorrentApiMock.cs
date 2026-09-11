@@ -13,6 +13,13 @@ namespace Listenarr.Tests.Mocks.Api
         public HttpStatusCode InfoStatusCode { get; set; } = HttpStatusCode.OK;
         public string? InfoResponseOverride { get; set; }
 
+        /// <summary>
+        /// Body returned by a successful /torrents/add. qBittorrent answers 200 with "Fails."
+        /// when it will not take the torrent, and older Web API versions answer 200 with nothing
+        /// at all, so the success body is a variable and not a constant.
+        /// </summary>
+        public string? AddSuccessResponseBody { get; set; }
+
         public QbittorrentApiMock()
         {
             AddRoute("api/v2/auth/login", DoLogin, HttpMethod.Post);
@@ -51,7 +58,7 @@ namespace Listenarr.Tests.Mocks.Api
                 return new HttpResponseMessage(HttpStatusCode.Forbidden);
             }
 
-            return MockUtils.GetCannedResponse("Ok");
+            return MockUtils.GetCannedResponse(AddSuccessResponseBody ?? "Ok");
         }
 
         private async Task<HttpResponseMessage> GetInfo(HttpRequestMessage request, CancellationToken ct)
