@@ -101,6 +101,23 @@ namespace Listenarr.Infrastructure.Library.Files
             return Task.CompletedTask;
         }
 
+        internal static void ApplyAsinTag(TagLib.File file, string asin)
+        {
+            // An MPEG-4 file's Tag is a CombinedTag wrapping the Apple tag, never the AppleTag
+            // itself, so a type test on file.Tag matches nothing here and the save that follows
+            // writes an unchanged file while still reporting success. The tag has to be asked
+            // for by type. Only MPEG-4 answers to Apple, so mp3 and flac fall through as before.
+            if (file.GetTag(TagLib.TagTypes.Apple, create: true) is TagLib.Mpeg4.AppleTag appleTag)
+                appleTag.SetDashBox("com.apple.iTunes", "ASIN", asin);
+            else if (file.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3Tag)
+            {
+                var frame = TagLib.Id3v2.UserTextInformationFrame.Get(id3Tag, "ASIN", true);
+                frame.Text = new[] { asin };
+            }
+            else if (file.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph)
+                xiph.SetField("ASIN", asin);
+        }
+
         /// <summary>
         /// Replace the file's embedded pictures with the supplied artwork.
         ///
@@ -126,23 +143,6 @@ namespace Listenarr.Infrastructure.Library.Files
 
             file.Tag.Pictures = new TagLib.IPicture[] { picture };
             return true;
-        }
-
-        internal static void ApplyAsinTag(TagLib.File file, string asin)
-        {
-            // An MPEG-4 file's Tag is a CombinedTag wrapping the Apple tag, never the AppleTag
-            // itself, so a type test on file.Tag matches nothing here and the save that follows
-            // writes an unchanged file while still reporting success. The tag has to be asked
-            // for by type. Only MPEG-4 answers to Apple, so mp3 and flac fall through as before.
-            if (file.GetTag(TagLib.TagTypes.Apple, create: true) is TagLib.Mpeg4.AppleTag appleTag)
-                appleTag.SetDashBox("com.apple.iTunes", "ASIN", asin);
-            else if (file.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3Tag)
-            {
-                var frame = TagLib.Id3v2.UserTextInformationFrame.Get(id3Tag, "ASIN", true);
-                frame.Text = new[] { asin };
-            }
-            else if (file.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph)
-                xiph.SetField("ASIN", asin);
         }
 
         private sealed class RegistrationLeaseFileAbstraction(
