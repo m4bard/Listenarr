@@ -75,6 +75,21 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         }
 
         [Fact]
+        public async Task ImportedDownload_NamesTheAudiobookInTheDeliveredBody()
+        {
+            using var probe = DispatchProbe.ForWebhook(NotificationTriggers.BookCompleted);
+
+            await probe.Service.OnDownloadImportedAsync(ImportedDownload());
+
+            var body = Assert.Single(probe.PostedBodies);
+            Assert.Contains("A Synthetic Audiobook", body, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                $"\"content\":\"[{NotificationTriggers.BookCompleted}]\"",
+                body,
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task ImportedDownload_StillReachesAWebhookSavedAgainstTheOlderInternalName()
         {
             using var probe = DispatchProbe.ForWebhook("Imported");
@@ -283,6 +298,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         {
             private readonly HttpClient _httpClient;
             private readonly List<Uri> _postedUrls = [];
+            private readonly List<string> _postedBodies = [];
 
             public DispatchProbe(ApplicationSettings settings)
             {
@@ -298,6 +314,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
                         if (request.Method == HttpMethod.Post && request.RequestUri != null)
                         {
                             _postedUrls.Add(request.RequestUri);
+                            _postedBodies.Add(request.Content == null
+                                ? string.Empty
+                                : request.Content.ReadAsStringAsync().GetAwaiter().GetResult());
                         }
                     })
                     .ReturnsAsync(() => new HttpResponseMessage(HttpStatusCode.OK));
@@ -327,6 +346,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
             /// <summary>Every URL that received an outbound POST, in delivery order.</summary>
             public IReadOnlyList<string> PostedUrls
                 => [.. _postedUrls.Select(uri => uri.ToString())];
+
+            /// <summary>Every outbound request body, in delivery order.</summary>
+            public IReadOnlyList<string> PostedBodies => _postedBodies;
 
             public static DispatchProbe ForWebhook(string storedTrigger, bool isEnabled = true)
                 => new(new ApplicationSettings

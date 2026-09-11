@@ -50,7 +50,9 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
         public Task OnDownloadImportedAsync(Download download)
             => SendNotificationSafelyAsync(
                 NotificationTriggers.BookCompleted,
-                new { AudiobookTitle = download.Title, Timestamp = DateTime.UtcNow },
+                // The payload builder reads `title`; `AudiobookTitle` is kept so a consumer
+                // written against the older body keeps the field it already parses.
+                new { title = download.Title, AudiobookTitle = download.Title, Timestamp = DateTime.UtcNow },
                 $"download {download.Id}");
 
         public Task OnDownloadFailedAsync(Download download)

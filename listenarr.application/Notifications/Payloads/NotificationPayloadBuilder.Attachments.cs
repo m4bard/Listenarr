@@ -291,6 +291,21 @@ namespace Listenarr.Application.Notifications.Payloads
                 return "An audiobook is now available";
             }
 
+            if (string.Equals(trigger, NotificationTriggers.BookCompleted, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrWhiteSpace(title) && !string.IsNullOrWhiteSpace(author))
+                {
+                    return $"{title} by {author} has finished processing";
+                }
+
+                if (!string.IsNullOrWhiteSpace(title))
+                {
+                    return $"{title} has finished processing";
+                }
+
+                return "An audiobook has finished processing";
+            }
+
             if (string.Equals(trigger, "book-downloading", StringComparison.OrdinalIgnoreCase))
             {
                 if (!string.IsNullOrWhiteSpace(title) && !string.IsNullOrWhiteSpace(author))
