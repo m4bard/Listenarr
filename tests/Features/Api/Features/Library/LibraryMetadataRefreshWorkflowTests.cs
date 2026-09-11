@@ -1,0 +1,133 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ */
+using Listenarr.Tests.Common;
+using Microsoft.AspNetCore.Mvc;
+
+namespace Listenarr.Tests.Features.Api.Features.Library;
+
+/// <summary>The transport shapes: 202 on accept, 409 on overlap, 404 on an unknown run.</summary>
+[Trait("Area", "Library")]
+[Trait("Name", "LibraryMetadataRefreshWorkflowTests")]
+[Trait("Category", "Api")]
+public class LibraryMetadataRefreshWorkflowTests : BaseTests
+{
+    private static MetadataRefreshRunSnapshot Snapshot(
+        Guid runId,
+        string scope = "Author",
+        string status = "Running",
+        int totalBooks = 4) => new(
+        runId,
+        scope,
+        status,
+        totalBooks,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        new DateTime(2026, 9, 10, 12, 0, 0, DateTimeKind.Utc),
+        null);
+
+    [Fact]
+    [Trait("Scenario", "AcceptedCarriesTheRunId")]
+    public async Task StartAsync_Returns202_WithTheRunIdScopeAndTotal()
+    {
+        var runId = Guid.NewGuid();
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+        coordinator
+            .Setup(c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MetadataRefreshStartResult(true, Snapshot(runId)));
+
+        var result = await new LibraryMetadataRefreshWorkflow(coordinator.Object)
+            .StartAsync(new MetadataRefreshRequest(AuthorId: 3), CancellationToken.None);
+
+        var accepted = Assert.IsType<AcceptedResult>(result);
+        var body = Assert.IsType<MetadataRefreshRunResponse>(accepted.Value);
+        Assert.Equal(runId, body.RunId);
+        Assert.Equal("Author", body.Scope);
+        Assert.Equal(4, body.TotalBooks);
+        Assert.Equal("Running", body.Status);
+    }
+
+    [Fact]
+    [Trait("Scenario", "AuthorIdBecomesAnAuthorScope")]
+    public async Task StartAsync_AsksForAnAuthorScope_WhenAnAuthorIdIsGiven()
+    {
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+        coordinator
+            .Setup(c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MetadataRefreshStartResult(true, Snapshot(Guid.NewGuid())));
+
+        await new LibraryMetadataRefreshWorkflow(coordinator.Object)
+            .StartAsync(new MetadataRefreshRequest(AuthorId: 7, Force: true), CancellationToken.None);
+
+        coordinator.Verify(
+            c => c.StartAsync(
+                It.Is<MetadataRefreshScopeRequest>(request =>
+                    request.Scope == MetadataRefreshRunScope.Author
+                    && request.MonitoredAuthorId == 7
+                    && request.Force),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    [Trait("Scenario", "OverlapIs409WithTheActiveRunId")]
+    public async Task StartAsync_Returns409_NamingTheRunThatHoldsTheGate()
+    {
+        var activeRunId = Guid.NewGuid();
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+        coordinator
+            .Setup(c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MetadataRefreshStartResult(false, Snapshot(activeRunId, scope: "Scheduled")));
+
+        var result = await new LibraryMetadataRefreshWorkflow(coordinator.Object)
+            .StartAsync(new MetadataRefreshRequest(AuthorId: 3), CancellationToken.None);
+
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        var body = Assert.IsType<MetadataRefreshRunResponse>(conflict.Value);
+        Assert.Equal(activeRunId, body.RunId);
+        Assert.Equal("Scheduled", body.Scope);
+    }
+
+    [Fact]
+    [Trait("Scenario", "StatusProjection")]
+    public void GetStatus_ProjectsEveryCounter()
+    {
+        var runId = Guid.NewGuid();
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+        coordinator
+            .Setup(c => c.Find(runId))
+            .Returns(new MetadataRefreshRunSnapshot(
+                runId, "Author", "Completed", 10, 10, 6, 2, 1, 1, 23,
+                new DateTime(2026, 9, 10, 12, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 9, 10, 12, 30, 0, DateTimeKind.Utc)));
+
+        var result = new LibraryMetadataRefreshWorkflow(coordinator.Object).GetStatus(runId);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<MetadataRefreshRunStatusResponse>(ok.Value);
+        Assert.Equal(10, body.TotalBooks);
+        Assert.Equal(10, body.Processed);
+        Assert.Equal(6, body.Updated);
+        Assert.Equal(2, body.Skipped);
+        Assert.Equal(1, body.Deferred);
+        Assert.Equal(1, body.Failed);
+        Assert.Equal(23, body.RequestsSpent);
+        Assert.NotNull(body.CompletedAt);
+    }
+
+    [Fact]
+    [Trait("Scenario", "UnknownRunIs404")]
+    public void GetStatus_Returns404_ForARunThisProcessDoesNotHold()
+    {
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+        coordinator.Setup(c => c.Find(It.IsAny<Guid>())).Returns((MetadataRefreshRunSnapshot?)null);
+
+        Assert.IsType<NotFoundObjectResult>(
+            new LibraryMetadataRefreshWorkflow(coordinator.Object).GetStatus(Guid.NewGuid()));
+    }
+}

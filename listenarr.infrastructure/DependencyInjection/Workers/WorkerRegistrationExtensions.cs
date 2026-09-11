@@ -21,8 +21,10 @@ internal static class WorkerRegistrationExtensions
     {
         services.AddSingleton<IWorkerCycleRunner, WorkerCycleRunner>();
 
-        services.AddSingleton<MetadataRefreshOptionsHolder>();
-        services.AddSingleton<IMetadataRefreshCoordinator, MetadataRefreshCoordinator>();
+        // MetadataRefreshOptionsHolder and IMetadataRefreshCoordinator are registered
+        // unconditionally in AddMetadataServices instead of here: this method is skipped
+        // wholesale when background hosted services are disabled, but the coordinator also
+        // gates the foreground API trigger and must remain resolvable either way.
 
         services.AddSingleton<IScanQueueService, ScanQueueService>();
         services.AddSingleton<MoveScanHandoffRecoveryService>();
