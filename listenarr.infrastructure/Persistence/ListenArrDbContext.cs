@@ -139,6 +139,7 @@ namespace Listenarr.Infrastructure.Persistence
 
             modelBuilder.Entity<Audiobook>().HasIndex(a => a.Monitored);
             modelBuilder.Entity<Audiobook>().HasIndex(a => a.LastSearchTime);
+            modelBuilder.Entity<Audiobook>().HasIndex(a => a.LastMetadataRefreshAt);
             modelBuilder.Entity<MonitoredAuthor>().HasIndex(a => new { a.AuthorNameNormalized, a.Region, a.Language }).IsUnique();
             modelBuilder.Entity<MonitoredAuthor>().HasIndex(a => a.LastCheckedAt);
             modelBuilder.Entity<MonitoredSeries>().HasIndex(s => new { s.SeriesNameNormalized, s.Region, s.Language }).IsUnique();
