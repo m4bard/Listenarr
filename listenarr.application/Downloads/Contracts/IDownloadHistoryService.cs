@@ -62,22 +62,17 @@ namespace Listenarr.Application.Downloads.Contracts
 
         /// <summary>
         /// Record that a download completed successfully.
+        /// Leave <c>protocol</c> null and the implementation resolves it from the download client
+        /// configuration, which is what a caller holding only a client id should do.
         /// </summary>
-        /// <param name="protocol">
-        /// Protocol the download used. Leave null and the implementation resolves it from the
-        /// download client configuration, which is what every caller that only holds a client id
-        /// should do.
-        /// </param>
         Task RecordDownloadCompleteAsync(string downloadId, string clientId, string title,
             string? outputPath = null, DownloadProtocol? protocol = null);
 
         /// <summary>
         /// Record that a download failed.
+        /// Leave <c>protocol</c> null and the implementation resolves it from the download client
+        /// configuration.
         /// </summary>
-        /// <param name="protocol">
-        /// Protocol the download used. Leave null and the implementation resolves it from the
-        /// download client configuration.
-        /// </param>
         Task RecordDownloadFailedAsync(string downloadId, string clientId, string title,
             string? errorMessage = null, DownloadProtocol? protocol = null);
 
@@ -86,11 +81,9 @@ namespace Listenarr.Application.Downloads.Contracts
         /// Sets the WasImported flag for idempotency checking.
         /// The audiobook id is the integer library key, so the resulting history row can be
         /// found by the per-book history query.
+        /// Leave <c>protocol</c> null and the implementation resolves it from the download client
+        /// configuration.
         /// </summary>
-        /// <param name="protocol">
-        /// Protocol the download used. Leave null and the implementation resolves it from the
-        /// download client configuration.
-        /// </param>
         Task RecordImportedAsync(string downloadId, string clientId, string title,
             int? audiobookId = null, DownloadProtocol? protocol = null);
 
