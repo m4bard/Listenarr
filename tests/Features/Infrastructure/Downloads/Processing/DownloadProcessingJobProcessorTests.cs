@@ -789,5 +789,57 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
                 .EnumerateArray());
             Assert.Equal(failedPath, failedResult.GetProperty("SourcePath").GetString());
         }
+
+        [Fact]
+        [Trait("Scenario", "FailedImportRetryUsesTheConfiguredDelay")]
+        public async Task Import_FileImportFailure_RetriesAfterTheConfiguredDelay()
+        {
+            // This call site is the newest of the seven in ProcessJobAsync and the only one that
+            // did not pass the configured delay, because the two changes were written on separate
+            // branches and merge cleanly without noticing each other. A clean merge is exactly what
+            // stops anybody looking, so this asserts the delay rather than leaving it to reading.
+            var source = FileService.GetTempDirectory("configured-delay-source");
+            var filePath = await FileService.GetFileAsync(source, "audiobook.mp3");
+            downloadClientGatewayMock.SourceFiles = [filePath];
+
+            var importService = new Mock<IDownloadImportService>();
+            importService
+                .Setup(service => service.ImportDownloadFilesAsync(
+                    It.IsAny<Audiobook>(),
+                    It.IsAny<List<string>>(),
+                    It.IsAny<CancellationToken>(),
+                    It.IsAny<DownloadImportOptions?>()))
+                .ReturnsAsync((Audiobook _, List<string> files, CancellationToken _, DownloadImportOptions? _) =>
+                    [ImportResult.ImportFailure(FileAction.Copy, files[0], files[0])]);
+            Init(builder => builder.WithSingleton<IDownloadImportService>(importService.Object));
+
+            // After Init, which rebuilds the provider and the repositories with it. Saving the
+            // settings first puts them in a store the rebuilt provider no longer reads, and the
+            // processor then falls back to the property default of 30, which is the wrong answer
+            // arrived at by the wrong route.
+            var settings = new ApplicationSettingsBuilder().Build();
+            settings.MissingSourceRetryInitialDelaySeconds = 600;
+            await _applicationSettingsRepository.SaveAsync(settings);
+
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithAudiobook(await CreateAudiobook())
+                .WithDownloadClientConfiguration(await CreateDownloadClientConfiguration())
+                .WithPath(source)
+                .WithCompletedStatus(at: DateTime.UtcNow)
+                .Build());
+            var job = await _downloadProcessingJobRepository.AddAsync(new DownloadProcessingJobBuilder()
+                .WithDownload(download)
+                .Build());
+
+            await _provider.GetRequiredService<DownloadProcessingJobProcessor>()
+                .ProcessQueueAsync(CancellationToken.None);
+
+            job = await _downloadProcessingJobRepository.GetByIdAsync(job.Id);
+            Assert.NotNull(job);
+            Assert.Equal(1, job!.RetryCount);
+            Assert.NotNull(job.NextRetryAt);
+            var seconds = (job.NextRetryAt!.Value - DateTime.UtcNow).TotalSeconds;
+            Assert.InRange(seconds, 570, 660);
+        }
     }
 }
