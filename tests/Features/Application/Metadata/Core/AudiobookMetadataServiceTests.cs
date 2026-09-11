@@ -151,6 +151,53 @@ namespace Listenarr.Tests.Features.Application.Metadata.Core
             Assert.Null(await service.GetMetadataAsync("BPOISONED1", "us", true));
         }
 
+        private sealed class CapturingLogger<T> : ILogger<T>
+        {
+            public List<string> Messages { get; } = [];
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter) =>
+                Messages.Add(formatter(state, exception));
+        }
+
+        [Fact]
+        public async Task GetMetadataAsync_SanitizesTheAsin_SoItCannotForgeALogLine()
+        {
+            var (search, audible, audnexus) = TwoSources(out var httpClient);
+            using var _ = httpClient;
+            audible
+                .Setup(a => a.GetBookMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<string?>()))
+                .ThrowsAsync(new HttpRequestException("connection refused"));
+            audnexus
+                .Setup(a => a.GetBookMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>()))
+                .ThrowsAsync(new HttpRequestException("connection refused"));
+
+            var logger = new CapturingLogger<AudiobookMetadataService>();
+            var service = new AudiobookMetadataService(search.Object, audible.Object, audnexus.Object, logger);
+
+            // The ASIN is an unvalidated route argument. Written raw, a newline in it puts a
+            // line of the caller's choosing into the log that a reader cannot tell from one this
+            // service wrote. The sibling workflow already sanitizes; the walk that reports a
+            // provider failure did not.
+            await Assert.ThrowsAsync<HttpRequestException>(
+                () => service.GetMetadataAsync("B0FORGED01\nWARN  everything is fine", "us", true));
+
+            Assert.NotEmpty(logger.Messages);
+            Assert.All(logger.Messages, message => Assert.DoesNotContain('\n', message));
+            Assert.Contains(
+                logger.Messages,
+                message => message.Contains("B0FORGED01 WARN  everything is fine", StringComparison.Ordinal));
+        }
+
         private static (Mock<ISearchService> Search, Mock<AudibleService> Audible, Mock<IAudnexusService> Audnexus)
             TwoSources(out HttpClient httpClient)
         {

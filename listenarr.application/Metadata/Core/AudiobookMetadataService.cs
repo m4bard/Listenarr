@@ -63,7 +63,7 @@ namespace Listenarr.Application.Metadata.Core
 
             if (metadataSources == null || !metadataSources.Any())
             {
-                _logger.LogWarning("No enabled metadata sources found for ASIN {Asin}", asin);
+                _logger.LogWarning("No enabled metadata sources found for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
 
@@ -95,7 +95,7 @@ namespace Listenarr.Application.Metadata.Core
                 try
                 {
                     _logger.LogInformation("Attempting to fetch metadata from {SourceName} (Priority: {Priority}) for ASIN: {Asin}",
-                        source.Name, source.Priority, asin);
+                        source.Name, source.Priority, LogRedaction.SanitizeText(asin));
 
                     AudibleBookResponse? result = null;
 
@@ -146,7 +146,7 @@ namespace Listenarr.Application.Metadata.Core
 
                     if (result != null)
                     {
-                        _logger.LogInformation("Successfully fetched metadata from {SourceName} for ASIN: {Asin}", source.Name, asin);
+                        _logger.LogInformation("Successfully fetched metadata from {SourceName} for ASIN: {Asin}", source.Name, LogRedaction.SanitizeText(asin));
                         return new AudiobookMetadataEnvelope(
                             result,
                             source.Name,
@@ -166,14 +166,17 @@ namespace Listenarr.Application.Metadata.Core
                 // Still tried every source first, so a second provider that does answer wins.
                 // Only a walk that ended with no answer at all raises, and it raises the fault
                 // that started it rather than a manufactured one.
+                // Sanitized like every sibling that logs an ASIN. The value is an unvalidated
+                // route argument, so a newline in it writes a line of its own into the log and
+                // a reader cannot tell it from one this service wrote.
                 _logger.LogWarning(
                     providerFault,
                     "No source answered for ASIN {Asin}; reporting the provider failure rather than a miss",
-                    asin);
+                    LogRedaction.SanitizeText(asin));
                 ExceptionDispatchInfo.Capture(providerFault).Throw();
             }
 
-            _logger.LogWarning("No metadata found for ASIN: {Asin} from any configured source", asin);
+            _logger.LogWarning("No metadata found for ASIN: {Asin} from any configured source", LogRedaction.SanitizeText(asin));
             return null;
         }
 
