@@ -119,27 +119,15 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
         var providerCalls = 0;
         var providerAnswers = 0;
 
-        // Pushback narrows the run once per book, when it arrives. Halving on every attempt
-        // took a run from sixty an hour to seven on the first book that got three 429s, and the
-        // design says the budget halves for the rest of the cycle, singular. Waiting for the
-        // retry ceiling instead was the opposite mistake: a 429 whose retry then succeeded
-        // narrowed nothing and dropped the Retry-After, so the walk went straight back at a
-        // provider that had just asked it not to. The once-per-book guard below is what keeps
-        // the halving singular; the ceiling never had to.
+        // Pushback narrows the run once per book, on the first 429 the book sees. Halving on
+        // every attempt took a run from sixty an hour to seven on the first book that got three
+        // of them, and the design says the budget halves for the rest of the cycle, singular.
+        // Narrowing only at the retry ceiling was the opposite mistake: a 429 whose retry then
+        // succeeded narrowed nothing and dropped the Retry-After, and the walk went straight
+        // back at a provider that had just asked it not to. The guard below is what keeps the
+        // halving singular; the ceiling never had to.
         var sawPushback = false;
         var pushbackSignalled = false;
-        TimeSpan? pushbackRetryAfter = null;
-
-        void ApplyPushbackOnce()
-        {
-            if (pushbackSignalled)
-            {
-                return;
-            }
-
-            pushbackSignalled = true;
-            budget.ApplyThrottleSignal(pushbackRetryAfter);
-        }
 
         void NotePushback(Exception exception)
         {
@@ -149,12 +137,13 @@ public sealed partial class MetadataRefreshService : IMetadataRefreshService
             }
 
             sawPushback = true;
-            pushbackRetryAfter = retryAfter ?? pushbackRetryAfter;
+            if (pushbackSignalled)
+            {
+                return;
+            }
 
-            // The first piece of pushback this book saw is the one that narrows the run, and
-            // its Retry-After is the one honoured. A second 429 for the same book says nothing
-            // the first did not.
-            ApplyPushbackOnce();
+            pushbackSignalled = true;
+            budget.ApplyThrottleSignal(retryAfter);
         }
 
         AudibleBookResponse? providerMetadata = null;
