@@ -17,6 +17,7 @@
  */
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
+using Listenarr.Application.Metadata.Refresh;
 
 namespace Listenarr.Application.Metadata.Core
 {
@@ -72,7 +73,22 @@ namespace Listenarr.Application.Metadata.Core
             // the scheduled refresh stamps such a book as checked and does not ask again for the
             // whole staleness window. Swallowing a 429 or a refused connection into that same
             // null is how a throttled sweep used to mark a library as checked.
+            //
+            // Only faults that mean the provider did not answer are kept. Anything else, a
+            // payload that will not parse above all, is a property of the book rather than of
+            // the provider, and it will fail the same way on every cycle. Reported as a
+            // provider fault it deferred that book forever: never stamped, so never off the
+            // head of the null-first ordering, so retried first every run and failing first
+            // every run.
             Exception? providerFault = null;
+
+            void NoteProviderFault(Exception exception)
+            {
+                if (MetadataProviderFaults.IsProviderUnavailable(exception))
+                {
+                    providerFault ??= exception;
+                }
+            }
 
             foreach (var source in metadataSources)
             {
@@ -118,7 +134,7 @@ namespace Listenarr.Application.Metadata.Core
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                         {
-                            providerFault ??= ex;
+                            NoteProviderFault(ex);
                             _logger.LogWarning(ex, "Audnexus lookup failed, trying next source");
                         }
                     }
@@ -139,7 +155,7 @@ namespace Listenarr.Application.Metadata.Core
                 }
                 catch (Exception sourceEx) when (sourceEx is not OperationCanceledException && sourceEx is not OutOfMemoryException && sourceEx is not StackOverflowException)
                 {
-                    providerFault ??= sourceEx;
+                    NoteProviderFault(sourceEx);
                     _logger.LogWarning(sourceEx, "Failed to fetch metadata from {SourceName}, trying next source", source.Name);
                     continue;
                 }

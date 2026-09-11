@@ -125,6 +125,32 @@ namespace Listenarr.Tests.Features.Application.Metadata.Core
             Assert.Equal("Audnexus", result!.Source);
         }
 
+        [Fact]
+        public async Task GetMetadataAsync_ReturnsNull_WhenEverySourceAnsweredAndTheirPayloadsWereUnusable()
+        {
+            var (search, audible, audnexus) = TwoSources(out var httpClient);
+            using var _ = httpClient;
+            audible
+                .Setup(a => a.GetBookMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<string?>()))
+                .ThrowsAsync(new System.Text.Json.JsonException("unexpected token at line 1"));
+            audnexus
+                .Setup(a => a.GetBookMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>()))
+                .ThrowsAsync(new InvalidOperationException("the payload had no asin"));
+
+            var service = new AudiobookMetadataService(
+                search.Object,
+                audible.Object,
+                audnexus.Object,
+                Mock.Of<ILogger<AudiobookMetadataService>>());
+
+            // Both providers answered; what came back would not parse. That is a property of
+            // this book, and it will be a property of it next cycle too. Raised as a provider
+            // fault the book deferred forever: never stamped, so never off the head of the
+            // null-first ordering, so first in the queue and first to fail on every run, with
+            // the books behind it never reached.
+            Assert.Null(await service.GetMetadataAsync("BPOISONED1", "us", true));
+        }
+
         private static (Mock<ISearchService> Search, Mock<AudibleService> Audible, Mock<IAudnexusService> Audnexus)
             TwoSources(out HttpClient httpClient)
         {
