@@ -275,7 +275,7 @@ namespace Listenarr.Api.Features.Search
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogError(ex, "Error proxying Audible series books for ASIN {Asin}", asin);
+                _logger.LogError(ex, "Error proxying Audible series books for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return StatusCode(500, "Internal server error");
             }
         }

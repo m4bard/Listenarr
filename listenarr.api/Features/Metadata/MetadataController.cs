@@ -116,7 +116,7 @@ namespace Listenarr.Api.Features.Metadata
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogError(ex, "Error fetching metadata for ASIN: {Asin}", asin);
+                _logger.LogError(ex, "Error fetching metadata for ASIN: {Asin}", LogRedaction.SanitizeText(asin));
                 return StatusCode(500, $"Error fetching metadata: {ex.Message}");
             }
         }
@@ -151,7 +151,7 @@ namespace Listenarr.Api.Features.Metadata
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogError(ex, "Error fetching Audible metadata for ASIN: {Asin}", asin);
+                _logger.LogError(ex, "Error fetching Audible metadata for ASIN: {Asin}", LogRedaction.SanitizeText(asin));
                 return StatusCode(500, "Internal server error");
             }
         }

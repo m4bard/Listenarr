@@ -61,7 +61,7 @@ namespace Listenarr.Application.Metadata.Core
 
             if (metadataSources == null || !metadataSources.Any())
             {
-                _logger.LogWarning("No enabled metadata sources found for ASIN {Asin}", asin);
+                _logger.LogWarning("No enabled metadata sources found for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
 
@@ -70,7 +70,7 @@ namespace Listenarr.Application.Metadata.Core
                 try
                 {
                     _logger.LogInformation("Attempting to fetch metadata from {SourceName} (Priority: {Priority}) for ASIN: {Asin}",
-                        source.Name, source.Priority, asin);
+                        source.Name, source.Priority, LogRedaction.SanitizeText(asin));
 
                     AudibleBookResponse? result = null;
 
@@ -120,7 +120,7 @@ namespace Listenarr.Application.Metadata.Core
 
                     if (result != null)
                     {
-                        _logger.LogInformation("Successfully fetched metadata from {SourceName} for ASIN: {Asin}", source.Name, asin);
+                        _logger.LogInformation("Successfully fetched metadata from {SourceName} for ASIN: {Asin}", source.Name, LogRedaction.SanitizeText(asin));
                         return new AudiobookMetadataEnvelope(
                             result,
                             source.Name,
@@ -134,7 +134,7 @@ namespace Listenarr.Application.Metadata.Core
                 }
             }
 
-            _logger.LogWarning("No metadata found for ASIN: {Asin} from any configured source", asin);
+            _logger.LogWarning("No metadata found for ASIN: {Asin} from any configured source", LogRedaction.SanitizeText(asin));
             return null;
         }
 

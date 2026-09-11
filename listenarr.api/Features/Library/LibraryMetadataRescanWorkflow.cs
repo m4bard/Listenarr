@@ -176,7 +176,7 @@ namespace Listenarr.Api.Features.Library
                             "Metadata rescan lookup failed for audiobook {AudiobookId} ({Title}) ASIN {Asin} region {Region}",
                             audiobook.Id,
                             audiobook.Title,
-                            normalizedAsin,
+                            LogRedaction.SanitizeText(normalizedAsin),
                             regionValue);
                         continue;
                     }
@@ -343,7 +343,7 @@ namespace Listenarr.Api.Features.Library
                 updatedAudiobook.Id,
                 updatedAudiobook.Title,
                 providerSource ?? "unknown",
-                resolvedAsin,
+                LogRedaction.SanitizeText(resolvedAsin),
                 resolvedRegion ?? "us");
 
             return new OkObjectResult(new
