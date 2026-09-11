@@ -237,5 +237,16 @@ namespace Listenarr.Domain.Configuration
         /// Preferred default language filter for Add New searches.
         /// </summary>
         public string DefaultSearchLanguage { get; set; } = "english";
+
+        // Scheduled provider-metadata refresh. The interval says how often the walk wakes up;
+        // the staleness age is what actually governs how often a given book is touched.
+        public bool MetadataRefreshEnabled { get; set; } = true;
+        public int MetadataRefreshIntervalHours { get; set; } = 24;
+        public int MetadataRefreshStaleAfterDays { get; set; } = 30;
+
+        // Deliberately timid: the provider publishes no rate limit, the client does not
+        // recognise a 429, and this host has been rate-limited by another service already.
+        public int MetadataRefreshRequestsPerHour { get; set; } = 60;
+        public int MetadataRefreshMinimumSpacingMs { get; set; } = 1000;
     }
 }

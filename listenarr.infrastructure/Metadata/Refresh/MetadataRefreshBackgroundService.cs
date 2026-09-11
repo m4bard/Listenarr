@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Metadata.Refresh;
@@ -47,10 +48,13 @@ public class MetadataRefreshBackgroundService(
 public class MetadataRefreshProcessor(
     ILogger<MetadataRefreshProcessor> logger,
     IMetadataRefreshCoordinator coordinator,
-    MetadataRefreshOptionsHolder options) : IMetadataRefreshProcessor
+    MetadataRefreshOptionsHolder options,
+    IServiceScopeFactory scopeFactory) : IMetadataRefreshProcessor
 {
     public async Task RunCycleAsync(CancellationToken cancellationToken)
     {
+        await RefreshOptionsAsync(cancellationToken);
+
         if (!options.Current.Enabled)
         {
             logger.LogDebug("MetadataRefreshBackgroundService cycle skipped; refresh is disabled in settings");
@@ -72,5 +76,34 @@ public class MetadataRefreshProcessor(
             run.Processed,
             run.Deferred,
             run.RequestsSpent);
+    }
+
+    /// <summary>
+    /// Rewrites the holder before every cycle, so an operator changing the budget or the interval
+    /// does not have to restart. The cycle runner re-reads the interval each pass for the same reason.
+    /// </summary>
+    private async Task RefreshOptionsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var configuration = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
+            var settings = await configuration.GetApplicationSettingsAsync();
+            options.Current = new MetadataRefreshOptions(
+                settings.MetadataRefreshEnabled,
+                Math.Max(1, settings.MetadataRefreshIntervalHours),
+                Math.Max(0, settings.MetadataRefreshStaleAfterDays),
+                Math.Max(1, settings.MetadataRefreshRequestsPerHour),
+                Math.Max(0, settings.MetadataRefreshMinimumSpacingMs));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+            when (ex is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+        {
+            logger.LogWarning(ex, "Failed to load metadata refresh settings; keeping the values already in use");
+        }
     }
 }

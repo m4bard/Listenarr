@@ -44,6 +44,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260825021432_AddWeakStorageVerifiedCleanup";
     private const string AudiobookLastMetadataRefreshAtMigrationId =
         "20260910120000_AddAudiobookLastMetadataRefreshAt";
+    private const string MetadataRefreshSettingsMigrationId =
+        "20260910120500_AddMetadataRefreshSettings";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -202,7 +204,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 FileMutationParentGenerationProofsMigrationId,
                 CompatibilityFilePublicationMigrationId,
                 WeakStorageVerifiedCleanupMigrationId,
-                AudiobookLastMetadataRefreshAtMigrationId
+                AudiobookLastMetadataRefreshAtMigrationId,
+                MetadataRefreshSettingsMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

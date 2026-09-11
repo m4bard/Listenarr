@@ -65,7 +65,8 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
         await new MetadataRefreshProcessor(
                 logger,
                 coordinator.Object,
-                new MetadataRefreshOptionsHolder())
+                new MetadataRefreshOptionsHolder(),
+                ScopeFactoryFor(new ApplicationSettings()))
             .RunCycleAsync(CancellationToken.None);
 
         Assert.Contains(
@@ -87,7 +88,8 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
         await new MetadataRefreshProcessor(
                 new CapturingLogger<MetadataRefreshProcessor>(),
                 coordinator.Object,
-                new MetadataRefreshOptionsHolder())
+                new MetadataRefreshOptionsHolder(),
+                ScopeFactoryFor(new ApplicationSettings()))
             .RunCycleAsync(CancellationToken.None);
 
         coordinator.Verify(
@@ -114,7 +116,8 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
         await new MetadataRefreshProcessor(
                 logger,
                 coordinator.Object,
-                new MetadataRefreshOptionsHolder())
+                new MetadataRefreshOptionsHolder(),
+                ScopeFactoryFor(new ApplicationSettings()))
             .RunCycleAsync(CancellationToken.None);
 
         Assert.DoesNotContain(logger.Entries, entry => entry.Level == LogLevel.Information);
@@ -130,10 +133,8 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
         await new MetadataRefreshProcessor(
                 new CapturingLogger<MetadataRefreshProcessor>(),
                 coordinator.Object,
-                new MetadataRefreshOptionsHolder
-                {
-                    Current = new MetadataRefreshOptions(Enabled: false)
-                })
+                new MetadataRefreshOptionsHolder(),
+                ScopeFactoryFor(new ApplicationSettings { MetadataRefreshEnabled = false }))
             .RunCycleAsync(CancellationToken.None);
 
         coordinator.Verify(
@@ -209,5 +210,85 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
         Assert.Equal(TimeSpan.FromHours(24), intervalProvider());
         holder.Current = new MetadataRefreshOptions(IntervalHours: 6);
         Assert.Equal(TimeSpan.FromHours(6), intervalProvider());
+    }
+
+    private static IServiceScopeFactory ScopeFactoryFor(ApplicationSettings settings)
+    {
+        var configuration = new Mock<IConfigurationService>();
+        configuration.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
+        var services = new ServiceCollection();
+        services.AddScoped(_ => configuration.Object);
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+    }
+
+    [Fact]
+    [Trait("Scenario", "SettingsAreReadEachCycle")]
+    public async Task RunCycleAsync_RewritesTheOptionsHolder_FromApplicationSettings()
+    {
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+        coordinator
+            .Setup(c => c.RunToCompletionAsync(
+                It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Snapshot(0, 0, 0, 0));
+        var holder = new MetadataRefreshOptionsHolder();
+
+        await new MetadataRefreshProcessor(
+                new CapturingLogger<MetadataRefreshProcessor>(),
+                coordinator.Object,
+                holder,
+                ScopeFactoryFor(new ApplicationSettings
+                {
+                    MetadataRefreshEnabled = true,
+                    MetadataRefreshIntervalHours = 6,
+                    MetadataRefreshStaleAfterDays = 14,
+                    MetadataRefreshRequestsPerHour = 120,
+                    MetadataRefreshMinimumSpacingMs = 250
+                }))
+            .RunCycleAsync(CancellationToken.None);
+
+        Assert.Equal(6, holder.Current.IntervalHours);
+        Assert.Equal(14, holder.Current.StaleAfterDays);
+        Assert.Equal(120, holder.Current.RequestsPerHour);
+        Assert.Equal(250, holder.Current.MinimumSpacingMs);
+    }
+
+    [Fact]
+    [Trait("Scenario", "DisablingInSettingsStopsTheNextCycle")]
+    public async Task RunCycleAsync_StopsStartingRuns_OnceSettingsTurnItOff()
+    {
+        var coordinator = new Mock<IMetadataRefreshCoordinator>();
+        coordinator
+            .Setup(c => c.RunToCompletionAsync(
+                It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Snapshot(0, 0, 0, 0));
+        var holder = new MetadataRefreshOptionsHolder();
+
+        await new MetadataRefreshProcessor(
+                new CapturingLogger<MetadataRefreshProcessor>(),
+                coordinator.Object,
+                holder,
+                ScopeFactoryFor(new ApplicationSettings { MetadataRefreshEnabled = false }))
+            .RunCycleAsync(CancellationToken.None);
+
+        Assert.False(holder.Current.Enabled);
+        coordinator.Verify(
+            c => c.RunToCompletionAsync(
+                It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    [Trait("Scenario", "ShippedDefaults")]
+    public void ApplicationSettings_ShipTheTimidBudget()
+    {
+        // 60 an hour with a one-second floor is deliberately conservative: the provider
+        // publishes no limit and the client does not recognise a 429.
+        var settings = new ApplicationSettings();
+
+        Assert.True(settings.MetadataRefreshEnabled);
+        Assert.Equal(24, settings.MetadataRefreshIntervalHours);
+        Assert.Equal(30, settings.MetadataRefreshStaleAfterDays);
+        Assert.Equal(60, settings.MetadataRefreshRequestsPerHour);
+        Assert.Equal(1000, settings.MetadataRefreshMinimumSpacingMs);
     }
 }
