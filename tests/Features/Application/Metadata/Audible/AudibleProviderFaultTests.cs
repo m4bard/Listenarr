@@ -89,6 +89,41 @@ public class AudibleProviderFaultTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "TheRequestUrlStaysOutOfTheMessage")]
+    public async Task GetBookMetadataAsync_KeepsTheRequestUrl_OutOfEveryRaisedMessage()
+    {
+        var throttled = Service(
+            (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests)),
+            out var throttledClient);
+        using var _ = throttledClient;
+
+        var pushback = await Assert.ThrowsAsync<MetadataProviderThrottledException>(
+            () => throttled.GetBookMetadataAsync("B0THROTTLD", "us", useCache: false));
+
+        var timedOut = Service(
+            (_, _) => throw new TaskCanceledException("the request was canceled due to timeout"),
+            out var timedOutClient);
+        using var __ = timedOutClient;
+
+        var transport = await Assert.ThrowsAsync<HttpRequestException>(
+            () => timedOut.GetBookMetadataAsync("B0TIMEDOUT", "us", useCache: false));
+
+        // Several API endpoints answer a failed lookup by echoing ex.Message. Once the client
+        // began raising rather than returning null, the message it composed was the full
+        // request URL, and the query string holds the ASIN or the search terms. The URL belongs
+        // in the log, which is ours; the message can be read by anyone who can call the API.
+        foreach (var message in new[] { pushback.Message, transport.Message })
+        {
+            Assert.DoesNotContain("http", message, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("audible.com", message, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("catalog/products", message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        Assert.DoesNotContain("B0THROTTLD", pushback.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("B0TIMEDOUT", transport.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     [Trait("Scenario", "AGenuineMissIsStillNull")]
     public async Task GetBookMetadataAsync_ReturnsNull_WhenTheProviderAnswers404()
     {

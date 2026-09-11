@@ -349,7 +349,14 @@ namespace Listenarr.Api.Features.Search
         /// <summary>
         /// Search the Audible catalog for audiobooks.
         /// </summary>
+        /// <remarks>
+        /// A provider that would not answer is told apart from one that answered with nothing.
+        /// The Audible client raises now instead of returning null, and without this the two
+        /// arrived as the same 500: a rate-limited host looked like a bug in Listenarr, and the
+        /// caller had no way to know that retrying was the right move.
+        /// </remarks>
         [HttpGet("audible")]
+        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
         public async Task<ActionResult<AudibleSearchResponse>> SearchAudible(
             [FromQuery] string query,
             [FromQuery] string region = "us",
@@ -369,6 +376,13 @@ namespace Listenarr.Api.Features.Search
                 }
 
                 return Ok(result);
+            }
+            catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
+            {
+                _logger.LogWarning(ex, "Provider did not answer searching the Audible catalog for query: {Query}", LogRedaction.SanitizeText(query));
+                return StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "The metadata provider did not answer; try again shortly");
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

@@ -94,6 +94,7 @@ namespace Listenarr.Api.Features.Metadata
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
         public async Task<ActionResult<object>> GetMetadata(
             string asin,
             [FromQuery] string region = "us",
@@ -114,10 +115,23 @@ namespace Listenarr.Api.Features.Metadata
 
                 return Ok(result);
             }
+            catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
+            {
+                // Same three answers as the ISBN endpoint. A provider that would not answer is
+                // not a missing book, and is not a fault in this service either.
+                _logger.LogWarning(ex, "Provider did not answer fetching metadata for ASIN: {Asin}", LogRedaction.SanitizeText(asin));
+                return StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "The metadata provider did not answer; try again shortly");
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Error fetching metadata for ASIN: {Asin}", asin);
-                return StatusCode(500, $"Error fetching metadata: {ex.Message}");
+
+                // A fixed string, like the sibling endpoint below. ex.Message on this path was
+                // the provider's own text, and once the Audible client began raising it carried
+                // the request URL out to any API client.
+                return StatusCode(500, "Error fetching metadata");
             }
         }
 
@@ -129,6 +143,7 @@ namespace Listenarr.Api.Features.Metadata
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
         public async Task<ActionResult<AudibleBookResponse>> GetAudibleMetadata(
             string asin,
             [FromQuery] string region = "us",
@@ -148,6 +163,13 @@ namespace Listenarr.Api.Features.Metadata
                 }
 
                 return Ok(result);
+            }
+            catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
+            {
+                _logger.LogWarning(ex, "Provider did not answer fetching Audible metadata for ASIN: {Asin}", LogRedaction.SanitizeText(asin));
+                return StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "The metadata provider did not answer; try again shortly");
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

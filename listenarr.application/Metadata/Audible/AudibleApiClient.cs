@@ -92,8 +92,11 @@ namespace Listenarr.Application.Metadata.Audible
                         "Audible API asked for less traffic (429) for URL {Url}; retry after {RetryAfter}",
                         url,
                         retryAfter?.ToString() ?? "unspecified");
+                    // The URL is logged, not carried. This message reaches API clients through
+                    // more than one catch that echoes ex.Message, and the query string holds
+                    // the ASIN or the search terms the request was built from.
                     throw new MetadataProviderThrottledException(
-                        $"Audible API returned 429 for {url}",
+                        "The Audible API asked for less traffic",
                         retryAfter);
                 }
 
@@ -112,7 +115,7 @@ namespace Listenarr.Application.Metadata.Audible
                 // and every caller between here and the refresh run treats one of those as "the
                 // run was asked to stop" rather than "this request did not arrive".
                 _logger.LogWarning(ex, "Audible API request timed out for URL: {Url}", url);
-                throw new HttpRequestException($"Audible API request timed out for {url}", ex);
+                throw new HttpRequestException("The Audible API request timed out", ex);
             }
             catch (HttpRequestException ex)
             {
