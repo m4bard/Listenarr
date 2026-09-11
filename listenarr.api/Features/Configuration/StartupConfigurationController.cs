@@ -17,6 +17,7 @@
  */
 
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Listenarr.Api.Attributes;
 using Listenarr.Api.Dtos;
 using Microsoft.AspNetCore.Authorization;
@@ -27,7 +28,7 @@ namespace Listenarr.Api.Features.Configuration
     [ApiController]
     [Route("api/v{version:apiVersion}/configuration")]
     [RequireAdminOrApiKey]
-    public class StartupConfigurationController : ControllerBase
+    public partial class StartupConfigurationController : ControllerBase
     {
         private readonly IConfigurationService _configurationService;
         private readonly IStartupConfigService _startupConfigService;
@@ -101,6 +102,15 @@ namespace Listenarr.Api.Features.Configuration
         [ProducesResponseType(500)]
         public async Task<ActionResult<StartupConfig>> SaveStartupConfig([FromBody] JsonElement patch)
         {
+            // Only a body that carries UrlBase has a UrlBase to judge. One that omits it is
+            // asking for the stored value to be left alone, which is the point of the merge,
+            // and rejecting it over a value already on disk would refuse posts about ports.
+            if (TryReadPostedUrlBase(patch, out var postedUrlBase) && !IsValidUrlBase(postedUrlBase))
+            {
+                _logger.LogWarning("Rejected a startup config whose UrlBase is a full URL rather than a path.");
+                return BadRequest(new { error = InvalidUrlBaseMessage });
+            }
+
             StartupConfig config;
             try
             {
@@ -133,6 +143,51 @@ namespace Listenarr.Api.Features.Configuration
 
             return Ok(savedConfig);
         }
+
+        internal const string InvalidUrlBaseMessage = "Must be a valid URL path (ie: '/listenarr')";
+
+        /// <summary>
+        /// Read <c>UrlBase</c> out of the posted body, if the body mentions it as a string.
+        /// </summary>
+        /// <remarks>
+        /// A body sending it as null is sending a value the rule already accepts, and a body
+        /// sending it as a number or an object is refused by the merge with the type error it
+        /// shares with every other mistyped property, so neither needs answering here.
+        /// </remarks>
+        private static bool TryReadPostedUrlBase(JsonElement patch, out string? urlBase)
+        {
+            urlBase = null;
+            if (!StartupConfigPatchReader.TryGetProperty(patch, nameof(StartupConfig.UrlBase), out var value))
+            {
+                return false;
+            }
+
+            if (value.ValueKind != JsonValueKind.String)
+            {
+                return false;
+            }
+
+            urlBase = value.GetString();
+            return true;
+        }
+
+        /// <summary>
+        /// A full URL in <c>UrlBase</c> is stored happily and then ignored at startup, because the
+        /// path base is a path. Sonarr, Radarr and Readarr all refuse it at the controller with
+        /// <c>ValidUrlBase</c>; this is the same rule and the same message.
+        /// </summary>
+        internal static bool IsValidUrlBase(string? urlBase)
+        {
+            if (string.IsNullOrWhiteSpace(urlBase))
+            {
+                return true;
+            }
+
+            return !AbsoluteUrlBase().IsMatch(urlBase.Trim());
+        }
+
+        [GeneratedRegex(@"^/?https?://[-_a-z0-9.]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+        private static partial Regex AbsoluteUrlBase();
 
         private string NormalizeStartupApiVersion(string? configuredApiVersion)
             => _startupConfigService.NormalizeApiVersion(configuredApiVersion, GetRequestedApiVersion());
