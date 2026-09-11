@@ -42,6 +42,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260821141235_AddCompatibilityFilePublication";
     private const string WeakStorageVerifiedCleanupMigrationId =
         "20260825021432_AddWeakStorageVerifiedCleanup";
+    private const string HistoryProtocolMigrationId =
+        "20260911172407_AddHistoryProtocol";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -178,6 +180,22 @@ public class SqliteMigrationSchemaTests : BaseTests
             await ColumnDefaultAsync(connection, "MoveJobs", "SourceCleanupMode"));
     }
 
+    // The protocol column is what makes a recorded protocol survive the write. Without it the
+    // value is built in DownloadHistoryService and then dropped by the mapping, so a test of the
+    // construction alone would pass while nothing reached the database.
+    [Fact]
+    [Trait("Scenario", "HistoryProtocolColumn")]
+    public async Task HistoryProtocolMigration_AddsTheNullableProtocolColumn()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.True(await ColumnExistsAsync(connection, "History", "Protocol"));
+    }
+
     [Fact]
     [Trait("Scenario", "FinalMigrationHistoryIsConsolidated")]
     public async Task MigrationHistory_ContainsOnlyRetainedRepairsAndConsolidatedPrMigrationAfterCanary()
@@ -199,7 +217,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 MoveJobRelocationForeignKeyMigrationId,
                 FileMutationParentGenerationProofsMigrationId,
                 CompatibilityFilePublicationMigrationId,
-                WeakStorageVerifiedCleanupMigrationId
+                WeakStorageVerifiedCleanupMigrationId,
+                HistoryProtocolMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

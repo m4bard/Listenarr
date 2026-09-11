@@ -147,6 +147,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int?>("ParentEventId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("Protocol")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Source")
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
