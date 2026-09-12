@@ -397,7 +397,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             downloadRepository.Verify(r => r.UpdateAsync(It.IsAny<Download>()), Times.Never);
             notificationService.VerifyNoOtherCalls();
         }
-    
+
         [Fact]
         [Trait("Scenario", "Reprocessing a completed download enqueues a job")]
         public async Task ReprocessDownload_EnqueuesAJobAndReturnsItsId()
@@ -513,5 +513,5 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             var withProcessed = await downloadService.ReprocessAllCompletedDownloadsAsync(includeProcessed: true);
             Assert.Contains(alreadyImported.Id, withProcessed.Select(result => result.DownloadId));
         }
-}
+    }
 }
