@@ -57,7 +57,7 @@
         :disabled="busy"
         @click="ask('completed')"
       >
-        Clear Completed
+        Clear Completed ({{ props.completedCount }})
       </button>
       <button
         class="toolbar-btn"
@@ -65,7 +65,7 @@
         :disabled="busy"
         @click="ask('failed')"
       >
-        Clear Failed
+        Clear Failed ({{ props.failedCount }} + {{ props.importBlockedCount }} import-blocked)
       </button>
     </div>
 
@@ -93,10 +93,22 @@ export interface ToolbarRow {
 
 type Pending = 'remove' | 'completed' | 'failed' | null
 
-const props = withDefaults(defineProps<{ selected?: ToolbarRow[]; busy?: boolean }>(), {
-  selected: () => [],
-  busy: false,
-})
+const props = withDefaults(
+  defineProps<{
+    selected?: ToolbarRow[]
+    busy?: boolean
+    completedCount?: number
+    failedCount?: number
+    importBlockedCount?: number
+  }>(),
+  {
+    selected: () => [],
+    busy: false,
+    completedCount: 0,
+    failedCount: 0,
+    importBlockedCount: 0,
+  },
+)
 
 const emit = defineEmits<{
   (e: 'clear-selection'): void
@@ -134,9 +146,13 @@ const confirmMessage = computed(() => {
     return `Remove ${count.value} selected ${noun}? Anything the download client still holds is removed there too.`
   }
   if (pending.value === 'completed') {
-    return 'This deletes every completed download record, not only the ones selected here. Files that were already imported are left alone.'
+    return `This deletes every completed download record, not only the ones selected here (currently ${props.completedCount}). Files that were already imported are left alone.`
   }
-  return 'This deletes every failed download record, not only the ones selected here. It also deletes downloads that are import blocked, including ones Retry could still fix.'
+  return (
+    'This deletes every failed download record, not only the ones selected here. It also deletes ' +
+    `downloads that are import blocked, including ones Retry could still fix (currently ` +
+    `${props.failedCount} failed and ${props.importBlockedCount} import blocked).`
+  )
 })
 
 const confirmLabel = computed(() => (pending.value === 'remove' ? 'Remove' : 'Clear'))
