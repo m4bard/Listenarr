@@ -105,12 +105,13 @@
           Clear Selection
         </button>
         <button
-          v-if="audiobooks.length > 0 && selectedCount === 0"
+          v-if="selectedCount === 0"
           class="toolbar-btn"
-          @click="libraryStore.selectAll()"
+          :disabled="audiobooks.length === 0"
+          @click="libraryStore.selectAll(audiobooks)"
         >
           <PhCheckSquare />
-          Select All
+          {{ selectAllLabel }}
         </button>
         <button v-if="selectedCount > 0" class="toolbar-btn edit-btn" @click="showBulkEdit">
           <PhPencil />
@@ -1710,6 +1711,17 @@ function clearFilters() {
 const loading = computed(() => libraryStore.loading)
 const error = computed(() => libraryStore.error)
 const selectedCount = computed(() => libraryStore.selectedIds.size)
+
+// True whenever the grid is showing less than the whole library, whatever combination
+// of the search box and the filter dropdowns got it there. Used to put the count on
+// Select All so its scope is legible before the click.
+const libraryFilterActive = computed(
+  () => audiobooks.value.length !== (libraryStore.audiobooks || []).length,
+)
+
+const selectAllLabel = computed(() =>
+  libraryFilterActive.value ? `Select All (${audiobooks.value.length})` : 'Select All',
+)
 const hasRootFolderConfigured = computed(() => {
   return (
     rootFoldersStore.folders.length > 0 ||
@@ -2622,6 +2634,17 @@ defineExpose({
   background-color: rgba(255, 255, 255, 0.03);
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolbar-btn:disabled:hover {
+  background-color: transparent;
+  transform: none;
+  box-shadow: none;
 }
 
 .toolbar-btn.active {
