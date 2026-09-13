@@ -1189,10 +1189,6 @@ const syncLibrarySnapshot = async () => {
 
 // --- Header search implementation ---
 const router = useRouter()
-// Clear the optimistic pending nav state once navigation fully resolves
-router.afterEach(() => {
-  pendingNavPath.value = null
-})
 const searchQuery = vueRef('')
 const suggestions = vueRef<
   Array<{ id: number; title: string; author?: string; imageUrl?: string }>
@@ -1269,6 +1265,28 @@ const onSearchInput = async () => {
     }
   }, 250)
 }
+
+// The results panel renders on `searching || suggestions.length || searchQuery.length`,
+// none of which a route change used to touch, so an abandoned search stayed painted
+// over whatever page the operator navigated to. Cancelling the debounce matters as
+// much as clearing the state: without it a search that was still pending when the
+// route changed lands afterwards and repopulates the panel on the new page.
+const resetNavSearch = () => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer)
+    searchDebounceTimer = undefined
+  }
+  searchQuery.value = ''
+  suggestions.value = []
+  searching.value = false
+  searchOpen.value = false
+}
+
+router.afterEach(() => {
+  // Clear the optimistic pending nav state once navigation fully resolves
+  pendingNavPath.value = null
+  resetNavSearch()
+})
 
 const selectSuggestion = (s: { id: number; title: string; author?: string }) => {
   // Navigate to audiobook detail if local (id > 0), else open search view
