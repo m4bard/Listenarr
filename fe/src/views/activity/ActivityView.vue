@@ -53,6 +53,9 @@
     <QueueToolbar
       :selected="selectedRows"
       :busy="bulkBusy"
+      :completed-count="clearCompletedCount"
+      :failed-count="clearFailedOnlyCount"
+      :import-blocked-count="clearImportBlockedCount"
       @clear-selection="clearSelection"
       @retry-selected="retrySelected"
       @remove-selected="removeSelected"
@@ -572,6 +575,22 @@ const convertMoveJobToQueueItem = (job: TrackedMoveJob): QueueItem => ({
 // Read user preference from configuration store
 const showCompletedExternalDownloads = computed(
   () => configStore.applicationSettings?.showCompletedExternalDownloads ?? false,
+)
+
+// Clear Completed and Clear Failed act on every matching record, not just what's selected or in
+// view, so the toolbar needs the true totals to disclose what a click is actually about to do.
+const clearCompletedCount = computed(() => (downloadsStore.completedDownloads || []).length)
+const clearFailedOnlyCount = computed(
+  () =>
+    (downloadsStore.failedDownloads || []).filter(
+      (d) => (d.status || '').toString().toLowerCase() === 'failed',
+    ).length,
+)
+const clearImportBlockedCount = computed(
+  () =>
+    (downloadsStore.failedDownloads || []).filter(
+      (d) => (d.status || '').toString().toLowerCase() === 'importblocked',
+    ).length,
 )
 
 // All activity items — unified list of queue + downloads

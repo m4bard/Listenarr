@@ -82,6 +82,21 @@ describe('QueueToolbar', () => {
     expect(wrapper.emitted('clear-failed')).toHaveLength(1)
   })
 
+  it('discloses the true counts for the two unbounded sweeps, not just the selection', async () => {
+    const wrapper = mount(QueueToolbar, {
+      props: { selected: [], completedCount: 0, failedCount: 1709, importBlockedCount: 33 },
+    })
+
+    expect(wrapper.get('[data-test="queue-clear-completed"]').text()).toContain('0')
+    expect(wrapper.get('[data-test="queue-clear-failed"]').text()).toContain('1709')
+    expect(wrapper.get('[data-test="queue-clear-failed"]').text()).toContain('33')
+
+    await wrapper.get('[data-test="queue-clear-failed"]').trigger('click')
+    const message = wrapper.findComponent(ConfirmModal).props('message') as string
+    expect(message).toContain('1709')
+    expect(message).toContain('33')
+  })
+
   it('says the completed sweep is not limited to the selection', async () => {
     const wrapper = mountToolbar([{ id: 'a', status: 'completed' }])
     await wrapper.get('[data-test="queue-clear-completed"]').trigger('click')
