@@ -37,11 +37,11 @@
         </div>
         <button
           class="btn btn-primary"
-          @click="searchMissing"
-          :disabled="categorizedWanted.missing.length === 0"
+          @click="requestSearchMissing"
+          :disabled="searchTargets.length === 0"
         >
           <PhRobot />
-          Search All
+          {{ searchButtonLabel }}
         </button>
         <button class="btn btn-secondary" @click="openManualImport">
           <PhFolderPlus />
@@ -191,6 +191,17 @@
       @close="closeManualImport"
       @imported="handleImported"
     />
+
+    <!-- Bulk search confirmation: this action hits every configured indexer once per book -->
+    <ConfirmModal
+      :visible="showSearchConfirm"
+      title="Start automatic search"
+      :message="searchConfirmMessage"
+      confirmLabel="Start search"
+      :confirming="bulkSearchRunning"
+      @confirm="confirmSearchMissing"
+      @cancel="cancelSearchMissing"
+    />
   </div>
 </template>
 
@@ -203,6 +214,7 @@ import { errorTracking } from '@/services/errorTracking'
 import { handleImageError } from '@/utils/imageFallback'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import ManualImportModal from '@/components/feedback/ManualImportModal.vue'
+import { ConfirmModal } from '@/components/feedback'
 import { EmptyState, LoadingState } from '@/components/base'
 import type { Audiobook, SearchResult, Download } from '@/types'
 import { safeText } from '@/utils/textUtils'
@@ -291,6 +303,12 @@ const searchResults = ref<Record<number, string>>({})
 const showManualSearchModal = ref(false)
 const selectedAudiobook = ref<Audiobook | null>(null)
 const showManualImportModal = ref(false)
+const showSearchConfirm = ref(false)
+const bulkSearchRunning = ref(false)
+
+// Spacing between per-book searches in the bulk action, so one click does not
+// burst every configured indexer.
+const SEARCH_SPACING_MS = 1000
 
 const syncWantedLayout = async () => {
   await nextTick()
@@ -337,17 +355,6 @@ const wantedAudiobooks = computed(() => {
   })
 })
 
-// Categorize wanted audiobooks by their current search state
-const categorizedWanted = computed(() => {
-  const all = wantedAudiobooks.value
-  const missingItems = all.filter((a) => !searching.value[a.id] && !searchResults.value[a.id])
-
-  return {
-    all,
-    missing: missingItems,
-  }
-})
-
 const filteredWanted = computed(() => {
   const items = wantedAudiobooks.value
   if (!filterText.value) return items
@@ -359,6 +366,24 @@ const filteredWanted = computed(() => {
     const series = (item.series || '').toLowerCase()
     return title.includes(query) || authors.includes(query) || series.includes(query)
   })
+})
+
+// What the bulk search button will actually act on: the rows the grid is showing,
+// minus any that already have a search in flight. This has to stay derived from
+// filteredWanted, not from wantedAudiobooks, or the action silently disagrees with
+// the list the operator is looking at.
+const searchTargets = computed(() =>
+  filteredWanted.value.filter((a) => !searching.value[a.id] && !searchResults.value[a.id]),
+)
+
+const searchButtonLabel = computed(() =>
+  filterText.value ? `Search ${searchTargets.value.length} (missing)` : 'Search All',
+)
+
+const searchConfirmMessage = computed(() => {
+  const count = searchTargets.value.length
+  const noun = count === 1 ? 'audiobook' : 'audiobooks'
+  return `Start an automatic search for ${count} ${noun}? Each one queries every configured indexer, one per second, so this takes about ${formatSearchDuration(count)}.`
 })
 
 const visibleWanted = computed(() => {
@@ -438,12 +463,42 @@ function getStatusText(item: Audiobook): string {
   return 'Missing'
 }
 
-const searchMissing = async () => {
-  logger.debug('Automatic search for all missing audiobooks')
+function formatSearchDuration(count: number): string {
+  const seconds = Math.round((count * SEARCH_SPACING_MS) / 1000)
+  if (seconds < 60) return `${Math.max(seconds, 1)} seconds`
+  const minutes = Math.round(seconds / 60)
+  return minutes === 1 ? 'a minute' : `${minutes} minutes`
+}
 
-  for (const audiobook of categorizedWanted.value.missing) {
-    await searchAudiobook(audiobook)
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+function requestSearchMissing() {
+  if (searchTargets.value.length === 0) return
+  showSearchConfirm.value = true
+}
+
+function cancelSearchMissing() {
+  if (bulkSearchRunning.value) return
+  showSearchConfirm.value = false
+}
+
+const confirmSearchMissing = async () => {
+  if (bulkSearchRunning.value) return
+
+  // Snapshot before the first search, because searchAudiobook mutates the
+  // searching/searchResults maps that searchTargets is derived from.
+  const targets = [...searchTargets.value]
+  showSearchConfirm.value = false
+  if (targets.length === 0) return
+
+  bulkSearchRunning.value = true
+  logger.debug(`Automatic search for ${targets.length} missing audiobooks`)
+
+  try {
+    for (const audiobook of targets) {
+      await searchAudiobook(audiobook)
+      await new Promise((resolve) => setTimeout(resolve, SEARCH_SPACING_MS))
+    }
+  } finally {
+    bulkSearchRunning.value = false
   }
 }
 
