@@ -298,8 +298,11 @@ export const useLibraryStore = defineStore('library', () => {
     }
   }
 
-  function selectAll() {
-    audiobooks.value.forEach((book) => selectedIds.value.add(book.id))
+  // Callers that render a filtered subset must pass that subset. Defaulting to the
+  // whole library is only right for a view with no filter, and a "Select All" that
+  // quietly reaches past the filter feeds rows the user cannot see into bulk delete.
+  function selectAll(books: Pick<Audiobook, 'id'>[] = audiobooks.value) {
+    books.forEach((book) => selectedIds.value.add(book.id))
   }
 
   function clearSelection() {
