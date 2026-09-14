@@ -82,7 +82,7 @@ namespace Listenarr.Api.Features.Search
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                logger.LogWarning(ex, "Failed to normalize image for {LogLabel} ASIN {Asin}", logLabel, result.Asin);
+                logger.LogWarning(ex, "Failed to normalize image for {LogLabel} ASIN {Asin}", logLabel, LogRedaction.SanitizeText(result.Asin));
             }
         }
 
