@@ -59,6 +59,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260914152223_AddIndexerFailureBackoff";
     private const string PreferredReleaseShapeMigrationId =
         "20260914153043_AddPreferredReleaseShapeToQualityProfile";
+    private const string HistoryReleaseMetadataMigrationId =
+        "20260914171829_AddHistoryReleaseMetadata";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -211,6 +213,79 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.True(await ColumnExistsAsync(connection, "History", "Protocol"));
     }
 
+    // Indexer, quality and size are in scope at the one place a grab is recorded and were
+    // discarded there. The columns are the half that has to exist before the call site can stop
+    // throwing them away, and a test of the call site alone would pass with nowhere to store them.
+    [Fact]
+    [Trait("Scenario", "HistoryReleaseMetadataColumns")]
+    public async Task HistoryReleaseMetadataMigration_AddsTheNullableReleaseColumns()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.True(await ColumnExistsAsync(connection, "History", "Indexer"));
+        Assert.True(await ColumnExistsAsync(connection, "History", "Quality"));
+        Assert.True(await ColumnExistsAsync(connection, "History", "Size"));
+    }
+
+    // The columns have to survive a real SQLite round trip, not just exist. An in-memory
+    // provider would accept a write to a column the migration never created.
+    [Fact]
+    [Trait("Scenario", "HistoryReleaseMetadataRoundTrip")]
+    public async Task HistoryReleaseMetadata_SurvivesAWriteAndAReadBack()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        context.History.Add(new History
+        {
+            EventType = HistoryEvents.Grabbed,
+            CorrelationId = "round-trip",
+            Indexer = "Example Indexer",
+            Quality = "M4B 128kbps",
+            Size = 734003200L
+        });
+        await context.SaveChangesAsync();
+
+        await using var reader = new ListenArrDbContext(CreateOptions(connection));
+        var stored = Assert.Single(await reader.History.AsNoTracking().ToListAsync());
+        Assert.Equal("Example Indexer", stored.Indexer);
+        Assert.Equal("M4B 128kbps", stored.Quality);
+        Assert.Equal(734003200L, stored.Size);
+    }
+
+    // A grab that knew none of the three leaves them null rather than zero or empty, so an
+    // unreported size does not read back as an empty release.
+    [Fact]
+    [Trait("Scenario", "HistoryReleaseMetadataStaysNull")]
+    public async Task HistoryReleaseMetadata_IsNullForAnEventWithNoReleaseBehindIt()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        context.History.Add(new History
+        {
+            EventType = "Added",
+            CorrelationId = "library-row"
+        });
+        await context.SaveChangesAsync();
+
+        await using var reader = new ListenArrDbContext(CreateOptions(connection));
+        var stored = Assert.Single(await reader.History.AsNoTracking().ToListAsync());
+        Assert.Null(stored.Indexer);
+        Assert.Null(stored.Quality);
+        Assert.Null(stored.Size);
+    }
+
     [Fact]
     [Trait("Scenario", "IndexerFailureBackoffColumns")]
     public async Task IndexerFailureBackoffMigration_AddsPerIndexerBackoffColumns()
@@ -281,7 +356,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 ReleaseBlocklistMigrationId,
                 HistoryProtocolMigrationId,
                 IndexerFailureBackoffMigrationId,
-                PreferredReleaseShapeMigrationId
+                PreferredReleaseShapeMigrationId,
+                HistoryReleaseMetadataMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
