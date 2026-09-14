@@ -103,6 +103,8 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
             var readableVariants = 0;
             var unreadableVariants = 0;
             string? lastFailureDetail = null;
+            var lastFailureReason = IndexerQueryReason.HttpStatus;
+            TimeSpan? lastRetryAfter = null;
 
             var queryIndex = 0;
             foreach (var searchQuery in queryPlan.Queries)
@@ -124,7 +126,16 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Internet Archive returned status {Status}", response.StatusCode);
-                    lastFailureDetail = IndexerQueryFailureClassifier.Describe(response.StatusCode);
+
+                    // A 429 on any variant latches: it is the one status carrying the remote's own
+                    // stated number, and a later variant returning a plain 500 must not discard it.
+                    if (lastFailureReason != IndexerQueryReason.RateLimited)
+                    {
+                        lastFailureReason = IndexerQueryFailureClassifier.Classify(response.StatusCode);
+                        lastFailureDetail = IndexerQueryFailureClassifier.Describe(response.StatusCode);
+                        lastRetryAfter = IndexerQueryFailureClassifier.ReadRetryAfter(response.Headers.RetryAfter);
+                    }
+
                     continue;
                 }
 
@@ -148,7 +159,7 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
             // Every query variant failing at the transport is not the archive saying it has nothing.
             if (!answeredAtLeastOnce && lastFailureDetail != null)
             {
-                return IndexerQueryObservation.Unavailable(IndexerQueryReason.HttpStatus, query, lastFailureDetail);
+                return IndexerQueryObservation.Unavailable(lastFailureReason, query, lastFailureDetail, retryAfter: lastRetryAfter);
             }
 
             // Nor is a body we could never read.
