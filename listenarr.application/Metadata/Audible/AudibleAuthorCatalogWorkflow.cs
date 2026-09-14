@@ -423,7 +423,7 @@ namespace Listenarr.Application.Metadata.Audible
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
-                    _logger.LogDebug(ex, "Failed to hydrate fallback author page metadata for ASIN {Asin}", book.Asin);
+                    _logger.LogDebug(ex, "Failed to hydrate fallback author page metadata for ASIN {Asin}", LogRedaction.SanitizeText(book.Asin));
                 }
             }
         }
