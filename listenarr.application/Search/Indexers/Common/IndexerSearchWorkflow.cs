@@ -22,6 +22,18 @@ namespace Listenarr.Application.Search.Indexers.Common;
 
 public class IndexerSearchWorkflow
 {
+    // Every enabled indexer is fanned out to concurrently. A local Jackett/Prowlarr proxy
+    // has its own connection-handling capacity, and firing all of them at once (unbounded,
+    // via Task.WhenAll) can exceed what that proxy can accept in one burst, producing
+    // SocketException(111)/SocketException(104) against ports Listenarr itself configured
+    // -- overload, not a remote outage. Bounded the same way DownloadClientQueuePoller
+    // (SemaphoreSlim) and UnmatchedScanBackgroundService (Parallel.ForEachAsync) already
+    // bound their own fan-outs. 4 sits in the middle of the finding's suggested 3-5 range:
+    // enough that a typical few-indexer interactive search still runs effectively unthrottled,
+    // low enough that a large automatic-search sweep never asks the local proxy to accept
+    // more than 4 simultaneous connections per book.
+    private const int MaxConcurrentIndexerSearches = 4;
+
     private readonly HttpClient _httpClient;
     private readonly IConfigurationService _configurationService;
     private readonly IIndexerRepository _indexerRepository;
@@ -68,30 +80,45 @@ public class IndexerSearchWorkflow
             return GenerateMockIndexerResults(query);
         }
 
-        var searchTasks = indexers.Select(async indexer =>
-        {
-            try
-            {
-                _logger.LogInformation("Searching indexer {Name} ({Type}) for query: {Query}", indexer.Name, indexer.Type, query);
-                var perIndexerRequest = ApplyIndexerMamOptions(indexer, request);
+        // One slot per configured indexer, written exactly once by the body below. An array rather
+        // than a ConcurrentBag so the per-indexer outcome log lines still come out in configuration
+        // order once the bounded fan-out has finished.
+        var observations = new (Indexer Indexer, IndexerQueryObservation Observation)[indexers.Count];
 
-                var observation = await SearchIndexerAsync(indexer, query, category, perIndexerRequest, ct);
-                _logger.LogInformation("Found {Count} results from indexer {Name}", observation.Results.Count, indexer.Name);
-                return (Indexer: indexer, Observation: observation);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        await Parallel.ForEachAsync(
+            indexers.Select((indexer, index) => (Indexer: indexer, Index: index)),
+            new ParallelOptions
             {
-                // Containment, not a tier miss: one indexer throwing must not take down the fan-out,
-                // and the outcome records that this indexer never answered.
-                _logger.LogError(ex, "Error searching indexer {Name} for query: {Query}", indexer.Name, query);
-                return (Indexer: indexer, Observation: IndexerQueryObservation.Unavailable(
-                    IndexerQueryFailureClassifier.Classify(ex),
-                    query,
-                    IndexerQueryFailureClassifier.Describe(ex)));
-            }
-        }).ToList();
+                MaxDegreeOfParallelism = MaxConcurrentIndexerSearches,
+                CancellationToken = ct
+            },
+            async (entry, _) =>
+            {
+                var indexer = entry.Indexer;
+                try
+                {
+                    _logger.LogInformation("Searching indexer {Name} ({Type}) for query: {Query}", indexer.Name, indexer.Type, query);
+                    var perIndexerRequest = ApplyIndexerMamOptions(indexer, request);
 
-        var observations = await Task.WhenAll(searchTasks);
+                    // The caller's own token, not the loop's linked one: Parallel.ForEachAsync cancels
+                    // its linked token when any body faults, and a sibling indexer faulting must not
+                    // make this indexer's in-flight HttpClient timeout read as a caller cancellation.
+                    var observation = await SearchIndexerAsync(indexer, query, category, perIndexerRequest, ct);
+                    _logger.LogInformation("Found {Count} results from indexer {Name}", observation.Results.Count, indexer.Name);
+                    observations[entry.Index] = (indexer, observation);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    // Containment, not a tier miss: one indexer throwing must not take down the fan-out,
+                    // and the outcome records that this indexer never answered.
+                    _logger.LogError(ex, "Error searching indexer {Name} for query: {Query}", indexer.Name, query);
+                    observations[entry.Index] = (indexer, IndexerQueryObservation.Unavailable(
+                        IndexerQueryFailureClassifier.Classify(ex),
+                        query,
+                        IndexerQueryFailureClassifier.Describe(ex)));
+                }
+            });
+
         foreach (var (indexer, observation) in observations)
         {
             LogIndexerQueryOutcome(indexer, observation);
