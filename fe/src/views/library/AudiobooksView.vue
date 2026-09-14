@@ -130,6 +130,15 @@
           <PhFolderOpen />
           Organize Selected
         </button>
+        <button
+          v-if="selectedCount > 0"
+          class="toolbar-btn"
+          :disabled="bulkSearchRunning"
+          @click="confirmBulkSearch"
+        >
+          <PhRobot />
+          Search Selected ({{ searchTargets.length }})
+        </button>
         <button v-if="selectedCount > 0" class="toolbar-btn delete-btn" @click="confirmBulkDelete">
           <PhTrash />
           Delete Selected ({{ selectedCount }})
@@ -884,6 +893,7 @@ import { getPlaceholderUrl } from '@/utils/placeholder'
 import { errorTracking } from '@/services/errorTracking'
 import { isLikelyBackendImageUrl, useProtectedImages } from '@/composables/useProtectedImages'
 import { useToast } from '@/services/toastService'
+import { SEARCH_SPACING_MS, formatSearchDuration } from '@/utils/automaticSearch'
 
 function getAuthorSortKey(author: string): string {
   const parts = author.trim().split(/\s+/)
@@ -2374,8 +2384,19 @@ async function confirmBulkDelete() {
   }
 }
 
-// Per-row automatic search state for the grid/list icon.
+// Per-row automatic search state, shared by the grid/list icon (item 2) and the
+// selection-gated bulk toolbar button (item 4).
 const searching = ref<Record<number, boolean>>({})
+const bulkSearchRunning = ref(false)
+
+// What "Search Selected" will actually act on: the selected rows minus any already in
+// flight. selectedIds is already scoped to the filtered grid by libraryStore.selectAll
+// (331f605f7), so no further join against the filtered computed is needed here.
+const searchTargets = computed(() =>
+  libraryStore.audiobooks.filter(
+    (a) => libraryStore.selectedIds.has(a.id) && !searching.value[a.id],
+  ),
+)
 
 async function runAutomaticSearch(audiobook: Audiobook) {
   if (searching.value[audiobook.id]) return
@@ -2402,6 +2423,34 @@ async function runAutomaticSearch(audiobook: Audiobook) {
     toast.error('Search failed', err instanceof Error ? err.message : String(err))
   } finally {
     searching.value[audiobook.id] = false
+  }
+}
+
+async function confirmBulkSearch() {
+  if (bulkSearchRunning.value) return
+
+  // Snapshot before the first search, because runAutomaticSearch mutates the
+  // searching map that searchTargets is derived from.
+  const targets = [...searchTargets.value]
+  if (targets.length === 0) return
+
+  const count = targets.length
+  const noun = count === 1 ? 'audiobook' : 'audiobooks'
+  const message = `Start an automatic search for ${count} ${noun}? Each one queries every configured indexer, one per second, so this takes about ${formatSearchDuration(count)}.`
+  const ok = await showConfirm(message, 'Confirm Search', {
+    confirmText: 'Search',
+    cancelText: 'Cancel',
+  })
+  if (!ok) return
+
+  bulkSearchRunning.value = true
+  try {
+    for (const audiobook of targets) {
+      await runAutomaticSearch(audiobook)
+      await new Promise((resolve) => setTimeout(resolve, SEARCH_SPACING_MS))
+    }
+  } finally {
+    bulkSearchRunning.value = false
   }
 }
 
@@ -2520,7 +2569,10 @@ defineExpose({
   showSearchAction,
   toggleSearchAction,
   searching,
+  searchTargets,
+  bulkSearchRunning,
   runAutomaticSearch,
+  confirmBulkSearch,
 })
 </script>
 
