@@ -59,7 +59,7 @@ public class AsinSearchHandler
         string? language = null,
         CancellationToken ct = default)
     {
-        _logger.LogInformation("Processing direct ASIN query: {Asin}", asin);
+        _logger.LogInformation("Processing direct ASIN query: {Asin}", LogRedaction.SanitizeText(asin));
         await _searchProgressReporter.BroadcastAsync($"Extracting ASIN: {asin}", null);
 
         var safeRegion = AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
@@ -69,7 +69,7 @@ public class AsinSearchHandler
         string? metadataSourceName = null;
 
         // Step 1: Try to get metadata from the Audible-backed provider first.
-        _logger.LogInformation("Attempting Audible catalog metadata for ASIN {Asin}", asin);
+        _logger.LogInformation("Attempting Audible catalog metadata for ASIN {Asin}", LogRedaction.SanitizeText(asin));
         await _searchProgressReporter.BroadcastAsync($"Searching Audible for {asin}", null);
 
         try
@@ -79,22 +79,22 @@ public class AsinSearchHandler
             {
                 metadata = _metadataConverters.ConvertAudibleToMetadata(audibleData, asin, "Audible");
                 metadataSourceName = "Audible";
-                _logger.LogInformation("Successfully got metadata from Audible for ASIN {Asin}", asin);
+                _logger.LogInformation("Successfully got metadata from Audible for ASIN {Asin}", LogRedaction.SanitizeText(asin));
             }
             else
             {
-                _logger.LogInformation("Audible metadata returned no data for ASIN {Asin}", asin);
+                _logger.LogInformation("Audible metadata returned no data for ASIN {Asin}", LogRedaction.SanitizeText(asin));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
-            _logger.LogDebug(ex, "Failed to get metadata from Audible for ASIN {Asin}", asin);
+            _logger.LogDebug(ex, "Failed to get metadata from Audible for ASIN {Asin}", LogRedaction.SanitizeText(asin));
         }
 
         // Step 2: If Audible failed, try other configured metadata sources (Audnexus)
         if (metadata == null && metadataSources != null && metadataSources.Any())
         {
-            _logger.LogInformation("Trying {Count} fallback metadata source(s) for ASIN {Asin}", metadataSources.Count, asin);
+            _logger.LogInformation("Trying {Count} fallback metadata source(s) for ASIN {Asin}", metadataSources.Count, LogRedaction.SanitizeText(asin));
             await _searchProgressReporter.BroadcastAsync($"Checking fallback metadata sources for {asin}", null);
 
             foreach (var source in metadataSources.OrderBy(s => s.Priority))
@@ -103,21 +103,21 @@ public class AsinSearchHandler
                 {
                     if (source.Name.Contains("Audnexus", StringComparison.OrdinalIgnoreCase))
                     {
-                        _logger.LogInformation("Attempting Audnexus for ASIN {Asin}", asin);
+                        _logger.LogInformation("Attempting Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                         await _searchProgressReporter.BroadcastAsync($"Searching Audnexus for {asin}", null);
                         var audnexusData = await _audnexusService.GetBookMetadataAsync(asin, safeRegion, true, false);
                         if (audnexusData != null)
                         {
                             metadata = _metadataConverters.ConvertAudnexusToMetadata(audnexusData, asin, "Audible");
                             metadataSourceName = source.Name;
-                            _logger.LogInformation("Successfully got metadata from {Source} for ASIN {Asin}", source.Name, asin);
+                            _logger.LogInformation("Successfully got metadata from {Source} for ASIN {Asin}", source.Name, LogRedaction.SanitizeText(asin));
                             break;
                         }
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
-                    _logger.LogDebug(ex, "Failed to get metadata from {Source} for ASIN {Asin}", source.Name, asin);
+                    _logger.LogDebug(ex, "Failed to get metadata from {Source} for ASIN {Asin}", source.Name, LogRedaction.SanitizeText(asin));
                 }
             }
         }
@@ -157,17 +157,17 @@ public class AsinSearchHandler
                 !result.Title.Equals("Amazon.com", StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrWhiteSpace(result.Artist))
             {
-                _logger.LogInformation("ASIN query succeeded for {Asin}, returning enriched result from {Source}", asin, metadataSourceName);
+                _logger.LogInformation("ASIN query succeeded for {Asin}, returning enriched result from {Source}", LogRedaction.SanitizeText(asin), metadataSourceName);
                 return new List<SearchResult> { result };
             }
             else
             {
-                _logger.LogWarning("ASIN query got invalid data for {Asin} (Title={Title}, Artist={Artist})", asin, result.Title, result.Artist);
+                _logger.LogWarning("ASIN query got invalid data for {Asin} (Title={Title}, Artist={Artist})", LogRedaction.SanitizeText(asin), result.Title, result.Artist);
             }
         }
         else
         {
-            _logger.LogWarning("ASIN query failed for {Asin} - no metadata from APIs or scraping", asin);
+            _logger.LogWarning("ASIN query failed for {Asin} - no metadata from APIs or scraping", LogRedaction.SanitizeText(asin));
         }
 
         // If we reach here, ASIN query failed - return empty list

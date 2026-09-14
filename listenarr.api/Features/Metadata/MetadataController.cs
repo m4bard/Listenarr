@@ -124,7 +124,7 @@ namespace Listenarr.Api.Features.Metadata
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogError(ex, "Error fetching metadata for ASIN: {Asin}", asin);
+                _logger.LogError(ex, "Error fetching metadata for ASIN: {Asin}", LogRedaction.SanitizeText(asin));
 
                 // A fixed string, like the sibling endpoint below. ex.Message on this path is
                 // the provider client's own text, and a client that raises composes that text
@@ -170,7 +170,7 @@ namespace Listenarr.Api.Features.Metadata
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogError(ex, "Error fetching Audible metadata for ASIN: {Asin}", asin);
+                _logger.LogError(ex, "Error fetching Audible metadata for ASIN: {Asin}", LogRedaction.SanitizeText(asin));
                 return StatusCode(500, "Internal server error");
             }
         }
