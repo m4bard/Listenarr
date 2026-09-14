@@ -105,6 +105,13 @@ namespace Listenarr.Domain.Audiobooks
         public int MaximumAge { get; set; } = 0;
 
         /// <summary>
+        /// How this profile treats bundle/omnibus releases relative to single-book releases.
+        /// Scored, not filtered: the losing shape is penalised and still eligible, so a book
+        /// whose only available release is on the wrong side of the preference still fills.
+        /// </summary>
+        public ReleaseShapePreference PreferredReleaseShape { get; set; } = ReleaseShapePreference.NoPreference;
+
+        /// <summary>
         /// Custom names for quality groups (codec -> custom name)
         /// e.g., { "MP3": "Lossy MP3", "FLAC": "High Quality" }
         /// </summary>

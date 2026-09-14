@@ -9,7 +9,7 @@ namespace Listenarr.Application.Audiobooks.Contracts
         Task<QualityProfile> CreateAsync(QualityProfile profile);
         Task<QualityProfile> UpdateAsync(QualityProfile profile);
         Task<bool> DeleteAsync(int id);
-        Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile);
-        Task<List<QualityScore>> ScoreSearchResults(List<SearchResult> searchResults, QualityProfile profile);
+        Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile, bool targetIsBundle = false);
+        Task<List<QualityScore>> ScoreSearchResults(List<SearchResult> searchResults, QualityProfile profile, bool targetIsBundle = false);
     }
 }
