@@ -205,7 +205,13 @@ namespace Listenarr.Application.Audiobooks.Quality
             // can display the same composite ranking details used for Smart sorting.
             try
             {
-                var composite = CompositeScorer.CalculateProwlarrStyleScore(searchResult, null, _logger);
+                Indexer? indexer = null;
+                if (searchResult.IndexerId.HasValue && _indexerRepository != null)
+                {
+                    indexer = await _indexerRepository.GetByIdAsync(searchResult.IndexerId.Value);
+                }
+
+                var composite = CompositeScorer.CalculateProwlarrStyleScore(searchResult, indexer, _logger);
                 score.SmartScore = composite.Total;
                 score.SmartScoreBreakdown = composite.Breakdown.ToDictionary(kv => kv.Key, kv => (int)Math.Round(kv.Value));
             }
