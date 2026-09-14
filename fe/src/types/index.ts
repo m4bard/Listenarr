@@ -829,16 +829,88 @@ export interface AudiobookUpdateRequest {
   qualityProfileId?: number
 }
 
+/**
+ * Stable operational outcome, matching HistoryOutcome on the server. Sent as the name
+ * rather than the ordinal because the endpoint binds the enum by name.
+ */
+export type HistoryOutcome = 'Requested' | 'Succeeded' | 'Failed' | 'Skipped' | 'Retrying'
+
+export const HISTORY_OUTCOMES: readonly HistoryOutcome[] = [
+  'Requested',
+  'Succeeded',
+  'Failed',
+  'Skipped',
+  'Retrying',
+]
+
+export type DownloadProtocolName = 'Unknown' | 'Torrent' | 'Usenet'
+
+/** Every field on the server's History entity. */
 export interface History {
   id: number
   audiobookId?: number
+  audiobookExternalId?: string
   audiobookTitle?: string
+  /** The release or file the action was about. */
+  sourceTitle?: string
   eventType: string
   message?: string
+  /** Pipeline stage, or the download client's name for download events. */
   source?: string
   timestamp: string
   notificationSent?: boolean
   data?: string
+  outcome?: HistoryOutcome
+  downloadId?: string
+  downloadClientId?: string
+  /** Groups the attempts that belong to one workflow. */
+  correlationId?: string
+  idempotencyKey?: string
+  parentEventId?: number
+  /** Failure detail, kept separately from the display message. */
+  error?: string
+  protocol?: DownloadProtocolName | number
+  indexer?: string
+  quality?: string
+  size?: number
+}
+
+/** One page of history, with the total of the whole filtered set rather than of the page. */
+export interface HistoryPage {
+  history: History[]
+  total: number
+  limit: number
+  offset: number
+}
+
+/** One entry with every other attempt sharing its correlation id, oldest first. */
+export interface HistoryDetails {
+  entry: History
+  related: History[]
+}
+
+export type HistorySortKey = 'timestamp' | 'eventType' | 'outcome' | 'source'
+
+/**
+ * Everything GET /history accepts. An options object rather than positional arguments
+ * because twelve parameters is not callable any other way.
+ */
+export interface HistoryQueryParams {
+  limit?: number
+  offset?: number
+  sortBy?: HistorySortKey
+  sortDirection?: 'asc' | 'desc'
+  /** One event type, or several as a comma-separated list. */
+  eventType?: string
+  outcome?: HistoryOutcome
+  /** Inclusive ISO-8601 lower bound. */
+  from?: string
+  /** Inclusive ISO-8601 upper bound. */
+  to?: string
+  audiobookId?: number
+  downloadId?: string
+  downloadClientId?: string
+  correlationId?: string
 }
 
 export interface Indexer {
