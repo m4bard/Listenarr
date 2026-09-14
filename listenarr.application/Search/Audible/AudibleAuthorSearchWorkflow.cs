@@ -214,7 +214,7 @@ namespace Listenarr.Application.Search.Audible
                 }
                 catch (Exception exMeta) when (exMeta is not OperationCanceledException && exMeta is not OutOfMemoryException && exMeta is not StackOverflowException)
                 {
-                    _logger.LogDebug(exMeta, "Failed fetching audible metadata for ASIN {Asin} while scanning for ISBN", candidate.Asin);
+                    _logger.LogDebug(exMeta, "Failed fetching audible metadata for ASIN {Asin} while scanning for ISBN", LogRedaction.SanitizeText(candidate.Asin));
                 }
             }
 
