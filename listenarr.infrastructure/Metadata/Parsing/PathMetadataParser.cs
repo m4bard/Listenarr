@@ -52,7 +52,6 @@ namespace Listenarr.Infrastructure.Metadata.Parsing
             @"^(\d{4})\s+-\s+(.+?)(?:\s+\[(.+?)\s+([\d.]+)\])?$",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        private static readonly string[] AudioExtensions = { ".m4b", ".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac", ".wav" };
         private static readonly string[] CoverExtensions = { ".jpg", ".jpeg", ".png", ".webp" };
 
         public static PathParsedMetadata Parse(
