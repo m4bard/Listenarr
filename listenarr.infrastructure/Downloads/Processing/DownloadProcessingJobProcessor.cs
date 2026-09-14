@@ -17,7 +17,6 @@
  */
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
-using System.Text.Json;
 
 namespace Listenarr.Infrastructure.Downloads.Processing
 {
@@ -243,8 +242,11 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     (string.IsNullOrEmpty(download.DownloadPath) || (!File.Exists(download.DownloadPath) && !Directory.Exists(download.DownloadPath))))
                 {
                     metrics.Increment("processing.source_missing");
+                    logger.LogWarning(
+                        "Direct-download source path not found at processing time: {Path}",
+                        LogRedaction.SanitizeFilePath(download.DownloadPath));
                     await ScheduleRetryAsync(job, downloadProcessingJobService, historyRepository, download, audiobook,
-                        correlationId, $"Direct-download source path not found at processing time: {download.DownloadPath}", cancellationToken, retryInitialDelaySeconds);
+                        correlationId, "Direct-download source path not found at processing time", cancellationToken, retryInitialDelaySeconds);
                     return;
                 }
 
@@ -305,8 +307,12 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                 }
                 catch (InvalidOperationException exception)
                 {
+                    // The exception can originate deep in path-identity resolution and may
+                    // quote a filesystem path, so it stays on the log line only; the History
+                    // row gets a fixed, non-leaking reason (issue #975).
+                    logger.LogError(exception, "Import failed for job {JobId}", job.Id);
                     await FailImportAsync(job, downloadProcessingJobService, historyRepository, download, audiobook,
-                        correlationId, exception.Message, cancellationToken);
+                        correlationId, "Unable to import the download's files (see the log for detail)", cancellationToken);
                     return;
                 }
 
@@ -362,43 +368,8 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     }
                 }
 
-                foreach (var result in results)
-                {
-                    var outcome = string.IsNullOrWhiteSpace(result.SourcePath) || string.IsNullOrWhiteSpace(result.FinalPath)
-                        ? HistoryOutcome.Skipped
-                        : HistoryOutcome.Succeeded;
-                    var eventType = outcome == HistoryOutcome.Skipped
-                        ? HistoryEvents.FileSkipped
-                        : result.Action == Listenarr.Domain.Audiobooks.Enumerations.FileAction.Move
-                            ? HistoryEvents.FileMoved
-                            : HistoryEvents.FileCopied;
-                    await historyRepository.AddAsync(new History
-                    {
-                        AudiobookId = audiobook.Id,
-                        AudiobookTitle = audiobook.Title,
-                        SourceTitle = Path.GetFileName(result.FinalPath ?? result.SourcePath ?? download.Title),
-                        DownloadId = download.Id.ToUpperInvariant(),
-                        DownloadClientId = download.DownloadClientId,
-                        EventType = eventType,
-                        Outcome = outcome,
-                        Source = "DownloadImport",
-                        Message = result.Message ?? $"{result.Action} completed",
-                        Timestamp = DateTime.UtcNow,
-                        CorrelationId = correlationId,
-                        Data = JsonSerializer.Serialize(new
-                        {
-                            JobId = job.Id,
-                            result.Action,
-                            result.RequestedAction,
-                            result.EffectiveAction,
-                            result.SourceDisposition,
-                            result.WarningCode,
-                            result.SourcePath,
-                            result.FinalPath,
-                            result.WasRegisteredToAudiobook
-                        })
-                    }, cancellationToken);
-                }
+                await RecordImportResultsAsync(historyRepository, job, download, audiobook,
+                    correlationId, results, cancellationToken);
 
                 job.JobData[Download.SourceRetainedMetadataKey] = results.Any(result =>
                     result.SourceDisposition
@@ -443,8 +414,9 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                 }
                 catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
                 {
+                    logger.LogError(exception, "Unable to enqueue the post-import library scan for job {JobId}", job.Id);
                     await ScheduleRetryAsync(job, downloadProcessingJobService, historyRepository, download, audiobook,
-                        correlationId, $"Unable to enqueue the post-import library scan: {exception.Message}", cancellationToken, retryInitialDelaySeconds);
+                        correlationId, "Unable to enqueue the post-import library scan (see the log for detail)", cancellationToken, retryInitialDelaySeconds);
                     return;
                 }
                 job.SetCheckpoint("ScanEnqueued", scanJobId.ToString());
@@ -488,8 +460,9 @@ namespace Listenarr.Infrastructure.Downloads.Processing
             }
             catch (InvalidOperationException exception)
             {
+                logger.LogError(exception, "Unable to commit import finalization for job {JobId}", job.Id);
                 await ScheduleRetryAsync(job, downloadProcessingJobService, historyRepository, download, audiobook,
-                    correlationId, $"Unable to commit import finalization: {exception.Message}", cancellationToken, retryInitialDelaySeconds);
+                    correlationId, "Unable to commit import finalization (see the log for detail)", cancellationToken, retryInitialDelaySeconds);
             }
         }
     }
