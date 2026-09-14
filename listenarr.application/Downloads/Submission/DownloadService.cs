@@ -373,11 +373,9 @@ namespace Listenarr.Application.Downloads.Submission
                 {
                     var protocol = isTorrent ? DownloadProtocol.Torrent : DownloadProtocol.Usenet;
                     await downloadHistoryService.RecordGrabbedAsync(
-                        downloadId,
-                        downloadClientIdForModel,
-                        candidate.Title,
-                        protocol,
-                        audiobookId > 0 ? audiobookId : null);
+                        downloadId, downloadClientIdForModel, candidate.Title, protocol,
+                        audiobookId > 0 ? audiobookId : null,
+                        candidate.Source, candidate.Quality, candidate.Size);
                     logger.LogInformation("Recorded grabbed event in history for download {DownloadId}", downloadId);
                 }
                 catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException)
