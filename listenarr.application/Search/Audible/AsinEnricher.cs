@@ -75,7 +75,7 @@ public class AsinEnricher
                 try
                 {
                     ct.ThrowIfCancellationRequested();
-                    _logger.LogDebug("Enriching ASIN {Asin}", asin);
+                    _logger.LogDebug("Enriching ASIN {Asin}", LogRedaction.SanitizeText(asin));
                     await _searchProgressReporter.BroadcastAsync($"Enriching ASIN: {asin}", asin);
 
                     // Get the original search results
@@ -90,7 +90,7 @@ public class AsinEnricher
                     {
                         try
                         {
-                            _logger.LogInformation("ASIN {Asin} has OpenLibrary augmentation. Considering OL metadata.", asin);
+                            _logger.LogInformation("ASIN {Asin} has OpenLibrary augmentation. Considering OL metadata.", LogRedaction.SanitizeText(asin));
 
                             // Build a simple haystack from OL fields and check if the original query
                             // appears anywhere in those fields. Only show OL-derived results when
@@ -123,18 +123,18 @@ public class AsinEnricher
                                     ImageUrl = olBook.CoverId.HasValue ? $"https://covers.openlibrary.org/b/id/{olBook.CoverId}-L.jpg" : null
                                 };
                                 metadataSourceName = "OpenLibrary";
-                                _logger.LogInformation("Using OpenLibrary metadata for ASIN {Asin} (title: {Title})", asin, olBook.Title);
+                                _logger.LogInformation("Using OpenLibrary metadata for ASIN {Asin} (title: {Title})", LogRedaction.SanitizeText(asin), olBook.Title);
                             }
                             else
                             {
                                 // OL exists for this ASIN but does not contain the query -> queue for fallback
-                                _logger.LogInformation("OpenLibrary has entry for ASIN {Asin} but OL metadata did not contain the query; queuing for fallback", asin);
+                                _logger.LogInformation("OpenLibrary has entry for ASIN {Asin} but OL metadata did not contain the query; queuing for fallback", LogRedaction.SanitizeText(asin));
                                 asinsNeedingFallback.Add(asin);
                             }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                         {
-                            _logger.LogWarning(ex, "Failed to convert OpenLibrary metadata for ASIN {Asin}", asin);
+                            _logger.LogWarning(ex, "Failed to convert OpenLibrary metadata for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                         }
 
                         // Skip calling Audible/Audnexus for OpenLibrary-augmented ASINs
@@ -183,18 +183,18 @@ public class AsinEnricher
                         {
                             enrichedResult.MetadataSource = metadataSourceName;
                             _logger.LogInformation("✓ Enriched result for ASIN {Asin} - Title: {Title}, MetadataSource: {MetadataSource}",
-                                asin, enrichedResult.Title ?? "null", metadataSourceName);
+                                LogRedaction.SanitizeText(asin), enrichedResult.Title ?? "null", metadataSourceName);
                         }
                         else
                         {
-                            _logger.LogWarning("⚠ Metadata obtained for ASIN {Asin} but metadataSourceName is null/empty", asin);
+                            _logger.LogWarning("⚠ Metadata obtained for ASIN {Asin} but metadataSourceName is null/empty", LogRedaction.SanitizeText(asin));
                         }
 
                         // Filter out Kindle Edition ebooks - these are not audiobooks
                         if (_filterPipeline.WouldFilter(enrichedResult, out string? filterReason))
                         {
                             _logger.LogInformation("Filtering out result: {Title} (ASIN: {Asin}) - Reason: {Reason}",
-                                enrichedResult.Title, asin, filterReason);
+                                enrichedResult.Title, LogRedaction.SanitizeText(asin), filterReason);
                             await _searchProgressReporter.BroadcastAsync($"Filtered out: {enrichedResult.Title}", asin);
                             try { candidateDropReasons[asin] = filterReason ?? "filtered"; }
                             catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
@@ -214,7 +214,7 @@ public class AsinEnricher
                     }
                     else
                     {
-                        _logger.LogWarning("✗ No metadata obtained for ASIN {Asin} after trying all sources and scraping", asin);
+                        _logger.LogWarning("✗ No metadata obtained for ASIN {Asin} after trying all sources and scraping", LogRedaction.SanitizeText(asin));
                         try { candidateDropReasons[asin] = "no_metadata_after_sources"; }
                         catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException)
                         {
@@ -224,12 +224,12 @@ public class AsinEnricher
                 }
                 catch (OperationCanceledException)
                 {
-                    _logger.LogInformation("Metadata enrichment cancelled for ASIN {Asin}", asin);
+                    _logger.LogInformation("Metadata enrichment cancelled for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                     throw;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
-                    _logger.LogWarning(ex, "Metadata enrichment failed for ASIN {Asin}", asin);
+                    _logger.LogWarning(ex, "Metadata enrichment failed for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 }
             }));
         }
