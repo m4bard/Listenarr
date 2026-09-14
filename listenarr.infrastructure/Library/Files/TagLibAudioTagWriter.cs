@@ -39,7 +39,7 @@ namespace Listenarr.Infrastructure.Library.Files
                 using var file = TagLib.File.Create(filePath);
                 ApplyAsinTag(file, asin);
                 file.Save();
-                _logger.LogDebug("Wrote ASIN tag '{Asin}' to {File}", asin, LogRedaction.SanitizeFilePath(filePath));
+                _logger.LogDebug("Wrote ASIN tag '{Asin}' to {File}", LogRedaction.SanitizeText(asin), LogRedaction.SanitizeFilePath(filePath));
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -74,7 +74,7 @@ namespace Listenarr.Infrastructure.Library.Files
                 file.Save();
                 _logger.LogDebug(
                     "Wrote ASIN tag '{Asin}' to generation-bound file {File}",
-                    asin,
+                    LogRedaction.SanitizeText(asin),
                     LogRedaction.SanitizeFilePath(registrationLease.PublicPath));
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

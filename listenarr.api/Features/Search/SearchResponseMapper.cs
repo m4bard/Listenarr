@@ -88,7 +88,7 @@ public sealed class SearchResponseMapper
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
-            _logger.LogDebug(ex, "Failed to sanitize public search result for ASIN {Asin}", r.Asin);
+            _logger.LogDebug(ex, "Failed to sanitize public search result for ASIN {Asin}", LogRedaction.SanitizeText(r.Asin));
         }
     }
 
@@ -126,7 +126,7 @@ public sealed class SearchResponseMapper
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Failed to normalize image for {Context} ASIN {Asin}", logContext, r.Asin);
+                _logger.LogWarning(ex, "Failed to normalize image for {Context} ASIN {Asin}", logContext, LogRedaction.SanitizeText(r.Asin));
             }
         }
     }
@@ -158,7 +158,7 @@ public sealed class SearchResponseMapper
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogDebug(ex, "Failed to normalize image for series result ASIN {Asin}", book.Asin);
+                _logger.LogDebug(ex, "Failed to normalize image for series result ASIN {Asin}", LogRedaction.SanitizeText(book.Asin));
             }
         }
 
@@ -239,7 +239,7 @@ public sealed class SearchResponseMapper
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
-            _logger.LogDebug(ex, "Failed to retrieve Audible metadata for ASIN {Asin}", md?.Asin);
+            _logger.LogDebug(ex, "Failed to retrieve Audible metadata for ASIN {Asin}", LogRedaction.SanitizeText(md?.Asin));
         }
 
         if (aud != null)
@@ -323,7 +323,7 @@ public sealed class SearchResponseMapper
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Failed to ensure cached image for {Asin}", r?.Asin);
+                _logger.LogWarning(ex, "Failed to ensure cached image for {Asin}", LogRedaction.SanitizeText(r?.Asin));
             }
         }
     }
@@ -358,7 +358,7 @@ public sealed class SearchResponseMapper
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
-            _logger.LogWarning(ex, "Failed to normalize Audible image for {Asin}", aud.Asin);
+            _logger.LogWarning(ex, "Failed to normalize Audible image for {Asin}", LogRedaction.SanitizeText(aud.Asin));
         }
 
         var authors = (aud.Authors ?? new List<AudibleAuthor>()).Where(a => a != null).Select(a => new
