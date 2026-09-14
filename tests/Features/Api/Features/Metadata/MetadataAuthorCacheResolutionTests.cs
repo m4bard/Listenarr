@@ -38,7 +38,7 @@ namespace Listenarr.Tests.Features.Api.Features.Metadata
         }
 
         [Fact]
-        public async Task ResolvePersistedAuthorCacheAsync_WhenTheNameMisses_FallsBackToAScannedAsin()
+        public async Task ResolvePersistedAuthorCacheAsync_WhenTheNameMisses_DoesNotScanForAnAsin()
         {
             var repository = new Mock<IAudiobookRepository>();
             var imageCache = new Mock<IImageCacheService>();
@@ -63,12 +63,12 @@ namespace Listenarr.Tests.Features.Api.Features.Metadata
 
             var resolved = await lookup.ResolvePersistedAuthorCacheAsync("Author One", "us", null);
 
-            // CHARACTERIZATION: the fallback exists to find a row the name lookup could not, which
-            // is precisely the case where the row belongs to somebody else. Author Two's row is
-            // returned as Author One's cache entry, and the caller then writes Author One's name
-            // back onto it.
-            Assert.NotNull(resolved);
-            Assert.Equal("Author Two", resolved!.AuthorName);
+            // The removed fallback could only fire where the name lookup had missed, which is
+            // precisely where the row it finds belongs to somebody else. Asserting on the returned
+            // row cannot tell "the fallback is gone" from "the fallback ran and missed", so the
+            // call itself is what is asserted.
+            Assert.Null(resolved);
+            repository.Verify(repo => repo.GetAuthorAsinByNameAsync(It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -98,7 +98,7 @@ namespace Listenarr.Tests.Features.Api.Features.Metadata
         }
 
         [Fact]
-        public async Task ProbeAuthorImageCacheAsync_WhenNoCandidateHasAnImage_StillReturnsACandidate()
+        public async Task ProbeAuthorImageCacheAsync_WhenNoCandidateHasAnImage_ReturnsNoAsin()
         {
             var repository = new Mock<IAudiobookRepository>();
             var imageCache = new Mock<IImageCacheService>();
@@ -117,9 +117,9 @@ namespace Listenarr.Tests.Features.Api.Features.Metadata
 
             var probe = await images.ProbeAuthorImageCacheAsync("Author One", "us", null);
 
-            // CHARACTERIZATION: an image-cache probe that found nothing hands back an ASIN anyway,
-            // and the author lookup then seeds its resolved identity from it.
-            Assert.Equal("FIXTURESHR1", probe.Asin);
+            // A probe that found nothing used to hand back an ASIN anyway, and the author lookup
+            // seeds its resolved identity from whatever comes back here.
+            Assert.Null(probe.Asin);
             Assert.Null(probe.CachedPath);
         }
 
