@@ -20,7 +20,7 @@ public class MetadataConverters
         _requestContextAccessor = requestContextAccessor;
     }
 
-    private static List<AudiobookSeriesMembership>? BuildSeriesMemberships(IEnumerable<AudibleSeries>? series)
+    internal static List<AudiobookSeriesMembership>? BuildSeriesMemberships(IEnumerable<AudibleSeries>? series)
     {
         if (series == null)
         {
@@ -42,7 +42,7 @@ public class MetadataConverters
         return normalized.Count == 0 ? null : normalized;
     }
 
-    private static void ApplyPrimarySeriesFields(AudibleBookMetadata metadata)
+    internal static void ApplyPrimarySeriesFields(AudibleBookMetadata metadata)
     {
         var primaryMembership = AudiobookSeriesMembershipHelper.GetPrimaryMembership(metadata.SeriesMemberships);
         metadata.Series = primaryMembership?.SeriesName;

@@ -187,5 +187,170 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                 catalog => catalog.GetCatalogAsync("Andy Weir", "us", 500, null, true, It.IsAny<System.Threading.CancellationToken>()),
                 Times.Once);
         }
+
+        [Fact]
+        public async Task MonitorAuthorAsync_PreservesSeriesAsinFromCatalogBook()
+        {
+            var dbOptions = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(databaseName: $"author-monitor-series-asin-{System.Guid.NewGuid():N}")
+                .Options;
+
+            await using var dbContext = new ListenArrDbContext(dbOptions);
+
+            var authorCatalogService = new Mock<IAuthorCatalogService>();
+            authorCatalogService
+                .Setup(service => service.GetCatalogAsync("Andy Weir", "uk", 500, null, false, It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync(new AuthorCatalogFetchResult
+                {
+                    Author = new AuthorLookupItem
+                    {
+                        Asin = "AUTHOR123",
+                        Name = "Andy Weir"
+                    },
+                    Books = new List<AudibleSearchResult>
+                    {
+                        new()
+                        {
+                            Asin = "B000MARTIAN",
+                            Title = "The Martian",
+                            Authors = new List<AudibleAuthor> { new() { Name = "Andy Weir" } },
+                            Language = "english",
+                            Series = new List<AudibleSeries>
+                            {
+                                new() { Name = "Andy Weir Collection", Position = "1", Asin = "SERIESASIN1" }
+                            }
+                        }
+                    }
+                });
+
+            LibraryAddOperationRequest? capturedRequest = null;
+            var libraryAddService = new Mock<ILibraryAddService>();
+            libraryAddService
+                .Setup(service => service.AddToLibraryAsync(
+                    It.IsAny<LibraryAddOperationRequest>(),
+                    It.IsAny<System.Threading.CancellationToken>()))
+                .Callback<LibraryAddOperationRequest, System.Threading.CancellationToken>((request, _) => capturedRequest = request)
+                .ReturnsAsync(new LibraryAddOperationResult
+                {
+                    Added = true,
+                    Message = "Audiobook added to library successfully",
+                    Audiobook = new Audiobook
+                    {
+                        Id = 11,
+                        Title = "The Martian",
+                        Authors = new List<string> { "Andy Weir" },
+                        Asin = "B000MARTIAN",
+                        Monitored = true
+                    }
+                });
+
+            var authorsRepo = new EfMonitoredAuthorRepository(dbContext);
+            var audiobooksRepo = new AudiobookRepository(dbContext);
+
+            var service = new AuthorMonitoringService(
+                authorsRepo,
+                audiobooksRepo,
+                authorCatalogService.Object,
+                libraryAddService.Object,
+                Mock.Of<ILogger<AuthorMonitoringService>>());
+
+            var result = await service.MonitorAuthorAsync(new MonitorAuthorRequest
+            {
+                Name = "Andy Weir",
+                Region = "uk",
+                Language = "english"
+            });
+
+            Assert.True(result.SyncResult.Succeeded);
+            Assert.Equal(1, result.SyncResult.AddedCount);
+            Assert.NotNull(capturedRequest);
+
+            var metadata = capturedRequest!.Metadata;
+            Assert.Equal("Andy Weir Collection", metadata.Series);
+            Assert.Equal("1", metadata.SeriesNumber);
+
+            var membership = Assert.Single(metadata.SeriesMemberships ?? new List<AudiobookSeriesMembership>());
+            Assert.Equal("Andy Weir Collection", membership.SeriesName);
+            Assert.Equal("1", membership.SeriesNumber);
+            Assert.Equal("SERIESASIN1", membership.SeriesAsin);
+        }
+
+        [Fact]
+        public async Task MonitorAuthorAsync_BookWithNoSeriesData_LeavesSeriesMembershipsNull()
+        {
+            var dbOptions = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(databaseName: $"author-monitor-no-series-{System.Guid.NewGuid():N}")
+                .Options;
+
+            await using var dbContext = new ListenArrDbContext(dbOptions);
+
+            var authorCatalogService = new Mock<IAuthorCatalogService>();
+            authorCatalogService
+                .Setup(service => service.GetCatalogAsync("Andy Weir", "uk", 500, null, false, It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync(new AuthorCatalogFetchResult
+                {
+                    Author = new AuthorLookupItem
+                    {
+                        Asin = "AUTHOR123",
+                        Name = "Andy Weir"
+                    },
+                    Books = new List<AudibleSearchResult>
+                    {
+                        new()
+                        {
+                            Asin = "B000MARTIAN",
+                            Title = "The Martian",
+                            Authors = new List<AudibleAuthor> { new() { Name = "Andy Weir" } },
+                            Language = "english"
+                        }
+                    }
+                });
+
+            LibraryAddOperationRequest? capturedRequest = null;
+            var libraryAddService = new Mock<ILibraryAddService>();
+            libraryAddService
+                .Setup(service => service.AddToLibraryAsync(
+                    It.IsAny<LibraryAddOperationRequest>(),
+                    It.IsAny<System.Threading.CancellationToken>()))
+                .Callback<LibraryAddOperationRequest, System.Threading.CancellationToken>((request, _) => capturedRequest = request)
+                .ReturnsAsync(new LibraryAddOperationResult
+                {
+                    Added = true,
+                    Message = "Audiobook added to library successfully",
+                    Audiobook = new Audiobook
+                    {
+                        Id = 11,
+                        Title = "The Martian",
+                        Authors = new List<string> { "Andy Weir" },
+                        Asin = "B000MARTIAN",
+                        Monitored = true
+                    }
+                });
+
+            var authorsRepo = new EfMonitoredAuthorRepository(dbContext);
+            var audiobooksRepo = new AudiobookRepository(dbContext);
+
+            var service = new AuthorMonitoringService(
+                authorsRepo,
+                audiobooksRepo,
+                authorCatalogService.Object,
+                libraryAddService.Object,
+                Mock.Of<ILogger<AuthorMonitoringService>>());
+
+            var result = await service.MonitorAuthorAsync(new MonitorAuthorRequest
+            {
+                Name = "Andy Weir",
+                Region = "uk",
+                Language = "english"
+            });
+
+            Assert.True(result.SyncResult.Succeeded);
+            Assert.NotNull(capturedRequest);
+
+            var metadata = capturedRequest!.Metadata;
+            Assert.Null(metadata.Series);
+            Assert.Null(metadata.SeriesNumber);
+            Assert.Null(metadata.SeriesMemberships);
+        }
     }
 }
