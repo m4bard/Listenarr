@@ -27,5 +27,13 @@ namespace Listenarr.Application.Search.Contracts.Repositories
         Task<Indexer> AddAsync(Indexer indexer, CancellationToken ct = default);
         Task UpdateAsync(Indexer indexer, CancellationToken ct = default);
         Task DeleteAsync(int id, CancellationToken ct = default);
+
+        /// <summary>
+        /// Writes only the failure-backoff columns of one indexer, leaving every configuration
+        /// column alone. Deliberately not expressed as <see cref="UpdateAsync"/> with a mutated
+        /// entity: that path overwrites the whole row from whatever was read, so a status write
+        /// built on a stale read would revert a settings edit made in between.
+        /// </summary>
+        Task UpdateBackoffStateAsync(int indexerId, IndexerBackoffState state, CancellationToken ct = default);
     }
 }
