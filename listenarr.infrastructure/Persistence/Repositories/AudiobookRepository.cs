@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
 using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Persistence.Repositories
@@ -190,7 +191,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
         {
             if (string.IsNullOrWhiteSpace(name)) return null;
 
-            var target = NormalizeAuthorName(name);
+            var target = StringUtils.NormalizeAuthorName(name);
 
             // Materialize first because SQLite cannot translate list-property checks on our JSON-backed columns.
             var candidates = await _db.Audiobooks
@@ -204,7 +205,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                     continue;
                 }
 
-                if (b.Authors.Any(a => NormalizeAuthorName(a) == target))
+                if (b.Authors.Any(a => StringUtils.NormalizeAuthorName(a) == target))
                 {
                     var asin = b.AuthorAsins.FirstOrDefault();
                     if (!string.IsNullOrWhiteSpace(asin)) return asin;
@@ -216,7 +217,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
         public async Task<AuthorCacheEntry?> GetCachedAuthorByNameAsync(string name, string region)
         {
-            var normalizedName = NormalizeAuthorName(name);
+            var normalizedName = StringUtils.NormalizeAuthorName(name);
             if (string.IsNullOrWhiteSpace(normalizedName))
             {
                 return null;
@@ -259,7 +260,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
         {
             ArgumentNullException.ThrowIfNull(authorCacheEntry);
 
-            var normalizedName = NormalizeAuthorName(authorCacheEntry.AuthorName);
+            var normalizedName = StringUtils.NormalizeAuthorName(authorCacheEntry.AuthorName);
             var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(authorCacheEntry.Region) ?? "us";
             var normalizedAsin = NormalizeAsin(authorCacheEntry.AuthorAsin);
 
@@ -295,7 +296,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 ? (string.IsNullOrWhiteSpace(existing.AuthorName) ? normalizedName : existing.AuthorName)
                 : authorCacheEntry.AuthorName.Trim();
             existing.AuthorNameNormalized = string.IsNullOrWhiteSpace(normalizedName)
-                ? NormalizeAuthorName(existing.AuthorName)
+                ? StringUtils.NormalizeAuthorName(existing.AuthorName)
                 : normalizedName;
             existing.AuthorAsin = string.IsNullOrWhiteSpace(normalizedAsin)
                 ? existing.AuthorAsin
@@ -433,23 +434,6 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
         {
             if (string.IsNullOrWhiteSpace(value)) return string.Empty;
             return new string(value.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
-        }
-
-        private static string NormalizeAuthorName(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return string.Empty;
-            }
-
-            var cleaned = new string(value
-                .Where(character => char.IsLetterOrDigit(character) || char.IsWhiteSpace(character))
-                .ToArray());
-            var parts = cleaned.Split(
-                new[] { ' ', '\t', '\n', '\r' },
-                StringSplitOptions.RemoveEmptyEntries);
-
-            return string.Join(' ', parts).ToLowerInvariant();
         }
 
         public async Task SaveChangesAsync(System.Threading.CancellationToken ct = default)
