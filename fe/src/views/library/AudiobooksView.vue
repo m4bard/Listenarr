@@ -897,6 +897,7 @@ import type { RuleLike } from '@/utils/customFilterEvaluator'
 import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobookStatus'
 import { safeText } from '@/utils/textUtils'
 import { formatSeriesMemberships } from '@/utils/seriesUtils'
+import { normalizeCollectionText } from '@/utils/collectionText'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { errorTracking } from '@/services/errorTracking'
 import { isLikelyBackendImageUrl, useProtectedImages } from '@/composables/useProtectedImages'
@@ -1443,10 +1444,32 @@ function getBookSeriesNames(book: Audiobook): string[] {
   return legacy ? [legacy] : []
 }
 
+// Every one of a book's authors (not just the first), so a co-authored book is grouped under
+// each of its authors' cards rather than being invisible under everyone but the first. `raw`
+// is the trimmed, as-stored spelling, kept as the group's display name; `normalized` is the
+// same normalizeCollectionText() comparison key CollectionView.vue already uses, so spelling
+// variants of one author ("Andy Weir" / "andy weir" / "Andy  Weir") collapse into one card
+// instead of splitting the count across several, and the two screens can no longer disagree.
+function getBookAuthorGroupKeys(book: Audiobook): { raw: string; normalized: string }[] {
+  const authors = book.authors || []
+  const seen = new Set<string>()
+  const keys: { raw: string; normalized: string }[] = []
+  for (const author of authors) {
+    const raw = (author || '').trim()
+    if (!raw) continue
+    const normalized = normalizeCollectionText(raw)
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    keys.push({ raw, normalized })
+  }
+  return keys
+}
+
 const groupedCollections = computed(() => {
   if (groupBy.value === 'books') return []
 
   const books = filteredAndSortedAudiobooks.value
+  const isAuthorsMode = groupBy.value === 'authors'
   const groups = new Map<
     string,
     {
@@ -1460,29 +1483,26 @@ const groupedCollections = computed(() => {
   >()
 
   books.forEach((book) => {
-    const keys =
-      groupBy.value === 'authors'
-        ? book.authors?.[0]
-          ? [book.authors[0]]
-          : []
-        : getBookSeriesNames(book)
-    for (const key of keys) {
-      if (!key) continue
-      if (!groups.has(key)) {
-        if (groupBy.value === 'authors') {
+    const keys = isAuthorsMode
+      ? getBookAuthorGroupKeys(book)
+      : getBookSeriesNames(book).map((name) => ({ raw: name, normalized: name }))
+    for (const { raw, normalized } of keys) {
+      if (!raw || !normalized) continue
+      if (!groups.has(normalized)) {
+        if (isAuthorsMode) {
           // Prefer override (fetched author image) first, then author ASIN, then book cover
           let cover: string | undefined = undefined
           try {
             // Use override if we've already fetched author image for this name
             // `authorCoverOverrides` is a reactive map populated asynchronously below
-            // (declared further down in this file via `reactive`).
-            // Access via (global) variable — will be undefined initially.
+            // (declared further down in this file via `reactive`), keyed by the display
+            // name (`raw`), same as everywhere else in this file.
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
-            if (authorCoverOverrides && authorCoverOverrides[key]) {
+            if (authorCoverOverrides && authorCoverOverrides[raw]) {
               // eslint-disable-next-line @typescript-eslint/ban-ts-comment
               // @ts-ignore
-              cover = authorCoverOverrides[key]
+              cover = authorCoverOverrides[raw]
             }
           } catch {}
 
@@ -1493,12 +1513,17 @@ const groupedCollections = computed(() => {
             } catch {}
           }
 
-          groups.set(key, { name: key, count: 0, coverUrl: cover, seriesNames: new Set<string>() })
+          groups.set(normalized, {
+            name: raw,
+            count: 0,
+            coverUrl: cover,
+            seriesNames: new Set<string>(),
+          })
         } else {
-          groups.set(key, { name: key, count: 0, coverUrls: [], seriesNames: new Set<string>() })
+          groups.set(normalized, { name: raw, count: 0, coverUrls: [], seriesNames: new Set<string>() })
         }
       }
-      const group = groups.get(key)!
+      const group = groups.get(normalized)!
       group.count++
       // Distinct series this author appears in. getBookSeriesNames is membership-aware and already
       // used by the series grouping below, so a book in several series counts once per series
@@ -1509,13 +1534,13 @@ const groupedCollections = computed(() => {
         }
       }
       const bookCover = getBookImageUrl(book)
-      if (groupBy.value === 'authors') {
+      if (isAuthorsMode) {
         try {
           const authorAsin = (book as unknown as { authorAsins?: string[] })?.authorAsins?.[0]
           if (authorAsin) group.coverUrl = buildApiPath(`/images/${encodeURIComponent(authorAsin)}`)
         } catch {}
       }
-      if (groupBy.value === 'series' && group.coverUrls && group.coverUrls.length < 8) {
+      if (!isAuthorsMode && group.coverUrls && group.coverUrls.length < 8) {
         if (bookCover && !group.coverUrls.includes(bookCover)) {
           group.coverUrls.push(bookCover)
         }
