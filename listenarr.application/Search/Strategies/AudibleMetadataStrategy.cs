@@ -53,7 +53,7 @@ namespace Listenarr.Application.Search.Strategies
 
         public async Task<AudibleBookMetadata?> FetchMetadataAsync(string asin, ApiConfiguration source, string? originalSource, string? region = null)
         {
-            _logger.LogDebug("Calling Audible metadata service for ASIN {Asin}", asin);
+            _logger.LogDebug("Calling Audible metadata service for ASIN {Asin}", LogRedaction.SanitizeText(asin));
             var safeRegion = AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
             var audibleData = await _audibleService.GetBookMetadataAsync(asin, safeRegion, true);
 
@@ -61,41 +61,41 @@ namespace Listenarr.Application.Search.Strategies
             {
                 _logger.LogInformation(
                     "Audible metadata returned data for ASIN {Asin}. Title: {Title}",
-                    asin,
+                    LogRedaction.SanitizeText(asin),
                     audibleData.Title ?? "null");
                 var metadata = _metadataConverters.ConvertAudibleToMetadata(audibleData, asin, originalSource ?? "Audible");
-                _logger.LogInformation("Successfully enriched ASIN {Asin} with metadata from {SourceName}", asin, source.Name);
+                _logger.LogInformation("Successfully enriched ASIN {Asin} with metadata from {SourceName}", LogRedaction.SanitizeText(asin), source.Name);
                 return metadata;
             }
 
-            _logger.LogWarning("Audible metadata returned null for ASIN {Asin}", asin);
+            _logger.LogWarning("Audible metadata returned null for ASIN {Asin}", LogRedaction.SanitizeText(asin));
 
             // Retry once without cache when the initial lookup misses.
             try
             {
                 _logger.LogInformation(
                     "Audible metadata returned null for ASIN {Asin} (cache=true); retrying without cache",
-                    asin);
+                    LogRedaction.SanitizeText(asin));
                 var audibleRetry = await _audibleService.GetBookMetadataAsync(asin, safeRegion, false);
                 if (audibleRetry != null)
                 {
                     _logger.LogInformation(
                         "Audible metadata returned data for ASIN {Asin} on retry (no-cache). Title: {Title}",
-                        asin,
+                        LogRedaction.SanitizeText(asin),
                         audibleRetry.Title ?? "null");
                     var metadata = _metadataConverters.ConvertAudibleToMetadata(audibleRetry, asin, originalSource ?? "Audible");
                     _logger.LogInformation(
                         "Successfully enriched ASIN {Asin} with metadata from {SourceName} (no-cache)",
-                        asin,
+                        LogRedaction.SanitizeText(asin),
                         source.Name);
                     return metadata;
                 }
 
-                _logger.LogWarning("Audible metadata returned null on retry for ASIN {Asin}", asin);
+                _logger.LogWarning("Audible metadata returned null on retry for ASIN {Asin}", LogRedaction.SanitizeText(asin));
             }
             catch (Exception exRetry) when (exRetry is not OperationCanceledException && exRetry is not OutOfMemoryException && exRetry is not StackOverflowException)
             {
-                _logger.LogWarning(exRetry, "Audible metadata retry without cache failed for ASIN {Asin}", asin);
+                _logger.LogWarning(exRetry, "Audible metadata retry without cache failed for ASIN {Asin}", LogRedaction.SanitizeText(asin));
             }
 
             return null;

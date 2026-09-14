@@ -54,7 +54,7 @@ public class SearchResultFilterPipeline
                 if (logFilteredResults)
                 {
                     _logger.LogInformation("Filtered out result: {Title} (ASIN: {Asin}) - Reason: {Reason}",
-                        result.Title, result.Asin, filterReason);
+                        result.Title, LogRedaction.SanitizeText(result.Asin), filterReason);
                 }
             }
             else
