@@ -315,6 +315,9 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<DownloadProcessingJobCleanupProcessor>();
             services.AddSingleton<IDownloadProcessingJobCleanupProcessor>(sp => sp.GetRequiredService<DownloadProcessingJobCleanupProcessor>());
             services.AddSingleton<DownloadProcessingJobCleanupService>();
+            services.AddSingleton<HistoryRetentionCleanupProcessor>();
+            services.AddSingleton<IHistoryRetentionCleanupProcessor>(sp => sp.GetRequiredService<HistoryRetentionCleanupProcessor>());
+            services.AddSingleton<HistoryRetentionCleanupService>();
 
             return services;
         }
