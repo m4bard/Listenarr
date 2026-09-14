@@ -436,6 +436,8 @@ export interface ApplicationSettings {
   enableNotifications: boolean
   allowedFileExtensions: string[]
   importBlacklistExtensions?: string[]
+  // Automatically extract archive files found during library import and completed-download import
+  extractArchives?: boolean
   // Action to perform for completed downloads.
   completedFileAction?: 'none' | 'move' | 'copy' | 'hardlink/copy'
   // Show completed external downloads (torrents/NZBs) in the Activity view

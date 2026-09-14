@@ -38,4 +38,26 @@ describe('SearchSettingsSection', () => {
       wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.enableOpenLibrarySearch).toBe(true)
   })
+
+  it('round-trips the Amazon and Audible search checkboxes', async () => {
+    const { default: SearchSettingsSection } =
+      await import('@/components/settings/SearchSettingsSection.vue')
+    const wrapper = mount(SearchSettingsSection, {
+      props: { settings: { enableAmazonSearch: true, enableAudibleSearch: true } },
+      global: { components: { Checkbox } },
+    })
+
+    const checks = wrapper.findAll('input[type="checkbox"]')
+    expect(checks).toHaveLength(3)
+
+    await checks[1].setValue(false)
+    let last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    expect(last.enableAmazonSearch).toBe(false)
+
+    await checks[2].setValue(false)
+    last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    expect(last.enableAudibleSearch).toBe(false)
+  })
 })
