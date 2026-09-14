@@ -71,7 +71,10 @@ public class AudiobookOnlyFilter : ISearchResultFilter
         var format = result.Format ?? string.Empty;
 
         var simpleIndicators = new[] { "Paperback", "Hardcover", "Mass Market Paperback", "eBook", "Kindle Edition", "Audio CD", "Board book" };
-        var phraseIndicators = new[] { "Box Set", "3 Books", "3 Book", "3-Book", "Three Volume", "Three Volume Set", "Volume Set", "Trilogy", "Collector's Edition", "Slipcase", "Box Set:", "Box set:" };
+        // Shared with ReleaseShapeDetector, which reads the same vocabulary to tell a
+        // bundle from a single edition. The list is identical to the one that used to be
+        // written out here; keeping one copy is the point.
+        var phraseIndicators = ReleaseShapeDetector.BundlePhrases;
         var suffixIndicators = new[] { "Paperback –", "Hardcover –", "Mass Market Paperback –" };
 
         bool HasAny(IEnumerable<string> patterns, string input) => patterns.Any(p => input.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0);

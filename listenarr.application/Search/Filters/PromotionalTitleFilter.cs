@@ -19,7 +19,10 @@
 namespace Listenarr.Application.Search.Filters;
 
 /// <summary>
-/// Filters out promotional or noise titles like "Best of", "Collection", etc.
+/// Filters out promotional titles (percentage discounts, "unlock", "visit the ... store")
+/// and titles that are noise rather than a book. It does NOT filter "Collection" or
+/// "Best of", whatever this summary used to say; SearchValidation.IsPromotionalTitle
+/// has never matched either.
 /// </summary>
 public class PromotionalTitleFilter : ISearchResultFilter
 {
