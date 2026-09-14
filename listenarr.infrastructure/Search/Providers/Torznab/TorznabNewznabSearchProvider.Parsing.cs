@@ -10,7 +10,7 @@ namespace Listenarr.Infrastructure.Search.Providers.Torznab;
 
 public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
 {
-    private async Task<List<IndexerSearchResult>> ParseTorznabResponseAsync(string xmlContent, Indexer indexer)
+    private async Task<IndexerQueryObservation> ParseTorznabResponseAsync(string xmlContent, Indexer indexer, string query)
     {
         var results = new List<IndexerSearchResult>();
 
@@ -39,7 +39,7 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
             if (channel == null)
             {
                 _logger.LogWarning("Invalid Torznab response: no channel element");
-                return results;
+                return IndexerQueryObservation.Unreadable(IndexerQueryReason.MissingChannel, query);
             }
 
             var items = channel.Elements("item");
@@ -447,12 +447,23 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
                     _logger.LogError("XML context around error:\n{Context}", context);
                 }
             }
+
+            return IndexerQueryObservation.Unreadable(
+                IndexerQueryReason.MalformedXml,
+                query,
+                IndexerQueryFailureClassifier.Describe(xmlEx));
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error parsing Torznab XML response from {IndexerName}", indexer.Name);
+            return IndexerQueryObservation.Unreadable(
+                IndexerQueryReason.MalformedXml,
+                query,
+                IndexerQueryFailureClassifier.Describe(ex));
         }
 
-        return results;
+        // A well-formed channel with no items is the indexer answering that it has nothing, which is
+        // a different thing from any of the failures above.
+        return IndexerQueryObservation.FromResults(results, query);
     }
 }
