@@ -153,6 +153,16 @@
                 </template>
               </span>
             </div>
+            <div class="detail-row error-row" v-if="isInBackoff(indexer)">
+              <PhWarning />
+              <span class="detail-label">In backoff:</span>
+              <span class="detail-value error">
+                Not queried until {{ formatServerDate(indexer.disabledTill) }}
+                <template v-if="indexer.lastFailureReason">
+                  ({{ indexer.lastFailureReason }})
+                </template>
+              </span>
+            </div>
             <div class="detail-row error-row" v-if="indexer.lastTestError">
               <PhWarning />
               <span class="detail-value error">{{ indexer.lastTestError }}</span>
@@ -372,6 +382,17 @@ const formatDate = (dateString: string | undefined): string => {
   const date = new Date(dateString)
   return date.toLocaleString()
 }
+
+// Timestamps read back out of SQLite come over the wire with no timezone designator, so a bare
+// new Date() reads them as local and is out by the browser's offset. They are always UTC.
+const parseServerDate = (value: string): Date =>
+  new Date(/([zZ]|[+-]\d{2}:?\d{2})$/.test(value) ? value : `${value}Z`)
+
+const formatServerDate = (dateString: string | undefined): string =>
+  dateString ? parseServerDate(dateString).toLocaleString() : 'Never'
+
+const isInBackoff = (indexer: Indexer): boolean =>
+  !!indexer.disabledTill && parseServerDate(indexer.disabledTill).getTime() > Date.now()
 
 const loadIndexers = async () => {
   loading.value = true
