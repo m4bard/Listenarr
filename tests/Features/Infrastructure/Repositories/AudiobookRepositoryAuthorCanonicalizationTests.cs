@@ -376,4 +376,84 @@ public sealed class AudiobookRepositoryAuthorCanonicalizationTests : BaseTests
             .Select(audiobook => audiobook.BasePath)
             .SingleAsync());
     }
+
+    // The spelling backfill reads AuthorCacheEntries.AuthorName and writes it onto books, so a
+    // cache row carrying another author's name is the one input that could turn a wrong cached
+    // identity into wrong stored data -- on disk, in file tags and in search queries, which is a
+    // good deal worse than a wrong author photo. The write-time guard on the author cache stops
+    // new rows being renamed, and it is on the write path, so it is in force before this pass ever
+    // runs and for anything writing while it runs. The two tests below cover what it cannot: a row
+    // renamed by an older build, already in the database on the boot that first has the guard.
+    //
+    // They pass because of two independent properties, either of which is enough on its own.
+    // BuildCanonicalAuthorNameMapAsync keys on a name re-derived from each row's display name
+    // rather than on the stored AuthorNameNormalized column, so a row only ever offers its
+    // spelling to books crediting the author it actually names; and CanonicalizeAuthorList adopts
+    // a name only where it is a spelling variant of what the book already says. Verified by
+    // removing them: with either in place these pass, and with both gone the second fails.
+
+    [Fact]
+    public async Task CanonicalizeStoredAuthorNamesAsync_RowRenamedByAnAsinCollision_ReachesNoOtherAuthorsBooks()
+    {
+        var (connection, context) = await OpenAsync();
+        await using var _ = connection;
+        await using var __ = context;
+        // The state an older build left behind: Author One's row, resolved by a shared ASIN and
+        // overwritten with Author Two's name.
+        context.AuthorCacheEntries.Add(new AuthorCacheEntry
+        {
+            AuthorName = "Author Two",
+            AuthorNameNormalized = "author two",
+            AuthorAsin = "FIXTURESHR1",
+            Region = "us"
+        });
+        context.Audiobooks.AddRange(
+            Book("A Book By One", "Author One"),
+            Book("A Book By Two", "Author  Two"));
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        var repository = new AudiobookRepository(context);
+
+        var updated = await repository.CanonicalizeStoredAuthorNamesAsync();
+
+        Assert.Equal(1, updated);
+        var spellings = await context.Audiobooks
+            .AsNoTracking()
+            .OrderBy(audiobook => audiobook.Id)
+            .Select(audiobook => audiobook.Authors!)
+            .ToListAsync();
+        Assert.Equal(["Author One"], spellings[0]);
+        Assert.Equal(["Author Two"], spellings[1]);
+    }
+
+    [Fact]
+    public async Task CanonicalizeStoredAuthorNamesAsync_RenamedRowStillCarryingItsOldKey_ReachesNothing()
+    {
+        var (connection, context) = await OpenAsync();
+        await using var _ = connection;
+        await using var __ = context;
+        // The worse shape: display name and stored key disagree about who the row is for. A pass
+        // that joined on the stored column would copy "Author Two" onto every book crediting
+        // Author One.
+        context.AuthorCacheEntries.Add(new AuthorCacheEntry
+        {
+            AuthorName = "Author Two",
+            AuthorNameNormalized = "author one",
+            AuthorAsin = "FIXTURESHR1",
+            Region = "us"
+        });
+        context.Audiobooks.Add(Book("A Book By One", "Author One"));
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        var repository = new AudiobookRepository(context);
+
+        var updated = await repository.CanonicalizeStoredAuthorNamesAsync();
+
+        Assert.Equal(0, updated);
+        Assert.Equal(
+            ["Author One"],
+            await context.Audiobooks.AsNoTracking()
+                .Select(audiobook => audiobook.Authors!)
+                .SingleAsync());
+    }
 }
