@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
 using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Persistence.Repositories
@@ -187,7 +188,6 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             await _db.SaveChangesAsync();
             return true;
         }
-
 
         public async Task<SeriesCacheEntry?> GetCachedSeriesByNameAsync(string name, string region)
         {
