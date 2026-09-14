@@ -184,8 +184,8 @@ internal static class SabnzbdResponseMapper
                 clientName: client.Name,
                 clientType: "sabnzbd",
                 protocol: DownloadProtocol.Usenet,
-                removeCompletedDownloads: client.Settings?.TryGetValue("removeCompletedDownloads", out var removeVal) is true &&
-                                         (removeVal is bool boolVal && boolVal),
+                removeCompletedDownloads: !string.IsNullOrEmpty(client.RemoveCompletedDownloads) &&
+                                         client.RemoveCompletedDownloads != "none",
                 hasPostImportCategory: !string.IsNullOrEmpty(client.Settings?.GetValueOrDefault("postImportCategory")?.ToString()))
         };
     }
