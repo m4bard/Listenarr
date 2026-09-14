@@ -135,6 +135,10 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Indexer")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Message")
                         .HasColumnType("TEXT");
 
@@ -148,6 +152,13 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int?>("Protocol")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Quality")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("Size")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Source")
