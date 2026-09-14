@@ -130,7 +130,7 @@ namespace Listenarr.Application.Downloads.Import
                 var sourceFiles = candidateFiles.Distinct(sourcePathComparer).ToList();
                 sourceRootPath = FileUtils.GetCommonDirectory(sourceFiles);
                 var plannedAudioFiles = MultiFileImportPlanner.BuildPlans(
-                    sourceFiles.Where(FileUtils.IsAudioFile).Select(f => (f, (string?)null)),
+                    sourceFiles.Where(f => FileUtils.IsAudioFile(f, settings.AllowedFileExtensions)).Select(f => (f, (string?)null)),
                     sourcePathComparer);
                 var planByPath = plannedAudioFiles.ToDictionary(p => p.FullPath, sourcePathComparer);
                 var diskNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plannedAudioFiles, p => p.DiskNumberHint, sourcePathComparer);
@@ -172,9 +172,9 @@ namespace Listenarr.Application.Downloads.Import
                                 file,
                                 "Source filesystem identity is unavailable.",
                                 ct);
-                        if (!FileUtils.IsAudioFile(file))
+                        if (!FileUtils.IsAudioFile(file, settings.AllowedFileExtensions))
                         {
-                            var hasSuccessfulAudioImport = results.Any(r => r.Success && !string.IsNullOrWhiteSpace(r.FinalPath) && !string.IsNullOrWhiteSpace(r.SourcePath) && FileUtils.IsAudioFile(r.SourcePath!));
+                            var hasSuccessfulAudioImport = results.Any(r => r.Success && !string.IsNullOrWhiteSpace(r.FinalPath) && !string.IsNullOrWhiteSpace(r.SourcePath) && FileUtils.IsAudioFile(r.SourcePath!, settings.AllowedFileExtensions));
                             if (!hasSuccessfulAudioImport || string.IsNullOrWhiteSpace(audiobook.BasePath))
                             {
                                 results.Add(ImportResult.Skipped("No successful audio import in batch"));
