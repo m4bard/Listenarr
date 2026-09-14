@@ -30,6 +30,7 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
         private readonly IApplicationVersionService _applicationVersionService;
         private readonly IRootFolderService _rootFolderService;
         private readonly IDiskSpaceProbe _diskSpaceProbe;
+        private readonly IDownloadClientStatusCache _downloadClientStatusCache;
         private readonly DateTime _startTime;
         private static readonly Process _currentProcess = Process.GetCurrentProcess();
 
@@ -39,7 +40,8 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             IApplicationPathService applicationPathService,
             IApplicationVersionService applicationVersionService,
             IRootFolderService rootFolderService,
-            IDiskSpaceProbe diskSpaceProbe)
+            IDiskSpaceProbe diskSpaceProbe,
+            IDownloadClientStatusCache downloadClientStatusCache)
         {
             _configurationService = configurationService;
             _logger = logger;
@@ -47,6 +49,7 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             _applicationVersionService = applicationVersionService;
             _rootFolderService = rootFolderService;
             _diskSpaceProbe = diskSpaceProbe;
+            _downloadClientStatusCache = downloadClientStatusCache;
             _startTime = DateTime.UtcNow;
         }
 
@@ -184,7 +187,8 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             try
             {
                 var clients = await _configurationService.GetDownloadClientConfigurationsAsync();
-                return SystemHealthMapper.BuildDownloadClientHealth(clients);
+                var polledStatuses = _downloadClientStatusCache.GetStatuses();
+                return SystemHealthMapper.BuildDownloadClientHealth(clients, polledStatuses);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
