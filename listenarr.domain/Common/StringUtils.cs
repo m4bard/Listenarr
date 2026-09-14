@@ -79,6 +79,27 @@ namespace Listenarr.Domain.Common
             return string.Join(' ', merged);
         }
 
+        /// <summary>
+        /// True when two author strings differ only in ways <see cref="NormalizeAuthorName"/>
+        /// already erases: case, punctuation, whitespace and diacritics. This is the guard that
+        /// makes adopting a provider's or a cache row's spelling a cosmetic correction rather
+        /// than a merge -- it can change how an author is spelled and it cannot change who the
+        /// author is. Containment is deliberately not enough: the remote author lookup accepts a
+        /// bare substring in either direction, so "Conan Doyle" matches "Sir Arthur Conan Doyle",
+        /// and a pen name, a translator credit or a deliberately distinct credit would be
+        /// destroyed with no way back.
+        /// </summary>
+        public static bool IsAuthorSpellingVariant(string? candidate, string? other)
+        {
+            var candidateKey = NormalizeAuthorName(candidate);
+            if (string.IsNullOrEmpty(candidateKey))
+            {
+                return false;
+            }
+
+            return string.Equals(candidateKey, NormalizeAuthorName(other), StringComparison.Ordinal);
+        }
+
         public static int LevenshteinDistance(string s, string t)
         {
             if (s == t) return 0;
