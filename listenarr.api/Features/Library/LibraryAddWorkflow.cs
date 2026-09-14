@@ -407,6 +407,19 @@ namespace Listenarr.Api.Features.Library
                             audiobook.AuthorAsins.Add(info.Asin);
                         }
 
+                        foreach (var correction in AuthorNameCanonicalization.AdoptSpelling(
+                            audiobook.Authors,
+                            authorName,
+                            info.Name))
+                        {
+                            _logger.LogInformation(
+                                "Adopting provider spelling '{CanonicalAuthor}' for stored author "
+                                + "'{StoredAuthor}' on '{Title}'",
+                                correction.Canonical,
+                                correction.Stored,
+                                LogRedaction.SanitizeText(audiobook.Title));
+                        }
+
                         try
                         {
                             var moved = await _imageCacheService.MoveToAuthorLibraryStorageAsync(info.Asin, info.Image);
