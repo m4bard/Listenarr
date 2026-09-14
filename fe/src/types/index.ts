@@ -847,7 +847,6 @@ export interface Indexer {
   apiKey?: string
   categories?: string
   animeCategories?: string
-  tags?: string
   enableRss: boolean
   enableAutomaticSearch: boolean
   enableInteractiveSearch: boolean

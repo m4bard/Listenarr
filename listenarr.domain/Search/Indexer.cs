@@ -61,11 +61,6 @@ namespace Listenarr.Domain.Search
         public string? AnimeCategories { get; set; }
 
         /// <summary>
-        /// Tags for filtering (comma-separated)
-        /// </summary>
-        public string? Tags { get; set; }
-
-        /// <summary>
         /// Whether to enable RSS sync
         /// </summary>
         public bool EnableRss { get; set; } = true;
