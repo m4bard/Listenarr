@@ -71,6 +71,32 @@ namespace Listenarr.Tests.Features.Domain.Utils
                 StringUtils.NormalizeAuthorName("J. N. Smith"));
         }
 
+        // The guard that makes adopting another spelling a cosmetic correction rather than a
+        // merge. The containment cases are the ones the remote author lookup accepts and this
+        // must not.
+        [Theory]
+        [InlineData("Andy  Weir", "Andy Weir")]
+        [InlineData("andy weir", "Andy Weir")]
+        [InlineData("Émile Zola", "Emile Zola")]
+        [InlineData("J. N. Chaney", "J.N. Chaney")]
+        public void IsAuthorSpellingVariant_SameAuthorDifferentSpelling_IsTrue(string a, string b)
+        {
+            Assert.True(StringUtils.IsAuthorSpellingVariant(a, b));
+        }
+
+        [Theory]
+        [InlineData("Sir Arthur Conan Doyle", "Arthur Conan Doyle")]
+        [InlineData("Andy Weir, PhD", "Andy Weir")]
+        [InlineData("Jane Austen (Author)", "Jane Austen")]
+        [InlineData("J. N. Chaney", "J. N. Smith")]
+        [InlineData("Verne, Jules", "Jules Verne")]
+        [InlineData("", "Andy Weir")]
+        [InlineData(null, null)]
+        public void IsAuthorSpellingVariant_AnythingElse_IsFalse(string? a, string? b)
+        {
+            Assert.False(StringUtils.IsAuthorSpellingVariant(a, b));
+        }
+
         [Fact]
         public void NormalizeAuthorName_NullOrWhitespace_ReturnsEmpty()
         {
