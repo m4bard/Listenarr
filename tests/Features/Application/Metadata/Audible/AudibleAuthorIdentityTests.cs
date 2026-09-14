@@ -32,30 +32,33 @@ namespace Listenarr.Tests.Features.Application.Metadata.Audible
     {
         [Fact]
         [Trait("Method", "LookupAuthorAsync")]
-        public async Task LookupAuthorAsync_ExactNameWithNoId_LosesToALooseCreditThatHasOne()
+        public async Task LookupAuthorAsync_ExactNameWithNoId_BeatsALooseCreditThatHasOne()
         {
             var service = _provider.GetRequiredService<AudibleService>();
 
             var result = await service.LookupAuthorAsync("Jane Austen", "us");
 
-            // CHARACTERIZATION: the id-bearing filter runs before anything weighs match quality,
-            // so a credit that merely contains the query beats one that is the query.
+            // The exact credit wins even though it carries no id, and the answer is the name
+            // without one. Asserting the name alone would pass on an implementation that returns
+            // the right name beside the wrong id, so the null is asserted too.
             Assert.NotNull(result);
-            Assert.Equal("FIXTURESHR1", result!.Asin);
+            Assert.Equal("Jane Austen", result!.Name);
+            Assert.True(string.IsNullOrEmpty(result.Asin));
         }
 
         [Fact]
         [Trait("Method", "LookupAuthorAsync")]
-        public async Task LookupAuthorAsync_SecondNameOnTheSameCredit_ResolvesToTheSameId()
+        public async Task LookupAuthorAsync_SecondNameOnTheSameCredit_ResolvesToNoId()
         {
             var service = _provider.GetRequiredService<AudibleService>();
 
             var result = await service.LookupAuthorAsync("Charlotte Bronte", "us");
 
-            // CHARACTERIZATION: paired with the test above, this is the whole reported symptom --
-            // one id standing in as the identity of two different authors.
+            // Paired with the test above: one id can no longer stand in as the identity of two
+            // different authors. Audible does not credit this id to a contributor at all, so it is
+            // not bound to either of them.
             Assert.NotNull(result);
-            Assert.Equal("FIXTURESHR1", result!.Asin);
+            Assert.True(string.IsNullOrEmpty(result!.Asin));
         }
 
         [Fact]
@@ -88,32 +91,33 @@ namespace Listenarr.Tests.Features.Application.Metadata.Audible
 
         [Fact]
         [Trait("Method", "LookupAuthorAsync")]
-        public async Task LookupAuthorAsync_WinnerTheContributorEndpointDoesNotKnow_IsReturnedAnyway()
+        public async Task LookupAuthorAsync_WinnerTheContributorEndpointDoesNotKnow_IsPassedOver()
         {
             var service = _provider.GetRequiredService<AudibleService>();
 
             var result = await service.LookupAuthorAsync("Mary Shelley", "us");
 
-            // CHARACTERIZATION: the contributor call is fired for enrichment only, so a null --
-            // which is exactly the signal that the id is not a contributor id -- falls through
-            // and the id is returned regardless. The second product's confirmable id is ignored.
+            // A contributor endpoint that does not know the id is the signal that it is not a
+            // contributor id. That used to fall through to returning it anyway; the next ranked
+            // candidate is tried instead.
             Assert.NotNull(result);
-            Assert.Equal("FIXTURESHR2", result!.Asin);
+            Assert.Equal("FIXTUREAUT3", result!.Asin);
         }
 
         [Fact]
         [Trait("Method", "LookupAuthorAsync")]
-        public async Task LookupAuthorAsync_WinnerTheContributorEndpointNamesDifferently_IsReturnedAnyway()
+        public async Task LookupAuthorAsync_WinnerTheContributorEndpointNamesDifferently_IsRejected()
         {
             var service = _provider.GetRequiredService<AudibleService>();
 
             var result = await service.LookupAuthorAsync("Herman Melville", "us");
 
-            // CHARACTERIZATION: the provider itself says this id belongs to someone else, and the
-            // lookup adopts that someone else's name and id as the answer for the query.
+            // Audible itself says this id belongs to somebody else. Both sides of that comparison
+            // are Audible's own data for the same claimed entity, which is why it can be strict
+            // here without touching the looseness between the stored string and the provider name.
             Assert.NotNull(result);
-            Assert.Equal("FIXTUREAUT4", result!.Asin);
-            Assert.Equal("Nathaniel Hawthorne", result.Name);
+            Assert.Equal("FIXTUREAUT5", result!.Asin);
+            Assert.Equal("Herman Melville", result.Name);
         }
 
         [Fact]
@@ -147,16 +151,17 @@ namespace Listenarr.Tests.Features.Application.Metadata.Audible
 
         [Fact]
         [Trait("Method", "LookupAuthorAsync")]
-        public async Task LookupAuthorAsync_AmongEquallyCloseCredits_TakesWhicheverAudibleRankedFirst()
+        public async Task LookupAuthorAsync_AmongEquallyCloseCredits_PrefersTheWiderCreditedOne()
         {
             var service = _provider.GetRequiredService<AudibleService>();
 
             var result = await service.LookupAuthorAsync("Alexandre Dumas", "us");
 
-            // CHARACTERIZATION: position in Audible's relevance ordering decides, even though one
-            // of the two candidates is credited on three of the four returned products.
+            // Same tier, same distance from the query, so the tie falls to the candidate credited
+            // across three of the four returned products rather than to whatever Audible ranked
+            // first.
             Assert.NotNull(result);
-            Assert.Equal("FIXTUREAUT8", result!.Asin);
+            Assert.Equal("FIXTUREAUT9", result!.Asin);
         }
     }
 }
