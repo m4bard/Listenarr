@@ -743,6 +743,7 @@ import {
   PhFileMinus,
   PhCircle,
   PhDiscordLogo,
+  PhRobot,
 } from '@phosphor-icons/vue'
 
 const route = useRoute()
@@ -762,6 +763,7 @@ const error = ref<string | null>(null)
 const activeTab = ref<DetailTab>('details')
 const showDeleteDialog = ref(false)
 const showManualSearchModal = ref(false)
+const automaticSearching = ref(false)
 const deleting = ref(false)
 const deleteFilesOnDisk = ref(false)
 const deleteFolderOnDisk = ref(false)
@@ -822,6 +824,17 @@ const topActions = computed<DetailTopAction[]>(() => [
     onClick: () => {
       void refresh()
     },
+  },
+  {
+    key: 'automatic-search',
+    label: automaticSearching.value ? 'Searching...' : 'Automatic Search',
+    title: 'Automatic Search',
+    ariaLabel: 'Automatic Search',
+    icon: automaticSearching.value ? PhSpinner : PhRobot,
+    iconClass: automaticSearching.value ? 'ph-spin' : undefined,
+    disabled: automaticSearching.value,
+    desktopGroup: 'primary',
+    onClick: () => void runAutomaticSearch(),
   },
   {
     key: 'manual-search',
@@ -936,6 +949,7 @@ type DetailIdentifierItem = {
 type DetailTopAction = {
   key:
     | 'refresh'
+    | 'automatic-search'
     | 'manual-search'
     | 'scan'
     | 'monitor'
@@ -1453,6 +1467,34 @@ async function refresh() {
   // Reload history if history tab is active
   if (activeTab.value === 'history') {
     await loadHistory()
+  }
+}
+
+async function runAutomaticSearch() {
+  if (!audiobook.value || automaticSearching.value) return
+
+  automaticSearching.value = true
+  const toast = useToast()
+  try {
+    const result = await apiService.searchAndDownload(audiobook.value.id)
+    if (result.success) {
+      toast.success(
+        'Search started',
+        `Found on ${result.indexerUsed}, sent to your download client`,
+      )
+      await refresh()
+    } else {
+      toast.info('No match found', result.message ?? 'No release met the quality profile')
+    }
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'AudiobookDetailView',
+      operation: 'automaticSearch',
+      metadata: { itemId: audiobook.value?.id },
+    })
+    toast.error('Search failed', err instanceof Error ? err.message : String(err))
+  } finally {
+    automaticSearching.value = false
   }
 }
 
