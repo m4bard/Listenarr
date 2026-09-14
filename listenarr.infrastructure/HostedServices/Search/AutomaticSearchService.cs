@@ -214,11 +214,12 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             }
 
             // Build search query
-            var searchQuery = _resultClassifier.BuildSearchQuery(audiobook);
-            _logger.LogInformation("Searching for audiobook '{Title}' with query: {Query}", audiobook.Title, searchQuery);
+            var searchPlan = _resultClassifier.BuildSearchPlan(audiobook);
+            var searchQuery = searchPlan.PrimaryQuery;
+            _logger.LogInformation("Searching for audiobook '{Title}' with query: {Query} ({Tiers} query forms available)", audiobook.Title, searchQuery, searchPlan.Forms.Count);
 
             // Search for results
-            var searchResults = await searchService.SearchAsync(searchQuery, isAutomaticSearch: true);
+            var searchResults = await searchService.SearchAsync(searchQuery, isAutomaticSearch: true, plan: searchPlan);
             _logger.LogInformation("Found {Count} raw search results for audiobook '{Title}'", searchResults.Count, audiobook.Title);
 
             // Asked after the search rather than before it, so an indexer that entered backoff
