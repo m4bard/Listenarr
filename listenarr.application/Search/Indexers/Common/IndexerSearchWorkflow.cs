@@ -74,9 +74,9 @@ public class IndexerSearchWorkflow
                 _logger.LogInformation("Searching indexer {Name} ({Type}) for query: {Query}", indexer.Name, indexer.Type, query);
                 var perIndexerRequest = ApplyIndexerMamOptions(indexer, request);
 
-                var indexerResults = await SearchIndexerAsync(indexer, query, category, perIndexerRequest);
-                _logger.LogInformation("Found {Count} results from indexer {Name}", indexerResults.Count, indexer.Name);
-                return indexerResults;
+                var observation = await SearchIndexerAsync(indexer, query, category, perIndexerRequest);
+                _logger.LogInformation("Found {Count} results from indexer {Name}", observation.Results.Count, indexer.Name);
+                return (Indexer: indexer, Observation: observation);
             }
             catch (OperationCanceledException ex)
             {
@@ -89,15 +89,21 @@ public class IndexerSearchWorkflow
             }
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
+                // Containment, not a tier miss: one indexer throwing must not take down the fan-out,
+                // and the outcome records that this indexer never answered.
                 _logger.LogError(ex, "Error searching indexer {Name} for query: {Query}", indexer.Name, query);
-                return new List<IndexerSearchResult>();
+                return (Indexer: indexer, Observation: IndexerQueryObservation.Unavailable(
+                    IndexerQueryFailureClassifier.Classify(ex),
+                    query,
+                    IndexerQueryFailureClassifier.Describe(ex)));
             }
         }).ToList();
 
-        var indexerResults = await Task.WhenAll(searchTasks);
-        foreach (var indexerResult in indexerResults)
+        var observations = await Task.WhenAll(searchTasks);
+        foreach (var (indexer, observation) in observations)
         {
-            results.AddRange(indexerResult);
+            LogIndexerQueryOutcome(indexer, observation);
+            results.AddRange(observation.Results);
         }
 
         _logger.LogInformation("Total {Count} results from all indexers for query: {Query}", results.Count, query);
@@ -127,8 +133,8 @@ public class IndexerSearchWorkflow
             var mamOpts = _additionalSettingsParser.ParseMamOptions(indexer.AdditionalSettings);
             if (mamOpts != null) req.MyAnonamouse = mamOpts;
 
-            var idxResults = await SearchIndexerAsync(indexer, query, category, req);
-            return idxResults.Select(SearchResultConverters.ToSearchResult).ToList();
+            var observation = await SearchIndexerAsync(indexer, query, category, req);
+            return observation.Results.Select(SearchResultConverters.ToSearchResult).ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
@@ -154,7 +160,8 @@ public class IndexerSearchWorkflow
             }
 
             request = ApplyIndexerMamOptions(indexer, request);
-            return await SearchIndexerAsync(indexer, query, category, request);
+            var observation = await SearchIndexerAsync(indexer, query, category, request);
+            return observation.Results.ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
@@ -206,7 +213,7 @@ public class IndexerSearchWorkflow
         return request;
     }
 
-    private async Task<List<IndexerSearchResult>> SearchIndexerAsync(
+    private async Task<IndexerQueryObservation> SearchIndexerAsync(
         Indexer indexer,
         string query,
         string? category = null,
@@ -226,22 +233,65 @@ public class IndexerSearchWorkflow
             if (provider == null)
             {
                 _logger.LogWarning("No provider found for indexer type: {Implementation}", indexer.Implementation);
-                return new List<IndexerSearchResult>();
+                return IndexerQueryObservation.NotConfigured(
+                    IndexerQueryReason.NoProviderForImplementation,
+                    query,
+                    LogRedaction.SanitizeText(indexer.Implementation));
             }
 
-            var providerResults = await provider.SearchAsync(indexer, query, category, request);
-            foreach (var r in providerResults.Where(r => string.IsNullOrWhiteSpace(r.Source)))
+            var observation = await provider.SearchAsync(indexer, query, category, request);
+            foreach (var r in observation.Results.Where(r => string.IsNullOrWhiteSpace(r.Source)))
             {
                 r.Source = fallbackName;
             }
 
-            return providerResults;
+            return observation;
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error searching indexer {Name}", indexer.Name);
-            return new List<IndexerSearchResult>();
+            return IndexerQueryObservation.Unavailable(
+                IndexerQueryFailureClassifier.Classify(ex),
+                query,
+                IndexerQueryFailureClassifier.Describe(ex));
         }
+    }
+
+    /// <summary>
+    /// One line per indexer per search, naming how the indexer answered. Without it, a 500 and a
+    /// genuine zero-match are indistinguishable in the log stream as well as in the return value.
+    /// </summary>
+    private void LogIndexerQueryOutcome(Indexer indexer, IndexerQueryObservation observation)
+    {
+        const string template =
+            "Indexer {Name} query outcome {Outcome} ({Reason}) at tier {Tier} with {Count} results{Detail}";
+        var detail = string.IsNullOrWhiteSpace(observation.Detail)
+            ? string.Empty
+            : $": {observation.Detail}";
+
+        if (observation.Outcome is IndexerQueryOutcome.Unavailable
+            or IndexerQueryOutcome.Unreadable
+            or IndexerQueryOutcome.NotConfigured)
+        {
+            _logger.LogWarning(
+                template,
+                indexer.Name,
+                observation.Outcome,
+                observation.Reason,
+                observation.Tier,
+                observation.Results.Count,
+                detail);
+            return;
+        }
+
+        _logger.LogInformation(
+            template,
+            indexer.Name,
+            observation.Outcome,
+            observation.Reason,
+            observation.Tier,
+            observation.Results.Count,
+            detail);
     }
 
     private static string GetFallbackIndexerName(Indexer indexer)
