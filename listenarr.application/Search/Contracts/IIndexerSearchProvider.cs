@@ -37,8 +37,11 @@ namespace Listenarr.Application.Search.Contracts
         /// <param name="query">The search query.</param>
         /// <param name="category">Optional category filter.</param>
         /// <param name="request">Optional additional request context.</param>
-        /// <returns>List of search results from the indexer.</returns>
-        Task<List<IndexerSearchResult>> SearchAsync(
+        /// <returns>
+        /// The indexer's answer: the results, plus the outcome and reason that say whether the indexer
+        /// answered with nothing or never answered at all. A bare result list collapses those two.
+        /// </returns>
+        Task<IndexerQueryObservation> SearchAsync(
             Indexer indexer,
             string query,
             string? category = null,
