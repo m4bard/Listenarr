@@ -20,6 +20,9 @@ public sealed class StartupDbNormalizerTests : BaseTests
                 normalized.TrySetResult();
                 return Task.CompletedTask;
             });
+        repository.Setup(service => service.RederiveAuthorNameKeysAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AuthorNameKeyRederivationResult(0, 0, 0));
         using var provider = new ServiceCollection()
             .AddScoped(_ => repository.Object)
             .BuildServiceProvider(new ServiceProviderOptions
