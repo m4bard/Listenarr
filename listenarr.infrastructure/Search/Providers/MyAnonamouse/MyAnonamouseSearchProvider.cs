@@ -44,7 +44,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
             _indexerRepository = indexerRepository ?? throw new ArgumentNullException(nameof(indexerRepository));
         }
 
-        public async Task<List<IndexerSearchResult>> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null)
+        public async Task<IndexerQueryObservation> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null)
         {
             try
             {
@@ -56,7 +56,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                 if (string.IsNullOrEmpty(mamId))
                 {
                     _logger.LogWarning("MyAnonamouse indexer {Name} missing mam_id", indexer.Name);
-                    return new List<IndexerSearchResult>();
+                    return IndexerQueryObservation.NotConfigured(IndexerQueryReason.None, query, "missing mam_id");
                 }
 
                 var searchUri = MyAnonamouseRequestFactory.BuildSearchUri(indexer, query, request);
@@ -84,7 +84,10 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                     _logger.LogWarning("MyAnonamouse returned status {Status}", response.StatusCode);
                     var errorContent = await response.Content.ReadAsStringAsync();
                     _logger.LogWarning("MyAnonamouse error response: {Content}", LogRedaction.RedactText(errorContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
-                    return new List<IndexerSearchResult>();
+                    return IndexerQueryObservation.Unavailable(
+                        IndexerQueryReason.HttpStatus,
+                        query,
+                        IndexerQueryFailureClassifier.Describe(response.StatusCode));
                 }
 
                 // Capture and persist an updated mam_id cookie if the tracker provided one in Set-Cookie
@@ -130,12 +133,25 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                 }
 
                 _logger.LogInformation("MyAnonamouse returned {Count} results", results.Count);
-                return results;
+                return IndexerQueryObservation.FromResults(results, query);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
+            {
+                // HttpClient reports its own request timeout as a cancellation. Left uncaught it escapes
+                // the per-indexer containment upstream and fails the whole fan-out.
+                _logger.LogWarning(ex, "MyAnonamouse indexer {Name} did not answer in time", indexer.Name);
+                return IndexerQueryObservation.Unavailable(
+                    IndexerQueryFailureClassifier.Classify(ex),
+                    query,
+                    IndexerQueryFailureClassifier.Describe(ex));
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Error searching MyAnonamouse indexer {Name}", indexer.Name);
-                return new List<IndexerSearchResult>();
+                return IndexerQueryObservation.Unavailable(
+                    IndexerQueryFailureClassifier.Classify(ex),
+                    query,
+                    IndexerQueryFailureClassifier.Describe(ex));
             }
         }
 
