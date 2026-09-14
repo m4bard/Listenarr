@@ -201,6 +201,7 @@ namespace Listenarr.Tests.Features.Api.Services
             var processor = new QueueMonitorProcessor(
                 _provider.GetRequiredService<IServiceScopeFactory>(),
                 hubContext.Object,
+                new DownloadClientStatusCache(),
                 _provider.GetRequiredService<ILogger<QueueMonitorProcessor>>());
 
             var firstInterval = await processor.RunCycleAsync(CancellationToken.None);

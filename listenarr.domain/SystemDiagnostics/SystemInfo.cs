@@ -120,6 +120,12 @@ namespace Listenarr.Domain.SystemDiagnostics
         public string Name { get; set; } = string.Empty;
         public string Status { get; set; } = "unknown"; // connected, disconnected, unknown
         public string? Type { get; set; }
+        /// <summary>
+        /// Why <see cref="Status"/> is not "connected", taken from the download queue
+        /// poller's last recorded failure for this client (e.g. "timeout", "error",
+        /// "canceled"). Null when connected or when no probe has run yet.
+        /// </summary>
+        public string? FailureReason { get; set; }
     }
 
     public class ApiStatus
