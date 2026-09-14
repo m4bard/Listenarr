@@ -80,7 +80,7 @@ namespace Listenarr.Application.Metadata.Core
                 _logger.LogDebug(
                     "ISBN lookup for {Isbn} returned non-exact fallback ASIN {Asin} (candidate ISBN: {CandidateIsbn})",
                     normalizedIsbn,
-                    firstAsin.Asin,
+                    LogRedaction.SanitizeText(firstAsin.Asin),
                     firstAsin.Isbn);
 
                 return (true, NormalizeAsin(firstAsin.Asin!), null);
@@ -142,7 +142,7 @@ namespace Listenarr.Application.Metadata.Core
             }
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogDebug(ex, "VerifyAsinContainsIsbnAsync failed for {Asin}", normalizedAsin);
+                _logger.LogDebug(ex, "VerifyAsinContainsIsbnAsync failed for {Asin}", LogRedaction.SanitizeText(normalizedAsin));
                 return (false, false, ex.Message);
             }
         }
