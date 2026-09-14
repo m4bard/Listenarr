@@ -33,6 +33,15 @@
         >
           <PhInfo />
         </button>
+        <button
+          class="toolbar-btn"
+          :class="{ active: showSearchAction }"
+          @click="toggleSearchAction"
+          :aria-pressed="showSearchAction"
+          title="Toggle automatic search action"
+        >
+          <PhRobot />
+        </button>
         <span
           v-if="
             (groupBy === 'books'
@@ -481,6 +490,15 @@
                 </div>
                 <div class="action-buttons">
                   <button
+                    v-if="showSearchAction"
+                    class="action-btn search-btn-small"
+                    :disabled="searching[audiobook.id]"
+                    @click.stop="runAutomaticSearch(audiobook)"
+                    title="Automatic Search"
+                  >
+                    <PhRobot />
+                  </button>
+                  <button
                     class="action-btn edit-btn-small"
                     @click.stop="openEditModal(audiobook)"
                     title="Edit"
@@ -643,6 +661,15 @@
               </div>
             </div>
             <div class="list-actions">
+              <button
+                v-if="showSearchAction"
+                class="action-btn search-btn-small"
+                :disabled="searching[audiobook.id]"
+                @click.stop="runAutomaticSearch(audiobook)"
+                title="Automatic Search"
+              >
+                <PhRobot />
+              </button>
               <button
                 class="action-btn edit-btn-small"
                 @click.stop="openEditModal(audiobook)"
@@ -821,6 +848,7 @@ import {
   PhUser,
   PhBooks,
   PhFolderOpen,
+  PhRobot,
 } from '@phosphor-icons/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLibraryStore } from '@/stores/library'
@@ -855,6 +883,7 @@ import { formatSeriesMemberships } from '@/utils/seriesUtils'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { errorTracking } from '@/services/errorTracking'
 import { isLikelyBackendImageUrl, useProtectedImages } from '@/composables/useProtectedImages'
+import { useToast } from '@/services/toastService'
 
 function getAuthorSortKey(author: string): string {
   const parts = author.trim().split(/\s+/)
@@ -1712,6 +1741,30 @@ watch(showItemDetails, async () => {
   updateVisibleRange()
 })
 
+// Option: show a per-row automatic-search icon in both renderers, default off so an
+// upgrade changes nothing until the user asks for it. Same shape as SHOW_ITEM_DETAILS_KEY.
+const SHOW_SEARCH_ACTION_KEY = 'listenarr.showSearchAction'
+const showSearchAction = ref<boolean>(false)
+
+try {
+  const stored = localStorage.getItem(SHOW_SEARCH_ACTION_KEY)
+  if (stored !== null) showSearchAction.value = stored === 'true'
+} catch {
+  // ignore localStorage errors (e.g., privacy mode)
+}
+
+watch(showSearchAction, (v) => {
+  try {
+    localStorage.setItem(SHOW_SEARCH_ACTION_KEY, v ? 'true' : 'false')
+  } catch {
+    // ignore localStorage errors (e.g., privacy mode)
+  }
+})
+
+function toggleSearchAction() {
+  showSearchAction.value = !showSearchAction.value
+}
+
 watch(
   () => route.query.group,
   (g) => {
@@ -2321,6 +2374,37 @@ async function confirmBulkDelete() {
   }
 }
 
+// Per-row automatic search state for the grid/list icon.
+const searching = ref<Record<number, boolean>>({})
+
+async function runAutomaticSearch(audiobook: Audiobook) {
+  if (searching.value[audiobook.id]) return
+
+  searching.value[audiobook.id] = true
+  const toast = useToast()
+  try {
+    const result = await apiService.searchAndDownload(audiobook.id)
+    if (result.success) {
+      toast.success(
+        'Search started',
+        `Found on ${result.indexerUsed}, sent to your download client`,
+      )
+      await libraryStore.fetchLibrary()
+    } else {
+      toast.info('No match found', result.message ?? 'No release met the quality profile')
+    }
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'AudiobooksView',
+      operation: 'automaticSearch',
+      metadata: { audiobookId: audiobook.id },
+    })
+    toast.error('Search failed', err instanceof Error ? err.message : String(err))
+  } finally {
+    searching.value[audiobook.id] = false
+  }
+}
+
 function resetDeleteOptions() {
   deleteFilesOnDisk.value = false
   deleteFolderOnDisk.value = false
@@ -2433,6 +2517,10 @@ defineExpose({
   setGroupBy,
   groupedCollections,
   showItemDetails,
+  showSearchAction,
+  toggleSearchAction,
+  searching,
+  runAutomaticSearch,
 })
 </script>
 
@@ -3755,6 +3843,20 @@ defineExpose({
   background-color: rgba(41, 128, 185, 1);
 }
 
+.search-btn-small {
+  background-color: rgba(155, 89, 182, 0.9);
+  border-color: rgba(142, 68, 173, 0.5);
+}
+
+.search-btn-small:hover {
+  background-color: rgba(142, 68, 173, 1);
+}
+
+.search-btn-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .loading-state,
 .empty-state,
 .error-state {
@@ -3852,7 +3954,7 @@ defineExpose({
 
 .audiobook-list-item {
   display: grid;
-  grid-template-columns: 40px 64px 1fr auto 120px;
+  grid-template-columns: 40px 64px 1fr auto 160px;
   gap: 12px;
   align-items: center;
   padding: 10px 12px;
@@ -3928,7 +4030,7 @@ defineExpose({
 /* Header row to mimic table columns */
 .list-header {
   display: grid;
-  grid-template-columns: 40px 64px 1fr auto 120px;
+  grid-template-columns: 40px 64px 1fr auto 160px;
   gap: 12px;
   padding: 8px 12px;
   color: #aaa;
