@@ -40,6 +40,7 @@ public class IndexerSearchWorkflow
     private readonly IEnumerable<IIndexerSearchProvider> _searchProviders;
     private readonly IndexerAdditionalSettingsParser _additionalSettingsParser;
     private readonly TorznabResponseParser _torznabResponseParser;
+    private readonly IIndexerStatusService? _indexerStatusService;
     private readonly ILogger<IndexerSearchWorkflow> _logger;
 
     public IndexerSearchWorkflow(
@@ -49,7 +50,8 @@ public class IndexerSearchWorkflow
         IEnumerable<IIndexerSearchProvider> searchProviders,
         IndexerAdditionalSettingsParser additionalSettingsParser,
         ILogger<IndexerSearchWorkflow> logger,
-        IHtmlTextExtractor? htmlTextExtractor = null)
+        IHtmlTextExtractor? htmlTextExtractor = null,
+        IIndexerStatusService? indexerStatusService = null)
     {
         _httpClient = httpClient;
         _configurationService = configurationService;
@@ -57,6 +59,7 @@ public class IndexerSearchWorkflow
         _searchProviders = searchProviders;
         _additionalSettingsParser = additionalSettingsParser;
         _logger = logger;
+        _indexerStatusService = indexerStatusService;
         _torznabResponseParser = new TorznabResponseParser(httpClient, logger, htmlTextExtractor);
     }
 
@@ -68,23 +71,56 @@ public class IndexerSearchWorkflow
         bool isAutomaticSearch = false,
         SearchRequest? request = null,
         SearchQueryPlan? plan = null,
+        bool filterBlocked = true,
         CancellationToken ct = default)
     {
         var results = new List<IndexerSearchResult>();
         var indexers = await _indexerRepository.GetEnabledAsync(isAutomaticSearch, ct);
 
-        // A caller with a book record hands down an ordered plan. A caller with nothing but a
-        // string an operator typed does not, and gets the one-form plan that is exactly what the
-        // search sent before any of this existed.
-        var queryPlan = plan is { Forms.Count: > 0 } ? plan : SearchQueryPlan.Verbatim(query);
+        // Kept so the two empty-list cases below stay distinguishable, and so a future health
+        // display can answer "how many would be available if nothing were blocked?".
+        var configuredCount = indexers.Count;
+
+        if (filterBlocked && _indexerStatusService != null && configuredCount > 0)
+        {
+            var blocked = await _indexerStatusService.GetBlockedIndexerIdsAsync(ct);
+            if (blocked.Count > 0)
+            {
+                indexers = indexers.Where(i => !blocked.Contains(i.Id)).ToList();
+                _logger.LogInformation(
+                    "Skipping {Count} of {Configured} enabled indexer(s) currently in failure backoff",
+                    configuredCount - indexers.Count,
+                    configuredCount);
+            }
+        }
 
         _logger.LogInformation("Searching {Count} enabled indexers for query: {Query}", indexers.Count, query);
 
-        if (!indexers.Any())
+        // Two different empty lists, and they must not share a branch. The mock results exist for
+        // an install with nothing configured yet; feeding five invented releases to the
+        // automatic-search scorer because every real indexer happens to be in cooldown would be a
+        // fabricated grab.
+        if (configuredCount == 0)
         {
             _logger.LogWarning("No indexers configured, returning mock results for query: {Query}", query);
-            return GenerateMockIndexerResults(query);
+            return IndexerMockResultGenerator.Generate(_logger, query);
         }
+
+        if (indexers.Count == 0)
+        {
+            _logger.LogWarning(
+                "All {Count} enabled indexer(s) are in failure backoff; skipping search for query: {Query}",
+                configuredCount,
+                query);
+            return results;
+        }
+
+        // Built only once an indexer has survived selection. A caller with a book record hands
+        // down an ordered plan; a caller with nothing but a string an operator typed does not, and
+        // gets the one-form plan that is exactly what the search sent before any of this existed.
+        // Deliberately after the two returns above: an indexer set emptied by failure backoff must
+        // never reach the ladder at all, rather than walking every rung against nobody.
+        var queryPlan = plan is { Forms.Count: > 0 } ? plan : SearchQueryPlan.Verbatim(query);
 
         // One slot per configured indexer, written exactly once by the body below. An array rather
         // than a ConcurrentBag so the per-indexer outcome log lines still come out in configuration
@@ -104,17 +140,26 @@ public class IndexerSearchWorkflow
                 try
                 {
                     var perIndexerRequest = ApplyIndexerMamOptions(indexer, request);
-                    observations[entry.Index] = (indexer, await RunQueryPlanAsync(indexer, queryPlan, category, perIndexerRequest, ct));
+
+                    // One observation per indexer per book, however many rungs the ladder issued:
+                    // RunQueryPlanAsync collapses the walk to the answer it stopped on. That is what
+                    // the failure backoff is fed, so a four-rung miss counts as the one "answered and
+                    // had nothing" it actually was, not as four separate failures.
+                    var observation = await RunQueryPlanAsync(indexer, queryPlan, category, perIndexerRequest, ct);
+                    observations[entry.Index] = (indexer, observation);
+                    await RecordOutcomeAsync(indexer, observation, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     // Containment, not a tier miss: one indexer throwing must not take down the fan-out,
                     // and the outcome records that this indexer never answered.
                     _logger.LogError(ex, "Error searching indexer {Name} for query: {Query}", indexer.Name, query);
-                    observations[entry.Index] = (indexer, IndexerQueryObservation.Unavailable(
+                    var failure = IndexerQueryObservation.Unavailable(
                         IndexerQueryFailureClassifier.Classify(ex),
                         query,
-                        IndexerQueryFailureClassifier.Describe(ex)));
+                        IndexerQueryFailureClassifier.Describe(ex));
+                    observations[entry.Index] = (indexer, failure);
+                    await RecordOutcomeAsync(indexer, failure, ct);
                 }
             });
 
@@ -152,6 +197,7 @@ public class IndexerSearchWorkflow
             if (mamOpts != null) req.MyAnonamouse = mamOpts;
 
             var observation = await SearchIndexerAsync(indexer, query, category, req);
+            await RecordOutcomeAsync(indexer, observation);
             return observation.Results.Select(SearchResultConverters.ToSearchResult).ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -179,6 +225,12 @@ public class IndexerSearchWorkflow
 
             request = ApplyIndexerMamOptions(indexer, request);
             var observation = await SearchIndexerAsync(indexer, query, category, request);
+
+            // Deliberately not filtered by the backoff above: an operator naming one indexer has
+            // overridden the policy by asking. Recording the answer is what makes that request
+            // double as the probe that walks a recovered indexer back down, which matters because
+            // there is no RSS sync here to serve as one.
+            await RecordOutcomeAsync(indexer, observation);
             return observation.Results.ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -350,6 +402,27 @@ public class IndexerSearchWorkflow
     }
 
     /// <summary>
+    /// Feeds one indexer's answer to the failure backoff. A status write must never be able to fail
+    /// a search that otherwise worked, so a persistence error is logged and swallowed here.
+    /// </summary>
+    private async Task RecordOutcomeAsync(Indexer indexer, IndexerQueryObservation observation, CancellationToken ct = default)
+    {
+        if (_indexerStatusService == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _indexerStatusService.RecordAsync(indexer, observation, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
+            _logger.LogWarning(ex, "Failed to record failure backoff state for indexer {Name}", indexer.Name);
+        }
+    }
+
+    /// <summary>
     /// One line per indexer per search, naming how the indexer answered. Without it, a 500 and a
     /// genuine zero-match are indistinguishable in the log stream as well as in the return value.
     /// </summary>
@@ -404,62 +477,5 @@ public class IndexerSearchWorkflow
         {
             return "Indexer";
         }
-    }
-
-    private List<IndexerSearchResult> GenerateMockIndexerResults(string query)
-    {
-        return GenerateMockIndexerResults(query, "Mock Indexer", "Torrent");
-    }
-
-    private List<IndexerSearchResult> GenerateMockIndexerResults(string query, string indexerName, string indexerType)
-    {
-        var random = new Random();
-        var results = new List<IndexerSearchResult>();
-        var isUsenet = indexerType.Equals("Usenet", StringComparison.OrdinalIgnoreCase);
-
-        _logger.LogInformation("Generating {Count} mock {Type} results for indexer {IndexerName}", 5, indexerType, indexerName);
-
-        for (int i = 0; i < 5; i++)
-        {
-            var result = new IndexerSearchResult
-            {
-                Id = Guid.NewGuid().ToString(),
-                Title = $"{query} - Quality {i + 1}",
-                Artist = "Various Authors",
-                Album = $"{query} Series",
-                Category = "Audiobook",
-                Size = random.Next(200_000_000, 1_500_000_000),
-                Seeders = isUsenet ? 0 : random.Next(5, 100),
-                Leechers = isUsenet ? 0 : random.Next(0, 20),
-                Source = indexerName,
-                PublishedDate = DateTime.UtcNow.AddDays(-random.Next(1, 365)).ToString("o"),
-                Quality = i switch
-                {
-                    0 => "MP3 64kbps",
-                    1 => "MP3 128kbps",
-                    2 => "MP3 192kbps",
-                    3 => "M4B 128kbps",
-                    _ => "FLAC"
-                },
-                Format = i >= 3 ? "M4B" : "MP3",
-                Language = "English"
-            };
-
-            if (isUsenet)
-            {
-                result.NzbUrl = $"https://{indexerName.ToLowerInvariant()}.example.com/api/nzb/{Guid.NewGuid():N}";
-                result.MagnetLink = string.Empty;
-                result.TorrentUrl = string.Empty;
-            }
-            else
-            {
-                result.MagnetLink = $"magnet:?xt=urn:btih:{Guid.NewGuid():N}";
-                result.NzbUrl = string.Empty;
-            }
-
-            results.Add(result);
-        }
-
-        return results;
     }
 }

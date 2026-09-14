@@ -852,6 +852,16 @@ export interface Indexer {
   lastTestedAt?: string
   lastTestSuccessful?: boolean
   lastTestError?: string
+  /** Start of the current run of failures, set once rather than per failure. */
+  initialFailure?: string
+  /** Most recent failure to answer a search. */
+  mostRecentFailure?: string
+  /** Position on the failure-backoff ladder; 0 means healthy. */
+  escalationLevel: number
+  /** When the current failure cooldown expires. While it is in the future the indexer is not queried. */
+  disabledTill?: string
+  /** Name of the query reason behind the current cooldown, eg. Timeout, RateLimited, AuthFailure. */
+  lastFailureReason?: string
 }
 
 export interface SystemReadiness {
