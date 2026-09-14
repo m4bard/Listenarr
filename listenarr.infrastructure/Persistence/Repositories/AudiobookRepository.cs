@@ -186,6 +186,13 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             return true;
         }
 
+        /// <summary>
+        /// Answers with a book's author ASIN only where the book pairs the two unambiguously:
+        /// one credited author and one recorded ASIN. AuthorAsins is a deduplicated set of
+        /// successful lookups and is not positionally parallel to Authors, so on any other book
+        /// there is no right answer to return -- the information needed to pick one was never
+        /// stored. Declining is deliberate, and the hits it gives up are the wrong ones.
+        /// </summary>
         public async Task<string?> GetAuthorAsinByNameAsync(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return null;
@@ -199,14 +206,14 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
             foreach (var b in candidates)
             {
-                if (b.AuthorAsins == null || b.AuthorAsins.Count == 0 || b.Authors == null || b.Authors.Count == 0)
+                if (b.AuthorAsins == null || b.AuthorAsins.Count != 1 || b.Authors == null || b.Authors.Count != 1)
                 {
                     continue;
                 }
 
-                if (b.Authors.Any(a => StringUtils.NormalizeAuthorName(a) == target))
+                if (StringUtils.NormalizeAuthorName(b.Authors[0]) == target)
                 {
-                    var asin = b.AuthorAsins.FirstOrDefault();
+                    var asin = b.AuthorAsins[0];
                     if (!string.IsNullOrWhiteSpace(asin)) return asin;
                 }
             }
