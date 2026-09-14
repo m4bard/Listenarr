@@ -71,7 +71,7 @@ public sealed class AudiobookRepositoryAuthorAsinIdentityTests : BaseTests
     };
 
     [Fact]
-    public async Task GetAuthorAsinByNameAsync_MultiAuthorBook_AnswersWithWhicheverAsinIsFirst()
+    public async Task GetAuthorAsinByNameAsync_MultiAuthorBook_Declines()
     {
         var (connection, context) = await OpenAsync();
         await using var _ = connection;
@@ -86,10 +86,10 @@ public sealed class AudiobookRepositoryAuthorAsinIdentityTests : BaseTests
 
         var asin = await repository.GetAuthorAsinByNameAsync("Unknown Person");
 
-        // CHARACTERIZATION: AuthorAsins is a deduplicated set of successful lookups and is not
-        // positionally parallel to Authors, so the first entry is returned for whichever name
-        // happened to match. Here that hands one author the other author's id.
-        Assert.Equal("FIXTUREAUT1", asin);
+        // AuthorAsins is a deduplicated set of successful lookups and is not positionally parallel
+        // to Authors, so on a co-authored book there is no right answer here to return. This used
+        // to hand one author the other author's id.
+        Assert.Null(asin);
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public sealed class AudiobookRepositoryAuthorAsinIdentityTests : BaseTests
     }
 
     [Fact]
-    public async Task GetAuthorAsinByNameAsync_SingleAuthorTwoAsins_AnswersWithWhicheverAsinIsFirst()
+    public async Task GetAuthorAsinByNameAsync_SingleAuthorTwoAsins_Declines()
     {
         var (connection, context) = await OpenAsync();
         await using var _ = connection;
@@ -121,8 +121,8 @@ public sealed class AudiobookRepositoryAuthorAsinIdentityTests : BaseTests
         context.ChangeTracker.Clear();
         var repository = new AudiobookRepository(context);
 
-        // CHARACTERIZATION: one author, two ids, and nothing recorded says which is theirs.
-        Assert.Equal("FIXTUREAUT1", await repository.GetAuthorAsinByNameAsync("Andy Weir"));
+        // One author, two ids, and nothing recorded says which is theirs.
+        Assert.Null(await repository.GetAuthorAsinByNameAsync("Andy Weir"));
     }
 
     [Fact]
