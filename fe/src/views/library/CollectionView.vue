@@ -839,7 +839,12 @@ import {
   formatMonitoringLabel,
 } from '@/utils/audiobookStatus'
 import { seriesCoverMosaicStyle, seriesPositionSortKey } from '@/utils/seriesUtils'
-import { normalizeCollectionText, safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
+import { safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
+import {
+  normalizeCollectionText,
+  normalizeIdentifier,
+  buildTitleAuthorKey,
+} from '@/utils/collectionText'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import {
   getPreferredSearchLanguageFilter,
@@ -959,23 +964,6 @@ const isCurrentSeriesMonitored = computed(() => Boolean(seriesMonitoringStatus.v
 const seriesMetadataContextLabel = computed(() => {
   return `${seriesRegionLabel.value} / ${seriesLanguageLabel.value}`
 })
-
-function normalizeIdentifier(value: string | undefined | null): string {
-  if (!value) return ''
-  return value.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
-}
-
-function normalizeAuthorKey(authors: string[] | undefined): string {
-  return (authors || [])
-    .map((author) => normalizeCollectionText(author))
-    .filter(Boolean)
-    .sort()
-    .join('|')
-}
-
-function buildTitleAuthorKey(title: string | undefined, authors: string[] | undefined): string {
-  return `${normalizeCollectionText(title)}::${normalizeAuthorKey(authors)}`
-}
 
 function createSyntheticId(seed: string): number {
   let hash = 0
