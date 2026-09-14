@@ -100,6 +100,24 @@ namespace Listenarr.Domain.Common
             return string.Equals(candidateKey, NormalizeAuthorName(other), StringComparison.Ordinal);
         }
 
+        /// <summary>
+        /// True when a cached author row is the row for <paramref name="normalizedName"/>. The
+        /// stored key is checked first and the display name is re-derived as a second chance,
+        /// because a row written before the author normalizer was unified carries a key the
+        /// current reader never produces -- and a row must not be declared to belong to somebody
+        /// else on the strength of a key nobody can reproduce.
+        /// </summary>
+        public static bool MatchesAuthorKey(string? storedNormalizedName, string? displayName, string? normalizedName)
+        {
+            if (string.IsNullOrEmpty(normalizedName))
+            {
+                return false;
+            }
+
+            return string.Equals(storedNormalizedName, normalizedName, StringComparison.Ordinal)
+                || string.Equals(NormalizeAuthorName(displayName), normalizedName, StringComparison.Ordinal);
+        }
+
         public static int LevenshteinDistance(string s, string t)
         {
             if (s == t) return 0;
