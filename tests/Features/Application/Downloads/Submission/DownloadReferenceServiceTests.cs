@@ -98,12 +98,4 @@ public sealed class DownloadReferenceServiceTests : BaseTests
                     "https://download.example/file.torrent?apikey=secret")],
                 "example.torrent"));
 
-    private sealed class MutableTimeProvider(DateTimeOffset utcNow) : TimeProvider
-    {
-        private DateTimeOffset _utcNow = utcNow;
-
-        public override DateTimeOffset GetUtcNow() => _utcNow;
-
-        public void Advance(TimeSpan duration) => _utcNow += duration;
-    }
 }
