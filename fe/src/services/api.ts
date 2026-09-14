@@ -1837,13 +1837,14 @@ class ApiService {
     })
   }
 
-  async cleanupOldHistory(days: number = 90): Promise<{ message: string; deletedCount: number }> {
-    return this.request<{ message: string; deletedCount: number }>(
-      `/history/cleanup?days=${days}`,
-      {
-        method: 'DELETE',
-      },
-    )
+  async cleanupOldHistory(days?: number): Promise<{ message: string; deletedCount: number }> {
+    // When `days` is omitted, no query param is sent, and the server falls back to the
+    // configured HistoryRetentionDays setting. Do not default this to a hardcoded value here:
+    // that would silently override the setting on every call that does not explicitly pass one.
+    const query = days === undefined ? '' : `?days=${days}`
+    return this.request<{ message: string; deletedCount: number }>(`/history/cleanup${query}`, {
+      method: 'DELETE',
+    })
   }
 
   // Indexers API

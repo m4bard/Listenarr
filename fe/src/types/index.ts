@@ -442,6 +442,9 @@ export interface ApplicationSettings {
   completedFileAction?: 'none' | 'move' | 'copy' | 'hardlink/copy'
   // Show completed external downloads (torrents/NZBs) in the Activity view
   showCompletedExternalDownloads?: boolean
+  // Number of days to retain activity history. A background job prunes entries
+  // older than this window daily. Zero keeps history indefinitely.
+  historyRetentionDays?: number
   // Failed download handling
   failedDownloadHandlingEnabled?: boolean
   failedDownloadAutoSearch?: boolean
