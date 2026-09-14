@@ -60,6 +60,18 @@ namespace Listenarr.Infrastructure.Persistence
                         rederived.Skipped);
                 }
 
+                // Runs after the re-derivation above and not before it: this join is on
+                // AuthorNameNormalized, so a stale key silently excludes exactly the drifted rows
+                // the pass exists to correct.
+                var canonicalized = await audiobookRepository.CanonicalizeStoredAuthorNamesAsync(
+                    stoppingToken);
+                if (canonicalized > 0)
+                {
+                    logger.LogInformation(
+                        "StartupDbNormalizer: adopted the cached author spelling on {Count} books.",
+                        canonicalized);
+                }
+
                 logger.LogInformation("StartupDbNormalizer: normalization pass complete.");
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
