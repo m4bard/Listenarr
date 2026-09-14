@@ -86,9 +86,10 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                     var errorContent = await response.Content.ReadAsStringAsync();
                     _logger.LogWarning("MyAnonamouse error response: {Content}", LogRedaction.RedactText(errorContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
                     return IndexerQueryObservation.Unavailable(
-                        IndexerQueryReason.HttpStatus,
+                        IndexerQueryFailureClassifier.Classify(response.StatusCode),
                         query,
-                        IndexerQueryFailureClassifier.Describe(response.StatusCode));
+                        IndexerQueryFailureClassifier.Describe(response.StatusCode),
+                        retryAfter: IndexerQueryFailureClassifier.ReadRetryAfter(response.Headers.RetryAfter));
                 }
 
                 // Capture and persist an updated mam_id cookie if the tracker provided one in Set-Cookie
