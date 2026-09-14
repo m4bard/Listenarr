@@ -384,6 +384,88 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         }
 
         [Fact]
+        public async Task SendNotificationAsync_SendsNothing_WhenNotificationsDisabled()
+        {
+            var trigger = "book-added";
+            var data = new { id = 1, title = "Should Not Send" };
+            var webhookUrl = "https://discord.com/api/webhooks/test";
+            var enabledTriggers = new List<string> { trigger };
+
+            var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+            using var postResponse = new HttpResponseMessage(HttpStatusCode.OK);
+            mockHttpMessageHandler
+                .Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(postResponse);
+
+            var mockConfigService = new Mock<IConfigurationService>();
+            mockConfigService
+                .Setup(x => x.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings { EnableNotifications = false });
+
+            var service = new NotificationService(
+                new HttpClient(mockHttpMessageHandler.Object),
+                Mock.Of<ILogger<NotificationService>>(),
+                mockConfigService.Object,
+                new NotificationPayloadBuilderAdapter(),
+                Mock.Of<IRequestContextAccessor>());
+
+            await service.SendNotificationAsync(trigger, data, webhookUrl, enabledTriggers);
+
+            mockHttpMessageHandler
+                .Protected()
+                .Verify(
+                    "SendAsync",
+                    Times.Never(),
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>());
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_Sends_WhenNotificationsEnabled()
+        {
+            var trigger = "book-added";
+            var data = new { id = 1, title = "Should Send" };
+            var webhookUrl = "https://discord.com/api/webhooks/test";
+            var enabledTriggers = new List<string> { trigger };
+
+            var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+            using var postResponse = new HttpResponseMessage(HttpStatusCode.OK);
+            mockHttpMessageHandler
+                .Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(postResponse);
+
+            var mockConfigService = new Mock<IConfigurationService>();
+            mockConfigService
+                .Setup(x => x.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings { EnableNotifications = true });
+
+            var service = new NotificationService(
+                new HttpClient(mockHttpMessageHandler.Object),
+                Mock.Of<ILogger<NotificationService>>(),
+                mockConfigService.Object,
+                new NotificationPayloadBuilderAdapter(),
+                Mock.Of<IRequestContextAccessor>());
+
+            await service.SendNotificationAsync(trigger, data, webhookUrl, enabledTriggers);
+
+            mockHttpMessageHandler
+                .Protected()
+                .Verify(
+                    "SendAsync",
+                    Times.AtLeastOnce(),
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>());
+        }
+
+        [Fact]
         public async Task SendNotificationAsync_AllowsPrivateWebhook_WhenCallerIsIpv4MappedLoopback()
         {
             var trigger = "book-added";

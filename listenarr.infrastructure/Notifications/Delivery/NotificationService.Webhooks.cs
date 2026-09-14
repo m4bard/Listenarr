@@ -19,6 +19,9 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
         {
             if (string.IsNullOrWhiteSpace(webhookUrl) || enabledTriggers == null || !enabledTriggers.Contains(trigger))
                 return;
+            var appSettings = await _configurationService.GetApplicationSettingsAsync();
+            if (appSettings != null && !appSettings.EnableNotifications)
+                return;
             var allowPrivateWebhookTargets = AllowPrivateWebhookTargetsForCurrentRequest();
             if (!NotificationDiagnostics.TryValidateWebhookTarget(webhookUrl, out var validationReason, allowPrivateWebhookTargets))
             {
