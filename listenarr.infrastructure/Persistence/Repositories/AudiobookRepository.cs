@@ -15,17 +15,20 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Domain.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Persistence.Repositories
 {
     public partial class AudiobookRepository : IAudiobookRepository
     {
         private readonly ListenArrDbContext _db;
-        public AudiobookRepository(ListenArrDbContext db)
+        private readonly ILogger<AudiobookRepository>? _logger;
+
+        public AudiobookRepository(ListenArrDbContext db, ILogger<AudiobookRepository>? logger = null)
         {
             _db = db;
+            _logger = logger;
         }
 
         public async Task<List<Audiobook>> GetAllAsync()
@@ -184,148 +187,6 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             _db.Audiobooks.Remove(audiobook);
             await _db.SaveChangesAsync();
             return true;
-        }
-
-        /// <summary>
-        /// Answers with a book's author ASIN only where the book pairs the two unambiguously:
-        /// one credited author and one recorded ASIN. AuthorAsins is a deduplicated set of
-        /// successful lookups and is not positionally parallel to Authors, so on any other book
-        /// there is no right answer to return -- the information needed to pick one was never
-        /// stored. Declining is deliberate, and the hits it gives up are the wrong ones.
-        /// </summary>
-        public async Task<string?> GetAuthorAsinByNameAsync(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name)) return null;
-
-            var target = StringUtils.NormalizeAuthorName(name);
-
-            // Materialize first because SQLite cannot translate list-property checks on our JSON-backed columns.
-            var candidates = await _db.Audiobooks
-                .AsNoTracking()
-                .ToListAsync();
-
-            foreach (var b in candidates)
-            {
-                if (b.AuthorAsins == null || b.AuthorAsins.Count != 1 || b.Authors == null || b.Authors.Count != 1)
-                {
-                    continue;
-                }
-
-                if (StringUtils.NormalizeAuthorName(b.Authors[0]) == target)
-                {
-                    var asin = b.AuthorAsins[0];
-                    if (!string.IsNullOrWhiteSpace(asin)) return asin;
-                }
-            }
-
-            return null;
-        }
-
-        public async Task<AuthorCacheEntry?> GetCachedAuthorByNameAsync(string name, string region)
-        {
-            var normalizedName = StringUtils.NormalizeAuthorName(name);
-            if (string.IsNullOrWhiteSpace(normalizedName))
-            {
-                return null;
-            }
-
-            var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
-
-            return await _db.AuthorCacheEntries
-                .AsNoTracking()
-                // COALESCE form — SQLite EF can't translate Nullable.GetValueOrDefault (it throws,
-                // and the caller's best-effort catch then silently disables this cache).
-                .OrderByDescending(entry => entry.LastFetchedAt ?? entry.UpdatedAt)
-                .FirstOrDefaultAsync(entry =>
-                    entry.AuthorNameNormalized == normalizedName &&
-                    entry.Region == normalizedRegion);
-        }
-
-        public async Task<AuthorCacheEntry?> GetCachedAuthorByAsinAsync(string asin, string region)
-        {
-            var normalizedAsin = NormalizeAsin(asin);
-            if (string.IsNullOrWhiteSpace(normalizedAsin))
-            {
-                return null;
-            }
-
-            var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
-
-            return await _db.AuthorCacheEntries
-                .AsNoTracking()
-                // COALESCE form — SQLite EF can't translate Nullable.GetValueOrDefault (it throws,
-                // and the caller's best-effort catch then silently disables this cache).
-                .OrderByDescending(entry => entry.LastFetchedAt ?? entry.UpdatedAt)
-                .FirstOrDefaultAsync(entry =>
-                    entry.AuthorAsin != null &&
-                    entry.AuthorAsin.ToUpper() == normalizedAsin &&
-                    entry.Region == normalizedRegion);
-        }
-
-        public async Task<AuthorCacheEntry> UpsertCachedAuthorAsync(AuthorCacheEntry authorCacheEntry)
-        {
-            ArgumentNullException.ThrowIfNull(authorCacheEntry);
-
-            var normalizedName = StringUtils.NormalizeAuthorName(authorCacheEntry.AuthorName);
-            var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(authorCacheEntry.Region) ?? "us";
-            var normalizedAsin = NormalizeAsin(authorCacheEntry.AuthorAsin);
-
-            AuthorCacheEntry? existing = null;
-
-            if (!string.IsNullOrWhiteSpace(normalizedAsin))
-            {
-                existing = await _db.AuthorCacheEntries.FirstOrDefaultAsync(entry =>
-                    entry.AuthorAsin != null &&
-                    entry.AuthorAsin.ToUpper() == normalizedAsin &&
-                    entry.Region == normalizedRegion);
-            }
-
-            if (existing == null && !string.IsNullOrWhiteSpace(normalizedName))
-            {
-                existing = await _db.AuthorCacheEntries.FirstOrDefaultAsync(entry =>
-                    entry.AuthorNameNormalized == normalizedName &&
-                    entry.Region == normalizedRegion);
-            }
-
-            var now = DateTime.UtcNow;
-            if (existing == null)
-            {
-                existing = new AuthorCacheEntry
-                {
-                    CreatedAt = now
-                };
-
-                _db.AuthorCacheEntries.Add(existing);
-            }
-
-            existing.AuthorName = string.IsNullOrWhiteSpace(authorCacheEntry.AuthorName)
-                ? (string.IsNullOrWhiteSpace(existing.AuthorName) ? normalizedName : existing.AuthorName)
-                : authorCacheEntry.AuthorName.Trim();
-            existing.AuthorNameNormalized = string.IsNullOrWhiteSpace(normalizedName)
-                ? StringUtils.NormalizeAuthorName(existing.AuthorName)
-                : normalizedName;
-            existing.AuthorAsin = string.IsNullOrWhiteSpace(normalizedAsin)
-                ? existing.AuthorAsin
-                : normalizedAsin;
-            existing.Region = normalizedRegion;
-            existing.ImageUrl = authorCacheEntry.ImageUrl ?? existing.ImageUrl;
-            existing.Description = authorCacheEntry.Description ?? existing.Description;
-
-            if (authorCacheEntry.SimilarAuthors != null)
-            {
-                existing.SimilarAuthors = authorCacheEntry.SimilarAuthors;
-            }
-
-            if (authorCacheEntry.CatalogBooks != null)
-            {
-                existing.CatalogBooks = authorCacheEntry.CatalogBooks;
-            }
-
-            existing.LastFetchedAt = authorCacheEntry.LastFetchedAt ?? existing.LastFetchedAt ?? now;
-            existing.UpdatedAt = now;
-
-            await _db.SaveChangesAsync();
-            return existing;
         }
 
         public async Task<SeriesCacheEntry?> GetCachedSeriesByNameAsync(string name, string region)
