@@ -15,17 +15,20 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Domain.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Persistence.Repositories
 {
     public partial class AudiobookRepository : IAudiobookRepository
     {
         private readonly ListenArrDbContext _db;
-        public AudiobookRepository(ListenArrDbContext db)
+        private readonly ILogger<AudiobookRepository>? _logger;
+
+        public AudiobookRepository(ListenArrDbContext db, ILogger<AudiobookRepository>? logger = null)
         {
             _db = db;
+            _logger = logger;
         }
 
         public async Task<List<Audiobook>> GetAllAsync()
