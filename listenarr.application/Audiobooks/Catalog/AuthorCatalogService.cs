@@ -156,22 +156,14 @@ namespace Listenarr.Application.Audiobooks.Catalog
 
             try
             {
-                var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(normalizedName);
-                if (!string.IsNullOrWhiteSpace(authorAsin))
+                // A scanned ASIN is a pointer to a cache row, never an identity in its own right.
+                // The row it reaches is accepted only if that row is this author's; an identity
+                // used to be fabricated here out of the scanned ASIN alone when no row existed,
+                // and nothing on that path verified anything.
+                var cachedByAsin = await ResolveCacheRowByScannedAsinAsync(normalizedName, region);
+                if (cachedByAsin != null)
                 {
-                    var cachedByAsin = await _audiobookRepository.GetCachedAuthorByAsinAsync(authorAsin, region);
-                    if (cachedByAsin != null)
-                    {
-                        return MapCachedAuthor(cachedByAsin, normalizedName, region);
-                    }
-
-                    return new AuthorLookupItem
-                    {
-                        Asin = authorAsin,
-                        Name = author?.Name ?? normalizedName,
-                        Image = author?.Image,
-                        Region = region
-                    };
+                    return MapCachedAuthor(cachedByAsin, normalizedName, region);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -216,11 +208,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     return cachedByName;
                 }
 
-                var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(normalizedName);
-                if (!string.IsNullOrWhiteSpace(authorAsin))
-                {
-                    return await _audiobookRepository.GetCachedAuthorByAsinAsync(authorAsin, region);
-                }
+                return await ResolveCacheRowByScannedAsinAsync(normalizedName, region);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -228,6 +216,34 @@ namespace Listenarr.Application.Audiobooks.Catalog
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Follows an ASIN scanned out of stored library data to a cached author row, and keeps
+        /// the row only when it is this author's. Without the name check this is the rename
+        /// hazard one call earlier: the row comes back under somebody else's name and the caller
+        /// then writes this author's name onto it.
+        /// </summary>
+        private async Task<AuthorCacheEntry?> ResolveCacheRowByScannedAsinAsync(string normalizedName, string region)
+        {
+            var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(normalizedName);
+            if (string.IsNullOrWhiteSpace(authorAsin))
+            {
+                return null;
+            }
+
+            var cachedByAsin = await _audiobookRepository.GetCachedAuthorByAsinAsync(authorAsin, region);
+            if (cachedByAsin == null)
+            {
+                return null;
+            }
+
+            return StringUtils.MatchesAuthorKey(
+                cachedByAsin.AuthorNameNormalized,
+                cachedByAsin.AuthorName,
+                StringUtils.NormalizeAuthorName(normalizedName))
+                ? cachedByAsin
+                : null;
         }
 
         private async Task SupplementWithSearchFallbackAsync(
