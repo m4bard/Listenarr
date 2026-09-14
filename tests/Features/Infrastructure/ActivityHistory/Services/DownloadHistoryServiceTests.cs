@@ -217,6 +217,154 @@ namespace Listenarr.Tests.Features.Infrastructure.ActivityHistory.Services
             Assert.Single(await _service.GetHistoryAsync("unlimited-history", "client-1"));
         }
 
+        // Every Record method hardcoded DownloadClient = "Unknown". The string is not blank, so
+        // AddUnifiedAsync's fallback never fired and "Unknown" is what reached History.Source,
+        // which is a sortable column, a filterable field, and a column on the History page. The
+        // rows people most want to read were the ones that said nothing.
+        [Fact]
+        public async Task RecordGrabbedAsync_NamesTheDownloadClientInsteadOfWritingUnknown()
+        {
+            await GivenDownloadClient("client-1", "qbittorrent", DownloadProtocol.Torrent);
+
+            await _service.RecordGrabbedAsync(
+                "abc123",
+                "client-1",
+                "Test Book",
+                DownloadProtocol.Torrent);
+
+            var entry = Assert.Single(_context.History);
+            Assert.Equal("client-1", entry.Source);
+            Assert.NotEqual("Unknown", entry.Source);
+        }
+
+        [Theory]
+        [InlineData("completed")]
+        [InlineData("failed")]
+        [InlineData("imported")]
+        [InlineData("importfailed")]
+        [InlineData("paused")]
+        [InlineData("resumed")]
+        [InlineData("removed")]
+        public async Task EveryRecordMethod_NamesTheDownloadClient(string which)
+        {
+            _context.DownloadClientConfigurations.Add(new DownloadClientConfiguration
+            {
+                Id = "client-1",
+                Name = "Living Room SAB",
+                Type = "sabnzbd"
+            });
+            await _context.SaveChangesAsync();
+
+            var adapter = new Mock<IDownloadClientAdapter>();
+            adapter.SetupGet(a => a.Protocol).Returns(DownloadProtocol.Usenet);
+            _adapterFactory.Setup(factory => factory.GetByType("sabnzbd")).Returns(adapter.Object);
+
+            switch (which)
+            {
+                case "completed":
+                    await _service.RecordDownloadCompleteAsync("abc123", "client-1", "Test Book");
+                    break;
+                case "failed":
+                    await _service.RecordDownloadFailedAsync("abc123", "client-1", "Test Book", "nope");
+                    break;
+                case "imported":
+                    await _service.RecordImportedAsync("abc123", "client-1", "Test Book");
+                    break;
+                case "importfailed":
+                    await _service.RecordImportFailedAsync("abc123", "client-1", "Test Book", "nope");
+                    break;
+                case "paused":
+                    await _service.RecordPausedAsync("abc123", "client-1", "Test Book");
+                    break;
+                case "resumed":
+                    await _service.RecordResumedAsync("abc123", "client-1", "Test Book");
+                    break;
+                default:
+                    await _service.RecordRemovedAsync("abc123", "client-1", "Test Book");
+                    break;
+            }
+
+            var entry = Assert.Single(_context.History);
+            Assert.Equal("Living Room SAB", entry.Source);
+        }
+
+        // A client that has been deleted leaves the name blank rather than filling it with a
+        // literal, so AddUnifiedAsync's own fallback is what decides, which is what it was
+        // written to do.
+        [Fact]
+        public async Task RecordGrabbedAsync_UnresolvableClientFallsBackToTheGenericSource()
+        {
+            await _service.RecordGrabbedAsync(
+                "abc123",
+                "gone-client",
+                "Test Book",
+                DownloadProtocol.Torrent);
+
+            var entry = Assert.Single(_context.History);
+            Assert.Equal("Download", entry.Source);
+        }
+
+        // The grab path holds the indexer, the quality and the size on the search result it is
+        // submitting, and threw all three away. Without them a grab row cannot say where a file
+        // came from or what was expected of it.
+        [Fact]
+        public async Task RecordGrabbedAsync_KeepsTheIndexerQualityAndSizeOfTheRelease()
+        {
+            await GivenDownloadClient("client-1", "qbittorrent", DownloadProtocol.Torrent);
+
+            await _service.RecordGrabbedAsync(
+                "abc123",
+                "client-1",
+                "Test Book",
+                DownloadProtocol.Torrent,
+                audiobookId: 42,
+                indexer: "Example Indexer",
+                quality: "M4B 128kbps",
+                size: 734003200L);
+
+            var entry = Assert.Single(_context.History);
+            Assert.Equal("Example Indexer", entry.Indexer);
+            Assert.Equal("M4B 128kbps", entry.Quality);
+            Assert.Equal(734003200L, entry.Size);
+        }
+
+        // A search result that reported no size carries zero, not null, and storing zero would
+        // render as an empty release rather than as one whose size nobody knows.
+        [Fact]
+        public async Task RecordGrabbedAsync_TreatsAnUnreportedSizeAsUnknownRatherThanEmpty()
+        {
+            await GivenDownloadClient("client-1", "qbittorrent", DownloadProtocol.Torrent);
+
+            await _service.RecordGrabbedAsync(
+                "abc123",
+                "client-1",
+                "Test Book",
+                DownloadProtocol.Torrent,
+                indexer: "   ",
+                quality: null,
+                size: 0L);
+
+            var entry = Assert.Single(_context.History);
+            Assert.Null(entry.Indexer);
+            Assert.Null(entry.Quality);
+            Assert.Null(entry.Size);
+        }
+
+        // Only a grab has a release behind it. Filling these in for a completion or an import
+        // would be inventing provenance the event never had.
+        [Fact]
+        public async Task EventsWithNoReleaseBehindThemLeaveTheReleaseColumnsNull()
+        {
+            await GivenDownloadClient("client-1", "qbittorrent", DownloadProtocol.Torrent);
+
+            await _service.RecordDownloadCompleteAsync("abc123", "client-1", "Test Book");
+
+            var entry = Assert.Single(_context.History);
+            Assert.Null(entry.Indexer);
+            Assert.Null(entry.Quality);
+            Assert.Null(entry.Size);
+        }
+
         public void Dispose() => _context.Dispose();
 
         // Every one of these three methods wrote DownloadProtocol.Torrent regardless of the client,
