@@ -206,6 +206,92 @@ public sealed class IndexerSearchWorkflowBackoffTests : BaseTests
         Assert.Single(status.Recorded);
     }
 
+    [Fact]
+    [Trait("Method", "SearchIndexersAsync")]
+    [Trait("Scenario", "BlockedIndexerWithLadder")]
+    public async Task SearchIndexersAsync_BlockedIndexerWithAMultiRungPlan_CostsNoRequestsAtAll()
+    {
+        // Given: the test for where the two features meet. With a one-form plan, "skipped" and
+        // "asked once and answered nothing" both leave an empty result list, so the existing
+        // skip test cannot tell a correct ordering from a broken one. A four-rung plan can: if
+        // selection ran after the ladder rather than before it, the blocked indexer would show
+        // four requests here instead of none.
+        var provider = new RecordingSearchProvider(_ => NoMatch());
+        var status = new FakeIndexerStatusService { Blocked = { 1 } };
+        var workflow = CreateWorkflow(provider, status, Indexer(1, "Blocked"), Indexer(2, "Healthy"));
+
+        // When
+        await workflow.SearchIndexersAsync("Alice", plan: FourRungPlan());
+
+        // Then
+        Assert.DoesNotContain("Blocked", provider.QueriedIndexers);
+
+        // The control that makes the assertion above mean something: the ladder really did run,
+        // and really did walk all four rungs, for the indexer that was not blocked.
+        Assert.Equal(4, provider.QueriedIndexers.Count(name => name == "Healthy"));
+    }
+
+    [Fact]
+    [Trait("Method", "SearchIndexersAsync")]
+    [Trait("Scenario", "LadderRecordsOnce")]
+    public async Task SearchIndexersAsync_LadderWalksEveryRung_RecordsOneOutcomeNotOnePerRung()
+    {
+        // Given: the backoff ladder escalates on failures, so it must be fed one outcome per
+        // indexer per book. Four requests for one book is the query ladder doing its job, not
+        // four separate failures, and counting it as four would cool an indexer off four times
+        // faster than the policy says.
+        var provider = new RecordingSearchProvider(_ => NoMatch());
+        var status = new FakeIndexerStatusService();
+        var workflow = CreateWorkflow(provider, status, Indexer(1, "Healthy"));
+
+        // When
+        await workflow.SearchIndexersAsync("Alice", plan: FourRungPlan());
+
+        // Then
+        Assert.Equal(4, provider.QueriedIndexers.Count);
+        var recorded = Assert.Single(status.Recorded);
+        Assert.Equal(IndexerQueryOutcome.NoMatch, recorded.Observation.Outcome);
+    }
+
+    [Fact]
+    [Trait("Method", "SearchIndexersAsync")]
+    [Trait("Scenario", "LadderHaltedByFailure")]
+    public async Task SearchIndexersAsync_LadderHaltedByATimeout_RecordsTheTimeoutAndNotTheRungBeforeIt()
+    {
+        // Given: an indexer that answers nothing, then times out. The ladder stops at the timeout
+        // rather than escalating into an indexer that is already failing, which is also why at
+        // most one non-answer is ever produced per indexer per book.
+        var attempts = 0;
+        var provider = new RecordingSearchProvider(_ =>
+            Interlocked.Increment(ref attempts) == 1
+                ? NoMatch()
+                : IndexerQueryObservation.Unavailable(IndexerQueryReason.Timeout, "Alice", "TaskCanceledException"));
+        var status = new FakeIndexerStatusService();
+        var workflow = CreateWorkflow(provider, status, Indexer(1, "Slow"));
+
+        // When
+        await workflow.SearchIndexersAsync("Alice", plan: FourRungPlan());
+
+        // Then: two of the four rungs were issued, and the answer the backoff sees is the timeout.
+        // The earlier empty answer must not also arrive as a separate healthy observation, or a
+        // failing indexer would keep resetting its own cooldown.
+        Assert.Equal(2, provider.QueriedIndexers.Count);
+        var recorded = Assert.Single(status.Recorded);
+        Assert.Equal(IndexerQueryOutcome.Unavailable, recorded.Observation.Outcome);
+        Assert.Equal(IndexerQueryReason.Timeout, recorded.Observation.Reason);
+    }
+
+    private static SearchQueryPlan FourRungPlan() => new(
+    [
+        new SearchQueryForm(1, "Alice Adventures", SearchQueryFormKind.TitleAuthor),
+        new SearchQueryForm(2, "Alice", SearchQueryFormKind.Title),
+        new SearchQueryForm(3, "Wonderland Adventures", SearchQueryFormKind.SeriesAuthor),
+        new SearchQueryForm(4, "Wonderland", SearchQueryFormKind.Series)
+    ]);
+
+    private static IndexerQueryObservation NoMatch() =>
+        IndexerQueryObservation.NoMatch(IndexerQueryReason.EmptyChannel, "Alice");
+
     private static IndexerQueryObservation Hit(string title) =>
         IndexerQueryObservation.FromResults([Result(title)], title);
 
