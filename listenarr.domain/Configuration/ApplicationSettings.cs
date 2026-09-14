@@ -86,6 +86,10 @@ namespace Listenarr.Domain.Configuration
         public int MaxConcurrentDownloads { get; set; } = 3;
         public int PollingIntervalSeconds { get; set; } = 30;
         public bool EnableNotifications { get; set; } = false;
+
+        // Audio file extensions FileUtils.IsAudioFile treats as recognized. Defaults to the same
+        // set FileUtils.AudioExtensions has always used, so an untouched setting reproduces
+        // today's hardcoded behavior exactly.
         public List<string> AllowedFileExtensions
         {
             get
@@ -93,7 +97,7 @@ namespace Listenarr.Domain.Configuration
                 return [.. FileUtils.NormalizeExtensions(field)];
             }
             set;
-        } = [".mp3", ".flac", ".m4a", ".m4b", ".ogg"];
+        } = [.. FileUtils.AudioExtensions];
 
         // Number of seconds a download must be observed in the client as "complete" before
         // the system will finalize it (stability window). Keeping a short default (10s)
