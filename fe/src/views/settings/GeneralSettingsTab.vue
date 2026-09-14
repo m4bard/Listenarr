@@ -59,6 +59,11 @@
           @update:settings="(val) => Object.assign(localSettings, val)"
         ></SearchSettingsSection>
 
+        <HistorySettingsSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></HistorySettingsSection>
+
         <AuthenticationSection
           :settings="localSettings"
           :apiKey="props.apiKey"
@@ -85,6 +90,7 @@ import DownloadSettingsSection from '@/components/settings/DownloadSettingsSecti
 import FeaturesSection from '@/components/settings/FeaturesSection.vue'
 import MetadataRefreshSection from '@/components/settings/MetadataRefreshSection.vue'
 import SearchSettingsSection from '@/components/settings/SearchSettingsSection.vue'
+import HistorySettingsSection from '@/components/settings/HistorySettingsSection.vue'
 import AuthenticationSection from '@/components/settings/AuthenticationSection.vue'
 
 interface Props {
