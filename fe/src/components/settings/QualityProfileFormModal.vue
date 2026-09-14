@@ -476,6 +476,22 @@
             />
 
             <FormRow
+              label="Bundle and Omnibus Editions"
+              labelFor="preferredReleaseShape"
+              help="Applies to automatic searches. A release on the wrong side of this is scored down, never rejected, so a book whose only available release is a bundle is still grabbed. A book whose own series position is a range (an omnibus entry) always prefers bundles, whatever is chosen here."
+            >
+              <select
+                id="preferredReleaseShape"
+                v-model="formData.preferredReleaseShape"
+                class="form-select"
+              >
+                <option value="none">No preference</option>
+                <option value="individual">Prefer individual books</option>
+                <option value="bundle">Prefer bundle and omnibus editions</option>
+              </select>
+            </FormRow>
+
+            <FormRow
               v-if="formData.preferNewerReleases"
               label="Maximum Age (Days)"
               labelFor="maximumAge"
@@ -530,7 +546,13 @@ import {
   PhDotsSixVertical,
   PhMusicNotesSimple,
 } from '@phosphor-icons/vue'
-import type { QualityProfile, CodecDefinition, QualityItem, QualityDefinition } from '@/types'
+import type {
+  QualityProfile,
+  CodecDefinition,
+  QualityItem,
+  QualityDefinition,
+  ReleaseShapePreference,
+} from '@/types'
 import { useToast } from '@/services/toastService'
 
 const props = defineProps<{
@@ -802,6 +824,7 @@ const formData = ref<QualityProfile>({
   isDefault: false,
   preferNewerReleases: false,
   maximumAge: 0,
+  preferredReleaseShape: 'none' as ReleaseShapePreference,
 })
 
 const preferM4b = ref(false)
@@ -841,6 +864,7 @@ watch(
       formData.value.isDefault = newProfile.isDefault
       formData.value.preferNewerReleases = newProfile.preferNewerReleases
       formData.value.maximumAge = newProfile.maximumAge
+      formData.value.preferredReleaseShape = newProfile.preferredReleaseShape || 'none'
 
       preferM4b.value = (formData.value.preferredFormats || []).some(
         (format) => (format || '').toLowerCase().trim() === 'm4b',
@@ -878,6 +902,7 @@ watch(
         isDefault: false,
         preferNewerReleases: false,
         maximumAge: 0,
+        preferredReleaseShape: 'none',
       }
 
       preferM4b.value = false
