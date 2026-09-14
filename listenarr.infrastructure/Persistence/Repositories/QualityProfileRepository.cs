@@ -72,6 +72,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             existing.MinimumScore = profile.MinimumScore;
             existing.IsDefault = profile.IsDefault;
             existing.PreferNewerReleases = profile.PreferNewerReleases;
+            existing.PreferredReleaseShape = profile.PreferredReleaseShape;
             existing.MaximumAge = profile.MaximumAge;
 
             // Replace list/scalar-serialized properties safely
