@@ -33,6 +33,15 @@
         >
           <PhInfo />
         </button>
+        <button
+          class="toolbar-btn"
+          :class="{ active: showSearchAction }"
+          @click="toggleSearchAction"
+          :aria-pressed="showSearchAction"
+          title="Toggle automatic search action"
+        >
+          <PhRobot />
+        </button>
         <span
           v-if="
             (groupBy === 'books'
@@ -120,6 +129,15 @@
         <button v-if="selectedCount > 0" class="toolbar-btn" @click="showOrganize">
           <PhFolderOpen />
           Organize Selected
+        </button>
+        <button
+          v-if="selectedCount > 0"
+          class="toolbar-btn"
+          :disabled="bulkSearchRunning"
+          @click="confirmBulkSearch"
+        >
+          <PhRobot />
+          Search Selected ({{ searchTargets.length }})
         </button>
         <button v-if="selectedCount > 0" class="toolbar-btn repair-btn" @click="showRepair">
           <PhWrench />
@@ -531,6 +549,15 @@
                 </div>
                 <div class="action-buttons">
                   <button
+                    v-if="showSearchAction"
+                    class="action-btn search-btn-small"
+                    :disabled="searching[audiobook.id]"
+                    @click.stop="runAutomaticSearch(audiobook)"
+                    title="Automatic Search"
+                  >
+                    <PhRobot />
+                  </button>
+                  <button
                     class="action-btn edit-btn-small"
                     @click.stop="openEditModal(audiobook)"
                     title="Edit"
@@ -693,6 +720,15 @@
               </div>
             </div>
             <div class="list-actions">
+              <button
+                v-if="showSearchAction"
+                class="action-btn search-btn-small"
+                :disabled="searching[audiobook.id]"
+                @click.stop="runAutomaticSearch(audiobook)"
+                title="Automatic Search"
+              >
+                <PhRobot />
+              </button>
               <button
                 class="action-btn edit-btn-small"
                 @click.stop="openEditModal(audiobook)"
@@ -886,6 +922,7 @@ import {
   PhUser,
   PhBooks,
   PhFolderOpen,
+  PhRobot,
   PhWrench,
 } from '@phosphor-icons/vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -923,6 +960,8 @@ import { normalizeCollectionText } from '@/utils/collectionText'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { errorTracking } from '@/services/errorTracking'
 import { isLikelyBackendImageUrl, useProtectedImages } from '@/composables/useProtectedImages'
+import { useToast } from '@/services/toastService'
+import { SEARCH_SPACING_MS, formatSearchDuration } from '@/utils/automaticSearch'
 
 function getAuthorSortKey(author: string): string {
   const parts = author.trim().split(/\s+/)
@@ -1831,6 +1870,30 @@ watch(showItemDetails, async () => {
   updateVisibleRange()
 })
 
+// Option: show a per-row automatic-search icon in both renderers, default off so an
+// upgrade changes nothing until the user asks for it. Same shape as SHOW_ITEM_DETAILS_KEY.
+const SHOW_SEARCH_ACTION_KEY = 'listenarr.showSearchAction'
+const showSearchAction = ref<boolean>(false)
+
+try {
+  const stored = localStorage.getItem(SHOW_SEARCH_ACTION_KEY)
+  if (stored !== null) showSearchAction.value = stored === 'true'
+} catch {
+  // ignore localStorage errors (e.g., privacy mode)
+}
+
+watch(showSearchAction, (v) => {
+  try {
+    localStorage.setItem(SHOW_SEARCH_ACTION_KEY, v ? 'true' : 'false')
+  } catch {
+    // ignore localStorage errors (e.g., privacy mode)
+  }
+})
+
+function toggleSearchAction() {
+  showSearchAction.value = !showSearchAction.value
+}
+
 watch(
   () => route.query.group,
   (g) => {
@@ -2455,6 +2518,76 @@ async function confirmBulkDelete() {
   }
 }
 
+// Per-row automatic search state, shared by the grid/list icon (item 2) and the
+// selection-gated bulk toolbar button (item 4).
+const searching = ref<Record<number, boolean>>({})
+const bulkSearchRunning = ref(false)
+
+// What "Search Selected" will actually act on: the selected rows minus any already in
+// flight. selectedIds is already scoped to the filtered grid by libraryStore.selectAll
+// (331f605f7), so no further join against the filtered computed is needed here.
+const searchTargets = computed(() =>
+  libraryStore.audiobooks.filter(
+    (a) => libraryStore.selectedIds.has(a.id) && !searching.value[a.id],
+  ),
+)
+
+async function runAutomaticSearch(audiobook: Audiobook) {
+  if (searching.value[audiobook.id]) return
+
+  searching.value[audiobook.id] = true
+  const toast = useToast()
+  try {
+    const result = await apiService.searchAndDownload(audiobook.id)
+    if (result.success) {
+      toast.success(
+        'Search started',
+        `Found on ${result.indexerUsed}, sent to your download client`,
+      )
+      await libraryStore.fetchLibrary()
+    } else {
+      toast.info('No match found', result.message ?? 'No release met the quality profile')
+    }
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'AudiobooksView',
+      operation: 'automaticSearch',
+      metadata: { audiobookId: audiobook.id },
+    })
+    toast.error('Search failed', err instanceof Error ? err.message : String(err))
+  } finally {
+    searching.value[audiobook.id] = false
+  }
+}
+
+async function confirmBulkSearch() {
+  if (bulkSearchRunning.value) return
+
+  // Snapshot before the first search, because runAutomaticSearch mutates the
+  // searching map that searchTargets is derived from.
+  const targets = [...searchTargets.value]
+  if (targets.length === 0) return
+
+  const count = targets.length
+  const noun = count === 1 ? 'audiobook' : 'audiobooks'
+  const message = `Start an automatic search for ${count} ${noun}? Each one queries every configured indexer, one per second, so this takes about ${formatSearchDuration(count)}.`
+  const ok = await showConfirm(message, 'Confirm Search', {
+    confirmText: 'Search',
+    cancelText: 'Cancel',
+  })
+  if (!ok) return
+
+  bulkSearchRunning.value = true
+  try {
+    for (const audiobook of targets) {
+      await runAutomaticSearch(audiobook)
+      await new Promise((resolve) => setTimeout(resolve, SEARCH_SPACING_MS))
+    }
+  } finally {
+    bulkSearchRunning.value = false
+  }
+}
+
 function resetDeleteOptions() {
   deleteFilesOnDisk.value = false
   deleteFolderOnDisk.value = false
@@ -2596,6 +2729,13 @@ defineExpose({
   setGroupBy,
   groupedCollections,
   showItemDetails,
+  showSearchAction,
+  toggleSearchAction,
+  searching,
+  searchTargets,
+  bulkSearchRunning,
+  runAutomaticSearch,
+  confirmBulkSearch,
 })
 </script>
 
@@ -3947,6 +4087,20 @@ defineExpose({
   background-color: rgba(41, 128, 185, 1);
 }
 
+.search-btn-small {
+  background-color: rgba(155, 89, 182, 0.9);
+  border-color: rgba(142, 68, 173, 0.5);
+}
+
+.search-btn-small:hover {
+  background-color: rgba(142, 68, 173, 1);
+}
+
+.search-btn-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .loading-state,
 .empty-state,
 .error-state {
@@ -4044,7 +4198,7 @@ defineExpose({
 
 .audiobook-list-item {
   display: grid;
-  grid-template-columns: 40px 64px 1fr auto 120px;
+  grid-template-columns: 40px 64px 1fr auto 160px;
   gap: 12px;
   align-items: center;
   padding: 10px 12px;
@@ -4120,7 +4274,7 @@ defineExpose({
 /* Header row to mimic table columns */
 .list-header {
   display: grid;
-  grid-template-columns: 40px 64px 1fr auto 120px;
+  grid-template-columns: 40px 64px 1fr auto 160px;
   gap: 12px;
   padding: 8px 12px;
   color: #aaa;
