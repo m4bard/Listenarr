@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 using static Listenarr.Application.Audiobooks.Catalog.AuthorCatalogMapping;
 
@@ -302,7 +303,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
             {
                 var entry = cachedEntry ?? new AuthorCacheEntry();
                 entry.AuthorName = string.IsNullOrWhiteSpace(author.Name) ? authorName : author.Name;
-                entry.AuthorNameNormalized = NormalizeAuthorCacheKey(authorName);
+                entry.AuthorNameNormalized = StringUtils.NormalizeAuthorName(authorName);
                 entry.AuthorAsin = author.Asin;
                 entry.Region = region;
                 entry.ImageUrl = author.Image ?? entry.ImageUrl;
