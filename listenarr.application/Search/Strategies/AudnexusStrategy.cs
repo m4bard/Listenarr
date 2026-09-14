@@ -47,20 +47,20 @@ public class AudnexusStrategy : IMetadataStrategy
 
     public async Task<AudibleBookMetadata?> FetchMetadataAsync(string asin, ApiConfiguration source, string? originalSource, string? region = null)
     {
-        _logger.LogDebug("Calling Audnexus service for ASIN {Asin}", asin);
+        _logger.LogDebug("Calling Audnexus service for ASIN {Asin}", LogRedaction.SanitizeText(asin));
         var safeRegion = AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
         var audnexusData = await _audnexusService.GetBookMetadataAsync(asin, safeRegion, true, false);
 
         if (audnexusData != null)
         {
-            _logger.LogInformation("✓ Audnexus returned data for ASIN {Asin}. Title: {Title}", asin, audnexusData.Title ?? "null");
+            _logger.LogInformation("✓ Audnexus returned data for ASIN {Asin}. Title: {Title}", LogRedaction.SanitizeText(asin), audnexusData.Title ?? "null");
             var metadata = _metadataConverters.ConvertAudnexusToMetadata(audnexusData, asin, originalSource ?? "Audible");
-            _logger.LogInformation("Successfully enriched ASIN {Asin} with metadata from {SourceName}", asin, source.Name);
+            _logger.LogInformation("Successfully enriched ASIN {Asin} with metadata from {SourceName}", LogRedaction.SanitizeText(asin), source.Name);
             return metadata;
         }
         else
         {
-            _logger.LogWarning("✗ Audnexus returned null for ASIN {Asin}", asin);
+            _logger.LogWarning("✗ Audnexus returned null for ASIN {Asin}", LogRedaction.SanitizeText(asin));
         }
 
         return null;
