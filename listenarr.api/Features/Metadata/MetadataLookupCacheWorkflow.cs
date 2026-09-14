@@ -51,17 +51,12 @@ namespace Listenarr.Api.Features.Metadata
                     }
                 }
 
-                var byName = await _audiobookRepository.GetCachedAuthorByNameAsync(normalizedName, region);
-                if (byName != null)
-                {
-                    return byName;
-                }
-
-                var storedAuthorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(normalizedName);
-                if (!string.IsNullOrWhiteSpace(storedAuthorAsin))
-                {
-                    return await _audiobookRepository.GetCachedAuthorByAsinAsync(storedAuthorAsin, region);
-                }
+                // Keyed on the unique index, so this already covers every row that genuinely
+                // belongs to this name. A fallback used to follow it, scanning the library for an
+                // ASIN and resolving a row by that instead; it could only ever fire where this
+                // lookup had missed, which is exactly where the row it finds belongs to somebody
+                // else.
+                return await _audiobookRepository.GetCachedAuthorByNameAsync(normalizedName, region);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
