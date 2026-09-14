@@ -16,10 +16,13 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Api.Dtos.ManualImport;
+using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Dtos.ManualImport
 {
-    public class ManualImportItemDtoTests
+    [Trait("Name", "ManualImportItemDtoTests")]
+    [Trait("Category", "Api")]
+    public class ManualImportItemDtoTests : BaseTests
     {
         [Theory]
         [InlineData("/library/Stalky and Co./track.m4b")]
