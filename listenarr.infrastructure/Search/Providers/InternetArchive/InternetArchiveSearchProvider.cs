@@ -49,7 +49,8 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
         Indexer indexer,
         string query,
         string? category = null,
-        SearchRequest? request = null)
+        SearchRequest? request = null,
+        CancellationToken ct = default)
     {
         try
         {
@@ -119,7 +120,7 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                     queryIndex,
                     queryPlan.Queries.Count);
 
-                using var response = await _httpClient.GetAsync(searchUrl);
+                using var response = await _httpClient.GetAsync(searchUrl, ct);
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Internet Archive returned status {Status}", response.StatusCode);
@@ -158,17 +159,18 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
 
             return IndexerQueryObservation.FromResults(searchResults, query);
         }
-        catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
+        catch (Exception ex) when (ex is OperationCanceledException or TimeoutException && !ct.IsCancellationRequested)
         {
-            // HttpClient reports its own request timeout as a cancellation. Left uncaught it escapes the
-            // per-indexer containment upstream and fails the whole fan-out.
+            // HttpClient reports its own request timeout as a cancellation, and the caller did not
+            // ask to cancel. Left uncaught it escapes the per-indexer containment upstream and fails
+            // the whole fan-out. A genuinely cancelled token falls through to propagate instead.
             _logger.LogWarning(ex, "Internet Archive indexer {Name} did not answer in time", indexer.Name);
             return IndexerQueryObservation.Unavailable(
                 IndexerQueryFailureClassifier.Classify(ex),
                 query,
                 IndexerQueryFailureClassifier.Describe(ex));
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error searching Internet Archive indexer {Name}", indexer.Name);
             return IndexerQueryObservation.Unavailable(

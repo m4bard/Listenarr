@@ -43,7 +43,8 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
         Indexer indexer,
         string query,
         string? category = null,
-        SearchRequest? request = null)
+        SearchRequest? request = null,
+        CancellationToken ct = default)
     {
         try
         {
@@ -58,7 +59,7 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
             var userAgent = $"Listenarr/{version} (+https://github.com/Listenarrs/listenarr)";
             requestMessage.Headers.UserAgent.ParseAdd(userAgent);
 
-            var response = await _httpClient.SendAsync(requestMessage);
+            var response = await _httpClient.SendAsync(requestMessage, ct);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Indexer {Name} returned status {Status}", indexer.Name, response.StatusCode);
@@ -76,17 +77,18 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
             _logger.LogInformation("Indexer {Name} returned {Count} results", indexer.Name, observation.Results.Count);
             return observation;
         }
-        catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
+        catch (Exception ex) when (ex is OperationCanceledException or TimeoutException && !ct.IsCancellationRequested)
         {
-            // HttpClient reports its own request timeout as a cancellation. Left uncaught it escapes the
-            // per-indexer containment upstream and fails the whole fan-out.
+            // HttpClient reports its own request timeout as a cancellation, and the caller did not
+            // ask to cancel. Left uncaught it escapes the per-indexer containment upstream and fails
+            // the whole fan-out. A genuinely cancelled token falls through to propagate instead.
             _logger.LogWarning(ex, "Torznab/Newznab indexer {Name} did not answer in time", indexer.Name);
             return IndexerQueryObservation.Unavailable(
                 IndexerQueryFailureClassifier.Classify(ex),
                 query,
                 IndexerQueryFailureClassifier.Describe(ex));
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error searching Torznab/Newznab indexer {Name}", indexer.Name);
             return IndexerQueryObservation.Unavailable(
