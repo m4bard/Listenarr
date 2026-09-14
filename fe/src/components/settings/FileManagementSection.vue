@@ -127,6 +127,13 @@
           "
         />
       </FormRow>
+
+      <CheckboxCard
+        :modelValue="settings.extractArchives"
+        @update:modelValue="updateExtractArchives"
+        title="Extract Archives"
+        description="Automatically extract archive files (.zip, .rar, .7z, .tar, .gz, .tgz) found during library import and completed-download import."
+      />
     </div>
 
     <!-- Pattern Help Modal -->
@@ -208,6 +215,7 @@ import type { ApplicationSettings } from '@/types'
 import { ref, computed } from 'vue'
 import { PhFolder, PhQuestion, PhX, PhWarning } from '@phosphor-icons/vue'
 import FormRow from '@/components/settings/FormRow.vue'
+import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 
 const props = defineProps<{ settings: Partial<ApplicationSettings> }>()
 const emit = defineEmits<{
@@ -308,6 +316,10 @@ function applyPattern(
 function updateField(field: keyof ApplicationSettings, value: unknown) {
   const payload = { ...(props.settings || {}), [field]: value } as Partial<ApplicationSettings>
   emit('update:settings', payload)
+}
+
+function updateExtractArchives(value: boolean) {
+  updateField('extractArchives', value)
 }
 
 function parseExtensionList(value: string): string[] {
