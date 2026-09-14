@@ -190,16 +190,17 @@ namespace Listenarr.Application.Audiobooks.Quality
             }
         }
 
-        public Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile) =>
-            ScoreSearchResult(searchResult, profile, resolvedIndexers: null);
+        public Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile, bool targetIsBundle = false) =>
+            ScoreSearchResult(searchResult, profile, resolvedIndexers: null, targetIsBundle);
 
         private async Task<QualityScore> ScoreSearchResult(
             SearchResult searchResult,
             QualityProfile profile,
-            IReadOnlyDictionary<int, Indexer>? resolvedIndexers)
+            IReadOnlyDictionary<int, Indexer>? resolvedIndexers,
+            bool targetIsBundle = false)
         {
             var scorer = new SearchResultScorer(_indexerRepository, _logger, resolvedIndexers);
-            var score = await scorer.Score(searchResult, profile);
+            var score = await scorer.Score(searchResult, profile, targetIsBundle);
 
             // Also calculate the Prowlarr-style composite (Smart) score so the UI
             // can display the same composite ranking details used for Smart sorting.
@@ -297,7 +298,7 @@ namespace Listenarr.Application.Audiobooks.Quality
 
 
 
-        public async Task<List<QualityScore>> ScoreSearchResults(List<SearchResult> searchResults, QualityProfile profile)
+        public async Task<List<QualityScore>> ScoreSearchResults(List<SearchResult> searchResults, QualityProfile profile, bool targetIsBundle = false)
         {
             // Resolve every indexer this batch refers to before fanning out, not inside it.
             // Scoring runs in parallel and the scorer reads indexer retention per result, so a
@@ -307,7 +308,7 @@ namespace Listenarr.Application.Audiobooks.Quality
             // rather than the request failing.
             var resolvedIndexers = await ResolveIndexersAsync(searchResults);
             var scores = await Task.WhenAll(
-                searchResults.Select(result => ScoreSearchResult(result, profile, resolvedIndexers)));
+                searchResults.Select(result => ScoreSearchResult(result, profile, resolvedIndexers, targetIsBundle)));
 
             // Ensure rejected results are ordered last regardless of numeric TotalScore
             return scores
