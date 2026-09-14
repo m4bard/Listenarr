@@ -36,49 +36,77 @@ namespace Listenarr.Application.Search.Core
                     // Nothing is logged here: the call that failed is the logging call itself.
                 }
 
-                // Try Audible-first for various search types. If Audible returns results,
-                // convert them to SearchResult and return immediately to avoid scraping.
+                // Flags controlling provider calls (enabled by default) - declare at outer scope.
+                // Loaded up front so both the Audible-first attempt and the ASIN handler below
+                // can honor EnableAudibleSearch/EnableAmazonSearch.
+                var skipOpenLibrary = false;
+                var enableAmazonSearch = true;
+                var enableAudibleSearch = true;
                 try
                 {
-                    // ASIN case is handled separately above via ASIN handler
-
-                    var simpleAudibleResults = await _audibleSimpleLookupWorkflow.TrySearchAsync(
-                        searchType,
-                        isbnVal,
-                        titleVal,
-                        actualQuery,
-                        region,
-                        language);
-                    if (simpleAudibleResults?.Any() == true)
+                    var appSettings = await _configurationService.GetApplicationSettingsAsync();
+                    if (appSettings != null)
                     {
-                        return simpleAudibleResults;
+                        skipOpenLibrary = !appSettings.EnableOpenLibrarySearch;
+                        enableAmazonSearch = appSettings.EnableAmazonSearch;
+                        enableAudibleSearch = appSettings.EnableAudibleSearch;
                     }
-
-                    var authorAudibleResults = await _audibleAuthorSearchWorkflow.TrySearchAsync(
-                        searchType,
-                        authorVal,
-                        titleVal,
-                        isbnVal,
-                        candidateLimit,
-                        region,
-                        language);
-                    if (authorAudibleResults?.Any() == true)
-                    {
-                        return authorAudibleResults;
-                    }
-
                 }
-                catch (Exception exAudibleFirst) when (exAudibleFirst is not OperationCanceledException && exAudibleFirst is not OutOfMemoryException && exAudibleFirst is not StackOverflowException)
+                catch (Exception exAppSettings) when (exAppSettings is not OperationCanceledException && exAppSettings is not OutOfMemoryException && exAppSettings is not StackOverflowException)
                 {
-                    _logger.LogWarning(exAudibleFirst, "Audible-first attempt failed; falling back to provider searches for query: {Query}", query);
+                    _logger.LogDebug(exAppSettings, "Failed to load application search settings, falling back to defaults");
                 }
 
-                // Flags controlling provider calls (enabled by default) - declare at outer scope
-                var skipOpenLibrary = false;
+                // Try Audible-first for various search types. If Audible returns results,
+                // convert them to SearchResult and return immediately to avoid scraping.
+                if (enableAudibleSearch)
+                {
+                    try
+                    {
+                        // ASIN case is handled separately above via ASIN handler
 
-                // Handle ASIN queries immediately with metadata-first approach
+                        var simpleAudibleResults = await _audibleSimpleLookupWorkflow.TrySearchAsync(
+                            searchType,
+                            isbnVal,
+                            titleVal,
+                            actualQuery,
+                            region,
+                            language);
+                        if (simpleAudibleResults?.Any() == true)
+                        {
+                            return simpleAudibleResults;
+                        }
+
+                        var authorAudibleResults = await _audibleAuthorSearchWorkflow.TrySearchAsync(
+                            searchType,
+                            authorVal,
+                            titleVal,
+                            isbnVal,
+                            candidateLimit,
+                            region,
+                            language);
+                        if (authorAudibleResults?.Any() == true)
+                        {
+                            return authorAudibleResults;
+                        }
+
+                    }
+                    catch (Exception exAudibleFirst) when (exAudibleFirst is not OperationCanceledException && exAudibleFirst is not OutOfMemoryException && exAudibleFirst is not StackOverflowException)
+                    {
+                        _logger.LogWarning(exAudibleFirst, "Audible-first attempt failed; falling back to provider searches for query: {Query}", query);
+                    }
+                }
+
+                // Handle ASIN queries immediately with metadata-first approach. An ASIN is an
+                // Amazon-assigned identifier, so this direct lookup is gated by EnableAmazonSearch.
                 if (searchType == "ASIN" && !string.IsNullOrEmpty(asinVal))
                 {
+                    if (!enableAmazonSearch)
+                    {
+                        _logger.LogInformation("Amazon search disabled; skipping direct ASIN metadata lookup for {Asin}", asinVal);
+                        return new List<MetadataSearchResult>();
+                    }
+
                     var asinMetadataSources = await GetEnabledMetadataSourcesAsync();
                     var asinSearchResults = await _asinSearchHandler.SearchByAsinAsync(
                         asinVal,
@@ -92,20 +120,6 @@ namespace Listenarr.Application.Search.Core
                 // Regular search flow for non-ASIN queries (ISBN, AUTHOR, TITLE, or normal text)
                 _logger.LogInformation("Searching for: {Query}", actualQuery);
                 await _searchProgressReporter.BroadcastAsync($"Searching for {actualQuery}", null);
-
-                // Apply application-level search settings (if configured)
-                try
-                {
-                    var appSettings = await _configurationService.GetApplicationSettingsAsync();
-                    if (appSettings != null)
-                    {
-                        skipOpenLibrary = !appSettings.EnableOpenLibrarySearch;
-                    }
-                }
-                catch (Exception exAppSettings) when (exAppSettings is not OperationCanceledException && exAppSettings is not OutOfMemoryException && exAppSettings is not StackOverflowException)
-                {
-                    _logger.LogDebug(exAppSettings, "Failed to load application search settings, falling back to defaults");
-                }
 
                 // Step 2: Collect candidates from OpenLibrary (and other non-scraping sources)
                 var candidateCollection = await _asinCandidateCollector.CollectCandidatesAsync(
