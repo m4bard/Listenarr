@@ -31,6 +31,14 @@ public interface IIndexerStatusService
     Task<IReadOnlySet<int>> GetBlockedIndexerIdsAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Whether any indexer that would otherwise have been queried for this kind of search is in a
+    /// cooldown right now, so the caller can tell a complete search from a degraded one.
+    /// </summary>
+    /// <param name="isAutomaticSearch">Which of the two enable flags to read.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<bool> AnyEnabledIndexerBlockedAsync(bool isAutomaticSearch, CancellationToken ct = default);
+
+    /// <summary>
     /// Records one query's outcome against one indexer and returns the resulting backoff state.
     /// </summary>
     /// <param name="indexer">
