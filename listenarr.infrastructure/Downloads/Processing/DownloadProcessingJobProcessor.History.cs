@@ -63,6 +63,12 @@ namespace Listenarr.Infrastructure.Downloads.Processing
             };
             if (failedResults is { Count: > 0 })
             {
+                // History rows are returned whole by the History API, so nothing here may
+                // carry a raw exception message or an absolute filesystem path (issue #975).
+                // Message is replaced by a fixed, non-leaking sentence for any classified
+                // failure, or sanitized/capped text as a fallback; the paths are reduced to
+                // their filenames. The real exception detail is already on the log line at
+                // the point each ImportResult was created.
                 details["FailedResults"] = failedResults.Select(result => new
                 {
                     result.Action,
@@ -70,9 +76,11 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     result.EffectiveAction,
                     result.SourceDisposition,
                     result.WarningCode,
-                    result.SourcePath,
-                    result.FinalPath,
-                    result.Message,
+                    SourcePath = LogRedaction.SanitizeFilePath(result.SourcePath),
+                    FinalPath = LogRedaction.SanitizeFilePath(result.FinalPath),
+                    Message = result.FailureClass != ImportFailureClass.None
+                        ? ImportFailureClassSentences.Describe(result.FailureClass)
+                        : LogRedaction.SanitizeText(result.Message),
                     result.WasRegisteredToAudiobook
                 }).ToArray();
             }
@@ -87,6 +95,67 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                 reason,
                 details,
                 ct);
+        }
+
+        /// <summary>
+        /// One History row per <see cref="ImportResult"/> the import produced.
+        /// </summary>
+        /// <remarks>
+        /// Every successful import lands here, so this is a much wider exposure than the
+        /// failure path in <c>BuildImportDetails</c> above: the message is a fixed sentence
+        /// for any classified failure, and both paths are reduced to their filenames before
+        /// they reach the History API (issue #975).
+        /// </remarks>
+        private static async Task RecordImportResultsAsync(
+            IHistoryRepository historyRepository,
+            DownloadProcessingJob job,
+            Download download,
+            Audiobook audiobook,
+            string correlationId,
+            IEnumerable<ImportResult> results,
+            CancellationToken ct)
+        {
+            foreach (var result in results)
+            {
+                var outcome = string.IsNullOrWhiteSpace(result.SourcePath) || string.IsNullOrWhiteSpace(result.FinalPath)
+                    ? HistoryOutcome.Skipped
+                    : HistoryOutcome.Succeeded;
+                var eventType = outcome == HistoryOutcome.Skipped
+                    ? HistoryEvents.FileSkipped
+                    : result.Action == Listenarr.Domain.Audiobooks.Enumerations.FileAction.Move
+                        ? HistoryEvents.FileMoved
+                        : HistoryEvents.FileCopied;
+                await historyRepository.AddAsync(new History
+                {
+                    AudiobookId = audiobook.Id,
+                    AudiobookTitle = audiobook.Title,
+                    SourceTitle = Path.GetFileName(result.FinalPath ?? result.SourcePath ?? download.Title),
+                    DownloadId = download.Id.ToUpperInvariant(),
+                    DownloadClientId = download.DownloadClientId,
+                    EventType = eventType,
+                    Outcome = outcome,
+                    Source = "DownloadImport",
+                    Message = result.FailureClass != ImportFailureClass.None
+                        ? ImportFailureClassSentences.Describe(result.FailureClass)
+                        : result.Message is { Length: > 0 } resultMessage
+                            ? LogRedaction.SanitizeText(resultMessage)
+                            : $"{result.Action} completed",
+                    Timestamp = DateTime.UtcNow,
+                    CorrelationId = correlationId,
+                    Data = JsonSerializer.Serialize(new
+                    {
+                        JobId = job.Id,
+                        result.Action,
+                        result.RequestedAction,
+                        result.EffectiveAction,
+                        result.SourceDisposition,
+                        result.WarningCode,
+                        SourcePath = LogRedaction.SanitizeFilePath(result.SourcePath),
+                        FinalPath = LogRedaction.SanitizeFilePath(result.FinalPath),
+                        result.WasRegisteredToAudiobook
+                    })
+                }, ct);
+            }
         }
 
         private static Task RecordHistoryAsync(
