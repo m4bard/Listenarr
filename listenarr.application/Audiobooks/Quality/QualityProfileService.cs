@@ -190,10 +190,10 @@ namespace Listenarr.Application.Audiobooks.Quality
             }
         }
 
-        public async Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile)
+        public async Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile, bool targetIsBundle = false)
         {
             var scorer = new SearchResultScorer(_indexerRepository, _logger);
-            var score = await scorer.Score(searchResult, profile);
+            var score = await scorer.Score(searchResult, profile, targetIsBundle);
 
             // Also calculate the Prowlarr-style composite (Smart) score so the UI
             // can display the same composite ranking details used for Smart sorting.
@@ -285,9 +285,9 @@ namespace Listenarr.Application.Audiobooks.Quality
 
 
 
-        public async Task<List<QualityScore>> ScoreSearchResults(List<SearchResult> searchResults, QualityProfile profile)
+        public async Task<List<QualityScore>> ScoreSearchResults(List<SearchResult> searchResults, QualityProfile profile, bool targetIsBundle = false)
         {
-            var scores = await Task.WhenAll(searchResults.Select(result => ScoreSearchResult(result, profile)));
+            var scores = await Task.WhenAll(searchResults.Select(result => ScoreSearchResult(result, profile, targetIsBundle)));
 
             // Ensure rejected results are ordered last regardless of numeric TotalScore
             return scores

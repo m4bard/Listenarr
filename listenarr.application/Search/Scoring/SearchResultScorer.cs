@@ -32,6 +32,11 @@ namespace Listenarr.Application.Search.Scoring
         public int LanguageMissingPenalty { get; set; } = -10;
         public int LanguageMismatchPenalty { get; set; } = -15;
         public int QualityNotAllowedPenalty { get; set; } = -20;
+        // Mirrors FormatMatchBonus / QualityNotAllowedPenalty on purpose. Against a base of
+        // 100 the penalty cannot on its own reach the "computed score <= 0" reject below, so
+        // a preference stays a preference instead of quietly becoming a filter.
+        public int ReleaseShapeMatchBonus { get; set; } = 5;
+        public int ReleaseShapeMismatchPenalty { get; set; } = -20;
         public int ForbiddenWordRejectionFlag { get; set; } = -1; // sentinel for rejection
 
         public SearchResultScorer(IIndexerRepository? indexerRepository, ILogger logger)
@@ -40,7 +45,18 @@ namespace Listenarr.Application.Search.Scoring
             _logger = logger;
         }
 
-        public async Task<QualityScore> Score(SearchResult searchResult, QualityProfile profile)
+        /// <summary>
+        /// Score one candidate release against a quality profile.
+        /// </summary>
+        /// <param name="searchResult">The candidate release.</param>
+        /// <param name="profile">The quality profile the audiobook is monitored under.</param>
+        /// <param name="targetIsBundle">
+        /// Whether the audiobook record being searched for is itself a bundle, which the
+        /// caller knows and the release does not carry. The right release for a six-book
+        /// omnibus record is a six-book omnibus, so when this is set the profile's preference
+        /// is overridden for that book rather than penalising every candidate it can match.
+        /// </param>
+        public async Task<QualityScore> Score(SearchResult searchResult, QualityProfile profile, bool targetIsBundle = false)
         {
             // Mirror existing QualityProfileService semantics, but organized and configurable
             var score = new QualityScore
@@ -317,6 +333,28 @@ namespace Listenarr.Application.Search.Scoring
                 {
                     score.TotalScore += bonus;
                     score.ScoreBreakdown["PreferredWords"] = bonus;
+                }
+            }
+
+            // Release shape preference: bundle/omnibus versus a single book.
+            if (profile.PreferredReleaseShape != ReleaseShapePreference.NoPreference)
+            {
+                var releaseLooksLikeBundle = ReleaseShapeDetector.LooksLikeBundle(searchResult.Title);
+                var wantBundle = targetIsBundle
+                    || profile.PreferredReleaseShape == ReleaseShapePreference.PreferBundle;
+
+                if (releaseLooksLikeBundle == wantBundle)
+                {
+                    score.TotalScore += ReleaseShapeMatchBonus;
+                    score.ScoreBreakdown["ReleaseShapeMatch"] = ReleaseShapeMatchBonus;
+                }
+                else
+                {
+                    // Deliberately not a rejection. Detection is a title heuristic, and a book
+                    // whose only candidate is on the wrong side of the preference should still
+                    // be filled; the breakdown key is how an operator sees why it lost.
+                    score.TotalScore += ReleaseShapeMismatchPenalty;
+                    score.ScoreBreakdown["ReleaseShapeMismatch"] = ReleaseShapeMismatchPenalty;
                 }
             }
 
