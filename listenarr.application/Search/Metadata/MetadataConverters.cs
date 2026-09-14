@@ -109,7 +109,7 @@ public class MetadataConverters
         }
 
         _logger.LogInformation("Converted audible data for {Asin}: Title={Title}, Runtime={Runtime}min, Year={Year}, Series={Series}, ImageUrl={ImageUrl}",
-            asin, metadata.Title, metadata.Runtime, metadata.PublishYear, metadata.Series, metadata.ImageUrl);
+            LogRedaction.SanitizeText(asin), metadata.Title, metadata.Runtime, metadata.PublishYear, metadata.Series, metadata.ImageUrl);
 
         return metadata;
     }
@@ -143,11 +143,11 @@ public class MetadataConverters
 
         if (metadata.SeriesMemberships != null && metadata.SeriesMemberships.Count > 0)
         {
-            _logger.LogInformation("Extracted {Count} series memberships from Audnexus for ASIN {Asin}", metadata.SeriesMemberships.Count, asin);
+            _logger.LogInformation("Extracted {Count} series memberships from Audnexus for ASIN {Asin}", metadata.SeriesMemberships.Count, LogRedaction.SanitizeText(asin));
         }
         else
         {
-            _logger.LogDebug("No series information from Audnexus for ASIN {Asin}", asin);
+            _logger.LogDebug("No series information from Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
         }
 
         // Convert runtime from minutes
@@ -172,7 +172,7 @@ public class MetadataConverters
         }
 
         _logger.LogInformation("Converted Audnexus data for {Asin}: Title={Title}, Runtime={Runtime}min, Year={Year}, Series={Series}, ImageUrl={ImageUrl}",
-            asin, metadata.Title, metadata.Runtime, metadata.PublishYear, metadata.Series, metadata.ImageUrl);
+            LogRedaction.SanitizeText(asin), metadata.Title, metadata.Runtime, metadata.PublishYear, metadata.Series, metadata.ImageUrl);
 
         return metadata;
     }
@@ -211,16 +211,16 @@ public class MetadataConverters
             {
                 imageUrl = fallbackImageUrl;
                 _logger.LogInformation("Using fallback image URL for ASIN {Asin}: {ImageUrl} (replaced {OriginalUrl})",
-                    asin, imageUrl, string.IsNullOrWhiteSpace(metadata.ImageUrl) ? "null" : "grey-pixel");
+                    LogRedaction.SanitizeText(asin), imageUrl, string.IsNullOrWhiteSpace(metadata.ImageUrl) ? "null" : "grey-pixel");
             }
             else if (string.IsNullOrWhiteSpace(imageUrl))
             {
-                _logger.LogWarning("No image URL available for ASIN {Asin} from metadata or fallback. Metadata source: {Source}", asin, metadata.Source);
+                _logger.LogWarning("No image URL available for ASIN {Asin} from metadata or fallback. Metadata source: {Source}", LogRedaction.SanitizeText(asin), metadata.Source);
             }
         }
         else
         {
-            _logger.LogDebug("Using metadata image URL for ASIN {Asin}: {ImageUrl}", asin, imageUrl);
+            _logger.LogDebug("Using metadata image URL for ASIN {Asin}: {ImageUrl}", LogRedaction.SanitizeText(asin), imageUrl);
         }
 
         // If we already have a cached image for this ASIN, use the local API endpoint
@@ -233,22 +233,22 @@ public class MetadataConverters
                 if (!string.IsNullOrWhiteSpace(cachedPath))
                 {
                     imageUrl = ApiVersionUtils.BuildImagePath(asin, _requestContextAccessor?.Current?.Path);
-                    _logger.LogInformation("Using cached image for ASIN {Asin}: {ImageUrl}", asin, imageUrl);
+                    _logger.LogInformation("Using cached image for ASIN {Asin}: {ImageUrl}", LogRedaction.SanitizeText(asin), imageUrl);
                 }
                 else
                 {
                     // Even if not cached, map to API endpoint to ensure consistent serving
                     // and avoid external URL failures. Background download will populate cache.
                     imageUrl = ApiVersionUtils.BuildImagePath(asin, _requestContextAccessor?.Current?.Path);
-                    _logger.LogDebug("Mapping to API endpoint for ASIN {Asin} (not yet cached): {ImageUrl}", asin, imageUrl);
-                    _logger.LogDebug("Initiating background image cache for ASIN {Asin} with URL: {OriginalUrl}", asin, metadata.ImageUrl ?? imageUrl);
+                    _logger.LogDebug("Mapping to API endpoint for ASIN {Asin} (not yet cached): {ImageUrl}", LogRedaction.SanitizeText(asin), imageUrl);
+                    _logger.LogDebug("Initiating background image cache for ASIN {Asin} with URL: {OriginalUrl}", LogRedaction.SanitizeText(asin), metadata.ImageUrl ?? imageUrl);
                     _ = _imageCacheService.DownloadAndCacheImageAsync(metadata.ImageUrl ?? imageUrl, asin);
-                    _logger.LogDebug("Started background image cache for ASIN {Asin}", asin);
+                    _logger.LogDebug("Started background image cache for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Failed to check/initiate image caching for ASIN {Asin}", asin);
+                _logger.LogWarning(ex, "Failed to check/initiate image caching for ASIN {Asin}", LogRedaction.SanitizeText(asin));
             }
         }
 
@@ -319,7 +319,7 @@ public class MetadataConverters
         };
 
         _logger.LogInformation("SearchResult for ASIN {Asin}: PublishYear='{PublishYear}', PublishedDate={PublishedDate:yyyy-MM-dd}",
-            asin, metadata.PublishYear, result.PublishedDate);
+            LogRedaction.SanitizeText(asin), metadata.PublishYear, result.PublishedDate);
 
         return result;
     }
@@ -358,16 +358,16 @@ public class MetadataConverters
             {
                 imageUrl = fallbackImageUrl;
                 _logger.LogInformation("Using fallback image URL for ASIN {Asin}: {ImageUrl} (replaced {OriginalUrl})",
-                    asin, imageUrl, string.IsNullOrWhiteSpace(metadata.ImageUrl) ? "null" : "grey-pixel");
+                    LogRedaction.SanitizeText(asin), imageUrl, string.IsNullOrWhiteSpace(metadata.ImageUrl) ? "null" : "grey-pixel");
             }
             else if (string.IsNullOrWhiteSpace(imageUrl))
             {
-                _logger.LogWarning("No image URL available for ASIN {Asin} from metadata or fallback. Metadata source: {Source}", asin, metadata.Source);
+                _logger.LogWarning("No image URL available for ASIN {Asin} from metadata or fallback. Metadata source: {Source}", LogRedaction.SanitizeText(asin), metadata.Source);
             }
         }
         else
         {
-            _logger.LogDebug("Using metadata image URL for ASIN {Asin}: {ImageUrl}", asin, imageUrl);
+            _logger.LogDebug("Using metadata image URL for ASIN {Asin}: {ImageUrl}", LogRedaction.SanitizeText(asin), imageUrl);
         }
 
         // If we already have a cached image for this ASIN, use the local API endpoint
@@ -380,22 +380,22 @@ public class MetadataConverters
                 if (!string.IsNullOrWhiteSpace(cachedPath))
                 {
                     imageUrl = ApiVersionUtils.BuildImagePath(asin, _requestContextAccessor?.Current?.Path);
-                    _logger.LogInformation("Using cached image for ASIN {Asin}: {ImageUrl}", asin, imageUrl);
+                    _logger.LogInformation("Using cached image for ASIN {Asin}: {ImageUrl}", LogRedaction.SanitizeText(asin), imageUrl);
                 }
                 else
                 {
                     // Even if not cached, map to API endpoint to ensure consistent serving
                     // and avoid external URL failures. Background download will populate cache.
                     imageUrl = ApiVersionUtils.BuildImagePath(asin, _requestContextAccessor?.Current?.Path);
-                    _logger.LogDebug("Mapping to API endpoint for ASIN {Asin} (not yet cached): {ImageUrl}", asin, imageUrl);
-                    _logger.LogDebug("Initiating background image cache for ASIN {Asin} with URL: {OriginalUrl}", asin, metadata.ImageUrl ?? imageUrl);
+                    _logger.LogDebug("Mapping to API endpoint for ASIN {Asin} (not yet cached): {ImageUrl}", LogRedaction.SanitizeText(asin), imageUrl);
+                    _logger.LogDebug("Initiating background image cache for ASIN {Asin} with URL: {OriginalUrl}", LogRedaction.SanitizeText(asin), metadata.ImageUrl ?? imageUrl);
                     _ = _imageCacheService.DownloadAndCacheImageAsync(metadata.ImageUrl ?? imageUrl, asin);
-                    _logger.LogDebug("Started background image cache for ASIN {Asin}", asin);
+                    _logger.LogDebug("Started background image cache for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Failed to check/initiate image caching for ASIN {Asin}", asin);
+                _logger.LogWarning(ex, "Failed to check/initiate image caching for ASIN {Asin}", LogRedaction.SanitizeText(asin));
             }
         }
 
@@ -455,7 +455,7 @@ public class MetadataConverters
         };
 
         _logger.LogInformation("MetadataSearchResult for ASIN {Asin}: PublishYear='{PublishYear}'",
-            asin, metadata.PublishYear);
+            LogRedaction.SanitizeText(asin), metadata.PublishYear);
 
         return result;
     }
