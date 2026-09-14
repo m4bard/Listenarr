@@ -588,6 +588,109 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
             Assert.False(score.IsRejected, "Result should not be rejected when MinimumScore = 0 and score > 0");
             Assert.True(score.TotalScore > 0, "Score should be positive");
         }
+
+        private static QualityProfile WordFilterProfile(
+            System.Collections.Generic.List<string>? mustNotContain = null,
+            System.Collections.Generic.List<string>? mustContain = null)
+        {
+            return new QualityProfile
+            {
+                MustNotContain = mustNotContain ?? new System.Collections.Generic.List<string>(),
+                MustContain = mustContain ?? new System.Collections.Generic.List<string>(),
+                PreferredFormats = new System.Collections.Generic.List<string>(),
+                PreferredWords = new System.Collections.Generic.List<string>(),
+                PreferredLanguages = new System.Collections.Generic.List<string>(),
+                MinimumSeeders = 0,
+                MaximumAge = 3650
+            };
+        }
+
+        private static SearchResult WordFilterResult(string title)
+        {
+            return new SearchResult
+            {
+                Title = title,
+                Size = 50 * 1024 * 1024,
+                Format = "mp3",
+                Quality = "320",
+                Language = "English",
+                DownloadType = "torrent",
+                Seeders = 2,
+                PublishedDate = DateTime.UtcNow.ToString("o")
+            };
+        }
+
+        [Fact]
+        public async Task ForbiddenWord_ShouldNotReject_WhenItIsOnlyASubstring()
+        {
+            var service = CreateService();
+            var profile = WordFilterProfile(mustNotContain: new System.Collections.Generic.List<string> { "abridged" });
+
+            var score = await service.ScoreSearchResult(WordFilterResult("The Hobbit [Unabridged]"), profile);
+
+            Assert.DoesNotContain(score.RejectionReasons, r => r.Contains("forbidden word"));
+            Assert.False(score.IsRejected, "Unabridged release should survive a profile that forbids 'abridged'");
+        }
+
+        [Fact]
+        public async Task ForbiddenWord_ShouldStillReject_OnAWholeWordMatch()
+        {
+            var service = CreateService();
+            var profile = WordFilterProfile(mustNotContain: new System.Collections.Generic.List<string> { "abridged" });
+
+            var score = await service.ScoreSearchResult(WordFilterResult("The Hobbit (Abridged)"), profile);
+
+            Assert.Contains(score.RejectionReasons, r => r.Contains("forbidden word"));
+            Assert.True(score.TotalScore < 0, "Abridged release should be rejected");
+        }
+
+        [Theory]
+        [InlineData("Herding Cats: A Category Theory Primer")]
+        [InlineData("How to Concatenate Anything")]
+        public async Task ForbiddenWord_ShouldNotReject_WhenEmbeddedInALongerWord(string title)
+        {
+            var service = CreateService();
+            var profile = WordFilterProfile(mustNotContain: new System.Collections.Generic.List<string> { "cat" });
+
+            var score = await service.ScoreSearchResult(WordFilterResult(title), profile);
+
+            Assert.DoesNotContain(score.RejectionReasons, r => r.Contains("forbidden word"));
+        }
+
+        [Fact]
+        public async Task RequiredWords_ShouldPass_WhenOnlyOneOfThemMatches()
+        {
+            var service = CreateService();
+            var profile = WordFilterProfile(mustContain: new System.Collections.Generic.List<string> { "foo", "bar" });
+
+            var score = await service.ScoreSearchResult(WordFilterResult("Some Book bar Edition"), profile);
+
+            Assert.DoesNotContain(score.RejectionReasons, r => r.Contains("required word"));
+            Assert.False(score.IsRejected, "Required words are any-of, so matching 'bar' alone is enough");
+        }
+
+        [Fact]
+        public async Task RequiredWords_ShouldReject_WhenNoneOfThemMatch()
+        {
+            var service = CreateService();
+            var profile = WordFilterProfile(mustContain: new System.Collections.Generic.List<string> { "foo", "bar" });
+
+            var score = await service.ScoreSearchResult(WordFilterResult("Some Book Deluxe Edition"), profile);
+
+            Assert.Contains(score.RejectionReasons, r => r.Contains("required word"));
+            Assert.True(score.TotalScore < 0, "A title matching no required word should be rejected");
+        }
+
+        [Fact]
+        public async Task RequiredWords_ShouldMatchOnWordBoundaries()
+        {
+            var service = CreateService();
+            var profile = WordFilterProfile(mustContain: new System.Collections.Generic.List<string> { "cat" });
+
+            var score = await service.ScoreSearchResult(WordFilterResult("A Category Theory Primer"), profile);
+
+            Assert.Contains(score.RejectionReasons, r => r.Contains("required word"));
+        }
     }
 }
 
