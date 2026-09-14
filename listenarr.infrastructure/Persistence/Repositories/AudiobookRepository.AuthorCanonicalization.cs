@@ -186,12 +186,10 @@ public partial class AudiobookRepository
                 continue;
             }
 
-            // Belt and braces: the map is keyed on the cache row's own re-derived key, so this
-            // always holds, but the guard is what makes the write provably spelling-only.
-            if (!string.Equals(
-                    StringUtils.NormalizeAuthorName(canonical),
-                    normalized,
-                    StringComparison.Ordinal))
+            // The same guard the on-add write-back uses. The map is keyed on the cache row's own
+            // re-derived key so this always holds, but stating it here is what makes the write
+            // provably spelling-only rather than provably-by-construction.
+            if (!StringUtils.IsAuthorSpellingVariant(stored, canonical))
             {
                 continue;
             }

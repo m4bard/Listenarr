@@ -124,6 +124,19 @@ public partial class LibraryAddService
                         audiobook.AuthorAsins.Add(info.Asin);
                     }
 
+                    foreach (var correction in AuthorNameCanonicalization.AdoptSpelling(
+                        audiobook.Authors,
+                        authorName,
+                        info.Name))
+                    {
+                        _logger.LogInformation(
+                            "Adopting provider spelling '{CanonicalAuthor}' for stored author "
+                            + "'{StoredAuthor}' on '{Title}'",
+                            correction.Canonical,
+                            correction.Stored,
+                            audiobook.Title);
+                    }
+
                     if (!string.IsNullOrWhiteSpace(info.Image))
                     {
                         await _imageCacheService.DownloadAndCacheImageAsync(info.Image, info.Asin);
