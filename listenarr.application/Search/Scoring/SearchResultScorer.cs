@@ -15,6 +15,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Search.Scoring
@@ -95,9 +97,7 @@ namespace Listenarr.Application.Search.Scoring
             string? normalizedQuality = NormalizeToken(searchResult.Quality);
 
             // Instant rejects: forbidden words
-            var forbidden = profile.MustNotContain.FirstOrDefault(word =>
-                !string.IsNullOrEmpty(word) &&
-                searchResult.Title.Contains(word, StringComparison.OrdinalIgnoreCase));
+            var forbidden = profile.MustNotContain.FirstOrDefault(word => TitleContainsTerm(searchResult.Title, word));
             if (forbidden != null)
             {
                 score.RejectionReasons.Add($"Contains forbidden word: '{forbidden}'");
@@ -105,13 +105,12 @@ namespace Listenarr.Application.Search.Scoring
                 return score;
             }
 
-            // Required words
-            var missingRequired = profile.MustContain.FirstOrDefault(required =>
-                !string.IsNullOrEmpty(required) &&
-                !searchResult.Title.Contains(required, StringComparison.OrdinalIgnoreCase));
-            if (missingRequired != null)
+            // Required words: the title has to match at least one of them, not all of them
+            var requiredWords = profile.MustContain.Where(required => !string.IsNullOrWhiteSpace(required)).ToList();
+            if (requiredWords.Count > 0 && !requiredWords.Any(required => TitleContainsTerm(searchResult.Title, required)))
             {
-                score.RejectionReasons.Add($"Missing required word: '{missingRequired}'");
+                var wordList = string.Join("', '", requiredWords.Select(required => required.Trim()));
+                score.RejectionReasons.Add($"Missing required word: title matches none of '{wordList}'");
                 score.TotalScore = -1;
                 return score;
             }
@@ -476,6 +475,115 @@ namespace Listenarr.Application.Search.Scoring
             }
 
             return score;
+        }
+
+        // Filter terms are matched on word boundaries rather than as raw substrings, so a
+        // forbidden "abridged" no longer rejects a release labelled "Unabridged". Patterns are
+        // cached because Score runs once per search result and profiles change rarely.
+        private static readonly ConcurrentDictionary<string, Regex> TermPatterns = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly TimeSpan TermMatchTimeout = TimeSpan.FromMilliseconds(250);
+        private const int TermPatternCacheLimit = 1024;
+
+        private static bool TitleContainsTerm(string? title, string? term)
+        {
+            if (string.IsNullOrEmpty(title) || string.IsNullOrWhiteSpace(term)) return false;
+            return GetTermPattern(term.Trim()).IsMatch(title);
+        }
+
+        private static Regex GetTermPattern(string term)
+        {
+            if (TermPatterns.TryGetValue(term, out var cached)) return cached;
+
+            // \b only asserts a boundary beside a word character, so anchor an end of the term
+            // only when that end is itself a word character: "v0" anchors both ends, "(sample)"
+            // neither, and "[unabridged" just the trailing one.
+            var leading = IsWordCharacter(term[0]) ? "\\b" : string.Empty;
+            var trailing = IsWordCharacter(term[^1]) ? "\\b" : string.Empty;
+            var pattern = new Regex(
+                leading + Regex.Escape(term) + trailing,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+                TermMatchTimeout);
+
+            if (TermPatterns.Count < TermPatternCacheLimit) TermPatterns.TryAdd(term, pattern);
+            return pattern;
+        }
+
+        private static bool IsWordCharacter(char c) => char.IsLetterOrDigit(c) || c == '_';
+
+        // Helpers (copied/adapted from old service)
+        private static bool HasPreferredLanguages(QualityProfile profile) => profile.PreferredLanguages != null && profile.PreferredLanguages.Count > 0;
+        private static bool HasPreferredFormats(QualityProfile profile) => profile.PreferredFormats != null && profile.PreferredFormats.Count > 0;
+
+        private static string? DetectFormatFromTitle(string titleLower, List<string>? preferredFormats)
+        {
+            if (preferredFormats == null || preferredFormats.Count == 0 || string.IsNullOrEmpty(titleLower)) return null;
+            return preferredFormats
+                .Where(format => !string.IsNullOrWhiteSpace(format))
+                .Select(format => format.ToLower().Trim())
+                .FirstOrDefault(token => titleLower.Contains(token) || titleLower.Contains("[" + token + "]") || titleLower.Contains("(" + token + ")") || titleLower.Contains("." + token));
+        }
+
+        private static string? DetectLanguageFromTitle(string titleLower, List<string>? preferredLanguages)
+        {
+            if (preferredLanguages == null || preferredLanguages.Count == 0 || string.IsNullOrEmpty(titleLower)) return null;
+            foreach (var lang in preferredLanguages.Where(language => !string.IsNullOrWhiteSpace(language)))
+            {
+                var token = lang.ToLower().Trim();
+                if (titleLower.Contains(token) || titleLower.Contains("[" + token + "]") || titleLower.Contains("(" + token + ")") || titleLower.Contains(" " + token + " "))
+                {
+                    return lang;
+                }
+            }
+            var common = new Dictionary<string, string>
+            {
+                { "eng", "English" }, { "english", "English" }, { "es", "Spanish" }, { "spanish", "Spanish" },
+                { "de", "German" }, { "german", "German" }, { "fr", "French" }, { "french", "French" }
+            };
+            foreach (var (token, name) in common) if (titleLower.Contains(token)) return name;
+            return null;
+        }
+
+        private int GetQualityScore(string quality)
+        {
+            if (string.IsNullOrEmpty(quality)) return 0;
+            var lowerQuality = quality.ToLower();
+            if (lowerQuality.Contains("flac")) return 100;
+            if (lowerQuality.Contains("aax")) return 95;
+            if (lowerQuality.Contains("m4b")) return 90;
+            if (lowerQuality.Contains("opus")) return 85;
+            if (ContainsVbrPreset(lowerQuality, "v0")) return 82;
+            if (ContainsVbrPreset(lowerQuality, "v1")) return 76;
+            if (ContainsVbrPreset(lowerQuality, "v2")) return 70;
+            if (lowerQuality.Contains("aac") || lowerQuality.Contains("m4a")) return 78;
+            if (lowerQuality.Contains("320")) return 80;
+            if (lowerQuality.Contains("256")) return 74;
+            if (lowerQuality.Contains("192")) return 60;
+            if (lowerQuality.Contains("vbr") || lowerQuality.Contains("cbr")) return 65;
+            if (lowerQuality.Contains("mp3") && !ContainsAnyBitrate(lowerQuality, "64", "128", "192", "256", "320")) return 65;
+            if (lowerQuality.Contains("128")) return 50;
+            if (lowerQuality.Contains("64")) return 40;
+            return 0;
+        }
+
+        private static bool ContainsVbrPreset(string qualityLower, string preset) => qualityLower.Contains(preset) || qualityLower.Contains($"-{preset}") || qualityLower.Contains($" {preset}");
+        private static bool ContainsAnyBitrate(string qualityLower, params string[] bitrates) => bitrates.Any(b => qualityLower.Contains(b));
+
+        private static bool IsNzbResult(SearchResult r)
+        {
+            bool hasNzbUrl = !string.IsNullOrEmpty(r.NzbUrl);
+            bool isNzbType = string.Equals(r.DownloadType, "nzb", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(r.DownloadType, "usenet", StringComparison.OrdinalIgnoreCase);
+            bool indexerIndicatesNzb = !string.IsNullOrEmpty(r.IndexerImplementation)
+                && (r.IndexerImplementation.IndexOf("nzb", StringComparison.OrdinalIgnoreCase) >= 0
+                    || r.IndexerImplementation.IndexOf("usenet", StringComparison.OrdinalIgnoreCase) >= 0);
+            bool sourceIndicatesNzb = !string.IsNullOrEmpty(r.Source)
+                && r.Source.IndexOf("usenet", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool urlIndicatesNzb = !string.IsNullOrEmpty(r.ResultUrl)
+                && (r.ResultUrl.EndsWith(".nzb", StringComparison.OrdinalIgnoreCase)
+                    || r.ResultUrl.IndexOf("/nzb", StringComparison.OrdinalIgnoreCase) >= 0);
+            bool torrentIndicatesNzb = !string.IsNullOrEmpty(r.TorrentUrl)
+                && r.TorrentUrl.EndsWith(".nzb", StringComparison.OrdinalIgnoreCase);
+            return hasNzbUrl || isNzbType || indexerIndicatesNzb || sourceIndicatesNzb || urlIndicatesNzb || torrentIndicatesNzb;
         }
     }
 }
