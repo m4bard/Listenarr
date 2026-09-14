@@ -15,9 +15,13 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Tests.Common;
+
 namespace Listenarr.Tests.Features.Domain.Utils
 {
-    public class StringUtilsNormalizeAuthorNameTests
+    [Trait("Name", "StringUtilsNormalizeAuthorNameTests")]
+    [Trait("Category", "Domain")]
+    public class StringUtilsNormalizeAuthorNameTests : BaseTests
     {
         // Previously known-good: bare period stripping already made these match.
         [Fact]
