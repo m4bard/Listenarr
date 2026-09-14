@@ -30,6 +30,14 @@
           <PhCaretRight :size="16" />
         </button>
         <button class="btn btn-secondary" @click="goToday">Today</button>
+        <button
+          class="btn btn-primary"
+          :disabled="searchTargets.length === 0 || bulkSearchRunning"
+          @click="requestSearchMissing"
+        >
+          <PhRobot :size="16" />
+          {{ searchButtonLabel }}
+        </button>
       </div>
     </div>
 
@@ -92,8 +100,8 @@
                 <div
                   v-for="item in date.items.slice(0, 3)"
                   :key="item.id"
-                  class="calendar-item"
-                  :title="`${item.title}${item.author ? ' - ' + item.author : ''}`"
+                  :class="['calendar-item', { 'status-no-file': item.missing }]"
+                  :title="entryTitle(item)"
                   role="button"
                   tabindex="0"
                   @click="navigateToDetail(item.id)"
@@ -125,7 +133,8 @@
               <div
                 v-for="item in day.items"
                 :key="item.id"
-                class="week-item"
+                :class="['week-item', { 'status-no-file': item.missing }]"
+                :title="entryTitle(item)"
                 role="button"
                 tabindex="0"
                 @click="navigateToDetail(item.id)"
@@ -147,7 +156,8 @@
             <div
               v-for="item in forecastItems"
               :key="item.id"
-              class="forecast-item"
+              :class="['forecast-item', { 'status-no-file': item.missing }]"
+              :title="entryTitle(item)"
               role="button"
               tabindex="0"
               @click="navigateToDetail(item.id)"
@@ -182,7 +192,8 @@
               <div
                 v-for="item in selectedDayItems"
                 :key="item.id"
-                class="day-list-item"
+                :class="['day-list-item', { 'status-no-file': item.missing }]"
+                :title="entryTitle(item)"
                 role="button"
                 tabindex="0"
                 @click="navigateToDetail(item.id)"
@@ -213,7 +224,8 @@
             <div
               v-for="item in allItemsSorted"
               :key="item.id"
-              class="agenda-item"
+              :class="['agenda-item', { 'status-no-file': item.missing }]"
+              :title="entryTitle(item)"
               role="button"
               tabindex="0"
               @click="navigateToDetail(item.id)"
@@ -244,7 +256,8 @@
             <div
               v-for="item in upcomingItems"
               :key="item.id"
-              class="upcoming-item"
+              :class="['upcoming-item', { 'status-no-file': item.missing }]"
+              :title="entryTitle(item)"
               role="button"
               tabindex="0"
               @click="navigateToDetail(item.id)"
@@ -265,6 +278,17 @@
         </div>
       </div>
     </div>
+
+    <!-- Bulk search confirmation: this action hits every configured indexer once per book -->
+    <ConfirmModal
+      :visible="showSearchConfirm"
+      title="Start automatic search"
+      :message="searchConfirmMessage"
+      confirmLabel="Start search"
+      :confirming="bulkSearchRunning"
+      @confirm="confirmSearchMissing"
+      @cancel="cancelSearchMissing"
+    />
   </div>
 </template>
 
@@ -278,8 +302,13 @@ import {
   PhCaretDown,
   PhClock,
   PhInfo,
+  PhRobot,
 } from '@phosphor-icons/vue'
 import { useLibraryStore } from '@/stores/library'
+import { apiService } from '@/services/api'
+import { errorTracking } from '@/services/errorTracking'
+import { ConfirmModal } from '@/components/feedback'
+import { logger } from '@/utils/logger'
 import type { Audiobook } from '@/types'
 
 interface CalendarItem {
@@ -288,6 +317,10 @@ interface CalendarItem {
   author?: string
   dateKey: string
   date: Date
+  // The calendar used to drop every file/monitor field on the way in, which left it
+  // unable to say whether an entry was already on disk. Carried through so the grid and
+  // the search button agree about what "missing" means.
+  missing: boolean
 }
 
 interface CalendarDate {
@@ -403,6 +436,22 @@ const toDateKeyLocal = (date: Date): string => {
   return `${y}-${m}-${d}`
 }
 
+// The same predicate WantedView applies in wantedAudiobooks: trust the server-computed
+// flag when it is a boolean, and otherwise fall back to monitored-with-nothing-on-disk.
+// Kept identical on purpose, so the calendar and the wanted list cannot disagree about
+// which books are missing.
+const isMissing = (book: Audiobook): boolean => {
+  const serverWanted = (book as unknown as Record<string, unknown>)['wanted']
+
+  if (serverWanted === true) return true
+  if (serverWanted === false) return false
+
+  const hasFiles = Array.isArray(book.files) ? book.files.length > 0 : false
+  const hasPrimaryFile = !!(book.filePath && book.filePath.toString().trim() !== '')
+
+  return !!book.monitored && !hasFiles && !hasPrimaryFile
+}
+
 const extractPublishedDateKey = (book: Audiobook): string | null => {
   if (book.publishedDate && book.publishedDate.length >= 10) {
     return book.publishedDate.slice(0, 10)
@@ -421,6 +470,7 @@ const calendarItems = computed<CalendarItem[]>(() => {
         author: book.authors?.length ? book.authors.join(', ') : undefined,
         dateKey: key,
         date: new Date(`${key}T00:00:00Z`),
+        missing: isMissing(book),
       } as CalendarItem
     })
     .filter((b): b is CalendarItem => b !== null)
@@ -596,6 +646,156 @@ const allItemsSorted = computed(() => {
     .filter((item) => item.date.getFullYear() === year && item.date.getMonth() === month)
     .sort((a, b) => a.date.getTime() - b.date.getTime())
 })
+
+// --- Automatic search for the missing books in view -------------------------------
+
+const searching = ref<Record<number, boolean>>({})
+const searchResults = ref<Record<number, string>>({})
+const showSearchConfirm = ref(false)
+const bulkSearchRunning = ref(false)
+
+// Spacing between per-book searches, so one click does not burst every configured
+// indexer. Same value the wanted list uses.
+const SEARCH_SPACING_MS = 1000
+
+// Every view mode owns its own window, and two of them do not line up with the month in
+// the header: the month grid is 42 cells and overflows into the adjacent months, and
+// forecast is a fixed 30 days from the 1st regardless of the day on screen. So rather
+// than normalise to a calendar month, read whichever computed the active mode is
+// actually rendering. The button then always describes what the operator can see.
+const visibleItems = computed<CalendarItem[]>(() => {
+  switch (viewMode.value) {
+    case 'month':
+      return calendarDates.value.flatMap((date) => date.items)
+    case 'week':
+      return weekDates.value.flatMap((day) => day.items)
+    case 'forecast':
+      return forecastItems.value
+    case 'day':
+      return selectedDayItems.value
+    case 'agenda':
+      return allItemsSorted.value
+    default:
+      return []
+  }
+})
+
+const audiobooksById = computed(
+  () => new Map(libraryStore.audiobooks.map((book) => [book.id, book])),
+)
+
+// What the button will actually act on: the missing entries in the current window, in
+// the order they are displayed, minus anything already in flight or already reported on.
+// A book can appear on more than one day only if the library holds it twice, but dedupe
+// anyway so the count on the face is the number of requests the click will make.
+const searchTargets = computed<Audiobook[]>(() => {
+  const seen = new Set<number>()
+  const targets: Audiobook[] = []
+
+  for (const item of visibleItems.value) {
+    if (!item.missing || seen.has(item.id)) continue
+    if (searching.value[item.id] || searchResults.value[item.id]) continue
+
+    const book = audiobooksById.value.get(item.id)
+    if (!book) continue
+
+    seen.add(item.id)
+    targets.push(book)
+  }
+
+  return targets
+})
+
+// Unlike the wanted list there is no "all" state here that means anything, so the count
+// is unconditional.
+const searchButtonLabel = computed(() => `Search ${searchTargets.value.length} missing`)
+
+const searchConfirmMessage = computed(() => {
+  const count = searchTargets.value.length
+  const noun = count === 1 ? 'audiobook' : 'audiobooks'
+  return `Start an automatic search for ${count} ${noun}? Each one queries every configured indexer, one per second, so this takes about ${formatSearchDuration(count)}.`
+})
+
+const entryTitle = (item: CalendarItem): string => {
+  const base = `${item.title}${item.author ? ' - ' + item.author : ''}`
+  const status = searchResults.value[item.id] ?? (item.missing ? 'Missing' : null)
+  return status ? `${base} (${status})` : base
+}
+
+function formatSearchDuration(count: number): string {
+  const seconds = Math.round((count * SEARCH_SPACING_MS) / 1000)
+  if (seconds < 60) return `${Math.max(seconds, 1)} seconds`
+  const minutes = Math.round(seconds / 60)
+  return minutes === 1 ? 'a minute' : `${minutes} minutes`
+}
+
+function requestSearchMissing() {
+  if (searchTargets.value.length === 0) return
+  showSearchConfirm.value = true
+}
+
+function cancelSearchMissing() {
+  if (bulkSearchRunning.value) return
+  showSearchConfirm.value = false
+}
+
+const searchAudiobook = async (book: Audiobook): Promise<boolean> => {
+  searching.value[book.id] = true
+
+  try {
+    const result = await apiService.searchAndDownload(book.id)
+
+    searchResults.value[book.id] = result.success
+      ? `Found on ${result.indexerUsed}, downloading...`
+      : result.message || 'No matches found'
+
+    return result.success
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'CalendarView',
+      operation: 'searchMissing',
+      metadata: { itemId: book.id },
+    })
+    searchResults.value[book.id] = 'Search failed'
+    return false
+  } finally {
+    delete searching.value[book.id]
+  }
+}
+
+const confirmSearchMissing = async () => {
+  if (bulkSearchRunning.value) return
+
+  // Snapshot before the first call, because searchAudiobook mutates the maps that
+  // searchTargets is derived from.
+  const targets = [...searchTargets.value]
+  showSearchConfirm.value = false
+  if (targets.length === 0) return
+
+  bulkSearchRunning.value = true
+  logger.debug(`Automatic search for ${targets.length} missing audiobooks on the calendar`)
+
+  let grabbed = 0
+
+  try {
+    for (const book of targets) {
+      if (await searchAudiobook(book)) grabbed++
+      await new Promise((resolve) => setTimeout(resolve, SEARCH_SPACING_MS))
+    }
+  } finally {
+    bulkSearchRunning.value = false
+  }
+
+  // One refresh at the end rather than one per book: the calendar has no per-row status
+  // cell, and the only thing the operator sees change here is the missing marker.
+  if (grabbed > 0) {
+    try {
+      await libraryStore.fetchLibrary()
+    } catch (e) {
+      logger.warn('Failed to refresh the library after a calendar search run:', e)
+    }
+  }
+}
 </script>
 
 <style scoped>
@@ -824,6 +1024,15 @@ const allItemsSorted = computed(() => {
 
 .btn-primary:active {
   transform: translateY(0);
+}
+
+.btn-primary:disabled,
+.btn-primary:disabled:hover {
+  background: #37474f;
+  color: rgba(255, 255, 255, 0.45);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .calendar-layout {
@@ -1325,6 +1534,28 @@ const allItemsSorted = computed(() => {
   border-color: rgba(77, 171, 247, 0.3);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   transform: translateX(2px);
+}
+
+/*
+ * Missing: monitored, with nothing on disk. #e74c3c is the colour the library views
+ * already use for this state (.status-no-file there puts it on the poster edge), and the
+ * left accent bar is the calendar's own existing device. Four of the six entry renderers
+ * already carry one in the calendar blue and only change colour here; the month cell and
+ * the forecast row get the bar added.
+ */
+.calendar-item.status-no-file {
+  border-left: 3px solid #e74c3c;
+}
+
+.forecast-item.status-no-file {
+  border-left: 3px solid #e74c3c;
+}
+
+.week-item.status-no-file,
+.day-list-item.status-no-file,
+.agenda-item.status-no-file,
+.upcoming-item.status-no-file {
+  border-left-color: #e74c3c;
 }
 
 .agenda-date {
