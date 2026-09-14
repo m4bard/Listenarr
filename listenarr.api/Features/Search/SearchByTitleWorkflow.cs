@@ -77,7 +77,7 @@ namespace Listenarr.Api.Features.Search
 
         private async Task<List<object>?> TryLookupAsinAsync(string asin, string region)
         {
-            logger.LogInformation("Query appears to be an ASIN; attempting direct metadata lookup for: {Asin}", asin);
+            logger.LogInformation("Query appears to be an ASIN; attempting direct metadata lookup for: {Asin}", LogRedaction.SanitizeText(asin));
 
             try
             {
@@ -95,7 +95,7 @@ namespace Listenarr.Api.Features.Search
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                logger.LogWarning(ex, "Audible metadata lookup failed for ASIN {Asin}, trying other configured metadata sources", asin);
+                logger.LogWarning(ex, "Audible metadata lookup failed for ASIN {Asin}, trying other configured metadata sources", LogRedaction.SanitizeText(asin));
             }
 
             try
@@ -106,11 +106,11 @@ namespace Listenarr.Api.Features.Search
                     return new List<object> { meta };
                 }
 
-                logger.LogWarning("Metadata lookup returned null for ASIN {Asin}, falling back to intelligent search", asin);
+                logger.LogWarning("Metadata lookup returned null for ASIN {Asin}, falling back to intelligent search", LogRedaction.SanitizeText(asin));
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                logger.LogWarning(ex, "Metadata lookup failed for ASIN {Asin}, falling back to intelligent search", asin);
+                logger.LogWarning(ex, "Metadata lookup failed for ASIN {Asin}, falling back to intelligent search", LogRedaction.SanitizeText(asin));
             }
 
             return null;
