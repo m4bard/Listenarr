@@ -55,6 +55,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260828191810_AddReleaseBlocklist";
     private const string HistoryProtocolMigrationId =
         "20260911172407_AddHistoryProtocol";
+    private const string IndexerFailureBackoffMigrationId =
+        "20260914152223_AddIndexerFailureBackoff";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -208,6 +210,26 @@ public class SqliteMigrationSchemaTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "IndexerFailureBackoffColumns")]
+    public async Task IndexerFailureBackoffMigration_AddsPerIndexerBackoffColumns()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.True(await ColumnExistsAsync(connection, "Indexers", "InitialFailure"));
+        Assert.True(await ColumnExistsAsync(connection, "Indexers", "MostRecentFailure"));
+        Assert.True(await ColumnExistsAsync(connection, "Indexers", "EscalationLevel"));
+        Assert.True(await ColumnExistsAsync(connection, "Indexers", "DisabledTill"));
+        Assert.True(await ColumnExistsAsync(connection, "Indexers", "LastFailureReason"));
+
+        // An existing install's indexers have to come up healthy, not blocked.
+        Assert.Equal("0", await ColumnDefaultAsync(connection, "Indexers", "EscalationLevel"));
+    }
+
+    [Fact]
     [Trait("Scenario", "FinalMigrationHistoryIsConsolidated")]
     public async Task MigrationHistory_ContainsOnlyRetainedRepairsAndConsolidatedPrMigrationAfterCanary()
     {
@@ -255,7 +277,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 CompatibilityFilePublicationMigrationId,
                 WeakStorageVerifiedCleanupMigrationId,
                 ReleaseBlocklistMigrationId,
-                HistoryProtocolMigrationId
+                HistoryProtocolMigrationId,
+                IndexerFailureBackoffMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
