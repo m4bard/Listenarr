@@ -57,6 +57,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260911172407_AddHistoryProtocol";
     private const string IndexerFailureBackoffMigrationId =
         "20260914152223_AddIndexerFailureBackoff";
+    private const string PreferredReleaseShapeMigrationId =
+        "20260914153043_AddPreferredReleaseShapeToQualityProfile";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -283,7 +285,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 WeakStorageVerifiedCleanupMigrationId,
                 ReleaseBlocklistMigrationId,
                 HistoryProtocolMigrationId,
-                IndexerFailureBackoffMigrationId
+                IndexerFailureBackoffMigrationId,
+                PreferredReleaseShapeMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
