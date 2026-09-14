@@ -50,6 +50,12 @@ namespace Listenarr.Domain.Audiobooks
         public string? Language { get; set; }
         public string? Series { get; set; }
         public decimal? SeriesPosition { get; set; }
+        /// <summary>
+        /// The series position exactly as the metadata source stated it, kept verbatim so
+        /// values that are not a single number (an omnibus covering "1-4", for example) survive
+        /// into file naming instead of being dropped by <see cref="SeriesPosition"/>'s decimal parse.
+        /// </summary>
+        public string? SeriesPositionText { get; set; }
         public byte[]? CoverArt { get; set; }
         public string? CoverArtUrl { get; set; }
         public Dictionary<string, object> AdditionalData { get; set; } = [];
@@ -75,6 +81,8 @@ namespace Listenarr.Domain.Audiobooks
 
             if (!SeriesPosition.HasValue && value.SeriesPosition.HasValue)
                 SeriesPosition = value.SeriesPosition;
+            if (string.IsNullOrWhiteSpace(SeriesPositionText) && !string.IsNullOrWhiteSpace(value.SeriesPositionText))
+                SeriesPositionText = value.SeriesPositionText;
             if (!TrackNumber.HasValue && value.TrackNumber.HasValue)
                 TrackNumber = value.TrackNumber;
             if (!DiscNumber.HasValue && value.DiscNumber.HasValue)

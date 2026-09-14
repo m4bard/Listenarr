@@ -86,7 +86,10 @@ namespace Listenarr.Application.Common
                 { "Publisher", string.IsNullOrWhiteSpace(metadata.Publisher) ? string.Empty : SanitizePathComponent(metadata.Publisher) },
                 { "Language", string.IsNullOrWhiteSpace(metadata.Language) ? string.Empty : SanitizePathComponent(metadata.Language) },
                 { "Asin", string.IsNullOrWhiteSpace(metadata.Asin) ? string.Empty : SanitizePathComponent(metadata.Asin) },
-                { "SeriesNumber", FirstNonEmpty(metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture), metadata.TrackNumber?.ToString()) },
+                // SeriesPositionText sits between the parsed position and the track number so a
+                // series number that is not a lone decimal ("1-4" on an omnibus) still renders,
+                // matching what the AudibleBookMetadata overload below has always done.
+                { "SeriesNumber", FirstNonEmpty(metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture), metadata.SeriesPositionText, metadata.TrackNumber?.ToString()) },
                 { "Year", FirstNonEmpty(metadata.Year?.ToString()) },
                 { "Quality", FirstNonEmpty(metadata.BitRate.HasValue ? metadata.BitRate + "kbps" : null, metadata.Format) },
                 { "DiskNumber", metadata.DiscNumber?.ToString() ?? string.Empty },
