@@ -55,7 +55,13 @@ public enum IndexerQueryReason
 
     /// <summary>A well-formed answer that carried no entries.</summary>
     EmptyChannel,
-    NoProviderForImplementation
+    NoProviderForImplementation,
+
+    /// <summary>HTTP 429: the indexer named a rate it is not willing to exceed.</summary>
+    RateLimited,
+
+    /// <summary>HTTP 401 or 403: the credentials this indexer is configured with were refused.</summary>
+    AuthFailure
 }
 
 /// <summary>
@@ -67,13 +73,18 @@ public enum IndexerQueryReason
 /// <param name="Tier">Position of this query in the query plan. Always 1 until a tiered ladder exists.</param>
 /// <param name="QueryForm">The query string that was issued, for logs and diagnostics.</param>
 /// <param name="Detail">Status code or exception type for the log line. Never a URL or an API key.</param>
+/// <param name="RetryAfter">
+/// How long the indexer asked to be left alone, when it said so. Parsed from a <c>Retry-After</c>
+/// header, so it is only ever populated alongside <see cref="IndexerQueryReason.RateLimited"/>.
+/// </param>
 public sealed record IndexerQueryObservation(
     IndexerQueryOutcome Outcome,
     IndexerQueryReason Reason,
     IReadOnlyList<IndexerSearchResult> Results,
     int Tier,
     string? QueryForm,
-    string? Detail = null)
+    string? Detail = null,
+    TimeSpan? RetryAfter = null)
 {
     private static readonly IReadOnlyList<IndexerSearchResult> NoResults = Array.Empty<IndexerSearchResult>();
 
@@ -105,9 +116,10 @@ public sealed record IndexerQueryObservation(
         IndexerQueryReason reason,
         string? queryForm,
         string? detail = null,
-        int tier = 1)
+        int tier = 1,
+        TimeSpan? retryAfter = null)
     {
-        return new IndexerQueryObservation(IndexerQueryOutcome.Unavailable, reason, NoResults, tier, queryForm, detail);
+        return new IndexerQueryObservation(IndexerQueryOutcome.Unavailable, reason, NoResults, tier, queryForm, detail, retryAfter);
     }
 
     /// <summary>The indexer answered, but the body could not be parsed.</summary>
