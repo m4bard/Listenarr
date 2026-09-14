@@ -316,9 +316,97 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
             Assert.Equal((int)ImportSourceDisposition.Retained,
                 failedResult.GetProperty("SourceDisposition").GetInt32());
             Assert.Equal(warningCode, failedResult.GetProperty("WarningCode").GetString());
-            Assert.Equal(sourcePath, failedResult.GetProperty("SourcePath").GetString());
-            Assert.Equal(finalPath, failedResult.GetProperty("FinalPath").GetString());
+            // The History API returns this row whole (issue #975), so the directories that
+            // held the source and destination must not survive into it: only the filename.
+            Assert.Equal(Path.GetFileName(sourcePath), failedResult.GetProperty("SourcePath").GetString());
+            Assert.Equal(Path.GetFileName(finalPath), failedResult.GetProperty("FinalPath").GetString());
+            Assert.DoesNotContain(Path.GetDirectoryName(sourcePath)!, failedImport.Data);
+            Assert.DoesNotContain(Path.GetDirectoryName(finalPath)!, failedImport.Data);
+            // This result carries no FailureClass (built directly rather than through a
+            // classifying factory), and its Message is already a safe, descriptive sentence
+            // with no path or exception text, so it survives unchanged.
             Assert.Equal(message, failedResult.GetProperty("Message").GetString());
+        }
+
+        [Fact]
+        public async Task Import_FailedWithPathBearingException_ClassifiesTheFailureWithoutLeakingThePath()
+        {
+            // A distinctive fragment standing in for anything on a real host's directory
+            // layout (a share name, a username) that must never survive into an API response.
+            const string leakCanary = "path-leak-canary-marker";
+            var importService = new Mock<IDownloadImportService>();
+            var sourceDirectory = FileService.GetTempDirectory(leakCanary);
+            var sourcePath = await FileService.GetFileAsync(sourceDirectory, "book.m4b");
+            // Shaped like a real .NET DirectoryNotFoundException: it quotes the full path.
+            // This is the control input a naive fix (e.g. just running the message through
+            // LogRedaction.SanitizeText) would fail against, since SanitizeText strips control
+            // characters and truncates but does not redact path content.
+            var directoryException = new DirectoryNotFoundException(
+                $"Could not find a part of the path '{sourcePath}'.");
+            importService
+                .Setup(service => service.ImportDownloadFilesAsync(
+                    It.IsAny<Audiobook>(),
+                    It.IsAny<List<string>>(),
+                    It.IsAny<CancellationToken>(),
+                    It.IsAny<DownloadImportOptions?>()))
+                .ReturnsAsync([ImportResult.Exception(directoryException, sourcePath)]);
+            Init(builder => builder.WithSingleton<IDownloadImportService>(importService.Object));
+            var audiobook = await CreateAudiobook();
+            var download = await _downloadRepository.AddAsync(new Download
+            {
+                Id = $"ddl-{Guid.NewGuid():N}",
+                AudiobookId = audiobook.Id,
+                Title = "Path Leak Canary Book",
+                Artist = "DDL Author",
+                Album = "Path Leak Canary Book",
+                DownloadClientId = DirectDownloadMetadataKeys.ClientId,
+                Status = DownloadStatus.Completed,
+                StartedAt = DateTime.UtcNow.AddMinutes(-5),
+                CompletedAt = DateTime.UtcNow,
+                DownloadPath = sourcePath,
+                Metadata = new Dictionary<string, object>
+                {
+                    [DirectDownloadMetadataKeys.DownloadType] = DirectDownloadMetadataKeys.ClientId
+                }
+            });
+            // Start with the retry budget spent. An import whose every file failed is retried
+            // now rather than blocking on the first attempt, and the ImportFailed row this
+            // test inspects is written by the terminal attempt.
+            var seed = new DownloadProcessingJobBuilder()
+                .WithDownload(download)
+                .Build();
+            seed.RetryCount = seed.MaxRetries;
+            var job = await _downloadProcessingJobRepository.AddAsync(seed);
+
+            await _provider.GetRequiredService<DownloadProcessingJobProcessor>()
+                .ProcessQueueAsync(CancellationToken.None);
+
+            var page = await _historyRepository.QueryAsync(new HistoryQuery
+            {
+                DownloadId = download.Id.ToUpperInvariant(),
+                Limit = 100
+            });
+            var failedImport = Assert.Single(page.Records, history =>
+                history.EventType == HistoryEvents.ImportFailed);
+
+            // The control: the History API returns this row whole, so neither the
+            // directory nor the canary fragment inside it may appear anywhere in the row.
+            Assert.DoesNotContain(sourceDirectory, failedImport.Data, StringComparison.Ordinal);
+            Assert.DoesNotContain(leakCanary, failedImport.Data, StringComparison.Ordinal);
+            Assert.DoesNotContain(leakCanary, failedImport.Message ?? string.Empty, StringComparison.Ordinal);
+            Assert.DoesNotContain(leakCanary, failedImport.Error ?? string.Empty, StringComparison.Ordinal);
+
+            using var details = JsonDocument.Parse(failedImport.Data!);
+            var failedResult = Assert.Single(details.RootElement
+                .GetProperty("FailedResults")
+                .EnumerateArray());
+            // DirectoryNotFoundException classifies to a fixed sentence: the exception's
+            // own text (which quoted the path) never reaches the row.
+            Assert.Equal(
+                "Failed to import file, destination unavailable",
+                failedResult.GetProperty("Message").GetString());
+            // The filename alone is retained; only the directory is stripped.
+            Assert.Equal(Path.GetFileName(sourcePath), failedResult.GetProperty("SourcePath").GetString());
         }
 
         [Fact]
