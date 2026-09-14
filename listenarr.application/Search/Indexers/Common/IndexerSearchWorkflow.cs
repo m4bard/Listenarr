@@ -78,6 +78,16 @@ public class IndexerSearchWorkflow
                 _logger.LogInformation("Found {Count} results from indexer {Name}", observation.Results.Count, indexer.Name);
                 return (Indexer: indexer, Observation: observation);
             }
+            catch (OperationCanceledException ex)
+            {
+                // Excluded from the general guard below on purpose: a per-indexer timeout must not
+                // propagate out of this lambda and fail every other indexer's Task.WhenAll alongside it.
+                _logger.LogWarning(ex, "Timed out searching indexer {Name} for query: {Query}", indexer.Name, query);
+                return (Indexer: indexer, Observation: IndexerQueryObservation.Unavailable(
+                    IndexerQueryFailureClassifier.Classify(ex),
+                    query,
+                    IndexerQueryFailureClassifier.Describe(ex)));
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Containment, not a tier miss: one indexer throwing must not take down the fan-out,
