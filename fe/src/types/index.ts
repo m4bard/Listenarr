@@ -979,10 +979,18 @@ export interface QualityProfile {
   isDefault?: boolean
   preferNewerReleases?: boolean
   maximumAge?: number // days (0 = no limit)
+  preferredReleaseShape?: ReleaseShapePreference
   customGroupNames?: Record<string, string> // Custom names for quality groups by codec
   createdAt?: string
   updatedAt?: string
 }
+
+/**
+ * How a profile treats a bundle or omnibus release against a single-book one. Scored, not
+ * filtered: a release on the wrong side of the preference is penalised and still eligible.
+ * Serialized by name, matching ReleaseShapePreference's JsonStringEnumMemberName values.
+ */
+export type ReleaseShapePreference = 'none' | 'individual' | 'bundle'
 
 export interface QualityDefinition {
   quality: string // e.g., "320kbps", "192kbps", "lossless"

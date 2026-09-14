@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatSeriesMemberships } from '@/utils/seriesUtils'
+import { formatSeriesMemberships, isBundleSeriesNumber } from '@/utils/seriesUtils'
 
 describe('formatSeriesMemberships', () => {
   it('lists every series a book belongs to with its number', () => {
@@ -31,5 +31,35 @@ describe('formatSeriesMemberships', () => {
   it('returns an empty string when there is no series information', () => {
     expect(formatSeriesMemberships({})).toBe('')
     expect(formatSeriesMemberships({ seriesMemberships: [] })).toBe('')
+  })
+})
+
+describe('isBundleSeriesNumber', () => {
+  it.each(['1-4', '1-2', '1-6', '1-8', '1 - 4', '1-3, 5', '2, 3'])(
+    'treats %s as covering more than one book',
+    (position) => {
+      expect(isBundleSeriesNumber(position)).toBe(true)
+    },
+  )
+
+  it.each([
+    '1',
+    '0',
+    '12',
+    // A novella between two books, not a bundle.
+    '1.5',
+    // A real Audible position: it has a comma and it is one book.
+    '2, Dramatized',
+    // Grouped digits are one number, not a list of two.
+    '20,000',
+    '',
+    '   ',
+  ])('treats %s as a single book', (position) => {
+    expect(isBundleSeriesNumber(position)).toBe(false)
+  })
+
+  it('handles a missing position', () => {
+    expect(isBundleSeriesNumber(undefined)).toBe(false)
+    expect(isBundleSeriesNumber(null)).toBe(false)
   })
 })
