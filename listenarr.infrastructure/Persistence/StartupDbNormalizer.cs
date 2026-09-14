@@ -77,6 +77,14 @@ namespace Listenarr.Infrastructure.Persistence
                 // Runs after the re-derivation above and not before it: this join is on
                 // AuthorNameNormalized, so a stale key silently excludes exactly the drifted rows
                 // the pass exists to correct.
+                // This pass reads cached author names and writes them onto books, so a cache row
+                // holding another author's name is the one input that could turn a wrong cached
+                // identity into wrong stored data on disk and in file tags. New rows cannot get
+                // into that state: the author cache refuses to rename a row when an ASIN is
+                // already somebody else's, and that guard is on the write path, so it is in force
+                // before this starts and for anything writing while it runs. A row renamed by an
+                // older build is caught inside the pass instead -- see the notes on
+                // BuildCanonicalAuthorNameMapAsync and CanonicalizeAuthorList.
                 var canonicalized = await audiobookRepository.CanonicalizeStoredAuthorNamesAsync(
                     stoppingToken);
                 if (canonicalized > 0)
