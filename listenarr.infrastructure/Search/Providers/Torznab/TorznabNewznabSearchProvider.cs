@@ -64,9 +64,10 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
             {
                 _logger.LogWarning("Indexer {Name} returned status {Status}", indexer.Name, response.StatusCode);
                 return IndexerQueryObservation.Unavailable(
-                    IndexerQueryReason.HttpStatus,
+                    IndexerQueryFailureClassifier.Classify(response.StatusCode),
                     query,
-                    IndexerQueryFailureClassifier.Describe(response.StatusCode));
+                    IndexerQueryFailureClassifier.Describe(response.StatusCode),
+                    retryAfter: IndexerQueryFailureClassifier.ReadRetryAfter(response.Headers.RetryAfter));
             }
 
             var xmlContent = await response.Content.ReadAsStringAsync();
