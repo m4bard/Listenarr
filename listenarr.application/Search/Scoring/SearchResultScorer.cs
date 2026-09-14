@@ -311,7 +311,7 @@ namespace Listenarr.Application.Search.Scoring
             {
                 var bonus = profile.PreferredWords
                     .Where(word => !string.IsNullOrWhiteSpace(word))
-                    .Count(word => (searchResult.Title ?? string.Empty).Contains(word, StringComparison.OrdinalIgnoreCase)) * 5;
+                    .Count(word => TitleContainsTerm(searchResult.Title, word)) * 5;
                 if (bonus != 0)
                 {
                     score.TotalScore += bonus;
