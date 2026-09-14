@@ -125,6 +125,9 @@ namespace Listenarr.Application.Search.Scoring
                     if (idx != null)
                     {
                         indexerRetention = idx.Retention;
+                        // Captured for tie-break purposes only (see QualityScoreComparer) - never
+                        // added into TotalScore, so indexer choice cannot override release quality.
+                        score.IndexerPriority = idx.Priority;
                         if (!isNzb && !string.IsNullOrWhiteSpace(idx.Type) && string.Equals(idx.Type, "Usenet", StringComparison.OrdinalIgnoreCase))
                         {
                             isNzb = true;
