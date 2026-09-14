@@ -968,6 +968,8 @@ export interface ClientStatus {
   name: string
   status: string // "connected", "disconnected", "unknown"
   type?: string
+  /** Why status is not "connected" (e.g. "timeout", "error"). Null when connected or unknown. */
+  failureReason?: string | null
 }
 
 export interface ApiStatus {
