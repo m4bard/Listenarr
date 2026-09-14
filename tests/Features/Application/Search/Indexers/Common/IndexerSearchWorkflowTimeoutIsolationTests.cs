@@ -23,7 +23,7 @@ namespace Listenarr.Tests.Features.Application.Search.Indexers.Common
     /// <summary>
     /// Regression coverage for the per-indexer timeout isolation fix: one indexer's HTTP
     /// timeout (TaskCanceledException from HttpClient.Timeout) must not abort the whole
-    /// multi-indexer Task.WhenAll fan-out and discard every other indexer's results.
+    /// bounded multi-indexer fan-out and discard every other indexer's results.
     /// </summary>
     [Trait("Area", "Search")]
     [Trait("Name", "IndexerSearchWorkflowTimeoutIsolationTests")]
@@ -131,6 +131,58 @@ namespace Listenarr.Tests.Features.Application.Search.Indexers.Common
             // ct.IsCancellationRequested is true for this call.
             await Assert.ThrowsAnyAsync<OperationCanceledException>(
                 () => workflow.SearchIndexersAsync("some query", ct: cts.Token));
+        }
+
+        [Fact]
+        [Trait("Area", "Search")]
+        [Trait("Method", "SearchIndexersAsync")]
+        [Trait("Scenario", "CancellationDuringFanOut_StillPropagates")]
+        public async Task SearchIndexersAsync_CancelledWhileAnIndexerIsInFlight_Propagates()
+        {
+            // The test above hands SearchIndexersAsync a token that is already cancelled, so the
+            // bounded fan-out can refuse to start before any provider is entered. That would pass
+            // even if the per-indexer catch filter swallowed cancellation, so this one cancels only
+            // once a provider has actually been entered: the exception has to travel back out
+            // through SearchIndexerAsync's `when (!ct.IsCancellationRequested)` filter, which must
+            // decline to catch it.
+            using var cts = new CancellationTokenSource();
+            var indexer = MakeIndexer(1, "Some Indexer", "Torznab");
+            var provider = new CancelOnEntrySearchProvider(cts);
+
+            var workflow = CreateWorkflow(new List<Indexer> { indexer }, new[] { provider });
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => workflow.SearchIndexersAsync("some query", ct: cts.Token));
+
+            Assert.True(provider.WasEntered, "The provider was never called, so nothing was proven about the catch filter.");
+        }
+
+        /// <summary>
+        /// Cancels the caller's token from inside the provider call, so cancellation is requested
+        /// while this indexer's request is genuinely in flight rather than before the fan-out began.
+        /// </summary>
+        private sealed class CancelOnEntrySearchProvider : IIndexerSearchProvider
+        {
+            private readonly CancellationTokenSource _cts;
+
+            public CancelOnEntrySearchProvider(CancellationTokenSource cts) => _cts = cts;
+
+            public bool WasEntered { get; private set; }
+
+            public string IndexerType => "Torznab";
+
+            public Task<IndexerQueryObservation> SearchAsync(
+                Indexer indexer,
+                string query,
+                string? category = null,
+                SearchRequest? request = null,
+                CancellationToken ct = default)
+            {
+                WasEntered = true;
+                _cts.Cancel();
+                ct.ThrowIfCancellationRequested();
+                return Task.FromResult(IndexerQueryObservation.FromResults(Array.Empty<IndexerSearchResult>(), query));
+            }
         }
     }
 }
