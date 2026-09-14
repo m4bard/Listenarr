@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Common;
 
 namespace Listenarr.Api.Features.Metadata
 {
@@ -32,9 +33,15 @@ namespace Listenarr.Api.Features.Metadata
                 : $"author-lookup:{normalizedRegion}:{normalizedName}:{normalizedAsin}";
         }
 
+        // Author keys go through the shared author normalizer so this writer of
+        // AuthorCacheEntries.AuthorNameNormalized produces the same key the repository's reader
+        // looks for. NormalizeLookupKey neither strips diacritics nor merges spaced-out initials,
+        // so it wrote rows that GetCachedAuthorByNameAsync could never find again.
+        // Series keys keep NormalizeLookupKey: series titles are not people's names, and the
+        // initials-merging pass would be wrong for them.
         public static string NormalizeAuthorCacheKey(string? value)
         {
-            return NormalizeLookupKey(value);
+            return StringUtils.NormalizeAuthorName(value);
         }
 
         public static string NormalizeSeriesCacheKey(string? value)
