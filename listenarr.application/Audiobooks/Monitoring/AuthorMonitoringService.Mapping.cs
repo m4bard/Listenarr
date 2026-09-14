@@ -2,8 +2,7 @@
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  */
-using System.Globalization;
-using System.Text;
+using Listenarr.Domain.Common;
 
 namespace Listenarr.Application.Audiobooks.Monitoring
 {
@@ -101,38 +100,6 @@ namespace Listenarr.Application.Audiobooks.Monitoring
             return string.Equals(normalizedBookLanguage, preferredLanguage, StringComparison.OrdinalIgnoreCase);
         }
 
-        private static string NormalizeAuthorName(string? name)
-        {
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return string.Empty;
-            }
-
-            var decomposed = name.Trim().Normalize(NormalizationForm.FormD);
-            var builder = new StringBuilder(decomposed.Length);
-            foreach (var character in decomposed)
-            {
-                if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark)
-                {
-                    continue;
-                }
-
-                if (char.IsLetterOrDigit(character))
-                {
-                    builder.Append(char.ToLowerInvariant(character));
-                }
-                else if (char.IsWhiteSpace(character))
-                {
-                    builder.Append(' ');
-                }
-            }
-
-            return string.Join(
-                ' ',
-                builder.ToString()
-                    .Split(' ', StringSplitOptions.RemoveEmptyEntries));
-        }
-
         private static string NormalizeRegion(string? region)
         {
             return AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
@@ -175,11 +142,11 @@ namespace Listenarr.Application.Audiobooks.Monitoring
 
         private static string BuildTitleAuthorKey(string? title, IEnumerable<string>? authors)
         {
-            var normalizedTitle = NormalizeAuthorName(title);
+            var normalizedTitle = StringUtils.NormalizeAuthorName(title);
             var normalizedAuthors = string.Join(
                 "|",
                 (authors ?? Enumerable.Empty<string>())
-                    .Select(NormalizeAuthorName)
+                    .Select(StringUtils.NormalizeAuthorName)
                     .Where(author => !string.IsNullOrWhiteSpace(author))
                     .OrderBy(author => author));
 
