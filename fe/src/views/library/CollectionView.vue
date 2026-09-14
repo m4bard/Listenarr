@@ -826,6 +826,11 @@ import type {
 } from '@/types'
 import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobookStatus'
 import { safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
+import {
+  normalizeCollectionText,
+  normalizeIdentifier,
+  buildTitleAuthorKey,
+} from '@/utils/collectionText'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import {
   getPreferredSearchLanguageFilter,
@@ -945,33 +950,6 @@ const isCurrentSeriesMonitored = computed(() => Boolean(seriesMonitoringStatus.v
 const seriesMetadataContextLabel = computed(() => {
   return `${seriesRegionLabel.value} / ${seriesLanguageLabel.value}`
 })
-
-function normalizeCollectionText(value: string | undefined | null): string {
-  if (!value) return ''
-  return value
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
-
-function normalizeIdentifier(value: string | undefined | null): string {
-  if (!value) return ''
-  return value.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
-}
-
-function normalizeAuthorKey(authors: string[] | undefined): string {
-  return (authors || [])
-    .map((author) => normalizeCollectionText(author))
-    .filter(Boolean)
-    .sort()
-    .join('|')
-}
-
-function buildTitleAuthorKey(title: string | undefined, authors: string[] | undefined): string {
-  return `${normalizeCollectionText(title)}::${normalizeAuthorKey(authors)}`
-}
 
 function createSyntheticId(seed: string): number {
   let hash = 0
