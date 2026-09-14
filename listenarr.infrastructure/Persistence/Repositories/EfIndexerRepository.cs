@@ -63,8 +63,43 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
         {
             var existing = await _db.Indexers.FindAsync(new object[] { indexer.Id }, ct);
             if (existing == null) throw new InvalidOperationException($"Indexer {indexer.Id} not found.");
+
+            // The failure-backoff columns are not operator-editable and are written only by
+            // UpdateBackoffStateAsync. SetValues below is a whole-row overwrite, so without this
+            // they would be carried back from whatever the caller read -- for a settings form,
+            // whatever they stood at when the form was opened. Saving unrelated settings during a
+            // cooldown would then silently lift it, and the indexer would be asked again
+            // immediately for no reason anyone could see.
+            var backoff = IndexerBackoffState.From(existing);
+
             _db.Entry(existing).CurrentValues.SetValues(indexer);
+
+            existing.InitialFailure = backoff.InitialFailure;
+            existing.MostRecentFailure = backoff.MostRecentFailure;
+            existing.EscalationLevel = backoff.EscalationLevel;
+            existing.DisabledTill = backoff.DisabledTill;
+            existing.LastFailureReason = backoff.LastFailureReason;
+
             await _db.SaveChangesAsync(ct);
+        }
+
+        public async Task UpdateBackoffStateAsync(int indexerId, IndexerBackoffState state, CancellationToken ct = default)
+        {
+            ArgumentNullException.ThrowIfNull(state);
+
+            // Named columns only. The whole-entity SetValues in UpdateAsync would carry back every
+            // configuration column as it stood when the caller read the row, which for a status
+            // writer is always a stale read.
+            await _db.Indexers
+                .Where(i => i.Id == indexerId)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(i => i.InitialFailure, state.InitialFailure)
+                        .SetProperty(i => i.MostRecentFailure, state.MostRecentFailure)
+                        .SetProperty(i => i.EscalationLevel, state.EscalationLevel)
+                        .SetProperty(i => i.DisabledTill, state.DisabledTill)
+                        .SetProperty(i => i.LastFailureReason, state.LastFailureReason),
+                    ct);
         }
 
         public async Task DeleteAsync(int id, CancellationToken ct = default)
