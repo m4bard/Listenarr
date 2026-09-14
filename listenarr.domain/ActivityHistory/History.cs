@@ -125,6 +125,24 @@ namespace Listenarr.Domain.ActivityHistory
         /// unknown protocol reads as unknown rather than as the first member of the enum.
         /// </summary>
         public Listenarr.Domain.Downloads.DownloadProtocol? Protocol { get; set; }
+
+        /// <summary>
+        /// Indexer the release was grabbed from. Null for events that did not come from a
+        /// search, and for rows written before the column existed.
+        /// </summary>
+        public string? Indexer { get; set; }
+
+        /// <summary>
+        /// Quality the release advertised, as the indexer reported it. Null for events with no
+        /// release behind them.
+        /// </summary>
+        public string? Quality { get; set; }
+
+        /// <summary>
+        /// Size of the release in bytes. Null rather than zero when the indexer did not report
+        /// one, so an unreported size does not read as an empty file.
+        /// </summary>
+        public long? Size { get; set; }
     }
 
     public sealed class HistoryQuery
@@ -134,6 +152,14 @@ namespace Listenarr.Domain.ActivityHistory
         public string SortBy { get; set; } = "timestamp";
         public string SortDirection { get; set; } = "desc";
         public string? EventType { get; set; }
+
+        /// <summary>
+        /// Several event types matched as a set. A filter preset covers a group of types, and
+        /// expressing it as one query keeps the total and the paging honest; firing one request
+        /// per type cannot do either. Takes precedence over <see cref="EventType"/> when set.
+        /// </summary>
+        public IReadOnlyList<string>? EventTypes { get; set; }
+
         public HistoryOutcome? Outcome { get; set; }
         public DateTime? From { get; set; }
         public DateTime? To { get; set; }
