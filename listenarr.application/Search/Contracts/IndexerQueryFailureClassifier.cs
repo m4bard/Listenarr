@@ -56,4 +56,46 @@ public static class IndexerQueryFailureClassifier
     {
         return LogRedaction.SanitizeText(((int)statusCode).ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
+
+    /// <summary>
+    /// Classifies a non-2xx response. A 429 and a 403 are not the same event as a 500: one is the
+    /// remote naming a rate, one is a credential that will never recover on its own, and collapsing
+    /// them into a single "non-2xx" leaves a caller unable to react differently to any of them.
+    /// </summary>
+    public static IndexerQueryReason Classify(System.Net.HttpStatusCode statusCode)
+    {
+        return statusCode switch
+        {
+            System.Net.HttpStatusCode.TooManyRequests => IndexerQueryReason.RateLimited,
+            System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden => IndexerQueryReason.AuthFailure,
+            _ => IndexerQueryReason.HttpStatus
+        };
+    }
+
+    /// <summary>
+    /// Reads a <c>Retry-After</c> header in either wire form: a delta in seconds, or an HTTP date.
+    /// Mirrors TorrentFileDownloader.GetRetryDelay, which is the in-repo precedent for this header,
+    /// but deliberately applies no upper clamp: the caller wants the number the indexer actually
+    /// stated, not a retry delay capped to something a single request is willing to wait.
+    /// </summary>
+    public static TimeSpan? ReadRetryAfter(System.Net.Http.Headers.RetryConditionHeaderValue? retryAfter)
+    {
+        if (retryAfter == null)
+        {
+            return null;
+        }
+
+        if (retryAfter.Delta is { } delta)
+        {
+            return delta > TimeSpan.Zero ? delta : null;
+        }
+
+        if (retryAfter.Date is { } date)
+        {
+            var wait = date - DateTimeOffset.UtcNow;
+            return wait > TimeSpan.Zero ? wait : null;
+        }
+
+        return null;
+    }
 }
