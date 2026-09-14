@@ -274,7 +274,7 @@ public partial class ManualImportController : ControllerBase
                                     // container in the selection is included so its companions are matched
                                     // the same way an .m4b's are; whether it imports at all is settled
                                     // per item by the content probe.
-                                    .Where(FileUtils.MayBeAudioPendingProbe),
+                                    .Where(f => FileUtils.MayBeAudioPendingProbe(f, appSettings.AllowedFileExtensions)),
                                 sourceSemantics.Value.Comparer, operationToken);
                         }
                     }

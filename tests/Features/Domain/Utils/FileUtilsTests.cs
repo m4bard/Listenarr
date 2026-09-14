@@ -24,6 +24,57 @@ namespace Listenarr.Tests.Features.Domain.Utils
 {
     public class FileUtilsTests
     {
+        [Theory]
+        [InlineData("book.m4b", true)]
+        [InlineData("book.mp3", true)]
+        [InlineData("book.wma", true)]
+        [InlineData("cover.jpg", false)]
+        [InlineData("notes.txt", false)]
+        public void IsAudioFile_WithoutAllowedExtensions_UsesHardcodedDefaultSet(string fileName, bool expected)
+        {
+            // No allowlist supplied: falls back to FileUtils.AudioExtensions, unchanged from
+            // today's behavior for callers not yet wired to a settings source.
+            Assert.Equal(expected, FileUtils.IsAudioFile(fileName));
+        }
+
+        [Fact]
+        public void IsAudioFile_WithDefaultConfiguredAllowlist_MatchesTodaysHardcodedBehavior()
+        {
+            // Control case: a fresh ApplicationSettings.AllowedFileExtensions (nobody has ever
+            // touched the setting) must reproduce exactly the same set FileUtils.AudioExtensions
+            // already recognized, so wiring the setting up is not a regression by default.
+            var settings = new ApplicationSettings();
+
+            foreach (var extension in FileUtils.AudioExtensions)
+            {
+                Assert.True(
+                    FileUtils.IsAudioFile($"book{extension}", settings.AllowedFileExtensions),
+                    $"Expected default AllowedFileExtensions to recognize {extension}");
+            }
+
+            Assert.False(FileUtils.IsAudioFile("cover.jpg", settings.AllowedFileExtensions));
+        }
+
+        [Fact]
+        public void IsAudioFile_WithConfiguredAllowlist_UsesConfiguredSetInsteadOfHardcodedDefault()
+        {
+            // A file recognized under the hardcoded default (.wma) must stop matching once the
+            // configured allowlist no longer includes it, and a narrower configured set is what
+            // actually governs the check.
+            var settings = new ApplicationSettings
+            {
+                AllowedFileExtensions = [".mp3", ".m4b"]
+            };
+
+            Assert.True(FileUtils.IsAudioFile("book.mp3", settings.AllowedFileExtensions));
+            Assert.True(FileUtils.IsAudioFile("book.m4b", settings.AllowedFileExtensions));
+
+            // .wma is in FileUtils.AudioExtensions (the hardcoded default) but not in this
+            // configured allowlist, so it must be rejected now that the setting is the live source.
+            Assert.True(FileUtils.AudioExtensions.Contains(".wma"));
+            Assert.False(FileUtils.IsAudioFile("book.wma", settings.AllowedFileExtensions));
+        }
+
         [Fact]
         public void GetUniqueDestinationPath_ReturnsSameIfNotExists()
         {
