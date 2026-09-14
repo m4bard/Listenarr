@@ -13,21 +13,17 @@ namespace Listenarr.Application.Downloads.Queue
 {
     internal static class DownloadSearchQueryBuilder
     {
-        public static string Build(Audiobook audiobook)
+        /// <summary>
+        /// The ordered query forms for an audiobook the download path is trying to find.
+        /// </summary>
+        /// <remarks>
+        /// Forwarded to <see cref="AudiobookSearchQueryBuilder"/> rather than built here, because
+        /// this path and the automatic sweep used to build their own strings and disagreed about
+        /// what belongs in one. Two entry points must not describe the same audiobook differently.
+        /// </remarks>
+        public static SearchQueryPlan BuildPlan(Audiobook audiobook)
         {
-            var parts = new List<string>();
-
-            if (!string.IsNullOrEmpty(audiobook.Title))
-            {
-                parts.Add(audiobook.Title);
-            }
-
-            if (audiobook.Authors != null && audiobook.Authors.Any())
-            {
-                parts.Add(audiobook.Authors.First());
-            }
-
-            return string.Join(" ", parts);
+            return AudiobookSearchQueryBuilder.BuildPlan(audiobook);
         }
     }
 }

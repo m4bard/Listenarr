@@ -64,7 +64,7 @@ public enum IndexerQueryReason
 /// <param name="Outcome">Coarse classification of the answer.</param>
 /// <param name="Reason">Fine-grained cause behind <paramref name="Outcome"/>.</param>
 /// <param name="Results">Results parsed from the answer; empty for everything but <see cref="IndexerQueryOutcome.Hit"/>.</param>
-/// <param name="Tier">Position of this query in the query plan. Always 1 until a tiered ladder exists.</param>
+/// <param name="Tier">1-based position of this query in the <see cref="Core.SearchQueryPlan"/> that produced it.</param>
 /// <param name="QueryForm">The query string that was issued, for logs and diagnostics.</param>
 /// <param name="Detail">Status code or exception type for the log line. Never a URL or an API key.</param>
 public sealed record IndexerQueryObservation(
