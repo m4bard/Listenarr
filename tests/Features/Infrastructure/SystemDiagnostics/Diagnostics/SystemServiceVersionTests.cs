@@ -80,7 +80,8 @@ namespace Listenarr.Tests.Features.Infrastructure.SystemDiagnostics.Diagnostics
                 applicationPathService.Object,
                 applicationVersionService.Object,
                 rootFolderService.Object,
-                new DiskSpaceProbe(NullLogger<DiskSpaceProbe>.Instance));
+                new DiskSpaceProbe(NullLogger<DiskSpaceProbe>.Instance),
+                new DownloadClientStatusCache());
         }
     }
 }
