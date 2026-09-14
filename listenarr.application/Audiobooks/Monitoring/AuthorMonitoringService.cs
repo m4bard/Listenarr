@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Audiobooks.Monitoring
@@ -105,7 +106,7 @@ namespace Listenarr.Application.Audiobooks.Monitoring
             string language,
             CancellationToken cancellationToken = default)
         {
-            var normalizedName = NormalizeAuthorName(name);
+            var normalizedName = StringUtils.NormalizeAuthorName(name);
             if (string.IsNullOrWhiteSpace(normalizedName))
             {
                 return null;
@@ -123,7 +124,7 @@ namespace Listenarr.Application.Audiobooks.Monitoring
         {
             ArgumentNullException.ThrowIfNull(request);
 
-            var normalizedName = NormalizeAuthorName(request.Name);
+            var normalizedName = StringUtils.NormalizeAuthorName(request.Name);
             if (string.IsNullOrWhiteSpace(normalizedName))
             {
                 throw new ArgumentException("Author name is required.", nameof(request));
