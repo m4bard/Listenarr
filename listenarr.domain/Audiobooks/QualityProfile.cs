@@ -64,12 +64,14 @@ namespace Listenarr.Domain.Audiobooks
         public List<string> PreferredWords { get; set; } = new();
 
         /// <summary>
-        /// Words/phrases that must NOT be in the title (e.g., "abridged", "sample")
+        /// Words/phrases that must NOT be in the title (e.g., "abridged", "sample").
+        /// Matched as whole words, so "abridged" does not reject a title reading "Unabridged".
         /// </summary>
         public List<string> MustNotContain { get; set; } = new();
 
         /// <summary>
-        /// Words/phrases that must be in the title
+        /// Words/phrases the title must match at least one of (e.g., "unabridged", "retail").
+        /// Matched as whole words. An empty list places no requirement on the title.
         /// </summary>
         public List<string> MustContain { get; set; } = new();
 
