@@ -37,6 +37,7 @@ namespace Listenarr.Application.Search.Contracts
         /// <param name="query">The search query.</param>
         /// <param name="category">Optional category filter.</param>
         /// <param name="request">Optional additional request context.</param>
+        /// <param name="ct">Cancellation token for the outbound request(s).</param>
         /// <returns>
         /// The indexer's answer: the results, plus the outcome and reason that say whether the indexer
         /// answered with nothing or never answered at all. A bare result list collapses those two.
@@ -45,6 +46,7 @@ namespace Listenarr.Application.Search.Contracts
             Indexer indexer,
             string query,
             string? category = null,
-            SearchRequest? request = null);
+            SearchRequest? request = null,
+            CancellationToken ct = default);
     }
 }

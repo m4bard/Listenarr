@@ -44,7 +44,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
             _indexerRepository = indexerRepository ?? throw new ArgumentNullException(nameof(indexerRepository));
         }
 
-        public async Task<IndexerQueryObservation> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null)
+        public async Task<IndexerQueryObservation> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null, CancellationToken ct = default)
         {
             try
             {
@@ -77,7 +77,8 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                     searchUri,
                     httpClientToUse,
                     _logger,
-                    allowPrivateTargets: true);
+                    allowPrivateTargets: true,
+                    cancellationToken: ct);
                 using var response = searchResponse;
                 if (!response.IsSuccessStatusCode)
                 {
@@ -135,17 +136,18 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                 _logger.LogInformation("MyAnonamouse returned {Count} results", results.Count);
                 return IndexerQueryObservation.FromResults(results, query);
             }
-            catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
+            catch (Exception ex) when (ex is OperationCanceledException or TimeoutException && !ct.IsCancellationRequested)
             {
-                // HttpClient reports its own request timeout as a cancellation. Left uncaught it escapes
-                // the per-indexer containment upstream and fails the whole fan-out.
+                // HttpClient reports its own request timeout as a cancellation, and the caller did not
+                // ask to cancel. Left uncaught it escapes the per-indexer containment upstream and fails
+                // the whole fan-out. A genuinely cancelled token falls through to propagate instead.
                 _logger.LogWarning(ex, "MyAnonamouse indexer {Name} did not answer in time", indexer.Name);
                 return IndexerQueryObservation.Unavailable(
                     IndexerQueryFailureClassifier.Classify(ex),
                     query,
                     IndexerQueryFailureClassifier.Describe(ex));
             }
-            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Error searching MyAnonamouse indexer {Name}", indexer.Name);
                 return IndexerQueryObservation.Unavailable(
