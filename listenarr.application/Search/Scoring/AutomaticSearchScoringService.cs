@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Search.Matching;
+using Listenarr.Application.Search.Parsing;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Search.Scoring;
@@ -46,7 +47,11 @@ public sealed class AutomaticSearchScoringService(
             compatibility.TryAdd(result, AutomaticCompatibilityPolicy.Evaluate(context, result, identities[result]));
         }
         // Every candidate is scored. The quality service sorts its output; associate by reference.
-        var quality = await qualityService.ScoreSearchResults(results, profile);
+        // The bundle flag comes from the library record, not from the release: indexer results
+        // carry no series position at all, and an omnibus record is the one case where a bundle
+        // release is the right one.
+        var targetIsBundle = ReleaseShapeDetector.IsBundleSeriesNumber(book.SeriesNumber);
+        var quality = await qualityService.ScoreSearchResults(results, profile, targetIsBundle);
         cancellationToken.ThrowIfCancellationRequested();
         var associatedQuality = new Dictionary<SearchResult, QualityScore?>(ReferenceEqualityComparer.Instance);
         foreach (var score in quality)
