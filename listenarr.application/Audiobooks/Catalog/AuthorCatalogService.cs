@@ -317,11 +317,22 @@ namespace Listenarr.Application.Audiobooks.Catalog
 
             try
             {
-                var entry = cachedEntry ?? new AuthorCacheEntry();
+                // Never rename the resolved row in place. It may have been resolved by an ASIN,
+                // and the mutation would reach the database through the upsert even though the
+                // row came back untracked. A fresh entry lets the upsert decide which row this
+                // write lands on; the resolved row is still worth reading for fallback values.
+                var normalizedName = StringUtils.NormalizeAuthorName(authorName);
+                var writable = cachedEntry != null && StringUtils.MatchesAuthorKey(
+                    cachedEntry.AuthorNameNormalized, cachedEntry.AuthorName, normalizedName);
+
+                var entry = writable ? cachedEntry! : new AuthorCacheEntry();
                 entry.AuthorName = string.IsNullOrWhiteSpace(author.Name) ? authorName : author.Name;
-                entry.AuthorNameNormalized = StringUtils.NormalizeAuthorName(authorName);
+                entry.AuthorNameNormalized = normalizedName;
                 entry.AuthorAsin = author.Asin;
                 entry.Region = region;
+                // Fallbacks come off the row only where that row is this author's, which after the
+                // check above means entry is that row. A row named for somebody else contributes
+                // nothing -- not its name, not its photo, not its biography.
                 entry.ImageUrl = author.Image ?? entry.ImageUrl;
                 entry.Description ??= author.Description;
                 entry.CatalogBooks = books.Select(MapCachedCatalogBook).ToList();
