@@ -154,6 +154,13 @@
           "
         />
       </FormRow>
+
+      <CheckboxCard
+        :modelValue="settings.extractArchives"
+        @update:modelValue="updateExtractArchives"
+        title="Extract Archives"
+        description="Automatically extract archive files (.zip, .rar, .7z, .tar, .gz, .tgz) found during library import and completed-download import."
+      />
     </div>
 
     <!-- Pattern Help Modal -->
@@ -336,6 +343,10 @@ function applyPattern(
 function updateField(field: keyof ApplicationSettings, value: unknown) {
   const payload = { ...(props.settings || {}), [field]: value } as Partial<ApplicationSettings>
   emit('update:settings', payload)
+}
+
+function updateExtractArchives(value: boolean) {
+  updateField('extractArchives', value)
 }
 
 function parseExtensionList(value: string): string[] {

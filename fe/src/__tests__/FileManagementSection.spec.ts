@@ -92,6 +92,29 @@ describe('FileManagementSection', () => {
     expect(wrapper.emitted()['update:settings']).toBeUndefined()
   })
 
+  it('round-trips the Extract Archives checkbox', async () => {
+    const { default: FileManagementSection } =
+      await import('@/components/settings/FileManagementSection.vue')
+    const Checkbox = (await import('@/components/form/Checkbox.vue')).default
+    const CheckboxCard = (await import('@/components/settings/CheckboxCard.vue')).default
+    const wrapper = mount(FileManagementSection, {
+      props: { settings: { extractArchives: false } },
+      global: { components: { Checkbox } },
+    })
+
+    // The File Metadata Enrichment boxes come first in the form, so pick this one by its title.
+    const card = wrapper
+      .findAllComponents(CheckboxCard)
+      .find((candidate) => candidate.props('title') === 'Extract Archives')!
+    const checkbox = card.find('input[type="checkbox"]')
+    expect((checkbox.element as HTMLInputElement).checked).toBe(false)
+
+    await checkbox.setValue(true)
+    const last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    expect(last.extractArchives).toBe(true)
+  })
+
   it('shows preview for multi-file pattern with chapter numbers', async () => {
     const { default: FileManagementSection } =
       await import('@/components/settings/FileManagementSection.vue')
