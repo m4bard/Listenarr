@@ -40,6 +40,7 @@ public class IndexerSearchWorkflow
     private readonly IEnumerable<IIndexerSearchProvider> _searchProviders;
     private readonly IndexerAdditionalSettingsParser _additionalSettingsParser;
     private readonly TorznabResponseParser _torznabResponseParser;
+    private readonly IIndexerStatusService? _indexerStatusService;
     private readonly ILogger<IndexerSearchWorkflow> _logger;
 
     public IndexerSearchWorkflow(
@@ -49,7 +50,8 @@ public class IndexerSearchWorkflow
         IEnumerable<IIndexerSearchProvider> searchProviders,
         IndexerAdditionalSettingsParser additionalSettingsParser,
         ILogger<IndexerSearchWorkflow> logger,
-        IHtmlTextExtractor? htmlTextExtractor = null)
+        IHtmlTextExtractor? htmlTextExtractor = null,
+        IIndexerStatusService? indexerStatusService = null)
     {
         _httpClient = httpClient;
         _configurationService = configurationService;
@@ -57,6 +59,7 @@ public class IndexerSearchWorkflow
         _searchProviders = searchProviders;
         _additionalSettingsParser = additionalSettingsParser;
         _logger = logger;
+        _indexerStatusService = indexerStatusService;
         _torznabResponseParser = new TorznabResponseParser(httpClient, logger, htmlTextExtractor);
     }
 
@@ -67,17 +70,48 @@ public class IndexerSearchWorkflow
         SearchSortDirection sortDirection = SearchSortDirection.Descending,
         bool isAutomaticSearch = false,
         SearchRequest? request = null,
+        bool filterBlocked = true,
         CancellationToken ct = default)
     {
         var results = new List<IndexerSearchResult>();
         var indexers = await _indexerRepository.GetEnabledAsync(isAutomaticSearch, ct);
 
+        // Kept so the two empty-list cases below stay distinguishable, and so a future health
+        // display can answer "how many would be available if nothing were blocked?".
+        var configuredCount = indexers.Count;
+
+        if (filterBlocked && _indexerStatusService != null && configuredCount > 0)
+        {
+            var blocked = await _indexerStatusService.GetBlockedIndexerIdsAsync(ct);
+            if (blocked.Count > 0)
+            {
+                indexers = indexers.Where(i => !blocked.Contains(i.Id)).ToList();
+                _logger.LogInformation(
+                    "Skipping {Count} of {Configured} enabled indexer(s) currently in failure backoff",
+                    configuredCount - indexers.Count,
+                    configuredCount);
+            }
+        }
+
         _logger.LogInformation("Searching {Count} enabled indexers for query: {Query}", indexers.Count, query);
 
-        if (!indexers.Any())
+        // Two different empty lists, and they must not share a branch. The mock results exist for
+        // an install with nothing configured yet; feeding five invented releases to the
+        // automatic-search scorer because every real indexer happens to be in cooldown would be a
+        // fabricated grab.
+        if (configuredCount == 0)
         {
             _logger.LogWarning("No indexers configured, returning mock results for query: {Query}", query);
             return GenerateMockIndexerResults(query);
+        }
+
+        if (indexers.Count == 0)
+        {
+            _logger.LogWarning(
+                "All {Count} enabled indexer(s) are in failure backoff; skipping search for query: {Query}",
+                configuredCount,
+                query);
+            return results;
         }
 
         // One slot per configured indexer, written exactly once by the body below. An array rather
@@ -106,16 +140,19 @@ public class IndexerSearchWorkflow
                     var observation = await SearchIndexerAsync(indexer, query, category, perIndexerRequest, ct);
                     _logger.LogInformation("Found {Count} results from indexer {Name}", observation.Results.Count, indexer.Name);
                     observations[entry.Index] = (indexer, observation);
+                    await RecordOutcomeAsync(indexer, observation, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     // Containment, not a tier miss: one indexer throwing must not take down the fan-out,
                     // and the outcome records that this indexer never answered.
                     _logger.LogError(ex, "Error searching indexer {Name} for query: {Query}", indexer.Name, query);
-                    observations[entry.Index] = (indexer, IndexerQueryObservation.Unavailable(
+                    var failure = IndexerQueryObservation.Unavailable(
                         IndexerQueryFailureClassifier.Classify(ex),
                         query,
-                        IndexerQueryFailureClassifier.Describe(ex)));
+                        IndexerQueryFailureClassifier.Describe(ex));
+                    observations[entry.Index] = (indexer, failure);
+                    await RecordOutcomeAsync(indexer, failure, ct);
                 }
             });
 
@@ -153,6 +190,7 @@ public class IndexerSearchWorkflow
             if (mamOpts != null) req.MyAnonamouse = mamOpts;
 
             var observation = await SearchIndexerAsync(indexer, query, category, req);
+            await RecordOutcomeAsync(indexer, observation);
             return observation.Results.Select(SearchResultConverters.ToSearchResult).ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -180,6 +218,12 @@ public class IndexerSearchWorkflow
 
             request = ApplyIndexerMamOptions(indexer, request);
             var observation = await SearchIndexerAsync(indexer, query, category, request);
+
+            // Deliberately not filtered by the backoff above: an operator naming one indexer has
+            // overridden the policy by asking. Recording the answer is what makes that request
+            // double as the probe that walks a recovered indexer back down, which matters because
+            // there is no RSS sync here to serve as one.
+            await RecordOutcomeAsync(indexer, observation);
             return observation.Results.ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -285,6 +329,27 @@ public class IndexerSearchWorkflow
                 IndexerQueryFailureClassifier.Classify(ex),
                 query,
                 IndexerQueryFailureClassifier.Describe(ex));
+        }
+    }
+
+    /// <summary>
+    /// Feeds one indexer's answer to the failure backoff. A status write must never be able to fail
+    /// a search that otherwise worked, so a persistence error is logged and swallowed here.
+    /// </summary>
+    private async Task RecordOutcomeAsync(Indexer indexer, IndexerQueryObservation observation, CancellationToken ct = default)
+    {
+        if (_indexerStatusService == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _indexerStatusService.RecordAsync(indexer, observation, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
+            _logger.LogWarning(ex, "Failed to record failure backoff state for indexer {Name}", indexer.Name);
         }
     }
 
