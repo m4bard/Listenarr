@@ -62,6 +62,12 @@ namespace Listenarr.Infrastructure.Downloads.Processing
             };
             if (failedResults is { Count: > 0 })
             {
+                // History rows are returned whole by the History API, so nothing here may
+                // carry a raw exception message or an absolute filesystem path (issue #975).
+                // Message is replaced by a fixed, non-leaking sentence for any classified
+                // failure, or sanitized/capped text as a fallback; the paths are reduced to
+                // their filenames. The real exception detail is already on the log line at
+                // the point each ImportResult was created.
                 details["FailedResults"] = failedResults.Select(result => new
                 {
                     result.Action,
@@ -69,9 +75,11 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     result.EffectiveAction,
                     result.SourceDisposition,
                     result.WarningCode,
-                    result.SourcePath,
-                    result.FinalPath,
-                    result.Message,
+                    SourcePath = LogRedaction.SanitizeFilePath(result.SourcePath),
+                    FinalPath = LogRedaction.SanitizeFilePath(result.FinalPath),
+                    Message = result.FailureClass != ImportFailureClass.None
+                        ? ImportFailureClassSentences.Describe(result.FailureClass)
+                        : LogRedaction.SanitizeText(result.Message),
                     result.WasRegisteredToAudiobook
                 }).ToArray();
             }
