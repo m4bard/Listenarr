@@ -313,7 +313,8 @@
             <div class="filter-group">
               <h4><PhCheck /> Must Contain (Required)</h4>
               <p class="section-description">
-                Releases MUST contain at least one of these words (case-insensitive).
+                Releases MUST contain at least one of these words (case-insensitive, whole words
+                only).
               </p>
               <div class="tag-input-group">
                 <div
@@ -359,7 +360,8 @@
             <div class="filter-group">
               <h4><PhX /> Must Not Contain (Forbidden)</h4>
               <p class="section-description">
-                Releases containing any of these words will be rejected (case-insensitive).
+                Releases containing any of these words will be rejected (case-insensitive, whole
+                words only, so "abridged" does not match "unabridged").
               </p>
               <div class="tag-input-group">
                 <div
