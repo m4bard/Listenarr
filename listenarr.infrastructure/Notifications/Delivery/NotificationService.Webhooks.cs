@@ -15,7 +15,17 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
         /// <summary>
         /// Sends a notification to the webhook URL if configured.
         /// </summary>
-        public async Task SendNotificationAsync(string trigger, object data, string webhookUrl, List<string> enabledTriggers)
+        /// <param name="trigger">The event trigger name.</param>
+        /// <param name="data">The notification data payload.</param>
+        /// <param name="webhookUrl">The webhook URL to send to.</param>
+        /// <param name="enabledTriggers">List of enabled triggers for this webhook.</param>
+        /// <param name="webhookType">
+        /// The stored WebhookConfiguration.Type for this target, if known. When present and
+        /// recognized it selects the provider directly; a blank or unrecognized value falls back
+        /// to sniffing the URL, which is also what happens for callers (e.g. the legacy single
+        /// ApplicationSettings.WebhookUrl) that have no WebhookConfiguration to read a Type from.
+        /// </param>
+        public async Task SendNotificationAsync(string trigger, object data, string webhookUrl, List<string> enabledTriggers, string? webhookType = null)
         {
             if (string.IsNullOrWhiteSpace(webhookUrl) || !NotificationTriggers.IsEnabled(enabledTriggers, trigger))
                 return;
@@ -29,8 +39,10 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
                 return;
             }
 
+            var providerType = ResolveWebhookProviderType(webhookType, webhookUrl);
+
             // Discord-specific handling
-            if (webhookUrl.Contains("discord.com/api/webhooks", StringComparison.OrdinalIgnoreCase))
+            if (providerType == WebhookProviderType.Discord)
             {
                 try
                 {
@@ -87,7 +99,7 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
             }
 
             // NTFY-specific handling (https://docs.ntfy.sh/publish/)
-            if (webhookUrl.IndexOf("ntfy", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (providerType == WebhookProviderType.Ntfy)
             {
                 try
                 {
@@ -146,7 +158,7 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
 
             // Pushover (https://pushover.net/api)
             // Expect webhookUrl like: https://api.pushover.net/1/messages.json?token=<app_token>&user=<user_key>
-            if (webhookUrl.IndexOf("api.pushover.net/1/messages.json", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (providerType == WebhookProviderType.Pushover)
             {
                 try
                 {
@@ -213,7 +225,7 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
 
             // Telegram (https://core.telegram.org/bots/api#sendmessage)
             // Expect webhookUrl like: https://api.telegram.org/bot<token>/sendMessage?chat_id=12345
-            if (webhookUrl.IndexOf("api.telegram.org/bot", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (providerType == WebhookProviderType.Telegram)
             {
                 try
                 {
@@ -272,7 +284,7 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
 
             // Pushbullet (https://docs.pushbullet.com/#pushes)
             // Expect webhookUrl like: https://api.pushbullet.com/v2/pushes?token=<access_token>
-            if (webhookUrl.IndexOf("api.pushbullet.com/v2/pushes", StringComparison.OrdinalIgnoreCase) >= 0 || webhookUrl.StartsWith("pushbullet://", StringComparison.OrdinalIgnoreCase))
+            if (providerType == WebhookProviderType.Pushbullet)
             {
                 try
                 {
@@ -360,7 +372,7 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
 
             // Slack Incoming Webhooks (https://api.slack.com/messaging/webhooks)
             // Expect webhookUrl like: https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX
-            if (webhookUrl.IndexOf("hooks.slack.com/services", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (providerType == WebhookProviderType.Slack)
             {
                 try
                 {
