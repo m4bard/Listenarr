@@ -47,7 +47,7 @@ namespace Listenarr.Api.Features.ActivityHistory
         /// <param name="offset">Number of entries to skip for pagination.</param>
         /// <param name="sortBy">Sortable field: timestamp, eventType, outcome, or source.</param>
         /// <param name="sortDirection">Sort direction: asc or desc.</param>
-        /// <param name="eventType">Optional event-type filter.</param>
+        /// <param name="eventType">Optional event-type filter. A comma-separated list matches any of the named types.</param>
         /// <param name="outcome">Optional outcome filter.</param>
         /// <param name="from">Optional inclusive UTC start date.</param>
         /// <param name="to">Optional inclusive UTC end date.</param>
@@ -70,13 +70,22 @@ namespace Listenarr.Api.Features.ActivityHistory
             [FromQuery] string? downloadClientId = null,
             [FromQuery] string? correlationId = null)
         {
+            // A comma-separated eventType matches any of the named types, so a filter preset
+            // covering a group of them stays one request with one honest total. A single value
+            // is left exactly as it was, which is what keeps existing callers working. No event
+            // type any producer writes contains a comma.
+            var eventTypes = eventType?.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
             var page = await _history.QueryAsync(new HistoryQuery
             {
                 Limit = limit,
                 Offset = offset,
                 SortBy = sortBy,
                 SortDirection = sortDirection,
-                EventType = eventType,
+                EventType = eventTypes is { Length: 1 } ? eventTypes[0] : null,
+                EventTypes = eventTypes is { Length: > 1 } ? eventTypes : null,
                 Outcome = outcome,
                 From = from,
                 To = to,
