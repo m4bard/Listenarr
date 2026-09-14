@@ -51,7 +51,7 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
             {
                 var webhooks = await _configurationService.GetWebhookConfigurationsAsync();
                 foreach (var wh in webhooks.Where(w => w.IsEnabled && w.Triggers.Contains("Imported")))
-                    await SendNotificationAsync("Imported", new { AudiobookTitle = download.Title, Timestamp = DateTime.UtcNow }, wh.Url, wh.Triggers);
+                    await SendNotificationAsync("Imported", new { AudiobookTitle = download.Title, Timestamp = DateTime.UtcNow }, wh.Url, wh.Triggers, wh.Type);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -65,7 +65,7 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
             {
                 var webhooks = await _configurationService.GetWebhookConfigurationsAsync();
                 foreach (var wh in webhooks.Where(w => w.IsEnabled && w.Triggers.Contains("Failed")))
-                    await SendNotificationAsync("Failed", new { AudiobookTitle = download.Title, Error = download.ErrorMessage, Timestamp = DateTime.UtcNow }, wh.Url, wh.Triggers);
+                    await SendNotificationAsync("Failed", new { AudiobookTitle = download.Title, Error = download.ErrorMessage, Timestamp = DateTime.UtcNow }, wh.Url, wh.Triggers, wh.Type);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -79,7 +79,7 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
             {
                 var webhooks = await _configurationService.GetWebhookConfigurationsAsync();
                 foreach (var wh in webhooks.Where(w => w.IsEnabled && w.Triggers.Contains("System")))
-                    await SendNotificationAsync("System", new { Title = title, Message = message, Timestamp = DateTime.UtcNow }, wh.Url, wh.Triggers);
+                    await SendNotificationAsync("System", new { Title = title, Message = message, Timestamp = DateTime.UtcNow }, wh.Url, wh.Triggers, wh.Type);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

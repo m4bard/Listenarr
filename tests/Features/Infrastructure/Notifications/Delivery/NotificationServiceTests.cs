@@ -384,6 +384,136 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         }
 
         [Fact]
+        public async Task SendNotificationAsync_UsesStoredType_ForTelegram_EvenWhenUrlDoesNotMatch()
+        {
+            // A webhook configured with Type="Telegram" but hosted behind a URL that doesn't
+            // contain "api.telegram.org/bot" (e.g. a proxy/relay) must still dispatch as Telegram.
+            var trigger = "book-added";
+            var data = new { title = "Type-Driven Telegram" };
+            var webhookUrl = "https://relay.example.com/hook?chat_id=99999";
+            var enabledTriggers = new List<string> { trigger };
+
+            string? capturedJson = null;
+            var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+            using var postResponse = new HttpResponseMessage(HttpStatusCode.OK);
+            mockHttpMessageHandler
+                .Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .Callback<HttpRequestMessage, CancellationToken>(async (request, _) =>
+                {
+                    capturedJson = await request.Content!.ReadAsStringAsync();
+                })
+                .ReturnsAsync(postResponse);
+
+            var mockConfigService = new Mock<IConfigurationService>();
+            mockConfigService.Setup(x => x.GetStartupConfigAsync()).ReturnsAsync(new StartupConfig());
+
+            var service = new NotificationService(
+                new HttpClient(mockHttpMessageHandler.Object),
+                Mock.Of<ILogger<NotificationService>>(),
+                mockConfigService.Object,
+                new NotificationPayloadBuilderAdapter(),
+                Mock.Of<IRequestContextAccessor>());
+
+            await service.SendNotificationAsync(trigger, data, webhookUrl, enabledTriggers, webhookType: "Telegram");
+
+            Assert.NotNull(capturedJson);
+            var posted = JsonNode.Parse(capturedJson!)!.AsObject();
+            Assert.Equal("99999", posted["chat_id"]?.ToString());
+            Assert.Equal("Markdown", posted["parse_mode"]?.ToString());
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_UsesStoredType_ForSlack_EvenWhenUrlDoesNotMatch()
+        {
+            // Same idea for Slack: Type drives dispatch, not a hooks.slack.com URL match.
+            var trigger = "book-added";
+            var data = new { title = "Type-Driven Slack" };
+            var webhookUrl = "https://relay.example.com/hook";
+            var enabledTriggers = new List<string> { trigger };
+
+            string? capturedJson = null;
+            var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+            using var postResponse = new HttpResponseMessage(HttpStatusCode.OK);
+            mockHttpMessageHandler
+                .Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .Callback<HttpRequestMessage, CancellationToken>(async (request, _) =>
+                {
+                    capturedJson = await request.Content!.ReadAsStringAsync();
+                })
+                .ReturnsAsync(postResponse);
+
+            var mockConfigService = new Mock<IConfigurationService>();
+            mockConfigService.Setup(x => x.GetStartupConfigAsync()).ReturnsAsync(new StartupConfig());
+
+            var service = new NotificationService(
+                new HttpClient(mockHttpMessageHandler.Object),
+                Mock.Of<ILogger<NotificationService>>(),
+                mockConfigService.Object,
+                new NotificationPayloadBuilderAdapter(),
+                Mock.Of<IRequestContextAccessor>());
+
+            await service.SendNotificationAsync(trigger, data, webhookUrl, enabledTriggers, webhookType: "Slack");
+
+            Assert.NotNull(capturedJson);
+            var posted = JsonNode.Parse(capturedJson!)!.AsObject();
+            Assert.NotNull(posted["text"]);
+            Assert.False(posted.ContainsKey("chat_id"), "Slack payload should not be shaped like a Telegram payload.");
+            Assert.False(posted.ContainsKey("embeds"), "Slack payload should not be shaped like a Discord/generic payload.");
+        }
+
+        [Fact]
+        public async Task SendNotificationAsync_FallsBackToUrlSniffing_WhenTypeIsBlank()
+        {
+            // Control: a legacy webhook with no Type stored (blank/omitted) must still dispatch
+            // correctly by sniffing the URL, exactly as before Type was read at all.
+            var trigger = "book-added";
+            var data = new { title = "Legacy Untyped Slack Webhook" };
+            var webhookUrl = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX";
+            var enabledTriggers = new List<string> { trigger };
+
+            string? capturedJson = null;
+            var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+            using var postResponse = new HttpResponseMessage(HttpStatusCode.OK);
+            mockHttpMessageHandler
+                .Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .Callback<HttpRequestMessage, CancellationToken>(async (request, _) =>
+                {
+                    capturedJson = await request.Content!.ReadAsStringAsync();
+                })
+                .ReturnsAsync(postResponse);
+
+            var mockConfigService = new Mock<IConfigurationService>();
+            mockConfigService.Setup(x => x.GetStartupConfigAsync()).ReturnsAsync(new StartupConfig());
+
+            var service = new NotificationService(
+                new HttpClient(mockHttpMessageHandler.Object),
+                Mock.Of<ILogger<NotificationService>>(),
+                mockConfigService.Object,
+                new NotificationPayloadBuilderAdapter(),
+                Mock.Of<IRequestContextAccessor>());
+
+            // No webhookType argument passed at all - simulates a stored webhook with an empty Type.
+            await service.SendNotificationAsync(trigger, data, webhookUrl, enabledTriggers);
+
+            Assert.NotNull(capturedJson);
+            var posted = JsonNode.Parse(capturedJson!)!.AsObject();
+            Assert.NotNull(posted["text"]);
+            Assert.False(posted.ContainsKey("chat_id"), "URL-sniffed dispatch for a slack URL should still produce the Slack shape.");
+        }
+
+        [Fact]
         public async Task SendNotificationAsync_SendsNothing_WhenNotificationsDisabled()
         {
             var trigger = "book-added";
