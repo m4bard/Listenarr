@@ -29,6 +29,15 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         int AudiobookId,
         string? PrimaryAuthor,
         DateTime? LastMetadataRefreshAt);
+    /// <summary>
+    /// Counts from one re-derivation pass over the normalized author-name columns.
+    /// Skipped rows are those whose re-derived key is already held by another row in the same
+    /// uniqueness slot; they keep the key they have rather than failing the pass.
+    /// </summary>
+    public sealed record AuthorNameKeyRederivationResult(
+        int AuthorCacheEntriesCorrected,
+        int MonitoredAuthorsCorrected,
+        int Skipped);
 
     public interface IAudiobookRepository
     {
@@ -79,6 +88,8 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, CancellationToken ct = default);
         Task<List<Audiobook>> GetMonitoredAudiobooksForSearchAsync(DateTime cutoff, CancellationToken ct = default);
         Task NormalizeJsonColumnsAsync(CancellationToken ct = default);
+        Task<AuthorNameKeyRederivationResult> RederiveAuthorNameKeysAsync(CancellationToken ct = default);
+        Task<int> CanonicalizeStoredAuthorNamesAsync(CancellationToken ct = default);
         Task<Audiobook?> GetByAsinAsync(string asin);
         Task<Audiobook?> GetByIsbnAsync(string isbn);
         Task<Audiobook?> GetByIdAsync(int id);
