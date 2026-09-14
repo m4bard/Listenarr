@@ -87,7 +87,7 @@ public sealed class IndexerStatusService : IIndexerStatusService
         var blocked = new HashSet<int>();
         foreach (var indexer in indexers)
         {
-            if (indexer.DisabledTill is { } till && till > now)
+            if (IsBlocked(indexer, now))
             {
                 blocked.Add(indexer.Id);
             }
@@ -95,6 +95,22 @@ public sealed class IndexerStatusService : IIndexerStatusService
 
         return blocked;
     }
+
+    public async Task<bool> AnyEnabledIndexerBlockedAsync(bool isAutomaticSearch, CancellationToken ct = default)
+    {
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var indexers = await _indexerRepository.GetAllAsync(ct);
+
+        // Only the indexers this kind of search would have asked. An interactive-only indexer in
+        // cooldown says nothing about whether an automatic sweep was complete.
+        return indexers.Any(i =>
+            i.IsEnabled
+            && (isAutomaticSearch ? i.EnableAutomaticSearch : i.EnableInteractiveSearch)
+            && IsBlocked(i, now));
+    }
+
+    private static bool IsBlocked(Indexer indexer, DateTime now) =>
+        indexer.DisabledTill is { } till && till > now;
 
     public async Task<IndexerBackoffState> RecordAsync(
         Indexer indexer,
