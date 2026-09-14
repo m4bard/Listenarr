@@ -74,7 +74,10 @@ namespace Listenarr.Api.Features.Metadata
                 }
             }
 
-            return (candidateAsins.FirstOrDefault(), null);
+            // No candidate produced a cached image, so the only ASIN worth handing back is the one
+            // the caller already had. Returning a probed candidate here made a failed cache lookup
+            // into an identity: the author lookup seeds its resolved ASIN from this and persists it.
+            return (string.IsNullOrWhiteSpace(hintedAsin) ? null : hintedAsin.Trim(), null);
         }
 
         public async Task<string?> ResolveCachedImagePathAsync(string? asin)
