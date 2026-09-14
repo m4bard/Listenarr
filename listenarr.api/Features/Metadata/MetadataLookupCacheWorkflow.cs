@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-
+using Listenarr.Domain.Common;
 
 namespace Listenarr.Api.Features.Metadata
 {
@@ -120,9 +120,17 @@ namespace Listenarr.Api.Features.Metadata
 
             try
             {
-                var entry = existingEntry ?? new AuthorCacheEntry();
+                // Never rename the resolved row in place. It may have been resolved by an ASIN,
+                // and the mutation would reach the database through the upsert even though the
+                // row came back untracked. A fresh entry lets the upsert decide which row this
+                // write lands on.
+                var normalizedCacheKey = MetadataCacheKeys.NormalizeAuthorCacheKey(normalizedName);
+                var writable = existingEntry != null && StringUtils.MatchesAuthorKey(
+                    existingEntry.AuthorNameNormalized, existingEntry.AuthorName, normalizedCacheKey);
+
+                var entry = writable ? existingEntry! : new AuthorCacheEntry();
                 entry.AuthorName = response.Name;
-                entry.AuthorNameNormalized = MetadataCacheKeys.NormalizeAuthorCacheKey(normalizedName);
+                entry.AuthorNameNormalized = normalizedCacheKey;
                 entry.AuthorAsin = response.Asin;
                 entry.Region = AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
                 entry.ImageUrl = response.Image;
