@@ -250,23 +250,6 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 .ToList();
         }
 
-        public static string NormalizeAuthorCacheKey(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return string.Empty;
-            }
-
-            var cleaned = new string(value
-                .Where(character => char.IsLetterOrDigit(character) || char.IsWhiteSpace(character))
-                .ToArray());
-            var parts = cleaned.Split(
-                new[] { ' ', '\t', '\n', '\r' },
-                StringSplitOptions.RemoveEmptyEntries);
-
-            return string.Join(' ', parts).ToLowerInvariant();
-        }
-
         public static string NormalizeRegion(string? region)
         {
             return AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
