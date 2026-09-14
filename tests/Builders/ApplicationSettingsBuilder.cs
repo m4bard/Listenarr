@@ -145,6 +145,30 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public ApplicationSettingsBuilder WithoutAmazonSearch()
+        {
+            _applicationSettings.EnableAmazonSearch = false;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithoutAudibleSearch()
+        {
+            _applicationSettings.EnableAudibleSearch = false;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithNotificationsEnabled()
+        {
+            _applicationSettings.EnableNotifications = true;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithoutNotificationsEnabled()
+        {
+            _applicationSettings.EnableNotifications = false;
+            return this;
+        }
+
         public ApplicationSettings Build()
         {
             _applicationSettings.ImportBlacklistExtensions = _importBlacklistExtensions;
