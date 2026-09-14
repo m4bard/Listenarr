@@ -90,7 +90,7 @@ namespace Listenarr.Api.Features.Metadata
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Failed to resolve cached author image path for ASIN {Asin}", asin);
+                _logger.LogWarning(ex, "Failed to resolve cached author image path for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
         }
