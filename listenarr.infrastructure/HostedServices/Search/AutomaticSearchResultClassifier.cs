@@ -22,17 +22,16 @@ namespace Listenarr.Infrastructure.HostedServices.Search
         }
 
         /// <summary>
-        /// Builds the indexer query for the automatic search sweep.
+        /// The ordered query forms for an audiobook the sweep is trying to find.
         /// </summary>
         /// <remarks>
-        /// The query is composed by <see cref="AudiobookSearchQueryBuilder"/> rather than
-        /// here. This path used to append the series name unconditionally, repeating text
-        /// the title already carried, and it disagreed with the download path about what
-        /// belongs in a query at all.
+        /// The series used to be appended to the one query this method produced, which narrowed
+        /// every sweep query by a term the indexer's own title may well not carry. It is a rung of
+        /// its own in the plan now, reached only when the title forms come back empty.
         /// </remarks>
-        public string BuildSearchQuery(Audiobook audiobook)
+        public SearchQueryPlan BuildSearchPlan(Audiobook audiobook)
         {
-            return AudiobookSearchQueryBuilder.Build(audiobook);
+            return AudiobookSearchQueryBuilder.BuildPlan(audiobook);
         }
 
         public bool IsTorrentResult(SearchResult result)
