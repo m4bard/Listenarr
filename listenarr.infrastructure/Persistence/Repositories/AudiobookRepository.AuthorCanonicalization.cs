@@ -205,6 +205,13 @@ public partial class AudiobookRepository
     /// Maps (re-derived normalized name, region) to the cache row's display spelling. Keyed on a
     /// freshly derived key rather than the stored column so the map is correct even if the
     /// re-derivation pass has not run against this database yet.
+    /// The re-derivation is also what keeps this pass safe against a cache row that was renamed by
+    /// an ASIN collision under an older build: such a row's stored key can name one author while
+    /// its display name names another, and joining on the stored column would offer the wrong name
+    /// to every book crediting the first. Deriving the key from the name the row would hand out
+    /// means a row can only ever offer its spelling to books crediting the author it names.
+    /// CanonicalizeAuthorList's spelling-variant check catches the same case independently, and
+    /// both are kept: either alone suffices, which is the point.
     /// </summary>
     private async Task<Dictionary<(string NormalizedName, string Region), string>>
         BuildCanonicalAuthorNameMapAsync(CancellationToken ct)
