@@ -18,6 +18,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Listenarr.Application.Search.Scoring;
 
 namespace Listenarr.Infrastructure.HostedServices.Search
 {
@@ -289,7 +290,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             {
                 _logger.LogDebug(ex, "Failed to broadcast scored search results for audiobook {Id}", audiobook.Id);
             }
-            foreach (var scoredResult in scoredResults.OrderByDescending(s => s.TotalScore))
+            foreach (var scoredResult in scoredResults.OrderByDescending(s => s, QualityScoreComparer.Instance))
             {
                 var status = scoredResult.IsRejected ? "REJECTED" : (scoredResult.TotalScore > 0 ? "ACCEPTABLE" : "LOW SCORE");
                 _logger.LogInformation("  [{Status}] Score: {Score} | Title: {Title} | Source: {Source} | Size: {Size}MB | Seeders: {Seeders} | Quality: {Quality}",
@@ -314,9 +315,12 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             var selectableResults = await BlockedReleaseFilter.ExcludeAsync(
                 blocklistService, audiobook.Id, scoredResults, _logger);
 
+            // Rank by TotalScore (quality/format/language/seeders/age); indexer priority only
+            // breaks an exact tie, so it can never make a worse release win. See
+            // QualityScoreComparer.
             var topResult = selectableResults
                 .Where(s => !s.IsRejected) // Only non-rejected results
-                .OrderByDescending(s => s.TotalScore)
+                .OrderByDescending(s => s, QualityScoreComparer.Instance)
                 .FirstOrDefault(); // Pick only the top scoring result
 
             if (topResult == null)
