@@ -17,7 +17,7 @@
  */
 import type { AudiobookSeriesMembership } from '@/types'
 import { seriesPositionSortKey } from '@/utils/seriesUtils'
-import { normalizeCollectionText } from '@/utils/textUtils'
+import { normalizeCollectionText } from '@/utils/collectionText'
 
 /**
  * The part of a collection row the series section needs. Library rows carry series
