@@ -231,14 +231,14 @@
               <FormRow
                 label="Priority"
                 labelFor="priority"
-                help="Higher priority indexers are searched first (1-100)"
+                help="Lower numbers are searched first and used as a tie-break when results are otherwise equal (1-50)"
               >
                 <input
                   id="priority"
                   v-model.number="formData.priority"
                   type="number"
                   min="1"
-                  max="100"
+                  max="50"
                 />
               </FormRow>
 
