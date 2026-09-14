@@ -133,7 +133,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             historyMock.Verify(
                 h => h.RecordGrabbedAsync(
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                    It.IsAny<DownloadProtocol>(), It.IsAny<Guid?>()),
+                    It.IsAny<DownloadProtocol>(), It.IsAny<int?>()),
                 Times.Never);
             notificationMock.VerifyNoOtherCalls();
         }
@@ -224,7 +224,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             historyMock.Verify(
                 h => h.RecordGrabbedAsync(
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                    It.IsAny<DownloadProtocol>(), It.IsAny<Guid?>()),
+                    It.IsAny<DownloadProtocol>(), It.IsAny<int?>()),
                 Times.Never);
             notificationMock.VerifyNoOtherCalls();
         }
