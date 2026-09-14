@@ -136,3 +136,28 @@ export function seriesCoverMosaicStyle(index: number, count: number) {
     borderRadius: '12px',
   }
 }
+
+/**
+ * Whether a series position covers more than one book, which is what marks an omnibus or
+ * box set. Audible gives such an edition a position like "1-4" and the value is carried as
+ * text all the way through, so this is the reliable signal for a library record.
+ *
+ * Mirrors ReleaseShapeDetector.IsBundleSeriesNumber on the backend, down to the cases that
+ * make it awkward: "1.5" is a novella between two books, "2, Dramatized" is a real Audible
+ * position for one book, and "20,000" is one grouped number rather than a list of two.
+ */
+export function isBundleSeriesNumber(seriesNumber?: string | null): boolean {
+  const trimmed = (seriesNumber || '').trim()
+  if (!trimmed) return false
+
+  // One number, however written, is one book.
+  if (/^\d{1,3}(,\d{3})*(\.\d+)?$/.test(trimmed)) return false
+
+  if (/\d+\s*[-\u2010-\u2015]\s*\d+/.test(trimmed)) return true
+
+  const numericParts = trimmed
+    .split(/[,;&+]/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0 && /^\d+(\.\d+)?$/.test(part))
+  return numericParts.length >= 2
+}
