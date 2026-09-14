@@ -25,6 +25,9 @@ import type {
   Audiobook,
   AudiobookUpdateRequest,
   History,
+  HistoryDetails,
+  HistoryPage,
+  HistoryQueryParams,
   Indexer,
   QueueItem,
   QueueSnapshot,
@@ -1759,25 +1762,29 @@ class ApiService {
   }
 
   // History API
-  async getHistory(
-    limit?: number,
-    offset?: number,
-  ): Promise<{
-    history: History[]
-    total: number
-    limit: number
-    offset: number
-  }> {
-    const params = new URLSearchParams()
-    if (limit) params.append('limit', limit.toString())
-    if (offset) params.append('offset', offset.toString())
-    const queryString = params.toString()
-    return this.request<{
-      history: History[]
-      total: number
-      limit: number
-      offset: number
-    }>(`/history${queryString ? '?' + queryString : ''}`)
+  /**
+   * Query history. The endpoint takes twelve parameters and this used to send two of them,
+   * so no page built on it could filter, sort or bound a date range. Undefined values are
+   * left off the query string rather than sent empty, because the server treats an empty
+   * string as a filter rather than as no filter.
+   */
+  async getHistory(params: HistoryQueryParams = {}): Promise<HistoryPage> {
+    const query = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === null || value === '') continue
+      query.append(key, String(value))
+    }
+    const queryString = query.toString()
+    return this.request<HistoryPage>(`/history${queryString ? '?' + queryString : ''}`)
+  }
+
+  /**
+   * One history entry plus every other attempt sharing its correlation id. This is the whole
+   * chain behind a download rather than one row's opaque data blob, which is what makes a
+   * per-row expansion worth opening.
+   */
+  async getHistoryDetails(id: number): Promise<HistoryDetails> {
+    return this.request<HistoryDetails>(`/history/${id}/details`)
   }
 
   async getHistoryByAudiobookId(audiobookId: number): Promise<History[]> {
@@ -2305,6 +2312,10 @@ export const getSystemInfo = () => apiService.getSystemInfo()
 export const getStorageInfo = () => apiService.getStorageInfo()
 export const getServiceHealth = () => apiService.getServiceHealth()
 export const getLogs = (limit?: number) => apiService.getLogs(limit)
+export const getHistory = (params?: HistoryQueryParams) => apiService.getHistory(params)
+export const getHistoryDetails = (id: number) => apiService.getHistoryDetails(id)
+export const deleteHistoryEntry = (id: number) => apiService.deleteHistoryEntry(id)
+export const clearAllHistory = () => apiService.clearAllHistory()
 export const downloadLogs = () => apiService.downloadLogs()
 
 // Export individual quality profile functions for convenience
