@@ -246,7 +246,7 @@ namespace Listenarr.Application.Downloads.Import
                             catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
                             {
                                 results.Add(ImportResult.Exception(exception, file));
-                                logger.LogWarning(exception, $"Failed companion-file import {file}");
+                                logger.LogWarning(exception, "Failed companion-file import {File}", LogRedaction.SanitizeFilePath(file));
                             }
                             continue;
                         }
@@ -470,7 +470,7 @@ namespace Listenarr.Application.Downloads.Import
                         catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
                         {
                             results.Add(ImportResult.Exception(exception, file));
-                            logger.LogWarning(exception, $"ImportFilesFromDirectory: Failed processing file in directory import: {file}");
+                            logger.LogWarning(exception, "ImportFilesFromDirectory: Failed processing file in directory import: {File}", LogRedaction.SanitizeFilePath(file));
                         }
                     }
                 }
