@@ -166,7 +166,8 @@ public sealed class IndexerSearchWorkflowOutcomeTests : BaseTests
             Indexer indexer,
             string query,
             string? category = null,
-            SearchRequest? request = null)
+            SearchRequest? request = null,
+            CancellationToken ct = default)
         {
             lock (QueriedIndexers)
             {
