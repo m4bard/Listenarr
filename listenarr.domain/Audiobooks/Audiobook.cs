@@ -97,8 +97,11 @@ namespace Listenarr.Domain.Audiobooks
                 Series = Series,
                 // Prefer audiobook's publish year when available
                 Year = int.TryParse(PublishYear, out var py) ? py : (int?)null,
-                // Series position / number
+                // Series position / number. SeriesNumber is a free-text field on the metadata
+                // side and is not always a lone number, so keep the raw text alongside the
+                // parsed decimal rather than losing ranges like "1-4".
                 SeriesPosition = !string.IsNullOrWhiteSpace(SeriesNumber) && decimal.TryParse(SeriesNumber, out var sp) ? sp : (decimal?)null,
+                SeriesPositionText = !string.IsNullOrWhiteSpace(SeriesNumber) ? SeriesNumber : null,
                 // Quality string from audiobook record
                 // Map into Bitrate/Format heuristically if useful; for now store textual quality
                 // We'll put it into AdditionalData so FileNamingService can use Format/Bitrate/Quality

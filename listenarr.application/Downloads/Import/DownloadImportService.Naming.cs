@@ -2,7 +2,7 @@ namespace Listenarr.Application.Downloads.Import;
 
 public partial class DownloadImportService
 {
-    private static AudioMetadata BuildNamingMetadata(
+    internal static AudioMetadata BuildNamingMetadata(
         Audiobook? audiobook,
         AudioMetadata? extractedMetadata,
         string fallbackTitle)
@@ -54,6 +54,9 @@ public partial class DownloadImportService
                     && decimal.TryParse(audiobook.SeriesNumber, out var seriesPosition)
                         ? seriesPosition
                         : extractedMetadata?.SeriesPosition,
+                SeriesPositionText = FirstNonEmpty(
+                    audiobook.SeriesNumber,
+                    extractedMetadata?.SeriesPositionText),
                 Year = !string.IsNullOrWhiteSpace(audiobook.PublishYear)
                     && int.TryParse(audiobook.PublishYear, out var year)
                         ? year
@@ -94,6 +97,17 @@ public partial class DownloadImportService
             AlbumArtist = "Unknown Author"
         };
     }
+
+    /// <summary>
+    /// The value behind the {SeriesNumber} naming token: the parsed position first, then the
+    /// series number exactly as the metadata source stated it so a range like "1-4" is not
+    /// lost, then the chapter number. Same order as FileNamingService.BuildVariables.
+    /// </summary>
+    internal static string SeriesNumberToken(AudioMetadata metadata, int? chapterNumber) =>
+        FirstNonEmpty(
+            metadata.SeriesPosition?.ToString(),
+            metadata.SeriesPositionText,
+            chapterNumber?.ToString());
 
     private static string ChooseAuthorFromMetadata(AudioMetadata? metadata)
     {
