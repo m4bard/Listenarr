@@ -86,6 +86,20 @@
         title="Enable OpenLibrary Searching"
         description="Include OpenLibrary title augmentation and lookups when performing intelligent searches."
       />
+
+      <CheckboxCard
+        :modelValue="settings.enableAmazonSearch"
+        @update:modelValue="updateEnableAmazonSearch"
+        title="Enable Amazon (ASIN) Searching"
+        description="Look up books directly by their Amazon-assigned ASIN when performing intelligent searches."
+      />
+
+      <CheckboxCard
+        :modelValue="settings.enableAudibleSearch"
+        @update:modelValue="updateEnableAudibleSearch"
+        title="Enable Audible Searching"
+        description="Try Audible first when performing intelligent searches."
+      />
     </div>
   </div>
 </template>
@@ -115,6 +129,14 @@ function updateField(field: keyof ApplicationSettings, value: unknown) {
 
 function updateEnableOpenLibrarySearch(value: boolean) {
   updateField('enableOpenLibrarySearch', value)
+}
+
+function updateEnableAmazonSearch(value: boolean) {
+  updateField('enableAmazonSearch', value)
+}
+
+function updateEnableAudibleSearch(value: boolean) {
+  updateField('enableAudibleSearch', value)
 }
 
 const defaultSearchRegion = computed(() =>
