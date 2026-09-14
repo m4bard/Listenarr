@@ -409,6 +409,72 @@ public sealed class IndexerStatusServiceTests : BaseTests
     }
 
     [Fact]
+    [Trait("Method", "RecordAsync")]
+    [Trait("Scenario", "BroadcastOnTransition")]
+    public async Task RecordAsync_BlockingAnIndexer_NudgesTheSettingsViewToRefresh()
+    {
+        // Given
+        var harness = new Harness();
+
+        // When
+        await harness.Service.RecordAsync(Indexer(), Timeout());
+
+        // Then: a mechanism that silently mutes indexers reproduces the defect that let the
+        // original incident run a full day with nobody watching.
+        harness.Broadcaster.Verify(
+            b => b.BroadcastAsync(
+                RealtimeHubTarget.Settings,
+                "IndexersUpdated",
+                It.IsAny<object>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    [Trait("Method", "RecordAsync")]
+    [Trait("Scenario", "NoBroadcastWithoutATransition")]
+    public async Task RecordAsync_HealthyIndexerAnswering_BroadcastsNothing()
+    {
+        // Given: the control. A broadcast per healthy answer would be one per book per indexer
+        // across a whole sweep.
+        var harness = new Harness();
+
+        // When
+        await harness.Service.RecordAsync(Indexer(), Hit());
+
+        // Then
+        harness.Broadcaster.Verify(
+            b => b.BroadcastAsync(
+                It.IsAny<RealtimeHubTarget>(),
+                It.IsAny<string>(),
+                It.IsAny<object>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    [Trait("Method", "RecordAsync")]
+    [Trait("Scenario", "BroadcastFails")]
+    public async Task RecordAsync_BroadcastThrows_StillReturnsTheNewState()
+    {
+        // Given
+        var harness = new Harness();
+        harness.Broadcaster
+            .Setup(b => b.BroadcastAsync(
+                It.IsAny<RealtimeHubTarget>(),
+                It.IsAny<string>(),
+                It.IsAny<object>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("no clients"));
+
+        // When
+        var state = await harness.Service.RecordAsync(Indexer(), Timeout());
+
+        // Then
+        Assert.Equal(1, state.EscalationLevel);
+    }
+
+    [Fact]
     [Trait("Method", "GetBlockedIndexerIdsAsync")]
     [Trait("Scenario", "ExpiryBoundary")]
     public async Task GetBlockedIndexerIdsAsync_ReturnsOnlyIndexersWhoseCooldownHasNotExpired()
@@ -509,8 +575,11 @@ public sealed class IndexerStatusServiceTests : BaseTests
                 Repository,
                 new IndexerBackoffStartupWindow(new MutableTimeProvider(startedAt)),
                 Clock,
-                NullLogger<IndexerStatusService>.Instance);
+                NullLogger<IndexerStatusService>.Instance,
+                Broadcaster.Object);
         }
+
+        public Mock<IHubBroadcaster> Broadcaster { get; } = new();
 
         public MutableTimeProvider Clock { get; }
 
