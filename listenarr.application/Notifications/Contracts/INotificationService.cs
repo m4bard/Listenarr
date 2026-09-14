@@ -40,6 +40,11 @@ namespace Listenarr.Application.Notifications.Contracts
         /// <param name="data">The notification data payload</param>
         /// <param name="webhookUrl">The webhook URL to send to</param>
         /// <param name="enabledTriggers">List of enabled triggers for this webhook</param>
-        Task SendNotificationAsync(string trigger, object data, string webhookUrl, List<string> enabledTriggers);
+        /// <param name="webhookType">
+        /// The stored WebhookConfiguration.Type for this target, if known. Selects the provider
+        /// directly when recognized; falls back to sniffing the URL when omitted, blank, or
+        /// unrecognized.
+        /// </param>
+        Task SendNotificationAsync(string trigger, object data, string webhookUrl, List<string> enabledTriggers, string? webhookType = null);
     }
 }
