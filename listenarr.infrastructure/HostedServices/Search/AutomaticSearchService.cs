@@ -18,6 +18,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Listenarr.Application.Search.Scoring;
 
 namespace Listenarr.Infrastructure.HostedServices.Search
 {
@@ -353,7 +354,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             {
                 _logger.LogDebug(ex, "Failed to broadcast scored search results for audiobook {Id}", audiobook.Id);
             }
-            foreach (var scoredResult in scoredResults.OrderByDescending(s => s.TotalScore))
+            foreach (var scoredResult in scoredResults.OrderByDescending(s => s, QualityScoreComparer.Instance))
             {
                 var status = scoredResult.IsRejected ? "REJECTED" : (scoredResult.TotalScore > 0 ? "ACCEPTABLE" : "LOW SCORE");
                 _logger.LogInformation("  [{Status}] Score: {Score} | Title: {Title} | Source: {Source} | Size: {Size}MB | Seeders: {Seeders} | Quality: {Quality}",
