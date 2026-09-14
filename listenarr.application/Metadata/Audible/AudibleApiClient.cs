@@ -23,6 +23,18 @@ using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Metadata.Audible
 {
+    /// <summary>
+    /// What happened to a request, for callers that need to tell a negative answer from no answer.
+    /// A 404 says the resource is not there; anything else that failed says only that Audible did
+    /// not answer, which is not evidence about the resource.
+    /// </summary>
+    internal enum AudibleRequestOutcome
+    {
+        Success,
+        NotFound,
+        Unreachable
+    }
+
     internal sealed class AudibleApiClient
     {
         private const string BrowserAcceptHeader = "application/json, text/plain, */*";
@@ -60,6 +72,21 @@ namespace Listenarr.Application.Metadata.Audible
         }
 
         public async Task<JsonDocument?> GetJsonDocumentAsync(
+            string url,
+            string region,
+            bool includeLocaleHeaders,
+            int timeoutSeconds)
+        {
+            var (_, document) = await GetJsonDocumentWithOutcomeAsync(url, region, includeLocaleHeaders, timeoutSeconds);
+            return document;
+        }
+
+        /// <summary>
+        /// As GetJsonDocumentAsync, but says why there is no document. Use it where the difference
+        /// matters: a 404 is an answer about the resource, while a timeout or a 5xx is an answer
+        /// about Audible, and treating the second as the first makes an outage look like evidence.
+        /// </summary>
+        public async Task<(AudibleRequestOutcome Outcome, JsonDocument? Document)> GetJsonDocumentWithOutcomeAsync(
             string url,
             string region,
             bool includeLocaleHeaders,
@@ -126,7 +153,7 @@ namespace Listenarr.Application.Metadata.Audible
                 }
 
                 await using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
-                return await JsonDocument.ParseAsync(stream, cancellationToken: cts.Token);
+                return (AudibleRequestOutcome.Success, await JsonDocument.ParseAsync(stream, cancellationToken: cts.Token));
             }
             catch (TaskCanceledException ex)
             {
@@ -153,7 +180,7 @@ namespace Listenarr.Application.Metadata.Audible
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Error performing Audible API request for URL: {Url}", url);
-                return null;
+                return (AudibleRequestOutcome.Unreachable, null);
             }
         }
 
