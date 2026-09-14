@@ -241,7 +241,7 @@ namespace Listenarr.Api.Features.Search
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Audible metadata lookup failed for ASIN {Asin} in advanced search; falling back to unified search", req.Asin);
+                _logger.LogWarning(ex, "Audible metadata lookup failed for ASIN {Asin} in advanced search; falling back to unified search", LogRedaction.SanitizeText(req.Asin));
             }
 
             return null;
@@ -305,7 +305,7 @@ namespace Listenarr.Api.Features.Search
                                 .ToList();
                         }
 
-                        _logger.LogInformation("Series ASIN {SeriesAsin} returned {Count} books (after language filter)", seriesAsin, books.Count);
+                        _logger.LogInformation("Series ASIN {SeriesAsin} returned {Count} books (after language filter)", LogRedaction.SanitizeText(seriesAsin), books.Count);
 
                         var seriesResults = new List<object>();
                         foreach (var book in books)
@@ -316,7 +316,7 @@ namespace Listenarr.Api.Features.Search
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                             {
-                                _logger.LogWarning(ex, "Failed converting series book to output for ASIN {Asin}", book.Asin);
+                                _logger.LogWarning(ex, "Failed converting series book to output for ASIN {Asin}", LogRedaction.SanitizeText(book.Asin));
                             }
                         }
 
@@ -327,7 +327,7 @@ namespace Listenarr.Api.Features.Search
                     }
                     else
                     {
-                        _logger.LogInformation("Series ASIN {SeriesAsin} returned no books", seriesAsin);
+                        _logger.LogInformation("Series ASIN {SeriesAsin} returned no books", LogRedaction.SanitizeText(seriesAsin));
                     }
                 }
             }
