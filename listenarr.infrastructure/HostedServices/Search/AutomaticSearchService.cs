@@ -259,8 +259,11 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 return new AudiobookSearchOutcome(0, indexersSkipped);
             }
 
-            // Score results against quality profile
-            var scoredResults = await qualityProfileService.ScoreSearchResults(searchResults, audiobook.QualityProfile);
+            // Score results against quality profile. The bundle flag comes from the library
+            // record, not from the release: indexer results carry no series position at all,
+            // and an omnibus record is the one case where a bundle release is the right one.
+            var targetIsBundle = ReleaseShapeDetector.IsBundleSeriesNumber(audiobook.SeriesNumber);
+            var scoredResults = await qualityProfileService.ScoreSearchResults(searchResults, audiobook.QualityProfile, targetIsBundle);
 
             // Log all scored results for debugging
             _logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", scoredResults.Count, audiobook.Title);
