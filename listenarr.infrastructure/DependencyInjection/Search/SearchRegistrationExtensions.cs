@@ -9,6 +9,7 @@
  */
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Search;
 
@@ -21,6 +22,12 @@ internal static class SearchRegistrationExtensions
         services.AddScoped<IIndexerSearchProvider, MyAnonamouseSearchProvider>();
         services.AddScoped<IMyAnonamouseConnectionTester, MyAnonamouseConnectionTester>();
         services.AddScoped<IndexerAdditionalSettingsParser>();
+
+        // The startup window has to time from process start and the status service is scoped, so
+        // the window is a singleton of its own rather than a field on the service.
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IndexerBackoffStartupWindow>();
+        services.AddScoped<IIndexerStatusService, IndexerStatusService>();
         services.AddScoped<IndexerSearchWorkflow>();
         services.AddScoped<MetadataSourceCatalog>();
         services.AddScoped<SearchFinalDispositionLogger>();
