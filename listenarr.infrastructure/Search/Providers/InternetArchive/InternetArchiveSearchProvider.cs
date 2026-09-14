@@ -45,7 +45,7 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
         _logger = logger;
     }
 
-    public async Task<List<IndexerSearchResult>> SearchAsync(
+    public async Task<IndexerQueryObservation> SearchAsync(
         Indexer indexer,
         string query,
         string? category = null,
@@ -92,12 +92,16 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
 
             if (queryPlan.Queries.Count == 0)
             {
-                return new List<IndexerSearchResult>();
+                return IndexerQueryObservation.NoMatch(IndexerQueryReason.None, query);
             }
 
             var applicationSettings = await _configurationService.GetApplicationSettingsAsync();
             var processedIdentifiers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var searchResults = new List<IndexerSearchResult>();
+            var answeredAtLeastOnce = false;
+            var readableVariants = 0;
+            var unreadableVariants = 0;
+            string? lastFailureDetail = null;
 
             var queryIndex = 0;
             foreach (var searchQuery in queryPlan.Queries)
@@ -119,32 +123,68 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Internet Archive returned status {Status}", response.StatusCode);
+                    lastFailureDetail = IndexerQueryFailureClassifier.Describe(response.StatusCode);
                     continue;
                 }
 
+                answeredAtLeastOnce = true;
                 var jsonResponse = await response.Content.ReadAsStringAsync();
                 _logger.LogDebug("Internet Archive response length: {Length}", jsonResponse.Length);
 
-                var queryResults = await ParseInternetArchiveSearchResponse(
+                var page = await ParseInternetArchiveSearchResponse(
                     jsonResponse,
                     indexer,
                     applicationSettings.ExtractArchives,
                     processedIdentifiers,
                     MaxItemsToProcess - processedIdentifiers.Count);
-                searchResults.AddRange(queryResults);
+                unreadableVariants += page.Unreadable ? 1 : 0;
+                readableVariants += page.Unreadable ? 0 : 1;
+                searchResults.AddRange(page.Results);
             }
 
             _logger.LogInformation("Internet Archive returned {Count} results", searchResults.Count);
-            return searchResults;
+
+            // Every query variant failing at the transport is not the archive saying it has nothing.
+            if (!answeredAtLeastOnce && lastFailureDetail != null)
+            {
+                return IndexerQueryObservation.Unavailable(IndexerQueryReason.HttpStatus, query, lastFailureDetail);
+            }
+
+            // Nor is a body we could never read.
+            if (searchResults.Count == 0 && unreadableVariants > 0 && readableVariants == 0)
+            {
+                return IndexerQueryObservation.Unreadable(IndexerQueryReason.MalformedXml, query);
+            }
+
+            return IndexerQueryObservation.FromResults(searchResults, query);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
+        {
+            // HttpClient reports its own request timeout as a cancellation. Left uncaught it escapes the
+            // per-indexer containment upstream and fails the whole fan-out.
+            _logger.LogWarning(ex, "Internet Archive indexer {Name} did not answer in time", indexer.Name);
+            return IndexerQueryObservation.Unavailable(
+                IndexerQueryFailureClassifier.Classify(ex),
+                query,
+                IndexerQueryFailureClassifier.Describe(ex));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error searching Internet Archive indexer {Name}", indexer.Name);
-            return new List<IndexerSearchResult>();
+            return IndexerQueryObservation.Unavailable(
+                IndexerQueryFailureClassifier.Classify(ex),
+                query,
+                IndexerQueryFailureClassifier.Describe(ex));
         }
     }
 
-    private async Task<List<IndexerSearchResult>> ParseInternetArchiveSearchResponse(
+    /// <summary>
+    /// A parsed Internet Archive page, and whether the body was readable at all. A body we could not
+    /// read is not the archive telling us it has nothing.
+    /// </summary>
+    private sealed record InternetArchivePage(List<IndexerSearchResult> Results, bool Unreadable);
+
+    private async Task<InternetArchivePage> ParseInternetArchiveSearchResponse(
         string jsonResponse,
         Indexer indexer,
         bool allowArchives,
@@ -162,13 +202,13 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
             if (!doc.RootElement.TryGetProperty("response", out var responseObj))
             {
                 _logger.LogWarning("Internet Archive response missing 'response' object");
-                return results;
+                return new InternetArchivePage(results, Unreadable: true);
             }
 
             if (!responseObj.TryGetProperty("docs", out var docsArray))
             {
                 _logger.LogWarning("Internet Archive response missing 'docs' array");
-                return results;
+                return new InternetArchivePage(results, Unreadable: true);
             }
 
             _logger.LogDebug("Found {Count} Internet Archive items in response", docsArray.GetArrayLength());
@@ -283,12 +323,18 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                 }
             }
         }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Error parsing Internet Archive response");
+            return new InternetArchivePage(results, Unreadable: true);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error parsing Internet Archive response");
+            return new InternetArchivePage(results, Unreadable: true);
         }
 
-        return results;
+        return new InternetArchivePage(results, Unreadable: false);
     }
 
     private static string ReadInternetArchiveField(JsonElement value)
