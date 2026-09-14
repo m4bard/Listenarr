@@ -11,11 +11,9 @@ namespace Listenarr.Application.Audiobooks.Monitoring
     {
         private static AudibleBookMetadata MapToMetadata(AudibleSearchResult book)
         {
-            var seriesMemberships = MetadataConverters.BuildSeriesMemberships(book.Series);
-            var primarySeries = AudiobookSeriesMembershipHelper.GetPrimaryMembership(seriesMemberships);
             var runtime = book.LengthMinutes ?? book.RuntimeLengthMin ?? book.RuntimeMinutes;
 
-            return new AudibleBookMetadata
+            var metadata = new AudibleBookMetadata
             {
                 Asin = book.Asin,
                 Title = book.Title,
@@ -39,14 +37,18 @@ namespace Listenarr.Application.Audiobooks.Monitoring
                     .Where(genre => !string.IsNullOrWhiteSpace(genre))
                     .Cast<string>()
                     .ToList(),
-                SeriesMemberships = seriesMemberships,
-                Series = primarySeries?.SeriesName,
-                SeriesNumber = primarySeries?.SeriesNumber,
                 PublishedDate = book.ReleaseDate,
                 PublishYear = TryExtractPublishYear(book.ReleaseDate),
                 Isbn = string.IsNullOrWhiteSpace(book.Isbn) ? new List<string>() : new List<string> { book.Isbn },
                 Source = "Audible"
             };
+
+            // Preserve the series ASIN (not just name/position) so books added via author
+            // monitoring get the same identified series membership as the Add-New search path.
+            metadata.SeriesMemberships = MetadataConverters.BuildSeriesMemberships(book.Series);
+            MetadataConverters.ApplyPrimarySeriesFields(metadata);
+
+            return metadata;
         }
 
         private static Audiobook? FindExistingLibraryMatch(
