@@ -63,6 +63,24 @@ describe('FileManagementSection', () => {
     expect(last.importBlacklistExtensions).toEqual(['.nfo', '.jpg'])
   })
 
+  it('round-trips the Extract Archives checkbox', async () => {
+    const { default: FileManagementSection } =
+      await import('@/components/settings/FileManagementSection.vue')
+    const Checkbox = (await import('@/components/form/Checkbox.vue')).default
+    const wrapper = mount(FileManagementSection, {
+      props: { settings: { extractArchives: false } },
+      global: { components: { Checkbox } },
+    })
+
+    const checkbox = wrapper.find('input[type="checkbox"]')
+    expect((checkbox.element as HTMLInputElement).checked).toBe(false)
+
+    await checkbox.setValue(true)
+    const last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    expect(last.extractArchives).toBe(true)
+  })
+
   it('shows preview for multi-file pattern with chapter numbers', async () => {
     const { default: FileManagementSection } =
       await import('@/components/settings/FileManagementSection.vue')
