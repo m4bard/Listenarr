@@ -126,7 +126,7 @@ public sealed class AudiobookRepositoryAuthorAsinIdentityTests : BaseTests
     }
 
     [Fact]
-    public async Task UpsertCachedAuthorAsync_WritingANewNameAgainstAnOwnedAsin_RenamesTheOwner()
+    public async Task UpsertCachedAuthorAsync_WritingANewNameAgainstAnOwnedAsin_KeepsBothRows()
     {
         var (connection, context) = await OpenAsync();
         await using var _ = connection;
@@ -138,18 +138,51 @@ public sealed class AudiobookRepositoryAuthorAsinIdentityTests : BaseTests
 
         await repository.UpsertCachedAuthorAsync(IncomingAuthor("Author Two", "FIXTURESHR1"));
 
-        // CHARACTERIZATION: the row is resolved by ASIN before it is resolved by name, and then
-        // its name is overwritten. Author One's identity, photo and biography are now filed under
-        // Author Two, and nothing is logged.
+        // The ASIN-first match is a miss when the row it finds is named for somebody else, so the
+        // write makes its own row instead of renaming Author One's. Both carry the ASIN, which the
+        // schema allows, and neither loses its name.
         context.ChangeTracker.Clear();
-        var rows = await context.AuthorCacheEntries.AsNoTracking().ToListAsync();
-        var row = Assert.Single(rows);
-        Assert.Equal("Author Two", row.AuthorName);
-        Assert.Equal("FIXTURESHR1", row.AuthorAsin);
+        var rows = await context.AuthorCacheEntries
+            .AsNoTracking()
+            .OrderBy(entry => entry.Id)
+            .ToListAsync();
+        Assert.Equal(2, rows.Count);
+        Assert.Equal("Author One", rows[0].AuthorName);
+        Assert.Equal("Author Two", rows[1].AuthorName);
+        Assert.All(rows, row => Assert.Equal("FIXTURESHR1", row.AuthorAsin));
     }
 
     [Fact]
-    public async Task UpsertCachedAuthorAsync_WhenTheIncomingNameAlreadyHasARow_ViolatesTheUniqueIndex()
+    public async Task UpsertCachedAuthorAsync_RefusingToRebindAnAsin_LogsAWarning()
+    {
+        var (connection, context) = await OpenAsync();
+        await using var _ = connection;
+        await using var __ = context;
+        context.AuthorCacheEntries.Add(CachedAuthor("Author One", "FIXTURESHR1"));
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        var logger = new Mock<ILogger<AudiobookRepository>>();
+        var repository = new AudiobookRepository(context, logger.Object);
+
+        await repository.UpsertCachedAuthorAsync(IncomingAuthor("Author Two", "FIXTURESHR1"));
+
+        // A log line is the whole operator-facing surface for a refused binding, so it has to
+        // carry both names and the ASIN or there is no way to look into one.
+        logger.Verify(
+            log => log.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((state, _) =>
+                    state.ToString()!.Contains("FIXTURESHR1", StringComparison.Ordinal)
+                    && state.ToString()!.Contains("Author One", StringComparison.Ordinal)
+                    && state.ToString()!.Contains("Author Two", StringComparison.Ordinal)),
+                It.IsAny<Exception?>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpsertCachedAuthorAsync_WhenTheIncomingNameAlreadyHasARow_WritesToThatRow()
     {
         var (connection, context) = await OpenAsync();
         await using var _ = connection;
@@ -161,11 +194,47 @@ public sealed class AudiobookRepositoryAuthorAsinIdentityTests : BaseTests
         context.ChangeTracker.Clear();
         var repository = new AudiobookRepository(context);
 
-        // CHARACTERIZATION: the rename would produce two rows keyed (author two, us), so the
-        // unique index rejects the write. The cache entry is lost and both callers swallow this
-        // as a warning, which means the whole remote lookup repeats on every later request.
-        await Assert.ThrowsAnyAsync<UniqueConstraintViolationException>(
-            () => repository.UpsertCachedAuthorAsync(IncomingAuthor("Author Two", "FIXTURESHR1")));
+        await repository.UpsertCachedAuthorAsync(IncomingAuthor("Author Two", "FIXTURESHR1"));
+
+        // The rename used to produce two rows keyed (author two, us) and the unique index rejected
+        // the whole write, which both callers swallowed as a warning -- so the remote lookup
+        // repeated on every later request. Now the write lands on Author Two's own row.
+        context.ChangeTracker.Clear();
+        var rows = await context.AuthorCacheEntries
+            .AsNoTracking()
+            .OrderBy(entry => entry.Id)
+            .ToListAsync();
+        Assert.Equal(2, rows.Count);
+        Assert.Equal("Author One", rows[0].AuthorName);
+        Assert.Equal("FIXTURESHR1", rows[0].AuthorAsin);
+        Assert.Equal("Author Two", rows[1].AuthorName);
+        Assert.Equal("FIXTURESHR1", rows[1].AuthorAsin);
+    }
+
+    [Fact]
+    public async Task UpsertCachedAuthorAsync_RowKeyedByAnEarlierNormalizer_IsNotTreatedAsAConflict()
+    {
+        var (connection, context) = await OpenAsync();
+        await using var _ = connection;
+        await using var __ = context;
+        // "j n chaney" is what the pre-unification normalizer wrote. The row is still that
+        // author's row, and the guard must not read a key nothing produces as a different person.
+        context.AuthorCacheEntries.Add(new AuthorCacheEntry
+        {
+            AuthorName = "J. N. Chaney",
+            AuthorNameNormalized = "j n chaney",
+            AuthorAsin = "FIXTUREAUT1",
+            Region = "us"
+        });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        var repository = new AudiobookRepository(context);
+
+        await repository.UpsertCachedAuthorAsync(IncomingAuthor("J.N. Chaney", "FIXTUREAUT1"));
+
+        context.ChangeTracker.Clear();
+        var row = Assert.Single(await context.AuthorCacheEntries.AsNoTracking().ToListAsync());
+        Assert.Equal("J.N. Chaney", row.AuthorName);
     }
 
     [Fact]
