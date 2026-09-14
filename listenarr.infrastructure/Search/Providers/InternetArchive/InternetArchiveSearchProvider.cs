@@ -49,7 +49,8 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
         Indexer indexer,
         string query,
         string? category = null,
-        SearchRequest? request = null)
+        SearchRequest? request = null,
+        CancellationToken ct = default)
     {
         try
         {
@@ -115,7 +116,7 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                     queryIndex,
                     queryPlan.Queries.Count);
 
-                using var response = await _httpClient.GetAsync(searchUrl);
+                using var response = await _httpClient.GetAsync(searchUrl, ct);
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Internet Archive returned status {Status}", response.StatusCode);
@@ -136,6 +137,11 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
 
             _logger.LogInformation("Internet Archive returned {Count} results", searchResults.Count);
             return searchResults;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("Search of Internet Archive indexer {Name} timed out", indexer.Name);
+            return new List<IndexerSearchResult>();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {

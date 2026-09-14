@@ -43,7 +43,8 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
         Indexer indexer,
         string query,
         string? category = null,
-        SearchRequest? request = null)
+        SearchRequest? request = null,
+        CancellationToken ct = default)
     {
         try
         {
@@ -58,7 +59,7 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
             var userAgent = $"Listenarr/{version} (+https://github.com/Listenarrs/listenarr)";
             requestMessage.Headers.UserAgent.ParseAdd(userAgent);
 
-            var response = await _httpClient.SendAsync(requestMessage);
+            var response = await _httpClient.SendAsync(requestMessage, ct);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Indexer {Name} returned status {Status}", indexer.Name, response.StatusCode);
@@ -72,6 +73,11 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
 
             _logger.LogInformation("Indexer {Name} returned {Count} results", indexer.Name, results.Count);
             return results;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("Search of Torznab/Newznab indexer {Name} timed out", indexer.Name);
+            return new List<IndexerSearchResult>();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {

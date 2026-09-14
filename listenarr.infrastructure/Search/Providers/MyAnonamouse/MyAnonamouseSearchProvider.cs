@@ -44,7 +44,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
             _indexerRepository = indexerRepository ?? throw new ArgumentNullException(nameof(indexerRepository));
         }
 
-        public async Task<List<IndexerSearchResult>> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null)
+        public async Task<List<IndexerSearchResult>> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null, CancellationToken ct = default)
         {
             try
             {
@@ -77,7 +77,8 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                     searchUri,
                     httpClientToUse,
                     _logger,
-                    allowPrivateTargets: true);
+                    allowPrivateTargets: true,
+                    cancellationToken: ct);
                 using var response = searchResponse;
                 if (!response.IsSuccessStatusCode)
                 {
@@ -131,6 +132,11 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
 
                 _logger.LogInformation("MyAnonamouse returned {Count} results", results.Count);
                 return results;
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                _logger.LogWarning("Search of MyAnonamouse indexer {Name} timed out", indexer.Name);
+                return new List<IndexerSearchResult>();
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
