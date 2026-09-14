@@ -119,6 +119,14 @@
       <!-- Metadata Badges -->
       <slot name="metadata">
         <div class="metadata-badges">
+          <span
+            v-if="isBundle"
+            class="metadata-badge bundle-badge"
+            title="This edition covers more than one book in the series"
+          >
+            <PhBooks />
+            Bundle
+          </span>
           <span v-if="book.publisher?.length" class="metadata-badge">
             <PhBuilding />
             {{ safeText(book.publisher[0]) }}
@@ -219,6 +227,7 @@ import {
   PhClock,
   PhGlobe,
   PhBook,
+  PhBooks,
   PhBuilding,
   PhCalendar,
   PhBarcode,
@@ -231,6 +240,7 @@ import type { OpenLibraryBook } from '@/services/openlibrary'
 import { safeText } from '@/utils/textUtils'
 import { formatRuntime, formatDate, capitalizeLanguage } from '@/utils/searchResultFormatting'
 import { getPlaceholderUrl } from '@/utils/placeholder'
+import { isBundleSeriesNumber } from '@/utils/seriesUtils'
 
 export interface SearchResultCardProps {
   /** The book/search result to display */
@@ -274,6 +284,13 @@ const asin = computed(() => {
     (props.book.key && !props.book.key.startsWith('OL') ? props.book.key : undefined)
   )
 })
+
+/**
+ * Whether this edition covers more than one book, read off the series position. Worth
+ * showing, because an operator cannot reason about a profile's bundle preference without
+ * being able to see which of their entries are bundles in the first place.
+ */
+const isBundle = computed(() => isBundleSeriesNumber(props.book.searchResult?.seriesNumber))
 
 /**
  * Get OpenLibrary ID if available and no ASIN
@@ -527,6 +544,10 @@ const sourceLabel = computed((): string => {
   white-space: nowrap;
 }
 
+.bundle-badge {
+  background-color: var(--color-bundle-bg, rgba(255, 152, 0, 0.12));
+  color: var(--color-bundle-text, #ff9800);
+}
 .metadata-badge svg {
   width: 12px;
   height: 12px;
