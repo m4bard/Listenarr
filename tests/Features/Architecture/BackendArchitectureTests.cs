@@ -521,7 +521,6 @@ public sealed class BackendArchitectureTests : BaseTests
             "Features/Library/SeriesMonitoringController.cs",
             "Features/Metadata/AdminMetadataController.cs",
             "Features/Metadata/MetadataController.cs",
-            "Features/Notifications/NotificationsController.cs",
             "Features/Prowlarr/ProwlarrCompatController.cs",
             "Features/Search/SearchController.cs",
             "Features/SystemDiagnostics/DiscordController.cs",
