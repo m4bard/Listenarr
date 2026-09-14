@@ -9,6 +9,7 @@
  */
 
 using System.Net;
+using System.Net.Http.Headers;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -191,6 +192,88 @@ public sealed class TorznabNewznabSearchProviderOutcomeTests : BaseTests
         Assert.NotNull(observation.Detail);
         Assert.DoesNotContain("http", observation.Detail, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(indexer.ApiKey!, observation.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    [Trait("Method", "SearchAsync")]
+    [Trait("Scenario", "RateLimited")]
+    public async Task SearchAsync_TooManyRequestsWithRetryAfterSeconds_ReportsRateLimitedAndCarriesTheDelay()
+    {
+        // Given: a 429 is the one status where the remote states a number of its own.
+        var provider = CreateProvider(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromHours(1));
+            return response;
+        });
+
+        // When
+        var observation = await provider.SearchAsync(CreateIndexer(), "Alice");
+
+        // Then
+        Assert.Equal(IndexerQueryOutcome.Unavailable, observation.Outcome);
+        Assert.Equal(IndexerQueryReason.RateLimited, observation.Reason);
+        Assert.Equal(TimeSpan.FromHours(1), observation.RetryAfter);
+        Assert.Equal("429", observation.Detail);
+    }
+
+    [Fact]
+    [Trait("Method", "SearchAsync")]
+    [Trait("Scenario", "RateLimitedHttpDate")]
+    public async Task SearchAsync_TooManyRequestsWithRetryAfterDate_ReportsRateLimitedAndCarriesTheDelay()
+    {
+        // Given: Retry-After has two wire forms, and the HTTP-date one is the minority that a
+        // hand-rolled seconds-only parser silently drops.
+        var provider = CreateProvider(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            response.Headers.RetryAfter = new RetryConditionHeaderValue(DateTimeOffset.UtcNow.AddMinutes(30));
+            return response;
+        });
+
+        // When
+        var observation = await provider.SearchAsync(CreateIndexer(), "Alice");
+
+        // Then
+        Assert.Equal(IndexerQueryReason.RateLimited, observation.Reason);
+        Assert.NotNull(observation.RetryAfter);
+        Assert.InRange(observation.RetryAfter!.Value, TimeSpan.FromMinutes(28), TimeSpan.FromMinutes(31));
+    }
+
+    [Fact]
+    [Trait("Method", "SearchAsync")]
+    [Trait("Scenario", "RateLimitedWithoutHeader")]
+    public async Task SearchAsync_TooManyRequestsWithoutRetryAfter_ReportsRateLimitedWithNoDelay()
+    {
+        // Given: a 429 with no header at all, which is where a null-header bug hides.
+        var provider = CreateProvider(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+
+        // When
+        var observation = await provider.SearchAsync(CreateIndexer(), "Alice");
+
+        // Then
+        Assert.Equal(IndexerQueryReason.RateLimited, observation.Reason);
+        Assert.Null(observation.RetryAfter);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [Trait("Method", "SearchAsync")]
+    [Trait("Scenario", "AuthFailure")]
+    public async Task SearchAsync_CredentialsRefused_ReportsAuthFailureNotPlainHttpStatus(HttpStatusCode status)
+    {
+        // Given
+        var provider = CreateProvider(_ => new HttpResponseMessage(status));
+
+        // When
+        var observation = await provider.SearchAsync(CreateIndexer(), "Alice");
+
+        // Then: a refused credential is distinguishable from a 500, which is what lets the operator
+        // be told the key is wrong rather than that the indexer is flaky.
+        Assert.Equal(IndexerQueryOutcome.Unavailable, observation.Outcome);
+        Assert.Equal(IndexerQueryReason.AuthFailure, observation.Reason);
+        Assert.Null(observation.RetryAfter);
     }
 
     private static HttpResponseMessage Ok(string body) =>
