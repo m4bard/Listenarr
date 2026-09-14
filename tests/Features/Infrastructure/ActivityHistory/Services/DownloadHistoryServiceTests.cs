@@ -363,5 +363,46 @@ namespace Listenarr.Tests.Features.Infrastructure.ActivityHistory.Services
 
             Assert.Equal(DownloadProtocol.Unknown, entry.Protocol);
         }
+
+        // The audiobook key and the protocol were fixed separately and both land on the same two
+        // lines of RecordImportedAsync, so they are easy to reconcile in a way that keeps one and
+        // quietly drops the other. This asks for both off one call: the row reached the book
+        // through the per-book query, and it carries the protocol its client actually speaks
+        // rather than the enum's first member.
+        [Fact]
+        public async Task RecordImportedAsync_AttachesTheBookAndRecordsTheResolvedProtocol()
+        {
+            await GivenDownloadClient("client-1", "sabnzbd", DownloadProtocol.Usenet);
+
+            await _service.RecordImportedAsync("abc123", "client-1", "Test Book", audiobookId: 42);
+
+            var repository = new EfHistoryRepository(_context);
+            var entry = Assert.Single(await repository.GetByAudiobookIdAsync(42));
+
+            Assert.Equal(42, entry.AudiobookId);
+            Assert.Equal(DownloadProtocol.Usenet, entry.Protocol);
+        }
+
+        // The same pairing on the grab path. The protocol comes from the caller here rather than
+        // from a lookup, because the submission knows it, but it still has to survive the write
+        // onto the row the book query finds.
+        [Fact]
+        public async Task RecordGrabbedAsync_AttachesTheBookAndKeepsTheCallersProtocol()
+        {
+            await GivenDownloadClient("client-1", "sabnzbd", DownloadProtocol.Usenet);
+
+            await _service.RecordGrabbedAsync(
+                "abc123",
+                "client-1",
+                "Test Book",
+                DownloadProtocol.Usenet,
+                audiobookId: 42);
+
+            var repository = new EfHistoryRepository(_context);
+            var entry = Assert.Single(await repository.GetByAudiobookIdAsync(42));
+
+            Assert.Equal(42, entry.AudiobookId);
+            Assert.Equal(DownloadProtocol.Usenet, entry.Protocol);
+        }
     }
 }
