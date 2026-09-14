@@ -79,6 +79,7 @@ namespace Listenarr.Infrastructure.Downloads.Queue
     public class QueueMonitorProcessor(
         IServiceScopeFactory serviceScopeFactory,
         IHubContext<DownloadHub> hubContext,
+        IDownloadClientStatusCache statusCache,
         ILogger<QueueMonitorProcessor> logger) : IQueueMonitorProcessor
     {
         private readonly TimeSpan _fastPollingInterval = TimeSpan.FromSeconds(5);
@@ -97,6 +98,12 @@ namespace Listenarr.Infrastructure.Downloads.Queue
                 // Get current queue from the shared queue reconciliation service
                 var currentSnapshot = await downloadQueueService.GetQueueSnapshotAsync();
                 var currentQueue = currentSnapshot.Items;
+
+                // Publish the freshly polled per-client connectivity so consumers that
+                // only care about reachability (e.g. the system health endpoint) can
+                // read it without triggering their own probe. Updated every cycle,
+                // independent of whether the queue itself changed below.
+                statusCache.SetStatuses(currentSnapshot.Clients);
 
                 // Determine optimal polling interval based on queue activity
                 nextInterval = DeterminePollingInterval(currentQueue);

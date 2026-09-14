@@ -225,7 +225,8 @@ namespace Listenarr.Tests.Features.Infrastructure.SystemDiagnostics.Storage
                 _applicationPathService,
                 applicationVersionService.Object,
                 _provider.GetRequiredService<IRootFolderService>(),
-                diskSpaceProbe);
+                diskSpaceProbe,
+                new DownloadClientStatusCache());
         }
     }
 }

@@ -46,9 +46,27 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             };
         }
 
-        public static DownloadClientHealth BuildDownloadClientHealth(IEnumerable<DownloadClientConfiguration> clients)
+        /// <summary>
+        /// Builds download-client health from configuration plus the last known
+        /// reachability of each client, as recorded by the background download-queue
+        /// poller (<see cref="Listenarr.Application.Downloads.Contracts.IDownloadClientStatusCache"/>).
+        /// </summary>
+        /// <param name="clients">The configured download clients.</param>
+        /// <param name="polledStatuses">
+        /// The most recent per-client poll results. A client with no entry here has not
+        /// been covered by a poll cycle yet (e.g. the poller hasn't run, or the client
+        /// was just added) and is reported as "unknown" rather than assumed connected.
+        /// </param>
+        public static DownloadClientHealth BuildDownloadClientHealth(
+            IEnumerable<DownloadClientConfiguration> clients,
+            IReadOnlyList<QueueClientStatus>? polledStatuses)
         {
             var clientList = clients?.ToList() ?? new List<DownloadClientConfiguration>();
+            var statusById = (polledStatuses ?? new List<QueueClientStatus>())
+                .Where(status => !string.IsNullOrEmpty(status.ClientId))
+                .GroupBy(status => status.ClientId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
             var clientStatuses = new List<ClientStatus>();
             var connectedCount = 0;
 
@@ -59,14 +77,40 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
                     continue;
                 }
 
-                var status = "connected";
-                connectedCount++;
+                string status;
+                string? failureReason = null;
+
+                if (statusById.TryGetValue(client.Id, out var polled))
+                {
+                    // A recorded failure reason means the most recent live probe of
+                    // this client did not succeed, whether or not a stale cached
+                    // queue snapshot is still being served for display purposes.
+                    if (!string.IsNullOrEmpty(polled.SnapshotFailureReason))
+                    {
+                        status = "disconnected";
+                        failureReason = polled.SnapshotFailureReason;
+                    }
+                    else
+                    {
+                        status = "connected";
+                    }
+                }
+                else
+                {
+                    status = "unknown";
+                }
+
+                if (status == "connected")
+                {
+                    connectedCount++;
+                }
 
                 clientStatuses.Add(new ClientStatus
                 {
                     Name = client.Name,
                     Status = status,
-                    Type = client.Type
+                    Type = client.Type,
+                    FailureReason = failureReason
                 });
             }
 
