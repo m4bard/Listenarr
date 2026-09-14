@@ -565,6 +565,198 @@ describe('AudiobooksView Grouping', () => {
     } catch {}
   })
 
+  it('merges spelling variants of the same author into one group, with a corrected count', async () => {
+    if (
+      typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
+    ) {
+      ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
+        observe() {}
+        disconnect() {}
+      }
+    }
+    if (typeof (globalThis as unknown as { WebSocket?: unknown }).WebSocket === 'undefined') {
+      ;(globalThis as unknown as Record<string, unknown>).WebSocket = function () {
+        /* noop */
+      }
+    }
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+      ],
+    })
+    await router.push('/audiobooks')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      // Case-only variant.
+      { id: 1, title: 'Book 1', authors: ['Andy Weir'], imageUrl: 'cover1.jpg', files: [] },
+      { id: 2, title: 'Book 2', authors: ['andy weir'], imageUrl: 'cover2.jpg', files: [] },
+      // Doubled-space variant.
+      { id: 3, title: 'Book 3', authors: ['Andy  Weir'], imageUrl: 'cover3.jpg', files: [] },
+      // Dotted vs. spaced-out initials -- the same pair shape covered by
+      // StringUtilsNormalizeAuthorNameTests on the backend, for consistency.
+      { id: 4, title: 'Book 4', authors: ['D.J. Molles'], imageUrl: 'cover4.jpg', files: [] },
+      { id: 5, title: 'Book 5', authors: ['D. J. Molles'], imageUrl: 'cover5.jpg', files: [] },
+    ] as unknown as import('@/types').Audiobook[]
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+    const wrapper = mount(AudiobooksView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'CustomSelect',
+        ],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const vm = getVm(wrapper)
+    await vm.setGroupBy?.('authors')
+    await wrapper.vm.$nextTick()
+
+    const groupedCollections = vm.groupedCollections ?? []
+    expect(groupedCollections).toHaveLength(2)
+
+    const weirGroup = groupedCollections.find((g) => /weir/i.test(g.name))
+    expect(weirGroup?.count).toBe(3)
+
+    const mollesGroup = groupedCollections.find((g) => /molles/i.test(g.name))
+    expect(mollesGroup?.count).toBe(2)
+  })
+
+  it('groups a co-authored book under every one of its authors, not just the first', async () => {
+    if (
+      typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
+    ) {
+      ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
+        observe() {}
+        disconnect() {}
+      }
+    }
+    if (typeof (globalThis as unknown as { WebSocket?: unknown }).WebSocket === 'undefined') {
+      ;(globalThis as unknown as Record<string, unknown>).WebSocket = function () {
+        /* noop */
+      }
+    }
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+      ],
+    })
+    await router.push('/audiobooks')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      { id: 1, title: 'Solo Book', authors: ['Author A'], imageUrl: 'cover1.jpg', files: [] },
+      {
+        id: 2,
+        title: 'Co-Authored Book',
+        authors: ['Author A', 'Author C'],
+        imageUrl: 'cover2.jpg',
+        files: [],
+      },
+    ] as unknown as import('@/types').Audiobook[]
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+    const wrapper = mount(AudiobooksView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'CustomSelect',
+        ],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const vm = getVm(wrapper)
+    await vm.setGroupBy?.('authors')
+    await wrapper.vm.$nextTick()
+
+    const groupedCollections = vm.groupedCollections ?? []
+    expect(groupedCollections).toHaveLength(2)
+    expect(groupedCollections.find((g) => g.name === 'Author A')?.count).toBe(2)
+    expect(groupedCollections.find((g) => g.name === 'Author C')?.count).toBe(1)
+  })
+
+  it('does not merge two genuinely different authors who share initials (overcorrection guard)', async () => {
+    if (
+      typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
+    ) {
+      ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
+        observe() {}
+        disconnect() {}
+      }
+    }
+    if (typeof (globalThis as unknown as { WebSocket?: unknown }).WebSocket === 'undefined') {
+      ;(globalThis as unknown as Record<string, unknown>).WebSocket = function () {
+        /* noop */
+      }
+    }
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+      ],
+    })
+    await router.push('/audiobooks')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      // Same initials, different surname -- must stay two authors, not one.
+      { id: 1, title: 'Book 1', authors: ['J. N. Chaney'], imageUrl: 'cover1.jpg', files: [] },
+      { id: 2, title: 'Book 2', authors: ['J. N. Smith'], imageUrl: 'cover2.jpg', files: [] },
+    ] as unknown as import('@/types').Audiobook[]
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+    const wrapper = mount(AudiobooksView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'CustomSelect',
+        ],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const vm = getVm(wrapper)
+    await vm.setGroupBy?.('authors')
+    await wrapper.vm.$nextTick()
+
+    const groupedCollections = vm.groupedCollections ?? []
+    expect(groupedCollections).toHaveLength(2)
+    expect(groupedCollections.find((g) => g.name === 'J. N. Chaney')?.count).toBe(1)
+    expect(groupedCollections.find((g) => g.name === 'J. N. Smith')?.count).toBe(1)
+  })
+
   it('groups audiobooks by series when groupBy is series', async () => {
     if (
       typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
