@@ -82,7 +82,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
             _logger.LogInformation(
                 "LibraryAddService received metadata: Title={Title}, Asin={Asin}, PublishYear={PublishYear}, Authors={Authors}, Series={Series}",
                 metadata.Title,
-                metadata.Asin,
+                LogRedaction.SanitizeText(metadata.Asin),
                 metadata.PublishYear,
                 metadata.Authors != null ? string.Join(", ", metadata.Authors) : "null",
                 metadata.Series);
@@ -206,7 +206,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
             _logger.LogInformation(
                 "Added audiobook '{Title}' (ASIN: {Asin}) to library with Monitored={Monitored}, QualityProfileId={QualityProfileId}, AutoSearch={AutoSearch}",
                 audiobook.Title,
-                audiobook.Asin,
+                LogRedaction.SanitizeText(audiobook.Asin),
                 request.Monitored,
                 audiobook.QualityProfileId,
                 request.AutoSearch);

@@ -248,7 +248,7 @@ namespace Listenarr.Api.Features.Library
             await AddHistoryAsync(audiobook);
 
             _logger.LogInformation("Added audiobook '{Title}' (ASIN: {Asin}) to library with Monitored={Monitored}, QualityProfileId={QualityProfileId}, AutoSearch={AutoSearch}",
-                audiobook.Title, audiobook.Asin, request.Monitored, audiobook.QualityProfileId, request.AutoSearch);
+                audiobook.Title, LogRedaction.SanitizeText(audiobook.Asin), request.Monitored, audiobook.QualityProfileId, request.AutoSearch);
 
             StartAutoSearchAfterAdd(audiobook, request.AutoSearch);
             return new OkObjectResult(new { message = "Audiobook added to library successfully", audiobook });
@@ -427,7 +427,7 @@ namespace Listenarr.Api.Features.Library
                             var moved = await _imageCacheService.MoveToAuthorLibraryStorageAsync(info.Asin, info.Image);
                             if (moved != null)
                             {
-                                _logger.LogInformation("Cached author image for {Author} (ASIN: {Asin})", authorName, info.Asin);
+                                _logger.LogInformation("Cached author image for {Author} (ASIN: {Asin})", authorName, LogRedaction.SanitizeText(info.Asin));
                             }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

@@ -90,7 +90,7 @@ namespace Listenarr.Api.Features.Metadata
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
-                    _logger.LogWarning(ex, "Failed to backfill cached author image for ASIN {Asin}", entry.AuthorAsin);
+                    _logger.LogWarning(ex, "Failed to backfill cached author image for ASIN {Asin}", LogRedaction.SanitizeText(entry.AuthorAsin));
                 }
             }
 
@@ -192,7 +192,7 @@ namespace Listenarr.Api.Features.Metadata
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
-                    _logger.LogWarning(ex, "Failed to backfill cached series image for ASIN {Asin}", entry.SeriesAsin);
+                    _logger.LogWarning(ex, "Failed to backfill cached series image for ASIN {Asin}", LogRedaction.SanitizeText(entry.SeriesAsin));
                 }
             }
 
