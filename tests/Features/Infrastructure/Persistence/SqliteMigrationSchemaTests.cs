@@ -55,6 +55,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260911172407_AddHistoryProtocol";
     private const string IndexerFailureBackoffMigrationId =
         "20260914152223_AddIndexerFailureBackoff";
+    private const string PreferredReleaseShapeMigrationId =
+        "20260914153043_AddPreferredReleaseShapeToQualityProfile";
     private const string OperationEvidencePublicationsMigrationId =
         "20261002210137_AddOperationEvidencePublications";
     private const string AutomaticSearchTimingMigrationId =
@@ -311,6 +313,7 @@ public class SqliteMigrationSchemaTests : BaseTests
                 WeakStorageVerifiedCleanupMigrationId,
                 HistoryProtocolMigrationId,
                 IndexerFailureBackoffMigrationId,
+                PreferredReleaseShapeMigrationId,
                 OperationEvidencePublicationsMigrationId,
                 AutomaticSearchTimingMigrationId,
                 ReleaseBlocklistMigrationId
