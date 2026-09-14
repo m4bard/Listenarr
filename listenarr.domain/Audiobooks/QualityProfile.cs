@@ -182,6 +182,14 @@ namespace Listenarr.Domain.Audiobooks
         public Dictionary<string, int> ScoreBreakdown { get; set; } = new();
         public List<string> RejectionReasons { get; set; } = new();
 
+        /// <summary>
+        /// The originating indexer's Priority (lower = higher priority), when resolvable.
+        /// Used only as a last-resort tie-break between otherwise-equal results; it must never
+        /// be folded into TotalScore as an additive term, since that would let indexer choice
+        /// override actual release quality.
+        /// </summary>
+        public int? IndexerPriority { get; set; }
+
         // Prowlarr-style composite smart scoring (optional)
         public double SmartScore { get; set; }
         public Dictionary<string, int> SmartScoreBreakdown { get; set; } = new();

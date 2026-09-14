@@ -1042,6 +1042,85 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
 
             Assert.Equal(5, score.ScoreBreakdown["PreferredWords"]);
         }
+
+        // Regression tests for Listenarr#178:
+        //  - Bug 1: Indexer.Priority never reached the automatic-grab TotalScore. It is now
+        //    surfaced on QualityScore.IndexerPriority for use as a tie-break only (see
+        //    QualityScoreComparerTests), never folded into TotalScore itself.
+        //  - Bug 2: the manual-search Score column always called CompositeScorer with a null
+        //    indexer, so its "Indexer" breakdown component was always zero.
+
+        [Fact]
+        public async Task ScoreSearchResult_PopulatesIndexerPriority_ForTieBreakUse_WithoutAffectingTotalScore()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+            using var db = new ListenArrDbContext(options);
+            var lowPriorityIndexer = new Listenarr.Domain.Search.Indexer { Name = "LowPriority", Url = "https://low.local", Priority = 50, IsEnabled = true };
+            db.Indexers.Add(lowPriorityIndexer);
+            db.SaveChanges();
+
+            var service = new QualityProfileService(new QualityProfileRepository(db), NullLogger<QualityProfileService>.Instance, new EfIndexerRepository(db));
+            var profile = new QualityProfile { MinimumSeeders = 0 };
+
+            var withIndexer = new SearchResult
+            {
+                Title = "Result With Known Indexer",
+                Quality = "MP3 320kbps",
+                DownloadType = "torrent",
+                Seeders = 1,
+                PublishedDate = DateTime.UtcNow.ToString("o"),
+                IndexerId = lowPriorityIndexer.Id
+            };
+            var withoutIndexer = new SearchResult
+            {
+                Title = "Result Without Known Indexer",
+                Quality = "MP3 320kbps",
+                DownloadType = "torrent",
+                Seeders = 1,
+                PublishedDate = DateTime.UtcNow.ToString("o")
+            };
+
+            var scoreWithIndexer = await service.ScoreSearchResult(withIndexer, profile);
+            var scoreWithoutIndexer = await service.ScoreSearchResult(withoutIndexer, profile);
+
+            Assert.Equal(50, scoreWithIndexer.IndexerPriority);
+            Assert.Null(scoreWithoutIndexer.IndexerPriority);
+
+            // Identical inputs aside from indexer resolution must still produce the same
+            // TotalScore: priority must never leak into the additive score.
+            Assert.Equal(scoreWithoutIndexer.TotalScore, scoreWithIndexer.TotalScore);
+        }
+
+        [Fact]
+        public async Task ScoreSearchResult_PassesRealIndexerToCompositeScorer_SoIndexerBreakdownIsNonZero()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+            using var db = new ListenArrDbContext(options);
+            var topPriorityIndexer = new Listenarr.Domain.Search.Indexer { Name = "TopPriority", Url = "https://top.local", Priority = 1, IsEnabled = true };
+            db.Indexers.Add(topPriorityIndexer);
+            db.SaveChanges();
+
+            var service = new QualityProfileService(new QualityProfileRepository(db), NullLogger<QualityProfileService>.Instance, new EfIndexerRepository(db));
+            var profile = new QualityProfile { MinimumSeeders = 0 };
+
+            var result = new SearchResult
+            {
+                Title = "Result With Known Indexer",
+                Quality = "MP3 320kbps",
+                DownloadType = "torrent",
+                Seeders = 1,
+                PublishedDate = DateTime.UtcNow.ToString("o"),
+                IndexerId = topPriorityIndexer.Id
+            };
+
+            var score = await service.ScoreSearchResult(result, profile);
+
+            Assert.True(score.SmartScoreBreakdown.TryGetValue("Indexer", out var indexerComponent),
+                "Expected an Indexer key in the Smart breakdown");
+            Assert.NotEqual(0, indexerComponent);
+            // Priority 1 (best) inverts to (51 - 1) * IndexerPriorityTieBreakWeight(1.0) = 50.
+            Assert.Equal(50, indexerComponent);
+        }
     }
 }
 
