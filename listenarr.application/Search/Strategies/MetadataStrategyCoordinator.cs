@@ -52,7 +52,7 @@ public class MetadataStrategyCoordinator
         if (metadataSources.Count > 0)
         {
             _logger.LogInformation("Attempting to fetch metadata for ASIN {Asin} from {Count} configured source(s): {Sources}",
-                asin, metadataSources.Count, string.Join(", ", metadataSources.Select(s => s.Name)));
+                LogRedaction.SanitizeText(asin), metadataSources.Count, string.Join(", ", metadataSources.Select(s => s.Name)));
         }
 
         // Try each metadata source in priority order until one succeeds
@@ -61,7 +61,7 @@ public class MetadataStrategyCoordinator
             try
             {
                 _logger.LogInformation("Attempting to fetch metadata from {SourceName} ({BaseUrl}) for ASIN {Asin}",
-                    source.Name, source.BaseUrl, asin);
+                    source.Name, source.BaseUrl, LogRedaction.SanitizeText(asin));
 
                 // Find a strategy that can handle this source
                 var strategy = _strategies.FirstOrDefault(s => s.CanHandle(source));
@@ -82,7 +82,7 @@ public class MetadataStrategyCoordinator
             catch (Exception sourceEx) when (sourceEx is not OperationCanceledException && sourceEx is not OutOfMemoryException && sourceEx is not StackOverflowException)
             {
                 _logger.LogWarning(sourceEx, "Failed to fetch metadata from {SourceName} for ASIN {Asin}, trying next source",
-                    source.Name, asin);
+                    source.Name, LogRedaction.SanitizeText(asin));
                 continue; // Try next metadata source
             }
         }

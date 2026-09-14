@@ -236,7 +236,7 @@ namespace Listenarr.Application.Search.Core
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
-                        _logger.LogDebug(ex, "Failed to compute containment/fuzzy scores for ASIN {Asin}", r.Asin);
+                        _logger.LogDebug(ex, "Failed to compute containment/fuzzy scores for ASIN {Asin}", LogRedaction.SanitizeText(r.Asin));
                     }
 
                     // Use the scorer to compute comprehensive relevance score
@@ -262,7 +262,7 @@ namespace Listenarr.Application.Search.Core
                     // Author/publisher requirement
                     if (requireAuthorAndPublisher && (string.IsNullOrWhiteSpace(r.Artist) || string.IsNullOrWhiteSpace(r.Publisher)))
                     {
-                        _logger.LogInformation("Dropping ASIN {Asin} because missing author or publisher", r.Asin);
+                        _logger.LogInformation("Dropping ASIN {Asin} because missing author or publisher", LogRedaction.SanitizeText(r.Asin));
                         continue;
                     }
 
@@ -277,7 +277,7 @@ namespace Listenarr.Application.Search.Core
                             if (string.IsNullOrEmpty(hay) || hay.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
                             {
                                 keep = false;
-                                _logger.LogInformation("Dropping ASIN {Asin} (Strict containment failed). containmentScore={Score}, fuzzy={Fuzzy}", r.Asin, s.ContainmentScore, s.FuzzyScore);
+                                _logger.LogInformation("Dropping ASIN {Asin} (Strict containment failed). containmentScore={Score}, fuzzy={Fuzzy}", LogRedaction.SanitizeText(r.Asin), s.ContainmentScore, s.FuzzyScore);
                             }
                         }
                         else // Relaxed
@@ -302,7 +302,7 @@ namespace Listenarr.Application.Search.Core
                                 else
                                 {
                                     keep = false;
-                                    _logger.LogInformation("Dropping ASIN {Asin} (Relaxed containment failed). containmentScore={Score}, fuzzy={Fuzzy}", r.Asin, s.ContainmentScore, s.FuzzyScore);
+                                    _logger.LogInformation("Dropping ASIN {Asin} (Relaxed containment failed). containmentScore={Score}, fuzzy={Fuzzy}", LogRedaction.SanitizeText(r.Asin), s.ContainmentScore, s.FuzzyScore);
                                 }
                             }
                         }

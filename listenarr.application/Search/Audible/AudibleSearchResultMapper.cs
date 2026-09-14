@@ -53,7 +53,7 @@ namespace Listenarr.Application.Search.Audible
                     ex is not OutOfMemoryException &&
                     ex is not StackOverflowException)
                 {
-                    logger?.LogDebug(ex, "Failed converting audible data for ASIN {Asin}", book.Asin);
+                    logger?.LogDebug(ex, "Failed converting audible data for ASIN {Asin}", LogRedaction.SanitizeText(book.Asin));
                 }
             }
 
