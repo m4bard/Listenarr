@@ -43,7 +43,7 @@ namespace Listenarr.Api.Dtos.ManualImport
                     throw new ArgumentException("Path is empty or contains invalid characters.", nameof(value));
                 }
 
-                if (value.Contains("..") || value.Contains("./") || value.Contains(".\\"))
+                if (value.Split(['/', '\\']).Any(segment => segment == ".."))
                 {
                     throw new ArgumentException("Path traversal attempts are not allowed.", nameof(value));
                 }
