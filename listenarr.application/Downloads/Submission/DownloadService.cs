@@ -158,8 +158,10 @@ namespace Listenarr.Application.Downloads.Submission
                 };
             }
 
-            // Score results against quality profile
-            var scoredResults = await qualityProfileService.ScoreSearchResults(searchResults, audiobook.QualityProfile);
+            // Score results against quality profile. See AutomaticSearchService for why the
+            // bundle flag is read off the library record rather than the candidate release.
+            var targetIsBundle = ReleaseShapeDetector.IsBundleSeriesNumber(audiobook.SeriesNumber);
+            var scoredResults = await qualityProfileService.ScoreSearchResults(searchResults, audiobook.QualityProfile, targetIsBundle);
 
             // Log all scored results for debugging
             logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", scoredResults.Count, LogRedaction.SanitizeText(audiobook.Title));
