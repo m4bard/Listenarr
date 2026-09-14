@@ -63,6 +63,13 @@ internal static class WorkerRegistrationExtensions
             DownloadProcessingJobCleanupService>(services);
 
         AddHostedProcessor<UnmatchedScanProcessor, IUnmatchedScanProcessor, UnmatchedScanBackgroundService>(services);
+
+        // Also its own worker: prunes action-history rows on the configured
+        // HistoryRetentionDays setting, unrelated to any other cleanup service's table.
+        AddHostedProcessor<
+            HistoryRetentionCleanupProcessor,
+            IHistoryRetentionCleanupProcessor,
+            HistoryRetentionCleanupService>(services);
         return services;
     }
 
