@@ -83,11 +83,15 @@ public class IndexerSearchWorkflow
                 // No workflow-level cancellation token flows into this search, so an
                 // OperationCanceledException here is an HttpClient per-request timeout
                 // (TaskCanceledException derives from OperationCanceledException). Contain it
-                // to this indexer so a single slow indexer can't abort every other one's results.
+                // to this indexer so a single slow indexer can't abort every other one's results,
+                // and record it as an observation rather than an empty, unexplained result set.
                 _logger.LogWarning(ex, "Timed out searching indexer {Name} for query: {Query}", indexer.Name, query);
-                return new List<IndexerSearchResult>();
+                return (Indexer: indexer, Observation: IndexerQueryObservation.Unavailable(
+                    IndexerQueryFailureClassifier.Classify(ex),
+                    query,
+                    IndexerQueryFailureClassifier.Describe(ex)));
             }
-            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Containment, not a tier miss: one indexer throwing must not take down the fan-out,
                 // and the outcome records that this indexer never answered.
