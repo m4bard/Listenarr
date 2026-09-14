@@ -268,7 +268,7 @@ public partial class ManualImportController : ControllerBase
                         {
                             selectedAudioProfiles = await _companionImporter.BuildAudioMatchProfilesAsync(
                                 freshItems.Where(item => !string.IsNullOrWhiteSpace(item.FullPath))
-                                    .Select(item => item.FullPath!).Where(FileUtils.IsAudioFile),
+                                    .Select(item => item.FullPath!).Where(f => FileUtils.IsAudioFile(f, appSettings.AllowedFileExtensions)),
                                 sourceSemantics.Value.Comparer, operationToken);
                         }
                     }
