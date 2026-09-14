@@ -919,14 +919,15 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
 
         private static QualityProfile WordFilterProfile(
             System.Collections.Generic.List<string>? mustNotContain = null,
-            System.Collections.Generic.List<string>? mustContain = null)
+            System.Collections.Generic.List<string>? mustContain = null,
+            System.Collections.Generic.List<string>? preferredWords = null)
         {
             return new QualityProfile
             {
                 MustNotContain = mustNotContain ?? new System.Collections.Generic.List<string>(),
                 MustContain = mustContain ?? new System.Collections.Generic.List<string>(),
                 PreferredFormats = new System.Collections.Generic.List<string>(),
-                PreferredWords = new System.Collections.Generic.List<string>(),
+                PreferredWords = preferredWords ?? new System.Collections.Generic.List<string>(),
                 PreferredLanguages = new System.Collections.Generic.List<string>(),
                 MinimumSeeders = 0,
                 MaximumAge = 3650
@@ -1018,6 +1019,28 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
             var score = await service.ScoreSearchResult(WordFilterResult("A Category Theory Primer"), profile);
 
             Assert.Contains(score.RejectionReasons, r => r.Contains("required word"));
+        }
+
+        [Fact]
+        public async Task PreferredWords_ShouldNotBonus_WhenOnlyASubstringMatches()
+        {
+            var service = CreateService();
+            var profile = WordFilterProfile(preferredWords: new System.Collections.Generic.List<string> { "cat" });
+
+            var score = await service.ScoreSearchResult(WordFilterResult("Herding Cats: A Category Theory Primer"), profile);
+
+            Assert.False(score.ScoreBreakdown.ContainsKey("PreferredWords"), "A 'cat' preference should not bonus on 'Category'");
+        }
+
+        [Fact]
+        public async Task PreferredWords_ShouldBonus_OnAWholeWordMatch()
+        {
+            var service = CreateService();
+            var profile = WordFilterProfile(preferredWords: new System.Collections.Generic.List<string> { "unabridged" });
+
+            var score = await service.ScoreSearchResult(WordFilterResult("The Hobbit (Unabridged)"), profile);
+
+            Assert.Equal(5, score.ScoreBreakdown["PreferredWords"]);
         }
     }
 }
