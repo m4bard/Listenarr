@@ -27,6 +27,17 @@ namespace Listenarr.Application.Search.Scoring
 
     public static class CompositeScorer
     {
+        /// <summary>
+        /// Scales the indexer-priority term so it can only act as a genuine tie-break, never as
+        /// a term that can outrank a real difference in quality or format. With this weight, the
+        /// full 1..50 priority range spans just 1-50 points, on the same footing as its own
+        /// pre-scaling domain and well under Quality's (thousands) and Format's/Seed's (hundreds
+        /// to thousands) granularity. Previously this was (51 - priority) * 1000.0, which could
+        /// swing the total by up to 50,000 points and let indexer choice override actual release
+        /// quality; see Listenarr#178.
+        /// </summary>
+        private const double IndexerPriorityTieBreakWeight = 1.0;
+
         public static CompositeScoreResult CalculateProwlarrStyleScore(SearchResult result, Indexer? indexer = null, ILogger? logger = null)
         {
             var res = new CompositeScoreResult();
@@ -39,12 +50,13 @@ namespace Listenarr.Application.Search.Scoring
             double formatScore = GetFormatScore(result.Format) * 100.0;
             res.Breakdown["Format"] = formatScore;
 
-            // Tier 3: Indexer Priority inversion (1..50 -> 50..1) multiplied by 1000
+            // Tier 3: Indexer priority (1..50 -> 50..1), tie-break magnitude only. See
+            // IndexerPriorityTieBreakWeight.
             double indexerScore = 0;
             if (indexer != null)
             {
                 var priority = Math.Clamp(indexer.Priority, 1, 50);
-                indexerScore = (51 - priority) * 1000.0;
+                indexerScore = (51 - priority) * IndexerPriorityTieBreakWeight;
             }
             res.Breakdown["Indexer"] = indexerScore;
 

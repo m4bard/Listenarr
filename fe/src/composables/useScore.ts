@@ -29,7 +29,12 @@ export function computeNormalizedSmart(breakdown?: Record<string, number>): {
     const k = key.toLowerCase()
     if (k === 'quality') return Math.round(raw / 1000)
     if (k === 'format') return Math.round(raw / 100)
-    if (k === 'indexer') return Math.round(raw / 500)
+    // Indexer is a tie-break-only term backed by CompositeScorer's
+    // IndexerPriorityTieBreakWeight (1.0): the raw breakdown value already IS the priority-
+    // inverted 1-50 range, so it needs no further scaling here. Previously this divided by 500
+    // to match a backend multiplier of 1000 that no longer exists; the mismatch (500 vs 1000)
+    // was itself a bug even before the backend weight changed.
+    if (k === 'indexer') return Math.round(raw)
     if (k === 'seed' || k === 'seeders' || k === 'seeds') return Math.round(raw / 100)
     if (k === 'age') return Math.round(raw / 10)
     if (k === 'size') return Math.round(raw)
