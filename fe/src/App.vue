@@ -371,6 +371,18 @@
               <span>Wanted</span>
               <Pill variant="count" v-if="wantedCount > 0">{{ wantedCount }}</Pill>
             </RouterLink>
+            <RouterLink
+              to="/history"
+              class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/history' }"
+              @mouseenter="preload('history')"
+              @focus="preload('history')"
+              @touchstart.passive="preload('history')"
+              @click="closeMobileMenu"
+            >
+              <PhClockCounterClockwise />
+              <span>History</span>
+            </RouterLink>
           </div>
 
           <div class="nav-section">
@@ -555,6 +567,7 @@ import {
   PhActivity,
   PhCalendar,
   PhHeart,
+  PhClockCounterClockwise,
   PhGear,
   PhMonitor,
   PhFileMinus,
