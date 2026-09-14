@@ -56,9 +56,13 @@ namespace Listenarr.Application.Downloads.Contracts
         /// Called when we first detect a download in the client.
         /// The audiobook id is the integer library key, so the resulting history row can be
         /// found by the per-book history query.
+        /// The indexer, quality and size describe the release that was grabbed; the submission
+        /// path holds all three on the search result it is submitting, and a grab row without
+        /// them cannot say where a file came from or what was expected of it.
         /// </summary>
         Task RecordGrabbedAsync(string downloadId, string clientId, string title,
-            DownloadProtocol protocol, int? audiobookId = null);
+            DownloadProtocol protocol, int? audiobookId = null,
+            string? indexer = null, string? quality = null, long? size = null);
 
         /// <summary>
         /// Record that a download completed successfully.

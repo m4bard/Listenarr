@@ -35,8 +35,17 @@ namespace Listenarr.Infrastructure.ActivityHistory.Persistence
             var offset = Math.Max(0, query.Offset);
             IQueryable<History> filtered = _db.History.AsNoTracking();
 
-            if (!string.IsNullOrWhiteSpace(query.EventType))
+            // A set of event types is one query rather than one per type, so Total and the
+            // paging stay true for a filter preset that covers a group of them.
+            if (query.EventTypes is { Count: > 0 })
+            {
+                var eventTypes = query.EventTypes.ToList();
+                filtered = filtered.Where(h => eventTypes.Contains(h.EventType));
+            }
+            else if (!string.IsNullOrWhiteSpace(query.EventType))
+            {
                 filtered = filtered.Where(h => h.EventType == query.EventType);
+            }
             if (query.Outcome.HasValue)
                 filtered = filtered.Where(h => h.Outcome == query.Outcome.Value);
             if (query.From.HasValue)
