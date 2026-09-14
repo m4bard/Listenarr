@@ -109,7 +109,6 @@ namespace Listenarr.Api.Features.Prowlarr
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 IsEnabled = true,
-                Tags = string.Empty,
                 AdditionalSettings = string.Empty
             };
 
