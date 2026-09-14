@@ -1259,6 +1259,8 @@ async function loadTabContents(tab: string) {
             }
 
             const openlib = pickBool('enableOpenLibrarySearch', 'EnableOpenLibrarySearch', true)
+            const amazonSearch = pickBool('enableAmazonSearch', 'EnableAmazonSearch', true)
+            const audibleSearch = pickBool('enableAudibleSearch', 'EnableAudibleSearch', true)
             const defaultSearchRegion = pickString(
               'defaultSearchRegion',
               'DefaultSearchRegion',
@@ -1272,6 +1274,8 @@ async function loadTabContents(tab: string) {
 
             // Assign normalized camelCase properties for the UI binding
             normalized.enableOpenLibrarySearch = openlib
+            normalized.enableAmazonSearch = amazonSearch
+            normalized.enableAudibleSearch = audibleSearch
             normalized.defaultSearchRegion = defaultSearchRegion
             normalized.defaultSearchLanguage = defaultSearchLanguage
 
@@ -1326,6 +1330,16 @@ async function loadTabContents(tab: string) {
             normalizedReq.enableOpenLibrarySearch = pickBoolReq(
               'enableOpenLibrarySearch',
               'EnableOpenLibrarySearch',
+              true,
+            )
+            normalizedReq.enableAmazonSearch = pickBoolReq(
+              'enableAmazonSearch',
+              'EnableAmazonSearch',
+              true,
+            )
+            normalizedReq.enableAudibleSearch = pickBoolReq(
+              'enableAudibleSearch',
+              'EnableAudibleSearch',
               true,
             )
             normalizedReq.defaultSearchRegion = pickStringReq(

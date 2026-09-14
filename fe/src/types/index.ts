@@ -481,6 +481,10 @@ export interface ApplicationSettings {
   // Search behavior settings
   // Enable OpenLibrary augmentation/search
   enableOpenLibrarySearch?: boolean
+  // Enable direct ASIN (Amazon identifier) lookups during intelligent searches
+  enableAmazonSearch?: boolean
+  // Enable the Audible-first lookup attempt during intelligent searches
+  enableAudibleSearch?: boolean
   defaultSearchRegion?: string
   defaultSearchLanguage?: string
 }
