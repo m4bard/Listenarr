@@ -284,7 +284,6 @@ namespace Listenarr.Api.Features.Indexers
             existing.ApiKey = indexer.ApiKey == ApiResponseRedactor.RedactedValue ? existing.ApiKey : indexer.ApiKey;
             existing.Categories = indexer.Categories;
             existing.AnimeCategories = indexer.AnimeCategories;
-            existing.Tags = indexer.Tags;
             existing.EnableRss = indexer.EnableRss;
             existing.EnableAutomaticSearch = indexer.EnableAutomaticSearch;
             existing.EnableInteractiveSearch = indexer.EnableInteractiveSearch;
