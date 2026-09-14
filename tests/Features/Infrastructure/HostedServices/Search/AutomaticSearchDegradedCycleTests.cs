@@ -92,7 +92,10 @@ public sealed class AutomaticSearchDegradedCycleTests : BaseTests
                 It.IsAny<List<string>?>(),
                 It.IsAny<SearchSortBy>(),
                 It.IsAny<SearchSortDirection>(),
-                It.IsAny<bool>()))
+                It.IsAny<bool>(),
+                // The automatic-search path hands down a real query plan, so a setup pinned to the
+                // pre-ladder arity would match only a null one and leave the mock unstubbed.
+                It.IsAny<SearchQueryPlan?>()))
             .ReturnsAsync(new List<SearchResult>());
 
         var downloadRepository = new Mock<IDownloadRepository>();
