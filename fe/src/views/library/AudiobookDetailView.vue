@@ -709,6 +709,7 @@ import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.
 import CustomSelect from '@/components/form/CustomSelect.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import { Pill } from '@/components/base'
+import { getEventIconComponent, getEventTypeClass, formatEventTitle } from '@/utils/historyEvents'
 import {
   PhArrowLeft,
   PhArrowClockwise,
@@ -723,7 +724,6 @@ import {
   PhSpeakerHigh,
   PhGlobe,
   PhTag,
-  PhBookmarkSimple,
   PhStar,
   PhChatCircle,
   PhMusicNotes,
@@ -734,14 +734,7 @@ import {
   PhCaretDown,
   PhFileDashed,
   PhWarningCircle,
-  PhPlusCircle,
-  PhDownload,
-  PhUpload,
   PhPencil,
-  PhHandGrabbing,
-  PhFilePlus,
-  PhFileMinus,
-  PhCircle,
   PhDiscordLogo,
 } from '@phosphor-icons/vue'
 
@@ -1793,57 +1786,6 @@ function formatHistoryTime(timestamp: string): string {
     hour: '2-digit',
     minute: '2-digit',
   })
-}
-
-function getEventIconComponent(eventType: string): Component {
-  const icons: Record<string, Component> = {
-    Added: PhPlusCircle,
-    Downloaded: PhDownload,
-    Imported: PhUpload,
-    Deleted: PhTrash,
-    Updated: PhPencil,
-    Monitored: PhBookmark,
-    Unmonitored: PhBookmarkSimple,
-    Grabbed: PhHandGrabbing,
-    Failed: PhWarningCircle,
-    'File Added': PhFilePlus,
-    'File Removed': PhFileMinus,
-  }
-  return icons[eventType] || PhCircle
-}
-
-function getEventTypeClass(eventType: string): string {
-  const classes: Record<string, string> = {
-    Added: 'event-success',
-    Downloaded: 'event-success',
-    Imported: 'event-info',
-    Deleted: 'event-danger',
-    Updated: 'event-info',
-    Monitored: 'event-info',
-    Unmonitored: 'event-warning',
-    Grabbed: 'event-info',
-    Failed: 'event-danger',
-    'File Added': 'event-success',
-    'File Removed': 'event-warning',
-  }
-  return classes[eventType] || 'event-default'
-}
-
-function formatEventTitle(eventType: string): string {
-  const titles: Record<string, string> = {
-    Added: 'Added to Library',
-    Downloaded: 'Downloaded',
-    Imported: 'Imported',
-    Deleted: 'Deleted from Library',
-    Updated: 'Updated',
-    Monitored: 'Monitoring Enabled',
-    Unmonitored: 'Monitoring Disabled',
-    Grabbed: 'Download Started',
-    Failed: 'Failed',
-    'File Added': 'File Added',
-    'File Removed': 'File Removed',
-  }
-  return titles[eventType] || eventType
 }
 
 function getFileName(filePath?: string): string {
