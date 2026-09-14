@@ -435,11 +435,5 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
                 [download, client, "simulated client failure", CancellationToken.None])!;
         }
 
-        private sealed class MutableTimeProvider(DateTimeOffset currentTime) : TimeProvider
-        {
-            public override DateTimeOffset GetUtcNow() => currentTime;
-
-            public void Advance(TimeSpan value) => currentTime = currentTime.Add(value);
-        }
     }
 }
