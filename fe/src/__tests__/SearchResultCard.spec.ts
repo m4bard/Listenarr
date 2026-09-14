@@ -579,4 +579,31 @@ describe('SearchResultCard', () => {
       expect(link.findAll('svg')).toHaveLength(2)
     })
   })
+
+  describe('bundle badge', () => {
+    const withSeriesNumber = (seriesNumber?: string) => ({
+      ...mockBook,
+      searchResult: { ...mockBook.searchResult, series: 'Barsoom', seriesNumber } as SearchResult,
+    })
+
+    it('marks an edition whose series position covers a range', () => {
+      const wrapper = mount(SearchResultCard, { props: { book: withSeriesNumber('1-6') } })
+
+      const badge = wrapper.find('.bundle-badge')
+      expect(badge.exists()).toBe(true)
+      expect(badge.text()).toContain('Bundle')
+    })
+
+    it('leaves a single-position edition unmarked', () => {
+      const wrapper = mount(SearchResultCard, { props: { book: withSeriesNumber('1') } })
+
+      expect(wrapper.find('.bundle-badge').exists()).toBe(false)
+    })
+
+    it('leaves an edition with no series position unmarked', () => {
+      const wrapper = mount(SearchResultCard, { props: { book: withSeriesNumber(undefined) } })
+
+      expect(wrapper.find('.bundle-badge').exists()).toBe(false)
+    })
+  })
 })

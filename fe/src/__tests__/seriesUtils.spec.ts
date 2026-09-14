@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSeriesFields, formatSeriesMemberships, looksLikeAsin } from '@/utils/seriesUtils'
+import { buildSeriesFields, formatSeriesMemberships, looksLikeAsin, isBundleSeriesNumber } from '@/utils/seriesUtils'
 
 describe('formatSeriesMemberships', () => {
   it('lists every series a book belongs to with its number', () => {
@@ -92,5 +92,35 @@ describe('buildSeriesFields', () => {
     expect(fields.seriesAsin).toBeUndefined()
     // The series itself is still kept; only the bogus identifier is dropped.
     expect(fields.series).toBe('Foundation')
+  })
+})
+
+describe('isBundleSeriesNumber', () => {
+  it.each(['1-4', '1-2', '1-6', '1-8', '1 - 4', '1-3, 5', '2, 3'])(
+    'treats %s as covering more than one book',
+    (position) => {
+      expect(isBundleSeriesNumber(position)).toBe(true)
+    },
+  )
+
+  it.each([
+    '1',
+    '0',
+    '12',
+    // A novella between two books, not a bundle.
+    '1.5',
+    // A real Audible position: it has a comma and it is one book.
+    '2, Dramatized',
+    // Grouped digits are one number, not a list of two.
+    '20,000',
+    '',
+    '   ',
+  ])('treats %s as a single book', (position) => {
+    expect(isBundleSeriesNumber(position)).toBe(false)
+  })
+
+  it('handles a missing position', () => {
+    expect(isBundleSeriesNumber(undefined)).toBe(false)
+    expect(isBundleSeriesNumber(null)).toBe(false)
   })
 })
