@@ -70,6 +70,7 @@ public class IndexerSearchWorkflow
         SearchSortDirection sortDirection = SearchSortDirection.Descending,
         bool isAutomaticSearch = false,
         SearchRequest? request = null,
+        SearchQueryPlan? plan = null,
         bool filterBlocked = true,
         CancellationToken ct = default)
     {
@@ -102,7 +103,7 @@ public class IndexerSearchWorkflow
         if (configuredCount == 0)
         {
             _logger.LogWarning("No indexers configured, returning mock results for query: {Query}", query);
-            return GenerateMockIndexerResults(query);
+            return IndexerMockResultGenerator.Generate(_logger, query);
         }
 
         if (indexers.Count == 0)
@@ -113,6 +114,13 @@ public class IndexerSearchWorkflow
                 query);
             return results;
         }
+
+        // Built only once an indexer has survived selection. A caller with a book record hands
+        // down an ordered plan; a caller with nothing but a string an operator typed does not, and
+        // gets the one-form plan that is exactly what the search sent before any of this existed.
+        // Deliberately after the two returns above: an indexer set emptied by failure backoff must
+        // never reach the ladder at all, rather than walking every rung against nobody.
+        var queryPlan = plan is { Forms.Count: > 0 } ? plan : SearchQueryPlan.Verbatim(query);
 
         // One slot per configured indexer, written exactly once by the body below. An array rather
         // than a ConcurrentBag so the per-indexer outcome log lines still come out in configuration
@@ -131,14 +139,13 @@ public class IndexerSearchWorkflow
                 var indexer = entry.Indexer;
                 try
                 {
-                    _logger.LogInformation("Searching indexer {Name} ({Type}) for query: {Query}", indexer.Name, indexer.Type, query);
                     var perIndexerRequest = ApplyIndexerMamOptions(indexer, request);
 
-                    // The caller's own token, not the loop's linked one: Parallel.ForEachAsync cancels
-                    // its linked token when any body faults, and a sibling indexer faulting must not
-                    // make this indexer's in-flight HttpClient timeout read as a caller cancellation.
-                    var observation = await SearchIndexerAsync(indexer, query, category, perIndexerRequest, ct);
-                    _logger.LogInformation("Found {Count} results from indexer {Name}", observation.Results.Count, indexer.Name);
+                    // One observation per indexer per book, however many rungs the ladder issued:
+                    // RunQueryPlanAsync collapses the walk to the answer it stopped on. That is what
+                    // the failure backoff is fed, so a four-rung miss counts as the one "answered and
+                    // had nothing" it actually was, not as four separate failures.
+                    var observation = await RunQueryPlanAsync(indexer, queryPlan, category, perIndexerRequest, ct);
                     observations[entry.Index] = (indexer, observation);
                     await RecordOutcomeAsync(indexer, observation, ct);
                 }
@@ -276,12 +283,69 @@ public class IndexerSearchWorkflow
         return request;
     }
 
+    /// <summary>
+    /// Walks one indexer down the query plan, stopping at the first form that finds something.
+    /// </summary>
+    /// <remarks>
+    /// Escalation is deliberately narrow. The next form is only ever tried when the indexer
+    /// answered and had nothing, which is what <see cref="IndexerQueryObservation.ShouldEscalate"/>
+    /// means. An indexer that timed out, refused the connection, answered 500 or sent a body the
+    /// parser could not read gets exactly one request, the same as it got before the ladder
+    /// existed. Responding to an indexer that is already failing by sending it three more requests
+    /// per book, across a sweep of the whole library, is how an install gets rate-limited off an
+    /// indexer altogether.
+    /// </remarks>
+    /// <remarks>
+    /// Internal rather than private so a test can assert on the outcome and the tier it stopped at.
+    /// <see cref="SearchIndexersAsync"/> flattens every indexer's answer into one result list, which
+    /// is exactly the collapse this observation exists to undo.
+    /// </remarks>
+    internal async Task<IndexerQueryObservation> RunQueryPlanAsync(
+        Indexer indexer,
+        SearchQueryPlan plan,
+        string? category,
+        SearchRequest? request,
+        CancellationToken ct)
+    {
+        IndexerQueryObservation? observation = null;
+
+        foreach (var form in plan.Forms)
+        {
+            _logger.LogInformation(
+                "Searching indexer {Name} ({Type}) at tier {Tier} ({Kind}) for query: {Query}",
+                indexer.Name,
+                indexer.Type,
+                form.Tier,
+                form.Kind,
+                form.Query);
+
+            // The caller's own token, not the loop's linked one: Parallel.ForEachAsync cancels
+            // its linked token when any body faults, and a sibling indexer faulting must not
+            // make this indexer's in-flight HttpClient timeout read as a caller cancellation.
+            observation = await SearchIndexerAsync(indexer, form.Query, category, request, ct, form.Tier);
+            _logger.LogInformation(
+                "Found {Count} results from indexer {Name} at tier {Tier}",
+                observation.Results.Count,
+                indexer.Name,
+                form.Tier);
+
+            if (observation.Outcome == IndexerQueryOutcome.Hit || !observation.ShouldEscalate)
+            {
+                return observation;
+            }
+        }
+
+        // Every form was issued and every one of them came back empty.
+        return observation ?? IndexerQueryObservation.NoMatch(IndexerQueryReason.EmptyChannel, plan.PrimaryQuery);
+    }
+
     private async Task<IndexerQueryObservation> SearchIndexerAsync(
         Indexer indexer,
         string query,
         string? category = null,
         SearchRequest? request = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        int tier = 1)
     {
         try
         {
@@ -300,7 +364,8 @@ public class IndexerSearchWorkflow
                 return IndexerQueryObservation.NotConfigured(
                     IndexerQueryReason.NoProviderForImplementation,
                     query,
-                    LogRedaction.SanitizeText(indexer.Implementation));
+                    LogRedaction.SanitizeText(indexer.Implementation),
+                    tier);
             }
 
             var observation = await provider.SearchAsync(indexer, query, category, request, ct);
@@ -309,7 +374,9 @@ public class IndexerSearchWorkflow
                 r.Source = fallbackName;
             }
 
-            return observation;
+            // The plan owns tier numbering; a provider answering one query has no way to know
+            // which rung of the ladder it is standing on.
+            return observation with { Tier = tier };
         }
         catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
         {
@@ -320,7 +387,8 @@ public class IndexerSearchWorkflow
             return IndexerQueryObservation.Unavailable(
                 IndexerQueryFailureClassifier.Classify(ex),
                 query,
-                IndexerQueryFailureClassifier.Describe(ex));
+                IndexerQueryFailureClassifier.Describe(ex),
+                tier);
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
@@ -328,7 +396,8 @@ public class IndexerSearchWorkflow
             return IndexerQueryObservation.Unavailable(
                 IndexerQueryFailureClassifier.Classify(ex),
                 query,
-                IndexerQueryFailureClassifier.Describe(ex));
+                IndexerQueryFailureClassifier.Describe(ex),
+                tier);
         }
     }
 
@@ -408,62 +477,5 @@ public class IndexerSearchWorkflow
         {
             return "Indexer";
         }
-    }
-
-    private List<IndexerSearchResult> GenerateMockIndexerResults(string query)
-    {
-        return GenerateMockIndexerResults(query, "Mock Indexer", "Torrent");
-    }
-
-    private List<IndexerSearchResult> GenerateMockIndexerResults(string query, string indexerName, string indexerType)
-    {
-        var random = new Random();
-        var results = new List<IndexerSearchResult>();
-        var isUsenet = indexerType.Equals("Usenet", StringComparison.OrdinalIgnoreCase);
-
-        _logger.LogInformation("Generating {Count} mock {Type} results for indexer {IndexerName}", 5, indexerType, indexerName);
-
-        for (int i = 0; i < 5; i++)
-        {
-            var result = new IndexerSearchResult
-            {
-                Id = Guid.NewGuid().ToString(),
-                Title = $"{query} - Quality {i + 1}",
-                Artist = "Various Authors",
-                Album = $"{query} Series",
-                Category = "Audiobook",
-                Size = random.Next(200_000_000, 1_500_000_000),
-                Seeders = isUsenet ? 0 : random.Next(5, 100),
-                Leechers = isUsenet ? 0 : random.Next(0, 20),
-                Source = indexerName,
-                PublishedDate = DateTime.UtcNow.AddDays(-random.Next(1, 365)).ToString("o"),
-                Quality = i switch
-                {
-                    0 => "MP3 64kbps",
-                    1 => "MP3 128kbps",
-                    2 => "MP3 192kbps",
-                    3 => "M4B 128kbps",
-                    _ => "FLAC"
-                },
-                Format = i >= 3 ? "M4B" : "MP3",
-                Language = "English"
-            };
-
-            if (isUsenet)
-            {
-                result.NzbUrl = $"https://{indexerName.ToLowerInvariant()}.example.com/api/nzb/{Guid.NewGuid():N}";
-                result.MagnetLink = string.Empty;
-                result.TorrentUrl = string.Empty;
-            }
-            else
-            {
-                result.MagnetLink = $"magnet:?xt=urn:btih:{Guid.NewGuid():N}";
-                result.NzbUrl = string.Empty;
-            }
-
-            results.Add(result);
-        }
-
-        return results;
     }
 }
