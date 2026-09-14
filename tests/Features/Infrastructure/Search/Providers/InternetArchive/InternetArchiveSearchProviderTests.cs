@@ -80,7 +80,8 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var indexer = CreateIndexer();
 
         // When
-        var results = await provider.SearchAsync(indexer, "Alice");
+        var observation = await provider.SearchAsync(indexer, "Alice");
+        var results = observation.Results;
 
         // Then
         Assert.Equal(2, results.Count);
@@ -123,7 +124,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
             "Songs from Alice in Wonderland and Through the Looking-Glass");
 
         // When
-        var result = Assert.Single(await provider.SearchAsync(CreateIndexer(), "Alice"));
+        var result = Assert.Single((await provider.SearchAsync(CreateIndexer(), "Alice")).Results);
 
         // Then
         Assert.Equal("English", result.Language);
@@ -150,7 +151,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var provider = CreateProvider(metadataJson);
 
         // When
-        var result = Assert.Single(await provider.SearchAsync(CreateIndexer(), "Alice"));
+        var result = Assert.Single((await provider.SearchAsync(CreateIndexer(), "Alice")).Results);
 
         // Then
         Assert.Equal("German", result.Language);
@@ -187,7 +188,8 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
             allowArchives: false);
 
         // When
-        var results = await provider.SearchAsync(CreateIndexer(), "Alice");
+        var observation = await provider.SearchAsync(CreateIndexer(), "Alice");
+        var results = observation.Results;
 
         // Then
         var mp3 = Assert.Single(results, result => result.Format == "128Kbps MP3");
@@ -223,7 +225,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var provider = CreateProvider(metadataJson);
 
         // When
-        var result = Assert.Single(await provider.SearchAsync(CreateIndexer(), "Alice"));
+        var result = Assert.Single((await provider.SearchAsync(CreateIndexer(), "Alice")).Results);
 
         // Then
         var artifact = Assert.Single(result.DirectDownloadArtifacts);
@@ -248,7 +250,8 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var provider = CreateProvider(metadataJson, allowArchives: false);
 
         // When
-        var results = await provider.SearchAsync(CreateIndexer(), "Alice");
+        var observation = await provider.SearchAsync(CreateIndexer(), "Alice");
+        var results = observation.Results;
 
         // Then
         Assert.Empty(results);
@@ -280,7 +283,8 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         });
 
         // When
-        var results = await provider.SearchAsync(CreateIndexer(), "Alices Adventures in Wonderland Lewis Carroll");
+        var observation = await provider.SearchAsync(CreateIndexer(), "Alices Adventures in Wonderland Lewis Carroll");
+        var results = observation.Results;
 
         // Then
         Assert.Contains(capturedQueries, query => query == expectedBroadQuery);
@@ -327,10 +331,11 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         };
 
         // When
-        var results = await provider.SearchAsync(
+        var observation = await provider.SearchAsync(
             CreateIndexer(),
             "Alices Adventures in Wonderland Lewis Carroll",
             request: request);
+        var results = observation.Results;
 
         // Then
         Assert.Equal(1, metadataCalls);
@@ -382,10 +387,11 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         };
 
         // When
-        var results = await provider.SearchAsync(
+        var observation = await provider.SearchAsync(
             CreateIndexer(),
             "Alices Adventures in Wonderland Lewis Carroll",
             request: request);
+        var results = observation.Results;
 
         // Then
         Assert.Equal(1, metadataCalls["alice_book"]);
@@ -417,6 +423,101 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var query = Assert.Single(capturedQueries);
         Assert.StartsWith("collection:librivoxaudio AND", query, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("mediatype", query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    [Trait("Method", "SearchAsync")]
+    [Trait("Scenario", "NonSuccessStatus")]
+    public async Task SearchAsync_ServerError_ReportsUnavailableWithHttpStatus()
+    {
+        // Given
+        var provider = CreateProvider(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+
+        // When
+        var observation = await provider.SearchAsync(CreateIndexer(), "Alice");
+
+        // Then
+        Assert.Equal(IndexerQueryOutcome.Unavailable, observation.Outcome);
+        Assert.Equal(IndexerQueryReason.HttpStatus, observation.Reason);
+        Assert.Empty(observation.Results);
+        Assert.False(observation.ShouldEscalate);
+        Assert.Equal("500", observation.Detail);
+    }
+
+    [Fact]
+    [Trait("Method", "SearchAsync")]
+    [Trait("Scenario", "RequestTimeout")]
+    public async Task SearchAsync_RequestTimesOut_ReportsUnavailableWithTimeout()
+    {
+        // Given: the shape HttpClient uses for its own request timeout
+        var provider = CreateProvider(_ => throw new TaskCanceledException("timed out", new TimeoutException()));
+
+        // When
+        var observation = await provider.SearchAsync(CreateIndexer(), "Alice");
+
+        // Then
+        Assert.Equal(IndexerQueryOutcome.Unavailable, observation.Outcome);
+        Assert.Equal(IndexerQueryReason.Timeout, observation.Reason);
+        Assert.False(observation.ShouldEscalate);
+    }
+
+    [Fact]
+    [Trait("Method", "SearchAsync")]
+    [Trait("Scenario", "MalformedBody")]
+    public async Task SearchAsync_MalformedJson_ReportsUnreadable()
+    {
+        // Given
+        var provider = CreateProvider(uri => IsAdvancedSearch(uri)
+            ? Ok("{\"response\": {\"docs\": [")
+            : new HttpResponseMessage(HttpStatusCode.NotFound));
+
+        // When
+        var observation = await provider.SearchAsync(CreateIndexer(), "Alice");
+
+        // Then
+        Assert.Equal(IndexerQueryOutcome.Unreadable, observation.Outcome);
+        Assert.False(observation.Answered);
+        Assert.False(observation.ShouldEscalate);
+    }
+
+    [Fact]
+    [Trait("Method", "SearchAsync")]
+    [Trait("Scenario", "EmptyResultSet")]
+    public async Task SearchAsync_WellFormedEmptyResponse_ReportsNoMatchNotUnavailable()
+    {
+        // Given: the control for this group. Without it, a mapping that answered Unavailable for
+        // everything would pass every other outcome test here.
+        var provider = CreateProvider(uri => IsAdvancedSearch(uri)
+            ? Ok(CreateEmptySearchResponse())
+            : new HttpResponseMessage(HttpStatusCode.NotFound));
+
+        // When
+        var observation = await provider.SearchAsync(CreateIndexer(), "Alice");
+
+        // Then
+        Assert.Equal(IndexerQueryOutcome.NoMatch, observation.Outcome);
+        Assert.Equal(IndexerQueryReason.EmptyChannel, observation.Reason);
+        Assert.Empty(observation.Results);
+        Assert.True(observation.Answered);
+        Assert.True(observation.ShouldEscalate);
+    }
+
+    [Fact]
+    [Trait("Method", "SearchAsync")]
+    [Trait("Scenario", "ResultsReturned")]
+    public async Task SearchAsync_ResponseWithDocs_ReportsHit()
+    {
+        // Given
+        var provider = CreateProvider(CreateMultiRepresentationMetadata());
+
+        // When
+        var observation = await provider.SearchAsync(CreateIndexer(), "Alice");
+
+        // Then
+        Assert.Equal(IndexerQueryOutcome.Hit, observation.Outcome);
+        Assert.Equal(IndexerQueryReason.None, observation.Reason);
+        Assert.NotEmpty(observation.Results);
+        Assert.True(observation.Answered);
     }
 
     private static InternetArchiveSearchProvider CreateProvider(
