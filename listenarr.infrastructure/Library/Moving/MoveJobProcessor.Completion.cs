@@ -191,7 +191,8 @@ internal partial class MoveJobProcessor
                         Timestamp = timeProvider.GetUtcNow().UtcDateTime
                     },
                     webhook.Url,
-                    webhook.Triggers);
+                    webhook.Triggers,
+                    webhook.Type);
             }
 
             return true;
