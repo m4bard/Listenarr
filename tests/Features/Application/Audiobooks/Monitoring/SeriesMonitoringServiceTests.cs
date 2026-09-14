@@ -307,5 +307,131 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
             Assert.NotNull(addedMetadata);
             return addedMetadata!;
         }
+
+        [Fact]
+        public async Task MonitorSeriesAsync_PersistsSeriesAsinFromCatalogBook()
+        {
+            // Given
+            Init(services => services
+                .WithSingleton(_seriesCatalogService.Object)
+                .WithSingleton(_imageCacheService.Object));
+
+            var rootPath = FileService.GetTempDirectory("series-monitoring-asin");
+
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithFolderNamingPattern("{Author}/{Series}/{Title}")
+                .Build());
+
+            await _rootFolderRepository.AddAsync(new RootFolderBuilder()
+                .WithIsDefault()
+                .WithPath(rootPath)
+                .Build());
+
+            _seriesCatalogService
+                .Setup(service => service.GetCatalogAsync(
+                    "Dungeon Crawler Carl",
+                    "us",
+                    500,
+                    null,
+                    true,
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new SeriesCatalogFetchResultBuilder()
+                    .WithSeries("Dungeon Crawler Carl", "SERIES123")
+                    .WithBook(new AudibleSearchResultBuilder()
+                        .WithAsin("BOOK123")
+                        .WithTitle("This Inevitable Ruin")
+                        .WithAuthor("Matt Dinniman")
+                        .WithLanguage("english")
+                        .WithSeries("Dungeon Crawler Carl", "7", "SERIESASIN7")
+                        .Build())
+                    .Build());
+
+            var service = _provider.GetRequiredService<ISeriesMonitoringService>();
+
+            // When
+            var result = await service.MonitorSeriesAsync(new MonitorSeriesRequest
+            {
+                Name = "Dungeon Crawler Carl",
+                Region = "us",
+                Language = "english"
+            });
+
+            // Then
+            Assert.True(result.SyncResult.Succeeded);
+            Assert.Equal(1, result.SyncResult.AddedCount);
+
+            var storedAudiobookSummary = Assert.Single(await _audiobookRepository.GetAllAsync());
+            Assert.Equal("Dungeon Crawler Carl", storedAudiobookSummary.Series);
+            Assert.Equal("7", storedAudiobookSummary.SeriesNumber);
+
+            // GetAllAsync doesn't Include(SeriesMemberships), so re-fetch by id to load it.
+            var storedAudiobook = await _audiobookRepository.GetByIdAsync(storedAudiobookSummary.Id);
+            Assert.NotNull(storedAudiobook);
+            var membership = Assert.Single(storedAudiobook!.SeriesMemberships ?? new List<AudiobookSeriesMembership>());
+            Assert.Equal("Dungeon Crawler Carl", membership.SeriesName);
+            Assert.Equal("7", membership.SeriesNumber);
+            Assert.Equal("SERIESASIN7", membership.SeriesAsin);
+        }
+
+        [Fact]
+        public async Task MonitorSeriesAsync_BookWithNoSeriesData_LeavesSeriesMembershipsNull()
+        {
+            // Given
+            Init(services => services
+                .WithSingleton(_seriesCatalogService.Object)
+                .WithSingleton(_libraryAddService.Object));
+
+            LibraryAddOperationRequest? capturedRequest = null;
+            _libraryAddService
+                .Setup(service => service.AddToLibraryAsync(
+                    It.IsAny<LibraryAddOperationRequest>(),
+                    It.IsAny<CancellationToken>()))
+                .Callback<LibraryAddOperationRequest, CancellationToken>((request, _) => capturedRequest = request)
+                .ReturnsAsync(new LibraryAddOperationResult
+                {
+                    Added = true,
+                    Message = "Audiobook added to library successfully",
+                    Audiobook = new AudiobookBuilder()
+                        .WithTitle("Standalone Title")
+                        .WithAuthor("Some Author")
+                        .WithMonitored()
+                        .Build()
+                });
+
+            _seriesCatalogService
+                .Setup(service => service.GetCatalogAsync(
+                    "Some Series",
+                    "us",
+                    500,
+                    null,
+                    true,
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new SeriesCatalogFetchResultBuilder()
+                    .WithSeries("Some Series", "SERIESX")
+                    .WithBook(new AudibleSearchResultBuilder()
+                        .WithAsin("BOOKX")
+                        .WithTitle("Standalone Title")
+                        .WithAuthor("Some Author")
+                        .WithLanguage("english")
+                        .Build())
+                    .Build());
+
+            var service = _provider.GetRequiredService<ISeriesMonitoringService>();
+
+            // When
+            var result = await service.MonitorSeriesAsync(new MonitorSeriesRequest
+            {
+                Name = "Some Series",
+                Region = "us",
+                Language = "english"
+            });
+
+            // Then
+            Assert.True(result.SyncResult.Succeeded);
+            Assert.NotNull(capturedRequest);
+            Assert.Null(capturedRequest!.Metadata.SeriesMemberships);
+            Assert.Null(capturedRequest.Metadata.Series);
+            Assert.Null(capturedRequest.Metadata.SeriesNumber);
+        }
     }
 }
