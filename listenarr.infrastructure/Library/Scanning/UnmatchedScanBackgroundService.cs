@@ -175,7 +175,6 @@ namespace Listenarr.Infrastructure.Library.Scanning
 
     public partial class UnmatchedScanProcessor : IUnmatchedScanProcessor
     {
-        private static readonly string[] AudioExtensions = { ".m4b", ".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac", ".wav" };
         private sealed record StemGroup(string Stem, List<string> Files);
         private sealed record GroupCandidate(string FilePath, string Stem, bool IsAncillary, string TitleKey, string AuthorKey);
 
