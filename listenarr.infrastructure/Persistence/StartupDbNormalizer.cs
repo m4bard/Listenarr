@@ -22,7 +22,9 @@ namespace Listenarr.Infrastructure.Persistence
 {
     /// <summary>
     /// Runs once at startup to idempotently normalize legacy JSON-backed TEXT columns
-    /// so that collection properties are stored as JSON arrays (not primitive roots).
+    /// so that collection properties are stored as JSON arrays (not primitive roots), and to
+    /// re-derive the normalized author-name keys that rows written by an earlier normalizer
+    /// still carry.
     /// This is safe to run repeatedly and will not modify already-correct rows.
     /// </summary>
     internal sealed class StartupDbNormalizer(
@@ -53,6 +55,23 @@ namespace Listenarr.Infrastructure.Persistence
                     logger.LogInformation(
                         "StartupDbNormalizer: gave {Count} audiobook(s) a starting metadata refresh timestamp",
                         backfilled);
+                }
+
+                // Must precede any join on AuthorNameNormalized: rows written before the author
+                // normalizer was unified hold keys the current reader never produces, so a join
+                // on that column would silently skip exactly the drifted rows it is looking for.
+                var rederived = await audiobookRepository.RederiveAuthorNameKeysAsync(stoppingToken);
+                if (rederived.AuthorCacheEntriesCorrected > 0
+                    || rederived.MonitoredAuthorsCorrected > 0
+                    || rederived.Skipped > 0)
+                {
+                    logger.LogInformation(
+                        "StartupDbNormalizer: re-derived author name keys "
+                        + "({CacheEntries} cached authors, {MonitoredAuthors} monitored authors, "
+                        + "{Skipped} left alone to avoid a duplicate key).",
+                        rederived.AuthorCacheEntriesCorrected,
+                        rederived.MonitoredAuthorsCorrected,
+                        rederived.Skipped);
                 }
 
                 logger.LogInformation("StartupDbNormalizer: normalization pass complete.");
