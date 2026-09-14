@@ -65,18 +65,21 @@ public sealed class IndexerStatusService : IIndexerStatusService
     private readonly IIndexerRepository _indexerRepository;
     private readonly IndexerBackoffStartupWindow _startupWindow;
     private readonly TimeProvider _timeProvider;
+    private readonly IHubBroadcaster? _hubBroadcaster;
     private readonly ILogger<IndexerStatusService> _logger;
 
     public IndexerStatusService(
         IIndexerRepository indexerRepository,
         IndexerBackoffStartupWindow startupWindow,
         TimeProvider timeProvider,
-        ILogger<IndexerStatusService> logger)
+        ILogger<IndexerStatusService> logger,
+        IHubBroadcaster? hubBroadcaster = null)
     {
         _indexerRepository = indexerRepository ?? throw new ArgumentNullException(nameof(indexerRepository));
         _startupWindow = startupWindow ?? throw new ArgumentNullException(nameof(startupWindow));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _hubBroadcaster = hubBroadcaster;
     }
 
     public async Task<IReadOnlySet<int>> GetBlockedIndexerIdsAsync(CancellationToken ct = default)
@@ -134,7 +137,39 @@ public sealed class IndexerStatusService : IIndexerStatusService
 
         await _indexerRepository.UpdateBackoffStateAsync(indexer.Id, next, ct);
         LogTransition(indexer, current, next);
+        await BroadcastTransitionAsync(ct);
         return next;
+    }
+
+    /// <summary>
+    /// Nudges any open settings view to re-read the indexer list, so a block appears and clears on
+    /// the card without a manual refresh. A mechanism that silently mutes indexers would reproduce
+    /// the defect that let the original incident run for a day unnoticed.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately carries counts only and no indexer array: the existing IndexersUpdated handler
+    /// treats a payload carrying indexers as a Prowlarr import and raises an "imported N indexers"
+    /// toast, which this is not. With created at zero it takes the quiet refresh path instead.
+    /// </remarks>
+    private async Task BroadcastTransitionAsync(CancellationToken ct)
+    {
+        if (_hubBroadcaster == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _hubBroadcaster.BroadcastAsync(
+                RealtimeHubTarget.Settings,
+                "IndexersUpdated",
+                new { created = 0, skipped = 0 },
+                ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
+            _logger.LogDebug(ex, "Failed to broadcast an indexer failure backoff transition");
+        }
     }
 
     /// <summary>
