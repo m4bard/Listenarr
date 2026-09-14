@@ -23,13 +23,13 @@ using System.Text.RegularExpressions;
 namespace Listenarr.Application.Search.Core;
 
 /// <summary>
-/// Builds the free text query handed to indexers for an audiobook.
+/// Turns an audiobook record into the ordered query forms handed to indexers.
 /// </summary>
 /// <remarks>
-/// This is the single place an audiobook becomes a query string. Both the automatic
-/// sweep and the download path call it, so the two cannot describe the same audiobook
-/// differently. The stored <see cref="Audiobook.Title"/> stays untouched for display;
-/// what goes on the wire is the derived query title from <see cref="BuildQueryTitle"/>.
+/// This is the single place an audiobook becomes indexer queries. Both the automatic sweep and
+/// the download path call it, so the two cannot describe the same audiobook differently. The
+/// stored <see cref="Audiobook.Title"/> stays untouched for display; what goes on the wire is
+/// the derived query title from <see cref="BuildQueryTitle"/>.
 /// </remarks>
 public static class AudiobookSearchQueryBuilder
 {
@@ -69,34 +69,73 @@ public static class AudiobookSearchQueryBuilder
         @"\s+",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    public static string Build(Audiobook audiobook)
+    /// <summary>
+    /// A single letter followed by a full stop, as author initials are usually written.
+    /// </summary>
+    private static readonly Regex Initial = new(
+        @"(?<![\p{L}\p{N}])(\p{L})\.",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Builds the ordered query forms to try for one audiobook, narrowest first.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The order matters more than the contents. Tier 1 is what the search sent before the ladder
+    /// existed, so a book that was already being found costs exactly one request per indexer as
+    /// it did before. Everything after tier 1 only happens when an indexer answered and said it
+    /// had nothing.
+    /// </para>
+    /// <para>
+    /// Series forms are additional rungs rather than a replacement for any title form: a real
+    /// library has plenty of books with no series at all, and those must still get the title
+    /// forms. They are skipped entirely when the title already says the series as whole words,
+    /// because "Oz L. Frank Baum" after "The Wonderful Wizard of Oz L. Frank Baum" asks a
+    /// strictly broader version of a question already answered.
+    /// </para>
+    /// <para>
+    /// A title's subtitle is demoted, never discarded. Readarr keeps the part before the colon
+    /// and throws the rest away, which turns "Sherlock Holmes: A Study in Scarlet" into a search
+    /// for the series and "She: A History of Adventure" into a search for the word "She". Here
+    /// the full title stays at tier 1 and the shortened form is an extra rung further down, so a
+    /// bad guess about which half carries the work costs a later request rather than the search.
+    /// </para>
+    /// </remarks>
+    public static SearchQueryPlan BuildPlan(Audiobook audiobook)
     {
         ArgumentNullException.ThrowIfNull(audiobook);
 
-        var parts = new List<string>();
-
         var queryTitle = BuildQueryTitle(audiobook.Title);
-        if (!string.IsNullOrEmpty(queryTitle))
+        var author = BuildQueryAuthor(audiobook.Authors);
+        var series = Collapse(audiobook.Series ?? string.Empty);
+        var titleStem = BuildTitleStem(queryTitle);
+
+        // A series the title already spells out adds nothing to a query the title already carries.
+        if (series.Length > 0 && ContainsPhrase(queryTitle, series))
         {
-            parts.Add(queryTitle);
+            series = string.Empty;
         }
 
-        var author = audiobook.Authors?.FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate));
-        if (!string.IsNullOrWhiteSpace(author))
+        var candidates = new List<(string Query, SearchQueryFormKind Kind)>
         {
-            parts.Add(author.Trim());
-        }
+            (Join(queryTitle, author), SearchQueryFormKind.TitleAuthor),
+            (queryTitle, SearchQueryFormKind.Title),
 
-        // A series name is only worth sending when it adds something the title does not
-        // already say. "The Wonderful Wizard of Oz" in the "Oz" series otherwise went out
-        // as "The Wonderful Wizard of Oz L. Frank Baum Oz".
-        var series = audiobook.Series;
-        if (!string.IsNullOrWhiteSpace(series) && !ContainsPhrase(queryTitle, series))
-        {
-            parts.Add(series.Trim());
-        }
+            // Only ever paired with the author. Alone, a stem such as "She" is broad enough to be
+            // noise, and the bare series rung below already covers the wide end of the ladder.
+            (Join(titleStem, author), SearchQueryFormKind.TitleStemAuthor),
 
-        return string.Join(" ", parts);
+            (Join(series, author), SearchQueryFormKind.SeriesAuthor),
+            (series, SearchQueryFormKind.Series)
+        };
+
+        var plan = SearchQueryPlan.FromCandidates(candidates);
+
+        // A record with nothing usable in it still has to produce a query, or the search silently
+        // stops asking rather than asking badly.
+        return plan.Forms.Count > 0
+            ? plan
+            : SearchQueryPlan.Verbatim(Collapse(audiobook.Title ?? string.Empty));
     }
 
     /// <summary>
@@ -125,6 +164,40 @@ public static class AudiobookSearchQueryBuilder
         // Stripping must never empty a title. If the annotation was the whole thing,
         // the stored title is a better query than nothing.
         return stripped.Length == 0 ? Collapse(title) : stripped;
+    }
+
+    /// <summary>
+    /// The first usable author name, with initials written the way an indexer tokenises them.
+    /// </summary>
+    /// <remarks>
+    /// The sanitizer does not strip a full stop, so "Dennis E. Taylor" reaches the wire with the
+    /// period attached to the initial and an indexer that splits on whitespace is asked for the
+    /// token "E." rather than "E". Normalising here rather than in the sanitizer keeps an
+    /// operator's typed text intact on the free-text path, which shares the sanitizer.
+    /// </remarks>
+    internal static string BuildQueryAuthor(IEnumerable<string>? authors)
+    {
+        var author = authors?.FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate));
+        return string.IsNullOrWhiteSpace(author)
+            ? string.Empty
+            : Collapse(Initial.Replace(author, "$1 "));
+    }
+
+    /// <summary>
+    /// The part of a title before its subtitle, or nothing when the title carries no subtitle.
+    /// </summary>
+    internal static string BuildTitleStem(string queryTitle)
+    {
+        var delimiter = queryTitle.IndexOf(':');
+        if (delimiter <= 0)
+        {
+            return string.Empty;
+        }
+
+        var stem = Collapse(queryTitle[..delimiter]);
+        return string.Equals(stem, queryTitle, StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : stem;
     }
 
     /// <summary>
@@ -164,6 +237,16 @@ public static class AudiobookSearchQueryBuilder
         }
 
         return false;
+    }
+
+    private static string Join(string left, string right)
+    {
+        if (left.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        return right.Length == 0 ? left : left + " " + right;
     }
 
     private static List<string> Tokenize(string? value)
