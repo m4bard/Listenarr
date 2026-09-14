@@ -1352,6 +1352,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("PreferredLanguages");
 
+                    b.Property<int>("PreferredReleaseShape")
+                        .HasColumnType("INTEGER");
+
                     b.PrimitiveCollection<string>("PreferredWords")
                         .IsRequired()
                         .HasColumnType("TEXT");
