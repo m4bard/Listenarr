@@ -367,7 +367,8 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                 configurationService.Object,
                 NullLogger<InternetArchiveSearchProvider>.Instance);
 
-            var results = await provider.SearchAsync(indexer, "Artemis");
+            var observation = await provider.SearchAsync(indexer, "Artemis");
+            var results = observation.Results;
 
             var result = Assert.Single(results);
             Assert.Equal("DDL", result.DownloadType);
@@ -689,7 +690,7 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                 httpClient,
                 Mock.Of<IIndexerRepository>());
 
-            var results = await provider.SearchAsync(
+            var observation = await provider.SearchAsync(
                 indexer,
                 "Enrich Test",
                 null,
@@ -698,6 +699,7 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                     IncludeEnrichment = true,
                     MyAnonamouse = new MyAnonamouseOptions { EnrichResults = true, EnrichTopResults = 1 }
                 });
+            var results = observation.Results;
 
             Assert.Single(results);
             var r = results[0];
