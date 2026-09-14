@@ -55,9 +55,8 @@ public sealed class IndexerSearchWorkflowBackoffTests : BaseTests
         // When
         var results = await workflow.SearchIndexersAsync("Alice");
 
-        // Then: the mock-results branch fires when nothing is CONFIGURED. Reaching it because every
-        // configured indexer happens to be in cooldown would put five invented releases in front of
-        // the automatic-search scorer, and from there into a grab.
+        // Then: nothing is asked and nothing comes back. A set emptied by cooldown returns before the
+        // fan-out, so no blocked indexer is queried on the way to an empty answer.
         Assert.Empty(results);
         Assert.Empty(provider.QueriedIndexers);
     }
@@ -65,10 +64,10 @@ public sealed class IndexerSearchWorkflowBackoffTests : BaseTests
     [Fact]
     [Trait("Method", "SearchIndexersAsync")]
     [Trait("Scenario", "NoneConfigured")]
-    public async Task SearchIndexersAsync_NoIndexersConfigured_StillReturnsMockResults()
+    public async Task SearchIndexersAsync_NoIndexersConfigured_ReturnsNothing()
     {
-        // Given: the control for the test above. Without it, "returns empty" and "the mock branch
-        // is broken" look the same, and the behaviour this feature must not change looks changed.
+        // Given: no indexer configured at all, the other way to an empty set. It must not invent
+        // results either: an install with nothing configured gets an empty answer, not fake releases.
         var provider = new RecordingSearchProvider(_ => Hit("Alice"));
         var workflow = CreateWorkflow(provider, new FakeIndexerStatusService());
 
@@ -76,7 +75,7 @@ public sealed class IndexerSearchWorkflowBackoffTests : BaseTests
         var results = await workflow.SearchIndexersAsync("Alice");
 
         // Then
-        Assert.NotEmpty(results);
+        Assert.Empty(results);
         Assert.Empty(provider.QueriedIndexers);
     }
 

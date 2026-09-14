@@ -13,15 +13,16 @@ namespace Listenarr.Application.Downloads.Queue
     internal static class DownloadSearchQueryBuilder
     {
         /// <summary>
-        /// Builds the indexer query for a download search.
+        /// The ordered query forms for an audiobook the download path is trying to find.
         /// </summary>
         /// <remarks>
-        /// The query is composed by <see cref="AudiobookSearchQueryBuilder"/> rather than
-        /// here, so that this path and the automatic sweep ask indexers the same question.
+        /// Forwarded to <see cref="AudiobookSearchQueryBuilder"/> rather than built here, because
+        /// this path and the automatic sweep used to build their own strings and disagreed about
+        /// what belongs in one. Two entry points must not describe the same audiobook differently.
         /// </remarks>
-        public static string Build(Audiobook audiobook)
+        public static SearchQueryPlan BuildPlan(Audiobook audiobook)
         {
-            return AudiobookSearchQueryBuilder.Build(audiobook);
+            return AudiobookSearchQueryBuilder.BuildPlan(audiobook);
         }
     }
 }
