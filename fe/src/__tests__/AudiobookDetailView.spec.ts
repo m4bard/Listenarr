@@ -41,8 +41,42 @@ vi.mock('@/services/api', () => ({
     scanAudiobook: vi.fn(),
     getWeakStorageMissingFiles: vi.fn(async () => ({ items: [] })),
     confirmWeakStorageMissingFiles: vi.fn(),
+    searchAndDownload: vi.fn(async () => ({ success: true, indexerUsed: 'Test Indexer' })),
   },
   ensureImageCached: vi.fn(async () => true),
+}))
+
+// Mock the toast service so tests can assert which toast variant was shown
+// without depending on the shared reactive toast state, and error tracking
+// so tests can assert captureException calls precisely. vi.mock factories are
+// hoisted above top-level statements, so the mock fns they close over must be
+// created via vi.hoisted() rather than plain top-level consts.
+const { toastSuccessMock, toastInfoMock, toastErrorMock, captureExceptionMock } = vi.hoisted(
+  () => ({
+    toastSuccessMock: vi.fn(),
+    toastInfoMock: vi.fn(),
+    toastErrorMock: vi.fn(),
+    captureExceptionMock: vi.fn(),
+  }),
+)
+vi.mock('@/services/toastService', () => ({
+  useToast: () => ({
+    success: toastSuccessMock,
+    info: toastInfoMock,
+    error: toastErrorMock,
+    warning: vi.fn(),
+    push: vi.fn(),
+    dismiss: vi.fn(),
+    subscribe: vi.fn(() => () => undefined),
+  }),
+}))
+
+vi.mock('@/services/errorTracking', () => ({
+  errorTracking: {
+    captureException: captureExceptionMock,
+    captureMessage: vi.fn(),
+    addBreadcrumb: vi.fn(),
+  },
 }))
 
 // Mock signalr service to provide missing hooks (e.g., onScanJobUpdate)
@@ -188,6 +222,136 @@ describe('AudiobookDetailView image recache behavior', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(wrapper.find('.edit-audiobook-modal-stub').attributes('data-open')).toBe('true')
+  })
+
+  describe('automatic search action', () => {
+    function mountDetailView() {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      const store = useLibraryStore()
+      store.audiobooks = [
+        {
+          id: 5,
+          title: 'Detail Book',
+          authors: ['Author One'],
+          files: [],
+        },
+      ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+
+      store.fetchLibrary = vi.fn(async () => undefined)
+
+      return mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    }
+
+    it('calls apiService.searchAndDownload with the book id when the action is pressed', async () => {
+      const searchMock = vi.mocked(apiService.searchAndDownload)
+      searchMock.mockResolvedValueOnce({ success: true, indexerUsed: 'Test Indexer' })
+
+      const wrapper = mountDetailView()
+      await new Promise((r) => setTimeout(r, 10))
+
+      const button = wrapper.find('button[aria-label="Automatic Search"]')
+      expect(button.exists()).toBe(true)
+
+      await button.trigger('click')
+      await new Promise((r) => setTimeout(r, 10))
+
+      expect(searchMock).toHaveBeenCalledTimes(1)
+      expect(searchMock).toHaveBeenCalledWith(5)
+      expect(toastSuccessMock).toHaveBeenCalledWith(
+        'Search started',
+        'Found on Test Indexer, sent to your download client',
+      )
+    })
+
+    it('disables the action while in flight and ignores a second press before the first resolves', async () => {
+      let resolveSearch: (value: { success: boolean; indexerUsed?: string }) => void = () => {}
+      const searchMock = vi.mocked(apiService.searchAndDownload)
+      searchMock.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSearch = resolve
+          }),
+      )
+
+      const wrapper = mountDetailView()
+      await new Promise((r) => setTimeout(r, 10))
+
+      const button = wrapper.find('button[aria-label="Automatic Search"]')
+      await button.trigger('click')
+      await new Promise((r) => setTimeout(r, 0))
+
+      const busyButton = wrapper.find('button[aria-label="Automatic Search"]')
+      expect(busyButton.attributes('disabled')).toBeDefined()
+
+      await busyButton.trigger('click')
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(searchMock).toHaveBeenCalledTimes(1)
+
+      resolveSearch({ success: true, indexerUsed: 'Test Indexer' })
+      await new Promise((r) => setTimeout(r, 10))
+
+      expect(searchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('surfaces a success:false response via toast.info without reporting it as an error', async () => {
+      const searchMock = vi.mocked(apiService.searchAndDownload)
+      searchMock.mockResolvedValueOnce({
+        success: false,
+        message: 'No release met the quality profile cutoff',
+      })
+
+      const wrapper = mountDetailView()
+      await new Promise((r) => setTimeout(r, 10))
+
+      const button = wrapper.find('button[aria-label="Automatic Search"]')
+      await button.trigger('click')
+      await new Promise((r) => setTimeout(r, 10))
+
+      expect(toastInfoMock).toHaveBeenCalledWith(
+        'No match found',
+        'No release met the quality profile cutoff',
+      )
+      expect(captureExceptionMock).not.toHaveBeenCalled()
+      expect(toastSuccessMock).not.toHaveBeenCalled()
+    })
+
+    it('routes a thrown error through errorTracking and clears the in-flight flag in finally', async () => {
+      const searchMock = vi.mocked(apiService.searchAndDownload)
+      const thrown = new Error('network down')
+      searchMock.mockRejectedValueOnce(thrown)
+
+      const wrapper = mountDetailView()
+      await new Promise((r) => setTimeout(r, 10))
+
+      const button = wrapper.find('button[aria-label="Automatic Search"]')
+      await button.trigger('click')
+      await new Promise((r) => setTimeout(r, 10))
+
+      expect(captureExceptionMock).toHaveBeenCalledWith(thrown, {
+        component: 'AudiobookDetailView',
+        operation: 'automaticSearch',
+        metadata: { itemId: 5 },
+      })
+      expect(toastErrorMock).toHaveBeenCalledWith('Search failed', 'network down')
+
+      const settledButton = wrapper.find('button[aria-label="Automatic Search"]')
+      expect(settledButton.attributes('disabled')).toBeUndefined()
+    })
+
+    it('renders the automatic-search action before manual-search in the toolbar', async () => {
+      const wrapper = mountDetailView()
+      await new Promise((r) => setTimeout(r, 10))
+
+      const buttons = wrapper.findAll('button')
+      const autoIndex = buttons.findIndex((b) => b.attributes('aria-label') === 'Automatic Search')
+      const manualIndex = buttons.findIndex((b) => b.attributes('aria-label') === 'Manual Search')
+
+      expect(autoIndex).toBeGreaterThanOrEqual(0)
+      expect(manualIndex).toBeGreaterThanOrEqual(0)
+      expect(autoIndex).toBeLessThan(manualIndex)
+    })
   })
 
   it('updates the Files tab scan status from the shared scan state', async () => {
