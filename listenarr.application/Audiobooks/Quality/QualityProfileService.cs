@@ -207,9 +207,20 @@ namespace Listenarr.Application.Audiobooks.Quality
             try
             {
                 Indexer? indexer = null;
-                if (searchResult.IndexerId.HasValue && _indexerRepository != null)
+                if (searchResult.IndexerId.HasValue)
                 {
-                    indexer = await _indexerRepository.GetByIdAsync(searchResult.IndexerId.Value);
+                    // Reuse the batch's pre-resolved indexer rather than a second per-result
+                    // query: the scorer above already paid for this lookup once, and the same
+                    // concurrent-DbContext hazard that motivated resolvedIndexers there applies
+                    // here too.
+                    if (resolvedIndexers != null)
+                    {
+                        resolvedIndexers.TryGetValue(searchResult.IndexerId.Value, out indexer);
+                    }
+                    else if (_indexerRepository != null)
+                    {
+                        indexer = await _indexerRepository.GetByIdAsync(searchResult.IndexerId.Value);
+                    }
                 }
 
                 var composite = CompositeScorer.CalculateProwlarrStyleScore(searchResult, indexer, _logger);

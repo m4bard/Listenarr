@@ -500,7 +500,6 @@
             </FormRow>
 
             <FormRow
-              v-if="formData.preferNewerReleases"
               label="Maximum Age (Days)"
               labelFor="maximumAge"
               help="Reject releases older than this many days (0 = no limit)"
