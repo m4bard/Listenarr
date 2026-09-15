@@ -15,8 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using System.Collections.Concurrent;
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Search.Scoring
@@ -97,7 +95,7 @@ namespace Listenarr.Application.Search.Scoring
             string? normalizedQuality = NormalizeToken(searchResult.Quality);
 
             // Instant rejects: forbidden words
-            var forbidden = profile.MustNotContain.FirstOrDefault(word => TitleContainsTerm(searchResult.Title, word));
+            var forbidden = profile.MustNotContain.FirstOrDefault(word => TitleTermMatcher.TitleContainsTerm(searchResult.Title, word));
             if (forbidden != null)
             {
                 score.RejectionReasons.Add($"Contains forbidden word: '{forbidden}'");
@@ -107,7 +105,7 @@ namespace Listenarr.Application.Search.Scoring
 
             // Required words: the title has to match at least one of them, not all of them
             var requiredWords = profile.MustContain.Where(required => !string.IsNullOrWhiteSpace(required)).ToList();
-            if (requiredWords.Count > 0 && !requiredWords.Any(required => TitleContainsTerm(searchResult.Title, required)))
+            if (requiredWords.Count > 0 && !requiredWords.Any(required => TitleTermMatcher.TitleContainsTerm(searchResult.Title, required)))
             {
                 var wordList = string.Join("', '", requiredWords.Select(required => required.Trim()));
                 score.RejectionReasons.Add($"Missing required word: title matches none of '{wordList}'");
@@ -392,7 +390,7 @@ namespace Listenarr.Application.Search.Scoring
             {
                 var bonus = profile.PreferredWords
                     .Where(word => !string.IsNullOrWhiteSpace(word))
-                    .Count(word => TitleContainsTerm(searchResult.Title, word)) * 5;
+                    .Count(word => TitleTermMatcher.TitleContainsTerm(searchResult.Title, word)) * 5;
                 if (bonus != 0)
                 {
                     score.TotalScore += bonus;
@@ -479,39 +477,6 @@ namespace Listenarr.Application.Search.Scoring
 
             return score;
         }
-
-        // Filter terms are matched on word boundaries rather than as raw substrings, so a
-        // forbidden "abridged" no longer rejects a release labelled "Unabridged". Patterns are
-        // cached because Score runs once per search result and profiles change rarely.
-        private static readonly ConcurrentDictionary<string, Regex> TermPatterns = new(StringComparer.OrdinalIgnoreCase);
-        private static readonly TimeSpan TermMatchTimeout = TimeSpan.FromMilliseconds(250);
-        private const int TermPatternCacheLimit = 1024;
-
-        private static bool TitleContainsTerm(string? title, string? term)
-        {
-            if (string.IsNullOrEmpty(title) || string.IsNullOrWhiteSpace(term)) return false;
-            return GetTermPattern(term.Trim()).IsMatch(title);
-        }
-
-        private static Regex GetTermPattern(string term)
-        {
-            if (TermPatterns.TryGetValue(term, out var cached)) return cached;
-
-            // \b only asserts a boundary beside a word character, so anchor an end of the term
-            // only when that end is itself a word character: "v0" anchors both ends, "(sample)"
-            // neither, and "[unabridged" just the trailing one.
-            var leading = IsWordCharacter(term[0]) ? "\\b" : string.Empty;
-            var trailing = IsWordCharacter(term[^1]) ? "\\b" : string.Empty;
-            var pattern = new Regex(
-                leading + Regex.Escape(term) + trailing,
-                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
-                TermMatchTimeout);
-
-            if (TermPatterns.Count < TermPatternCacheLimit) TermPatterns.TryAdd(term, pattern);
-            return pattern;
-        }
-
-        private static bool IsWordCharacter(char c) => char.IsLetterOrDigit(c) || c == '_';
 
         // Helpers (copied/adapted from old service)
         private static bool HasPreferredLanguages(QualityProfile profile) => profile.PreferredLanguages != null && profile.PreferredLanguages.Count > 0;
