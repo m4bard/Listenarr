@@ -913,7 +913,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
             var failedResult = Assert.Single(details.RootElement
                 .GetProperty("FailedResults")
                 .EnumerateArray());
-            Assert.Equal(failedPath, failedResult.GetProperty("SourcePath").GetString());
+            // History rows never carry an absolute filesystem path (issue #975); SourcePath is
+            // reduced to its filename before it reaches this JSON.
+            Assert.Equal(Path.GetFileName(failedPath), failedResult.GetProperty("SourcePath").GetString());
         }
     }
 }

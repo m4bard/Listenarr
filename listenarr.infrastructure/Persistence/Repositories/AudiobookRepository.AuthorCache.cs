@@ -41,6 +41,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             if (string.IsNullOrWhiteSpace(name)) return null;
 
             var target = StringUtils.NormalizeAuthorName(name);
+            if (string.IsNullOrWhiteSpace(target)) return null;
 
             // Materialize first because SQLite cannot translate list-property checks on our JSON-backed columns.
             var candidates = await _db.Audiobooks
@@ -49,15 +50,39 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
             foreach (var b in candidates)
             {
-                if (b.AuthorAsins == null || b.AuthorAsins.Count != 1 || b.Authors == null || b.Authors.Count != 1)
+                if (b.AuthorAsins == null || b.AuthorAsins.Count == 0 || b.Authors == null || b.Authors.Count == 0)
                 {
                     continue;
                 }
 
-                if (StringUtils.NormalizeAuthorName(b.Authors[0]) == target)
+                // AuthorAsins is a de-duplicated bag, not a positional mirror of Authors. Enrichment
+                // skips any name the metadata source cannot resolve and drops repeats, so position i
+                // in one list says nothing about position i in the other. A book can therefore only
+                // attribute an ASIN to a name when it credits a single author and carries a single
+                // ASIN. Matching any credited name and then taking the first ASIN handed one
+                // author's identifier to every co-author credited on the same book -- and comparing
+                // Authors.Count directly (rather than the distinct normalized count) rejected a book
+                // that credits the same person twice under different casing, which is one author,
+                // not two.
+                var bookAuthors = b.Authors
+                    .Select(StringUtils.NormalizeAuthorName)
+                    .Where(author => !string.IsNullOrWhiteSpace(author))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+                var bookAsins = b.AuthorAsins
+                    .Where(asin => !string.IsNullOrWhiteSpace(asin))
+                    .Select(asin => asin.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (bookAuthors.Count != 1 || bookAsins.Count != 1)
                 {
-                    var asin = b.AuthorAsins[0];
-                    if (!string.IsNullOrWhiteSpace(asin)) return asin;
+                    continue;
+                }
+
+                if (bookAuthors[0] == target)
+                {
+                    return bookAsins[0];
                 }
             }
 
