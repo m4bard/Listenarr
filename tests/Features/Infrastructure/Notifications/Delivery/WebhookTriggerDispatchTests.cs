@@ -142,6 +142,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
             var settings = new ApplicationSettings
             {
                 WebhookUrl = WebhookUrl,
+                EnableNotifications = true,
                 EnabledNotificationTriggers = [.. NotificationTriggers.UserSelectable],
                 Webhooks =
                 [
@@ -332,6 +333,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
                 => new(new ApplicationSettings
                 {
                     WebhookUrl = string.Empty,
+                    EnableNotifications = true,
                     EnabledNotificationTriggers = [],
                     Webhooks =
                     [
