@@ -61,7 +61,7 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
                     continue;
                 }
 
-                await SendNotificationAsync(trigger, data, webhook.Url, webhook.Triggers);
+                await SendNotificationAsync(trigger, data, webhook.Url, webhook.Triggers, webhook.Type);
             }
         }
 
