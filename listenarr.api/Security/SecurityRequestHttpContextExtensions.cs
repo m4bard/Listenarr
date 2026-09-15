@@ -65,5 +65,29 @@ public static class HttpSecurityRequestUtils
     }
 
     public static bool ShouldRedactSecretsForCaller(HttpContext? context)
-        => !IsLocalOrPrivateRequest(context) && !IsAuthenticatedAdminOrApiKey(context);
+    {
+        if (IsAuthenticatedAdminOrApiKey(context))
+        {
+            return false;
+        }
+
+        // A private source address is not evidence of authorisation, so it only
+        // stands in for a credential while the login screen is switched off.
+        // That is the same condition RequireApiKeyManagementAccessFilter applies
+        // to the API key endpoints: below it, private callers are trusted; above
+        // it, everyone presents an admin session or the API key. Without this,
+        // an operator who turns authentication on still hands every secret the
+        // redactors cover to any caller whose packets arrive from RFC1918,
+        // link-local or IPv6 ULA space.
+        return IsAuthenticationRequired(context) || !IsLocalOrPrivateRequest(context);
+    }
+
+    // Unresolvable configuration redacts rather than discloses. The address
+    // check above fails open on a null RemoteIpAddress and this deliberately
+    // does not copy that.
+    private static bool IsAuthenticationRequired(HttpContext? context)
+    {
+        var startupConfigService = context?.RequestServices?.GetService<IStartupConfigService>();
+        return startupConfigService?.IsAuthenticationRequired() ?? true;
+    }
 }

@@ -171,6 +171,12 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
                 }
             };
 
+            // A private source address only stands in for a credential while the
+            // login screen is off, so the arrangement has to say which it is.
+            httpContext.RequestServices = new ServiceCollection()
+                .AddSingleton<IStartupConfigService>(new StartupConfigServiceMock(new StartupConfig { AuthenticationRequired = "false" }))
+                .BuildServiceProvider();
+
             // Act
             var actionResult = await controller.TestDownloadClientConfiguration(request);
 
