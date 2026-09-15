@@ -1521,7 +1521,12 @@ const groupedCollections = computed(() => {
             seriesNames: new Set<string>(),
           })
         } else {
-          groups.set(normalized, { name: raw, count: 0, coverUrls: [], seriesNames: new Set<string>() })
+          groups.set(normalized, {
+            name: raw,
+            count: 0,
+            coverUrls: [],
+            seriesNames: new Set<string>(),
+          })
         }
       }
       const group = groups.get(normalized)!
