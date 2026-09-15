@@ -64,6 +64,7 @@ jobs:
           build-args: |
             LISTENARR_VERSION=${{ steps.version.outputs.value }}
           tags: |
+            ghcr.io/${{ github.repository_owner }}/listenarr-m4bard:current
             ghcr.io/${{ github.repository_owner }}/listenarr-m4bard:canary
             ghcr.io/${{ github.repository_owner }}/listenarr-m4bard:canary-${{ steps.version.outputs.short_sha }}
           labels: |
@@ -77,7 +78,10 @@ jobs:
 
       - name: Say what landed
         run: |
-          echo "published ghcr.io/${{ github.repository_owner }}/listenarr-m4bard:canary"
-          echo "  version reported by the app: ${{ steps.version.outputs.value }}"
-          echo "  immutable tag: canary-m4bard-${{ steps.version.outputs.short_sha }}"
+          echo "published ghcr.io/${{ github.repository_owner }}/listenarr-m4bard"
+          echo "  moving tags:  current, canary"
+          echo "  immutable:    canary-${{ steps.version.outputs.short_sha }}"
+          echo "  stamped version: ${{ steps.version.outputs.value }}"
+          echo "  NOTE: the running app truncates the +metadata and reports the base version."
+          echo "  Pin a round by DIGEST, never by any of these tags."
           echo "This is an UNOFFICIAL patched build. Do not use it to reproduce a bug for an upstream report."
