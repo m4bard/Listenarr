@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { buildSeriesFields, formatSeriesMemberships, looksLikeAsin, isBundleSeriesNumber } from '@/utils/seriesUtils'
+import {
+  buildSeriesFields,
+  formatSeriesMemberships,
+  looksLikeAsin,
+  isBundleSeriesNumber,
+} from '@/utils/seriesUtils'
 
 describe('formatSeriesMemberships', () => {
   it('lists every series a book belongs to with its number', () => {
