@@ -303,10 +303,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             return new string(value.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
         }
 
-<<<<<<< HEAD
 
-=======
->>>>>>> 49df1029b (Fix author name normalization to merge spaced-out initials)
         public async Task SaveChangesAsync(System.Threading.CancellationToken ct = default)
         {
             await _db.SaveChangesAsync(ct);
