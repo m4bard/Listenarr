@@ -492,8 +492,7 @@ const searchConfirmCount = computed(() =>
 const searchConfirmMessage = computed(() => {
   const count = searchConfirmCount.value
   const noun = count === 1 ? 'audiobook' : 'audiobooks'
-  const subject =
-    pendingSearchScope.value === 'selected' ? 'selected' : activeBucketLabel.value
+  const subject = pendingSearchScope.value === 'selected' ? 'selected' : activeBucketLabel.value
   return `Start an automatic search for ${count} ${subject} ${noun}? Each one queries every configured indexer, one per second, so this takes about ${formatSearchDuration(count)}.`
 })
 
