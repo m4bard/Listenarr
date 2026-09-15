@@ -108,7 +108,7 @@ public partial class AudiobookRepository
             return [];
         }
 
-        var narrowed = await NarrowAuthorCandidateIdsAsync(target, ct);
+        var narrowed = await NarrowAuthorCandidateIdsAsync(authorName, target, ct);
         if (narrowed is { Count: 0 })
         {
             return [];
@@ -137,14 +137,18 @@ public partial class AudiobookRepository
     /// target gives nothing to narrow on and the caller has to read the table after all.
     /// </summary>
     /// <remarks>
-    /// The normalizer only deletes characters and lowercases them; it never reorders or inserts.
-    /// So every ASCII letter and digit of the normalized target must appear, in that order, in
-    /// the lowercased stored value, which is what the <c>%a%b%c%</c> pattern asks. That makes the
-    /// result a superset and never drops a row the exact comparison would have kept, including
-    /// the punctuation-only differences ("A. Writer" against "a writer") the normalizer exists
-    /// for. Non-ASCII characters are left out of the pattern rather than matched, because
-    /// SQLite's <c>lower</c> is ASCII-only and folding them there would disagree with
-    /// <c>ToLowerInvariant</c>.
+    /// The normalizer deletes characters, lowercases them, and (once StringUtils.NormalizeAuthorName
+    /// is in play) folds diacritics to their base letter; it never reorders or inserts. So every
+    /// ASCII letter and digit of the normalized target must appear, in that order, in the
+    /// lowercased stored value, which is what the <c>%a%b%c%</c> pattern asks -- as long as the
+    /// stored value carries no diacritic the normalizer would have folded out. SQLite's
+    /// <c>lower</c> cannot fold accents the way <c>ToLowerInvariant</c> plus NFD decomposition
+    /// does, so a normalized target that came from a diacritic (e.g. "jose" from "José") would ask
+    /// the database for a literal 'e' a stored "José" does not contain, turning the narrowing from
+    /// a superset into a filter that drops a real match. Narrowing is skipped entirely -- not just
+    /// left non-ASCII out of the pattern -- whenever the original, pre-normalization name carries
+    /// any non-ASCII character, since that is the only signal available for whether folding
+    /// happened.
     /// <para>
     /// A row whose author column is not valid JSON is kept rather than dropped. <c>json_each</c>
     /// cannot expand one, but the value converter can still read it: it tolerates legacy bare
@@ -155,9 +159,15 @@ public partial class AudiobookRepository
     /// </para>
     /// </remarks>
     private async Task<List<int>?> NarrowAuthorCandidateIdsAsync(
+        string originalAuthorName,
         string normalizedTarget,
         CancellationToken ct)
     {
+        if (!originalAuthorName.All(character => character <= 127))
+        {
+            return null;
+        }
+
         var pattern = BuildAuthorSubsequencePattern(normalizedTarget);
         if (pattern == null || !_db.Database.IsRelational())
         {
