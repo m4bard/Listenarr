@@ -142,6 +142,9 @@ namespace Listenarr.Tests.Builders
         public ApplicationSettingsBuilder WithoutFailedDownloadHandling()
         {
             _applicationSettings.FailedDownloadHandlingEnabled = false;
+            return this;
+        }
+
         public ApplicationSettingsBuilder WithoutAmazonSearch()
         {
             _applicationSettings.EnableAmazonSearch = false;
