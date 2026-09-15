@@ -42,7 +42,11 @@ namespace Listenarr.Tests.Features.Infrastructure.DependencyInjection;
 public sealed class MetadataHttpClientRetryPolicyTests : BaseTests
 {
     private static readonly TimeSpan HandlerNeverAnswers = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan CallerTimeout = TimeSpan.FromMilliseconds(250);
+    // Long enough that the request reliably reaches the policy handler before it fires, and
+    // still far short of HandlerNeverAnswers so it always fires mid-attempt. At 250ms a loaded
+    // suite could spend the whole budget on scheduling, so the handler was never entered and the
+    // attempt went uncounted.
+    private static readonly TimeSpan CallerTimeout = TimeSpan.FromSeconds(1);
     private const string ProbeUrl = "http://metadata-retry-policy.invalid/catalog/products";
 
     private sealed class CountingHandler : HttpMessageHandler
@@ -137,7 +141,9 @@ public sealed class MetadataHttpClientRetryPolicyTests : BaseTests
             .Or<TimeoutRejectedException>()
             .WaitAndRetryAsync(3, _ => TimeSpan.FromMilliseconds(50));
         var perAttemptTimeout = Policy.TimeoutAsync<HttpResponseMessage>(TimeSpan.FromMilliseconds(300));
-        using var caller = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
+        // The four attempts need 4*300ms plus three 50ms waits. Budget well clear of that: the
+        // retry exhausting is what ends this call, and the caller token is only a backstop.
+        using var caller = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         var attempts = await CountAttemptsAsync(Policy.WrapAsync(retry, perAttemptTimeout), caller.Token);
 
@@ -157,7 +163,11 @@ public sealed class MetadataHttpClientRetryPolicyTests : BaseTests
         var handler = new CountingHandler(HandlerNeverAnswers);
         var client = BuildClient(breaker, handler);
 
-        for (var i = 0; i < 2; i++)
+        // Two timed-out calls trip a two-failure breaker, but only failures the policy actually
+        // saw are counted, and a call cancelled before it reaches the policy is not one. Keep
+        // calling until it trips rather than asserting on the first two landing. Failures must
+        // be consecutive, and a lost iteration is not a success, so it does not reset the count.
+        for (var i = 0; i < 4 && ((ICircuitBreakerPolicy)breaker).CircuitState != CircuitState.Open; i++)
         {
             using var caller = new CancellationTokenSource(CallerTimeout);
             try
