@@ -196,7 +196,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             historyMock
                 .Setup(h => h.RecordDownloadFailedAsync(
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
-                .Callback<string, string, string, string?>((_, _, _, message) => recordedMessage = message)
+                .Callback<string, string, string, string?, DownloadProtocol?>((_, _, _, message, _) => recordedMessage = message)
                 .Returns(Task.CompletedTask);
             _services.AddSingleton(gatewayMock.Object);
             _services.AddSingleton(historyMock.Object);
