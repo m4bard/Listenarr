@@ -62,6 +62,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
                 Task.FromResult(indexer);
             public Task UpdateAsync(Indexer indexer, CancellationToken ct = default) => Task.CompletedTask;
             public Task DeleteAsync(int id, CancellationToken ct = default) => Task.CompletedTask;
+            public Task UpdateBackoffStateAsync(int indexerId, IndexerBackoffState state, CancellationToken ct = default) =>
+                Task.CompletedTask;
         }
 
         [Fact]
