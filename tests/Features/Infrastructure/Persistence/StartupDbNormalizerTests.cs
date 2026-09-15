@@ -25,6 +25,9 @@ public sealed class StartupDbNormalizerTests : BaseTests
                 calls.Add(nameof(IAudiobookRepository.NormalizeJsonColumnsAsync));
                 return Task.CompletedTask;
             });
+        repository.Setup(service => service.BackfillMetadataRefreshTimestampsAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
         repository.Setup(service => service.RederiveAuthorNameKeysAsync(
                 It.IsAny<CancellationToken>()))
             .Returns(() =>
@@ -80,6 +83,9 @@ public sealed class StartupDbNormalizerTests : BaseTests
                 normalized.TrySetResult();
                 return Task.CompletedTask;
             });
+        repository.Setup(service => service.BackfillMetadataRefreshTimestampsAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
         repository.Setup(service => service.RederiveAuthorNameKeysAsync(
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AuthorNameKeyRederivationResult(0, 0, 0));
