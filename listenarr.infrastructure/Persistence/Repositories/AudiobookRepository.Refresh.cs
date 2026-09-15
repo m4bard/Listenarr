@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 using System.Text;
+using Listenarr.Domain.Common;
 using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Persistence.Repositories;
@@ -102,7 +103,7 @@ public partial class AudiobookRepository
         string authorName,
         CancellationToken ct = default)
     {
-        var target = NormalizeAuthorName(authorName);
+        var target = StringUtils.NormalizeAuthorName(authorName);
         if (string.IsNullOrEmpty(target))
         {
             return [];
@@ -126,7 +127,7 @@ public partial class AudiobookRepository
 
         return candidates
             .Where(candidate => candidate.Authors != null
-                && candidate.Authors.Any(author => NormalizeAuthorName(author) == target))
+                && candidate.Authors.Any(author => StringUtils.NormalizeAuthorName(author) == target))
             .Select(candidate => candidate.Id)
             .OrderBy(id => id)
             .ToList();
