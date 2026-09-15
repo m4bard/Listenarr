@@ -122,7 +122,7 @@ namespace Listenarr.Application.Metadata.Audible
                     if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
                     {
                         _logger.LogWarning("Audible API has no record ({StatusCode}) for URL {Url}", response.StatusCode, url);
-                        return null;
+                        return (AudibleRequestOutcome.NotFound, null);
                     }
 
                     // 429 is the documented shape of pushback. 403 is the one Audible reaches
