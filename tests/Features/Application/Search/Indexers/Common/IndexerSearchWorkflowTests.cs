@@ -101,13 +101,13 @@ namespace Listenarr.Tests.Features.Application.Search.Indexers.Common
 
             public string IndexerType { get; }
 
-            public Task<List<IndexerSearchResult>> SearchAsync(
+            public Task<IndexerQueryObservation> SearchAsync(
                 Indexer indexer,
                 string query,
                 string? category = null,
                 SearchRequest? request = null)
             {
-                return Task.FromResult(_behavior());
+                return Task.FromResult(IndexerQueryObservation.FromResults(_behavior(), query));
             }
         }
     }
