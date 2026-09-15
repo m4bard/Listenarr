@@ -453,7 +453,9 @@ const activeWanted = computed(() =>
 )
 
 // How the active tab is named wherever the bulk action describes what it is about to do.
-const activeBucketLabel = computed(() => (wantedMode.value === 'cutoff' ? 'cutoff unmet' : 'missing'))
+const activeBucketLabel = computed(() =>
+  wantedMode.value === 'cutoff' ? 'cutoff unmet' : 'missing',
+)
 
 const filteredWanted = computed(() => {
   const items = activeWanted.value
