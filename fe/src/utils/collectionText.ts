@@ -63,6 +63,9 @@ export function normalizeAuthorKey(authors: string[] | undefined): string {
  * A stable key combining a normalized title and a normalized author-set key, used to match
  * "the same book" across sources that may spell the title or authors slightly differently.
  */
-export function buildTitleAuthorKey(title: string | undefined, authors: string[] | undefined): string {
+export function buildTitleAuthorKey(
+  title: string | undefined,
+  authors: string[] | undefined,
+): string {
   return `${normalizeCollectionText(title)}::${normalizeAuthorKey(authors)}`
 }
