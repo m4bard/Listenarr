@@ -1835,6 +1835,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("CompletedFileAction")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("CustomScripts")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("DefaultSearchLanguage")
                         .IsRequired()
                         .HasColumnType("TEXT");

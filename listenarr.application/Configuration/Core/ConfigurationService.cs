@@ -479,5 +479,19 @@ namespace Listenarr.Application.Configuration.Core
                 return new List<WebhookConfiguration>();
             }
         }
+
+        public async Task<List<CustomScriptConfiguration>> GetCustomScriptConfigurationsAsync()
+        {
+            try
+            {
+                var settings = await GetApplicationSettingsAsync();
+                return settings?.CustomScripts ?? new List<CustomScriptConfiguration>();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogError(ex, "Error retrieving custom script configurations");
+                return new List<CustomScriptConfiguration>();
+            }
+        }
     }
 }
