@@ -198,6 +198,71 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
             configurationService.VerifyNoOtherCalls();
         }
 
+        /// <summary>
+        /// The same caller as the test above, reported the way a dual-stack listener
+        /// actually reports it. Kestrel binds a wildcard endpoint, so an IPv4 peer
+        /// arrives as an IPv4-mapped IPv6 address rather than as a bare IPv4 one, and
+        /// the redaction gate has to reach the same verdict for both forms.
+        /// </summary>
+        [Fact]
+        public async Task TestDownloadClientConfiguration_PrivateNetworkCallerMappedToIPv6_DoesNotRedactSecrets()
+        {
+            // Arrange
+            var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
+            var downloadClientGateway = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
+            var logger = NullLogger<DownloadClientController>.Instance;
+
+            downloadClientGateway
+                .Setup(x => x.TestConnectionAsync(It.IsAny<DownloadClientConfiguration>()))
+                .ReturnsAsync((true, "Connection successful"));
+
+            var controller = new DownloadClientController(
+                configurationService.Object,
+                downloadClientGateway.Object,
+                logger);
+
+            var httpContext = new DefaultHttpContext();
+            var callerAddress = IPAddress.Parse("172.16.1.23").MapToIPv6();
+            Assert.True(callerAddress.IsIPv4MappedToIPv6);
+            httpContext.Connection.RemoteIpAddress = callerAddress;
+            controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+            var request = new DownloadClientConfiguration
+            {
+                Id = string.Empty,
+                Name = "NZBGet",
+                Type = "nzbget",
+                Host = "172.16.1.50",
+                Port = 6789,
+                Username = "nzb-user",
+                Password = "nzb-pass",
+                UseSSL = false,
+                IsEnabled = true,
+                Settings = new Dictionary<string, object>
+                {
+                    ["apiKey"] = "very-secret-api-key"
+                }
+            };
+
+            // Act
+            var actionResult = await controller.TestDownloadClientConfiguration(request);
+
+            // Assert
+            var ok = Assert.IsType<OkObjectResult>(actionResult.Result);
+            Assert.NotNull(ok.Value);
+            var payload = ok.Value!;
+
+            var clientProp = payload.GetType().GetProperty("client");
+            Assert.NotNull(clientProp);
+            var returnedClient = Assert.IsType<DownloadClientConfiguration>(clientProp!.GetValue(payload));
+            Assert.Equal("nzb-user", returnedClient.Username);
+            Assert.Equal("nzb-pass", returnedClient.Password);
+            Assert.True(returnedClient.Settings.TryGetValue("apiKey", out var apiKey));
+            Assert.Equal("very-secret-api-key", apiKey?.ToString());
+
+            configurationService.VerifyNoOtherCalls();
+        }
+
         [Fact]
         public async Task ApiKeyManagementFilter_RemoteCaller_WhenAuthenticationDisabled_ReturnsForbidden()
         {
