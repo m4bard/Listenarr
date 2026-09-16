@@ -42,6 +42,13 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
                 c => c == null ? null : JsonSerializer.Deserialize<List<WebhookConfiguration>>(JsonSerializer.Serialize(c, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null)
             );
 
+        private static ValueComparer<List<CustomScriptConfiguration>?> CustomScriptListComparer() =>
+            new ValueComparer<List<CustomScriptConfiguration>?>(
+                (c1, c2) => JsonSerializer.Serialize(c1, (JsonSerializerOptions?)null) == JsonSerializer.Serialize(c2, (JsonSerializerOptions?)null),
+                c => c == null ? 0 : JsonSerializer.Serialize(c, (JsonSerializerOptions?)null).GetHashCode(),
+                c => c == null ? null : JsonSerializer.Deserialize<List<CustomScriptConfiguration>>(JsonSerializer.Serialize(c, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null)
+            );
+
         public void Configure(EntityTypeBuilder<ApplicationSettings> builder)
         {
             builder.Property(e => e.Version).IsConcurrencyToken();
@@ -81,6 +88,17 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
                 );
             builder.Property(e => e.Webhooks)
                 .Metadata.SetValueComparer(WebhookListComparer());
+
+            // CustomScripts stored as JSON
+            builder.Property(e => e.CustomScripts)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => string.IsNullOrWhiteSpace(v)
+                        ? null
+                        : JsonSerializer.Deserialize<List<CustomScriptConfiguration>>(v, (JsonSerializerOptions?)null)
+                );
+            builder.Property(e => e.CustomScripts)
+                .Metadata.SetValueComparer(CustomScriptListComparer());
         }
     }
 }
