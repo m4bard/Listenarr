@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Infrastructure.DependencyInjection.Calendar;
 using Listenarr.Infrastructure.DependencyInjection.Downloads;
 using Listenarr.Infrastructure.DependencyInjection.Library;
 using Listenarr.Infrastructure.DependencyInjection.Metadata;
@@ -32,6 +33,7 @@ public static class AppServiceRegistrationExtensions
         services.AddSearchServices();
         services.AddMetadataServices();
         services.AddLibraryServices();
+        services.AddCalendarServices();
         services.AddDownloadServices(configuration);
         services.AddNotificationAndRealtimeServices();
         services.AddSystemDiagnosticServices();
