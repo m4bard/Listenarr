@@ -21,7 +21,7 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
 {
     internal static class MyAnonamouseDownloadUrlBuilder
     {
-        public static string Build(string dlHash, string torrentId, Indexer indexer)
+        public static string Build(string dlHash, string torrentId, Indexer indexer, bool spendFreeleechWedge = false)
         {
             if (string.IsNullOrWhiteSpace(dlHash) && string.IsNullOrWhiteSpace(torrentId))
             {
@@ -29,9 +29,23 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
             }
 
             var baseUrl = (indexer.Url ?? "https://www.myanonamouse.net").TrimEnd('/');
-            var downloadUrl = !string.IsNullOrWhiteSpace(dlHash)
-                ? $"{baseUrl}/tor/download.php/{Uri.EscapeDataString(dlHash)}"
-                : $"{baseUrl}/tor/download.php?tid={Uri.EscapeDataString(torrentId)}";
+
+            // fl=1 asks MyAnonamouse to apply a freeleech wedge to this grab. Prowlarr adds it in
+            // MyAnonamouseParser.GetDownloadUrl, and only ever to /tor/download.php?tid={id};
+            // nothing evidences that MyAnonamouse reads fl on the /tor/download.php/{hash} form.
+            // So a grab that spends a wedge takes the ?tid= form, and without a torrent id to build
+            // it from, the wedge goes unspent rather than riding on a guessed shape. An unspent
+            // wedge costs ratio, which seeding earns back; a rejected download URL costs the grab.
+            var spendingWedge = spendFreeleechWedge && IsTorrentId(torrentId);
+            var downloadUrl = spendingWedge || string.IsNullOrWhiteSpace(dlHash)
+                ? $"{baseUrl}/tor/download.php?tid={Uri.EscapeDataString(torrentId)}"
+                : $"{baseUrl}/tor/download.php/{Uri.EscapeDataString(dlHash)}";
+
+            if (spendingWedge)
+            {
+                downloadUrl += "&fl=1";
+            }
+
             var mamIdLocal = MyAnonamouseHelper.TryGetMamId(indexer.AdditionalSettings);
             if (!string.IsNullOrEmpty(mamIdLocal))
             {
@@ -49,6 +63,25 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
             }
 
             return downloadUrl;
+        }
+
+        /// <summary>
+        /// Whether this is a torrent id MyAnonamouse could resolve, rather than merely a non-empty
+        /// string. A torrent id there is a number: Prowlarr deserialises it as int and hands it to
+        /// GetDownloadUrl as int (src/NzbDrone.Core/Indexers/Definitions/MyAnonamouse.cs).
+        ///
+        /// Worth checking rather than assuming, because the caller does not always have one. An
+        /// item that arrives without an "id" is given a generated one so the result has a key, and
+        /// a generated id in tid would build a download URL that cannot resolve. Spending a wedge
+        /// on that while discarding a working hash URL is the worse of the two errors.
+        /// </summary>
+        private static bool IsTorrentId(string? value)
+        {
+            return int.TryParse(
+                value,
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var torrentId) && torrentId > 0;
         }
     }
 }
