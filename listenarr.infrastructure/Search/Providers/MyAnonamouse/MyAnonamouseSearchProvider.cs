@@ -115,7 +115,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
 
                 var jsonResponse = await response.Content.ReadAsStringAsync();
                 _logger.LogDebug("MyAnonamouse raw response: {Response}", jsonResponse);
-                var results = MyAnonamouseResponseParser.Parse(jsonResponse, indexer, _logger);
+                var results = MyAnonamouseResponseParser.Parse(jsonResponse, indexer, _logger, request?.MyAnonamouse?.FreeleechWedge);
 
                 // Optional per-result enrichment: fetch individual item pages to populate missing fields
                 try
