@@ -1,4 +1,5 @@
 using Listenarr.Infrastructure.HostedServices;
+using Listenarr.Infrastructure.HostedServices.Scheduling;
 
 namespace Listenarr.Tests.Features.Api.Services
 {
@@ -92,6 +93,10 @@ namespace Listenarr.Tests.Features.Api.Services
         }
 
         private static WorkerCycleRunner CreateRunner(Mock<IAppMetricsService> metrics) =>
-            new(TimeProvider.System, metrics.Object, Mock.Of<ILogger<WorkerCycleRunner>>());
+            new(
+                TimeProvider.System,
+                metrics.Object,
+                new ScheduledTaskRegistry(TimeProvider.System, Mock.Of<ILogger<ScheduledTaskRegistry>>()),
+                Mock.Of<ILogger<WorkerCycleRunner>>());
     }
 }
