@@ -55,6 +55,15 @@ public static class SecurityRequestUtils
 
     public static bool IsPrivateOrLoopback(IPAddress ip)
     {
+        // A dual-stack listener reports every IPv4 peer in its mapped form, and a URL
+        // host may be written that way as well, so the private ranges below are
+        // unreachable unless the address is brought back to IPv4 before the family is
+        // examined. ImageDownloadValidator.IsPrivateOrLoopback already does this.
+        if (ip.IsIPv4MappedToIPv6)
+        {
+            ip = ip.MapToIPv4();
+        }
+
         if (IsLoopback(ip))
         {
             return true;
