@@ -42,6 +42,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260821141235_AddCompatibilityFilePublication";
     private const string WeakStorageVerifiedCleanupMigrationId =
         "20260825021432_AddWeakStorageVerifiedCleanup";
+    private const string CustomScriptNotificationsMigrationId =
+        "20260916112317_AddCustomScriptNotifications";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -179,6 +181,19 @@ public class SqliteMigrationSchemaTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "CustomScriptNotificationStorage")]
+    public async Task CustomScriptMigration_AddsTheCustomScriptsColumn()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.True(await ColumnExistsAsync(connection, "ApplicationSettings", "CustomScripts"));
+    }
+
+    [Fact]
     [Trait("Scenario", "FinalMigrationHistoryIsConsolidated")]
     public async Task MigrationHistory_ContainsOnlyRetainedRepairsAndConsolidatedPrMigrationAfterCanary()
     {
@@ -199,7 +214,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 MoveJobRelocationForeignKeyMigrationId,
                 FileMutationParentGenerationProofsMigrationId,
                 CompatibilityFilePublicationMigrationId,
-                WeakStorageVerifiedCleanupMigrationId
+                WeakStorageVerifiedCleanupMigrationId,
+                CustomScriptNotificationsMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

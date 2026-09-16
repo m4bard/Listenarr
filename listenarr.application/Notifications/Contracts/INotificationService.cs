@@ -33,5 +33,16 @@ namespace Listenarr.Application.Notifications.Contracts
         /// <param name="webhookUrl">The webhook URL to send to</param>
         /// <param name="enabledTriggers">List of enabled triggers for this webhook</param>
         Task SendNotificationAsync(string trigger, object data, string webhookUrl, List<string> enabledTriggers);
+
+        /// <summary>
+        /// The single entry point for notifications. Publishes one event to every registered
+        /// subscriber that supports its channel; each subscriber decides which of its own configured
+        /// instances are enabled for it.
+        /// </summary>
+        /// <remarks>
+        /// Callers do not need to know what targets exist, how many are configured, or whether any
+        /// are. A feature raises the event and is finished.
+        /// </remarks>
+        Task PublishAsync(NotificationEvent notification, CancellationToken cancellationToken = default);
     }
 }

@@ -30,15 +30,18 @@ namespace Listenarr.Api.Features.Notifications
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<NotificationsController> _logger;
         private readonly INotificationService _notificationService;
+        private readonly IEnumerable<INotificationSubscriber> _subscribers;
 
         public NotificationsController(
             IConfigurationService configurationService,
             ILogger<NotificationsController> logger,
-            INotificationService notificationService)
+            INotificationService notificationService,
+            IEnumerable<INotificationSubscriber> subscribers)
         {
             _configurationService = configurationService;
             _logger = logger;
             _notificationService = notificationService;
+            _subscribers = subscribers;
         }
 
         /// <summary>
@@ -82,6 +85,34 @@ namespace Listenarr.Api.Features.Notifications
                 _logger.LogError(ex, "Error sending test notification");
                 return StatusCode(500, new { success = false, message = "Failed to send test notification", error = ex.Message });
             }
+        }
+
+        /// <summary>
+        /// Exercise one configured subscriber instance and report whether it works.
+        /// </summary>
+        /// <remarks>
+        /// Unlike the webhook test above, this runs the real target: a custom script is executed,
+        /// with the event type set to Test. A script is expected to handle that without side effects.
+        /// </remarks>
+        [HttpPost("subscribers/{subscriberName}/test/{configurationId}")]
+        public async Task<ActionResult<object>> TestSubscriber(
+            string subscriberName,
+            string configurationId,
+            CancellationToken cancellationToken)
+        {
+            var subscriber = _subscribers.FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, subscriberName, StringComparison.OrdinalIgnoreCase));
+
+            if (subscriber == null)
+            {
+                return NotFound(new { success = false, message = $"No notification subscriber named '{subscriberName}'" });
+            }
+
+            var result = await subscriber.TestAsync(configurationId, cancellationToken);
+
+            return result.IsValid
+                ? Ok(new { success = true, message = $"{subscriber.Name} test succeeded" })
+                : BadRequest(new { success = false, message = $"{subscriber.Name} test failed", failures = result.Failures });
         }
     }
 }

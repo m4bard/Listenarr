@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Notifications;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Notifications.Delivery
@@ -32,8 +33,9 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
         private readonly IRequestContextAccessor? _requestContextAccessor;
         private readonly INotificationPayloadBuilder _payloadBuilder;
         private readonly NotificationHttpSender _httpSender;
+        private readonly IReadOnlyList<INotificationSubscriber> _subscribers;
 
-        public NotificationService(HttpClient httpClient, ILogger<NotificationService> logger, IConfigurationService configurationService, INotificationPayloadBuilder payloadBuilder, IRequestContextAccessor? requestContextAccessor = null)
+        public NotificationService(HttpClient httpClient, ILogger<NotificationService> logger, IConfigurationService configurationService, INotificationPayloadBuilder payloadBuilder, IRequestContextAccessor? requestContextAccessor = null, IEnumerable<INotificationSubscriber>? subscribers = null)
         {
             _httpClient = httpClient;
             _logger = logger;
@@ -41,6 +43,7 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
             _payloadBuilder = payloadBuilder ?? throw new ArgumentNullException(nameof(payloadBuilder));
             _requestContextAccessor = requestContextAccessor;
             _httpSender = new NotificationHttpSender(httpClient, httpClient, logger, AllowPrivateWebhookTargetsForCurrentRequest);
+            _subscribers = subscribers?.ToList() ?? new List<INotificationSubscriber>();
         }
 
         // INotificationService interface stubs — webhook dispatch goes through SendNotificationAsync;
@@ -49,6 +52,8 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
         {
             try
             {
+                await PublishAsync(FromDownload(NotificationChannel.Download, download));
+
                 var webhooks = await _configurationService.GetWebhookConfigurationsAsync();
                 foreach (var wh in webhooks.Where(w => w.IsEnabled && w.Triggers.Contains("Imported")))
                     await SendNotificationAsync("Imported", new { AudiobookTitle = download.Title, Timestamp = DateTime.UtcNow }, wh.Url, wh.Triggers);
@@ -63,6 +68,8 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
         {
             try
             {
+                await PublishAsync(FromDownload(NotificationChannel.DownloadFailed, download));
+
                 var webhooks = await _configurationService.GetWebhookConfigurationsAsync();
                 foreach (var wh in webhooks.Where(w => w.IsEnabled && w.Triggers.Contains("Failed")))
                     await SendNotificationAsync("Failed", new { AudiobookTitle = download.Title, Error = download.ErrorMessage, Timestamp = DateTime.UtcNow }, wh.Url, wh.Triggers);
