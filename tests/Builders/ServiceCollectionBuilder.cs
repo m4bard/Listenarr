@@ -4,6 +4,8 @@ using Listenarr.Infrastructure.DependencyInjection;
 using Listenarr.Infrastructure.DependencyInjection.Downloads;
 using Listenarr.Infrastructure.Downloads.DirectDownload;
 using Listenarr.Infrastructure.HostedServices;
+using Listenarr.Application.Common.Scheduling;
+using Listenarr.Infrastructure.HostedServices.Scheduling;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks;
 using Listenarr.Tests.Mocks.Api;
@@ -140,6 +142,7 @@ namespace Listenarr.Tests.Builders
             services.AddLogging();
             services.AddMemoryCache();
             services.TryAddSingleton(TimeProvider.System);
+            services.AddSingleton<IScheduledTaskRegistry, ScheduledTaskRegistry>();
             services.AddSingleton<IWorkerCycleRunner, WorkerCycleRunner>();
             services.AddListenarrAppServices(configuration);
             services.AddListenarrAdapters(configuration);
