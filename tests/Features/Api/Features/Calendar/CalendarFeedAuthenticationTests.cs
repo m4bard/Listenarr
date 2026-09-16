@@ -1,0 +1,163 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+using System.Net;
+using Asp.Versioning.ApiExplorer;
+using Listenarr.Api.Features.Calendar;
+using Listenarr.Tests.Common;
+using Listenarr.Tests.Mocks;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
+namespace Listenarr.Tests.Features.Api.Features.Calendar;
+
+/// <summary>
+/// The feed URL is long lived, ends up inside third-party calendar software, and often leaves the
+/// local network, so how it authenticates is the part of this feature most worth pinning down.
+/// </summary>
+[Trait("Area", "Calendar")]
+[Trait("Name", "CalendarFeedAuthenticationTests")]
+[Trait("Category", "Integration")]
+public sealed class CalendarFeedAuthenticationTests : BaseTests, IClassFixture<ListenarrWebApplicationFactory>
+{
+    private const string ApiKey = "test-api-key-0123456789";
+    private const string FeedPath = "/feed/v1/calendar/" + CalendarFeedController.FeedFileName;
+
+    private readonly ListenarrWebApplicationFactory _factory;
+
+    public CalendarFeedAuthenticationTests(ListenarrWebApplicationFactory factory)
+    {
+        _factory = factory;
+    }
+
+    [Fact]
+    public async Task Feed_WithApiKeyInTheQueryString_IsServed()
+    {
+        // This is the whole point. A calendar client subscribes to a URL and cannot attach a
+        // header, so the key has to ride in the query, spelled "apikey" exactly as Sonarr, Radarr
+        // and Readarr spell it, or an operator's pasted URL will not work.
+        using var factory = WithAuthenticationEnabled();
+        using var client = NewClient(factory);
+
+        var response = await client.GetAsync($"{FeedPath}?apikey={ApiKey}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("text/calendar", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task Feed_WithApiKeyInTheHeader_IsAlsoServed()
+    {
+        using var factory = WithAuthenticationEnabled();
+        using var client = NewClient(factory);
+        client.DefaultRequestHeaders.Add("X-Api-Key", ApiKey);
+
+        var response = await client.GetAsync(FeedPath);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Feed_WithNoKey_IsRefusedWhenAuthenticationIsRequired()
+    {
+        // The feed sits outside /api on purpose, and the authentication enforcer used to wave
+        // through everything that was not /api or /hubs. Without the enforcer knowing about
+        // /feed, this request would be served and the whole library would be readable.
+        using var factory = WithAuthenticationEnabled();
+        using var client = NewClient(factory);
+
+        var response = await client.GetAsync(FeedPath);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Feed_WithTheWrongKey_IsRefused()
+    {
+        using var factory = WithAuthenticationEnabled();
+        using var client = NewClient(factory);
+
+        var response = await client.GetAsync($"{FeedPath}?apikey=not-the-key");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ApiRoutes_StillRefuseAKeyInTheQueryString()
+    {
+        // The query-string carve-out is scoped to the feed. Widening it to /api would undo the
+        // reason ApiKeyMiddleware refuses query-string keys in the first place.
+        using var factory = WithAuthenticationEnabled();
+        using var client = NewClient(factory);
+        var apiBasePath = ResolveApiBasePath(factory.Services);
+
+        var response = await client.GetAsync($"{apiBasePath}/library?apikey={ApiKey}");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Feed_IsNotCachedByAnythingInBetween()
+    {
+        using var factory = WithAuthenticationEnabled();
+        using var client = NewClient(factory);
+
+        var response = await client.GetAsync($"{FeedPath}?apikey={ApiKey}");
+
+        Assert.True(response.Headers.CacheControl?.NoStore);
+    }
+
+    [Fact]
+    public async Task Feed_ServesAWellFormedDocumentWithAnEmptyLibrary()
+    {
+        using var factory = WithAuthenticationEnabled();
+        using var client = NewClient(factory);
+
+        var response = await client.GetAsync($"{FeedPath}?apikey={ApiKey}");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.StartsWith("BEGIN:VCALENDAR", body, StringComparison.Ordinal);
+        Assert.EndsWith("END:VCALENDAR\r\n", body, StringComparison.Ordinal);
+    }
+
+    private WebApplicationFactory<Program> WithAuthenticationEnabled() =>
+        _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IStartupConfigService>();
+                services.AddSingleton<IStartupConfigService>(_ =>
+                    new StartupConfigServiceMock(new StartupConfig
+                    {
+                        AuthenticationRequired = "Enabled",
+                        ApiKey = ApiKey
+                    }));
+            }));
+
+    private static HttpClient NewClient(WebApplicationFactory<Program> factory) =>
+        factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+    private static string ResolveApiBasePath(IServiceProvider services)
+    {
+        using var scope = services.CreateScope();
+        var provider = scope.ServiceProvider.GetService<IApiVersionDescriptionProvider>();
+        var groupName = provider?.ApiVersionDescriptions.FirstOrDefault(d => !d.IsDeprecated)?.GroupName
+            ?? provider?.ApiVersionDescriptions.FirstOrDefault()?.GroupName;
+
+        return string.IsNullOrWhiteSpace(groupName) ? "/api/v1" : $"/api/{groupName}";
+    }
+}
