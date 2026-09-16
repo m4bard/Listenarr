@@ -41,6 +41,59 @@ namespace Listenarr.Application.Common
             }
         }
 
+        /// <summary>
+        /// Reads the stored freeleech wedge preference from an indexer's AdditionalSettings.
+        ///
+        /// The settings form writes every MyAnonamouse option under "mam_options" and reads flat
+        /// properties only when that object is absent (IndexerFormModal.vue), and
+        /// IndexerAdditionalSettingsParser.ParseMamOptions applies the same rule. So "mam_options"
+        /// decides on its own when it is there, and a flat property is a document from before that
+        /// shape rather than an override of it. Anything else would give one setting two parsers
+        /// that disagree.
+        /// </summary>
+        public static MamFreeleechWedge? TryGetFreeleechWedge(string? additionalSettings)
+        {
+            if (string.IsNullOrWhiteSpace(additionalSettings))
+                return null;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(additionalSettings);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                    return null;
+
+                return root.TryGetProperty("mam_options", out var nested) && nested.ValueKind == JsonValueKind.Object
+                    ? ReadFreeleechWedge(nested)
+                    : ReadFreeleechWedge(root);
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Decides whether a grab should spend a freeleech wedge: the user asked for one, and the
+        /// release is not already free. Mirrors Prowlarr's MyAnonamouseParser.GetDownloadUrl.
+        /// </summary>
+        public static bool ShouldSpendFreeleechWedge(MamFreeleechWedge? preference, bool releaseIsAlreadyFree)
+        {
+            return (preference is MamFreeleechWedge.Preferred or MamFreeleechWedge.Required) && !releaseIsAlreadyFree;
+        }
+
+        private static MamFreeleechWedge? ReadFreeleechWedge(JsonElement element)
+        {
+            if (element.TryGetProperty("freeleechWedge", out var wedge)
+                && wedge.ValueKind == JsonValueKind.String
+                && Enum.TryParse<MamFreeleechWedge>(wedge.GetString() ?? string.Empty, true, out var parsed))
+            {
+                return parsed;
+            }
+
+            return null;
+        }
+
         public static HttpClient CreateAuthenticatedHttpClient(string mamId, string? baseUrl, TimeSpan? timeout = null)
         {
             var handler = new HttpClientHandler
