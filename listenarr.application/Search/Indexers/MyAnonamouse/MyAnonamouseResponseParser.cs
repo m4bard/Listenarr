@@ -17,13 +17,14 @@
  */
 
 using System.Text.Json;
+using Listenarr.Application.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Search.Indexers.MyAnonamouse
 {
     public static partial class MyAnonamouseResponseParser
     {
-        public static List<IndexerSearchResult> Parse(string jsonResponse, Indexer indexer, ILogger logger)
+        public static List<IndexerSearchResult> Parse(string jsonResponse, Indexer indexer, ILogger logger, MamFreeleechWedge? requestedFreeleechWedge = null)
         {
             var results = new List<IndexerSearchResult>();
 
@@ -43,6 +44,10 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
                 }
 
                 logger.LogDebug("Found {Count} MyAnonamouse results", dataArrayElement.GetArrayLength());
+
+                // A wedge asked for on this one search wins over the indexer's stored preference.
+                var freeleechWedgePreference = requestedFreeleechWedge
+                    ?? MyAnonamouseHelper.TryGetFreeleechWedge(indexer.AdditionalSettings);
                 try
                 {
                     if (dataArrayElement.GetArrayLength() > 0)
@@ -331,7 +336,11 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
                             }
                         }
 
-                        var downloadUrl = MyAnonamouseDownloadUrlBuilder.Build(dlHash, id, indexer);
+                        // MyAnonamouse marks a release free for everyone ("free") or free for this
+                        // account only ("personal_freeleech"). Either way it costs no ratio to grab.
+                        var releaseIsAlreadyFree = ReadBooleanFlag(item, "free") || ReadBooleanFlag(item, "personal_freeleech");
+                        var spendFreeleechWedge = MyAnonamouseHelper.ShouldSpendFreeleechWedge(freeleechWedgePreference, WedgeWouldBeWasted(item));
+                        var downloadUrl = MyAnonamouseDownloadUrlBuilder.Build(dlHash, id, indexer, spendFreeleechWedge);
 
                         // Preserve raw language code for later flagging/flags list
                         string rawLangCode = string.Empty;
@@ -476,6 +485,5 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
 
             return results;
         }
-
     }
 }
