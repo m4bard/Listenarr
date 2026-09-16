@@ -128,6 +128,12 @@ namespace Listenarr.Domain.Configuration
         /// </summary>
         public List<WebhookConfiguration>? Webhooks { get; set; }
 
+        /// <summary>
+        /// Configured custom scripts. Each entry is one executable run on the channels it is
+        /// enabled for.
+        /// </summary>
+        public List<CustomScriptConfiguration>? CustomScripts { get; set; }
+
         // Optional admin credentials submitted from the UI when saving settings.
         // These are NOT mapped to the ApplicationSettings table; they are used to create/update
         // a User record in the Users table via the ConfigurationService.
