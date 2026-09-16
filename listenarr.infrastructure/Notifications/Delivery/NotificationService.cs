@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Notifications;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Notifications.Delivery
@@ -32,8 +33,9 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
         private readonly IRequestContextAccessor? _requestContextAccessor;
         private readonly INotificationPayloadBuilder _payloadBuilder;
         private readonly NotificationHttpSender _httpSender;
+        private readonly IReadOnlyList<INotificationSubscriber> _subscribers;
 
-        public NotificationService(HttpClient httpClient, ILogger<NotificationService> logger, IConfigurationService configurationService, INotificationPayloadBuilder payloadBuilder, IRequestContextAccessor? requestContextAccessor = null)
+        public NotificationService(HttpClient httpClient, ILogger<NotificationService> logger, IConfigurationService configurationService, INotificationPayloadBuilder payloadBuilder, IRequestContextAccessor? requestContextAccessor = null, IEnumerable<INotificationSubscriber>? subscribers = null)
         {
             _httpClient = httpClient;
             _logger = logger;
@@ -41,23 +43,36 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
             _payloadBuilder = payloadBuilder ?? throw new ArgumentNullException(nameof(payloadBuilder));
             _requestContextAccessor = requestContextAccessor;
             _httpSender = new NotificationHttpSender(httpClient, httpClient, logger, AllowPrivateWebhookTargetsForCurrentRequest);
+            _subscribers = subscribers?.ToList() ?? new List<INotificationSubscriber>();
         }
 
         // Typed convenience methods. Each names the event it stands for in the shared trigger
         // vocabulary and hands it to the dispatcher, which decides which targets subscribe.
         // A download reaching Moved is the point where its files have been imported into the
         // library, so it is what the settings screen offers as "Processing Complete".
-        public Task OnDownloadImportedAsync(Download download)
-            => SendNotificationSafelyAsync(
+        //
+        // The subscriber model is published to first, and separately from the webhook dispatch:
+        // a subscriber does not subscribe by trigger name, and PublishAsync already contains any
+        // subscriber failure, so neither path can suppress the other.
+        public async Task OnDownloadImportedAsync(Download download)
+        {
+            await PublishAsync(FromDownload(NotificationChannel.Download, download));
+
+            await SendNotificationSafelyAsync(
                 NotificationTriggers.BookCompleted,
                 new { AudiobookTitle = download.Title, Timestamp = DateTime.UtcNow },
                 $"download {download.Id}");
+        }
 
-        public Task OnDownloadFailedAsync(Download download)
-            => SendNotificationSafelyAsync(
+        public async Task OnDownloadFailedAsync(Download download)
+        {
+            await PublishAsync(FromDownload(NotificationChannel.DownloadFailed, download));
+
+            await SendNotificationSafelyAsync(
                 NotificationTriggers.DownloadFailed,
                 new { AudiobookTitle = download.Title, Error = download.ErrorMessage, Timestamp = DateTime.UtcNow },
                 $"download {download.Id}");
+        }
 
         public Task SendSystemNotificationAsync(string title, string message)
             => SendNotificationSafelyAsync(
