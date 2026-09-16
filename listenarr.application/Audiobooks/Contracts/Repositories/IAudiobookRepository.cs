@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Calendar;
 using Listenarr.Domain.Common;
 
 namespace Listenarr.Application.Audiobooks.Contracts.Repositories
@@ -87,6 +88,27 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<Dictionary<int, List<AudiobookSeriesMembership>>> GetAllSeriesMembershipsGroupedByAudiobookIdAsync(CancellationToken ct = default);
         Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, CancellationToken ct = default);
         Task<List<Audiobook>> GetMonitoredAudiobooksForSearchAsync(DateTime cutoff, CancellationToken ct = default);
+
+        /// <summary>
+        /// Projects the audiobooks whose stored PublishedDate falls inside a coarse string range,
+        /// for the calendar window query.
+        /// </summary>
+        /// <remarks>
+        /// PublishedDate is a TEXT column holding inconsistently formatted ISO 8601 values, so the
+        /// bounds here are deliberately coarse (see <see cref="CalendarWindow"/>) and the caller
+        /// narrows to the exact day range after parsing.
+        /// </remarks>
+        /// <param name="coarseLowerBound">Inclusive lower bound for the string comparison.</param>
+        /// <param name="coarseUpperBound">Inclusive upper bound for the string comparison.</param>
+        /// <param name="includeUnmonitored">
+        /// When false, unmonitored audiobooks are excluded in SQL, matching the *arr calendars.
+        /// </param>
+        /// <param name="ct">Cancellation token.</param>
+        Task<List<CalendarAudiobookRow>> GetCalendarRowsAsync(
+            string coarseLowerBound,
+            string coarseUpperBound,
+            bool includeUnmonitored,
+            CancellationToken ct = default);
         Task NormalizeJsonColumnsAsync(CancellationToken ct = default);
         Task<AuthorNameKeyRederivationResult> RederiveAuthorNameKeysAsync(CancellationToken ct = default);
         Task<int> CanonicalizeStoredAuthorNamesAsync(CancellationToken ct = default);
