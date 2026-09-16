@@ -61,6 +61,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260914153043_AddPreferredReleaseShapeToQualityProfile";
     private const string HistoryReleaseMetadataMigrationId =
         "20260914171829_AddHistoryReleaseMetadata";
+    private const string CustomScriptNotificationsMigrationId =
+        "20260916112317_AddCustomScriptNotifications";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -307,6 +309,19 @@ public class SqliteMigrationSchemaTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "CustomScriptNotificationStorage")]
+    public async Task CustomScriptMigration_AddsTheCustomScriptsColumn()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.True(await ColumnExistsAsync(connection, "ApplicationSettings", "CustomScripts"));
+    }
+
+    [Fact]
     [Trait("Scenario", "FinalMigrationHistoryIsConsolidated")]
     public async Task MigrationHistory_ContainsOnlyRetainedRepairsAndConsolidatedPrMigrationAfterCanary()
     {
@@ -357,7 +372,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 HistoryProtocolMigrationId,
                 IndexerFailureBackoffMigrationId,
                 PreferredReleaseShapeMigrationId,
-                HistoryReleaseMetadataMigrationId
+                HistoryReleaseMetadataMigrationId,
+                CustomScriptNotificationsMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
