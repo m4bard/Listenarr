@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Common.Scheduling;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.HostedServices
@@ -23,6 +24,7 @@ namespace Listenarr.Infrastructure.HostedServices
     public sealed class WorkerCycleRunner(
         TimeProvider timeProvider,
         IAppMetricsService metrics,
+        IScheduledTaskRegistry scheduledTasks,
         ILogger<WorkerCycleRunner> logger) : IWorkerCycleRunner
     {
         public async Task RunPeriodicAsync(
@@ -32,8 +34,17 @@ namespace Listenarr.Infrastructure.HostedServices
             Func<CancellationToken, Task> runCycle,
             CancellationToken cancellationToken)
         {
+            // Every worker that asks to be driven periodically becomes visible on the
+            // task surface here, so no worker has to declare itself to appear there.
+            using var task = scheduledTasks.Register(
+                workerName,
+                intervalProvider,
+                runCycle,
+                cancellationToken);
+
             if (initialDelay is { } delay && delay > TimeSpan.Zero)
             {
+                task.RecordNextExecution(timeProvider.GetUtcNow() + delay);
                 try
                 {
                     await Task.Delay(delay, timeProvider, cancellationToken);
@@ -56,7 +67,7 @@ namespace Listenarr.Infrastructure.HostedServices
                 try
                 {
                     metrics.Increment(BuildMetricName(workerName, "cycle.started"));
-                    await runCycle(cancellationToken);
+                    await task.RunCycleAsync(ScheduledTaskTrigger.Scheduled, cancellationToken);
                     metrics.Increment(BuildMetricName(workerName, "cycle.completed"));
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -75,9 +86,11 @@ namespace Listenarr.Infrastructure.HostedServices
                     logger.LogError(ex, "Error in {WorkerName} cycle", workerName);
                 }
 
+                var interval = intervalProvider();
+                task.RecordNextExecution(timeProvider.GetUtcNow() + interval);
                 try
                 {
-                    await Task.Delay(intervalProvider(), timeProvider, cancellationToken);
+                    await Task.Delay(interval, timeProvider, cancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
