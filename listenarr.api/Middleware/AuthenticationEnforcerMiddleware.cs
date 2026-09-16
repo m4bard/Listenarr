@@ -91,16 +91,21 @@ namespace Listenarr.Api.Middleware
                 return;
             }
 
-            // Serve SPA assets and client-side routes anonymously: if the request is not for an API or realtime hub,
-            // let the static file middleware or SPA fallback handle it. This avoids returning 401 for '/'.
-            // Keep API and hub routes protected.
+            // Serve SPA assets and client-side routes anonymously: if the request is not for an API,
+            // a realtime hub, or a subscription feed, let the static file middleware or SPA fallback
+            // handle it. This avoids returning 401 for '/'.
+            // Keep API, hub and feed routes protected. /feed is listed here because it sits outside
+            // the /api prefix by design (calendar clients hold one URL for years and must not be
+            // pinned to an API version), and without it the feed would never reach this check.
             // Case-insensitive on purpose. ASP.NET route matching is case-insensitive by
             // default, so "/API/v1/library" reaches the controller exactly as "/api/v1/library"
             // does. An ordinal check here therefore did not decide "is this a static asset";
             // it decided "was the caller willing to change one letter", and every other path
-            // comparison in this method already passes OrdinalIgnoreCase.
+            // comparison in this method already passes OrdinalIgnoreCase. The same holds for
+            // /feed, which is routed the same way.
             if (!path.StartsWith("/api", StringComparison.OrdinalIgnoreCase)
-                && !path.StartsWith("/hubs", StringComparison.OrdinalIgnoreCase))
+                && !path.StartsWith("/hubs", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("/feed", StringComparison.OrdinalIgnoreCase))
             {
                 await _next(context);
                 return;
