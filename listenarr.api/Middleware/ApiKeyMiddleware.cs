@@ -26,6 +26,12 @@ namespace Listenarr.Api.Middleware
     /// </summary>
     public class ApiKeyMiddleware
     {
+        /// <summary>
+        /// Path prefix on which the API key may arrive as an "apikey" query parameter. Scoped to
+        /// the calendar feed alone: /api keeps refusing query-string keys.
+        /// </summary>
+        public const string CalendarFeedQueryKeyPathPrefix = "/feed/v1/calendar/";
+
         private readonly RequestDelegate _next;
         private readonly IStartupConfigService _startupConfigService;
         private readonly ILogger<ApiKeyMiddleware> _logger;
@@ -57,7 +63,10 @@ namespace Listenarr.Api.Middleware
                             provided = s.Substring("ApiKey ".Length).Trim();
                     }
 
-                    // If headers didn't supply the key, only accept query-string token for realtime hub connections.
+                    // If headers didn't supply the key, only accept a query-string token on the two
+                    // paths whose clients physically cannot send a header: realtime hub connections,
+                    // and the iCalendar subscription feed, which is fetched by third-party calendar
+                    // software from a URL the operator pastes in.
                     // Avoiding query-string auth for normal API routes prevents credential leakage via logs/referrers.
                     if (string.IsNullOrWhiteSpace(provided))
                     {
@@ -69,10 +78,17 @@ namespace Listenarr.Api.Middleware
                                 var qs = context.Request.Query;
                                 if (qs.TryGetValue("access_token", out var accessTokenValues)) provided = accessTokenValues.FirstOrDefault();
                             }
+                            else if (path.StartsWith(CalendarFeedQueryKeyPathPrefix, StringComparison.OrdinalIgnoreCase))
+                            {
+                                // "apikey" is the parameter name Sonarr, Radarr and Readarr all use,
+                                // so a subscription URL copied from one of those works unchanged.
+                                var qs = context.Request.Query;
+                                if (qs.TryGetValue("apikey", out var feedKeyValues)) provided = feedKeyValues.FirstOrDefault();
+                            }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                         {
-                            _logger?.LogDebug(ex, "ApiKeyMiddleware: failed reading hub access_token from query string");
+                            _logger?.LogDebug(ex, "ApiKeyMiddleware: failed reading token from query string");
                         }
                     }
 
