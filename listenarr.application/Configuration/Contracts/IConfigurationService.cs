@@ -101,5 +101,10 @@ namespace Listenarr.Application.Configuration.Contracts
         /// </summary>
         /// <returns>List of webhook configurations</returns>
         Task<List<WebhookConfiguration>> GetWebhookConfigurationsAsync();
+
+        /// <summary>
+        /// Gets the configured custom scripts, or an empty list when none are configured.
+        /// </summary>
+        Task<List<CustomScriptConfiguration>> GetCustomScriptConfigurationsAsync();
     }
 }
