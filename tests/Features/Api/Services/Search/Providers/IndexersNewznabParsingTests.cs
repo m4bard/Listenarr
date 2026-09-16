@@ -297,7 +297,8 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
             // browse_lang uses [] notation; provider currently uses the default '1' value unless overridden by request processing - assert presence
             Assert.Contains(Uri.EscapeDataString("tor[browse_lang][]") + "=1", q);
             Assert.Contains(Uri.EscapeDataString("tor[searchType]") + "=fl", q);
-            Assert.Contains(Uri.EscapeDataString("tor[freeleechWedge]") + "=required", q);
+            // The wedge preference is spent on the download URL, not asked for in the search.
+            Assert.DoesNotContain(Uri.EscapeDataString("tor[freeleechWedge]"), q);
         }
 
         [Fact]

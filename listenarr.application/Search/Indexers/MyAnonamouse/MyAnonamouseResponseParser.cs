@@ -17,6 +17,7 @@
  */
 
 using System.Text.Json;
+using Listenarr.Application.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Search.Indexers.MyAnonamouse
@@ -43,6 +44,8 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
                 }
 
                 logger.LogDebug("Found {Count} MyAnonamouse results", dataArrayElement.GetArrayLength());
+
+                var freeleechWedgePreference = MyAnonamouseHelper.TryGetFreeleechWedge(indexer.AdditionalSettings);
                 try
                 {
                     if (dataArrayElement.GetArrayLength() > 0)
@@ -331,7 +334,11 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
                             }
                         }
 
-                        var downloadUrl = MyAnonamouseDownloadUrlBuilder.Build(dlHash, id, indexer);
+                        // MyAnonamouse marks a release free for everyone ("free") or for this account
+                        // only ("personal_freeleech"). Either way a wedge would be wasted on it.
+                        var releaseIsAlreadyFree = ReadBooleanFlag(item, "free") || ReadBooleanFlag(item, "personal_freeleech");
+                        var spendFreeleechWedge = MyAnonamouseHelper.ShouldSpendFreeleechWedge(freeleechWedgePreference, releaseIsAlreadyFree);
+                        var downloadUrl = MyAnonamouseDownloadUrlBuilder.Build(dlHash, id, indexer, spendFreeleechWedge);
 
                         // Preserve raw language code for later flagging/flags list
                         string rawLangCode = string.Empty;
@@ -476,6 +483,5 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
 
             return results;
         }
-
     }
 }

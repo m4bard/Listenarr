@@ -86,11 +86,6 @@ internal static class MyAnonamouseRequestFactory
 
         queryParameters.Add(new("tor[searchType]", searchType));
 
-        if (request?.MyAnonamouse?.FreeleechWedge is { } freeleechWedge)
-        {
-            queryParameters.Add(new("tor[freeleechWedge]", freeleechWedge.ToString().ToLowerInvariant()));
-        }
-
         var queryString = string.Join(
             "&",
             queryParameters.Select(pair =>

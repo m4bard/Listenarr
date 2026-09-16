@@ -21,7 +21,7 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
 {
     internal static class MyAnonamouseDownloadUrlBuilder
     {
-        public static string Build(string dlHash, string torrentId, Indexer indexer)
+        public static string Build(string dlHash, string torrentId, Indexer indexer, bool spendFreeleechWedge = false)
         {
             if (string.IsNullOrWhiteSpace(dlHash) && string.IsNullOrWhiteSpace(torrentId))
             {
@@ -32,6 +32,14 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
             var downloadUrl = !string.IsNullOrWhiteSpace(dlHash)
                 ? $"{baseUrl}/tor/download.php/{Uri.EscapeDataString(dlHash)}"
                 : $"{baseUrl}/tor/download.php?tid={Uri.EscapeDataString(torrentId)}";
+
+            // fl=1 tells MyAnonamouse to apply a freeleech wedge to this grab, the same parameter
+            // Prowlarr adds in MyAnonamouseParser.GetDownloadUrl.
+            if (spendFreeleechWedge)
+            {
+                downloadUrl += downloadUrl.Contains('?') ? "&fl=1" : "?fl=1";
+            }
+
             var mamIdLocal = MyAnonamouseHelper.TryGetMamId(indexer.AdditionalSettings);
             if (!string.IsNullOrEmpty(mamIdLocal))
             {
