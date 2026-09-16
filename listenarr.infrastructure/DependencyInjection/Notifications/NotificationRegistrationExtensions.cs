@@ -9,6 +9,7 @@
  */
 
 using Microsoft.Extensions.DependencyInjection;
+using Listenarr.Infrastructure.Notifications.CustomScript;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Notifications;
 
@@ -22,6 +23,7 @@ internal static class NotificationRegistrationExtensions
         services.AddScoped<INotificationService>(provider =>
             provider.GetRequiredService<NotificationService>());
         services.AddSingleton<INotificationPayloadBuilder, NotificationPayloadBuilderAdapter>();
+        services.AddScoped<INotificationSubscriber, CustomScriptNotification>();
         services.AddSingleton<IDiscordBotService, DiscordBotService>();
         services.AddSingleton<IToastService, ToastService>();
         services.AddSingleton<IHubBroadcaster, SignalRHubBroadcaster>();
