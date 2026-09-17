@@ -108,4 +108,28 @@ public sealed class DeviceNumberIdentityProbeTests
                 nodeA,
                 otherObject));
     }
+
+    [Fact]
+    public void RootFolderPersistedValueAlsoFailsOnADeviceOnlyDifference()
+    {
+        // The root-folder path does not use ArePersistedObjectIdentitiesDurablyEquivalent.
+        // It stores a hash of the whole native identity string and rehashes the live one,
+        // so it has no field-wise tolerance available to it at all.
+        var nodeA = Identity(MinorNodeA, SharedInode, SharedHandle);
+        var nodeB = Identity(MinorNodeB, SharedInode, SharedHandle);
+        var token = Guid.NewGuid().ToString("N");
+        var persisted = ManagedDirectoryIdentity.Create(token, nodeA);
+
+        // Control first: the apparatus matches the identity it was built from.
+        Assert.True(ManagedDirectoryIdentity.MatchesNativeIdentity(
+            ManagedDirectoryIdentity.CurrentVersion,
+            persisted,
+            nodeA));
+
+        // The defect, on the path a root folder actually takes.
+        Assert.False(ManagedDirectoryIdentity.MatchesNativeIdentity(
+            ManagedDirectoryIdentity.CurrentVersion,
+            persisted,
+            nodeB));
+    }
 }
