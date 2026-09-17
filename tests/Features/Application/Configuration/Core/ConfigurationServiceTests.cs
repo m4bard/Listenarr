@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Microsoft.EntityFrameworkCore;
+using Listenarr.Domain.Notifications;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Builders;
 
@@ -157,6 +158,116 @@ namespace Listenarr.Tests.Features.Application.Configuration.Core
             Assert.NotNull(reloaded!.Webhooks);
             Assert.Single(reloaded.Webhooks!);
             Assert.Equal("DirectWebhook", reloaded.Webhooks![0].Name);
+        }
+
+        [Fact]
+        public async Task SaveApplicationSettings_PreservesSavedCustomScripts_WhenPayloadOmitsThem()
+        {
+            var svc = _provider.GetRequiredService<IConfigurationService>();
+
+            var settings = await svc.GetApplicationSettingsAsync();
+            settings.CustomScripts =
+            [
+                new()
+                {
+                    Id = "script-1",
+                    Name = "OnImport",
+                    Path = FileUtils.GetAbsolutePath("on-import.sh"),
+                    Channels = [NotificationChannel.Download],
+                }
+            ];
+            await svc.SaveApplicationSettingsAsync(settings);
+
+            var saved = await svc.GetApplicationSettingsAsync();
+            Assert.Single(saved.CustomScripts!);
+
+            await svc.SaveApplicationSettingsAsync(new ApplicationSettings
+            {
+                Id = 1,
+                Version = saved.Version,
+                OutputPath = FileUtils.GetAbsolutePath("updated-output")
+            });
+
+            var afterPartial = await svc.GetApplicationSettingsAsync();
+            Assert.NotNull(afterPartial.CustomScripts);
+            Assert.Single(afterPartial.CustomScripts!);
+            Assert.Equal("OnImport", afterPartial.CustomScripts![0].Name);
+        }
+
+        [Fact]
+        public async Task SaveApplicationSettings_ReplacesSavedCustomScripts_WhenPayloadCarriesANewList()
+        {
+            // The control for the preserve guard above. Without it the guard could degenerate into
+            // "this field is never updated" and the preservation test would still pass.
+            var svc = _provider.GetRequiredService<IConfigurationService>();
+
+            var settings = await svc.GetApplicationSettingsAsync();
+            settings.CustomScripts =
+            [
+                new()
+                {
+                    Id = "script-1",
+                    Name = "OnImport",
+                    Path = FileUtils.GetAbsolutePath("on-import.sh"),
+                    Channels = [NotificationChannel.Download],
+                }
+            ];
+            await svc.SaveApplicationSettingsAsync(settings);
+
+            var saved = await svc.GetApplicationSettingsAsync();
+            await svc.SaveApplicationSettingsAsync(new ApplicationSettings
+            {
+                Id = 1,
+                Version = saved.Version,
+                CustomScripts =
+                [
+                    new()
+                    {
+                        Id = "script-2",
+                        Name = "OnFailure",
+                        Path = FileUtils.GetAbsolutePath("on-failure.sh"),
+                        Channels = [NotificationChannel.DownloadFailed],
+                    }
+                ]
+            });
+
+            var afterReplace = await svc.GetApplicationSettingsAsync();
+            Assert.NotNull(afterReplace.CustomScripts);
+            Assert.Single(afterReplace.CustomScripts!);
+            Assert.Equal("OnFailure", afterReplace.CustomScripts![0].Name);
+        }
+
+        [Fact]
+        public async Task SaveApplicationSettings_ClearingCustomScripts_RequiresAnEmptyListNotAnAbsentKey()
+        {
+            // An operator removing their last script sends an empty list, which is not null and so
+            // is not treated as an omission.
+            var svc = _provider.GetRequiredService<IConfigurationService>();
+
+            var settings = await svc.GetApplicationSettingsAsync();
+            settings.CustomScripts =
+            [
+                new()
+                {
+                    Id = "script-1",
+                    Name = "OnImport",
+                    Path = FileUtils.GetAbsolutePath("on-import.sh"),
+                    Channels = [NotificationChannel.Download],
+                }
+            ];
+            await svc.SaveApplicationSettingsAsync(settings);
+
+            var saved = await svc.GetApplicationSettingsAsync();
+            await svc.SaveApplicationSettingsAsync(new ApplicationSettings
+            {
+                Id = 1,
+                Version = saved.Version,
+                CustomScripts = []
+            });
+
+            var afterClear = await svc.GetApplicationSettingsAsync();
+            Assert.NotNull(afterClear.CustomScripts);
+            Assert.Empty(afterClear.CustomScripts!);
         }
 
         [Fact]
