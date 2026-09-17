@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using System.Reflection;
 using Listenarr.Application.Search.Indexers.Torznab;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,6 +18,8 @@ namespace Listenarr.Tests.Features.Application.Search.Indexers.Torznab;
 [Trait("Category", "TorznabIndexerFlagSurfacing")]
 public sealed class TorznabIndexerFlagSurfacingTests : BaseTests
 {
+    private const string ParseMethodName = "ParseTorznabResponseAsync";
+
     private const string FeedWithFlags = """
     <?xml version="1.0" encoding="UTF-8"?>
     <rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed">
@@ -90,18 +93,100 @@ public sealed class TorznabIndexerFlagSurfacingTests : BaseTests
         // result carries them only on whichever code path happened to handle it.
         using var httpClient = new HttpClient();
         var provider = new TorznabNewznabSearchProvider(httpClient, NullLogger<TorznabNewznabSearchProvider>.Instance);
-        var parse = typeof(TorznabNewznabSearchProvider).GetMethod(
-            "ParseTorznabResponseAsync",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        Assert.NotNull(parse);
 
-        var results = await (Task<List<IndexerSearchResult>>)parse!.Invoke(
-            provider,
-            [FeedWithFlags, CreateIndexer()])!;
+        var results = await ParseWithTheInfrastructureProviderAsync(provider, FeedWithFlags, CreateIndexer());
 
         Assert.Equal(2, results.Count);
         Assert.Equal(["freeleech", "doubleupload", "internal"], results[0].IndexerFlags);
         Assert.Empty(results[1].IndexerFlags);
+    }
+
+    /// <summary>
+    /// Invokes the provider's private Torznab parse. It sits behind no interface, and both its
+    /// parameter list and its return type move as the search pipeline is reworked: it has grown a
+    /// query-form argument and now hands back an observation record rather than a bare result list.
+    /// Binding to one fixed shape turned that into a <see cref="TargetParameterCountException"/>
+    /// carrying no message, which said nothing about the flags the test is actually about, so the
+    /// shape is discovered and asserted here instead. The assertions on the flags themselves are
+    /// unchanged and are the point of the test.
+    /// </summary>
+    private static async Task<IReadOnlyList<IndexerSearchResult>> ParseWithTheInfrastructureProviderAsync(
+        TorznabNewznabSearchProvider provider,
+        string xmlContent,
+        Indexer indexer)
+    {
+        var candidates = typeof(TorznabNewznabSearchProvider)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)
+            .Where(method => method.Name == ParseMethodName && TakesTheFeedAndTheIndexer(method))
+            .ToArray();
+
+        Assert.True(
+            candidates.Length == 1,
+            $"Expected exactly one non-public {ParseMethodName}(string, Indexer, ...) on "
+                + $"{nameof(TorznabNewznabSearchProvider)}; found {candidates.Length}. The parse entry "
+                + "point moved. Follow it here rather than dropping the assertions below.");
+
+        var parse = candidates[0];
+        var parameters = parse.GetParameters();
+        var arguments = new object?[parameters.Length];
+        arguments[0] = xmlContent;
+        arguments[1] = indexer;
+        for (var index = 2; index < parameters.Length; index++)
+        {
+            arguments[index] = ArgumentFor(parameters[index]);
+        }
+
+        var task = Assert.IsAssignableFrom<Task>(parse.Invoke(provider, arguments));
+        await task;
+
+        return ResultsFrom(parse.ReturnType.GetProperty("Result")?.GetValue(task));
+    }
+
+    private static bool TakesTheFeedAndTheIndexer(MethodInfo method)
+    {
+        var parameters = method.GetParameters();
+        return parameters.Length >= 2
+            && parameters[0].ParameterType == typeof(string)
+            && parameters[1].ParameterType == typeof(Indexer);
+    }
+
+    private static object? ArgumentFor(ParameterInfo parameter)
+    {
+        // The only extra argument the parse has ever taken is the query form it was answering,
+        // which is carried into the observation for logging and is not consulted while parsing.
+        if (parameter.ParameterType == typeof(string))
+        {
+            return "a free book";
+        }
+
+        if (parameter.HasDefaultValue)
+        {
+            return parameter.DefaultValue;
+        }
+
+        Assert.True(
+            parameter.ParameterType.IsValueType,
+            $"{ParseMethodName} grew a required '{parameter.Name}' of type "
+                + $"{parameter.ParameterType.Name}, which this test has no sensible value for. Supply "
+                + "a real one here.");
+
+        return Activator.CreateInstance(parameter.ParameterType);
+    }
+
+    private static IReadOnlyList<IndexerSearchResult> ResultsFrom(object? parsed)
+    {
+        if (parsed is IReadOnlyList<IndexerSearchResult> bare)
+        {
+            return bare;
+        }
+
+        var carried = parsed?.GetType().GetProperty("Results")?.GetValue(parsed);
+        Assert.True(
+            carried is not null,
+            $"{ParseMethodName} returned {parsed?.GetType().Name ?? "nothing"}, which is neither a "
+                + "result list nor something carrying a Results property.");
+
+        return Assert.IsAssignableFrom<IReadOnlyList<IndexerSearchResult>>(carried);
     }
 
     private static Indexer CreateIndexer() => new()
