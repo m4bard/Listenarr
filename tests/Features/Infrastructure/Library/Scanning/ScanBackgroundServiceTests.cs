@@ -3,6 +3,7 @@ using Listenarr.Tests.Builders;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Listenarr.Tests.Common;
+using Listenarr.Application.Common.Scheduling;
 
 namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning;
 
@@ -230,7 +231,8 @@ public sealed class ScanBackgroundServiceTests : BaseTests
             TimeSpan? initialDelay,
             Func<TimeSpan> intervalProvider,
             Func<CancellationToken, Task> runCycle,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ScheduledTaskManualTrigger manualTrigger = ScheduledTaskManualTrigger.Denied)
         {
             await runCycle(cancellationToken);
             try
