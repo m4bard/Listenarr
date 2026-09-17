@@ -38,6 +38,13 @@ namespace Listenarr.Api.Features.SystemDiagnostics
 
         public required bool IsRunning { get; init; }
 
+        /// <summary>
+        /// Whether POST to this task's run route will be accepted. Present so the whole
+        /// manual-run allowlist can be read off one GET, and so a UI can render the
+        /// button disabled rather than discovering the refusal by pressing it.
+        /// </summary>
+        public required bool IsManualRunAllowed { get; init; }
+
         public DateTimeOffset? LastStartedAt { get; init; }
 
         public DateTimeOffset? LastEndedAt { get; init; }
@@ -57,6 +64,7 @@ namespace Listenarr.Api.Features.SystemDiagnostics
             IntervalSeconds = status.Interval.TotalSeconds,
             RegisteredAt = status.RegisteredAt,
             IsRunning = status.IsRunning,
+            IsManualRunAllowed = status.ManualTrigger == ScheduledTaskManualTrigger.Allowed,
             LastStartedAt = status.LastStartedAt,
             LastEndedAt = status.LastEndedAt,
             LastDurationSeconds = status.LastDuration?.TotalSeconds,
