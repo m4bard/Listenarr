@@ -39,6 +39,10 @@ namespace Listenarr.Infrastructure.Downloads.Processing
         {
             logger.LogInformation("Download processing job cleanup worker started");
 
+            // Deliberately not on the manual-run allowlist. This cycle prunes terminal
+            // job rows, so running it out of band destroys rows the caller was not
+            // warned about, including ones other checks are still reading. Absence is
+            // the refusal: RunPeriodicAsync defaults to ScheduledTaskManualTrigger.Denied.
             await cycleRunner.RunPeriodicAsync(
                 nameof(DownloadProcessingJobCleanupService),
                 InitialDelay,

@@ -16,15 +16,30 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Common.Scheduling;
+
 namespace Listenarr.Application.Common.Contracts
 {
     public interface IWorkerCycleRunner
     {
+        /// <summary>
+        /// Drives a worker's cycle on an interval, and puts it on the task surface for
+        /// the life of that loop.
+        /// </summary>
+        /// <remarks>
+        /// <paramref name="manualTrigger"/> is whether this worker may also be run on
+        /// demand from the task surface. It sits after the cancellation token because it
+        /// carries a default, and the default is
+        /// <see cref="ScheduledTaskManualTrigger.Denied"/>: a worker joins the manual-run
+        /// allowlist only by saying so here. Anything added later, by anyone who has not
+        /// read this, is scheduled-only until its author decides otherwise.
+        /// </remarks>
         Task RunPeriodicAsync(
             string workerName,
             TimeSpan? initialDelay,
             Func<TimeSpan> intervalProvider,
             Func<CancellationToken, Task> runCycle,
-            CancellationToken cancellationToken);
+            CancellationToken cancellationToken,
+            ScheduledTaskManualTrigger manualTrigger = ScheduledTaskManualTrigger.Denied);
     }
 }

@@ -49,6 +49,7 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
             string taskName,
             Func<TimeSpan> intervalProvider,
             Func<CancellationToken, Task> runCycle,
+            ScheduledTaskManualTrigger manualTrigger,
             CancellationToken workerCancellation,
             TimeProvider timeProvider,
             Action<ScheduledTaskHandle> onDisposed)
@@ -56,6 +57,7 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
             TaskName = taskName;
             _intervalProvider = intervalProvider;
             _runCycle = runCycle;
+            ManualTrigger = manualTrigger;
             _workerCancellation = workerCancellation;
             _timeProvider = timeProvider;
             _onDisposed = onDisposed;
@@ -64,6 +66,12 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
         }
 
         public string TaskName { get; }
+
+        /// <summary>
+        /// What the worker said about being run out of band. Read-only for the life of
+        /// the registration: nothing can promote a task onto the allowlist at runtime.
+        /// </summary>
+        public ScheduledTaskManualTrigger ManualTrigger { get; }
 
         public async Task RunCycleAsync(ScheduledTaskTrigger trigger, CancellationToken cancellationToken)
         {
@@ -93,6 +101,13 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
         public bool TryBeginManualRun() => !_disposed && _gate.Wait(0);
 
         /// <summary>
+        /// Whether a manual run may even be attempted. Checked before the gate, so a
+        /// task that is not on the allowlist never takes the exclusion gate and cannot
+        /// be told apart from an idle one by how long the refusal takes.
+        /// </summary>
+        public bool AllowsManualRun => ManualTrigger == ScheduledTaskManualTrigger.Allowed;
+
+        /// <summary>
         /// Runs a manual cycle on a gate already taken by <see cref="TryBeginManualRun"/>,
         /// bound to the worker's own cancellation so shutdown stops it.
         /// </summary>
@@ -119,6 +134,7 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
                     Interval = interval,
                     RegisteredAt = _registeredAt,
                     IsRunning = _isRunning,
+                    ManualTrigger = ManualTrigger,
                     LastStartedAt = _lastStartedAt,
                     LastEndedAt = _lastEndedAt,
                     LastDuration = _lastDuration,
