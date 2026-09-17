@@ -25,6 +25,7 @@ global using Listenarr.Application.Security.Contracts;
 global using Listenarr.Application.Security.Contracts.Repositories;
 global using Listenarr.Application.SystemDiagnostics.Contracts;
 global using Listenarr.Application.Common;
+global using Listenarr.Application.Common.Scheduling;
 global using Listenarr.Application.Configuration.Core;
 global using Listenarr.Application.Downloads.Cleanup;
 global using Listenarr.Application.Downloads.Common;
