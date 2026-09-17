@@ -76,7 +76,10 @@ public sealed class ScheduledTaskRegistryTests : BaseTests
     public async Task Trigger_IdleTask_RunsAnExtraCycleAndRecordsTheManualTrigger()
     {
         var registry = CreateRegistry();
-        using var worker = new FakeWorker(registry, "TriggerableWorker");
+        using var worker = new FakeWorker(
+            registry,
+            "TriggerableWorker",
+            manualTrigger: ScheduledTaskManualTrigger.Allowed);
 
         await worker.WaitForCycleAsync(1);
         await WaitForIdleAsync(registry, "TriggerableWorker");
@@ -96,7 +99,11 @@ public sealed class ScheduledTaskRegistryTests : BaseTests
     {
         var registry = CreateRegistry();
         using var gate = new SemaphoreSlim(0, 1);
-        using var worker = new FakeWorker(registry, "BusyWorker", holdCycleOn: gate);
+        using var worker = new FakeWorker(
+            registry,
+            "BusyWorker",
+            holdCycleOn: gate,
+            manualTrigger: ScheduledTaskManualTrigger.Allowed);
 
         await worker.WaitForCycleAsync(1);
 
@@ -117,6 +124,63 @@ public sealed class ScheduledTaskRegistryTests : BaseTests
         await worker.StopAsync();
 
         Assert.Empty(registry.GetAll());
+    }
+
+    [Fact]
+    public async Task Worker_ThatSaysNothing_IsNotTriggerable()
+    {
+        var registry = CreateRegistry();
+        using var worker = new FakeWorker(registry, "QuietWorker");
+
+        await worker.WaitForCycleAsync(1);
+
+        var status = registry.Find("QuietWorker");
+        Assert.NotNull(status);
+        Assert.Equal(ScheduledTaskManualTrigger.Denied, status.ManualTrigger);
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public async Task Trigger_TaskNotOnTheAllowlist_IsRefusedAndItsCycleIsNeverEntered()
+    {
+        // The case the allowlist exists for. A deny-list would have had to know this
+        // worker's name in advance; here it is refused because nobody said otherwise.
+        var registry = CreateRegistry();
+        using var worker = new FakeWorker(registry, "DestructiveWorker");
+
+        await worker.WaitForCycleAsync(1);
+        await WaitForIdleAsync(registry, "DestructiveWorker");
+        var cyclesBefore = worker.CycleCount;
+
+        var refused = registry.Trigger("DestructiveWorker");
+
+        Assert.Equal(ScheduledTaskTriggerResult.NotAllowed, refused);
+
+        // Refusing is not enough on its own: prove the cycle body was never reached.
+        // The manual run is dispatched on a pool thread when it is accepted, so give a
+        // wrongly accepted one room to show up rather than racing it.
+        await Task.Delay(200);
+        Assert.Equal(cyclesBefore, worker.CycleCount);
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public async Task Trigger_RefusalIsDistinctFromAnUnknownTask()
+    {
+        // NotFound and NotAllowed must not collapse into each other, or a caller cannot
+        // tell a typo from a task they are simply not allowed to start.
+        var registry = CreateRegistry();
+        using var worker = new FakeWorker(registry, "PresentButDeniedWorker");
+
+        await worker.WaitForCycleAsync(1);
+
+        Assert.Equal(
+            ScheduledTaskTriggerResult.NotAllowed,
+            registry.Trigger("PresentButDeniedWorker"));
+        Assert.Equal(
+            ScheduledTaskTriggerResult.NotFound,
+            registry.Trigger("NoSuchWorker"));
+        await worker.StopAsync();
     }
 
     private static ScheduledTaskRegistry CreateRegistry() =>
@@ -163,7 +227,8 @@ public sealed class ScheduledTaskRegistryTests : BaseTests
             IScheduledTaskRegistry registry,
             string workerName,
             Func<Exception>? failure = null,
-            SemaphoreSlim? holdCycleOn = null)
+            SemaphoreSlim? holdCycleOn = null,
+            ScheduledTaskManualTrigger? manualTrigger = null)
         {
             _failure = failure;
             _holdCycleOn = holdCycleOn;
@@ -174,12 +239,35 @@ public sealed class ScheduledTaskRegistryTests : BaseTests
                 registry,
                 Mock.Of<ILogger<WorkerCycleRunner>>());
 
-            _loop = runner.RunPeriodicAsync(
-                workerName,
-                initialDelay: null,
-                intervalProvider: () => Interval,
-                runCycle: RunCycleAsync,
-                _cancellation.Token);
+            // Null means the argument is genuinely omitted, so a worker that says nothing
+            // about manual runs takes the runner's own default rather than one this
+            // helper invented. Flipping that default has to break the tests below.
+            _loop = manualTrigger is { } declared
+                ? runner.RunPeriodicAsync(
+                    workerName,
+                    initialDelay: null,
+                    intervalProvider: () => Interval,
+                    runCycle: RunCycleAsync,
+                    _cancellation.Token,
+                    declared)
+                : runner.RunPeriodicAsync(
+                    workerName,
+                    initialDelay: null,
+                    intervalProvider: () => Interval,
+                    runCycle: RunCycleAsync,
+                    _cancellation.Token);
+        }
+
+        /// <summary>How many times the cycle body has actually been entered.</summary>
+        public int CycleCount
+        {
+            get
+            {
+                lock (_cycleLock)
+                {
+                    return _cycleCount;
+                }
+            }
         }
 
         public Task WaitForCycleAsync(int cycleNumber)

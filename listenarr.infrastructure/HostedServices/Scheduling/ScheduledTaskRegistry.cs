@@ -38,6 +38,7 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
             string taskName,
             Func<TimeSpan> intervalProvider,
             Func<CancellationToken, Task> runCycle,
+            ScheduledTaskManualTrigger manualTrigger,
             CancellationToken workerCancellation)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(taskName);
@@ -48,6 +49,7 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
                 taskName,
                 intervalProvider,
                 runCycle,
+                manualTrigger,
                 workerCancellation,
                 timeProvider,
                 Deregister);
@@ -63,7 +65,10 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
                     return handle;
                 });
 
-            logger.LogDebug("Registered scheduled task {TaskName}", taskName);
+            logger.LogDebug(
+                "Registered scheduled task {TaskName} (manual run {ManualTrigger})",
+                taskName,
+                manualTrigger);
             return handle;
         }
 
@@ -81,6 +86,16 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
             if (!_tasks.TryGetValue(taskName, out var handle))
             {
                 return ScheduledTaskTriggerResult.NotFound;
+            }
+
+            // The allowlist is checked before the gate, so a scheduled-only worker is
+            // refused without any part of its cycle being reached.
+            if (!handle.AllowsManualRun)
+            {
+                logger.LogWarning(
+                    "Refused a manual run of {TaskName}: it is not on the manual-run allowlist",
+                    taskName);
+                return ScheduledTaskTriggerResult.NotAllowed;
             }
 
             if (!handle.TryBeginManualRun())

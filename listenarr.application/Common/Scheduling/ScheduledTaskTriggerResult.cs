@@ -30,6 +30,13 @@ namespace Listenarr.Application.Common.Scheduling
         NotFound = 1,
 
         /// <summary>A cycle of that task is already in flight.</summary>
-        AlreadyRunning = 2
+        AlreadyRunning = 2,
+
+        /// <summary>
+        /// The task is registered but is not on the manual-run allowlist. Distinct from
+        /// <see cref="NotFound"/> on purpose: the caller asked for something real and was
+        /// refused, and telling them it does not exist would be a lie they cannot act on.
+        /// </summary>
+        NotAllowed = 3
     }
 }
