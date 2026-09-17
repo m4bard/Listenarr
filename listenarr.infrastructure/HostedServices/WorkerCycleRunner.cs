@@ -32,14 +32,19 @@ namespace Listenarr.Infrastructure.HostedServices
             TimeSpan? initialDelay,
             Func<TimeSpan> intervalProvider,
             Func<CancellationToken, Task> runCycle,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ScheduledTaskManualTrigger manualTrigger = ScheduledTaskManualTrigger.Denied)
         {
             // Every worker that asks to be driven periodically becomes visible on the
             // task surface here, so no worker has to declare itself to appear there.
+            // Appearing is not the same as being runnable: a worker is on the manual-run
+            // allowlist only if it passed ScheduledTaskManualTrigger.Allowed, and the
+            // default below is what a worker gets for saying nothing.
             using var task = scheduledTasks.Register(
                 workerName,
                 intervalProvider,
                 runCycle,
+                manualTrigger,
                 cancellationToken);
 
             if (initialDelay is { } delay && delay > TimeSpan.Zero)

@@ -38,7 +38,10 @@ namespace Listenarr.Infrastructure.Library.Monitoring
                 initialDelay: TimeSpan.FromMinutes(10),
                 intervalProvider: () => SyncInterval,
                 runCycle: processor.RunCycleAsync,
-                stoppingToken);
+                stoppingToken,
+                // Syncs monitored authors that are due. Additive, and on a one-day
+                // interval it is the task an operator most wants to bring forward.
+                manualTrigger: ScheduledTaskManualTrigger.Allowed);
 
             logger.LogInformation("AuthorMonitoringBackgroundService stopped");
         }
