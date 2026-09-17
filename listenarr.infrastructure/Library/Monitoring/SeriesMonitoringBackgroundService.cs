@@ -38,7 +38,10 @@ namespace Listenarr.Infrastructure.Library.Monitoring
                 initialDelay: TimeSpan.FromMinutes(10),
                 intervalProvider: () => SyncInterval,
                 runCycle: processor.RunCycleAsync,
-                stoppingToken);
+                stoppingToken,
+                // Syncs monitored series that are due. Same reasoning as the author
+                // monitor beside it: additive, and a day is a long time to wait.
+                manualTrigger: ScheduledTaskManualTrigger.Allowed);
 
             logger.LogInformation("SeriesMonitoringBackgroundService stopped");
         }
