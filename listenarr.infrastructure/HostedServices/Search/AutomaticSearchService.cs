@@ -38,7 +38,12 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 initialDelay: TimeSpan.FromMinutes(5),
                 intervalProvider: () => SearchInterval,
                 runCycle: processor.RunCycleAsync,
-                stoppingToken);
+                stoppingToken,
+                // Searching on demand is the whole point of a search button, and the
+                // family exposes the equivalent commands. It does grab releases, so it is
+                // the one entry here with a real side effect; the exclusion gate stops a
+                // second press from overlapping the first.
+                manualTrigger: ScheduledTaskManualTrigger.Allowed);
 
             logger.LogInformation("AutomaticSearchService stopped");
         }

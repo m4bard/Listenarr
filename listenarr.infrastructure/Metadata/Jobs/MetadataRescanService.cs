@@ -41,7 +41,10 @@ namespace Listenarr.Infrastructure.Metadata.Jobs
                 initialDelay: null,
                 intervalProvider: () => Interval,
                 runCycle: processor.RunCycleAsync,
-                stoppingToken);
+                stoppingToken,
+                // Reads files that are missing metadata and fills the gaps in. Bringing a
+                // cycle forward costs a rescan and destroys nothing.
+                manualTrigger: ScheduledTaskManualTrigger.Allowed);
             logger.LogInformation("MetadataRescanService stopping");
         }
     }
