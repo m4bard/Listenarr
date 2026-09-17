@@ -26,6 +26,9 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             DownloadClientHealth downloadClientHealth,
             ExternalApiHealth externalApiHealth)
         {
+            // Precedence is error > warning > unknown > healthy. "unknown" only wins when
+            // nothing is confirmed wrong but at least one probe could not produce an answer,
+            // so the page never claims healthy on the strength of a question mark.
             var overallStatus = "healthy";
             if (downloadClientHealth.Status == "error" || externalApiHealth.Status == "error")
             {
@@ -34,6 +37,10 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             else if (downloadClientHealth.Status == "warning" || externalApiHealth.Status == "warning")
             {
                 overallStatus = "warning";
+            }
+            else if (downloadClientHealth.Status == "unknown" || externalApiHealth.Status == "unknown")
+            {
+                overallStatus = "unknown";
             }
 
             return new ServiceHealth
@@ -46,38 +53,50 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             };
         }
 
-        public static DownloadClientHealth BuildDownloadClientHealth(IEnumerable<DownloadClientConfiguration> clients)
+        /// <summary>
+        /// Maps already-probed download clients into the health payload. Probing happens in
+        /// SystemService; this stays a pure function so the status arithmetic can be tested
+        /// without a gateway, a socket or a clock.
+        /// </summary>
+        /// <param name="probes">One entry per enabled client. Disabled clients are not probed and are not reported.</param>
+        public static DownloadClientHealth BuildDownloadClientHealth(IEnumerable<DownloadClientProbe> probes)
         {
-            var clientList = clients?.ToList() ?? new List<DownloadClientConfiguration>();
+            var probeList = probes?.ToList() ?? new List<DownloadClientProbe>();
             var clientStatuses = new List<ClientStatus>();
             var connectedCount = 0;
+            var disconnectedCount = 0;
+            var unknownCount = 0;
 
-            foreach (var client in clientList)
+            foreach (var probe in probeList)
             {
-                if (!client.IsEnabled)
+                switch (probe.Status)
                 {
-                    continue;
+                    case DownloadClientProbeStatuses.Connected:
+                        connectedCount++;
+                        break;
+                    case DownloadClientProbeStatuses.Unknown:
+                        unknownCount++;
+                        break;
+                    default:
+                        disconnectedCount++;
+                        break;
                 }
-
-                var status = "connected";
-                connectedCount++;
 
                 clientStatuses.Add(new ClientStatus
                 {
-                    Name = client.Name,
-                    Status = status,
-                    Type = client.Type
+                    Name = probe.Name,
+                    Status = probe.Status,
+                    Type = probe.Type
                 });
             }
 
-            var totalEnabled = clientList.Count(c => c.IsEnabled);
-            var overallStatus = BuildChildStatus(connectedCount, totalEnabled);
+            var overallStatus = BuildProbedChildStatus(connectedCount, disconnectedCount, unknownCount);
 
             return new DownloadClientHealth
             {
                 Status = overallStatus,
                 Connected = connectedCount,
-                Total = totalEnabled,
+                Total = probeList.Count,
                 Clients = clientStatuses
             };
         }
@@ -138,6 +157,27 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
                 Total = 0,
                 Apis = new List<ApiStatus>()
             };
+        }
+
+        /// <summary>
+        /// Rolls per-client probe outcomes into one status. With no unknowns this is identical
+        /// to the two-argument form used by the API card: everything down is an error, a mix is
+        /// a warning, everything up is healthy. An unknown never counts as connected, and never
+        /// hardens into an error on its own, because not knowing is not the same as being down.
+        /// </summary>
+        private static string BuildProbedChildStatus(int connectedCount, int disconnectedCount, int unknownCount)
+        {
+            if (disconnectedCount > 0)
+            {
+                return connectedCount == 0 && unknownCount == 0 ? "error" : "warning";
+            }
+
+            if (unknownCount > 0)
+            {
+                return "unknown";
+            }
+
+            return "healthy";
         }
 
         private static string BuildChildStatus(int connectedCount, int totalEnabled)

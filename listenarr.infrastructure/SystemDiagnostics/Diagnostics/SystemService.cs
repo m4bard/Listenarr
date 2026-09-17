@@ -22,7 +22,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
 {
-    public class SystemService : ISystemService
+    public partial class SystemService : ISystemService
     {
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<SystemService> _logger;
@@ -30,8 +30,18 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
         private readonly IApplicationVersionService _applicationVersionService;
         private readonly IRootFolderService _rootFolderService;
         private readonly IDiskSpaceProbe _diskSpaceProbe;
+        private readonly IDownloadClientGateway _downloadClientGateway;
+        private readonly TimeSpan _downloadClientProbeTimeout;
         private readonly DateTime _startTime;
         private static readonly Process _currentProcess = Process.GetCurrentProcess();
+
+        /// <summary>
+        /// How long one download client gets to answer before the health endpoint gives up on it
+        /// and reports unknown. Deliberately far below the download client HttpClient timeout of
+        /// 30 seconds and its retry policy, because this endpoint runs while somebody is looking
+        /// at the System page and one unreachable client must not hold the whole response.
+        /// </summary>
+        private static readonly TimeSpan DefaultDownloadClientProbeTimeout = TimeSpan.FromSeconds(5);
 
         public SystemService(
             IConfigurationService configurationService,
@@ -39,7 +49,9 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             IApplicationPathService applicationPathService,
             IApplicationVersionService applicationVersionService,
             IRootFolderService rootFolderService,
-            IDiskSpaceProbe diskSpaceProbe)
+            IDiskSpaceProbe diskSpaceProbe,
+            IDownloadClientGateway downloadClientGateway,
+            TimeSpan? downloadClientProbeTimeout = null)
         {
             _configurationService = configurationService;
             _logger = logger;
@@ -47,6 +59,8 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             _applicationVersionService = applicationVersionService;
             _rootFolderService = rootFolderService;
             _diskSpaceProbe = diskSpaceProbe;
+            _downloadClientGateway = downloadClientGateway;
+            _downloadClientProbeTimeout = downloadClientProbeTimeout ?? DefaultDownloadClientProbeTimeout;
             _startTime = DateTime.UtcNow;
         }
 
@@ -176,20 +190,6 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             {
                 _logger.LogError(ex, "Error getting service health");
                 throw;
-            }
-        }
-
-        private async Task<DownloadClientHealth> GetDownloadClientHealthAsync()
-        {
-            try
-            {
-                var clients = await _configurationService.GetDownloadClientConfigurationsAsync();
-                return SystemHealthMapper.BuildDownloadClientHealth(clients);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                _logger.LogError(ex, "Error getting download client health");
-                return SystemHealthMapper.BuildDownloadClientHealthError();
             }
         }
 

@@ -73,8 +73,8 @@
           <div v-else>
             <div v-for="client in downloadClients" :key="client.name" class="client-status">
               <component
-                :is="client.status === 'connected' ? PhCheckCircle : PhXCircle"
-                :class="client.status === 'connected' ? 'success' : 'error'"
+                :is="statusIcon(client.status)"
+                :class="statusTone(client.status)"
               />
               <span class="client-name">{{ client.name }}</span>
               <span :class="['client-indicator', client.status]">{{ client.status }}</span>
@@ -99,8 +99,8 @@
           <div v-else>
             <div v-for="api in externalApis.apis" :key="api.name" class="client-status">
               <component
-                :is="api.status === 'connected' ? PhCheckCircle : PhXCircle"
-                :class="api.status === 'connected' ? 'success' : 'error'"
+                :is="statusIcon(api.status)"
+                :class="statusTone(api.status)"
               />
               <span class="client-name">{{ api.name }}</span>
               <span :class="['client-indicator', api.status]">{{ api.status }}</span>
@@ -215,6 +215,7 @@ import {
   PhWarning,
   PhCheckCircle,
   PhXCircle,
+  PhQuestion,
   PhCode,
   PhClock,
   PhDownload,
@@ -284,6 +285,21 @@ const {
 } = useSystemLogs(50)
 
 // Load all system data
+// A client or API status is one of "connected", "disconnected" or "unknown". Unknown means
+// the probe could not produce an answer within its budget, which is not the same as being
+// down, so it gets its own icon and its own colour rather than falling in with the failures.
+const statusIcon = (status: string) => {
+  if (status === 'connected') return PhCheckCircle
+  if (status === 'unknown') return PhQuestion
+  return PhXCircle
+}
+
+const statusTone = (status: string) => {
+  if (status === 'connected') return 'success'
+  if (status === 'unknown') return 'warning'
+  return 'error'
+}
+
 const loadSystemData = async () => {
   loading.value = true
   error.value = null
@@ -550,11 +566,17 @@ onMounted(() => {
   border: 1px solid rgba(243, 156, 18, 0.3);
 }
 
-.status-badge.error,
-.status-badge.unknown {
+.status-badge.error {
   background: rgba(231, 76, 60, 0.15);
   color: #e74c3c;
   border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+/* Unknown is amber, not red: we could not find out, which is not the same as down. */
+.status-badge.unknown {
+  background: rgba(243, 156, 18, 0.15);
+  color: #f39c12;
+  border: 1px solid rgba(243, 156, 18, 0.3);
 }
 
 /* Status Details */
@@ -618,6 +640,10 @@ onMounted(() => {
   color: #e74c3c;
 }
 
+.client-status i.warning {
+  color: #f39c12;
+}
+
 .client-name {
   flex: 1;
   color: #fff;
@@ -638,11 +664,16 @@ onMounted(() => {
   border: 1px solid rgba(39, 174, 96, 0.3);
 }
 
-.client-indicator.disconnected,
-.client-indicator.unknown {
+.client-indicator.disconnected {
   background: rgba(231, 76, 60, 0.15);
   color: #e74c3c;
   border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+.client-indicator.unknown {
+  background: rgba(243, 156, 18, 0.15);
+  color: #f39c12;
+  border: 1px solid rgba(243, 156, 18, 0.3);
 }
 
 /* Empty Message */
