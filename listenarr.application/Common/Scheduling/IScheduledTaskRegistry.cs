@@ -27,12 +27,15 @@ namespace Listenarr.Application.Common.Scheduling
     {
         /// <summary>
         /// Announces a worker for the life of its loop. Called by the cycle runner,
-        /// not by workers directly.
+        /// not by workers directly. <paramref name="manualTrigger"/> is the worker's
+        /// own answer to whether it may be run out of band; the cycle runner passes
+        /// through whatever the worker said, and the default is to refuse.
         /// </summary>
         IScheduledTaskHandle Register(
             string taskName,
             Func<TimeSpan> intervalProvider,
             Func<CancellationToken, Task> runCycle,
+            ScheduledTaskManualTrigger manualTrigger,
             CancellationToken workerCancellation);
 
         /// <summary>All currently registered tasks, ordered by name.</summary>
