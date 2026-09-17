@@ -164,6 +164,8 @@ namespace Listenarr.Application.Configuration.Core
                         settings.EnabledNotificationTriggers = existing.EnabledNotificationTriggers;
                     if (settings.Webhooks == null)
                         settings.Webhooks = existing.Webhooks;
+                    if (settings.CustomScripts == null)
+                        settings.CustomScripts = existing.CustomScripts;
 
                     // The other fields RedactApplicationSettings covers need the
                     // same sentinel check as ProwlarrApiKeyEncrypted above. A
