@@ -16,12 +16,16 @@ public sealed class ScheduledTasksControllerTests : BaseTests
         registry.Setup(candidate => candidate.GetAll()).Returns(new[]
         {
             CreateStatus("MetadataRescanService"),
-            CreateStatus("move.scan.handoff.recovery")
+            CreateStatus("move.scan.handoff.recovery", manualTrigger: ScheduledTaskManualTrigger.Denied)
         });
         var controller = new ScheduledTasksController(registry.Object);
 
         var result = Assert.IsType<OkObjectResult>(controller.GetAll().Result);
         var tasks = Assert.IsAssignableFrom<IReadOnlyList<ScheduledTaskDto>>(result.Value);
+
+        // The whole allowlist is readable off this one call, which is what keeps it
+        // auditable without opening ten registration sites.
+        Assert.Equal(new[] { true, false }, tasks.Select(task => task.IsManualRunAllowed));
 
         Assert.Equal(
             new[] { "MetadataRescanService", "move.scan.handoff.recovery" },
@@ -84,7 +88,29 @@ public sealed class ScheduledTasksControllerTests : BaseTests
         Assert.Equal("Manual", task.LastTrigger);
     }
 
-    private static ScheduledTaskStatus CreateStatus(string taskName, bool isRunning = false)
+    [Fact]
+    public void Run_TaskNotOnTheAllowlist_IsForbiddenRatherThanNotFound()
+    {
+        var registry = new Mock<IScheduledTaskRegistry>(MockBehavior.Strict);
+        registry.Setup(candidate => candidate.Trigger("DownloadProcessingJobCleanupService"))
+            .Returns(ScheduledTaskTriggerResult.NotAllowed);
+        var controller = new ScheduledTasksController(registry.Object);
+
+        var result = Assert.IsType<ObjectResult>(
+            controller.Run("DownloadProcessingJobCleanupService").Result);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+
+        // A registered task the caller may not start is not the same as a task that does
+        // not exist, and the body has to say which it is.
+        Assert.Contains("schedule", result.Value?.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("No scheduled task named", result.Value?.ToString());
+    }
+
+    private static ScheduledTaskStatus CreateStatus(
+        string taskName,
+        bool isRunning = false,
+        ScheduledTaskManualTrigger manualTrigger = ScheduledTaskManualTrigger.Allowed)
     {
         var endedAt = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
 
@@ -94,6 +120,7 @@ public sealed class ScheduledTasksControllerTests : BaseTests
             Interval = TimeSpan.FromMinutes(15),
             RegisteredAt = endedAt.AddHours(-1),
             IsRunning = isRunning,
+            ManualTrigger = manualTrigger,
             LastStartedAt = endedAt.AddSeconds(-30),
             LastEndedAt = endedAt,
             LastDuration = TimeSpan.FromSeconds(30),
