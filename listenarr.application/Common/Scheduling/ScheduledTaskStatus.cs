@@ -37,6 +37,14 @@ namespace Listenarr.Application.Common.Scheduling
         /// <summary>True while a cycle is in flight, whether scheduled or manual.</summary>
         public required bool IsRunning { get; init; }
 
+        /// <summary>
+        /// Whether this worker may be run out of band. Required rather than defaulted so
+        /// that anything constructing a status has to state the answer, and reported on
+        /// the API row so the whole allowlist is auditable in one GET rather than by
+        /// reading ten registration sites.
+        /// </summary>
+        public required ScheduledTaskManualTrigger ManualTrigger { get; init; }
+
         public DateTimeOffset? LastStartedAt { get; init; }
 
         public DateTimeOffset? LastEndedAt { get; init; }
