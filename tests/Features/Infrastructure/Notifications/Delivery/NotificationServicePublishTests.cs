@@ -43,16 +43,34 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
                 Task.FromResult(NotificationSubscriberTestResult.Success());
         }
 
-        private static NotificationService BuildSubject(params INotificationSubscriber[] subscribers)
+        /// <summary>
+        /// A configuration service with the EnableNotifications master switch on, which is what the
+        /// rest of these tests are about. The switch defaults to off on a real instance.
+        /// </summary>
+        private static Mock<IConfigurationService> AConfiguration(
+            bool enableNotifications = true,
+            List<WebhookConfiguration>? webhooks = null)
         {
             var configuration = new Mock<IConfigurationService>();
             configuration.Setup(service => service.GetWebhookConfigurationsAsync())
-                .ReturnsAsync(new List<WebhookConfiguration>());
+                .ReturnsAsync(webhooks ?? new List<WebhookConfiguration>());
+            configuration.Setup(service => service.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings { EnableNotifications = enableNotifications });
 
+            return configuration;
+        }
+
+        private static NotificationService BuildSubject(params INotificationSubscriber[] subscribers) =>
+            BuildSubject(AConfiguration().Object, subscribers);
+
+        private static NotificationService BuildSubject(
+            IConfigurationService configuration,
+            params INotificationSubscriber[] subscribers)
+        {
             return new NotificationService(
                 new HttpClient(),
                 Mock.Of<ILogger<NotificationService>>(),
-                configuration.Object,
+                configuration,
                 Mock.Of<INotificationPayloadBuilder>(),
                 requestContextAccessor: null,
                 subscribers: subscribers);
@@ -106,6 +124,46 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         }
 
         [Fact]
+        public async Task PublishAsync_WithNotificationsEnabled_CallsSubscribers()
+        {
+            // The on half of the pair below. Stated on its own so that the off case is a comparison
+            // against something, rather than an assertion that nothing happened.
+            var subscriber = new RecordingSubscriber("Recorder");
+            var subject = BuildSubject(AConfiguration(enableNotifications: true).Object, subscriber);
+
+            await subject.PublishAsync(AnEvent(NotificationChannel.Download));
+
+            Assert.Single(subscriber.Received);
+        }
+
+        [Fact]
+        public async Task PublishAsync_WithNotificationsDisabled_CallsNoSubscriber()
+        {
+            var subscriber = new RecordingSubscriber("Recorder");
+            var subject = BuildSubject(AConfiguration(enableNotifications: false).Object, subscriber);
+
+            await subject.PublishAsync(AnEvent(NotificationChannel.Download));
+
+            Assert.Empty(subscriber.Received);
+        }
+
+        [Fact]
+        public async Task PublishAsync_WhenTheSettingCannotBeRead_SuppressesDeliveryWithoutThrowing()
+        {
+            // Chosen behaviour on an unreadable setting: suppress. A subscriber runs an
+            // operator-authored executable, and the caller still must not see the failure.
+            var subscriber = new RecordingSubscriber("Recorder");
+            var configuration = new Mock<IConfigurationService>();
+            configuration.Setup(service => service.GetApplicationSettingsAsync())
+                .ThrowsAsync(new IOException("simulated settings read failure"));
+            var subject = BuildSubject(configuration.Object, subscriber);
+
+            await subject.PublishAsync(AnEvent(NotificationChannel.Download));
+
+            Assert.Empty(subscriber.Received);
+        }
+
+        [Fact]
         public async Task OnDownloadImportedAsync_PublishesTheDownloadChannel()
         {
             var subscriber = new RecordingSubscriber("Recorder");
@@ -142,26 +200,18 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
             // The per-webhook dispatch filters on a trigger name the settings UI cannot produce, so
             // that path delivers nothing for a real import. A subscriber must not inherit that.
             var subscriber = new RecordingSubscriber("Recorder");
-            var configuration = new Mock<IConfigurationService>();
-            configuration.Setup(service => service.GetWebhookConfigurationsAsync())
-                .ReturnsAsync(new List<WebhookConfiguration>
+            var configuration = AConfiguration(webhooks: new List<WebhookConfiguration>
+            {
+                new()
                 {
-                    new()
-                    {
-                        Name = "A Webhook",
-                        Url = "https://example.invalid/hook",
-                        IsEnabled = true,
-                        Triggers = new List<string> { "book-completed" },
-                    },
-                });
+                    Name = "A Webhook",
+                    Url = "https://example.invalid/hook",
+                    IsEnabled = true,
+                    Triggers = new List<string> { "book-completed" },
+                },
+            });
 
-            var subject = new NotificationService(
-                new HttpClient(),
-                Mock.Of<ILogger<NotificationService>>(),
-                configuration.Object,
-                Mock.Of<INotificationPayloadBuilder>(),
-                requestContextAccessor: null,
-                subscribers: new[] { subscriber });
+            var subject = BuildSubject(configuration.Object, subscriber);
 
             await subject.OnDownloadImportedAsync(new Download { Id = "d3", Title = "Frankenstein" });
 
