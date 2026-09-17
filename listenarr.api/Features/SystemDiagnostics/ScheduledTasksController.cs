@@ -70,8 +70,15 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         /// Runs one cycle of a task now. Returns as soon as the cycle has started,
         /// because a scan or a metadata rescan outlives any sensible request.
         /// </summary>
+        /// <remarks>
+        /// Only tasks on the manual-run allowlist can be reached here. A registered task
+        /// that is not on it answers 403 rather than 404: it exists, the caller is simply
+        /// not allowed to bring its cycle forward, and saying "no such task" would send
+        /// them looking for a spelling mistake that is not there.
+        /// </remarks>
         [HttpPost("{taskName}/run")]
         [ProducesResponseType(typeof(ScheduledTaskDto), StatusCodes.Status202Accepted)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
         public ActionResult<ScheduledTaskDto> Run(string taskName)
@@ -82,6 +89,14 @@ namespace Listenarr.Api.Features.SystemDiagnostics
             {
                 case ScheduledTaskTriggerResult.NotFound:
                     return NotFound(new { error = $"No scheduled task named '{taskName}' is running." });
+
+                case ScheduledTaskTriggerResult.NotAllowed:
+                    return StatusCode(
+                        StatusCodes.Status403Forbidden,
+                        new
+                        {
+                            error = $"'{taskName}' runs on its schedule only and cannot be started on demand."
+                        });
 
                 case ScheduledTaskTriggerResult.AlreadyRunning:
                     return Conflict(new { error = $"'{taskName}' is already running." });
