@@ -25,6 +25,11 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
         {
             ArgumentNullException.ThrowIfNull(notification);
 
+            if (!await SubscriberDeliveryIsEnabledAsync())
+            {
+                return;
+            }
+
             foreach (var subscriber in _subscribers.Where(candidate => candidate.Supports(notification.Channel)))
             {
                 try
@@ -48,6 +53,45 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
                 }
 #pragma warning restore CA1031
             }
+        }
+
+        /// <summary>
+        /// Reads the EnableNotifications master switch, which gates the whole fan-out rather than
+        /// any one subscriber.
+        /// </summary>
+        /// <remarks>
+        /// A failed read suppresses delivery rather than assuming the switch is on. A subscriber here
+        /// runs an operator-authored executable, so the cost of guessing wrong in one direction is a
+        /// dropped notification and in the other is running a process the operator may have asked us
+        /// not to run. The read failure is swallowed for the same reason a subscriber failure is: a
+        /// notification is a side effect of an operation and may not break it.
+        /// </remarks>
+        private async Task<bool> SubscriberDeliveryIsEnabledAsync()
+        {
+            try
+            {
+                var settings = await _configurationService.GetApplicationSettingsAsync();
+                if (settings?.EnableNotifications == true)
+                {
+                    return true;
+                }
+
+                _logger.LogDebug("Notifications are disabled, so no subscriber will be called for this event");
+                return false;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            // Intentional broad catch: see the remarks above. Suppressing delivery is the chosen
+            // behaviour on an unreadable setting, and the caller must not learn about it.
+#pragma warning disable CA1031
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Could not read the notification settings, so no subscriber will be called for this event");
+                return false;
+            }
+#pragma warning restore CA1031
         }
 
         /// <summary>
