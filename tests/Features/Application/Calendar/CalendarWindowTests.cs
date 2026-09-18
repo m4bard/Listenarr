@@ -104,7 +104,8 @@ public sealed class CalendarWindowTests : BaseTests
     [InlineData("2026-09-14", 2026, 9, 14)]
     [InlineData("2026-09-14T13:45:00.0000000+00:00", 2026, 9, 14)]
     [InlineData("2026-09-14T23:30:00Z", 2026, 9, 14)]
-    [InlineData("  2026-09-14  ", 2026, 9, 14)]
+    [InlineData("2026-9-14", 2026, 9, 14)]
+    [InlineData("2026-09-14  ", 2026, 9, 14)]
     [InlineData("2026", 2026, 1, 1)]
     public void ParsePublishedDate_AcceptsEveryFormatThisCodebaseWrites(
         string stored,
@@ -121,9 +122,64 @@ public sealed class CalendarWindowTests : BaseTests
     [InlineData("   ")]
     [InlineData("not a date")]
     [InlineData("0000")]
+    [InlineData("  2026-09-14")]
+    [InlineData("  2026-09-14  ")]
+    [InlineData("\t2026-09-14")]
     public void ParsePublishedDate_RejectsWhatItCannotRead(string? stored)
     {
         Assert.Null(CalendarWindow.ParsePublishedDate(stored));
+    }
+
+    [Fact]
+    public void ParsePublishedDate_RefusesLeadingWhitespaceBecauseTheQueryLayerNeverDeliversIt()
+    {
+        // Spelled out separately from the reject theory because this is a deliberate narrowing,
+        // not a parsing limitation. A space is 0x20 and the coarse lower bound is always four
+        // digits starting at 0x30, so a padded value sorts below every possible bound and the row
+        // never reaches the parser. Trimming here would make the parser claim a format it cannot
+        // actually see, which is what the crossing test in AudiobookRepositoryCalendarTests
+        // exists to prevent.
+        var window = new CalendarWindow(new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+
+        Assert.True(string.CompareOrdinal("  2026-09-14", window.CoarseLowerBound) < 0);
+        Assert.Null(CalendarWindow.ParsePublishedDate("  2026-09-14"));
+
+        // Trailing padding is the opposite case: it sorts inside the bound, so it is read.
+        Assert.True(string.CompareOrdinal("2026-09-14  ", window.CoarseLowerBound) > 0);
+        Assert.True(string.CompareOrdinal("2026-09-14  ", window.CoarseUpperBound) < 0);
+        Assert.Equal(new DateOnly(2026, 9, 14), CalendarWindow.ParsePublishedDate("2026-09-14  "));
+    }
+
+    [Fact]
+    public void CoarseBounds_SpanAYearBoundary()
+    {
+        // The default 7/28 day feed crosses a year boundary for 35 days out of every 365, and
+        // spanning years is the only reason the bound is a range rather than a single year. No
+        // test at any layer constructed a window that crossed one.
+        var window = new CalendarWindow(new DateOnly(2025, 12, 28), new DateOnly(2026, 1, 10));
+
+        Assert.Equal("2025", window.CoarseLowerBound);
+        Assert.Equal("2026-99", window.CoarseUpperBound);
+
+        foreach (var stored in new[]
+                 {
+                     "2025",
+                     "2025-12-28",
+                     "2025-12-31T18:00:00.0000000+00:00",
+                     "2026",
+                     "2026-01-10"
+                 })
+        {
+            Assert.True(
+                string.CompareOrdinal(stored, window.CoarseLowerBound) >= 0,
+                $"{stored} sorted below the coarse lower bound {window.CoarseLowerBound}");
+            Assert.True(
+                string.CompareOrdinal(stored, window.CoarseUpperBound) <= 0,
+                $"{stored} sorted above the coarse upper bound {window.CoarseUpperBound}");
+        }
+
+        Assert.True(string.CompareOrdinal("2024-12-31", window.CoarseLowerBound) < 0);
+        Assert.True(string.CompareOrdinal("2027-01-01", window.CoarseUpperBound) > 0);
     }
 
     [Fact]
