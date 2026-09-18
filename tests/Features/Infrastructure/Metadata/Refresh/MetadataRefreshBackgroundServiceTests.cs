@@ -2,6 +2,7 @@
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  */
+using Listenarr.Application.Common.Scheduling;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Infrastructure.Metadata.Refresh;
@@ -297,9 +298,10 @@ public class MetadataRefreshBackgroundServiceTests : BaseTests
                 It.IsAny<TimeSpan?>(),
                 It.IsAny<Func<TimeSpan>>(),
                 It.IsAny<Func<CancellationToken, Task>>(),
-                It.IsAny<CancellationToken>()))
-            .Callback<string, TimeSpan?, Func<TimeSpan>, Func<CancellationToken, Task>, CancellationToken>(
-                (_, _, provider, _, _) => capture(provider))
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ScheduledTaskManualTrigger>()))
+            .Callback<string, TimeSpan?, Func<TimeSpan>, Func<CancellationToken, Task>, CancellationToken, ScheduledTaskManualTrigger>(
+                (_, _, provider, _, _, _) => capture(provider))
             .Returns(Task.CompletedTask);
         return cycleRunner;
     }
