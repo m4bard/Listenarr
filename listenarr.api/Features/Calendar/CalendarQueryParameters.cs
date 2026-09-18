@@ -28,13 +28,31 @@ namespace Listenarr.Api.Features.Calendar
         /// </summary>
         public const int MaxFeedDays = 3650;
 
-        /// <summary>Splits the comma separated tag list the *arr feeds use.</summary>
-        public static IReadOnlyCollection<string> ParseTags(string? tags) =>
-            string.IsNullOrWhiteSpace(tags)
+        /// <summary>
+        /// Splits the comma separated tag list the *arr feeds use, accepting either spelling.
+        /// </summary>
+        /// <param name="tags">
+        /// The Sonarr and Radarr spelling (src/Sonarr.Api.V3/Calendar/CalendarFeedController.cs:31).
+        /// Preferred when both are present.
+        /// </param>
+        /// <param name="tagList">
+        /// The Readarr spelling (src/Readarr.Api.V1/Calendar/CalendarFeedController.cs:31). Readarr
+        /// is the lineage parent, so an operator migrating from it arrives holding a URL spelled
+        /// this way, and a tag filter that silently does nothing is worse than one that errors.
+        /// Worth knowing: Readarr's own calendar link modal emits tags= while its controller binds
+        /// tagList (frontend/src/Calendar/iCal/CalendarLinkModalContent.js:33), so the filter in a
+        /// URL Readarr generates for you is ignored by Readarr itself.
+        /// </param>
+        public static IReadOnlyCollection<string> ParseTags(string? tags, string? tagList = null)
+        {
+            var value = string.IsNullOrWhiteSpace(tags) ? tagList : tags;
+
+            return string.IsNullOrWhiteSpace(value)
                 ? Array.Empty<string>()
-                : tags
+                : value
                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                     .ToArray();
+        }
 
         /// <summary>Clamps a feed day count into the supported range.</summary>
         public static int ClampFeedDays(int days) => Math.Clamp(days, 0, MaxFeedDays);
