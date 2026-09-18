@@ -29,15 +29,32 @@ public sealed class CalendarEventStatusTests : BaseTests
     private static readonly DateOnly Today = new(2026, 9, 16);
 
     [Fact]
-    public void Compute_InFlightDownload_OutranksEverythingElse()
+    public void Compute_FileOnDisk_OutranksAnInFlightUpgrade()
     {
-        // An unmonitored book with a file, still downloading, reads as downloading: this is the
-        // precedence Readarr's getStatusStyle applies, and it is what the legend expects.
+        // A book already on disk with an upgrade in flight reads as downloaded, not downloading.
+        // This is the precedence the lineage parent applies: Readarr's getStatusStyle returns
+        // 'downloaded' at 100 percent and 'partial' above zero before it tests 'downloading'
+        // (frontend/src/Calendar/getStatusStyle.js:7-17), and Sonarr tests hasFile first the same
+        // way (frontend/src/Calendar/getStatusStyle.ts:13-19). Radarr is the one that puts the
+        // queue first; we follow the other two.
         var status = CalendarEventStatus.Compute(
             isDownloading: true,
             hasFile: true,
             monitored: false,
             releaseDate: Today.AddDays(-30),
+            today: Today);
+
+        Assert.Equal(CalendarEventStatus.Downloaded, status);
+    }
+
+    [Fact]
+    public void Compute_InFlightDownloadWithNothingOnDisk_OutranksMonitoringAndReleaseDate()
+    {
+        var status = CalendarEventStatus.Compute(
+            isDownloading: true,
+            hasFile: false,
+            monitored: false,
+            releaseDate: Today.AddDays(30),
             today: Today);
 
         Assert.Equal(CalendarEventStatus.Downloading, status);
