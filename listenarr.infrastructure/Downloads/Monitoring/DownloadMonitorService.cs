@@ -384,18 +384,28 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 download.Title ?? "Unknown",
                 errorMessage);
 
-            if (!settings.FailedDownloadHandlingEnabled)
-            {
-                return;
-            }
-
-            // Block the release before the auto-search below, so the search that follows a
-            // failure cannot pick the same broken release straight back up.
+            // Recording that a release failed sits beside recording the failure itself, above
+            // the FailedDownloadHandlingEnabled gate, and it is deliberately not gated on any
+            // setting.
             //
-            // Below the FailedDownloadHandlingEnabled gate rather than above it. An operator who
-            // has turned failed-download handling off has said they want failures left alone, and
-            // a blocklist entry is durable state with no expiry: writing one anyway would
-            // accumulate permanent bans that the setting gives no hint exist.
+            // The earlier arrangement had the write below the gate and the search-side filter
+            // above it, which left the setting half-applied: an operator who switched
+            // failed-download handling off stopped accruing rows and went on being blocked by
+            // every row already written. Gating both sides was the other way to make that
+            // coherent, and the family settles which. Neither Readarr nor Sonarr gates its
+            // blocklist on anything: the write is unconditional in
+            // BlocklistService.Handle(DownloadFailedEvent) (Readarr
+            // src/NzbDrone.Core/Blocklisting/BlocklistService.cs:174-197) and the read is
+            // unconditional in BlocklistSpecification
+            // (src/NzbDrone.Core/DecisionEngine/Specifications/BlocklistSpecification.cs:22-31).
+            // The only failure-related setting either has is AutoRedownloadFailed, which gates
+            // the re-download and nothing else (Readarr
+            // src/NzbDrone.Core/Download/RedownloadFailedDownloadService.cs:39; Sonarr's is at
+            // :40). Listenarr's own analogue of that setting is FailedDownloadAutoSearch, which
+            // still gates the auto-search below.
+            //
+            // The way out of a wrong entry is the delete and clear endpoints, not a setting that
+            // suppresses the list while leaving it populated.
             //
             // Only downloads the client accepted and then failed reach this method. A
             // release the client refused at submission never gets here, which is what keeps
@@ -423,6 +433,11 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                         ReleaseIdentity.SizeForGrabbed(download),
                         errorMessage);
                 }
+            }
+
+            if (!settings.FailedDownloadHandlingEnabled)
+            {
+                return;
             }
 
             var clientItemId = download.GetExternalId();

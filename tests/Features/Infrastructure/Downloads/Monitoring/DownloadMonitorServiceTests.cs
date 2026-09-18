@@ -358,39 +358,40 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
                 "NZBGet failed while unpacking."));
         }
 
-        [Fact]
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
         [Trait("Method", "OnDownloadFailed")]
-        public async Task OnDownloadFailed_WithFailedDownloadHandlingOff_WritesNoBlocklistEntry()
+        public async Task OnDownloadFailed_RecordsTheBlockedRelease_WhicheverWayFailedDownloadHandlingIsSet(
+            bool handlingEnabled)
         {
-            // A blocklist entry is durable state with no expiry and, before the delete endpoints,
-            // no way out at all. Writing one while the operator has failed-download handling
-            // switched off accumulates permanent bans that nothing in the UI hints at.
-            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
-                .WithoutFailedDownloadHandling()
+            // The blocklist is deliberately independent of FailedDownloadHandlingEnabled, so both
+            // cases are the same assertion and the pair is the evidence for the independence
+            // rather than one case plus a claim about the other.
+            //
+            // The setting used to gate the write while the search-side filter ran regardless,
+            // which left it half-applied: switching it off stopped new rows and went on blocking
+            // by the rows already there. Neither Readarr nor Sonarr gates a blocklist on a
+            // setting at all; see the reasoning at the write in DownloadMonitorService.
+            var settings = new ApplicationSettingsBuilder();
+            await _applicationSettingsRepository.SaveAsync(
+                (handlingEnabled
+                    ? settings.WithFailedDownloadHandling()
+                    : settings.WithoutFailedDownloadHandling())
                 .Build());
 
-            var download = await AddFailedDownloadAsync("handling-off");
-            await InvokeOnDownloadFailedAsync(download);
-
-            var blocklist = _provider.GetRequiredService<IBlocklistService>();
-            Assert.Empty(await blocklist.GetForAudiobookAsync(download.AudiobookId!.Value));
-        }
-
-        [Fact]
-        [Trait("Method", "OnDownloadFailed")]
-        public async Task OnDownloadFailed_WithFailedDownloadHandlingOn_WritesTheBlocklistEntry()
-        {
-            // The control for the test above. Without it, a BlockAsync that had stopped being
-            // called at all, or an identity that came back null, would read as a pass there.
-            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
-                .WithFailedDownloadHandling()
-                .Build());
-
-            var download = await AddFailedDownloadAsync("handling-on");
+            var download = await AddFailedDownloadAsync($"handling-{handlingEnabled}");
             await InvokeOnDownloadFailedAsync(download);
 
             var blocklist = _provider.GetRequiredService<IBlocklistService>();
             var entry = Assert.Single(await blocklist.GetForAudiobookAsync(download.AudiobookId!.Value));
+
+            // The identity as well as the title. Asserting only the title would pass for a row
+            // written under a key nothing recomputes, which is the whole failure this feature has
+            // had four times.
+            Assert.Equal(
+                download.GetMetadataString(ReleaseIdentity.MetadataKey),
+                entry.ReleaseIdentifier);
             Assert.Equal("The Failing Listing", entry.Title);
         }
 
