@@ -66,7 +66,19 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
             // Read once here, on the worker's own thread, so a handle disposed before any
             // snapshot still reports the interval it was registered with rather than zero.
             _lastKnownInterval = intervalProvider();
+            RegisteredInterval = _lastKnownInterval;
         }
+
+        /// <summary>
+        /// The interval the worker reported when it registered.
+        /// </summary>
+        /// <remarks>
+        /// Exposed so the registry can judge the value at registration without calling the
+        /// worker's delegate a second time. It does not move afterwards, even for a worker
+        /// whose provider returns something different later, which is what makes it safe to
+        /// read without the lock.
+        /// </remarks>
+        internal TimeSpan RegisteredInterval { get; }
 
         public string TaskName { get; }
 
