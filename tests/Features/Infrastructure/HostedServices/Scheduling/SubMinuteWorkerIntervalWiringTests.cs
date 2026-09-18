@@ -133,7 +133,7 @@ public sealed class SubMinuteWorkerIntervalWiringTests : BaseTests
         var interval = TimeSpan.FromSeconds(seconds);
 
         Assert.Equal(0, (int)interval.TotalMinutes);
-        Assert.Equal((long?)seconds, ScheduledTaskDto.ToWholeSeconds(interval));
+        Assert.Equal((long?)seconds, ScheduledTaskInterval.ToWholeSeconds(interval));
     }
 
     private static async Task AssertPublishedIntervalAsync(
@@ -149,13 +149,11 @@ public sealed class SubMinuteWorkerIntervalWiringTests : BaseTests
             var status = await WaitForRegistrationAsync(registry, taskName);
             var row = ScheduledTaskDto.FromStatus(status);
 
+            // No separate assertion that this is not 0: the equality already forces it for
+            // every value this helper is called with, and an assertion that cannot fail
+            // independently is documentation wearing a test's clothes.
             Assert.Equal((long?)expectedSeconds, row.IntervalSeconds);
             Assert.Null(row.IntervalError);
-
-            // Stated separately from the equality above so that a failure says which of
-            // the two things went wrong. Reporting 0 is the poisoned outcome: it does not
-            // read as a rounding error, it reads as a worker that never runs.
-            Assert.NotEqual((long?)0, row.IntervalSeconds);
         }
         finally
         {
