@@ -99,16 +99,20 @@ public sealed class ScheduledTasksControllerTests : BaseTests
         var controller = new ScheduledTasksController(registry.Object);
 
         var result = Assert.IsType<AcceptedResult>(controller.Run("ScanBackgroundService").Result);
-        var task = Assert.IsType<ScheduledTaskDto>(result.Value);
+        var run = Assert.IsType<ScheduledTaskRunDto>(result.Value);
 
         Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
-        Assert.True(task.IsRunning);
-        Assert.NotNull(task.LastStartedAt);
+        Assert.Equal(ScheduledTaskRunDto.AlreadyRunning, run.Triggered);
+        Assert.True(run.Task.IsRunning);
+        Assert.NotNull(run.Task.LastStartedAt);
     }
 
     [Fact]
-    public void Run_IdleTask_IsAcceptedAndReturnsTheStartedRow()
+    public void Run_IdleTask_RelaysWhateverRowTheRegistryHandsBack()
     {
+        // Renamed from a name that promised a production behaviour this cannot observe.
+        // With a mocked registry, relaying is the only claim available; the real-registry
+        // test below is the one that carries the behavioural claim.
         var registry = new Mock<IScheduledTaskRegistry>(MockBehavior.Strict);
         registry.Setup(candidate => candidate.Trigger("MetadataRescanService"))
             .Returns(ScheduledTaskTriggerOutcome.For(
@@ -117,11 +121,55 @@ public sealed class ScheduledTasksControllerTests : BaseTests
         var controller = new ScheduledTasksController(registry.Object);
 
         var result = Assert.IsType<AcceptedResult>(controller.Run("MetadataRescanService").Result);
-        var task = Assert.IsType<ScheduledTaskDto>(result.Value);
+        var run = Assert.IsType<ScheduledTaskRunDto>(result.Value);
 
         Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
-        Assert.True(task.IsRunning);
-        Assert.Equal("Manual", task.LastTrigger);
+        Assert.Equal(ScheduledTaskRunDto.Started, run.Triggered);
+        Assert.True(run.Task.IsRunning);
+        Assert.Equal("Manual", run.Task.LastTrigger);
+    }
+
+    [Fact]
+    public async Task Run_TwiceWhileTheCycleIsHeld_SaysWhichRequestStartedIt()
+    {
+        // The rows for the two outcomes are identical, down to lastStartedAt, because the
+        // second caller is being told about the cycle the first caller started. Without a
+        // discriminator in the body a UI cannot tell "started" from "already running",
+        // and the endpoint's documentation used to claim it could.
+        var registry = CreateRegistry();
+        using var gate = new SemaphoreSlim(0, 1);
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "DoubleClickedWorker",
+            holdCycleOn: gate,
+            holdFromCycle: 2,
+            manualTrigger: ScheduledTaskManualTrigger.Allowed);
+        var controller = new ScheduledTasksController(registry);
+
+        await worker.WaitForCycleAsync(1);
+        await WaitForIdleAsync(registry, "DoubleClickedWorker");
+
+        var first = Assert.IsType<AcceptedResult>(controller.Run("DoubleClickedWorker").Result);
+        await worker.WaitForCycleAsync(2);
+        var second = Assert.IsType<AcceptedResult>(controller.Run("DoubleClickedWorker").Result);
+
+        var started = Assert.IsType<ScheduledTaskRunDto>(first.Value);
+        var joined = Assert.IsType<ScheduledTaskRunDto>(second.Value);
+
+        Assert.Equal(ScheduledTaskRunDto.Started, started.Triggered);
+        Assert.Equal(ScheduledTaskRunDto.AlreadyRunning, joined.Triggered);
+
+        // The rows really are indistinguishable, which is why the discriminator exists.
+        Assert.Equal(started.Task.IsRunning, joined.Task.IsRunning);
+        Assert.Equal(started.Task.LastTrigger, joined.Task.LastTrigger);
+        Assert.Equal(started.Task.LastStartedAt, joined.Task.LastStartedAt);
+
+        // The rig has to be live, or "the second call did not start anything" is also what
+        // a dead harness looks like: one scheduled cycle plus exactly one manual cycle.
+        gate.Release();
+        await Task.Delay(200);
+        Assert.Equal(2, worker.CycleCount);
+        await worker.StopAsync();
     }
 
     [Fact]
@@ -143,18 +191,22 @@ public sealed class ScheduledTasksControllerTests : BaseTests
         await WaitForIdleAsync(registry, "RealTriggerableWorker");
 
         var result = Assert.IsType<AcceptedResult>(controller.Run("RealTriggerableWorker").Result);
-        var task = Assert.IsType<ScheduledTaskDto>(result.Value);
+        var run = Assert.IsType<ScheduledTaskRunDto>(result.Value);
 
         Assert.Equal(StatusCodes.Status202Accepted, result.StatusCode);
-        Assert.True(task.IsRunning);
-        Assert.Equal("Manual", task.LastTrigger);
-        Assert.NotNull(task.LastStartedAt);
+        Assert.Equal(ScheduledTaskRunDto.Started, run.Triggered);
+        Assert.True(run.Task.IsRunning);
+        Assert.Equal("Manual", run.Task.LastTrigger);
+        Assert.NotNull(run.Task.LastStartedAt);
         await worker.StopAsync();
     }
 
     [Fact]
-    public async Task Run_StoppedWorker_IsNotFoundEvenThoughItsRowIsStillListed()
+    public async Task Run_StoppedWorker_IsConflictRatherThanNotFoundBecauseGetStillListsIt()
     {
+        // Answering "no such task" for a row the same API lists contradicts the reasoning
+        // that gives a scheduled-only worker a 403 rather than a 404: a caller looking
+        // straight at the row goes hunting for a spelling mistake that is not there.
         var registry = CreateRegistry();
         using var worker = new PeriodicWorkerHarness(
             registry,
@@ -169,7 +221,14 @@ public sealed class ScheduledTasksControllerTests : BaseTests
         var tasks = Assert.IsAssignableFrom<IReadOnlyList<ScheduledTaskDto>>(listed.Value);
         Assert.False(Assert.Single(tasks).IsRegistered);
 
-        Assert.IsType<NotFoundObjectResult>(controller.Run("StoppedTriggerableWorker").Result);
+        var refused = Assert.IsType<ConflictObjectResult>(
+            controller.Run("StoppedTriggerableWorker").Result);
+
+        Assert.Equal(StatusCodes.Status409Conflict, refused.StatusCode);
+        Assert.Contains("stopped", refused.Value?.ToString(), StringComparison.OrdinalIgnoreCase);
+
+        // And a name nothing ever registered is still a 404, or the two have collapsed.
+        Assert.IsType<NotFoundObjectResult>(controller.Run("NeverRegisteredWorker").Result);
     }
 
     [Fact]
@@ -193,6 +252,23 @@ public sealed class ScheduledTasksControllerTests : BaseTests
         // not exist, and the body has to say which it is.
         Assert.Contains("schedule", result.Value?.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("No scheduled task named", result.Value?.ToString());
+    }
+
+    [Fact]
+    public void Run_UnknownTriggerResult_ThrowsRatherThanQuietlyAnswering202()
+    {
+        // Accepted is 0, so anything unmapped would previously have fallen into the
+        // default arm and been reported as a started run. A result added later has to
+        // fail loudly instead.
+        var registry = new Mock<IScheduledTaskRegistry>(MockBehavior.Strict);
+        registry.Setup(candidate => candidate.Trigger("FutureWorker"))
+            .Returns(ScheduledTaskTriggerOutcome.For(
+                (ScheduledTaskTriggerResult)99,
+                CreateStatus("FutureWorker")));
+        var controller = new ScheduledTasksController(registry.Object);
+
+        var thrown = Assert.Throws<InvalidOperationException>(() => controller.Run("FutureWorker"));
+        Assert.Contains("99", thrown.Message);
     }
 
     private static ScheduledTaskRegistry CreateRegistry() =>

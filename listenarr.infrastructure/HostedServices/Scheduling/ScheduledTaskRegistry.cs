@@ -89,12 +89,22 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
 
         public ScheduledTaskTriggerOutcome Trigger(string taskName)
         {
-            // A stopped worker keeps its row on the read surface, but there is no loop
-            // left to bring a cycle forward on, so a trigger against one is answered the
-            // same way as a name nobody ever registered.
-            if (!_tasks.TryGetValue(taskName, out var handle) || !handle.IsRegistered)
+            if (!_tasks.TryGetValue(taskName, out var handle))
             {
                 return ScheduledTaskTriggerOutcome.NotFound;
+            }
+
+            // A stopped worker keeps its row on the read surface, and answering "no such
+            // task" for something the same API lists would contradict the reasoning that
+            // gives a scheduled-only worker a refusal rather than a 404.
+            if (!handle.IsRegistered)
+            {
+                logger.LogWarning(
+                    "Refused a manual run of {TaskName}: its worker has stopped",
+                    taskName);
+                return ScheduledTaskTriggerOutcome.For(
+                    ScheduledTaskTriggerResult.WorkerStopped,
+                    handle.Snapshot());
             }
 
             // The allowlist is checked before the gate, so a scheduled-only worker is
@@ -109,16 +119,21 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
                     handle.Snapshot());
             }
 
-            if (handle.TryBeginManualRun() is not { } started)
+            // The attempt carries its own row, taken in the same critical section as the
+            // gate, so a refusal cannot report a cycle that has since finished.
+            var attempt = handle.TryBeginManualRun();
+            if (!attempt.Started)
             {
                 return ScheduledTaskTriggerOutcome.For(
                     ScheduledTaskTriggerResult.AlreadyRunning,
-                    handle.Snapshot());
+                    attempt.Status);
             }
 
             _ = Task.Run(() => RunManualAsync(handle));
             logger.LogInformation("Manually triggered scheduled task {TaskName}", taskName);
-            return ScheduledTaskTriggerOutcome.For(ScheduledTaskTriggerResult.Accepted, started);
+            return ScheduledTaskTriggerOutcome.For(
+                ScheduledTaskTriggerResult.Accepted,
+                attempt.Status);
         }
 
         private async Task RunManualAsync(ScheduledTaskHandle handle)
@@ -143,11 +158,12 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
         /// Ends a registration without taking the row off the surface.
         /// </summary>
         /// <remarks>
-        /// The handle itself reports that it has stopped, so nothing has to be moved or
-        /// copied here; what matters is that a handle whose name has since been taken
-        /// over by a newer registration does not disturb the live one. The reference
-        /// check is what guarantees that, and it is the reason the dictionary is keyed on
-        /// name rather than on the handle.
+        /// The handle reports its own stopped state, so there is nothing to move or copy
+        /// and this method mutates nothing: the reference check only decides whether the
+        /// log line is about the row that is actually on the surface. The property that
+        /// matters, a stale handle not disturbing a live one that took over its name, is
+        /// enforced by <see cref="Register"/>'s <c>AddOrUpdate</c>, not here. Change that
+        /// and this log line goes quiet; change this and nothing breaks.
         /// </remarks>
         private void Deregister(ScheduledTaskHandle handle)
         {
