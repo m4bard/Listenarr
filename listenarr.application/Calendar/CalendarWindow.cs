@@ -72,30 +72,39 @@ namespace Listenarr.Application.Calendar
         }
 
         /// <summary>
-        /// Parses a stored PublishedDate. Accepts the yyyy-MM-dd the metadata path writes, any
-        /// value with a leading yyyy-MM-dd, a bare four-digit year read as 1 January, and a
-        /// single-digit month or day form such as 2026-6-15. Trailing whitespace is tolerated.
-        /// Anything else yields null and the book is left off the calendar.
+        /// Parses a stored PublishedDate. Accepts ISO-leading forms only: a four-digit year, a
+        /// hyphen, and then either the rest of a yyyy-MM-dd (with anything after it, such as a
+        /// round-trip time component) or a single-digit month or day such as 2026-6-15. A bare
+        /// four-digit year is also accepted and read as 1 January. Trailing whitespace is
+        /// tolerated. Anything else yields null and the book is left off the calendar.
         /// </summary>
         /// <remarks>
-        /// Leading whitespace is deliberately refused rather than trimmed, and that is the one
-        /// piece of this method worth explaining.
+        /// The two refusals here are deliberate narrowings rather than parsing limitations, and
+        /// both exist for the same reason: the coarse bound in
+        /// AudiobookRepository.GetCalendarRowsAsync compares the stored string as it sits in the
+        /// column, under binary collation, against a four-digit year. A format whose lexical order
+        /// does not match its chronological order can be read here and still never arrive, and a
+        /// parser that accepts one is advertising a tolerance the query layer negates.
         ///
-        /// The coarse bound in AudiobookRepository.GetCalendarRowsAsync compares the stored string
-        /// as it sits in the column, against a four-digit year. A space is 0x20 and the digits are
-        /// 0x30 upward, so a value with leading whitespace sorts below every possible lower bound
-        /// and is excluded by the query before this method ever sees it. Trimming here would
-        /// advertise a tolerance the query layer negates: the value would be asserted acceptable
-        /// in the parser's own tests and silently dropped in production.
+        /// Leading whitespace: a space is 0x20 and the digits start at 0x30, so a padded value
+        /// sorts below every possible lower bound. Trailing whitespace is the opposite case. It
+        /// does not move the value below the lower bound, and "{year}-99" is above every real
+        /// month, so those rows do arrive and are read. Hence TrimEnd rather than Trim.
         ///
-        /// Trailing whitespace is a different case. It does not move the value below the lower
-        /// bound, and "{year}-99" is above every real month, so those rows do reach here and are
-        /// read. Hence TrimEnd rather than Trim.
+        /// Non-ISO-leading forms: DateTime.TryParse under the invariant culture reads a wide class
+        /// of these, and their sort order is unrelated to their dates. Measured: "06/15/2026" and
+        /// "15 June 2026" sort below "2026", "June 15, 2026" sorts above "2026-99", and all three
+        /// parse to 2026-06-15, so the query excludes every one of them. The fallback is therefore
+        /// gated on four digits and a hyphen, which keeps 2026-6-15 (admitted by the bound, and
+        /// readable only by the fallback) and refuses the rest.
+        ///
+        /// These are reachable rather than theoretical. PublishedDate is written unvalidated from
+        /// an API request (Features/Library/LibraryUpdateWorkflow.Metadata.cs:34), and the test
+        /// builder writes a current-culture DateOnly.ToString() (tests/Builders/AudiobookBuilder.cs:60),
+        /// which is "6/1/1996" on an en-US machine.
         ///
         /// AudiobookRepositoryCalendarTests.GetCalendarRowsAsync_AdmitsEveryStoredFormTheParserClaimsToAccept
-        /// holds the two layers to this agreement, and PublishedDate is written unvalidated from an
-        /// API request (Features/Library/LibraryUpdateWorkflow.Metadata.cs:34), so arbitrary
-        /// strings really do reach the column.
+        /// holds the two layers to this agreement over real SQLite, and seeds all of the above.
         /// </remarks>
         public static DateOnly? ParsePublishedDate(string? publishedDate)
         {
@@ -128,7 +137,8 @@ namespace Listenarr.Application.Calendar
                 return new DateOnly(year, 1, 1);
             }
 
-            if (DateTime.TryParse(
+            if (StartsWithIsoYearAndHyphen(value)
+                && DateTime.TryParse(
                     value,
                     CultureInfo.InvariantCulture,
                     DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal,
@@ -139,5 +149,18 @@ namespace Listenarr.Application.Calendar
 
             return null;
         }
+
+        /// <summary>
+        /// True when the value opens with four ASCII digits and a hyphen, which is the shape whose
+        /// lexical order under binary collation matches its chronological order, and therefore the
+        /// only shape the coarse bound can deliver.
+        /// </summary>
+        private static bool StartsWithIsoYearAndHyphen(string value) =>
+            value.Length >= 5
+            && char.IsAsciiDigit(value[0])
+            && char.IsAsciiDigit(value[1])
+            && char.IsAsciiDigit(value[2])
+            && char.IsAsciiDigit(value[3])
+            && value[4] == '-';
     }
 }
