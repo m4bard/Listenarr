@@ -46,12 +46,21 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         /// <para>
         /// Null and not simply absent. Controllers serialize with
         /// <c>JsonIgnoreCondition.WhenWritingNull</c>
-        /// (<c>Startup/ListenarrServiceRegistration.cs:44</c>), which would drop the key,
-        /// and an absent numeric field is the silent 0 this whole design exists to avoid.
-        /// The per-property <c>JsonIgnore(Never)</c> overrides that and puts the null on
-        /// the wire, where a client with a non-nullable numeric throws on it rather than
-        /// defaulting. That behaviour is pinned by
-        /// <c>ScheduledTaskIntervalWireFormatTests</c> rather than assumed.
+        /// (<c>Startup/ListenarrServiceRegistration.cs:44</c>), which would drop the key
+        /// altogether, and the per-property <c>JsonIgnore(Never)</c> overrides that so the
+        /// key set does not depend on the value. A stable key set is what makes
+        /// <c>required</c> mean anything in the generated schema: a client generated from
+        /// it sees a property that is required and nullable, and its own compiler makes it
+        /// handle the null.
+        /// </para>
+        /// <para>
+        /// What this does not buy, because measuring said otherwise: it is not a runtime
+        /// trap that fires by itself. Only System.Text.Json is measured, where a null into
+        /// a non-nullable numeric throws and an absent one reads as 0. In JavaScript, which
+        /// is the consumer this surface will actually get, <c>null</c> and <c>0</c> are
+        /// indistinguishable under <c>&gt; 0</c>, <c>??</c> and arithmetic, so a page has
+        /// to read <see cref="IntervalError"/> or test for null on purpose. Jackson and Go
+        /// are unmeasured and nothing here claims anything about them.
         /// </para>
         /// <para>
         /// The family sends this as <c>Interval</c>, an int in minutes
@@ -79,6 +88,13 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         /// still reads nothing here whatever the type, because the name differs. That is
         /// the field-naming question, and it is not this field's to answer.
         /// </para>
+        /// <para>
+        /// The forced key is for this field and not for the other nullable numerics on the
+        /// row. <see cref="LastDurationSeconds"/> is omitted when null and should be: a
+        /// duration of 0 is merely a wrong number, where an interval of 0 is a wrong
+        /// meaning, because the family reads it as a task that is never due. Only a zero
+        /// that carries a meaning is worth a key that never moves.
+        /// </para>
         /// </remarks>
         [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
         public required long? IntervalSeconds { get; init; }
@@ -89,11 +105,17 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         /// </summary>
         /// <remarks>
         /// The refusal travels on the row rather than in the status code, so that one
-        /// worker nobody can describe does not withhold the nine that can be. That is the
-        /// same call <c>ScheduledTaskHandle.ReadInterval</c> makes one layer down, where a
-        /// worker whose interval delegate throws falls back to its last known value rather
-        /// than failing the whole list, and it follows from this surface's own rule that
-        /// the state most worth seeing is the one that went wrong.
+        /// worker nobody can describe does not withhold the nine that can be.
+        /// <c>ScheduledTaskHandle.ReadInterval</c> declines the same trade one layer down,
+        /// where a worker whose interval delegate throws falls back to its last known
+        /// value rather than failing the whole list. Only the refusal to fail the list is
+        /// shared: the handle has a last good number to print and this does not, which is
+        /// why one publishes a value and the other publishes null.
+        /// <para>
+        /// The refusal is advisory. It does not set a status code, and the registry logs a
+        /// warning at registration so that an operator who never calls this API still
+        /// hears about it.
+        /// </para>
         /// </remarks>
         public string? IntervalError { get; init; }
 
@@ -128,70 +150,32 @@ namespace Listenarr.Api.Features.SystemDiagnostics
 
         public DateTimeOffset? NextExecution { get; init; }
 
-        public static ScheduledTaskDto FromStatus(ScheduledTaskStatus status) => new()
+        public static ScheduledTaskDto FromStatus(ScheduledTaskStatus status)
         {
-            Name = status.TaskName,
-            DisplayName = SplitName(status.TaskName),
-            IntervalSeconds = ToWholeSeconds(status.Interval),
-            IntervalError = DescribeUnstatableInterval(status.TaskName, status.Interval),
-            RegisteredAt = status.RegisteredAt,
-            IsRegistered = status.IsRegistered,
-            IsRunning = status.IsRunning,
-            IsManualRunAllowed = status.ManualTrigger == ScheduledTaskManualTrigger.Allowed,
-            LastStartedAt = status.LastStartedAt,
-            LastEndedAt = status.LastEndedAt,
-            LastDurationSeconds = status.LastDuration?.TotalSeconds,
-            LastOutcome = status.LastOutcome.ToString(),
-            LastTrigger = status.LastTrigger?.ToString(),
-            NextExecution = status.NextExecution
-        };
+            // One decision, read once. Asking twice would let the number and the
+            // explanation of its absence disagree with each other.
+            var intervalSeconds = ScheduledTaskInterval.ToWholeSeconds(status.Interval);
 
-        /// <summary>
-        /// The interval in the unit the surface publishes, or null if it does not fit
-        /// that unit.
-        /// </summary>
-        /// <remarks>
-        /// Ticks rather than <c>TotalSeconds</c> so the test for exactness is exact:
-        /// asking whether a double is a whole number reintroduces the rounding the field
-        /// exists to avoid. A negative interval is refused for the same reason a
-        /// fractional one is, since truncating it also lands on 0.
-        /// <para>
-        /// <c>long</c> because <c>TimeSpan.MaxValue</c> is 922,337,203,685 seconds, which
-        /// overflows an <c>int</c>, and sits well under 2^53 so a browser parsing the
-        /// number keeps it exact.
-        /// </para>
-        /// </remarks>
-        internal static long? ToWholeSeconds(TimeSpan interval) =>
-            CanBeStatedInWholeSeconds(interval)
-                ? interval.Ticks / TimeSpan.TicksPerSecond
-                : null;
-
-        /// <summary>
-        /// The refusal text for an interval that cannot be stated, naming the task, the
-        /// field, the value and the accepted form. Null when there is nothing to refuse.
-        /// </summary>
-        internal static string? DescribeUnstatableInterval(string taskName, TimeSpan interval)
-        {
-            if (CanBeStatedInWholeSeconds(interval))
+            return new ScheduledTaskDto
             {
-                return null;
-            }
-
-            var declared = interval.TotalSeconds.ToString(
-                "0.###############",
-                System.Globalization.CultureInfo.InvariantCulture);
-            var truncated = (interval.Ticks / TimeSpan.TicksPerSecond)
-                .ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-            return $"'{taskName}' declares an interval of {declared}s, and 'intervalSeconds' " +
-                $"carries whole, non-negative seconds only. It is reported as null rather " +
-                $"than truncated to {truncated}, because truncation is how a sub-second " +
-                $"worker comes to report 0, and 0 on this surface reads as a task that " +
-                $"never runs.";
+                Name = status.TaskName,
+                DisplayName = SplitName(status.TaskName),
+                IntervalSeconds = intervalSeconds,
+                IntervalError = intervalSeconds is null
+                    ? ScheduledTaskInterval.DescribeRefusal(status.TaskName, status.Interval)
+                    : null,
+                RegisteredAt = status.RegisteredAt,
+                IsRegistered = status.IsRegistered,
+                IsRunning = status.IsRunning,
+                IsManualRunAllowed = status.ManualTrigger == ScheduledTaskManualTrigger.Allowed,
+                LastStartedAt = status.LastStartedAt,
+                LastEndedAt = status.LastEndedAt,
+                LastDurationSeconds = status.LastDuration?.TotalSeconds,
+                LastOutcome = status.LastOutcome.ToString(),
+                LastTrigger = status.LastTrigger?.ToString(),
+                NextExecution = status.NextExecution
+            };
         }
-
-        private static bool CanBeStatedInWholeSeconds(TimeSpan interval) =>
-            interval >= TimeSpan.Zero && interval.Ticks % TimeSpan.TicksPerSecond == 0;
 
         /// <summary>
         /// Worker names arrive either as a type name or as a dotted identifier, so
