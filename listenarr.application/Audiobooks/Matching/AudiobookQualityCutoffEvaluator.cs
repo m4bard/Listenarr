@@ -56,13 +56,23 @@ namespace Listenarr.Application.Audiobooks.Matching
                 return false;
             }
 
-            // Preserve the original guard: an unset or unknown cutoff means "keep searching".
-            var cutoffQuality = profile.Qualities
-                .FirstOrDefault(q => q.Quality == profile.CutoffQuality);
+            // Narrowed guard: a blank profile (no rungs, or no CutoffQuality set) is always
+            // satisfied, matching QualityMatcher.ResolveCutoff/MeetsCutoff/LabelMeetsCutoff and
+            // AudiobookStatusEvaluator's library-view answer for the same input. A CutoffQuality
+            // that names a rung the profile no longer lists is a different case and still means
+            // "keep searching": that half of the original guard is preserved below.
+            var cutoffIsBlank = profile.Qualities.Count == 0 ||
+                                 string.IsNullOrWhiteSpace(profile.CutoffQuality);
 
-            if (cutoffQuality == null)
+            if (!cutoffIsBlank)
             {
-                return false;
+                var cutoffQuality = profile.Qualities
+                    .FirstOrDefault(q => q.Quality == profile.CutoffQuality);
+
+                if (cutoffQuality == null)
+                {
+                    return false;
+                }
             }
 
             foreach (var download in existingDownloads)
