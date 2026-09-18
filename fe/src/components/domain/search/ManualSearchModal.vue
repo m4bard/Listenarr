@@ -174,6 +174,15 @@
                         {{ safeText(result.title) }}
                       </a>
                       <span v-else class="title-text">{{ safeText(result.title) }}</span>
+                      <span v-if="result.indexerFlags?.length" class="indexer-flags">
+                        <span
+                          v-for="flag in result.indexerFlags"
+                          :key="flag"
+                          :class="['indexer-flag-badge', `flag-${flag}`]"
+                        >
+                          {{ formatIndexerFlag(flag) }}
+                        </span>
+                      </span>
                     </div>
                   </td>
                   <td class="col-indexer">
@@ -399,6 +408,21 @@ const normalizeLanguage = (value?: string | null): string | undefined => {
 }
 const anyHasQuality = computed(() => displayResults.value.some((r) => !!r.quality || !!r.format))
 
+// Display names for the release flags the backend sends, which use the *arr naming
+const indexerFlagDisplayNames: Record<string, string> = {
+  freeleech: 'Freeleech',
+  freeleech75: '75% Free',
+  halfleech: '50% Free',
+  freeleech25: '25% Free',
+  doubleupload: '2x Upload',
+  internal: 'Internal',
+  scene: 'Scene',
+}
+
+function formatIndexerFlag(flag: string): string {
+  return indexerFlagDisplayNames[flag.toLowerCase()] ?? flag
+}
+
 function shouldShowFormatFallback(result: SearchResult): boolean {
   if (!result) return false
   const fmt = (result.format || '').toString().toLowerCase().trim()
@@ -572,6 +596,9 @@ async function search() {
             indexerId: String(dto.indexerId ?? indexer.id),
             indexerImplementation: String(dto.indexer ?? indexer.name),
             resultUrl: String(dto.infoUrl ?? dto.guid ?? ''),
+            indexerFlags: Array.isArray(dto.indexerFlags)
+              ? (dto.indexerFlags as unknown[]).map((flag) => String(flag))
+              : [],
             description: undefined,
             publisher: undefined,
             subtitle: undefined,
@@ -1320,6 +1347,36 @@ function getScoreClass(score: number): string {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+.indexer-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.indexer-flag-badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background-color: #3a3a3a;
+  color: #ccc;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.indexer-flag-badge.flag-freeleech,
+.indexer-flag-badge.flag-freeleech75 {
+  background-color: #1e4620;
+  color: #7ddb84;
+}
+
+.indexer-flag-badge.flag-halfleech,
+.indexer-flag-badge.flag-freeleech25 {
+  background-color: #3d3a1a;
+  color: #e0cc6a;
 }
 
 .indexer-name {
