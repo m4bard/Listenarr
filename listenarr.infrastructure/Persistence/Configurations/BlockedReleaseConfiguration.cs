@@ -29,9 +29,19 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             // the access path.
             //
             // Here rather than in ListenArrDbContext.OnModelCreating, which asks for exactly
-            // that: "prefer moving indexes into configuration classes". It also keeps this
-            // branch's edit to that file down to the one DbSet line, which matters because
-            // every open PR adding a table touches it.
+            // that: "prefer moving indexes into configuration classes". This class is also what
+            // registers the entity at all: ApplyConfigurationsFromAssembly picks it up, so the
+            // table needs no DbSet property and this branch leaves ListenArrDbContext.cs alone.
+            // That file is the one every pull request adding a table has to edit, which is
+            // exactly why they collide there.
+            // Named here because nothing else names it. EF takes a table name from the DbSet
+            // property that exposes the entity, and there is no such property; left to itself it
+            // would fall back to the type name and map this to "BlockedRelease", singular, while
+            // the migration creates "BlockedReleases". That mismatch is not a compile error and
+            // not a test of its own either. It surfaces as every migrating test failing with
+            // PendingModelChangesWarning, which is a long way from the line that caused it.
+            builder.ToTable("BlockedReleases");
+
             builder
                 .HasIndex(entry => new { entry.AudiobookId, entry.ReleaseIdentifier })
                 .IsUnique();

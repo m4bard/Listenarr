@@ -86,16 +86,53 @@ public sealed class BlocklistServiceTests : BaseTests
         Assert.Equal("first", Assert.Single(await ReadAllAsync()).Reason);
     }
 
+    [Fact]
+    public async Task BlockedRelease_IsMappedWithoutADbSetPropertyOnTheContext()
+    {
+        // The table is registered by BlockedReleaseConfiguration through
+        // ApplyConfigurationsFromAssembly, not by a DbSet property on ListenArrDbContext.
+        // Deliberate: that one list of DbSets is edited by every open pull request that adds a
+        // table, and this branch does not need to be in the queue for it.
+        Assert.Null(typeof(ListenArrDbContext).GetProperty("BlockedReleases"));
+
+        await using var db = new ListenArrDbContext(_options);
+
+        // The control for the assertion above. "No property" has to mean "registered somewhere
+        // else", not "not registered", and those two look identical from the context's public
+        // surface. A model that had lost the entity fails here instead of passing quietly.
+        var entityType = Assert.Single(
+            db.Model.GetEntityTypes(),
+            candidate => candidate.ClrType == typeof(BlockedRelease));
+
+        // And the table it maps to, which is the part the DbSet property was quietly supplying.
+        // Without a property to take the name from, EF falls back to the type name and maps this
+        // to "BlockedRelease" while the migration creates "BlockedReleases". Round-tripping a row
+        // does not catch it, because EnsureCreated builds whatever the model asked for.
+        Assert.Equal("BlockedReleases", entityType.GetTableName());
+
+        db.Set<BlockedRelease>().Add(new BlockedRelease
+        {
+            AudiobookId = 7,
+            ReleaseIdentifier = Identifier,
+            Title = "Mine",
+            Size = 800_000_000,
+            Reason = "mapped without a DbSet"
+        });
+        await db.SaveChangesAsync();
+
+        Assert.Equal(Identifier, Assert.Single(await ReadAllAsync()).ReleaseIdentifier);
+    }
+
     private async Task<List<BlockedRelease>> ReadAllAsync()
     {
         await using var db = new ListenArrDbContext(_options);
-        return await db.BlockedReleases.AsNoTracking().ToListAsync();
+        return await db.Set<BlockedRelease>().AsNoTracking().ToListAsync();
     }
 
     private void WriteRivalEntry()
     {
         using var rival = new ListenArrDbContext(_options);
-        rival.BlockedReleases.Add(new BlockedRelease
+        rival.Set<BlockedRelease>().Add(new BlockedRelease
         {
             AudiobookId = 7,
             ReleaseIdentifier = Identifier,

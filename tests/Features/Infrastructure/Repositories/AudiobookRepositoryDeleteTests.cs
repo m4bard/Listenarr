@@ -68,7 +68,7 @@ public sealed class AudiobookRepositoryDeleteTests : BaseTests
         var kept = new Audiobook { Title = "Kept Book" };
         context.Audiobooks.AddRange(deleted, kept);
         await context.SaveChangesAsync();
-        context.BlockedReleases.AddRange(
+        context.Set<BlockedRelease>().AddRange(
             new BlockedRelease
             {
                 AudiobookId = deleted.Id,
@@ -96,8 +96,8 @@ public sealed class AudiobookRepositoryDeleteTests : BaseTests
 
         Assert.True(await repository.DeleteByIdAsync(deleted.Id));
 
-        Assert.False(await context.BlockedReleases.AnyAsync(entry => entry.AudiobookId == deleted.Id));
+        Assert.False(await context.Set<BlockedRelease>().AnyAsync(entry => entry.AudiobookId == deleted.Id));
         // The control: a sweep that took the whole table would satisfy the assertion above.
-        Assert.True(await context.BlockedReleases.AnyAsync(entry => entry.AudiobookId == kept.Id));
+        Assert.True(await context.Set<BlockedRelease>().AnyAsync(entry => entry.AudiobookId == kept.Id));
     }
 }

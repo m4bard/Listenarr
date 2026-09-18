@@ -41,6 +41,10 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
         /// same transaction as the delete of the book itself and a failure cannot leave the rows
         /// orphaned with the book already gone.
         ///
+        /// Set&lt;BlockedRelease&gt; rather than a DbSet property for the reason given on
+        /// BlocklistService.BlockedReleases: that property would sit in the one list every table
+        /// this release touches has to edit.
+        ///
         /// BlockedReleases carries an AudiobookId but no navigation property and therefore no
         /// foreign key. Giving it one means a second migration on top of the one that created the
         /// table, and in SQLite adding a foreign key rebuilds the table. Readarr sweeps the same
@@ -52,12 +56,12 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
         /// </summary>
         private async Task RemoveBlocklistEntriesFor(int audiobookId)
         {
-            var blockedReleases = await _db.BlockedReleases
+            var blockedReleases = await _db.Set<BlockedRelease>()
                 .Where(entry => entry.AudiobookId == audiobookId)
                 .ToListAsync();
             if (blockedReleases.Count > 0)
             {
-                _db.BlockedReleases.RemoveRange(blockedReleases);
+                _db.Set<BlockedRelease>().RemoveRange(blockedReleases);
             }
         }
     }

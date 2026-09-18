@@ -25,6 +25,19 @@ namespace Listenarr.Infrastructure.Downloads.Blocklist
             _logger = logger;
         }
 
+        /// <summary>
+        /// The blocklist table, reached through Set&lt;T&gt; rather than through a DbSet property
+        /// on ListenArrDbContext.
+        ///
+        /// EF finds the entity either way: BlockedReleaseConfiguration implements
+        /// IEntityTypeConfiguration&lt;BlockedRelease&gt; and OnModelCreating already calls
+        /// ApplyConfigurationsFromAssembly, which puts the type in the model without a property
+        /// declaring it. What the property would add is one more line to the single list that
+        /// every pull request adding a table has to edit, and that list is where those pull
+        /// requests collide with each other.
+        /// </summary>
+        private DbSet<BlockedRelease> BlockedReleases => _context.Set<BlockedRelease>();
+
         public async Task BlockAsync(
             int audiobookId,
             string releaseIdentifier,
@@ -37,7 +50,7 @@ namespace Listenarr.Infrastructure.Downloads.Blocklist
                 return;
             }
 
-            var already = await _context.BlockedReleases.AnyAsync(
+            var already = await BlockedReleases.AnyAsync(
                 entry => entry.AudiobookId == audiobookId
                     && entry.ReleaseIdentifier == releaseIdentifier);
             if (already)
@@ -45,7 +58,7 @@ namespace Listenarr.Infrastructure.Downloads.Blocklist
                 return;
             }
 
-            var entry = _context.BlockedReleases.Add(new BlockedRelease
+            var entry = BlockedReleases.Add(new BlockedRelease
             {
                 AudiobookId = audiobookId,
                 ReleaseIdentifier = releaseIdentifier,
@@ -87,7 +100,7 @@ namespace Listenarr.Infrastructure.Downloads.Blocklist
 
         public async Task<IReadOnlyList<BlockedRelease>> GetForAudiobookAsync(int audiobookId)
         {
-            return await _context.BlockedReleases
+            return await BlockedReleases
                 .Where(entry => entry.AudiobookId == audiobookId)
                 .OrderByDescending(entry => entry.BlockedAt)
                 .ToListAsync();
@@ -95,14 +108,14 @@ namespace Listenarr.Infrastructure.Downloads.Blocklist
 
         public async Task<bool> DeleteAsync(int id)
         {
-            var entry = await _context.BlockedReleases
+            var entry = await BlockedReleases
                 .FirstOrDefaultAsync(candidate => candidate.Id == id);
             if (entry is null)
             {
                 return false;
             }
 
-            _context.BlockedReleases.Remove(entry);
+            BlockedReleases.Remove(entry);
             await _context.SaveChangesAsync();
             _logger.LogInformation(
                 "Removed blocklist entry {BlocklistEntryId} for audiobook {AudiobookId}",
@@ -113,7 +126,7 @@ namespace Listenarr.Infrastructure.Downloads.Blocklist
 
         public async Task<int> ClearForAudiobookAsync(int audiobookId)
         {
-            var entries = await _context.BlockedReleases
+            var entries = await BlockedReleases
                 .Where(entry => entry.AudiobookId == audiobookId)
                 .ToListAsync();
             if (entries.Count == 0)
@@ -121,7 +134,7 @@ namespace Listenarr.Infrastructure.Downloads.Blocklist
                 return 0;
             }
 
-            _context.BlockedReleases.RemoveRange(entries);
+            BlockedReleases.RemoveRange(entries);
             await _context.SaveChangesAsync();
             _logger.LogInformation(
                 "Cleared {RemovedCount} blocklist entries for audiobook {AudiobookId}",
