@@ -32,8 +32,10 @@ namespace Listenarr.Api.Features.Calendar
         /// Splits the comma separated tag list the *arr feeds use, accepting either spelling.
         /// </summary>
         /// <param name="tags">
-        /// The Sonarr and Radarr spelling (src/Sonarr.Api.V3/Calendar/CalendarFeedController.cs:31).
-        /// Preferred when both are present.
+        /// Sonarr's spelling, verified at
+        /// sonarr src/Sonarr.Api.V3/Calendar/CalendarFeedController.cs:31. Preferred when both are
+        /// present. Radarr is reported to use the same name; it is not checked out here, so that
+        /// is unverified and nothing below depends on it.
         /// </param>
         /// <param name="tagList">
         /// The Readarr spelling (src/Readarr.Api.V1/Calendar/CalendarFeedController.cs:31). Readarr
