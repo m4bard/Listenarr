@@ -128,6 +128,25 @@ public sealed class MyAnonamouseRequestFactoryTests : BaseTests
         Assert.Equal("1", SingleValueOf(uri, "tor[browse_lang][]"));
     }
 
+    [Theory]
+    [InlineData(MamFreeleechWedge.Never)]
+    [InlineData(MamFreeleechWedge.Preferred)]
+    [InlineData(MamFreeleechWedge.Required)]
+    public void BuildSearchUri_DoesNotAskTheSearchForAFreeleechWedge(MamFreeleechWedge wedge)
+    {
+        // A wedge is applied to a download, not to a search. Prowlarr carries the preference as a
+        // setting and spends it when it builds the download URL
+        // (src/NzbDrone.Core/Indexers/Definitions/MyAnonamouse.cs, GetDownloadUrl); nothing sends it
+        // with the query. tor[freeleechWedge] was the fourth parameter in this function that
+        // MyAnonamouse had no use for, and it is the one that looked like it was doing something.
+        var uri = MyAnonamouseRequestFactory.BuildSearchUri(
+            CreateIndexer(),
+            "Ready Player Two",
+            new SearchRequest { MyAnonamouse = new MyAnonamouseOptions { FreeleechWedge = wedge } });
+
+        Assert.DoesNotContain(Uri.EscapeDataString("tor[freeleechWedge]"), uri.Query, StringComparison.Ordinal);
+    }
+
     private static Indexer CreateIndexer() => new()
     {
         Id = 7,
