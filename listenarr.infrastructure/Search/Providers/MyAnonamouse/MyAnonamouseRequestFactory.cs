@@ -13,6 +13,8 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse;
 
 internal static class MyAnonamouseRequestFactory
 {
+    private const string DefaultSearchLanguage = "1";
+
     private const string UserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
@@ -73,7 +75,7 @@ internal static class MyAnonamouseRequestFactory
         }
 
         queryParameters.Add(new("tor[main_cat][]", "13"));
-        queryParameters.Add(new("tor[browse_lang][]", "1"));
+        queryParameters.Add(new("tor[browse_lang][]", ResolveSearchLanguage(request?.MyAnonamouse?.SearchLanguage)));
         queryParameters.Add(new("tor[browseFlagsHideVsShow]", "0"));
         queryParameters.Add(new("tor[sortType]", "default"));
         queryParameters.Add(new("tor[startNumber]", "0"));
@@ -95,6 +97,23 @@ internal static class MyAnonamouseRequestFactory
                 $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
         var baseUrl = indexer.Url.TrimEnd('/');
         return new Uri($"{baseUrl}/tor/js/loadSearchJSONbasic.php?{queryString}", UriKind.Absolute);
+    }
+
+    /// <summary>
+    /// MyAnonamouse identifies search languages by number, 1 being English
+    /// (Prowlarr's MyAnonamouseSearchLanguages enumerates them). A language the tracker cannot
+    /// read would be another parameter it ignores, so anything non-numeric leaves the default
+    /// in place rather than going out as it stands.
+    /// </summary>
+    private static string ResolveSearchLanguage(string? searchLanguage)
+    {
+        return int.TryParse(
+            searchLanguage,
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var languageId) && languageId > 0
+            ? languageId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : DefaultSearchLanguage;
     }
 
     public static HttpRequestMessage CreateSearchRequest(Uri uri, string mamId, bool addCookieHeader)
