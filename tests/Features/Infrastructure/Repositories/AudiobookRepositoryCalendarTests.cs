@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Calendar;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Tests.Common;
 using Microsoft.Data.Sqlite;
@@ -143,6 +144,81 @@ public sealed class AudiobookRepositoryCalendarTests : BaseTests
         Assert.Equal(new[] { "H. G. Wells" }, row.Authors);
         Assert.Equal(new[] { "Science Fiction" }, row.Genres);
         Assert.Equal(new[] { "TBR" }, row.Tags);
+    }
+
+    [Fact]
+    public async Task GetCalendarRowsAsync_AdmitsEveryStoredFormTheParserClaimsToAccept()
+    {
+        // The seam. CalendarWindow.ParsePublishedDate decides which stored strings become events;
+        // the coarse bound in this query decides which rows the parser ever sees. Each half was
+        // tested where it is right and nothing crossed them, which is how a value gets asserted
+        // acceptable in one file and silently dropped in another.
+        //
+        // The invariant is one directional: anything the parser accepts must be admitted by SQL.
+        // The reverse does not hold, and should not: "2026-13-45" sorts inside the bound and is
+        // not a date, so the parser is right to refuse it.
+        var storedForms = new[]
+        {
+            "2026",
+            "2026-06-15",
+            "2026-12-31T18:00:00.0000000+00:00",
+            "2026-6-15",            // single digit month, only the TryParse fallback reads this
+            "2026-06-15  ",         // trailing padding: sorts inside the bound
+            "  2026-06-15",         // leading padding: sorts below "2026" because ' ' < '2'
+            "2026-13-45",           // inside the bound, not a date
+            "not a date"
+        };
+
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var context = await NewContextAsync(connection);
+
+        context.Audiobooks.AddRange(storedForms.Select(form => Book(form, form)));
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var repository = new AudiobookRepository(context);
+        var admitted = (await repository.GetCalendarRowsAsync("2026", "2026-99", includeUnmonitored: true))
+            .Select(row => row.Title!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var advertisedButUnreachable = storedForms
+            .Where(form => CalendarWindow.ParsePublishedDate(form) is not null)
+            .Where(form => !admitted.Contains(form))
+            .ToList();
+
+        Assert.Empty(advertisedButUnreachable);
+    }
+
+    [Fact]
+    public async Task GetCalendarRowsAsync_SpansAYearBoundary()
+    {
+        // The default 7/28 day feed crosses a year boundary for 35 days out of every 365, and
+        // surviving that is the only reason the coarse bound is a year range rather than a year.
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var context = await NewContextAsync(connection);
+
+        context.Audiobooks.AddRange(
+            Book("late december", "2025-12-30"),
+            Book("early january", "2026-01-05"),
+            Book("bare year before", "2025"),
+            Book("round trip in december", "2025-12-31T18:00:00.0000000+00:00"),
+            Book("two years earlier", "2024-12-30"),
+            Book("year after", "2027-01-01"));
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var window = new CalendarWindow(new DateOnly(2025, 12, 28), new DateOnly(2026, 1, 10));
+        var repository = new AudiobookRepository(context);
+        var rows = await repository.GetCalendarRowsAsync(
+            window.CoarseLowerBound,
+            window.CoarseUpperBound,
+            includeUnmonitored: true);
+
+        Assert.Equal(
+            new[] { "bare year before", "early january", "late december", "round trip in december" },
+            rows.Select(row => row.Title).Order(StringComparer.Ordinal));
     }
 
     private static async Task<ListenArrDbContext> NewContextAsync(SqliteConnection connection)
