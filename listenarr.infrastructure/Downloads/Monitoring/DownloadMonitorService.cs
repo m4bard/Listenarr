@@ -64,10 +64,7 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 initialDelay: null,
                 intervalProvider: () => TimeSpan.FromSeconds(_pollingInterval),
                 runCycle: processor.RunCycleAsync,
-                cancellationToken,
-                // Polls the download clients for progress. Readarr schedules and exposes
-                // the same thing as RefreshMonitoredDownloads.
-                manualTrigger: ScheduledTaskManualTrigger.Allowed);
+                cancellationToken, manualTrigger: ScheduledTaskManualTrigger.Allowed); // Readarr: RefreshMonitoredDownloads
 
             logger.LogInformation("Download Monitor Service stopping");
         }
