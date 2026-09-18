@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Text.Json.Serialization;
 using Listenarr.Application.Common.Scheduling;
 
 namespace Listenarr.Api.Features.SystemDiagnostics
@@ -33,17 +34,25 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         public required string DisplayName { get; init; }
 
         /// <summary>
-        /// The gap between cycles, as a whole number of seconds.
+        /// The gap between cycles, as a whole number of seconds, or null when the
+        /// worker's interval cannot be stated in that unit.
         /// </summary>
         /// <remarks>
-        /// Whole seconds rather than a floating point count, because a whole number is
-        /// the only shape in which an interval this surface cannot state is an event at
-        /// all: a double absorbs every value silently, including the ones a consumer
-        /// truncates to 0 on its own side. An interval that is not a whole, non-negative
-        /// number of seconds throws
-        /// <see cref="ScheduledTaskIntervalFormatException"/> here and the request is
-        /// refused, so nothing on this surface can report 0 unless the worker really
-        /// declared 0.
+        /// Whole seconds rather than a floating point count, so that the unit is a fact
+        /// about the contract rather than an approximation: an interval this surface
+        /// cannot state exactly is refused at the conversion and reported as null beside
+        /// <see cref="IntervalError"/>, instead of being published as a number nobody
+        /// declared. Nothing here can report 0 unless the worker really declared 0.
+        /// <para>
+        /// Null and not simply absent. Controllers serialize with
+        /// <c>JsonIgnoreCondition.WhenWritingNull</c>
+        /// (<c>Startup/ListenarrServiceRegistration.cs:44</c>), which would drop the key,
+        /// and an absent numeric field is the silent 0 this whole design exists to avoid.
+        /// The per-property <c>JsonIgnore(Never)</c> overrides that and puts the null on
+        /// the wire, where a client with a non-nullable numeric throws on it rather than
+        /// defaulting. That behaviour is pinned by
+        /// <c>ScheduledTaskIntervalWireFormatTests</c> rather than assumed.
+        /// </para>
         /// <para>
         /// The family sends this as <c>Interval</c>, an int in minutes
         /// (<c>Sonarr.Api.V3/System/Tasks/TaskResource.cs:10</c>, where 0 also carries a
@@ -65,10 +74,28 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         /// Minutes-as-int would round all four to 0, which in the family's own reading
         /// means "never runs", and two of them unconditionally rather than only on default
         /// configuration. Seconds holds all four exactly, so no rounding can lose one. The
-        /// field is named for its unit so nothing reads it as minutes by mistake.
+        /// field is named for its unit so nothing reads it as minutes by mistake. It does
+        /// not close the family's own hazard: a client generated against <c>Interval</c>
+        /// still reads nothing here whatever the type, because the name differs. That is
+        /// the field-naming question, and it is not this field's to answer.
         /// </para>
         /// </remarks>
-        public required long IntervalSeconds { get; init; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+        public required long? IntervalSeconds { get; init; }
+
+        /// <summary>
+        /// Why <see cref="IntervalSeconds"/> is null, on the one row where it is, and
+        /// absent everywhere else.
+        /// </summary>
+        /// <remarks>
+        /// The refusal travels on the row rather than in the status code, so that one
+        /// worker nobody can describe does not withhold the nine that can be. That is the
+        /// same call <c>ScheduledTaskHandle.ReadInterval</c> makes one layer down, where a
+        /// worker whose interval delegate throws falls back to its last known value rather
+        /// than failing the whole list, and it follows from this surface's own rule that
+        /// the state most worth seeing is the one that went wrong.
+        /// </remarks>
+        public string? IntervalError { get; init; }
 
         public required DateTimeOffset RegisteredAt { get; init; }
 
@@ -105,7 +132,8 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         {
             Name = status.TaskName,
             DisplayName = SplitName(status.TaskName),
-            IntervalSeconds = ToWholeSeconds(status.TaskName, status.Interval),
+            IntervalSeconds = ToWholeSeconds(status.Interval),
+            IntervalError = DescribeUnstatableInterval(status.TaskName, status.Interval),
             RegisteredAt = status.RegisteredAt,
             IsRegistered = status.IsRegistered,
             IsRunning = status.IsRunning,
@@ -119,24 +147,51 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         };
 
         /// <summary>
-        /// The interval in the unit the surface publishes, or a refusal if it does not
-        /// fit that unit.
+        /// The interval in the unit the surface publishes, or null if it does not fit
+        /// that unit.
         /// </summary>
         /// <remarks>
         /// Ticks rather than <c>TotalSeconds</c> so the test for exactness is exact:
         /// asking whether a double is a whole number reintroduces the rounding the field
         /// exists to avoid. A negative interval is refused for the same reason a
         /// fractional one is, since truncating it also lands on 0.
+        /// <para>
+        /// <c>long</c> because <c>TimeSpan.MaxValue</c> is 922,337,203,685 seconds, which
+        /// overflows an <c>int</c>, and sits well under 2^53 so a browser parsing the
+        /// number keeps it exact.
+        /// </para>
         /// </remarks>
-        internal static long ToWholeSeconds(string taskName, TimeSpan interval)
+        internal static long? ToWholeSeconds(TimeSpan interval) =>
+            CanBeStatedInWholeSeconds(interval)
+                ? interval.Ticks / TimeSpan.TicksPerSecond
+                : null;
+
+        /// <summary>
+        /// The refusal text for an interval that cannot be stated, naming the task, the
+        /// field, the value and the accepted form. Null when there is nothing to refuse.
+        /// </summary>
+        internal static string? DescribeUnstatableInterval(string taskName, TimeSpan interval)
         {
-            if (interval < TimeSpan.Zero || interval.Ticks % TimeSpan.TicksPerSecond != 0)
+            if (CanBeStatedInWholeSeconds(interval))
             {
-                throw new ScheduledTaskIntervalFormatException(taskName, interval);
+                return null;
             }
 
-            return interval.Ticks / TimeSpan.TicksPerSecond;
+            var declared = interval.TotalSeconds.ToString(
+                "0.###############",
+                System.Globalization.CultureInfo.InvariantCulture);
+            var truncated = (interval.Ticks / TimeSpan.TicksPerSecond)
+                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+            return $"'{taskName}' declares an interval of {declared}s, and 'intervalSeconds' " +
+                $"carries whole, non-negative seconds only. It is reported as null rather " +
+                $"than truncated to {truncated}, because truncation is how a sub-second " +
+                $"worker comes to report 0, and 0 on this surface reads as a task that " +
+                $"never runs.";
         }
+
+        private static bool CanBeStatedInWholeSeconds(TimeSpan interval) =>
+            interval >= TimeSpan.Zero && interval.Ticks % TimeSpan.TicksPerSecond == 0;
 
         /// <summary>
         /// Worker names arrive either as a type name or as a dotted identifier, so
