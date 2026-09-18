@@ -73,17 +73,63 @@ public sealed class CalendarFeedAuthenticationTests : BaseTests, IClassFixture<L
     }
 
     [Fact]
-    public async Task Feed_WithNoKey_IsRefusedWhenAuthenticationIsRequired()
+    public async Task Feed_WithNoKey_IsRefusedByTheAuthenticationEnforcer()
     {
         // The feed sits outside /api on purpose, and the authentication enforcer used to wave
         // through everything that was not /api or /hubs. Without the enforcer knowing about
         // /feed, this request would be served and the whole library would be readable.
+        //
+        // The status code alone does not pin that guard: [RequireApiKey] returns a bare 401 of
+        // its own, so deleting the /feed clause from the enforcer leaves a status-only assertion
+        // green. The body is the discriminator. The enforcer writes this JSON itself
+        // (AuthenticationEnforcerMiddleware.cs:110-112) and runs before MVC, whereas
+        // UnauthorizedResult writes no body at all (RequireApiKeyAttribute.cs:65).
         using var factory = WithAuthenticationEnabled();
         using var client = NewClient(factory);
 
         var response = await client.GetAsync(FeedPath);
+        var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("{\"message\":\"Authentication required\"}", body);
+    }
+
+    [Fact]
+    public async Task Feed_WithACaseVariantPathAndNoKey_IsRefusedByTheAttributeInstead()
+    {
+        // The enforcer's prefix checks pass no StringComparison, so they are case sensitive and
+        // /FEED/... slips past the /feed clause. MVC routing is case insensitive, so the request
+        // still reaches the controller, where [RequireApiKey] refuses it. This case is the one
+        // place the two layers come apart, so it is the one worth asserting.
+        //
+        // The discriminator is the body, but not in the way it looks from the source.
+        // UnauthorizedResult does not produce a bodyless 401 here: the MVC problem-details
+        // handler renders it as an RFC 9457 document. Measured, not read. So the two layers are
+        // still told apart by the body, and this assertion fails the moment the enforcer starts
+        // catching this path too.
+        using var factory = WithAuthenticationEnabled();
+        using var client = NewClient(factory);
+
+        var response = await client.GetAsync("/FEED/v1/calendar/" + CalendarFeedController.FeedFileName);
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.DoesNotContain("Authentication required", body, StringComparison.Ordinal);
+        Assert.Contains("\"status\":401", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Feed_WithACaseVariantPathAndTheKey_IsStillServed()
+    {
+        // The other half of the same seam: ApiKeyMiddleware's query-key carve-out does compare
+        // case insensitively, so a correct key still works on the odd casing.
+        using var factory = WithAuthenticationEnabled();
+        using var client = NewClient(factory);
+
+        var response = await client.GetAsync(
+            $"/FEED/v1/calendar/{CalendarFeedController.FeedFileName}?apikey={ApiKey}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]

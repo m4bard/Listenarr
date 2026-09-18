@@ -27,8 +27,13 @@ namespace Listenarr.Application.Calendar
     /// them here instead is what lets the iCalendar feed carry the state as well, and saves the
     /// calendar page from loading the whole library to colour a cell.
     ///
-    /// Readarr's sixth value, "partial", is a percentage across an author or series rather than a
-    /// property of one book, so it has no per-event meaning and is not modelled.
+    /// Readarr has a sixth value, "partial", which sits between downloaded and downloading. It is
+    /// a per-book figure, not a per-author one: the calendar event passes the book's own
+    /// statistics.percentOfBooks (frontend/src/Calendar/Events/CalendarEvent.js:67), which is
+    /// BookFileCount over BookCount (src/Readarr.Api.V1/Books/BookStatisticsResource.cs:12-23).
+    /// An audiobook split across several files has the same shape, so "partial" would mean
+    /// something here. It is not modelled yet only because CalendarAudiobookRow carries a file
+    /// count and no expected count, leaving nothing to take the ratio against. Worth revisiting.
     /// </remarks>
     public static class CalendarEventStatus
     {
@@ -39,10 +44,19 @@ namespace Listenarr.Application.Calendar
         public const string Unreleased = "unreleased";
 
         /// <summary>
-        /// Resolves the event state. Precedence matches Readarr's getStatusStyle: an in-flight
-        /// download outranks what is on disk, which outranks monitoring, and only then does the
-        /// release date decide between missing and unreleased.
+        /// Resolves the event state. What is on disk outranks an in-flight download, which
+        /// outranks monitoring, and only then does the release date decide between missing and
+        /// unreleased.
         /// </summary>
+        /// <remarks>
+        /// The disk-before-download order follows the lineage parent and Sonarr, not Radarr.
+        /// Readarr returns 'downloaded' at 100 percent and 'partial' above zero before it ever
+        /// tests 'downloading' (frontend/src/Calendar/getStatusStyle.js:7-17); Sonarr tests
+        /// hasFile first as well (frontend/src/Calendar/getStatusStyle.ts:13-19). Only Radarr
+        /// returns the queue state first (frontend/src/Calendar/getStatusStyle.ts:7-13). The
+        /// observable difference is a book already on disk with an upgrade in flight: it reads
+        /// downloaded here, which is what an operator arriving from Readarr or Sonarr expects.
+        /// </remarks>
         /// <param name="isDownloading">An active download row references this audiobook.</param>
         /// <param name="hasFile">Tracked files exist, or the legacy single-file path is set.</param>
         /// <param name="monitored">The audiobook is monitored.</param>
@@ -55,14 +69,14 @@ namespace Listenarr.Application.Calendar
             DateOnly releaseDate,
             DateOnly today)
         {
-            if (isDownloading)
-            {
-                return Downloading;
-            }
-
             if (hasFile)
             {
                 return Downloaded;
+            }
+
+            if (isDownloading)
+            {
+                return Downloading;
             }
 
             if (!monitored)
