@@ -35,7 +35,7 @@ public sealed class ScheduledTasksControllerTests : BaseTests
         Assert.Equal(
             new[] { "Metadata Rescan Service", "Move Scan Handoff Recovery" },
             tasks.Select(task => task.DisplayName));
-        Assert.Equal(900d, tasks[0].IntervalSeconds);
+        Assert.Equal(900L, tasks[0].IntervalSeconds);
         Assert.Equal(nameof(ScheduledTaskOutcome.Succeeded), tasks[0].LastOutcome);
         Assert.True(tasks[0].IsRegistered);
     }
