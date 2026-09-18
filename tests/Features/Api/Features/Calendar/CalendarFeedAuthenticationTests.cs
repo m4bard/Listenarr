@@ -49,8 +49,9 @@ public sealed class CalendarFeedAuthenticationTests : BaseTests, IClassFixture<L
     public async Task Feed_WithApiKeyInTheQueryString_IsServed()
     {
         // This is the whole point. A calendar client subscribes to a URL and cannot attach a
-        // header, so the key has to ride in the query, spelled "apikey" exactly as Sonarr, Radarr
-        // and Readarr spell it, or an operator's pasted URL will not work.
+        // header, so the key has to ride in the query, spelled "apikey" exactly as the family
+        // spells it, or an operator's pasted URL will not work. Verified in Readarr, at
+        // src/Readarr.Http/Authentication/AuthenticationBuilderExtensions.cs:62.
         using var factory = WithAuthenticationEnabled();
         using var client = NewClient(factory);
 

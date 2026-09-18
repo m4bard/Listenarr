@@ -107,6 +107,15 @@
         </div>
 
         <div v-else-if="urls.httpUrl" class="section-card">
+          <div v-if="isDevServer" class="feed-notice" data-testid="calendar-feed-dev">
+            <PhWarning />
+            <span>
+              Running against the dev server, which does not forward the feed route, so this URL
+              answers with the app's HTML rather than a calendar. Build the app to test a real
+              subscription.
+            </span>
+          </div>
+
           <FormField
             id="calendar-feed-http-url"
             label="iCalendar Feed"
@@ -212,7 +221,7 @@ import ModalBody from '@/components/feedback/ModalBody.vue'
 import ModalFooter from '@/components/feedback/ModalFooter.vue'
 import FormField from '@/components/base/FormField.vue'
 import { apiService } from '@/services/api'
-import { API_BASE_PATH } from '@/services/apiBase'
+import { API_BASE_PATH, API_ORIGIN } from '@/services/apiBase'
 import { logger } from '@/utils/logger'
 import {
   CALENDAR_FEED_DEFAULT_FUTURE_DAYS,
@@ -220,6 +229,7 @@ import {
   CALENDAR_FEED_MAX_DAYS,
   buildCalendarFeedUrls,
   calendarFeedUrlBase,
+  resolveCalendarFeedOrigin,
 } from '@/utils/calendarFeedUrl'
 
 const props = defineProps<{ visible: boolean }>()
@@ -235,6 +245,12 @@ const loading = ref(false)
 const loadError = ref(false)
 const copied = ref<'http' | 'webcal' | null>(null)
 
+// The dev server proxies /api and /hubs and not /feed (fe/vite.config.ts), so a URL generated
+// under `npm run dev` falls through to the SPA and answers with HTML and a 200. That is the
+// failure that looks like success, so the dialog says so rather than letting someone validate
+// the feature against it.
+const isDevServer = import.meta.env.DEV
+
 const urls = computed(() =>
   buildCalendarFeedUrls(
     {
@@ -244,12 +260,11 @@ const urls = computed(() =>
       tags: tags.value,
       apiKey: apiKey.value,
     },
-    {
-      // The SPA is served by the same instance that serves the feed, so the browser's own
-      // origin is the address the operator can reach. This is how Readarr and Sonarr build it.
-      protocol: window.location.protocol,
-      host: window.location.host,
-    },
+    resolveCalendarFeedOrigin(
+      API_ORIGIN,
+      { protocol: window.location.protocol, host: window.location.host },
+      isDevServer,
+    ),
     calendarFeedUrlBase(API_BASE_PATH),
   ),
 )

@@ -125,9 +125,43 @@ public sealed class CalendarWindowTests : BaseTests
     [InlineData("  2026-09-14")]
     [InlineData("  2026-09-14  ")]
     [InlineData("\t2026-09-14")]
+    [InlineData("06/15/2026")]
+    [InlineData("15 June 2026")]
+    [InlineData("June 15, 2026")]
+    [InlineData("6/1/1996")]
+    [InlineData("20260914")]
     public void ParsePublishedDate_RejectsWhatItCannotRead(string? stored)
     {
         Assert.Null(CalendarWindow.ParsePublishedDate(stored));
+    }
+
+    [Fact]
+    public void ParsePublishedDate_RefusesFormsWhoseSortOrderIsNotTheirDateOrder()
+    {
+        // The narrowing this exists for. DateTime.TryParse under the invariant culture reads a
+        // wide class of forms whose lexical order has nothing to do with their chronological
+        // order, and the coarse bound compares the stored string as it sits in the column. So a
+        // parser that accepted these would be claiming a tolerance the query layer negates, which
+        // is the same defect as the leading-whitespace case one level further out.
+        //
+        // All three parse to 2026-06-15 under a bare TryParse. Two sort below the lower bound and
+        // one sorts above the upper bound, which is worth spelling out: they are excluded by
+        // opposite ends of the range, not by one mechanism.
+        var window = new CalendarWindow(new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+
+        Assert.True(string.CompareOrdinal("06/15/2026", window.CoarseLowerBound) < 0);
+        Assert.True(string.CompareOrdinal("15 June 2026", window.CoarseLowerBound) < 0);
+        Assert.True(string.CompareOrdinal("June 15, 2026", window.CoarseUpperBound) > 0);
+
+        Assert.Null(CalendarWindow.ParsePublishedDate("06/15/2026"));
+        Assert.Null(CalendarWindow.ParsePublishedDate("15 June 2026"));
+        Assert.Null(CalendarWindow.ParsePublishedDate("June 15, 2026"));
+
+        // The one non-canonical form the bound does deliver is kept, and it is readable only by
+        // the gated fallback: length 9 skips TryParseExact and it is not a bare year.
+        Assert.True(string.CompareOrdinal("2026-6-15", window.CoarseLowerBound) > 0);
+        Assert.True(string.CompareOrdinal("2026-6-15", window.CoarseUpperBound) < 0);
+        Assert.Equal(new DateOnly(2026, 6, 15), CalendarWindow.ParsePublishedDate("2026-6-15"));
     }
 
     [Fact]
