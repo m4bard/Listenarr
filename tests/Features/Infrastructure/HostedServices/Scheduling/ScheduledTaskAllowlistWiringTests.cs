@@ -1,8 +1,6 @@
 using Listenarr.Application.Common.Scheduling;
-using Listenarr.Infrastructure.Downloads.Processing;
 using Listenarr.Infrastructure.HostedServices;
 using Listenarr.Infrastructure.HostedServices.Scheduling;
-using Listenarr.Infrastructure.Metadata.Jobs;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Scheduling;
@@ -44,7 +42,7 @@ public sealed class ScheduledTaskAllowlistWiringTests : BaseTests
 
             var refused = registry.Trigger(nameof(DownloadProcessingJobCleanupService));
 
-            Assert.Equal(ScheduledTaskTriggerResult.NotAllowed, refused);
+            Assert.Equal(ScheduledTaskTriggerResult.NotAllowed, refused.Result);
 
             // A strict mock with no setup throws on any call, so an accepted run would
             // surface as a failure rather than as a silently deleted row. Give the pool
@@ -95,7 +93,7 @@ public sealed class ScheduledTaskAllowlistWiringTests : BaseTests
 
             Assert.Equal(
                 ScheduledTaskTriggerResult.Accepted,
-                registry.Trigger(nameof(MetadataRescanService)));
+                registry.Trigger(nameof(MetadataRescanService)).Result);
 
             await cycles.WaitForAsync(2);
             Assert.Equal(

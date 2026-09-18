@@ -48,6 +48,12 @@ namespace Listenarr.Application.Common.Scheduling
         /// Starts one cycle out of band on a background task and returns at once.
         /// The run is bound to the worker's own cancellation, so shutdown stops it.
         /// </summary>
-        ScheduledTaskTriggerResult Trigger(string taskName);
+        /// <remarks>
+        /// The row travels back with the answer rather than being left for the caller to
+        /// fetch. An accepted trigger has already marked the manual cycle started, and a
+        /// caller that re-read the registry instead would usually get the previous
+        /// cycle's row, because the cycle body is dispatched onto the thread pool.
+        /// </remarks>
+        ScheduledTaskTriggerOutcome Trigger(string taskName);
     }
 }

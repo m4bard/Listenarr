@@ -7,7 +7,6 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
-using Listenarr.Application.Common.Scheduling;
 using Listenarr.Infrastructure.HostedServices;
 using Listenarr.Infrastructure.HostedServices.Scheduling;
 using Microsoft.Extensions.Configuration;
