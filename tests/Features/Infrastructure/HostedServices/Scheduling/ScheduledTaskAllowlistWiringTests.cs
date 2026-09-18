@@ -89,7 +89,11 @@ public sealed class ScheduledTaskAllowlistWiringTests : BaseTests
             Assert.Equal(ScheduledTaskManualTrigger.Allowed, status.ManualTrigger);
 
             // Let the first scheduled cycle land so the manual one is unambiguously extra.
+            // WaitForAsync fires from inside the processor call, which is before the gate
+            // is released, so waiting for that alone can race the trigger into an
+            // AlreadyRunning answer. Wait for the task to come to rest as well.
             await cycles.WaitForAsync(1);
+            await WaitForIdleAsync(registry, nameof(MetadataRescanService));
 
             Assert.Equal(
                 ScheduledTaskTriggerResult.Accepted,
@@ -115,6 +119,27 @@ public sealed class ScheduledTaskAllowlistWiringTests : BaseTests
             Mock.Of<IAppMetricsService>(),
             registry,
             Mock.Of<ILogger<WorkerCycleRunner>>());
+
+    private static async Task<ScheduledTaskStatus> WaitForIdleAsync(
+        IScheduledTaskRegistry registry,
+        string taskName)
+    {
+        var deadline = DateTimeOffset.UtcNow + Patience;
+
+        do
+        {
+            if (registry.Find(taskName) is { IsRunning: false, LastEndedAt: not null } status)
+            {
+                return status;
+            }
+
+            await Task.Delay(10);
+        }
+        while (DateTimeOffset.UtcNow < deadline);
+
+        Assert.Fail($"'{taskName}' never came to rest.");
+        throw new InvalidOperationException("unreachable");
+    }
 
     private static async Task<ScheduledTaskStatus> WaitForRegistrationAsync(
         IScheduledTaskRegistry registry,
