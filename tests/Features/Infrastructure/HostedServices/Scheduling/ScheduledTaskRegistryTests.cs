@@ -269,8 +269,10 @@ public sealed class ScheduledTaskRegistryTests : BaseTests
     }
 
     [Fact]
-    public async Task Trigger_StoppedWorker_IsNotFoundBecauseThereIsNoLoopLeft()
+    public async Task Trigger_StoppedWorker_IsRefusedAsStoppedRatherThanAsUnknown()
     {
+        // The row is still listed, so "no such task" would be read as a typo. A stopped
+        // worker and a name nobody ever registered are different answers.
         var registry = CreateRegistry();
         using var worker = new PeriodicWorkerHarness(
             registry,
@@ -283,9 +285,45 @@ public sealed class ScheduledTaskRegistryTests : BaseTests
 
         var outcome = registry.Trigger("GoneWorker");
 
-        Assert.Equal(ScheduledTaskTriggerResult.NotFound, outcome.Result);
+        Assert.Equal(ScheduledTaskTriggerResult.WorkerStopped, outcome.Result);
+        Assert.NotNull(outcome.Status);
+        Assert.False(outcome.Status.IsRegistered);
+        Assert.NotEqual(ScheduledTaskTriggerResult.NotFound, outcome.Result);
+
         await Task.Delay(200);
         Assert.Equal(cyclesBefore, worker.CycleCount);
+    }
+
+    [Fact]
+    public async Task StoppedWorker_IsNoLongerAskedForItsInterval()
+    {
+        // Keeping the row means the handle outlives the worker, so its interval delegate
+        // would otherwise be called on API request threads for the life of the process,
+        // against a worker whose dependencies may be gone. The row reports the interval
+        // the task had when it stopped instead.
+        var registry = CreateRegistry();
+        var intervalReads = 0;
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "InterrogatedWorker",
+            intervalProvider: () =>
+            {
+                Interlocked.Increment(ref intervalReads);
+                return TimeSpan.FromMinutes(7);
+            });
+
+        await worker.WaitForCycleAsync(1);
+        await worker.StopAsync();
+
+        var readsAtStop = Volatile.Read(ref intervalReads);
+        Assert.True(readsAtStop > 0, "the running worker must have been asked at least once");
+
+        var stopped = Assert.Single(registry.GetAll());
+        Assert.Equal(TimeSpan.FromMinutes(7), stopped.Interval);
+        _ = registry.GetAll();
+        _ = registry.Find("InterrogatedWorker");
+
+        Assert.Equal(readsAtStop, Volatile.Read(ref intervalReads));
     }
 
     [Fact]

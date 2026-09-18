@@ -26,7 +26,7 @@ namespace Listenarr.Application.Common.Scheduling
         /// <summary>The cycle was started on a background task.</summary>
         Accepted = 0,
 
-        /// <summary>No worker with that name is registered.</summary>
+        /// <summary>No worker has ever registered under that name.</summary>
         NotFound = 1,
 
         /// <summary>A cycle of that task is already in flight.</summary>
@@ -37,6 +37,14 @@ namespace Listenarr.Application.Common.Scheduling
         /// <see cref="NotFound"/> on purpose: the caller asked for something real and was
         /// refused, and telling them it does not exist would be a lie they cannot act on.
         /// </summary>
-        NotAllowed = 3
+        NotAllowed = 3,
+
+        /// <summary>
+        /// The worker's loop has ended, so there is nothing left to bring a cycle forward
+        /// on. Distinct from <see cref="NotFound"/> for the same reason
+        /// <see cref="NotAllowed"/> is: the row is still on the read surface, and a caller
+        /// looking straight at it would read "no such task" as a spelling mistake.
+        /// </summary>
+        WorkerStopped = 4
     }
 }
