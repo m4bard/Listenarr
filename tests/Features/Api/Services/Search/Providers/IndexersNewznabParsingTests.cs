@@ -297,7 +297,8 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
             // browse_lang uses [] notation and carries the requested language id, 2 here.
             Assert.Contains(Uri.EscapeDataString("tor[browse_lang][]") + "=2", q);
             Assert.Contains(Uri.EscapeDataString("tor[searchType]") + "=fl", q);
-            Assert.Contains(Uri.EscapeDataString("tor[freeleechWedge]") + "=required", q);
+            // The wedge preference belongs on a download, not on a search.
+            Assert.DoesNotContain(Uri.EscapeDataString("tor[freeleechWedge]"), q);
         }
 
         [Fact]
