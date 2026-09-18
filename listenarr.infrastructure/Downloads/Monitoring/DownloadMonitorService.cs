@@ -70,7 +70,7 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
         }
     }
 
-    public class DownloadMonitorProcessor(
+    public partial class DownloadMonitorProcessor(
         IServiceScopeFactory scopeFactory,
         IDownloadPushService downloadPushService,
         TimeProvider timeProvider,
@@ -383,6 +383,11 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 download.DownloadClientId,
                 download.Title ?? "Unknown",
                 errorMessage);
+
+            // Recording that a release failed sits beside recording the failure itself, above the
+            // FailedDownloadHandlingEnabled gate, and is deliberately not gated on any setting.
+            // The reasoning, which is long, is in DownloadMonitorService.Blocklist.cs.
+            await BlockFailedReleaseAsync(scope, download, errorMessage);
 
             if (!settings.FailedDownloadHandlingEnabled)
             {

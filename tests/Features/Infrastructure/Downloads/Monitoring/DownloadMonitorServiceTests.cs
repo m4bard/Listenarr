@@ -358,6 +358,76 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
                 "NZBGet failed while unpacking."));
         }
 
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        [Trait("Method", "OnDownloadFailed")]
+        public async Task OnDownloadFailed_RecordsTheBlockedRelease_WhicheverWayFailedDownloadHandlingIsSet(
+            bool handlingEnabled)
+        {
+            // The blocklist is deliberately independent of FailedDownloadHandlingEnabled, so both
+            // cases are the same assertion and the pair is the evidence for the independence
+            // rather than one case plus a claim about the other.
+            //
+            // The setting used to gate the write while the search-side filter ran regardless,
+            // which left it half-applied: switching it off stopped new rows and went on blocking
+            // by the rows already there. Neither Readarr nor Sonarr gates a blocklist on a
+            // setting at all; see the reasoning at the write in DownloadMonitorService.
+            var settings = new ApplicationSettingsBuilder();
+            await _applicationSettingsRepository.SaveAsync(
+                (handlingEnabled
+                    ? settings.WithFailedDownloadHandling()
+                    : settings.WithoutFailedDownloadHandling())
+                .Build());
+
+            var download = await AddFailedDownloadAsync($"handling-{handlingEnabled}");
+            await InvokeOnDownloadFailedAsync(download);
+
+            var blocklist = _provider.GetRequiredService<IBlocklistService>();
+            var entry = Assert.Single(await blocklist.GetForAudiobookAsync(download.AudiobookId!.Value));
+
+            // The identity as well as the title. Asserting only the title would pass for a row
+            // written under a key nothing recomputes, which is the whole failure this feature has
+            // had four times.
+            Assert.Equal(
+                download.GetMetadataString(ReleaseIdentity.MetadataKey),
+                entry.ReleaseIdentifier);
+            Assert.Equal("The Failing Listing", entry.Title);
+        }
+
+        private async Task<Download> AddFailedDownloadAsync(string id)
+        {
+            var audiobook = await CreateAudiobook();
+            var download = new DownloadBuilder()
+                .WithId(id)
+                .WithStatus(DownloadStatus.Failed)
+                .WithTitle("The Failing Listing")
+                .WithAudiobook(audiobook)
+                .WithDownloadClientConfiguration(client)
+                .Build();
+            // The builder sets no external id, so the client-removal branch below the gate stays
+            // out of this.
+            download.Metadata[ReleaseIdentity.MetadataKey] =
+                ReleaseIdentity.KeyFor("ABCDEF1234567890ABCDEF1234567890ABCDEF12", null)!;
+            return await _downloadRepository.AddAsync(download);
+        }
+
+        private async Task InvokeOnDownloadFailedAsync(Download download)
+        {
+            // The failure handling lives on the processor rather than on the hosted service, and
+            // the only public route to it is a whole poll cycle against a mock client that would
+            // have to be persuaded to report a failure. Reflection keeps the test about the one
+            // branch it is asking after, the way MonitorDownloadsAsync is reached above.
+            var processor = _provider.GetRequiredService<IDownloadMonitorProcessor>();
+            var method = processor.GetType().GetMethod(
+                "OnDownloadFailed",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.NotNull(method);
+            await (Task)method.Invoke(
+                processor,
+                [download, client, "simulated client failure", CancellationToken.None])!;
+        }
+
         private sealed class MutableTimeProvider(DateTimeOffset currentTime) : TimeProvider
         {
             public override DateTimeOffset GetUtcNow() => currentTime;
