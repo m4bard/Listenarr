@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 
@@ -12,6 +13,12 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission;
 public sealed class BlocklistSearchWiringTests : BaseTests
 {
     private const string InfoHash = "ABCDEF1234567890ABCDEF1234567890ABCDEF12";
+
+    private static readonly Regex GrabCall = new(
+        @"\.\s*StartDownloadAsync\s*\(", RegexOptions.CultureInvariant);
+
+    private static readonly Regex FilterCall = new(
+        @"BlockedReleaseFilter\s*\.\s*ExcludeAsync\s*\(", RegexOptions.CultureInvariant);
 
     [Fact]
     public async Task SearchAndDownloadAsync_WhenTheOnlyCandidateIsBlocked_ReportsNoAcceptableResults()
@@ -96,6 +103,14 @@ public sealed class BlocklistSearchWiringTests : BaseTests
         //
         // This asserts the invariant rather than one instance of it: a production file that starts a
         // download has to consult the blocklist somewhere in the same file.
+        //
+        // Both halves of that are matched on shape rather than on a spelling. Looking for
+        // "await downloadService.StartDownloadAsync(" and "await _downloadService." by name
+        // misses a third grab path the moment the variable is called something else, which is
+        // precisely the bug this test exists to have caught. And accepting a file because the
+        // text "IBlocklistService" appears in it anywhere passes for an unused using directive or
+        // an injected-but-never-called constructor parameter. So: any receiver, and the filter
+        // call itself.
         var root = TestUtils.FindRepositoryRoot();
         var projects = new[] { "listenarr.application", "listenarr.infrastructure", "listenarr.api" };
 
@@ -105,12 +120,10 @@ public sealed class BlocklistSearchWiringTests : BaseTests
             .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
                         && !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
             .Select(file => new { File = file, Text = File.ReadAllText(file) })
-            // The call, not the declaration: a file that only defines StartDownloadAsync is not a
-            // grab path.
-            .Where(entry => entry.Text.Contains("await downloadService.StartDownloadAsync(", StringComparison.Ordinal)
-                         || entry.Text.Contains("await _downloadService.StartDownloadAsync(", StringComparison.Ordinal))
-            .Where(entry => !entry.Text.Contains("BlockedReleaseFilter", StringComparison.Ordinal)
-                         && !entry.Text.Contains("IBlocklistService", StringComparison.Ordinal))
+            // A call on some receiver, not a declaration: a file that only defines or declares
+            // StartDownloadAsync is not a grab path.
+            .Where(entry => GrabCall.IsMatch(entry.Text))
+            .Where(entry => !FilterCall.IsMatch(entry.Text))
             .Select(entry => Path.GetRelativePath(root, entry.File))
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
