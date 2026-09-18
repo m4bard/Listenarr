@@ -33,9 +33,18 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         public required string DisplayName { get; init; }
 
         /// <summary>
-        /// The gap between cycles, in seconds.
+        /// The gap between cycles, as a whole number of seconds.
         /// </summary>
         /// <remarks>
+        /// Whole seconds rather than a floating point count, because a whole number is
+        /// the only shape in which an interval this surface cannot state is an event at
+        /// all: a double absorbs every value silently, including the ones a consumer
+        /// truncates to 0 on its own side. An interval that is not a whole, non-negative
+        /// number of seconds throws
+        /// <see cref="ScheduledTaskIntervalFormatException"/> here and the request is
+        /// refused, so nothing on this surface can report 0 unless the worker really
+        /// declared 0.
+        /// <para>
         /// The family sends this as <c>Interval</c>, an int in minutes
         /// (<c>Sonarr.Api.V3/System/Tasks/TaskResource.cs:10</c>, where 0 also carries a
         /// meaning: <c>NzbDrone.Core/Jobs/TaskManager.cs:49</c> treats a task with
@@ -55,10 +64,11 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         /// </list>
         /// Minutes-as-int would round all four to 0, which in the family's own reading
         /// means "never runs", and two of them unconditionally rather than only on default
-        /// configuration. The field is named for its unit so nothing reads it as minutes
-        /// by mistake.
+        /// configuration. Seconds holds all four exactly, so no rounding can lose one. The
+        /// field is named for its unit so nothing reads it as minutes by mistake.
+        /// </para>
         /// </remarks>
-        public required double IntervalSeconds { get; init; }
+        public required long IntervalSeconds { get; init; }
 
         public required DateTimeOffset RegisteredAt { get; init; }
 
@@ -95,7 +105,7 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         {
             Name = status.TaskName,
             DisplayName = SplitName(status.TaskName),
-            IntervalSeconds = status.Interval.TotalSeconds,
+            IntervalSeconds = ToWholeSeconds(status.TaskName, status.Interval),
             RegisteredAt = status.RegisteredAt,
             IsRegistered = status.IsRegistered,
             IsRunning = status.IsRunning,
@@ -107,6 +117,26 @@ namespace Listenarr.Api.Features.SystemDiagnostics
             LastTrigger = status.LastTrigger?.ToString(),
             NextExecution = status.NextExecution
         };
+
+        /// <summary>
+        /// The interval in the unit the surface publishes, or a refusal if it does not
+        /// fit that unit.
+        /// </summary>
+        /// <remarks>
+        /// Ticks rather than <c>TotalSeconds</c> so the test for exactness is exact:
+        /// asking whether a double is a whole number reintroduces the rounding the field
+        /// exists to avoid. A negative interval is refused for the same reason a
+        /// fractional one is, since truncating it also lands on 0.
+        /// </remarks>
+        internal static long ToWholeSeconds(string taskName, TimeSpan interval)
+        {
+            if (interval < TimeSpan.Zero || interval.Ticks % TimeSpan.TicksPerSecond != 0)
+            {
+                throw new ScheduledTaskIntervalFormatException(taskName, interval);
+            }
+
+            return interval.Ticks / TimeSpan.TicksPerSecond;
+        }
 
         /// <summary>
         /// Worker names arrive either as a type name or as a dotted identifier, so
