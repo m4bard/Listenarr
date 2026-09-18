@@ -120,6 +120,50 @@ public sealed class BlocklistServiceTests : BaseTests
     }
 
     [Fact]
+    public async Task AMalformedRowDoesNotBreakTheSearchPathForThatBook()
+    {
+        // The read side has to be lenient, and this is why. GetForAudiobookAsync is called on the
+        // search path, so anything it throws takes out searching for that book, not just the row.
+        // The column is only NOT NULL, which an empty string satisfies, so a hand-edited database
+        // or a restored backup can put one there. An earlier version of FromStorage threw
+        // ArgumentException on it and produced exactly that outcome.
+        await using var db = new ListenArrDbContext(_options);
+        var connection = db.Database.GetDbConnection();
+        await connection.OpenAsync();
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.CommandText =
+                "INSERT INTO BlockedReleases (AudiobookId, ReleaseIdentifier, Title, Size, "
+                + "BlockedAt, Reason) VALUES (7, '', 'Some Book', NULL, '2026-01-01', 'hand edited')";
+            await insert.ExecuteNonQueryAsync();
+        }
+
+        await using var context = new ListenArrDbContext(_options);
+        var service = new BlocklistService(context, NullLogger<BlocklistService>.Instance);
+
+        var rows = await service.GetForAudiobookAsync(7);
+        var row = Assert.Single(rows);
+        Assert.True(row.ReleaseIdentifier.IsEmpty);
+
+        // And the empty key contributes no match of its own. The row's Title column is still a
+        // live second key by design, so the candidate here is one that key cannot reach: a
+        // different title, which leaves the identifier as the only route to a match.
+        var differentRelease = new SearchResult { Title = "Quite Another Book", Size = 1 };
+        Assert.False(ReleaseIdentity.Matches(row, differentRelease));
+
+        // The control, so the assertion above is not passing because Matches has stopped working:
+        // the same candidate does match a row whose key carries that title.
+        Assert.True(ReleaseIdentity.Matches(
+            new BlockedRelease
+            {
+                ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "Quite Another Book")!.Value,
+                Title = string.Empty,
+                Size = null
+            },
+            differentRelease));
+    }
+
+    [Fact]
     public async Task BlockedRelease_IsMappedWithoutADbSetPropertyOnTheContext()
     {
         // The table is registered by BlockedReleaseConfiguration through

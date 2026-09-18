@@ -8,9 +8,15 @@
  * (at your option) any later version.
  */
 
+using System.Text.Json;
 using Listenarr.Tests.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
+using Swashbuckle.AspNetCore.Swagger;
+// Microsoft.OpenApi also declares a SearchResult, so the domain one is named explicitly here.
+using SearchResult = Listenarr.Domain.Search.SearchResult;
 
 namespace Listenarr.Tests.Features.Api.Features.Downloads;
 
@@ -126,26 +132,113 @@ public sealed class BlocklistControllerTests : BaseTests
         // type rather than a string is a wire question as well as a modelling one. Without the
         // converter on the type, every entry would answer with an empty object where callers
         // expect "btih:..." and no controller would have been touched to cause it.
+        //
+        // Serialised through the options the API actually configures, resolved from the host,
+        // rather than through JsonSerializer defaults. Defaults spell the property PascalCase and
+        // carry none of the converters the pipeline adds, so a test using them would keep passing
+        // if the pipeline's own JSON configuration changed under it.
         var blocklist = _provider.GetRequiredService<IBlocklistService>();
         await blocklist.BlockAsync(
             7, ReleaseIdentity.KeyFor(FirstHash, null)!.Value, "Mine", 1, "a");
 
+        using var factory = new Listenarr.Tests.Mocks.ListenarrWebApplicationFactory();
+        var apiJsonOptions = factory.Services
+            .GetRequiredService<IOptions<JsonOptions>>()
+            .Value
+            .JsonSerializerOptions;
+
         var response = Assert.IsType<OkObjectResult>((await NewController().GetForAudiobook(7)).Result);
-        var json = System.Text.Json.JsonSerializer.Serialize(response.Value);
+        var json = JsonSerializer.Serialize(response.Value, apiJsonOptions);
 
         Assert.Contains(
-            "\"ReleaseIdentifier\":\"btih:abcdef1234567890abcdef1234567890abcdef12\"",
+            "\"releaseIdentifier\":\"btih:abcdef1234567890abcdef1234567890abcdef12\"",
             json,
             StringComparison.Ordinal);
 
         // The control. A field serialised as an object still contains the property name, so the
         // assertion above has to be paired with one that fails in exactly that case, and with a
         // read back proving the string is the key rather than a constant.
-        Assert.DoesNotContain("\"ReleaseIdentifier\":{", json, StringComparison.Ordinal);
-        var readBack = System.Text.Json.JsonSerializer.Deserialize<List<BlockedRelease>>(json);
+        Assert.DoesNotContain("\"releaseIdentifier\":{", json, StringComparison.Ordinal);
+        var readBack = JsonSerializer.Deserialize<List<BlockedRelease>>(json, apiJsonOptions);
         Assert.Equal(
             ReleaseIdentity.KeyFor(FirstHash, null)!.Value,
             Assert.Single(readBack!).ReleaseIdentifier);
+    }
+
+    [Fact]
+    public void OpenApi_DocumentsTheIdentifierAsAStringRatherThanAnObject()
+    {
+        // The fourth representation, and the one a wire test cannot see. Swashbuckle builds a
+        // schema from the CLR shape and does not read [JsonConverter], so ReleaseIdentifier is
+        // documented as an object with four read-only accessors unless ListenarrSwaggerRegistration
+        // maps it. A spec that contradicts the wire is worse than either a clean break or no
+        // change: a generated client models an object and receives a string.
+        using var factory = new Listenarr.Tests.Mocks.ListenarrWebApplicationFactory();
+        var swaggerDocument = factory.Services
+            .GetRequiredService<ISwaggerProvider>()
+            .GetSwagger("v1");
+
+        using var textWriter = new StringWriter();
+        var writer = new OpenApiJsonWriter(textWriter);
+        swaggerDocument.SerializeAs(OpenApiSpecVersion.OpenApi3_0, writer);
+        using var document = JsonDocument.Parse(textWriter.ToString());
+
+        var schemaName = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .EnumerateObject()
+            .Select(schema => schema.Name)
+            .Single(name => name.EndsWith($".{nameof(BlockedRelease)}", StringComparison.Ordinal));
+
+        var identifier = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty(schemaName)
+            .GetProperty("properties")
+            .GetProperty("releaseIdentifier");
+
+        Assert.Equal("string", identifier.GetProperty("type").GetString());
+
+        // The control. An unmapped value type appears as a $ref to a schema of its own, so the
+        // shape this must not become is named rather than left implied.
+        Assert.False(identifier.TryGetProperty("$ref", out _));
+        Assert.DoesNotContain(
+            nameof(ReleaseIdentifier),
+            document.RootElement.GetProperty("components").GetProperty("schemas")
+                .EnumerateObject().Select(schema => schema.Name),
+            StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void TheJsonConverter_RoundTripsWhatItWrites()
+    {
+        // The two halves of a converter have to agree. Write goes through ToString, so an
+        // unassigned identifier serialises as "" rather than throwing; Read therefore has to
+        // accept "" back. A converter that emits a value it cannot parse is a landmine for the
+        // first caller that round-trips one, and there is no such caller today, which is exactly
+        // why it would be found late.
+        var written = System.Text.Json.JsonSerializer.Serialize(new BlockedRelease
+        {
+            AudiobookId = 7,
+            Title = "Never assigned an identifier"
+        });
+
+        Assert.Contains("\"ReleaseIdentifier\":\"\"", written, StringComparison.Ordinal);
+
+        var readBack = System.Text.Json.JsonSerializer.Deserialize<BlockedRelease>(written);
+        Assert.NotNull(readBack);
+        Assert.True(readBack.ReleaseIdentifier.IsEmpty);
+
+        // The control: a real key survives the same round trip unchanged, so this is about the
+        // empty case and not about the converter having been loosened into doing nothing.
+        var real = System.Text.Json.JsonSerializer.Deserialize<BlockedRelease>(
+            System.Text.Json.JsonSerializer.Serialize(new BlockedRelease
+            {
+                ReleaseIdentifier = ReleaseIdentity.KeyFor(FirstHash, null)!.Value
+            }));
+        Assert.Equal(
+            ReleaseIdentity.KeyFor(FirstHash, null)!.Value,
+            real!.ReleaseIdentifier);
     }
 
     [Fact]

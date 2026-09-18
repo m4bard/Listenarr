@@ -50,6 +50,14 @@ public static class ListenarrSwaggerRegistration
                 "   - Use `ApiKeyHeader` (`<apiKey>`) or `ApiKeyAuthorization` (`ApiKey <apiKey>`)."
             });
 
+            // Swashbuckle builds a schema from the CLR shape and does not read [JsonConverter],
+            // so a value type that serialises as a string is documented as an object unless it is
+            // mapped here. Left alone, the published spec contradicts the wire format, which is
+            // worse than either a clean break or no change: a generated client models an object
+            // and receives a string. It would also promote four internal accessors on
+            // ReleaseIdentifier into the public API contract.
+            options.MapType<ReleaseIdentifier>(() => new OpenApiSchema { Type = JsonSchemaType.String });
+
             options.SwaggerDoc("v1", new OpenApiInfo
             {
                 Title = "Listenarr API",

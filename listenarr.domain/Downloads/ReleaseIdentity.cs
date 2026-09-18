@@ -266,9 +266,9 @@ namespace Listenarr.Domain.Downloads
         /// and again in
         /// src/NzbDrone.Core.Test/Download/DownloadClientTests/TransmissionTests/TransmissionFixture.cs:146.
         /// Sonarr itself never decodes base32 in its own code; it hands the whole magnet to
-        /// MonoTorrent (MagnetLink.Parse(magnetUrl).InfoHashes.V1OrV2.ToHex(), at
+        /// MonoTorrent (MagnetLink.Parse(magnetUrl).InfoHash.ToHex(), at
         /// src/NzbDrone.Core/Indexers/TorrentRssParser.cs:85 and
-        /// src/NzbDrone.Core/Download/TorrentClientBase.cs:233), which handles both encodings.
+        /// src/NzbDrone.Core/Download/TorrentClientBase.cs:224), which handles both encodings.
         /// Listenarr has no torrent library, so the encoding is decoded here instead; taking a
         /// dependency on one for a forty-character string would be the larger change.
         ///

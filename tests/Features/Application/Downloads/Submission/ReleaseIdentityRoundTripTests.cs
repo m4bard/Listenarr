@@ -66,6 +66,9 @@ public sealed class ReleaseIdentityRoundTripTests : BaseTests
         var download = GrabbedDownloadFor(grabbed);
         download.TotalSize = SizeTheClientReportsLater;
 
+        // Both sides asserted non-null first. Comparing two nullables says nothing if both
+        // regressed to null, and this test exists to catch exactly a regression in one of them.
+        Assert.NotNull(ReleaseIdentity.For(grabbed));
         Assert.Equal(ReleaseIdentity.For(grabbed), ReleaseIdentity.ForGrabbed(download));
     }
 

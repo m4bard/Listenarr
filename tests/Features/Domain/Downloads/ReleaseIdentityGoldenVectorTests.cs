@@ -127,17 +127,13 @@ public sealed class ReleaseIdentityGoldenVectorTests : BaseTests
         Assert.Equal(ReleaseIdentity.KeyPrefixes.OrderBy(p => p, StringComparer.Ordinal), covered.OrderBy(p => p, StringComparer.Ordinal));
     }
 
-    // The shape the two tests above cannot see: a branch that returns a prefix as a bare inline
-    // literal, with no named constant to reflect over. Measured, not assumed: adding
-    // `return "nzbid:" + normalizedTitle;` to KeyFor ships green across all 3,326 tests with only
+    // The shape the two tests above cannot see: a prefix written as a bare inline literal, with no
+    // named constant to reflect over. Measured, not assumed: adding
+    // `return "nzbid:" + normalizedTitle;` to KeyFor ships green across the whole suite with only
     // the reflection test in place.
     //
-    // So this is a belt beside them rather than a replacement for either. It is the old
-    // source-regex guard with its two known holes closed: `[a-z0-9]+` instead of `[a-z]+`, because
-    // btih2 for BitTorrent v2 hashes is a realistic addition that digits excluded, and an optional
-    // `$` with no closing quote required, so an interpolated key is caught too. What it still
-    // cannot see is an extracted helper or a composed return, which is exactly what the reflection
-    // test covers, and that division is the reason both are here.
+    // So this is a belt beside them rather than a replacement for either. See LiteralPrefixesIn
+    // for what the pattern matches and for the hole an earlier version of it had.
     //
     // Zero findings is the correct state today, because every branch returns one of the declared
     // constants. A test whose pass state is "found nothing" has to prove its apparatus works, or a
@@ -146,21 +142,50 @@ public sealed class ReleaseIdentityGoldenVectorTests : BaseTests
     [Fact]
     public void NoBranch_ReturnsAKeyPrefixAsAnUndeclaredInlineLiteral()
     {
+        // The sample carries every shape the two files actually use, and it is what proves the
+        // pattern still matches anything at all. The last three are the ones an earlier version
+        // missed: it anchored on `return`, and ReleaseIdentifier.cs contains no return statement
+        // anywhere, because every member of it is expression-bodied. Measured at the time:
+        // adding `ForNzbId(string id) => new("nzbid:" + id)` to that file left all 25 tests in
+        // here green.
+        // The sample carries every shape the two files actually use, and it is what proves the
+        // pattern still matches anything at all. The first two were all an earlier version
+        // covered; the next three are the ones it missed, because it anchored on `return` and
+        // ReleaseIdentifier.cs contains no return statement anywhere, every member of it being
+        // expression-bodied. Measured at the time: adding
+        // `ForNzbId(string id) => new("nzbid:" + id)` to that file left all 25 tests in here green.
+        //
+        // The last line is the other half of the control. A prefix is a literal that ENDS at the
+        // colon, and "urn:btih:" is a magnet marker being parsed rather than a key being minted,
+        // so it must not be reported. Without that distinction the scan reports the marker
+        // constant in ReleaseIdentity and the test never passes on a clean tree, which is the same
+        // failure as never failing.
         const string sample = """
             if (x) { return "nzbid:" + y; }
             if (z) { return $"btih2:{w}"; }
+            static A ForMagnet(string h) => new("btih3:" + h);
+            const string SomethingPrefix = "nzbid2:";
+            var composed = $"btih4:{h}";
+            const string MagnetInfoHashMarker = "urn:btih:";
             """;
 
         Assert.Equal(
-            ["btih2:", "nzbid:"],
+            ["btih2:", "btih3:", "btih4:", "nzbid2:", "nzbid:"],
             LiteralPrefixesIn(sample).Order(StringComparer.Ordinal).ToArray());
 
         // Both files, because the minting moved. ReleaseIdentity decides which branch a release
         // takes and ReleaseIdentifier puts the prefix on the front, so a prefix introduced as a
-        // bare literal would now appear in the second one.
-        var source = string.Concat(
-            new[] { "ReleaseIdentity.cs", "ReleaseIdentifier.cs" }.Select(file => File.ReadAllText(
-                Path.Join(TestUtils.FindRepositoryRoot(), "listenarr.domain", "Downloads", file))));
+        // bare literal now appears in the second one.
+        //
+        // Comment lines are dropped first. These files argue about prefixes in prose and quote
+        // them, and a doc comment is not a branch. Without this the scan reports its own
+        // documentation.
+        var source = string.Join(
+            Environment.NewLine,
+            new[] { "ReleaseIdentity.cs", "ReleaseIdentifier.cs" }
+                .SelectMany(file => File.ReadAllLines(
+                    Path.Join(TestUtils.FindRepositoryRoot(), "listenarr.domain", "Downloads", file)))
+                .Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)));
 
         var undeclared = LiteralPrefixesIn(source)
             .Where(prefix => !ReleaseIdentity.KeyPrefixes.Contains(prefix))
@@ -174,8 +199,25 @@ public sealed class ReleaseIdentityGoldenVectorTests : BaseTests
             + string.Join(", ", undeclared));
     }
 
+    /// <summary>
+    /// Every string literal in the source that looks like a key prefix, wherever it appears.
+    ///
+    /// Not anchored on a statement. The previous version required `return` in front of the
+    /// literal, which made it blind to an expression-bodied member, a `new(...)` argument and a
+    /// constant declaration, and those are what the code is actually made of.
+    ///
+    /// What defines a prefix instead is its shape: a run of lower-case letters and digits, then a
+    /// colon, then the end of the literal, which is either the closing quote or the start of an
+    /// interpolation hole. Requiring the literal to end there is what separates a key prefix from
+    /// a longer literal that merely contains a colon, "urn:btih:" being the one in this very file.
+    /// `[a-z0-9]+` rather than `[a-z]+` because btih2 for BitTorrent v2 hashes is a realistic
+    /// addition, and the optional `$` so an interpolated key is caught too.
+    ///
+    /// It still cannot see a prefix assembled out of pieces, which is what the reflection test
+    /// next door covers, and that division is the reason both are here.
+    /// </summary>
     private static IEnumerable<string> LiteralPrefixesIn(string source) =>
-        Regex.Matches(source, @"return\s+\$?""(?<prefix>[a-z0-9]+):")
+        Regex.Matches(source, @"\$?""(?<prefix>[a-z0-9]+):(?=[""{])")
             .Select(match => match.Groups["prefix"].Value + ":")
             .Distinct(StringComparer.Ordinal);
 
@@ -187,8 +229,13 @@ public sealed class ReleaseIdentityGoldenVectorTests : BaseTests
         // two that exist, writing a branch that returns it, and not touching the set or this file.
         // A source scan for string literals also has to guess at interpolation, extracted helpers
         // and prefixes containing a digit, and guesses wrong quietly; this does not.
-        var declared = typeof(ReleaseIdentity)
-            .GetFields(BindingFlags.Public | BindingFlags.Static)
+        //
+        // Both types, and non-public fields as well as public. Prefix application moved onto
+        // ReleaseIdentifier, so a const declared there would otherwise be invisible to this and to
+        // the source scan alike, and `private const` is the more likely way it would be written.
+        var declared = new[] { typeof(ReleaseIdentity), typeof(ReleaseIdentifier) }
+            .SelectMany(type => type.GetFields(
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
             .Where(field => field.IsLiteral
                          && field.FieldType == typeof(string)
                          && field.Name.EndsWith("Prefix", StringComparison.Ordinal))

@@ -26,9 +26,12 @@ namespace Listenarr.Domain.Downloads
     /// one of those hops used to be a bare string among other bare strings: a title, a reason, a
     /// source name, a client id. Two of the three defects this feature has had were a key being
     /// derived in the wrong place, and neither was a case the type system was asked about. It is
-    /// now: a string will not pass where an identifier is expected, and the only ways to make one
-    /// are <see cref="ReleaseIdentity.For(Listenarr.Domain.Search.SearchResult)"/>,
-    /// <see cref="ReleaseIdentity.ForGrabbed"/> and reading a row back.
+    /// now: a string will not pass where an identifier is expected. The ways to derive one from
+    /// release fields are <see cref="ReleaseIdentity.For(Listenarr.Domain.Search.SearchResult)"/>
+    /// and <see cref="ReleaseIdentity.ForGrabbed"/>, and those are the only two, which is the part
+    /// that was going wrong. <see cref="FromStorage"/> is separate and public, because the EF
+    /// converter lives in another assembly and has to reach it; it rebuilds a key that already
+    /// exists rather than composing one out of fields.
     ///
     /// The parsing lives here too, because the format is this type's business. Asking a key
     /// whether it carries an info-hash was two private helpers on ReleaseIdentity that each
@@ -53,26 +56,32 @@ namespace Listenarr.Domain.Downloads
             ?? throw new InvalidOperationException(
                 "A default ReleaseIdentifier carries no key. Derive one through ReleaseIdentity.");
 
-        /// <summary>Whether this is the default, keyless value rather than a real identity.</summary>
-        public bool IsEmpty => _key is null;
+        /// <summary>
+        /// Whether this carries no usable key: the default value, or a row whose column is empty.
+        /// Both are checked, because BlockAsync guards the write with this and the column is only
+        /// NOT NULL, which an empty string satisfies.
+        /// </summary>
+        public bool IsEmpty => string.IsNullOrEmpty(_key);
 
         /// <summary>
         /// Rebuild an identifier from its stored form, for the EF value converter and for a test
         /// naming a key literally.
         ///
-        /// Deliberately not validated against the pinned prefixes. An unrecognised prefix is not a
-        /// reason to throw on the read path: the blocklist read sits on the search path, so a
-        /// single malformed row would take out searching for that book entirely. A key that
-        /// matches no prefix already fails to match anything, because both accessors below return
-        /// nothing for it and the comparison falls back to the row's own title and size columns.
-        /// Refusing loudly here would trade a row that does nothing for a book that cannot be
-        /// searched.
+        /// Nothing is refused here, including an empty string and an unrecognised prefix. This is
+        /// the read path, and the read sits on the search path: one malformed row that threw would
+        /// take out searching for that book entirely, which is a far worse outcome than the row
+        /// itself. A key that matches no prefix already matches nothing, because both accessors
+        /// below return nothing for it and the comparison falls back to the row's own title and
+        /// size columns.
+        ///
+        /// An earlier version of this threw on an empty string, which produced exactly the failure
+        /// this paragraph argues against: a single row with an empty column, reachable by a
+        /// hand-edited database or a restored backup, and GetForAudiobookAsync throwing on every
+        /// call for that book. Measured before it was removed. The guard that matters is on the
+        /// write, where <see cref="Key"/> throws rather than storing a default, and where
+        /// BlockAsync refuses an <see cref="IsEmpty"/> identifier.
         /// </summary>
-        public static ReleaseIdentifier FromStorage(string stored) =>
-            string.IsNullOrWhiteSpace(stored)
-                ? throw new ArgumentException(
-                    "A blocklist row cannot carry an empty release identifier.", nameof(stored))
-                : new ReleaseIdentifier(stored);
+        public static ReleaseIdentifier FromStorage(string stored) => new(stored);
 
         /// <summary>The normalised info-hash this key names, or null when it is not a hash key.</summary>
         public string? InfoHash => _key is not null
@@ -113,6 +122,9 @@ namespace Listenarr.Domain.Downloads
             ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
             ReleaseIdentifier.FromStorage(reader.GetString() ?? string.Empty);
 
+        // ToString rather than Key, so a default value serialises as "" instead of throwing, and
+        // Read accepts "" back. The two halves have to agree: a converter that emits a value it
+        // cannot parse is a landmine for the first caller that round-trips one.
         public override void Write(
             Utf8JsonWriter writer, ReleaseIdentifier value, JsonSerializerOptions options) =>
             writer.WriteStringValue(value.ToString());
