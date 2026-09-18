@@ -46,6 +46,47 @@ public sealed class CalendarDocumentWriterTests : BaseTests
         // actually read. The *arr feeds set both and so must this one.
         Assert.Contains("NAME:Listenarr Audiobook Schedule", lines);
         Assert.Contains("X-WR-CALNAME:Listenarr Audiobook Schedule", lines);
+
+        // The three the envelope emits that nothing asserted. DTSTAMP is mandatory on a VEVENT
+        // (RFC 5545 section 3.6.1) and clients compare it to decide whether an event changed, so
+        // a missing or misformatted one is a silent refresh failure rather than a parse error.
+        Assert.Contains("METHOD:PUBLISH", lines);
+        Assert.Contains("TRANSP:TRANSPARENT", lines);
+        Assert.Contains("DTSTAMP:20260916T101500Z", lines);
+    }
+
+    [Fact]
+    public void Write_StampsEveryEventWithOneTimestampTakenFromTheInjectedClock()
+    {
+        var document = NewWriter().Write(
+            new[] { SampleEvent(), SampleEvent(audiobookId: 42) },
+            "Listenarr");
+        var stamps = Unfold(document)
+            .Where(line => line.StartsWith("DTSTAMP:", StringComparison.Ordinal))
+            .ToList();
+
+        // One document, one instant. Reading the clock per event would make two events written in
+        // the same pass disagree, and DTSTAMP is what a client compares to detect a change.
+        Assert.Equal(2, stamps.Count);
+        Assert.Single(stamps.Distinct(StringComparer.Ordinal));
+        Assert.Equal("DTSTAMP:20260916T101500Z", stamps[0]);
+    }
+
+    [Fact]
+    public void Write_GivesTwoDifferentEventsDifferentUids()
+    {
+        // The stability test writes the same event twice. Two different events had never appeared
+        // in one document, so nothing said their UIDs must differ, and a client keys events by
+        // UID: a collision merges two books into one calendar entry.
+        var document = NewWriter().Write(
+            new[] { SampleEvent(audiobookId: 41), SampleEvent(audiobookId: 42) },
+            "Listenarr");
+        var uids = Unfold(document)
+            .Where(line => line.StartsWith("UID:", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.Equal(2, uids.Count);
+        Assert.Equal(2, uids.Distinct(StringComparer.Ordinal).Count());
     }
 
     [Fact]
@@ -198,10 +239,11 @@ public sealed class CalendarDocumentWriterTests : BaseTests
         bool hasFile = false,
         string? description = "An inventor travels forward.",
         string[]? genres = null,
-        string status = CalendarEventStatus.Missing) =>
+        string status = CalendarEventStatus.Missing,
+        int audiobookId = 41) =>
         new()
         {
-            AudiobookId = 41,
+            AudiobookId = audiobookId,
             Title = title,
             Authors = new[] { "H. G. Wells" },
             Genres = genres,
