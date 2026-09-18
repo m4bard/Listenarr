@@ -1,4 +1,5 @@
 using Listenarr.Domain.Common;
+using Listenarr.Infrastructure.Persistence.Converters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -30,6 +31,14 @@ public sealed class AudiobookFileConfiguration : IEntityTypeConfiguration<Audiob
         builder.Property(file => file.PathIdentityVersion).HasDefaultValue(1);
         builder.Property(file => file.PhysicalObjectIdentity).HasMaxLength(512);
         builder.Property(file => file.PhysicalIdentityVersion).HasDefaultValue(1);
+
+        // AudiobookFile.ApplyPhysicalObjectIdentity refuses a Kind that is not Utc, and
+        // both the clone in AudiobookFileService and the copy in EfAudiobookFileRepository
+        // hand this column's loaded value straight back to that guard. SQLite stores the
+        // timestamp as text with no zone marker, so without this the value returns as
+        // Kind=Unspecified and the guard rejects a timestamp the application itself wrote.
+        builder.Property(file => file.PhysicalIdentityObservedAtUtc)
+            .HasConversion(new UtcDateTimeConverter());
 
         builder.HasIndex(file => file.PathIdentityLookupKey);
         builder.HasIndex(file => file.PathOwnershipKey)
