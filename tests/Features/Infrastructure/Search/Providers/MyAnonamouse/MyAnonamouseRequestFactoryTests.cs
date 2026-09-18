@@ -76,6 +76,18 @@ public sealed class MyAnonamouseRequestFactoryTests : BaseTests
         Assert.Contains(Uri.EscapeDataString("tor[srchIn][author]") + "=true", uri.Query, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BuildSearchUri_SendsPerPageAsAPlainParameter()
+    {
+        // MyAnonamouse reads the page size as a top-level "perpage", not inside the tor[] array.
+        // Prowlarr sends it that way (src/NzbDrone.Core/Indexers/Definitions/MyAnonamouse.cs), and
+        // so does this codebase's own debug search (IndexerDebugSearchWorkflow.BuildMamSearchRequest).
+        var uri = MyAnonamouseRequestFactory.BuildSearchUri(CreateIndexer(), "Ready Player Two", perPage: 37);
+
+        Assert.Equal("37", SingleValueOf(uri, "perpage"));
+        Assert.DoesNotContain(Uri.EscapeDataString("tor[perpage]"), uri.Query, StringComparison.Ordinal);
+    }
+
     private static Indexer CreateIndexer() => new()
     {
         Id = 7,
