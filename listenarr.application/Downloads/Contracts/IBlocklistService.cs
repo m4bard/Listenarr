@@ -14,7 +14,7 @@ namespace Listenarr.Application.Downloads.Contracts
     public interface IBlocklistService
     {
         /// <summary>Record that a release failed for a book and should not be grabbed for it again.</summary>
-        Task BlockAsync(int audiobookId, string releaseIdentifier, string title, long? size, string reason);
+        Task BlockAsync(int audiobookId, ReleaseIdentifier releaseIdentifier, string title, long? size, string reason);
 
         /// <summary>
         /// Every entry blocked for one book. The whole row rather than a key, because a match is

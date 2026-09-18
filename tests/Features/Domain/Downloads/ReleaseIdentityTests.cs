@@ -16,7 +16,7 @@ public sealed class ReleaseIdentityTests : BaseTests
         var fromAnother = ReleaseIdentity.KeyFor(HexHash.ToLowerInvariant(), "A Different Listing Title");
 
         Assert.Equal(fromOneIndexer, fromAnother);
-        Assert.StartsWith(ReleaseIdentity.InfoHashPrefix, fromOneIndexer);
+        Assert.StartsWith(ReleaseIdentity.InfoHashPrefix, fromOneIndexer?.Key);
     }
 
     [Fact]
@@ -26,7 +26,7 @@ public sealed class ReleaseIdentityTests : BaseTests
         var two = ReleaseIdentity.KeyFor(null, "  some book unabridged  ");
 
         Assert.Equal(one, two);
-        Assert.StartsWith(ReleaseIdentity.TitlePrefix, one);
+        Assert.StartsWith(ReleaseIdentity.TitlePrefix, one?.Key);
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public sealed class ReleaseIdentityTests : BaseTests
         var key = ReleaseIdentity.KeyFor("ABCDEF", "Some Book Unabridged");
 
         Assert.Equal(ReleaseIdentity.KeyFor(null, "Some Book Unabridged"), key);
-        Assert.StartsWith(ReleaseIdentity.TitlePrefix, key);
+        Assert.StartsWith(ReleaseIdentity.TitlePrefix, key?.Key);
     }
 
     [Theory]
@@ -120,7 +120,7 @@ public sealed class ReleaseIdentityTests : BaseTests
         // title and size on the row are what carry the match.
         var entry = new BlockedRelease
         {
-            ReleaseIdentifier = ReleaseIdentity.KeyFor(HexHash, "Some Book Unabridged M4B")!,
+            ReleaseIdentifier = ReleaseIdentity.KeyFor(HexHash, "Some Book Unabridged M4B")!.Value,
             Title = "Some Book Unabridged M4B",
             Size = 734_003_200
         };
@@ -135,9 +135,9 @@ public sealed class ReleaseIdentityTests : BaseTests
         // Both halves of the precondition, so the assertion below cannot pass because the two
         // sides happened to agree on a key after all: the row is keyed on the hash, and the later
         // listing can produce no hash at all.
-        Assert.StartsWith(ReleaseIdentity.InfoHashPrefix, entry.ReleaseIdentifier);
-        Assert.StartsWith(ReleaseIdentity.TitlePrefix, ReleaseIdentity.For(laterSearch));
-        Assert.NotEqual(entry.ReleaseIdentifier, ReleaseIdentity.For(laterSearch));
+        Assert.StartsWith(ReleaseIdentity.InfoHashPrefix, entry.ReleaseIdentifier.Key);
+        Assert.StartsWith(ReleaseIdentity.TitlePrefix, ReleaseIdentity.For(laterSearch)?.Key);
+        Assert.NotEqual<ReleaseIdentifier?>(entry.ReleaseIdentifier, ReleaseIdentity.For(laterSearch));
 
         Assert.True(ReleaseIdentity.Matches(entry, laterSearch));
     }
@@ -149,7 +149,7 @@ public sealed class ReleaseIdentityTests : BaseTests
         // release carrying a hash is only ever looked up by hash there.
         var entry = new BlockedRelease
         {
-            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "Some Book Unabridged M4B")!,
+            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "Some Book Unabridged M4B")!.Value,
             Title = "Some Book Unabridged M4B",
             Size = 734_003_200
         };
@@ -161,9 +161,9 @@ public sealed class ReleaseIdentityTests : BaseTests
             Size = 734_003_200
         };
 
-        Assert.StartsWith(ReleaseIdentity.TitlePrefix, entry.ReleaseIdentifier);
-        Assert.StartsWith(ReleaseIdentity.InfoHashPrefix, ReleaseIdentity.For(laterSearch));
-        Assert.NotEqual(entry.ReleaseIdentifier, ReleaseIdentity.For(laterSearch));
+        Assert.StartsWith(ReleaseIdentity.TitlePrefix, entry.ReleaseIdentifier.Key);
+        Assert.StartsWith(ReleaseIdentity.InfoHashPrefix, ReleaseIdentity.For(laterSearch)?.Key);
+        Assert.NotEqual<ReleaseIdentifier?>(entry.ReleaseIdentifier, ReleaseIdentity.For(laterSearch));
 
         Assert.True(ReleaseIdentity.Matches(entry, laterSearch));
     }
@@ -175,7 +175,7 @@ public sealed class ReleaseIdentityTests : BaseTests
         // falling through to a title comparison that would over-block.
         var entry = new BlockedRelease
         {
-            ReleaseIdentifier = ReleaseIdentity.KeyFor(HexHash, "Some Book Unabridged M4B")!,
+            ReleaseIdentifier = ReleaseIdentity.KeyFor(HexHash, "Some Book Unabridged M4B")!.Value,
             Title = "Some Book Unabridged M4B",
             Size = 734_003_200
         };
@@ -199,7 +199,7 @@ public sealed class ReleaseIdentityTests : BaseTests
         // side of the boundary, so a tolerance that is absent, wrong or one-sided fails here.
         var entry = new BlockedRelease
         {
-            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "Some Book Unabridged")!,
+            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "Some Book Unabridged")!.Value,
             Title = "Some Book Unabridged",
             Size = 734_003_200
         };
@@ -227,7 +227,7 @@ public sealed class ReleaseIdentityTests : BaseTests
         // (BlocklistService.cs:157-161).
         var entry = new BlockedRelease
         {
-            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "Some Book Unabridged")!,
+            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "Some Book Unabridged")!.Value,
             Title = "Some Book Unabridged",
             Size = null
         };
@@ -253,7 +253,7 @@ public sealed class ReleaseIdentityTests : BaseTests
         // broken.
         var entry = new BlockedRelease
         {
-            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "Some Book Unabridged")!,
+            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "Some Book Unabridged")!.Value,
             Title = "Some Book Unabridged",
             Size = 734_003_200
         };
@@ -277,14 +277,14 @@ public sealed class ReleaseIdentityTests : BaseTests
         // The two cannot disagree today, so this pins the rule rather than reporting a live bug.
         var columnIsWrong = new BlockedRelease
         {
-            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "The Real Advertised Title")!,
+            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "The Real Advertised Title")!.Value,
             Title = "Unknown",
             Size = null
         };
 
         var keyIsUnhelpful = new BlockedRelease
         {
-            ReleaseIdentifier = ReleaseIdentity.KeyFor(HexHash, "The Real Advertised Title")!,
+            ReleaseIdentifier = ReleaseIdentity.KeyFor(HexHash, "The Real Advertised Title")!.Value,
             Title = "The Real Advertised Title",
             Size = null
         };
@@ -295,7 +295,7 @@ public sealed class ReleaseIdentityTests : BaseTests
         // column is empty and only the key carries one.
         var columnIsEmpty = new BlockedRelease
         {
-            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "The Real Advertised Title")!,
+            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "The Real Advertised Title")!.Value,
             Title = string.Empty,
             Size = null
         };
@@ -308,7 +308,7 @@ public sealed class ReleaseIdentityTests : BaseTests
         // rather than removing the title check.
         var neitherAgrees = new BlockedRelease
         {
-            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "Quite Another Book")!,
+            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "Quite Another Book")!.Value,
             Title = "Unknown",
             Size = null
         };
@@ -320,7 +320,7 @@ public sealed class ReleaseIdentityTests : BaseTests
     {
         var entry = new BlockedRelease
         {
-            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "Some Book Unabridged")!,
+            ReleaseIdentifier = ReleaseIdentity.KeyFor(null, "Some Book Unabridged")!.Value,
             Title = "Some Book Unabridged",
             Size = 734_003_200
         };

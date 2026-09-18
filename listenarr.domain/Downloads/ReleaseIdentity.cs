@@ -88,7 +88,7 @@ namespace Listenarr.Domain.Downloads
         /// which fields of a search result make up the key, so the grab side and the search-filter
         /// side cannot pick different ones.
         /// </summary>
-        public static string? For(SearchResult result)
+        public static ReleaseIdentifier? For(SearchResult result)
         {
             if (result is null)
             {
@@ -103,7 +103,7 @@ namespace Listenarr.Domain.Downloads
         /// download when it was created, because every field this could otherwise be recomputed
         /// from is mutable after the grab.
         /// </summary>
-        public static string? ForGrabbed(Download download)
+        public static ReleaseIdentifier? ForGrabbed(Download download)
         {
             if (download is null)
             {
@@ -113,7 +113,7 @@ namespace Listenarr.Domain.Downloads
             var stamped = download.GetMetadataString(MetadataKey);
             if (!string.IsNullOrWhiteSpace(stamped))
             {
-                return stamped;
+                return ReleaseIdentifier.FromStorage(stamped);
             }
 
             // A download created before the stamp existed. Recomputing is all that is left for it.
@@ -178,7 +178,7 @@ namespace Listenarr.Domain.Downloads
                 return false;
             }
 
-            var storedHash = InfoHashFromKey(entry.ReleaseIdentifier);
+            var storedHash = entry.ReleaseIdentifier.InfoHash;
             var candidateHash = NormalizeInfoHash(infoHash);
 
             if (storedHash is not null && candidateHash is not null)
@@ -195,13 +195,13 @@ namespace Listenarr.Domain.Downloads
         /// <see cref="For(SearchResult)"/> or <see cref="ForGrabbed"/> instead. That is this
         /// class owning the format made into a compile error rather than a convention to remember.
         /// </summary>
-        internal static string? KeyFor(string? torrentInfoHash, string? title)
+        internal static ReleaseIdentifier? KeyFor(string? torrentInfoHash, string? title)
         {
             // A torrent info-hash is the release, across indexers and across submissions.
             var hash = NormalizeInfoHash(torrentInfoHash);
             if (hash is not null)
             {
-                return InfoHashPrefix + hash;
+                return ReleaseIdentifier.ForInfoHash(hash);
             }
 
             // The normalised title next. Stored as text rather than digested, so a row stays
@@ -214,7 +214,9 @@ namespace Listenarr.Domain.Downloads
             // for that reason, and Readarr has none either: its only two keys are the info-hash
             // and the title (src/NzbDrone.Core/Blocklisting/BlocklistService.cs:38-62).
             var normalizedTitle = NormalizeTitle(title);
-            return normalizedTitle.Length == 0 ? null : TitlePrefix + normalizedTitle;
+            return normalizedTitle.Length == 0
+                ? null
+                : ReleaseIdentifier.ForTitle(normalizedTitle);
         }
 
         /// <summary>
@@ -331,16 +333,6 @@ namespace Listenarr.Domain.Downloads
             return collapsed.ToLowerInvariant();
         }
 
-        private static string? InfoHashFromKey(string? key)
-        {
-            if (string.IsNullOrWhiteSpace(key) || !key.StartsWith(InfoHashPrefix, StringComparison.Ordinal))
-            {
-                return null;
-            }
-
-            return NormalizeInfoHash(key[InfoHashPrefix.Length..]);
-        }
-
         private static bool HasSameTitle(BlockedRelease entry, string? title)
         {
             var candidate = NormalizeTitle(title);
@@ -361,20 +353,10 @@ namespace Listenarr.Domain.Downloads
             // comparison and removes the case where a future writer sets Title to something
             // friendlier and silently strands the key's own title.
             var storedColumn = NormalizeTitle(entry.Title);
-            var storedKey = TitleFromKey(entry.ReleaseIdentifier);
+            var storedKey = entry.ReleaseIdentifier.TitleKey;
 
             return (storedColumn.Length > 0 && string.Equals(storedColumn, candidate, StringComparison.Ordinal))
                 || (storedKey.Length > 0 && string.Equals(storedKey, candidate, StringComparison.Ordinal));
-        }
-
-        private static string TitleFromKey(string? key)
-        {
-            if (string.IsNullOrWhiteSpace(key) || !key.StartsWith(TitlePrefix, StringComparison.Ordinal))
-            {
-                return string.Empty;
-            }
-
-            return key[TitlePrefix.Length..];
         }
 
         /// <summary>

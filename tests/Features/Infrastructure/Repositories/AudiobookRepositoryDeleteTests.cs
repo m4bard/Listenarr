@@ -72,21 +72,21 @@ public sealed class AudiobookRepositoryDeleteTests : BaseTests
             new BlockedRelease
             {
                 AudiobookId = deleted.Id,
-                ReleaseIdentifier = "btih:abcdef1234567890abcdef1234567890abcdef12",
+                ReleaseIdentifier = ReleaseIdentifier.FromStorage("btih:abcdef1234567890abcdef1234567890abcdef12"),
                 Title = "First",
                 Reason = "simulated failure"
             },
             new BlockedRelease
             {
                 AudiobookId = deleted.Id,
-                ReleaseIdentifier = "btih:1111111111111111111111111111111111111111",
+                ReleaseIdentifier = ReleaseIdentifier.FromStorage("btih:1111111111111111111111111111111111111111"),
                 Title = "Second",
                 Reason = "simulated failure"
             },
             new BlockedRelease
             {
                 AudiobookId = kept.Id,
-                ReleaseIdentifier = "btih:2222222222222222222222222222222222222222",
+                ReleaseIdentifier = ReleaseIdentifier.FromStorage("btih:2222222222222222222222222222222222222222"),
                 Title = "Somebody else's",
                 Reason = "simulated failure"
             });

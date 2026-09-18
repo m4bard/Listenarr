@@ -391,7 +391,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             // had four times.
             Assert.Equal(
                 download.GetMetadataString(ReleaseIdentity.MetadataKey),
-                entry.ReleaseIdentifier);
+                entry.ReleaseIdentifier.Key);
             Assert.Equal("The Failing Listing", entry.Title);
         }
 
@@ -408,7 +408,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             // The builder sets no external id, so the client-removal branch below the gate stays
             // out of this.
             download.Metadata[ReleaseIdentity.MetadataKey] =
-                ReleaseIdentity.KeyFor("ABCDEF1234567890ABCDEF1234567890ABCDEF12", null)!;
+                ReleaseIdentity.KeyFor("ABCDEF1234567890ABCDEF1234567890ABCDEF12", null)!.Value.Key;
             return await _downloadRepository.AddAsync(download);
         }
 

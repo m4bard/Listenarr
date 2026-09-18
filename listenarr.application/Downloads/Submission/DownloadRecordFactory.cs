@@ -41,9 +41,9 @@ namespace Listenarr.Application.Downloads.Submission
             // read it back instead of deriving one of its own from fields that have moved since.
             // TotalSize below is overwritten from the download client's queue snapshot, which is
             // how the write side and the read side ended up hashing different numbers.
-            if (!string.IsNullOrWhiteSpace(candidate.ReleaseIdentifier))
+            if (candidate.ReleaseIdentifier is { } releaseIdentifier)
             {
-                metadata[ReleaseIdentity.MetadataKey] = candidate.ReleaseIdentifier;
+                metadata[ReleaseIdentity.MetadataKey] = releaseIdentifier.Key;
             }
 
             return new Download

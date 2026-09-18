@@ -95,7 +95,7 @@ public sealed class ReleaseIdentityGoldenVectorTests : BaseTests
             Title = title ?? string.Empty
         };
 
-        Assert.Equal(expected, ReleaseIdentity.For(result));
+        Assert.Equal(expected, ReleaseIdentity.For(result)?.Key);
         Assert.False(string.IsNullOrWhiteSpace(because));
     }
 
@@ -155,8 +155,12 @@ public sealed class ReleaseIdentityGoldenVectorTests : BaseTests
             ["btih2:", "nzbid:"],
             LiteralPrefixesIn(sample).Order(StringComparer.Ordinal).ToArray());
 
-        var source = File.ReadAllText(Path.Join(
-            TestUtils.FindRepositoryRoot(), "listenarr.domain", "Downloads", "ReleaseIdentity.cs"));
+        // Both files, because the minting moved. ReleaseIdentity decides which branch a release
+        // takes and ReleaseIdentifier puts the prefix on the front, so a prefix introduced as a
+        // bare literal would now appear in the second one.
+        var source = string.Concat(
+            new[] { "ReleaseIdentity.cs", "ReleaseIdentifier.cs" }.Select(file => File.ReadAllText(
+                Path.Join(TestUtils.FindRepositoryRoot(), "listenarr.domain", "Downloads", file))));
 
         var undeclared = LiteralPrefixesIn(source)
             .Where(prefix => !ReleaseIdentity.KeyPrefixes.Contains(prefix))

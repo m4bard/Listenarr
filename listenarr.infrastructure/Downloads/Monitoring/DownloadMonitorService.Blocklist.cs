@@ -76,11 +76,11 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 // grabbed the identical release more than a hundred times over the next eleven
                 // hours.
                 var identifier = ReleaseIdentity.ForGrabbed(download);
-                if (identifier is not null)
+                if (identifier is { } releaseIdentifier)
                 {
                     await blocklistService.BlockAsync(
                         download.AudiobookId.Value,
-                        identifier,
+                        releaseIdentifier,
                         // The title as advertised, and never a placeholder standing in for it.
                         // Title is a lookup key now, so a literal like "Unknown" would be a key
                         // that every untitled failure shares; an empty column contributes nothing

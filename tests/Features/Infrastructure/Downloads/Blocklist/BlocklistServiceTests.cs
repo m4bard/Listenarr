@@ -23,8 +23,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Blocklist;
 [Trait("Category", "Blocklist")]
 public sealed class BlocklistServiceTests : BaseTests
 {
-    private const string Identifier = "btih:abcdef1234567890abcdef1234567890abcdef12";
-    private const string OtherIdentifier = "btih:1111111111111111111111111111111111111111";
+    private static readonly ReleaseIdentifier Identifier =
+        ReleaseIdentifier.FromStorage("btih:abcdef1234567890abcdef1234567890abcdef12");
+
+    private static readonly ReleaseIdentifier OtherIdentifier =
+        ReleaseIdentifier.FromStorage("btih:1111111111111111111111111111111111111111");
 
     private DbContextOptions<ListenArrDbContext> _options = null!;
 
@@ -84,6 +87,36 @@ public sealed class BlocklistServiceTests : BaseTests
         await service.BlockAsync(7, Identifier, "Mine again", 800_000_000, "second");
 
         Assert.Equal("first", Assert.Single(await ReadAllAsync()).Reason);
+    }
+
+    [Fact]
+    public async Task TheIdentifierColumn_HoldsTheSameTextAsBeforeItBecameAValueType()
+    {
+        // ReleaseIdentifier is a value type on the entity and plain TEXT in the column, and the
+        // text is the same key it always was. Asserted against the literal rather than against
+        // Identifier.Key, because comparing the round trip with itself would pass just as happily
+        // if the converter wrote the type name on both sides.
+        await using var context = new ListenArrDbContext(_options);
+        var service = new BlocklistService(context, NullLogger<BlocklistService>.Instance);
+        await service.BlockAsync(7, Identifier, "Mine", 800_000_000, "first");
+
+        await using var db = new ListenArrDbContext(_options);
+        var connection = db.Database.GetDbConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ReleaseIdentifier FROM BlockedReleases";
+
+        Assert.Equal(
+            "btih:abcdef1234567890abcdef1234567890abcdef12",
+            (string?)await command.ExecuteScalarAsync());
+
+        // The control, and the half a materialisation test cannot make on its own: the converter
+        // has to be in the query too. A comparison EF could not translate would either throw or
+        // quietly match everything, and both show up here rather than in the read above.
+        Assert.NotNull(await db.Set<BlockedRelease>()
+            .FirstOrDefaultAsync(entry => entry.ReleaseIdentifier == Identifier));
+        Assert.Null(await db.Set<BlockedRelease>()
+            .FirstOrDefaultAsync(entry => entry.ReleaseIdentifier == OtherIdentifier));
     }
 
     [Fact]

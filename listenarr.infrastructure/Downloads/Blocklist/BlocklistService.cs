@@ -40,12 +40,15 @@ namespace Listenarr.Infrastructure.Downloads.Blocklist
 
         public async Task BlockAsync(
             int audiobookId,
-            string releaseIdentifier,
+            ReleaseIdentifier releaseIdentifier,
             string title,
             long? size,
             string reason)
         {
-            if (string.IsNullOrWhiteSpace(releaseIdentifier))
+            // A default-constructed identifier, which the struct cannot forbid. Every caller
+            // passes one unwrapped from ReleaseIdentifier?, so reaching this means a caller
+            // declared one and never assigned it.
+            if (releaseIdentifier.IsEmpty)
             {
                 return;
             }

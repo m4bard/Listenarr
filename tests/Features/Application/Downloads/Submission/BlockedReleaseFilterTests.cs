@@ -203,7 +203,7 @@ public sealed class BlockedReleaseFilterTests : BaseTests
     private static BlockedRelease Row(string? infoHash, string title, long? size) => new()
     {
         AudiobookId = 7,
-        ReleaseIdentifier = ReleaseIdentity.KeyFor(infoHash, title)!,
+        ReleaseIdentifier = ReleaseIdentity.KeyFor(infoHash, title)!.Value,
         Title = title,
         Size = size
     };

@@ -103,7 +103,7 @@ public sealed class BlocklistSearchWiringTests : BaseTests
         var blocklist = _provider.GetRequiredService<IBlocklistService>();
         await blocklist.BlockAsync(
             audiobook.Id,
-            ReleaseIdentity.KeyFor(InfoHash, null)!,
+            ReleaseIdentity.KeyFor(InfoHash, null)!.Value,
             "The Only Listing",
             800_000_000,
             "simulated earlier failure");

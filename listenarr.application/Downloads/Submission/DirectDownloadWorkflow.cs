@@ -21,7 +21,7 @@ namespace Listenarr.Application.Downloads.Submission
         public async Task<string> CreateTrackedDownloadAsync(
             PreparedDirectDownloadSubmission submission,
             int? audiobookId,
-            string? releaseIdentifier = null)
+            ReleaseIdentifier? releaseIdentifier = null)
         {
             if (submission.Artifacts.Count == 0)
             {
@@ -82,9 +82,9 @@ namespace Listenarr.Application.Downloads.Submission
                 // Same stamp as the client-backed path in DownloadRecordFactory. A direct download
                 // that fails has to be blockable by the identity the search result was grabbed
                 // under, or the automatic search picks the same dead link up again.
-                if (!string.IsNullOrWhiteSpace(releaseIdentifier))
+                if (releaseIdentifier is { } identifier)
                 {
-                    download.SetMetadata(ReleaseIdentity.MetadataKey, releaseIdentifier);
+                    download.SetMetadata(ReleaseIdentity.MetadataKey, identifier.Key);
                 }
 
                 await downloadRepository.AddAsync(download);

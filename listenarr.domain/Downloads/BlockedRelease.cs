@@ -37,7 +37,7 @@ namespace Listenarr.Domain.Downloads
         /// can produce a match; see
         /// <see cref="ReleaseIdentity.Matches(BlockedRelease, SearchResult)"/>.
         /// </summary>
-        public string ReleaseIdentifier { get; set; } = string.Empty;
+        public ReleaseIdentifier ReleaseIdentifier { get; set; }
 
         /// <summary>
         /// The release title as the indexer advertised it. Load-bearing rather than decoration:

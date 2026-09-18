@@ -39,7 +39,7 @@ public sealed class BlocklistControllerTests : BaseTests
         // excluding the release. A DeleteAsync that removed nothing would still return
         // NoContent, so the filter is asked both before and after.
         var blocklist = _provider.GetRequiredService<IBlocklistService>();
-        var identifier = ReleaseIdentity.KeyFor(FirstHash, null)!;
+        var identifier = ReleaseIdentity.KeyFor(FirstHash, null)!.Value;
         await blocklist.BlockAsync(7, identifier, "The Only Listing", 800_000_000, "simulated failure");
 
         Assert.Empty(await BlockedReleaseFilter.ExcludeAsync(
@@ -57,8 +57,8 @@ public sealed class BlocklistControllerTests : BaseTests
     public async Task Delete_LeavesTheOtherEntriesForTheSameBookAlone()
     {
         var blocklist = _provider.GetRequiredService<IBlocklistService>();
-        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(FirstHash, null)!, "First", 1, "a");
-        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(SecondHash, null)!, "Second", 2, "b");
+        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(FirstHash, null)!.Value, "First", 1, "a");
+        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(SecondHash, null)!.Value, "Second", 2, "b");
 
         var first = (await blocklist.GetForAudiobookAsync(7)).Single(entry => entry.Title == "First");
         await NewController().Delete(first.Id);
@@ -81,9 +81,9 @@ public sealed class BlocklistControllerTests : BaseTests
         // A clear that quietly purged the whole table would satisfy "the book has none left",
         // so the second book is the control.
         var blocklist = _provider.GetRequiredService<IBlocklistService>();
-        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(FirstHash, null)!, "First", 1, "a");
-        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(SecondHash, null)!, "Second", 2, "b");
-        await blocklist.BlockAsync(9, ReleaseIdentity.KeyFor(FirstHash, null)!, "Other book", 3, "c");
+        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(FirstHash, null)!.Value, "First", 1, "a");
+        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(SecondHash, null)!.Value, "Second", 2, "b");
+        await blocklist.BlockAsync(9, ReleaseIdentity.KeyFor(FirstHash, null)!.Value, "Other book", 3, "c");
 
         var response = Assert.IsType<OkObjectResult>(await NewController().ClearForAudiobook(7));
 
@@ -110,13 +110,42 @@ public sealed class BlocklistControllerTests : BaseTests
     public async Task GetForAudiobook_ReturnsOnlyThatBooksEntries()
     {
         var blocklist = _provider.GetRequiredService<IBlocklistService>();
-        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(FirstHash, null)!, "Mine", 1, "a");
-        await blocklist.BlockAsync(9, ReleaseIdentity.KeyFor(SecondHash, null)!, "Not mine", 2, "b");
+        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(FirstHash, null)!.Value, "Mine", 1, "a");
+        await blocklist.BlockAsync(9, ReleaseIdentity.KeyFor(SecondHash, null)!.Value, "Not mine", 2, "b");
 
         var response = Assert.IsType<OkObjectResult>((await NewController().GetForAudiobook(7)).Result);
         var entries = Assert.IsAssignableFrom<IReadOnlyList<BlockedRelease>>(response.Value);
 
         Assert.Equal("Mine", Assert.Single(entries).Title);
+    }
+
+    [Fact]
+    public async Task GetForAudiobook_CarriesTheIdentifierAsAJsonString()
+    {
+        // This endpoint returns BlockedRelease rows as they are, so the identifier being a value
+        // type rather than a string is a wire question as well as a modelling one. Without the
+        // converter on the type, every entry would answer with an empty object where callers
+        // expect "btih:..." and no controller would have been touched to cause it.
+        var blocklist = _provider.GetRequiredService<IBlocklistService>();
+        await blocklist.BlockAsync(
+            7, ReleaseIdentity.KeyFor(FirstHash, null)!.Value, "Mine", 1, "a");
+
+        var response = Assert.IsType<OkObjectResult>((await NewController().GetForAudiobook(7)).Result);
+        var json = System.Text.Json.JsonSerializer.Serialize(response.Value);
+
+        Assert.Contains(
+            "\"ReleaseIdentifier\":\"btih:abcdef1234567890abcdef1234567890abcdef12\"",
+            json,
+            StringComparison.Ordinal);
+
+        // The control. A field serialised as an object still contains the property name, so the
+        // assertion above has to be paired with one that fails in exactly that case, and with a
+        // read back proving the string is the key rather than a constant.
+        Assert.DoesNotContain("\"ReleaseIdentifier\":{", json, StringComparison.Ordinal);
+        var readBack = System.Text.Json.JsonSerializer.Deserialize<List<BlockedRelease>>(json);
+        Assert.Equal(
+            ReleaseIdentity.KeyFor(FirstHash, null)!.Value,
+            Assert.Single(readBack!).ReleaseIdentifier);
     }
 
     [Fact]

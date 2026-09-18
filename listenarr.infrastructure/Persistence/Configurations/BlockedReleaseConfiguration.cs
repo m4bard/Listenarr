@@ -42,6 +42,19 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             // PendingModelChangesWarning, which is a long way from the line that caused it.
             builder.ToTable("BlockedReleases");
 
+            // The identifier is a value type on the entity and the same TEXT it always was in
+            // the column. Nothing about the stored bytes changes, which is the point: this is a
+            // modelling change, and a migration adding a column or rewriting one would mean it
+            // had gone further than intended. EF regenerates the model snapshot for it, and
+            // generates an empty migration body for it, which is the check that no schema change
+            // is implied.
+            builder
+                .Property(entry => entry.ReleaseIdentifier)
+                .HasConversion(
+                    identifier => identifier.Key,
+                    stored => ReleaseIdentifier.FromStorage(stored));
+
+
             builder
                 .HasIndex(entry => new { entry.AudiobookId, entry.ReleaseIdentifier })
                 .IsUnique();

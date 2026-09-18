@@ -81,7 +81,7 @@ public sealed class ReleaseIdentityRoundTripTests : BaseTests
         var download = GrabbedDownloadFor(grabbed);
 
         Assert.Equal(
-            ReleaseIdentity.For(grabbed),
+            ReleaseIdentity.For(grabbed)?.Key,
             download.GetMetadataString(ReleaseIdentity.MetadataKey));
     }
 
@@ -157,7 +157,7 @@ public sealed class ReleaseIdentityRoundTripTests : BaseTests
             repository.Object,
             NullLogger<DirectDownloadWorkflow>.Instance);
 
-        await workflow.CreateTrackedDownloadAsync(submission, audiobookId: 7, releaseIdentifier: "title:some book unabridged");
+        await workflow.CreateTrackedDownloadAsync(submission, audiobookId: 7, releaseIdentifier: ReleaseIdentifier.FromStorage("title:some book unabridged"));
 
         Assert.NotNull(persisted);
         Assert.Equal("title:some book unabridged", persisted.GetMetadataString(ReleaseIdentity.MetadataKey));
@@ -197,7 +197,7 @@ public sealed class ReleaseIdentityRoundTripTests : BaseTests
                 Path.Join(root, project), "*.cs", SearchOption.AllDirectories))
             .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
                         && !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
-            .Where(file => File.ReadAllText(file).Contains("ReleaseIdentity.For(", StringComparison.Ordinal))
+            .Where(file => DerivesAnIdentity(File.ReadAllLines(file)))
             .Select(file => Path.GetRelativePath(root, file))
             .Where(relative => !allowed.Contains(relative, StringComparer.Ordinal))
             .OrderBy(path => path, StringComparer.Ordinal)
@@ -210,14 +210,27 @@ public sealed class ReleaseIdentityRoundTripTests : BaseTests
     }
 
     /// <summary>
+    /// Whether a file calls the derivation, ignoring comment lines.
+    ///
+    /// Comment lines are dropped because a doc comment naming the method is not a call, and the
+    /// scan would otherwise forbid referring to it in prose. ReleaseIdentifier's own summary says
+    /// where a key can come from and cites this method by name, which is worth more than the
+    /// false positive costs.
+    /// </summary>
+    private static bool DerivesAnIdentity(IEnumerable<string> lines) =>
+        lines
+            .Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal))
+            .Any(line => line.Contains("ReleaseIdentity.For(", StringComparison.Ordinal));
+
+    /// <summary>
     /// The blocklist row DownloadMonitorService.OnDownloadFailed writes: the key it read back off
     /// the download, plus the advertised title and size beside it. Built here rather than by hand
     /// so the three fields cannot drift apart in the test either.
     /// </summary>
-    private static BlockedRelease RowBlockedUnder(string identifier, Download download) => new()
+    private static BlockedRelease RowBlockedUnder(ReleaseIdentifier? identifier, Download download) => new()
     {
         AudiobookId = 7,
-        ReleaseIdentifier = identifier,
+        ReleaseIdentifier = identifier!.Value,
         Title = download.Title ?? string.Empty,
         Size = ReleaseIdentity.SizeForGrabbed(download)
     };
