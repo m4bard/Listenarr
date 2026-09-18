@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Listenarr.Application.Common.Scheduling;
 using Listenarr.Tests.Common;
 using Microsoft.AspNetCore.Http;
@@ -15,10 +16,13 @@ namespace Listenarr.Tests.Features.Api.Features.SystemDiagnostics;
 /// that is never due, so an interval flattened into 0 does not report a fast worker
 /// inaccurately, it reports a working worker as dead. Minutes could not hold the four
 /// sub-minute workers at all; seconds holds them exactly, and anything finer than a
-/// second is refused here rather than truncated.
+/// second is refused rather than truncated.
 /// <para>
-/// Every refusal test below is paired with a value one step away that is accepted, so
-/// that "it refused" cannot also be what a rig that refuses everything looks like.
+/// The refusal travels on the row, as an explicit null beside a message, rather than in
+/// the status code, so that one worker nobody can describe does not withhold the nine
+/// that can be. Every refusal test below is paired with a value one step away that is
+/// accepted, so that "it refused" cannot also be what a rig that refuses everything looks
+/// like.
 /// </para>
 /// </remarks>
 [Trait("Name", "ScheduledTaskIntervalWireFormatTests")]
@@ -37,8 +41,9 @@ public sealed class ScheduledTaskIntervalWireFormatTests : BaseTests
 
         var row = ScheduledTaskDto.FromStatus(CreateStatus("SomeWorker", declared));
 
-        Assert.Equal((long)seconds, row.IntervalSeconds);
-        Assert.Equal(declared, TimeSpan.FromSeconds(row.IntervalSeconds));
+        Assert.Equal((long?)seconds, row.IntervalSeconds);
+        Assert.Null(row.IntervalError);
+        Assert.Equal(declared, TimeSpan.FromSeconds(row.IntervalSeconds!.Value));
     }
 
     [Theory]
@@ -50,61 +55,85 @@ public sealed class ScheduledTaskIntervalWireFormatTests : BaseTests
     {
         var declared = TimeSpan.FromMilliseconds(milliseconds);
 
-        var refusal = Assert.Throws<ScheduledTaskIntervalFormatException>(
-            () => ScheduledTaskDto.FromStatus(CreateStatus("SubSecondWorker", declared)));
+        var row = ScheduledTaskDto.FromStatus(CreateStatus("SubSecondWorker", declared));
 
-        Assert.Equal("SubSecondWorker", refusal.TaskName);
-        Assert.Equal(declared, refusal.Interval);
+        Assert.Null(row.IntervalSeconds);
+        Assert.NotEqual((long?)0, row.IntervalSeconds);
 
-        // The message has to carry the field and the accepted form, because it is the
-        // whole of what the caller gets: an operator reading it should not have to open
-        // the source to find out which value the server would not state.
-        Assert.Contains("intervalSeconds", refusal.Message, StringComparison.Ordinal);
-        Assert.Contains("whole, non-negative seconds", refusal.Message, StringComparison.Ordinal);
-        Assert.Contains("SubSecondWorker", refusal.Message, StringComparison.Ordinal);
+        // The message is the whole of what a reader gets, so it has to carry the field and
+        // the accepted form: an operator should not have to open the source to find out
+        // which value the server would not state.
+        Assert.NotNull(row.IntervalError);
+        Assert.Contains("intervalSeconds", row.IntervalError, StringComparison.Ordinal);
+        Assert.Contains("whole, non-negative seconds", row.IntervalError, StringComparison.Ordinal);
+        Assert.Contains("SubSecondWorker", row.IntervalError, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void AnIntervalOfExactlyZero_IsPublishedAsZero_AndIsNotARefusal()
+    public void AnIntervalOfExactlyZero_IsPublishedAsZero_AndCarriesNoRefusal()
     {
         // The control for the refusals above, and the distinction they depend on. A worker
-        // that really declares no gap between cycles is described, with 0, and answered
-        // 200. A worker whose interval could not be stated is answered 400 and never
-        // reaches a number at all, so the two can never be confused for one another.
-        var registry = CreateRegistryReturning(
-            CreateStatus("ZeroIntervalWorker", TimeSpan.Zero));
-        var controller = new ScheduledTasksController(registry);
+        // that really declares no gap between cycles is described, with 0 and no message.
+        // A worker whose interval could not be stated carries null and a message. The two
+        // can never be read as one another.
+        var row = ScheduledTaskDto.FromStatus(CreateStatus("ZeroIntervalWorker", TimeSpan.Zero));
 
-        var response = Assert.IsType<OkObjectResult>(controller.GetByName("ZeroIntervalWorker").Result);
-        var row = Assert.IsType<ScheduledTaskDto>(response.Value);
-
-        Assert.Equal(0L, row.IntervalSeconds);
+        Assert.Equal((long?)0, row.IntervalSeconds);
+        Assert.Null(row.IntervalError);
     }
 
     [Fact]
-    public void GetByName_AWorkerWhoseIntervalCannotBeStated_Answers400NamingIt()
+    public void OnTheWire_ARefusedIntervalIsAnExplicitNull_RatherThanAMissingKey()
     {
-        var registry = CreateRegistryReturning(
-            CreateStatus("SubSecondWorker", TimeSpan.FromMilliseconds(500)));
-        var controller = new ScheduledTasksController(registry);
+        // This is the test the whole shape rests on. Controllers serialize with
+        // WhenWritingNull, which drops a null property, and a missing numeric field is
+        // read as 0 by any client with a non-nullable field: the silent zero, arriving by
+        // a different door. JsonIgnore(Never) on the property overrides that.
+        var refused = ScheduledTaskDto.FromStatus(
+            CreateStatus("SubSecondWorker", TimeSpan.FromMilliseconds(500), omitLastStartedAt: true));
 
-        var response = Assert.IsType<BadRequestObjectResult>(controller.GetByName("SubSecondWorker").Result);
+        var json = JsonSerializer.Serialize(refused, ApiSerializerOptions());
 
-        Assert.Equal(StatusCodes.Status400BadRequest, response.StatusCode);
-        var body = JsonSerializer.Serialize(response.Value);
-        Assert.Contains("intervalSeconds", body, StringComparison.Ordinal);
-        Assert.Contains("SubSecondWorker", body, StringComparison.Ordinal);
+        Assert.Contains("\"intervalSeconds\":null", json, StringComparison.Ordinal);
+        Assert.Contains("\"intervalError\":", json, StringComparison.Ordinal);
 
-        // 400 rather than a 5xx because ServerErrorProblemDetailsFilter replaces the body
-        // of anything 500 and above with a generic document and drops the detail outside
-        // Development (Filters/ServerErrorProblemDetailsFilter.cs:25-33), which would
-        // take every word of the message that makes this refusal readable with it.
-        Assert.DoesNotContain("\"intervalSeconds\":0", body, StringComparison.Ordinal);
+        // The control, and it has to come out differently or the assertion above proves
+        // nothing: lastStartedAt is null on this same row and carries no attribute, so if
+        // WhenWritingNull were not in force it would be present too, and the explicit null
+        // above would be the default rather than the attribute doing its job.
+        Assert.DoesNotContain("\"lastStartedAt\"", json, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void GetAll_AWorkerWhoseIntervalCannotBeStated_Answers400RatherThanARowSaying0()
+    public void OnTheWire_AStatableIntervalIsAnIntegerToken_AndARefusedOneIsANullToken()
     {
+        var options = ApiSerializerOptions();
+
+        using var statable = JsonDocument.Parse(JsonSerializer.Serialize(
+            ScheduledTaskDto.FromStatus(CreateStatus("SomeWorker", TimeSpan.FromSeconds(10))),
+            options));
+        using var refused = JsonDocument.Parse(JsonSerializer.Serialize(
+            ScheduledTaskDto.FromStatus(CreateStatus("SubSecondWorker", TimeSpan.FromMilliseconds(500))),
+            options));
+
+        var statableValue = statable.RootElement.GetProperty("intervalSeconds");
+        Assert.Equal(JsonValueKind.Number, statableValue.ValueKind);
+        Assert.True(statableValue.TryGetInt64(out var seconds));
+        Assert.Equal(10L, seconds);
+
+        // Asserted on the parsed token rather than on the text, because a whole-valued
+        // double serializes as "10" too: searching the string for "10.0" would pass
+        // against the double this field replaced and so would prove nothing.
+        Assert.Equal(JsonValueKind.Null, refused.RootElement.GetProperty("intervalSeconds").ValueKind);
+    }
+
+    [Fact]
+    public void GetAll_AWorkerWhoseIntervalCannotBeStated_DoesNotWithholdTheRowsThatCan()
+    {
+        // The reason the refusal is on the row and not in the status code. Answering 400
+        // for the list would withhold every healthy worker because of one broken one, on a
+        // surface whose whole job is telling an operator which workers are alive, and the
+        // registry one layer down already refuses to make that trade.
         var registry = new Mock<IScheduledTaskRegistry>(MockBehavior.Strict);
         registry.Setup(candidate => candidate.GetAll()).Returns(new[]
         {
@@ -113,53 +142,76 @@ public sealed class ScheduledTaskIntervalWireFormatTests : BaseTests
         });
         var controller = new ScheduledTasksController(registry.Object);
 
-        var response = Assert.IsType<BadRequestObjectResult>(controller.GetAll().Result);
-
-        Assert.Contains("SubSecondWorker", JsonSerializer.Serialize(response.Value), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void GetAll_WorkersWhoseIntervalsCanBeStated_Answer200()
-    {
-        // The control for the test above. Same call, same controller, one row changed, and
-        // the list comes back, so the 400 is the refusal rather than a rig that cannot
-        // produce a list at all.
-        var registry = new Mock<IScheduledTaskRegistry>(MockBehavior.Strict);
-        registry.Setup(candidate => candidate.GetAll()).Returns(new[]
-        {
-            CreateStatus("HealthyWorker", TimeSpan.FromSeconds(10)),
-            CreateStatus("AnotherHealthyWorker", TimeSpan.FromMilliseconds(1000))
-        });
-        var controller = new ScheduledTasksController(registry.Object);
-
         var response = Assert.IsType<OkObjectResult>(controller.GetAll().Result);
         var rows = Assert.IsAssignableFrom<IReadOnlyList<ScheduledTaskDto>>(response.Value);
 
-        Assert.Equal(new[] { 10L, 1L }, rows.Select(row => row.IntervalSeconds));
+        Assert.Equal(new long?[] { 10L, null }, rows.Select(row => row.IntervalSeconds));
+        Assert.Null(rows[0].IntervalError);
+        Assert.NotNull(rows[1].IntervalError);
     }
 
     [Fact]
-    public void OnTheWire_IntervalSecondsIsAnInteger()
-    {
-        // The contract is what a client parses, not what the CLR holds, and "10.0" is a
-        // different contract from "10": it tells a generated client the field is
-        // fractional and invites it to round on its own side.
-        var row = ScheduledTaskDto.FromStatus(CreateStatus("SomeWorker", TimeSpan.FromSeconds(10)));
-
-        var json = JsonSerializer.Serialize(row, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-
-        Assert.Contains("\"intervalSeconds\":10", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"intervalSeconds\":10.0", json, StringComparison.Ordinal);
-    }
-
-    private static IScheduledTaskRegistry CreateRegistryReturning(ScheduledTaskStatus status)
+    public void GetByName_AWorkerWhoseIntervalCannotBeStated_StillDescribesTheRest()
     {
         var registry = new Mock<IScheduledTaskRegistry>(MockBehavior.Strict);
-        registry.Setup(candidate => candidate.Find(status.TaskName)).Returns(status);
-        return registry.Object;
+        registry.Setup(candidate => candidate.Find("SubSecondWorker"))
+            .Returns(CreateStatus("SubSecondWorker", TimeSpan.FromMilliseconds(500)));
+        var controller = new ScheduledTasksController(registry.Object);
+
+        var response = Assert.IsType<OkObjectResult>(controller.GetByName("SubSecondWorker").Result);
+        var row = Assert.IsType<ScheduledTaskDto>(response.Value);
+
+        Assert.Null(row.IntervalSeconds);
+        Assert.NotNull(row.IntervalError);
+
+        // Everything else about the row is still true and still useful, which is the
+        // argument for describing it rather than refusing the request.
+        Assert.Equal("SubSecondWorker", row.Name);
+        Assert.True(row.IsRegistered);
+        Assert.Equal(nameof(ScheduledTaskOutcome.Succeeded), row.LastOutcome);
     }
 
-    private static ScheduledTaskStatus CreateStatus(string taskName, TimeSpan interval)
+    [Fact]
+    public void Run_AWorkerWhoseIntervalCannotBeStated_StillAnswers202()
+    {
+        // The cycle has already been dispatched by the time the row is built, so anything
+        // other than 202 would deny a side effect that happened. The refusal rides along
+        // on the row instead.
+        var registry = new Mock<IScheduledTaskRegistry>(MockBehavior.Strict);
+        registry.Setup(candidate => candidate.Trigger("SubSecondWorker"))
+            .Returns(ScheduledTaskTriggerOutcome.For(
+                ScheduledTaskTriggerResult.Accepted,
+                CreateStatus("SubSecondWorker", TimeSpan.FromMilliseconds(500), isRunning: true)));
+        var controller = new ScheduledTasksController(registry.Object);
+
+        var response = Assert.IsType<AcceptedResult>(controller.Run("SubSecondWorker").Result);
+        var run = Assert.IsType<ScheduledTaskRunDto>(response.Value);
+
+        Assert.Equal(StatusCodes.Status202Accepted, response.StatusCode);
+        Assert.Equal(ScheduledTaskRunDto.Started, run.Triggered);
+        Assert.True(run.Task.IsRunning);
+        Assert.Null(run.Task.IntervalSeconds);
+        Assert.NotNull(run.Task.IntervalError);
+    }
+
+    /// <summary>
+    /// The options the controllers are actually registered with
+    /// (<c>listenarr.api/Startup/ListenarrServiceRegistration.cs:41-44</c>). Copied rather
+    /// than resolved because the registration builds a whole host, and the only part that
+    /// bears on this contract is the ignore condition.
+    /// </summary>
+    private static JsonSerializerOptions ApiSerializerOptions() =>
+        new(JsonSerializerDefaults.Web)
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            Converters = { new JsonStringEnumConverter() }
+        };
+
+    private static ScheduledTaskStatus CreateStatus(
+        string taskName,
+        TimeSpan interval,
+        bool isRunning = false,
+        bool omitLastStartedAt = false)
     {
         var endedAt = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
 
@@ -169,14 +221,14 @@ public sealed class ScheduledTaskIntervalWireFormatTests : BaseTests
             Interval = interval,
             RegisteredAt = endedAt.AddHours(-1),
             IsRegistered = true,
-            IsRunning = false,
+            IsRunning = isRunning,
             ManualTrigger = ScheduledTaskManualTrigger.Allowed,
-            LastStartedAt = endedAt.AddSeconds(-30),
+            LastStartedAt = omitLastStartedAt ? null : endedAt.AddSeconds(-30),
             LastEndedAt = endedAt,
             LastDuration = TimeSpan.FromSeconds(30),
             LastOutcome = ScheduledTaskOutcome.Succeeded,
-            LastTrigger = ScheduledTaskTrigger.Scheduled,
-            NextExecution = endedAt + interval
+            LastTrigger = isRunning ? ScheduledTaskTrigger.Manual : ScheduledTaskTrigger.Scheduled,
+            NextExecution = endedAt + (interval > TimeSpan.Zero ? interval : TimeSpan.Zero)
         };
     }
 }
