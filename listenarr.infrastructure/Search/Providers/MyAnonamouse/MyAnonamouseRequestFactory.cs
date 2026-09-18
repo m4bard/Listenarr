@@ -18,16 +18,18 @@ internal static class MyAnonamouseRequestFactory
 
     public static Uri BuildSearchUri(Indexer indexer, string query, SearchRequest? request = null, int perPage = 100)
     {
-        var (parsedTitle, parsedAuthor) = ParseTitleAuthorFromQuery(query);
-        var searchType = "all";
-        if (!string.IsNullOrWhiteSpace(parsedTitle) && string.IsNullOrWhiteSpace(parsedAuthor))
+        // MyAnonamouse expresses the torrent filter through tor[searchType]. The accepted values are
+        // the ones Prowlarr sends (src/NzbDrone.Core/Indexers/Definitions/MyAnonamouse.cs), and the
+        // fields a query is matched against are chosen separately through tor[srchIn][...].
+        var searchType = request?.MyAnonamouse?.Filter switch
         {
-            searchType = "title";
-        }
-        else if (string.IsNullOrWhiteSpace(parsedTitle) && !string.IsNullOrWhiteSpace(parsedAuthor))
-        {
-            searchType = "author";
-        }
+            MamTorrentFilter.Active => "active",
+            MamTorrentFilter.Freeleech => "fl",
+            MamTorrentFilter.FreeleechOrVip => "fl-VIP",
+            MamTorrentFilter.Vip => "VIP",
+            MamTorrentFilter.NotVip => "nVIP",
+            _ => "all"
+        };
 
         var searchFields = new Dictionary<string, bool>
         {
@@ -84,25 +86,6 @@ internal static class MyAnonamouseRequestFactory
 
         queryParameters.Add(new("tor[searchType]", searchType));
 
-        switch (request?.MyAnonamouse?.Filter)
-        {
-            case MamTorrentFilter.Active:
-                queryParameters.Add(new("tor[onlyActive]", "1"));
-                break;
-            case MamTorrentFilter.Freeleech:
-                queryParameters.Add(new("tor[onlyFreeleech]", "1"));
-                break;
-            case MamTorrentFilter.FreeleechOrVip:
-                queryParameters.Add(new("tor[freeleechOrVip]", "1"));
-                break;
-            case MamTorrentFilter.Vip:
-                queryParameters.Add(new("tor[onlyVip]", "1"));
-                break;
-            case MamTorrentFilter.NotVip:
-                queryParameters.Add(new("tor[notVip]", "1"));
-                break;
-        }
-
         if (request?.MyAnonamouse?.FreeleechWedge is { } freeleechWedge)
         {
             queryParameters.Add(new("tor[freeleechWedge]", freeleechWedge.ToString().ToLowerInvariant()));
@@ -130,31 +113,5 @@ internal static class MyAnonamouseRequestFactory
         }
 
         return request;
-    }
-
-    private static (string? Title, string? Author) ParseTitleAuthorFromQuery(string query)
-    {
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            return (null, null);
-        }
-
-        var value = query.Trim();
-        var byIndex = value.LastIndexOf(" by ", StringComparison.OrdinalIgnoreCase);
-        if (byIndex > 0)
-        {
-            return (value[..byIndex].Trim(), value[(byIndex + 4)..].Trim());
-        }
-
-        var dashParts = value.Split(new[] { " - " }, 2, StringSplitOptions.None);
-        if (dashParts.Length == 2)
-        {
-            return (dashParts[0].Trim(), dashParts[1].Trim());
-        }
-
-        var commaParts = value.Split(new[] { ',' }, 2);
-        return commaParts.Length == 2
-            ? (commaParts[1].Trim(), commaParts[0].Trim())
-            : (null, null);
     }
 }
