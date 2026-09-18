@@ -71,6 +71,21 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
                     return handle;
                 });
 
+            // Q12's "loudly". Without this the refusal exists only on the API row, so a
+            // worker nobody can describe is invisible to an operator who never calls the
+            // task surface. Logged once per registration rather than per read, which is
+            // also why it cannot catch a provider that starts whole and later returns a
+            // fraction; the row still reports that case.
+            if (!ScheduledTaskInterval.CanBeStated(handle.RegisteredInterval))
+            {
+                logger.LogWarning(
+                    "Scheduled task {TaskName} registered with an interval of {Interval}, which "
+                        + "cannot be stated in whole seconds; its row will report no interval "
+                        + "rather than a rounded one",
+                    taskName,
+                    handle.RegisteredInterval);
+            }
+
             logger.LogDebug(
                 "Registered scheduled task {TaskName} (manual run {ManualTrigger})",
                 taskName,
