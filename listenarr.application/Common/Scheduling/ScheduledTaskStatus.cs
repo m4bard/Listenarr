@@ -34,6 +34,14 @@ namespace Listenarr.Application.Common.Scheduling
         /// <summary>When the worker first announced itself to the registry.</summary>
         public required DateTimeOffset RegisteredAt { get; init; }
 
+        /// <summary>
+        /// Whether the worker's loop is still running. A worker that has stopped, or
+        /// whose host has torn it down, keeps its row with this false rather than
+        /// vanishing: for a monitoring surface, "it stopped" is the state most worth
+        /// seeing, and removing the row reported it as a task that never existed.
+        /// </summary>
+        public required bool IsRegistered { get; init; }
+
         /// <summary>True while a cycle is in flight, whether scheduled or manual.</summary>
         public required bool IsRunning { get; init; }
 
