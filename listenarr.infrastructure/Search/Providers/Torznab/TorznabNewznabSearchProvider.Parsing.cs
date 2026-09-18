@@ -73,6 +73,11 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
                     var newznabNs = System.Xml.Linq.XNamespace.Get("http://www.newznab.com/DTD/2010/feeds/attributes/");
                     var attributes = item.Elements(torznabNs + "attr").Concat(item.Elements(newznabNs + "attr")).ToList();
 
+                    result.IndexerFlags = TorznabIndexerFlagParser.Parse(attributes.Select(attr =>
+                        new KeyValuePair<string, string>(
+                            attr.Attribute("name")?.Value ?? string.Empty,
+                            attr.Attribute("value")?.Value ?? string.Empty)));
+
                     foreach (var attr in attributes)
                     {
                         var name = attr.Attribute("name")?.Value;
