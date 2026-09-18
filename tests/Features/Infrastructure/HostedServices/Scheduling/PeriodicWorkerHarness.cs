@@ -37,12 +37,14 @@ internal sealed class PeriodicWorkerHarness : IDisposable
         TimeSpan? initialDelay = null,
         TimeSpan? interval = null,
         ScheduledTaskManualTrigger? manualTrigger = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        Func<TimeSpan>? intervalProvider = null)
     {
         _failure = failure;
         _holdCycleOn = holdCycleOn;
         _holdFromCycle = holdFromCycle;
         Interval = interval ?? DefaultInterval;
+        var readInterval = intervalProvider ?? (() => Interval);
 
         var runner = new WorkerCycleRunner(
             timeProvider ?? TimeProvider.System,
@@ -57,14 +59,14 @@ internal sealed class PeriodicWorkerHarness : IDisposable
             ? runner.RunPeriodicAsync(
                 workerName,
                 initialDelay,
-                intervalProvider: () => Interval,
+                intervalProvider: readInterval,
                 runCycle: RunCycleAsync,
                 _cancellation.Token,
                 declared)
             : runner.RunPeriodicAsync(
                 workerName,
                 initialDelay,
-                intervalProvider: () => Interval,
+                intervalProvider: readInterval,
                 runCycle: RunCycleAsync,
                 _cancellation.Token);
     }
