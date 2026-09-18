@@ -26,7 +26,7 @@ public sealed class MyAnonamouseConnectionTesterTests : BaseTests
         Assert.Equal(HttpMethod.Get, captured.Method);
         Assert.Equal("/tor/js/loadSearchJSONbasic.php", captured.RequestUri!.AbsolutePath);
         Assert.Contains("tor%5Btext%5D=test", captured.RequestUri.Query);
-        Assert.Contains("tor%5Bperpage%5D=1", captured.RequestUri.Query);
+        Assert.Contains("perpage=1", captured.RequestUri.Query);
         Assert.Contains("mam_id=secret-cookie", captured.Headers.GetValues("Cookie").Single());
         Assert.NotNull(captured.Headers.Referrer);
         Assert.NotEmpty(captured.Headers.UserAgent);

@@ -77,7 +77,10 @@ internal static class MyAnonamouseRequestFactory
         queryParameters.Add(new("tor[browseFlagsHideVsShow]", "0"));
         queryParameters.Add(new("tor[sortType]", "default"));
         queryParameters.Add(new("tor[startNumber]", "0"));
-        queryParameters.Add(new("tor[perpage]", perPage.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        // The page size is a top-level parameter, not part of the tor[] array. Prowlarr sends
+        // "perpage" (src/NzbDrone.Core/Indexers/Definitions/MyAnonamouse.cs) and so does this
+        // codebase's own debug search (IndexerDebugSearchWorkflow.BuildMamSearchRequest).
+        queryParameters.Add(new("perpage", perPage.ToString(System.Globalization.CultureInfo.InvariantCulture)));
 
         foreach (var field in searchFields)
         {
