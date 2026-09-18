@@ -43,6 +43,9 @@ export const CALENDAR_FEED_MAX_DAYS = 3650
 /** Strips the /api/v{n} suffix off the API base path, leaving any reverse-proxy prefix. */
 const API_SUFFIX_REGEX = /\/api(?:\/v\d+(?:\.\d+)?)?\/?$/i
 
+/** An API base that names its own host, rather than a path on this one. */
+const ABSOLUTE_ORIGIN_REGEX = /^https?:\/\//i
+
 export interface CalendarFeedOptions {
   /** Include unmonitored audiobooks. */
   unmonitored: boolean
@@ -81,6 +84,37 @@ export function calendarFeedUrlBase(apiBasePath: string): string {
   const withoutApi = trimmed.replace(API_SUFFIX_REGEX, '')
   const withoutTrailingSlash = withoutApi.replace(/\/+$/, '')
   return withoutTrailingSlash === '/' ? '' : withoutTrailingSlash
+}
+
+/**
+ * Picks the protocol and host the subscribe URL should point at.
+ *
+ * Readarr and Sonarr build theirs from `window.location` unconditionally, because their SPA is
+ * always served by the app itself. Listenarr's config allows an absolute `VITE_API_BASE_URL`, and
+ * `API_BASE_PATH` is `toPath()` of it, which discards the host. So on a deployment serving the
+ * SPA from one origin and the API from another, `window.location` would produce a URL pointing at
+ * the SPA origin, which does not serve `/feed`. `API_ORIGIN` already holds the right answer there.
+ *
+ * Under the dev server the API origin is a hardcoded default rather than a derived value, so it
+ * is not evidence about where anything is reachable. The browser origin is the only honest answer
+ * there, and the dialog says separately that a dev URL is not servable.
+ */
+export function resolveCalendarFeedOrigin(
+  apiOrigin: string,
+  location: CalendarFeedOrigin,
+  isDevServer: boolean,
+): CalendarFeedOrigin {
+  if (isDevServer) return location
+
+  const candidate = (apiOrigin || '').trim()
+  if (!ABSOLUTE_ORIGIN_REGEX.test(candidate)) return location
+
+  try {
+    const parsed = new URL(candidate)
+    return { protocol: parsed.protocol, host: parsed.host }
+  } catch {
+    return location
+  }
 }
 
 /**

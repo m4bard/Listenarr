@@ -164,6 +164,17 @@ describe('CalendarFeedModal', () => {
     expect(document.querySelector('[data-testid="calendar-feed-error"]')).not.toBeNull()
   })
 
+  it('warns that a dev-server URL is not servable, without hiding it', async () => {
+    // vitest runs with import.meta.env.DEV true, which is the branch under test. The dev server
+    // proxies /api and /hubs and not /feed (fe/vite.config.ts), so the URL falls through to the
+    // SPA and answers with HTML and a 200 -- a failure that looks like a success. The notice sits
+    // beside the URL rather than replacing it, because a developer still wants to read it.
+    await mountModal()
+
+    expect(document.querySelector('[data-testid="calendar-feed-dev"]')).not.toBeNull()
+    expect(httpUrl()).toContain('/feed/v1/calendar/Listenarr.ics?')
+  })
+
   it('emits close', async () => {
     const wrapper = await mountModal()
 
