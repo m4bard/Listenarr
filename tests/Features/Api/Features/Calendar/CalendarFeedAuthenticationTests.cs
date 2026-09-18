@@ -79,11 +79,13 @@ public sealed class CalendarFeedAuthenticationTests : BaseTests, IClassFixture<L
         // through everything that was not /api or /hubs. Without the enforcer knowing about
         // /feed, this request would be served and the whole library would be readable.
         //
-        // The status code alone does not pin that guard: [RequireApiKey] returns a bare 401 of
-        // its own, so deleting the /feed clause from the enforcer leaves a status-only assertion
-        // green. The body is the discriminator. The enforcer writes this JSON itself
-        // (AuthenticationEnforcerMiddleware.cs:110-112) and runs before MVC, whereas
-        // UnauthorizedResult writes no body at all (RequireApiKeyAttribute.cs:65).
+        // The status code alone does not pin that guard: [RequireApiKey] returns a 401 of its
+        // own, so deleting the /feed clause from the enforcer leaves a status-only assertion
+        // green. The body is the discriminator, because the two layers write different ones. The
+        // enforcer writes this JSON itself (AuthenticationEnforcerMiddleware.cs:110-112) and runs
+        // before MVC; the attribute's UnauthorizedResult (RequireApiKeyAttribute.cs:65) comes back
+        // as an RFC 9457 problem document instead. Measured, and see the case-variant test below,
+        // which asserts the other shape.
         using var factory = WithAuthenticationEnabled();
         using var client = NewClient(factory);
 
@@ -116,6 +118,33 @@ public sealed class CalendarFeedAuthenticationTests : BaseTests, IClassFixture<L
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.DoesNotContain("Authentication required", body, StringComparison.Ordinal);
         Assert.Contains("\"status\":401", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Feed_WithAnIgnorableCharacterInThePath_IsStillNotServed()
+    {
+        // The enforcer's three prefix checks pass no StringComparison, so they run under the
+        // current culture, and a culture comparison treats U+200D and U+00AD as ignorable. So
+        // "/\u200dfeed/v1/..." satisfies StartsWith("/feed") and the enforcer catches it, while
+        // StringComparison.Ordinal would wave it through. Measured across en-US, de-DE, tr-TR and
+        // the invariant culture; the difference is the same in all four.
+        //
+        // Measured both ways at this boundary, and the outcome is the same: routing does not
+        // match the literal segment either, so the request is refused regardless of which
+        // comparison the enforcer used. The clause is therefore left culture-sensitive, matching
+        // the /api and /hubs clauses beside it, which pass no comparison either and are
+        // pre-existing. Switching only /feed to Ordinal would make the enforcer catch strictly
+        // fewer paths for no observable gain, which is the wrong direction to move a security
+        // check on a hunch. This test pins the outcome rather than the mechanism.
+        using var factory = WithAuthenticationEnabled();
+        using var client = NewClient(factory);
+
+        var response = await client.GetAsync(
+            "/\u200dfeed/v1/calendar/" + CalendarFeedController.FeedFileName);
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.NotEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.DoesNotContain("BEGIN:VCALENDAR", body, StringComparison.Ordinal);
     }
 
     [Fact]
