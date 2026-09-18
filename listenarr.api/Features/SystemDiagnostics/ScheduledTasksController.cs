@@ -72,7 +72,7 @@ namespace Listenarr.Api.Features.SystemDiagnostics
             var status = _scheduledTasks.Find(taskName);
 
             return status is null
-                ? NotFound(new { error = $"No scheduled task named '{taskName}' is running." })
+                ? NotFound(new { error = $"No scheduled task named '{taskName}' exists." })
                 : Ok(ScheduledTaskDto.FromStatus(status));
         }
 

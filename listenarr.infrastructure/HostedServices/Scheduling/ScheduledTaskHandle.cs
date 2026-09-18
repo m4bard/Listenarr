@@ -79,20 +79,16 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
         public async Task RunCycleAsync(ScheduledTaskTrigger trigger, CancellationToken cancellationToken)
         {
             await _gate.WaitAsync(cancellationToken);
-            try
-            {
-                DateTimeOffset startedAt;
-                lock (_state)
-                {
-                    startedAt = BeginCycleLocked(trigger);
-                }
 
-                await RunBodyAsync(startedAt, cancellationToken);
-            }
-            finally
+            DateTimeOffset startedAt;
+            lock (_state)
             {
-                _gate.Release();
+                startedAt = BeginCycleLocked(trigger);
             }
+
+            // RunBodyAsync releases the gate, under the same lock that marks the cycle
+            // finished, so the two can never be observed out of step.
+            await RunBodyAsync(startedAt, cancellationToken);
         }
 
         public void RecordNextExecution(DateTimeOffset nextExecution)
@@ -116,9 +112,10 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
         /// cycle: not running, last triggered by the schedule.
         /// <para>
         /// Taking the gate inside <c>lock (_state)</c> looks like a lock-ordering hazard
-        /// and is not one, because <c>Wait(0)</c> cannot block. A cycle holding the gate
-        /// does wait on <c>_state</c> in its finally, but this side never waits on the
-        /// gate, so it always releases <c>_state</c> and lets that finally through.
+        /// and is not one, because <see cref="TryTakeGateWithoutWaiting"/> cannot block. A
+        /// cycle holding the gate does wait on <c>_state</c> in its finally, but this side
+        /// never waits on the gate, so it always releases <c>_state</c> and lets that
+        /// finally through.
         /// </para>
         /// </remarks>
         public ScheduledTaskManualRunAttempt TryBeginManualRun()
@@ -128,7 +125,7 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
 
             lock (_state)
             {
-                if (_disposed || !_gate.Wait(0))
+                if (_disposed || !TryTakeGateWithoutWaiting())
                 {
                     return new ScheduledTaskManualRunAttempt(false, BuildStatusLocked(interval));
                 }
@@ -137,6 +134,18 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
                 return new ScheduledTaskManualRunAttempt(true, BuildStatusLocked(interval));
             }
         }
+
+        /// <summary>
+        /// Takes the gate if it is free and gives up immediately if it is not.
+        /// </summary>
+        /// <remarks>
+        /// The zero is load-bearing and is why this is a named method rather than an
+        /// inline call. <see cref="TryBeginManualRun"/> calls it with <c>_state</c> held,
+        /// which is the opposite order to every other path in this class; that is safe
+        /// only because this cannot block. A timeout or an await here deadlocks against
+        /// the cycle body's finally.
+        /// </remarks>
+        private bool TryTakeGateWithoutWaiting() => _gate.Wait(0);
 
         /// <summary>
         /// False once the worker's loop has ended. The row stays on the surface so a
@@ -154,7 +163,7 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
         /// <summary>
         /// Runs a manual cycle on a gate already taken by <see cref="TryBeginManualRun"/>,
         /// which has already recorded the start, bound to the worker's own cancellation
-        /// so shutdown stops it.
+        /// so shutdown stops it. The gate is released by the body when the cycle ends.
         /// </summary>
         public async Task RunManualHeldAsync()
         {
@@ -166,14 +175,7 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
                 startedAt = _lastStartedAt ?? _timeProvider.GetUtcNow();
             }
 
-            try
-            {
-                await RunBodyAsync(startedAt, _workerCancellation);
-            }
-            finally
-            {
-                _gate.Release();
-            }
+            await RunBodyAsync(startedAt, _workerCancellation);
         }
 
         public ScheduledTaskStatus Snapshot()
@@ -206,7 +208,23 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
                 }
             }
 
-            var interval = _intervalProvider();
+            TimeSpan interval;
+            try
+            {
+                interval = _intervalProvider();
+            }
+            catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+            {
+                // GetAll() reads every registered worker's delegate on one request thread,
+                // so a single worker computing a bad interval would otherwise take the
+                // whole task list down with it. The last good value is a better answer
+                // than a 500, and the worker's own logs carry the failure.
+                lock (_state)
+                {
+                    return _lastKnownInterval;
+                }
+            }
+
             lock (_state)
             {
                 _lastKnownInterval = interval;
@@ -277,6 +295,12 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
             return startedAt;
         }
 
+        /// <summary>
+        /// Runs the cycle body on a gate the caller has already taken, and releases that
+        /// gate when the cycle ends. Both callers hand ownership over rather than
+        /// releasing it themselves, because the release has to happen under the same lock
+        /// that clears <c>_isRunning</c>.
+        /// </summary>
         private async Task RunBodyAsync(DateTimeOffset startedAt, CancellationToken cancellationToken)
         {
             var outcome = ScheduledTaskOutcome.Unknown;
@@ -308,6 +332,13 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
                     _lastEndedAt = endedAt;
                     _lastDuration = endedAt - startedAt;
                     _lastOutcome = outcome;
+
+                    // Releasing here rather than in the caller is what makes the refusal
+                    // row truthful. Released outside this lock, there was a window where
+                    // the gate was still held while _isRunning was already false, so a
+                    // manual request landing in it was refused as already running and
+                    // handed a row saying nothing was running.
+                    _gate.Release();
                 }
             }
         }
@@ -318,9 +349,10 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
     /// was started, and the row as it stood when that was decided.
     /// </summary>
     /// <remarks>
-    /// Both halves come from one critical section on purpose. Reading the row on the
-    /// statement after a refusal let a competing cycle finish in between, so an
-    /// "already running" answer could carry a row saying nothing was running.
+    /// Both halves come from one critical section on purpose, so the row is the state the
+    /// decision was made on rather than whatever the state had become by the next
+    /// statement. That plus releasing the gate under the same lock that marks a cycle
+    /// finished is what stops a refusal reporting a cycle that is no longer running.
     /// </remarks>
     internal readonly record struct ScheduledTaskManualRunAttempt(
         bool Started,
