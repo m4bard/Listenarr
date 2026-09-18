@@ -78,51 +78,62 @@ public sealed class SubMinuteWorkerIntervalWiringTests : BaseTests
         await AssertPublishedIntervalAsync(service, registry, "move.scan.handoff.recovery", 30);
     }
 
-    [Fact]
-    public async Task MovedDownloadCleanupService_PublishesTheConfiguredIntervalInSeconds()
+    [Theory]
+    [InlineData(0, 10)]   // settings set nothing, so the service's own default stands
+    [InlineData(15, 15)]  // a configured value in seconds reaches the row in seconds
+    public async Task MovedDownloadCleanupService_PublishesItsIntervalInSeconds(
+        int configuredSeconds,
+        long expectedSeconds)
     {
         var registry = CreateRegistry();
         var service = new MovedDownloadCleanupService(
             Mock.Of<IMovedDownloadCleanupProcessor>(),
             Mock.Of<ILogger<MovedDownloadCleanupService>>(),
             CreateRunner(registry),
-            CreateScopeFactoryReturningPollingInterval(10));
+            CreateScopeFactoryReturningPollingInterval(configuredSeconds));
 
-        await AssertPublishedIntervalAsync(service, registry, nameof(MovedDownloadCleanupService), 10);
+        await AssertPublishedIntervalAsync(
+            service,
+            registry,
+            nameof(MovedDownloadCleanupService),
+            expectedSeconds);
     }
 
-    [Fact]
-    public async Task DownloadMonitorService_PublishesTheConfiguredIntervalInSeconds()
+    [Theory]
+    [InlineData(0, 30)]   // settings set nothing, so the service's own default stands
+    [InlineData(15, 15)]  // a configured value in seconds reaches the row in seconds
+    public async Task DownloadMonitorService_PublishesItsIntervalInSeconds(
+        int configuredSeconds,
+        long expectedSeconds)
     {
         var registry = CreateRegistry();
         var service = new DownloadMonitorService(
             Mock.Of<IDownloadMonitorProcessor>(),
             Mock.Of<ILogger<DownloadMonitorService>>(),
             CreateRunner(registry),
-            CreateScopeFactoryReturningPollingInterval(30));
+            CreateScopeFactoryReturningPollingInterval(configuredSeconds));
 
-        await AssertPublishedIntervalAsync(service, registry, nameof(DownloadMonitorService), 30);
+        await AssertPublishedIntervalAsync(
+            service,
+            registry,
+            nameof(DownloadMonitorService),
+            expectedSeconds);
     }
 
-    [Fact]
-    public void AMinuteGranularSurfaceWouldHavePublishedAllFourAsNeverDue()
+    [Theory]
+    [InlineData(10)]
+    [InlineData(30)]
+    public void WholeMinutesCannotHoldASubMinuteInterval_WhereWholeSecondsCan(int seconds)
     {
-        // The control, and the reason the other four tests are worth their runtime. It
-        // states the arithmetic they are defending against: every interval on this list
-        // is under a minute, so whole minutes is not a coarser answer for them, it is the
-        // answer reserved for a task that never runs.
-        var shipped = new[]
-        {
-            TimeSpan.FromSeconds(10),
-            TimeSpan.FromSeconds(30),
-            TimeSpan.FromSeconds(10),
-            TimeSpan.FromSeconds(30)
-        };
+        // Not a control on the four tests above, and it should not be read as one: the
+        // values are literals rather than anything the shipped services declare. It states
+        // the arithmetic those tests are defending against, which is that whole minutes is
+        // not a coarser answer for an interval under a minute, it is the answer reserved
+        // for a task that never runs.
+        var interval = TimeSpan.FromSeconds(seconds);
 
-        Assert.All(shipped, interval => Assert.Equal(0, (int)interval.TotalMinutes));
-        Assert.All(
-            shipped,
-            interval => Assert.NotEqual(0L, ScheduledTaskDto.ToWholeSeconds("SomeWorker", interval)));
+        Assert.Equal(0, (int)interval.TotalMinutes);
+        Assert.Equal((long?)seconds, ScheduledTaskDto.ToWholeSeconds(interval));
     }
 
     private static async Task AssertPublishedIntervalAsync(
@@ -138,12 +149,13 @@ public sealed class SubMinuteWorkerIntervalWiringTests : BaseTests
             var status = await WaitForRegistrationAsync(registry, taskName);
             var row = ScheduledTaskDto.FromStatus(status);
 
-            Assert.Equal(expectedSeconds, row.IntervalSeconds);
+            Assert.Equal((long?)expectedSeconds, row.IntervalSeconds);
+            Assert.Null(row.IntervalError);
 
             // Stated separately from the equality above so that a failure says which of
             // the two things went wrong. Reporting 0 is the poisoned outcome: it does not
             // read as a rounding error, it reads as a worker that never runs.
-            Assert.NotEqual(0L, row.IntervalSeconds);
+            Assert.NotEqual((long?)0, row.IntervalSeconds);
         }
         finally
         {
@@ -163,9 +175,13 @@ public sealed class SubMinuteWorkerIntervalWiringTests : BaseTests
 
     /// <summary>
     /// Both configuration-driven workers read <c>PollingIntervalSeconds</c> out of a
-    /// scope at startup, so the interval under test is the one a real install would give
-    /// them rather than a field default the settings would have overwritten.
+    /// scope at startup, and both ignore it when it is not positive.
     /// </summary>
+    /// <remarks>
+    /// Passing 0 is what makes the pair of cases worth having. It leaves each service on
+    /// its own hardcoded default, so the row is asserted against the value the service
+    /// ships with rather than against a number this test just handed it.
+    /// </remarks>
     private static IServiceScopeFactory CreateScopeFactoryReturningPollingInterval(int seconds)
     {
         var configuration = new Mock<IConfigurationService>();
