@@ -52,21 +52,13 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         /// </summary>
         [HttpGet]
         [ProducesResponseType(typeof(IReadOnlyList<ScheduledTaskDto>), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public ActionResult<IReadOnlyList<ScheduledTaskDto>> GetAll()
         {
-            try
-            {
-                var tasks = _scheduledTasks.GetAll()
-                    .Select(ScheduledTaskDto.FromStatus)
-                    .ToList();
+            var tasks = _scheduledTasks.GetAll()
+                .Select(ScheduledTaskDto.FromStatus)
+                .ToList();
 
-                return Ok(tasks);
-            }
-            catch (ScheduledTaskIntervalFormatException exception)
-            {
-                return RefuseUnstatableInterval(exception);
-            }
+            return Ok(tasks);
         }
 
         /// <summary>
@@ -74,25 +66,14 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         /// </summary>
         [HttpGet("{taskName}")]
         [ProducesResponseType(typeof(ScheduledTaskDto), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public ActionResult<ScheduledTaskDto> GetByName(string taskName)
         {
             var status = _scheduledTasks.Find(taskName);
 
-            if (status is null)
-            {
-                return NotFound(new { error = $"No scheduled task named '{taskName}' exists." });
-            }
-
-            try
-            {
-                return Ok(ScheduledTaskDto.FromStatus(status));
-            }
-            catch (ScheduledTaskIntervalFormatException exception)
-            {
-                return RefuseUnstatableInterval(exception);
-            }
+            return status is null
+                ? NotFound(new { error = $"No scheduled task named '{taskName}' exists." })
+                : Ok(ScheduledTaskDto.FromStatus(status));
         }
 
         /// <summary>
@@ -127,7 +108,6 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         /// </remarks>
         [HttpPost("{taskName}/run")]
         [ProducesResponseType(typeof(ScheduledTaskRunDto), StatusCodes.Status202Accepted)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -160,22 +140,9 @@ namespace Listenarr.Api.Features.SystemDiagnostics
                     // here, because the cycle body runs on a pool thread and a second read
                     // would usually describe the previous cycle instead. Which of the two
                     // happened is in the body, since the rows do not differ.
-                    if (outcome.Status is null)
-                    {
-                        return Accepted();
-                    }
-
-                    try
-                    {
-                        return Accepted(ScheduledTaskRunDto.FromStatus(outcome.Result, outcome.Status));
-                    }
-                    catch (ScheduledTaskIntervalFormatException exception)
-                    {
-                        // The cycle has started either way. The row describing it cannot
-                        // be written, and saying so beats answering 202 with a body that
-                        // states an interval nobody asked for.
-                        return RefuseUnstatableInterval(exception);
-                    }
+                    return outcome.Status is null
+                        ? Accepted()
+                        : Accepted(ScheduledTaskRunDto.FromStatus(outcome.Result, outcome.Status));
 
                 default:
                     // A result added later must not silently become a 202.
@@ -183,23 +150,5 @@ namespace Listenarr.Api.Features.SystemDiagnostics
                         $"Unhandled scheduled task trigger result '{outcome.Result}'.");
             }
         }
-
-        /// <summary>
-        /// Answers a worker whose interval cannot be stated in the unit this surface
-        /// publishes, rather than publishing a rounded one.
-        /// </summary>
-        /// <remarks>
-        /// 400 and not a 5xx, even though the fault is a worker registration rather than
-        /// anything the caller sent. <c>ServerErrorProblemDetailsFilter</c> rewrites every
-        /// response of 500 or above into a generic problem document and drops the detail
-        /// outside Development
-        /// (<c>Filters/ServerErrorProblemDetailsFilter.cs:25-33</c>), so a
-        /// 5xx here would reach an operator as "Internal server error" with no mention of
-        /// the field, the task or the accepted form. A refusal nobody can read is not a
-        /// refusal, and the whole point of this path is that the value fails visibly
-        /// instead of arriving as 0.
-        /// </remarks>
-        private ObjectResult RefuseUnstatableInterval(ScheduledTaskIntervalFormatException exception) =>
-            BadRequest(new { error = exception.Message, task = exception.TaskName });
     }
 }
