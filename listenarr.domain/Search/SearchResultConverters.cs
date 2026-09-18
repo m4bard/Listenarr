@@ -113,6 +113,7 @@ namespace Listenarr.Domain.Search
                 Language = NormalizeLanguage(result.Language) ?? (string.Equals(result.DownloadType, "Torrent", System.StringComparison.OrdinalIgnoreCase) ? DetectLanguageFromText(result.Title + " " + (result.Description ?? string.Empty)) : null),
                 ResultUrl = result.ResultUrl,
                 DownloadReference = result.DownloadReference,
+                IndexerFlags = new List<string>(result.IndexerFlags),
                 Grabs = result.Grabs,
                 Files = result.Files,
                 // Copy indexer metadata for MAM server-side downloads
@@ -146,6 +147,7 @@ namespace Listenarr.Domain.Search
                 Quality = result.Quality,
                 ResultUrl = result.ResultUrl,
                 DownloadReference = result.DownloadReference,
+                IndexerFlags = new List<string>(result.IndexerFlags),
                 Grabs = result.Grabs,
                 Files = result.Files,
                 TorrentFileName = result.TorrentFileName,
@@ -189,8 +191,8 @@ namespace Listenarr.Domain.Search
             // SortTitle: normalized lower-case, remove punctuation
             dto.SortTitle = System.Text.RegularExpressions.Regex.Replace(dto.Title?.ToLowerInvariant() ?? string.Empty, "[^a-z0-9 ]", "").Trim();
 
-            // IndexerFlags and Categories: best-effort mapping (not always present in result); keep empty lists if not available
-            dto.IndexerFlags = new List<string>();
+            dto.IndexerFlags = new List<string>(result.IndexerFlags);
+            // Categories: best-effort mapping (not always present in result); keep an empty list if not available
             if (!string.IsNullOrWhiteSpace(result.Category))
             {
                 // Keep a simple category object with name
