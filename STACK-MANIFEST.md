@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        a630572e983614a52ea409a23da52a99e3b8b91b
     base short:  a630572e9
-    patches:     288
-    version:     1.3.4+m4bard.288
+    patches:     293
+    version:     1.3.4+m4bard.293
 
 ## Patches, oldest first
 
@@ -297,6 +297,11 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     3e8b882fc  #-    notifications: a subscriber model and a Custom Script provider
     7f4fcba1a  #-    feat(calendar): add the calendar endpoint and iCalendar feed
     fcd551c6b  #-    test(indexers): reach the provider's parse by shape, not by a fixed signature
+    38ffef5e2  #-    stack: manifest for a630572e9 plus 288 patches
+    074a75875  #-    scheduled tasks: an allowlist for manual runs, not a deny-list
+    5d89a0468  #-    notifications: let the EnableNotifications switch gate the subscriber fan-out
+    965217c88  #-    configuration: keep stored custom scripts when a save omits them
+    2b066e661  #-    stack: reconcile the manual-run allowlist with the stacked tree
 
 ## Items, in application order
 
