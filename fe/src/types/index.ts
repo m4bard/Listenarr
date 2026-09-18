@@ -106,6 +106,7 @@ export interface SearchResult extends BaseSearchResult {
   downloadType: string // "Torrent", "Usenet", or "DDL"
   quality?: string
   resultUrl?: string // Canonical indexer page for the result
+  indexerFlags?: string[] // Release flags advertised by the tracker (freeleech, internal, scene, ...)
 
   // Metadata-specific properties
   description?: string
