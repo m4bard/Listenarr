@@ -50,7 +50,6 @@ public sealed class ScheduledTaskIntervalWireFormatTests : BaseTests
     [InlineData(1500)]   // 1.5s: truncation would report 1, a schedule the worker never declared
     [InlineData(500)]    // 0.5s: truncation would report 0, which reads as never due
     [InlineData(1)]      // a millisecond, the smallest thing a sub-second worker could declare
-    [InlineData(-500)]   // negative also truncates to 0, so it is refused the same way
     public void IntervalFinerThanASecond_IsRefused_AndDoesNotBecomeZero(int milliseconds)
     {
         var declared = TimeSpan.FromMilliseconds(milliseconds);
@@ -58,15 +57,36 @@ public sealed class ScheduledTaskIntervalWireFormatTests : BaseTests
         var row = ScheduledTaskDto.FromStatus(CreateStatus("SubSecondWorker", declared));
 
         Assert.Null(row.IntervalSeconds);
+
+        // Redundant after the assertion above and kept anyway, because not becoming 0 is
+        // the literal requirement this field exists to meet and it should be readable as
+        // such in the test rather than inferred from a null.
         Assert.NotEqual((long?)0, row.IntervalSeconds);
 
         // The message is the whole of what a reader gets, so it has to carry the field and
         // the accepted form: an operator should not have to open the source to find out
         // which value the server would not state.
-        Assert.NotNull(row.IntervalError);
-        Assert.Contains("intervalSeconds", row.IntervalError, StringComparison.Ordinal);
-        Assert.Contains("whole, non-negative seconds", row.IntervalError, StringComparison.Ordinal);
-        Assert.Contains("SubSecondWorker", row.IntervalError, StringComparison.Ordinal);
+        AssertNamesTheFieldAndTheForm(row.IntervalError, "SubSecondWorker");
+        Assert.Contains("truncating", row.IntervalError!, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(-10)]   // whole, so nothing is truncated and the truncation reason would be a lie
+    [InlineData(-0.5)]  // fractional as well, and still refused as a negative first
+    public void NegativeInterval_IsRefused_ForNotBeingASchedule_RatherThanForTruncating(
+        double seconds)
+    {
+        var row = ScheduledTaskDto.FromStatus(
+            CreateStatus("BackwardsWorker", TimeSpan.FromSeconds(seconds)));
+
+        Assert.Null(row.IntervalSeconds);
+        AssertNamesTheFieldAndTheForm(row.IntervalError, "BackwardsWorker");
+
+        // The reason has to be the right one. Truncating -10 seconds lands on -10, not on
+        // 0, so the sub-second truncation argument does not apply and saying it would tell
+        // an operator the server refused a value because rounding it gives the same value.
+        Assert.Contains("not a schedule", row.IntervalError!, StringComparison.Ordinal);
+        Assert.DoesNotContain("truncat", row.IntervalError!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -192,6 +212,34 @@ public sealed class ScheduledTaskIntervalWireFormatTests : BaseTests
         Assert.True(run.Task.IsRunning);
         Assert.Null(run.Task.IntervalSeconds);
         Assert.NotNull(run.Task.IntervalError);
+    }
+
+    [Fact]
+    public void Run_AWorkerAlreadyRunning_WhoseIntervalCannotBeStated_StillAnswers202()
+    {
+        // The second Run arm. Both results share the 202 and the row, so a refusal on one
+        // and not the other would be a difference nothing in the code intends.
+        var registry = new Mock<IScheduledTaskRegistry>(MockBehavior.Strict);
+        registry.Setup(candidate => candidate.Trigger("SubSecondWorker"))
+            .Returns(ScheduledTaskTriggerOutcome.For(
+                ScheduledTaskTriggerResult.AlreadyRunning,
+                CreateStatus("SubSecondWorker", TimeSpan.FromMilliseconds(500), isRunning: true)));
+        var controller = new ScheduledTasksController(registry.Object);
+
+        var response = Assert.IsType<AcceptedResult>(controller.Run("SubSecondWorker").Result);
+        var run = Assert.IsType<ScheduledTaskRunDto>(response.Value);
+
+        Assert.Equal(ScheduledTaskRunDto.AlreadyRunning, run.Triggered);
+        Assert.Null(run.Task.IntervalSeconds);
+        Assert.NotNull(run.Task.IntervalError);
+    }
+
+    private static void AssertNamesTheFieldAndTheForm(string? refusal, string taskName)
+    {
+        Assert.NotNull(refusal);
+        Assert.Contains("intervalSeconds", refusal, StringComparison.Ordinal);
+        Assert.Contains("whole, non-negative seconds", refusal, StringComparison.Ordinal);
+        Assert.Contains(taskName, refusal, StringComparison.Ordinal);
     }
 
     /// <summary>
