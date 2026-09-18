@@ -79,6 +79,9 @@ namespace Listenarr.Domain.Search
         public string? ResultUrl { get; set; }
         public string? DownloadReference { get; set; }
 
+        // Release flags advertised by the tracker (freeleech, internal, scene, ...)
+        public List<string> IndexerFlags { get; set; } = new();
+
         // Lightweight metadata occasionally parsed from indexer responses
         public string? Description { get; set; }
         public string? Language { get; set; }
@@ -150,6 +153,9 @@ namespace Listenarr.Domain.Search
         // Link to the indexer page for this result
         public string? ResultUrl { get; set; }
         public string? DownloadReference { get; set; }
+
+        // Release flags advertised by the tracker (freeleech, internal, scene, ...)
+        public List<string> IndexerFlags { get; set; } = new();
 
         // Metadata-specific properties
         public string? Description { get; set; }
