@@ -373,6 +373,10 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
                         }
                         result.IndexerId = indexer.Id;
                         result.IndexerImplementation = indexer.Implementation ?? string.Empty;
+                        if (releaseIsAlreadyFree)
+                        {
+                            result.IndexerFlags.Add(IndexerFlagNames.FreeLeech);
+                        }
                         PopulateDownloadLinks(
                             item,
                             result,
