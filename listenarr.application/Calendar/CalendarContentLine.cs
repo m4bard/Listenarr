@@ -34,8 +34,15 @@ namespace Listenarr.Application.Calendar
         /// <summary>
         /// Escapes a TEXT value: backslash, semicolon and comma are escaped, and newlines become
         /// a literal backslash-n. Carriage returns are dropped so a CRLF does not leave a stray
-        /// escape behind.
+        /// escape behind, and so are the other C0 controls and DEL, which TSAFE-CHAR excludes.
         /// </summary>
+        /// <remarks>
+        /// RFC 5545 section 3.3.11 defines TSAFE-CHAR as %x20-21, %x23-2B, %x2D-39, %x3C-5B,
+        /// %x5D-7E and NON-US-ASCII, plus the escaped forms. HTAB is allowed because WSP covers
+        /// it; every other control below 0x20, and DEL, is not. A description arriving from a
+        /// metadata provider with one stray control byte would otherwise produce a document that
+        /// strict clients reject whole, losing every event rather than one property.
+        /// </remarks>
         public static string EscapeText(string? value)
         {
             if (string.IsNullOrEmpty(value))
@@ -62,7 +69,15 @@ namespace Listenarr.Application.Calendar
                         break;
                     case '\r':
                         break;
+                    case '\t':
+                        builder.Append(character);
+                        break;
                     default:
+                        if (character < ' ' || character == '\u007f')
+                        {
+                            break;
+                        }
+
                         builder.Append(character);
                         break;
                 }

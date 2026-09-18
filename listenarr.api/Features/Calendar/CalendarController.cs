@@ -54,6 +54,10 @@ namespace Listenarr.Api.Features.Calendar
         /// Comma separated tag names. When present, only audiobooks carrying at least one are
         /// returned. Matching is case insensitive.
         /// </param>
+        /// <param name="tagList">
+        /// The Readarr spelling of the same filter, accepted here as well so the two endpoints
+        /// agree. Ignored when <paramref name="tags"/> is present.
+        /// </param>
         /// <param name="cancellationToken">Request cancellation token.</param>
         [HttpGet]
         [ProducesResponseType(typeof(IEnumerable<CalendarEventDto>), StatusCodes.Status200OK)]
@@ -62,6 +66,7 @@ namespace Listenarr.Api.Features.Calendar
             [FromQuery] DateOnly? end,
             [FromQuery] bool unmonitored = false,
             [FromQuery] string? tags = null,
+            [FromQuery] string? tagList = null,
             CancellationToken cancellationToken = default)
         {
             var startDay = start ?? DateOnly.FromDateTime(DateTime.Today);
@@ -71,7 +76,7 @@ namespace Listenarr.Api.Features.Calendar
             var events = await _calendarService.GetEventsAsync(
                 window,
                 unmonitored,
-                CalendarQueryParameters.ParseTags(tags),
+                CalendarQueryParameters.ParseTags(tags, tagList),
                 cancellationToken);
 
             return Ok(events.Select(CalendarEventDtoFactory.Create).ToList());
