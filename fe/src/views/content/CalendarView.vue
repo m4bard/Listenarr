@@ -23,6 +23,16 @@
         Calendar
       </h1>
       <div class="calendar-actions">
+        <button
+          class="btn btn-secondary"
+          data-testid="calendar-feed-open"
+          aria-label="Get calendar feed URL"
+          title="Get calendar feed URL"
+          @click="openFeedModal"
+        >
+          <PhRss :size="16" />
+          Feed
+        </button>
         <button class="btn btn-secondary" @click="previousMonth" aria-label="Previous month">
           <PhCaretLeft :size="16" />
         </button>
@@ -265,6 +275,8 @@
         </div>
       </div>
     </div>
+
+    <CalendarFeedModal :visible="showFeedModal" @close="closeFeedModal" />
   </div>
 </template>
 
@@ -278,8 +290,10 @@ import {
   PhCaretDown,
   PhClock,
   PhInfo,
+  PhRss,
 } from '@phosphor-icons/vue'
 import { useLibraryStore } from '@/stores/library'
+import CalendarFeedModal from '@/components/domain/calendar/CalendarFeedModal.vue'
 import type { Audiobook } from '@/types'
 
 interface CalendarItem {
@@ -318,6 +332,16 @@ const libraryStore = useLibraryStore()
 const router = useRouter()
 const viewMode = ref<'month' | 'week' | 'forecast' | 'day' | 'agenda'>('month')
 const calendarStorageKey = 'listenarr.calendar.currentDate'
+const showFeedModal = ref(false)
+
+function openFeedModal() {
+  showFeedModal.value = true
+}
+
+function closeFeedModal() {
+  showFeedModal.value = false
+}
+
 const viewModes = [
   { value: 'month', label: 'Month' },
   { value: 'week', label: 'Week' },
