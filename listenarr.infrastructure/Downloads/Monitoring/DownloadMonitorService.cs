@@ -420,7 +420,7 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                         download.AudiobookId.Value,
                         identifier,
                         download.Title ?? "Unknown",
-                        download.ExpectedFileSize ?? (download.TotalSize > 0 ? download.TotalSize : null),
+                        ReleaseIdentity.SizeForGrabbed(download),
                         errorMessage);
                 }
             }

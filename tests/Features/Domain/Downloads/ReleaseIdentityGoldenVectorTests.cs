@@ -1,138 +1,150 @@
-using System.Text.RegularExpressions;
+using System.Reflection;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Domain.Downloads;
 
-// A release identity is PERSISTED. It is written into the blocklist when a release fails and
-// looked up by string equality on every later grab, so the wire format is a storage contract and
-// not an implementation detail. Change the hash, the truncation, the case or the separator and
-// every row already in the database becomes unreachable: the blocklist silently stops blocking,
-// and the release that failed is grabbed again forever.
+// A release key is PERSISTED. It is written into the blocklist when a release fails and is the
+// uniqueness rule for a row, so its wire format is a storage contract and not an implementation
+// detail. Change the prefix, the case folding, the whitespace rule or the Unicode form and every
+// row already in the database becomes unreachable by its primary key.
 //
-// That is not hypothetical. The blocklist has had four defects and all four were one defect, an
-// identity derived one way in one place and another way somewhere else. The fix for that was to
-// give one class sole ownership of the format. This file guards the other half: what that one
-// owner is allowed to change about the format without anybody noticing.
+// That is not hypothetical. The blocklist has had four defects and all four were one defect, a
+// key derived one way in one place and another way somewhere else. The fix for that was to give
+// one class sole ownership of the format. This file guards the other half: what that one owner is
+// allowed to change about the format without anybody noticing.
 //
-// The existing ReleaseIdentityTests assert relational properties: same release gives the same
-// key, different size gives a different one, the prefix is what you expect. All of those still
-// pass if SHA256 becomes SHA1, if the digest stops being truncated to 32 characters, or if the
-// hex is uppercased. These vectors are the statement those tests cannot make.
+// The relational assertions live next door in ReleaseIdentityTests: same release gives the same
+// key, a different torrent does not match, size carries tolerance. All of those still pass if the
+// case folding is dropped, if the whitespace collapse changes, or if the NFC pass is removed,
+// because they compare two outputs of the same build against each other. These vectors are the
+// statement those tests cannot make.
 [Trait("Name", "ReleaseIdentityGoldenVectorTests")]
 [Trait("Category", "Domain")]
 public sealed class ReleaseIdentityGoldenVectorTests : BaseTests
 {
-    // Each vector pins one branch of ReleaseIdentity.For to an exact output. Computed
-    // independently of the implementation rather than captured from it: SHA256 of the normalized
-    // input, hex, lowercased, first 32 characters.
-    public static TheoryData<string, string?, string?, string?, long?, string> Vectors() => new()
+    // The base32 and hex spellings of one torrent, as Sonarr pins them in its own fixtures at
+    // src/NzbDrone.Core.Test/Download/DownloadClientTests/QBittorrentTests/QBittorrentFixture.cs:469.
+    private const string Base32Hash = "ZPBPA2P6ROZPKRHK44D5OW6NHXU5Z6KR";
+    private const string HexHash = "CBC2F069FE8BB2F544EAE707D75BCD3DE9DCF951";
+    private const string ExpectedHashKey = "btih:cbc2f069fe8bb2f544eae707d75bcd3de9dcf951";
+
+    // Each vector pins one branch and one normalisation rule to an exact output, through the
+    // production entry point ReleaseIdentity.For(SearchResult) rather than an internal helper, so
+    // a change anywhere between the magnet and the stored key lands here.
+    public static TheoryData<string, string?, string?, string> Vectors() => new()
     {
         {
-            "btih, explicit info-hash, trimmed and folded to lower case",
-            "ABCDEF0123456789ABCDEF0123456789ABCDEF01", null, null, null,
-            "btih:abcdef0123456789abcdef0123456789abcdef01"
+            "btih, hex magnet, folded to lower case",
+            $"magnet:?xt=urn:btih:{HexHash}&tr=udp", "Some Book Title", ExpectedHashKey
         },
         {
-            "name, title and size, the Usenet case that must survive a re-grab",
-            null, null, "Some Book Title", 123456789L,
-            "name:398a59f279088f1c1df8838f45d3c607"
+            "btih, the base32 spelling of that same torrent, which must not become a second key",
+            $"magnet:?xt=urn:btih:{Base32Hash}&tr=udp", "Some Book Title", ExpectedHashKey
         },
         {
-            "name, title with no size, so the size slot is a literal question mark",
-            null, null, "Some Book Title", null,
-            "name:76d0b643f32c186b0d26e176fe39f86b"
+            "btih, percent-encoded marker, which a raw substring search misses entirely",
+            $"magnet:?xt=urn%3Abtih%3A{HexHash}&dn=x", "Some Book Title", ExpectedHashKey
         },
         {
-            "name, title normalized for case and runs of whitespace before hashing",
-            null, null, "  Some   BOOK   Title  ", 123456789L,
-            "name:398a59f279088f1c1df8838f45d3c607"
+            "btih, indexed parameter name, same marker once decoded",
+            $"magnet:?xt.1=urn:btih:{HexHash}", "Some Book Title", ExpectedHashKey
         },
         {
-            "url, last resort when there is no usable title",
-            null, "https://indexer.example/get/abc?token=XYZ", null, null,
-            "url:09fbce0a2ba90dec669e4583af7d76ec"
+            "title, a release name shaped the way indexers actually shape one",
+            null,
+            "Some.Book.Title.2019.Unabridged.M4B.64k-GROUP [eng]",
+            "title:some.book.title.2019.unabridged.m4b.64k-group [eng]"
+        },
+        {
+            "title, an apostrophe, brackets and braces carried through unchanged",
+            null,
+            "Author's Tale (Narrator) {B08XYZ1234}",
+            "title:author's tale (narrator) {b08xyz1234}"
+        },
+        {
+            "title, runs of whitespace collapsed and case folded",
+            null, "  Some   BOOK   Title  ", "title:some book title"
+        },
+        {
+            "title, an accent already in composed form",
+            null, "Les Mis\u00E9rables Unabridged", "title:les mis\u00E9rables unabridged"
+        },
+        {
+            "title, the same accent decomposed, which must compose to the identical key",
+            null, "Les Mise\u0301rables Unabridged", "title:les mis\u00E9rables unabridged"
+        },
+        {
+            "title, a magnet with an empty hash mints no hash key and the title carries it",
+            "magnet:?xt=urn:btih:&dn=x", "Some Book Title", "title:some book title"
+        },
+        {
+            "title, a magnet whose hash is the wrong length is not a hash",
+            "magnet:?xt=urn:btih:ABCDEF&dn=x", "Some Book Title", "title:some book title"
         },
     };
 
     [Theory]
     [MemberData(nameof(Vectors))]
     public void For_ProducesTheExactPersistedKey(
-        string because, string? torrentInfoHash, string? releaseUrl, string? title, long? size, string expected)
+        string because, string? magnetLink, string? title, string expected)
     {
-        var actual = ReleaseIdentity.For(torrentInfoHash, releaseUrl, title, size);
+        var result = new SearchResult
+        {
+            MagnetLink = magnetLink ?? string.Empty,
+            Title = title ?? string.Empty
+        };
 
-        Assert.Equal(expected, actual);
+        Assert.Equal(expected, ReleaseIdentity.For(result));
         Assert.False(string.IsNullOrWhiteSpace(because));
     }
 
-    [Fact]
-    public void TorrentHashFrom_MagnetLink_FoldsToTheSameKeyAsTheExplicitHash()
-    {
-        const string magnet = "magnet:?xt=urn:btih:DEADBEEF00112233445566778899AABBCCDDEEFF&dn=x";
-
-        var viaMagnet = ReleaseIdentity.For(ReleaseIdentity.TorrentHashFrom(magnet), null, null, null);
-
-        Assert.Equal("btih:deadbeef00112233445566778899aabbccddeeff", viaMagnet);
-    }
-
-    // The digest convention itself, stated once so a change to it fails here rather than in a
-    // vector and leaves the reader guessing which part moved.
     [Theory]
-    [InlineData("name:398a59f279088f1c1df8838f45d3c607")]
-    [InlineData("url:09fbce0a2ba90dec669e4583af7d76ec")]
-    public void HashedKeys_AreThirtyTwoCharactersOfLowercaseHex(string key)
+    [MemberData(nameof(Vectors))]
+    public void EveryPinnedKey_CarriesADeclaredPrefix(
+        string because, string? magnetLink, string? title, string expected)
     {
-        var digest = key[(key.IndexOf(':') + 1)..];
+        _ = because;
+        _ = magnetLink;
+        _ = title;
 
-        Assert.Equal(32, digest.Length);
-        Assert.Matches("^[0-9a-f]{32}$", digest);
+        Assert.Contains(
+            ReleaseIdentity.KeyPrefixes,
+            prefix => expected.StartsWith(prefix, StringComparison.Ordinal));
     }
 
-    // The part the vectors above cannot cover on their own. A new protocol branch that returns a
-    // key under a prefix nobody pinned would ship with no vector and nothing would notice, which
-    // is the specific hole this file was asked to close. So read the source, collect every scheme
-    // prefix it can emit, and require that each one is represented above.
-    //
-    // Reading the source rather than reflecting over the type because the prefixes are string
-    // literals inside one method and there is nothing to reflect on.
     [Fact]
-    public void EveryPrefixTheSourceCanEmit_HasAGoldenVector()
+    public void EveryDeclaredPrefix_HasAGoldenVector()
     {
-        var source = File.ReadAllText(Path.Join(
-            FindRepositoryRoot(), "listenarr.domain", "Downloads", "ReleaseIdentity.cs"));
-
-        // Matches `return "btih:" + ...` and `return "name:" + ...`, the shape every branch uses.
-        var emitted = Regex.Matches(source, @"return\s+""(?<prefix>[a-z]+):""")
-            .Select(match => match.Groups["prefix"].Value)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(prefix => prefix, StringComparer.Ordinal)
-            .ToList();
-
+        // The part the vectors cannot cover on their own. A new branch emitting a key under a
+        // prefix nobody pinned would ship with no vector and nothing would notice, which is the
+        // specific hole this file was asked to close.
         var covered = Vectors()
-            .Select(row => (string)row[5]!)
-            .Select(key => key[..key.IndexOf(':')])
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(prefix => prefix, StringComparer.Ordinal)
-            .ToList();
+            .Select(row => (string)row[3]!)
+            .Select(key => key[..(key.IndexOf(':') + 1)])
+            .ToHashSet(StringComparer.Ordinal);
 
-        Assert.NotEmpty(emitted);
-        Assert.Equal(emitted, covered);
+        Assert.Equal(ReleaseIdentity.KeyPrefixes.OrderBy(p => p, StringComparer.Ordinal), covered.OrderBy(p => p, StringComparer.Ordinal));
     }
 
-    private static string FindRepositoryRoot()
+    [Fact]
+    public void EveryPrefixConstantOnTheType_IsDeclaredInTheKeyPrefixSet()
     {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current != null)
-        {
-            if (File.Exists(Path.Join(current.FullName, "listenarr.slnx")))
-            {
-                return current.FullName;
-            }
+        // Reflection over the type rather than a regex over its source text. The realistic way a
+        // prefix escapes the set is somebody adding a `const string SomethingPrefix` next to the
+        // two that exist, writing a branch that returns it, and not touching the set or this file.
+        // A source scan for string literals also has to guess at interpolation, extracted helpers
+        // and prefixes containing a digit, and guesses wrong quietly; this does not.
+        var declared = typeof(ReleaseIdentity)
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(field => field.IsLiteral
+                         && field.FieldType == typeof(string)
+                         && field.Name.EndsWith("Prefix", StringComparison.Ordinal))
+            .Select(field => (string)field.GetRawConstantValue()!)
+            .ToHashSet(StringComparer.Ordinal);
 
-            current = current.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            "Could not locate the repository root from the test output directory.");
+        Assert.NotEmpty(declared);
+        Assert.Equal(
+            ReleaseIdentity.KeyPrefixes.OrderBy(p => p, StringComparer.Ordinal),
+            declared.OrderBy(p => p, StringComparer.Ordinal));
     }
 }

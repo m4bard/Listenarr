@@ -16,9 +16,12 @@ namespace Listenarr.Application.Downloads.Contracts
         /// <summary>Record that a release failed for a book and should not be grabbed for it again.</summary>
         Task BlockAsync(int audiobookId, string releaseIdentifier, string title, long? size, string reason);
 
-        /// <summary>The release identifiers already blocked for one book.</summary>
-        Task<IReadOnlyCollection<string>> GetBlockedIdentifiersAsync(int audiobookId);
-
+        /// <summary>
+        /// Every entry blocked for one book. The whole row rather than a key, because a match is
+        /// not a string comparison: a row's info-hash and its advertised title and size are two
+        /// separate keys, either of which can match, and the size is compared with tolerance.
+        /// See <see cref="ReleaseIdentity.Matches(BlockedRelease, SearchResult)"/>.
+        /// </summary>
         Task<IReadOnlyList<BlockedRelease>> GetForAudiobookAsync(int audiobookId);
 
         /// <summary>

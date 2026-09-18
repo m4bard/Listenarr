@@ -85,14 +85,6 @@ namespace Listenarr.Infrastructure.Downloads.Blocklist
                 reason);
         }
 
-        public async Task<IReadOnlyCollection<string>> GetBlockedIdentifiersAsync(int audiobookId)
-        {
-            return await _context.BlockedReleases
-                .Where(entry => entry.AudiobookId == audiobookId)
-                .Select(entry => entry.ReleaseIdentifier)
-                .ToListAsync();
-        }
-
         public async Task<IReadOnlyList<BlockedRelease>> GetForAudiobookAsync(int audiobookId)
         {
             return await _context.BlockedReleases

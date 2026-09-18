@@ -33,15 +33,14 @@ namespace Listenarr.Application.Downloads.Submission
                 return scoredResults;
             }
 
-            var blocked = await blocklistService.GetBlockedIdentifiersAsync(audiobookId);
+            var blocked = await blocklistService.GetForAudiobookAsync(audiobookId);
             if (blocked.Count == 0)
             {
                 return scoredResults;
             }
 
-            var blockedSet = new HashSet<string>(blocked, StringComparer.OrdinalIgnoreCase);
             var kept = scoredResults
-                .Where(scored => !IsBlocked(scored.SearchResult, blockedSet))
+                .Where(scored => !IsBlocked(scored.SearchResult, blocked))
                 .ToList();
 
             var dropped = scoredResults.Count - kept.Count;
@@ -56,14 +55,27 @@ namespace Listenarr.Application.Downloads.Submission
             return kept;
         }
 
-        private static bool IsBlocked(SearchResult result, HashSet<string> blockedSet)
+        private static bool IsBlocked(SearchResult result, IReadOnlyList<BlockedRelease> blocked)
         {
-            // Deliberately no field-picking here. ReleaseIdentity owns which parts of a search
-            // result make up the key, and the grab side asks it the same question about the same
-            // object, so the two cannot answer differently. Every defect this feature has had so
-            // far came from two sides picking fields for themselves.
-            var identifier = ReleaseIdentity.For(result);
-            return identifier is not null && blockedSet.Contains(identifier);
+            // Deliberately no field-picking here. ReleaseIdentity owns both which parts of a
+            // search result make up a key and what counts as the same release, and the grab side
+            // asks it the same question about the same object, so the two cannot answer
+            // differently. Every defect this feature has had so far came from two sides picking
+            // fields for themselves.
+            //
+            // A row at a time rather than a set lookup, because a match is not string equality:
+            // an info-hash key and a title-plus-size key are both live on every row, and the size
+            // carries tolerance. Bounded by the per-book scoping, which is what makes a linear
+            // pass the right shape here.
+            for (var index = 0; index < blocked.Count; index++)
+            {
+                if (ReleaseIdentity.Matches(blocked[index], result))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

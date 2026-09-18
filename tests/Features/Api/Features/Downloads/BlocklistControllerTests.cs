@@ -39,7 +39,7 @@ public sealed class BlocklistControllerTests : BaseTests
         // excluding the release. A DeleteAsync that removed nothing would still return
         // NoContent, so the filter is asked both before and after.
         var blocklist = _provider.GetRequiredService<IBlocklistService>();
-        var identifier = ReleaseIdentity.For(FirstHash, null, null, null)!;
+        var identifier = ReleaseIdentity.KeyFor(FirstHash, null)!;
         await blocklist.BlockAsync(7, identifier, "The Only Listing", 800_000_000, "simulated failure");
 
         Assert.Empty(await BlockedReleaseFilter.ExcludeAsync(
@@ -57,8 +57,8 @@ public sealed class BlocklistControllerTests : BaseTests
     public async Task Delete_LeavesTheOtherEntriesForTheSameBookAlone()
     {
         var blocklist = _provider.GetRequiredService<IBlocklistService>();
-        await blocklist.BlockAsync(7, ReleaseIdentity.For(FirstHash, null, null, null)!, "First", 1, "a");
-        await blocklist.BlockAsync(7, ReleaseIdentity.For(SecondHash, null, null, null)!, "Second", 2, "b");
+        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(FirstHash, null)!, "First", 1, "a");
+        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(SecondHash, null)!, "Second", 2, "b");
 
         var first = (await blocklist.GetForAudiobookAsync(7)).Single(entry => entry.Title == "First");
         await NewController().Delete(first.Id);
@@ -81,9 +81,9 @@ public sealed class BlocklistControllerTests : BaseTests
         // A clear that quietly purged the whole table would satisfy "the book has none left",
         // so the second book is the control.
         var blocklist = _provider.GetRequiredService<IBlocklistService>();
-        await blocklist.BlockAsync(7, ReleaseIdentity.For(FirstHash, null, null, null)!, "First", 1, "a");
-        await blocklist.BlockAsync(7, ReleaseIdentity.For(SecondHash, null, null, null)!, "Second", 2, "b");
-        await blocklist.BlockAsync(9, ReleaseIdentity.For(FirstHash, null, null, null)!, "Other book", 3, "c");
+        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(FirstHash, null)!, "First", 1, "a");
+        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(SecondHash, null)!, "Second", 2, "b");
+        await blocklist.BlockAsync(9, ReleaseIdentity.KeyFor(FirstHash, null)!, "Other book", 3, "c");
 
         var response = Assert.IsType<OkObjectResult>(await NewController().ClearForAudiobook(7));
 
@@ -110,8 +110,8 @@ public sealed class BlocklistControllerTests : BaseTests
     public async Task GetForAudiobook_ReturnsOnlyThatBooksEntries()
     {
         var blocklist = _provider.GetRequiredService<IBlocklistService>();
-        await blocklist.BlockAsync(7, ReleaseIdentity.For(FirstHash, null, null, null)!, "Mine", 1, "a");
-        await blocklist.BlockAsync(9, ReleaseIdentity.For(SecondHash, null, null, null)!, "Not mine", 2, "b");
+        await blocklist.BlockAsync(7, ReleaseIdentity.KeyFor(FirstHash, null)!, "Mine", 1, "a");
+        await blocklist.BlockAsync(9, ReleaseIdentity.KeyFor(SecondHash, null)!, "Not mine", 2, "b");
 
         var response = Assert.IsType<OkObjectResult>((await NewController().GetForAudiobook(7)).Result);
         var entries = Assert.IsAssignableFrom<IReadOnlyList<BlockedRelease>>(response.Value);

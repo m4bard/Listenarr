@@ -41,8 +41,8 @@ public sealed class ReleaseIdentityRoundTripTests : BaseTests
         Assert.NotNull(blockedUnder);
 
         var blocklist = new Mock<IBlocklistService>();
-        blocklist.Setup(service => service.GetBlockedIdentifiersAsync(7))
-            .ReturnsAsync([blockedUnder]);
+        blocklist.Setup(service => service.GetForAudiobookAsync(7))
+            .ReturnsAsync([RowBlockedUnder(blockedUnder, download)]);
 
         // The same dead post comes back on the next pass, with a freshly minted download link.
         var comesBackAgain = new QualityScore
@@ -110,8 +110,8 @@ public sealed class ReleaseIdentityRoundTripTests : BaseTests
         Assert.NotNull(blockedUnder);
 
         var blocklist = new Mock<IBlocklistService>();
-        blocklist.Setup(service => service.GetBlockedIdentifiersAsync(7))
-            .ReturnsAsync([blockedUnder]);
+        blocklist.Setup(service => service.GetForAudiobookAsync(7))
+            .ReturnsAsync([RowBlockedUnder(blockedUnder, legacy)]);
 
         var comesBackAgain = new QualityScore
         {
@@ -157,10 +157,10 @@ public sealed class ReleaseIdentityRoundTripTests : BaseTests
             repository.Object,
             NullLogger<DirectDownloadWorkflow>.Instance);
 
-        await workflow.CreateTrackedDownloadAsync(submission, audiobookId: 7, releaseIdentifier: "name:deadbeef");
+        await workflow.CreateTrackedDownloadAsync(submission, audiobookId: 7, releaseIdentifier: "title:some book unabridged");
 
         Assert.NotNull(persisted);
-        Assert.Equal("name:deadbeef", persisted.GetMetadataString(ReleaseIdentity.MetadataKey));
+        Assert.Equal("title:some book unabridged", persisted.GetMetadataString(ReleaseIdentity.MetadataKey));
     }
 
     [Fact]
@@ -186,10 +186,10 @@ public sealed class ReleaseIdentityRoundTripTests : BaseTests
         {
             // Owns the derivation.
             Path.Join("listenarr.domain", "Downloads", "ReleaseIdentity.cs"),
-            // The grab, where the search result is in hand and nothing has moved yet.
-            Path.Join("listenarr.application", "Downloads", "Submission", "TrustedDownloadCandidateFactory.cs"),
-            // The search side, which only ever has search results to go on.
-            Path.Join("listenarr.application", "Downloads", "Submission", "BlockedReleaseFilter.cs")
+            // The grab, where the search result is in hand and nothing has moved yet. The only
+            // other caller used to be the search filter; it now asks ReleaseIdentity whether a
+            // stored row matches instead of deriving a key of its own, so it is not listed here.
+            Path.Join("listenarr.application", "Downloads", "Submission", "TrustedDownloadCandidateFactory.cs")
         };
 
         var offenders = projects
@@ -208,6 +208,19 @@ public sealed class ReleaseIdentityRoundTripTests : BaseTests
             "These derive a release identity for themselves instead of reading the one stamped at "
                 + "grab time:" + Environment.NewLine + string.Join(Environment.NewLine, offenders));
     }
+
+    /// <summary>
+    /// The blocklist row DownloadMonitorService.OnDownloadFailed writes: the key it read back off
+    /// the download, plus the advertised title and size beside it. Built here rather than by hand
+    /// so the three fields cannot drift apart in the test either.
+    /// </summary>
+    private static BlockedRelease RowBlockedUnder(string identifier, Download download) => new()
+    {
+        AudiobookId = 7,
+        ReleaseIdentifier = identifier,
+        Title = download.Title ?? string.Empty,
+        Size = ReleaseIdentity.SizeForGrabbed(download)
+    };
 
     private static SearchResult UsenetResult(string nzbUrl) => new()
     {

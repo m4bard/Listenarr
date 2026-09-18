@@ -407,7 +407,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             // The builder sets no external id, so the client-removal branch below the gate stays
             // out of this.
             download.Metadata[ReleaseIdentity.MetadataKey] =
-                ReleaseIdentity.For("ABCDEF1234567890ABCDEF1234567890ABCDEF12", null, null, null)!;
+                ReleaseIdentity.KeyFor("ABCDEF1234567890ABCDEF1234567890ABCDEF12", null)!;
             return await _downloadRepository.AddAsync(download);
         }
 

@@ -25,19 +25,34 @@ namespace Listenarr.Domain.Downloads
         public int AudiobookId { get; set; }
 
         /// <summary>
-        /// Stable identity for the release, as <see cref="ReleaseIdentity"/> works it out. A
-        /// torrent info-hash where one is known, since that identifies the same release across
-        /// indexers, otherwise a hash of the release title and size together, and only a hash of
-        /// the URL when there is no usable title. Never the indexer URL on its own: a Usenet
-        /// download link carries a per-fetch token, so it differs between the grab and the next
-        /// search. Never the download client's own id either, which is per submission and would
-        /// not match the same release on a later search.
+        /// The primary key for the release, as <see cref="ReleaseIdentity"/> works it out: a
+        /// normalised torrent info-hash where one is known, since that identifies the same
+        /// release across indexers, otherwise the normalised release title. Never the indexer
+        /// URL: a Usenet download link carries a per-fetch token, so it differs between the grab
+        /// and the next search. Never the download client's own id either, which is per
+        /// submission and would not match the same release on a later search.
+        ///
+        /// This is the uniqueness rule for a row rather than the whole of the match.
+        /// <see cref="Title"/> and <see cref="Size"/> below are the second key, and either key
+        /// can produce a match; see
+        /// <see cref="ReleaseIdentity.Matches(BlockedRelease, SearchResult)"/>.
         /// </summary>
         public string ReleaseIdentifier { get; set; } = string.Empty;
 
-        /// <summary>Release title as it was seen, so a human reading the list can tell what it is.</summary>
+        /// <summary>
+        /// The release title as the indexer advertised it. Load-bearing rather than decoration:
+        /// this is the second lookup key, and it is what lets a row written under an info-hash
+        /// still be matched by the same release on a later search where the indexer served no
+        /// magnet. Kept as advertised rather than pre-normalised, so the row stays readable and
+        /// so the normalisation rules can change without stranding rows.
+        /// </summary>
         public string Title { get; set; } = string.Empty;
 
+        /// <summary>
+        /// The size the indexer advertised, compared with tolerance rather than for equality and
+        /// treated as no constraint at all when null. Both are deliberate and both are Readarr's
+        /// behaviour (src/NzbDrone.Core/Blocklisting/BlocklistService.cs:157-167).
+        /// </summary>
         public long? Size { get; set; }
 
         public DateTime BlockedAt { get; set; } = DateTime.UtcNow;
