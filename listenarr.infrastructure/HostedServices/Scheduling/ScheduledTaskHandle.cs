@@ -16,8 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using Listenarr.Application.Common.Scheduling;
-
 namespace Listenarr.Infrastructure.HostedServices.Scheduling
 {
     /// <summary>
@@ -37,7 +35,7 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
         private readonly DateTimeOffset _registeredAt;
 
         private bool _isRunning;
-        private bool _disposed;
+        private volatile bool _disposed;
         private DateTimeOffset? _lastStartedAt;
         private DateTimeOffset? _lastEndedAt;
         private TimeSpan? _lastDuration;
@@ -78,7 +76,8 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
             await _gate.WaitAsync(cancellationToken);
             try
             {
-                await RunHeldAsync(trigger, cancellationToken);
+                var startedAt = BeginCycle(trigger);
+                await RunBodyAsync(startedAt, cancellationToken);
             }
             finally
             {
@@ -95,10 +94,33 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
         }
 
         /// <summary>
-        /// Takes the exclusion gate without waiting. False means a cycle is already
-        /// in flight and the manual request should be refused rather than queued.
+        /// Takes the exclusion gate without waiting and, on success, marks the manual
+        /// cycle started. Null means a cycle is already in flight, or the worker has
+        /// stopped, and the manual request should be refused rather than queued.
         /// </summary>
-        public bool TryBeginManualRun() => !_disposed && _gate.Wait(0);
+        /// <remarks>
+        /// The state transition belongs here rather than in the cycle body because the
+        /// moment the gate is taken is the moment the manual run is committed, and the
+        /// body runs on a pool thread that the caller does not wait for. Doing it in the
+        /// body meant the row handed back to the caller still described the previous
+        /// cycle: not running, last triggered by the schedule.
+        /// </remarks>
+        public ScheduledTaskStatus? TryBeginManualRun()
+        {
+            if (_disposed || !_gate.Wait(0))
+            {
+                return null;
+            }
+
+            BeginCycle(ScheduledTaskTrigger.Manual);
+            return Snapshot();
+        }
+
+        /// <summary>
+        /// False once the worker's loop has ended. The row stays on the surface so a
+        /// stopped worker reads as stopped rather than as a task that never existed.
+        /// </summary>
+        public bool IsRegistered => !_disposed;
 
         /// <summary>
         /// Whether a manual run may even be attempted. Checked before the gate, so a
@@ -109,13 +131,22 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
 
         /// <summary>
         /// Runs a manual cycle on a gate already taken by <see cref="TryBeginManualRun"/>,
-        /// bound to the worker's own cancellation so shutdown stops it.
+        /// which has already recorded the start, bound to the worker's own cancellation
+        /// so shutdown stops it.
         /// </summary>
         public async Task RunManualHeldAsync()
         {
+            DateTimeOffset startedAt;
+            lock (_state)
+            {
+                // The gate is held, so nothing else can have moved this on since
+                // TryBeginManualRun set it.
+                startedAt = _lastStartedAt ?? _timeProvider.GetUtcNow();
+            }
+
             try
             {
-                await RunHeldAsync(ScheduledTaskTrigger.Manual, _workerCancellation);
+                await RunBodyAsync(startedAt, _workerCancellation);
             }
             finally
             {
@@ -133,6 +164,7 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
                     TaskName = TaskName,
                     Interval = interval,
                     RegisteredAt = _registeredAt,
+                    IsRegistered = !_disposed,
                     IsRunning = _isRunning,
                     ManualTrigger = ManualTrigger,
                     LastStartedAt = _lastStartedAt,
@@ -145,6 +177,11 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
             }
         }
 
+        /// <summary>
+        /// Ends the registration. The row stays on the surface marked as no longer
+        /// registered, because a worker that has stopped is the state an operator most
+        /// needs to see, and removing the row reported it as a task that never existed.
+        /// </summary>
         public void Dispose()
         {
             if (_disposed)
@@ -154,10 +191,17 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
 
             _disposed = true;
             _onDisposed(this);
-            _gate.Dispose();
+
+            // The gate is deliberately not disposed. A manual run dispatched onto the
+            // pool can still be holding it here, and its Release would then throw and be
+            // logged as a failed cycle that did not fail. SemaphoreSlim needs disposing
+            // only once AvailableWaitHandle has been taken, and nothing takes it.
         }
 
-        private async Task RunHeldAsync(ScheduledTaskTrigger trigger, CancellationToken cancellationToken)
+        /// <summary>
+        /// Records that a cycle has started, on the gate already held by the caller.
+        /// </summary>
+        private DateTimeOffset BeginCycle(ScheduledTaskTrigger trigger)
         {
             var startedAt = _timeProvider.GetUtcNow();
             lock (_state)
@@ -175,6 +219,11 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
                 }
             }
 
+            return startedAt;
+        }
+
+        private async Task RunBodyAsync(DateTimeOffset startedAt, CancellationToken cancellationToken)
+        {
             var outcome = ScheduledTaskOutcome.Unknown;
             try
             {
