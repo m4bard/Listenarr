@@ -24,6 +24,7 @@ import {
   buildCalendarFeedUrls,
   calendarFeedUrlBase,
   clampFeedDays,
+  resolveCalendarFeedOrigin,
 } from '@/utils/calendarFeedUrl'
 
 const origin = { protocol: 'https:', host: 'books.example:8443' }
@@ -159,6 +160,47 @@ describe('buildCalendarFeedUrls', () => {
     expect(buildCalendarFeedUrls({ ...defaults, apiKey: '' }, origin, '')).toEqual({
       httpUrl: '',
       webcalUrl: '',
+    })
+  })
+
+  describe('resolveCalendarFeedOrigin', () => {
+    const location = { protocol: 'https:', host: 'spa.example' }
+
+    it('uses the browser origin when the api base is relative', () => {
+      // The default deployment: the instance serves the SPA and the feed, so the address the
+      // browser reached is the address a calendar client can reach. This is what Readarr and
+      // Sonarr assume unconditionally.
+      expect(resolveCalendarFeedOrigin('', location, false)).toEqual(location)
+      expect(resolveCalendarFeedOrigin('/listenarr', location, false)).toEqual(location)
+    })
+
+    it('uses the api origin when the api lives on another host', () => {
+      // fe/src/services/apiBase.ts allows an absolute VITE_API_BASE_URL, and API_BASE_PATH is
+      // toPath() of it, which discards the host. Building the feed URL from window.location would
+      // point it at the SPA origin, which does not serve /feed. Listenarr's config permits this
+      // split; Readarr's does not, so this is a divergence rather than a copied assumption.
+      expect(resolveCalendarFeedOrigin('https://api.example.com', location, false)).toEqual({
+        protocol: 'https:',
+        host: 'api.example.com',
+      })
+    })
+
+    it('keeps a non-default port on the api origin', () => {
+      expect(resolveCalendarFeedOrigin('http://api.example.com:9090', location, false)).toEqual({
+        protocol: 'http:',
+        host: 'api.example.com:9090',
+      })
+    })
+
+    it('falls back to the browser origin when the api origin will not parse', () => {
+      expect(resolveCalendarFeedOrigin('not a url', location, false)).toEqual(location)
+    })
+
+    it('ignores the api origin under the dev server', () => {
+      // API_ORIGIN is a hardcoded default in dev rather than a derived value, so it is not
+      // evidence about where anything is reachable. The browser origin is the only honest answer
+      // there, and the modal says separately that a dev URL is not servable.
+      expect(resolveCalendarFeedOrigin('http://localhost:9999', location, true)).toEqual(location)
     })
   })
 
