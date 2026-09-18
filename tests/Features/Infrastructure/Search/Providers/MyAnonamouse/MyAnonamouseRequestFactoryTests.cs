@@ -88,6 +88,46 @@ public sealed class MyAnonamouseRequestFactoryTests : BaseTests
         Assert.DoesNotContain(Uri.EscapeDataString("tor[perpage]"), uri.Query, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BuildSearchUri_SendsTheRequestedSearchLanguage()
+    {
+        // The language option was threaded from the query string to MyAnonamouseOptions and then
+        // dropped: tor[browse_lang][] went out hardcoded to 1, English. MyAnonamouse numbers its
+        // languages, and Prowlarr sends the chosen ids in tor[browse_lang]
+        // (src/NzbDrone.Core/Indexers/Definitions/MyAnonamouse.cs, MyAnonamouseSearchLanguages).
+        var uri = MyAnonamouseRequestFactory.BuildSearchUri(
+            CreateIndexer(),
+            "Ready Player Two",
+            new SearchRequest { MyAnonamouse = new MyAnonamouseOptions { SearchLanguage = "2" } });
+
+        Assert.Equal("2", SingleValueOf(uri, "tor[browse_lang][]"));
+    }
+
+    [Fact]
+    public void BuildSearchUri_WithoutASearchLanguage_KeepsEnglish()
+    {
+        var uri = MyAnonamouseRequestFactory.BuildSearchUri(CreateIndexer(), "Ready Player Two");
+
+        Assert.Equal("1", SingleValueOf(uri, "tor[browse_lang][]"));
+    }
+
+    [Theory]
+    [InlineData("english")]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("2; drop")]
+    public void BuildSearchUri_KeepsEnglishForALanguageMyAnonamouseCannotRead(string language)
+    {
+        // MyAnonamouse identifies languages by number. Anything else would be a parameter it
+        // ignores, which is the bug this is fixing, so the default stands instead.
+        var uri = MyAnonamouseRequestFactory.BuildSearchUri(
+            CreateIndexer(),
+            "Ready Player Two",
+            new SearchRequest { MyAnonamouse = new MyAnonamouseOptions { SearchLanguage = language } });
+
+        Assert.Equal("1", SingleValueOf(uri, "tor[browse_lang][]"));
+    }
+
     private static Indexer CreateIndexer() => new()
     {
         Id = 7,
