@@ -489,6 +489,55 @@ public sealed class ScheduledTaskRegistryTests : BaseTests
             "A request refused as already running must carry a row that says so.");
     }
 
+    [Fact]
+    public void Worker_WhoseIntervalCannotBeStatedInWholeSeconds_IsWarnedAboutAtRegistration()
+    {
+        // Without this the refusal exists only on an API row, so a worker nobody can
+        // describe stays invisible to an operator who never calls the task surface. The
+        // decision this implements asked for the refusal to be loud, and a log is the one
+        // channel that does not require somebody to go looking.
+        var logger = new Mock<ILogger<ScheduledTaskRegistry>>();
+        var registry = new ScheduledTaskRegistry(TimeProvider.System, logger.Object);
+
+        using var handle = registry.Register(
+            "SubSecondWorker",
+            () => TimeSpan.FromMilliseconds(500),
+            _ => Task.CompletedTask,
+            ScheduledTaskManualTrigger.Denied,
+            CancellationToken.None);
+
+        Assert.Single(WarningsMentioning(logger, "SubSecondWorker"));
+    }
+
+    [Fact]
+    public void Worker_WhoseIntervalIsWholeSeconds_IsNotWarnedAbout()
+    {
+        // The control. Same registry, same call, an interval one step away, and no
+        // warning, so the assertion above is the guard firing rather than a rig that warns
+        // about every registration.
+        var logger = new Mock<ILogger<ScheduledTaskRegistry>>();
+        var registry = new ScheduledTaskRegistry(TimeProvider.System, logger.Object);
+
+        using var handle = registry.Register(
+            "WholeSecondWorker",
+            () => TimeSpan.FromSeconds(10),
+            _ => Task.CompletedTask,
+            ScheduledTaskManualTrigger.Denied,
+            CancellationToken.None);
+
+        Assert.Empty(WarningsMentioning(logger, "WholeSecondWorker"));
+    }
+
+    private static IReadOnlyList<IInvocation> WarningsMentioning(
+        Mock<ILogger<ScheduledTaskRegistry>> logger,
+        string taskName) =>
+        logger.Invocations
+            .Where(invocation =>
+                invocation.Method.Name == nameof(ILogger.Log) &&
+                invocation.Arguments[0] is LogLevel.Warning &&
+                invocation.Arguments[2]?.ToString()?.Contains(taskName, StringComparison.Ordinal) == true)
+            .ToList();
+
     private static ScheduledTaskRegistry CreateRegistry(TimeProvider? timeProvider = null) =>
         new(timeProvider ?? TimeProvider.System, Mock.Of<ILogger<ScheduledTaskRegistry>>());
 
