@@ -17,6 +17,7 @@
  */
 
 using Listenarr.Tests.Builders;
+using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Application.Audiobooks.Matching
 {
@@ -30,7 +31,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Matching
     /// must still mean "keep searching" - several tests here exist specifically to fail if that
     /// half of the original guard is deleted instead of narrowed to the blank case only.
     /// </summary>
-    public class AudiobookQualityCutoffEvaluatorTests
+    [Trait("Name", nameof(AudiobookQualityCutoffEvaluatorTests))]
+    [Trait("Category", "Application")]
+    public class AudiobookQualityCutoffEvaluatorTests : BaseTests
     {
         private static QualityProfileBuilder StructuredProfile() =>
             new QualityProfileBuilder().WithName("Structured").WithStructuredDefaults();
