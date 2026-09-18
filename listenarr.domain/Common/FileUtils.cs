@@ -97,6 +97,26 @@ namespace Listenarr.Domain.Common
         }
 
         /// <summary>
+        /// Returns true when the extension either always carries audio or might carry audio.
+        /// This is NOT a substitute for <see cref="IsAudioFile"/> and it never admits anything on
+        /// its own: it exists for the pre-filters that stand in front of the one content gate, so
+        /// an ambiguous container reaches the probe instead of being dropped on its extension.
+        /// A caller that cannot probe, or that must decide now, wants <see cref="IsAudioFile"/>.
+        /// The library scanner is exactly that caller and deliberately still uses
+        /// <see cref="IsAudioFile"/>: it walks every file and cannot afford a probe each time.
+        /// </summary>
+        /// <param name="filePath">The path to check.</param>
+        /// <param name="allowedExtensions">
+        /// The configured allowlist, forwarded to <see cref="IsAudioFile"/> for the always-audio
+        /// half of the check. It does not govern the ambiguous containers: those are decided by
+        /// the content probe, never by an extension list.
+        /// </param>
+        public static bool MayBeAudioPendingProbe(string filePath, IEnumerable<string>? allowedExtensions = null)
+        {
+            return IsAudioFile(filePath, allowedExtensions) || IsAmbiguousAudioContainer(filePath);
+        }
+
+        /// <summary>
         /// Decides whether a probed container should be admitted as audio. True when the file
         /// carries an audio stream and no playable video stream. Attached-picture streams (cover
         /// art) are not playable video and are ignored by the probe mapper, so an audiobook whose
