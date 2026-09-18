@@ -32,9 +32,33 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         /// <summary>The same name split for display, as the other *arrs present it.</summary>
         public required string DisplayName { get; init; }
 
+        /// <summary>
+        /// The gap between cycles, in seconds.
+        /// </summary>
+        /// <remarks>
+        /// The family sends this as <c>Interval</c>, an int in minutes
+        /// (<c>Sonarr.Api.V3/System/Tasks/TaskResource.cs:10</c>, where 0 also carries a
+        /// meaning: <c>NzbDrone.Core/Jobs/TaskManager.cs:49</c> treats a task with
+        /// <c>Interval</c> 0 as never due). Listenarr cannot use that shape as it stands,
+        /// because two of the workers on this surface run faster than once a minute: the
+        /// move handoff recovery poll is every 30 seconds
+        /// (<c>Library/Scanning/ScanBackgroundService.cs:42</c>) and the download monitor
+        /// takes its interval from configuration in seconds
+        /// (<c>Downloads/Monitoring/DownloadMonitorService.cs:65</c>). Minutes-as-int
+        /// would round both to 0, which in the family's own reading means "never runs".
+        /// The field is named for its unit so nothing reads it as minutes by mistake.
+        /// </remarks>
         public required double IntervalSeconds { get; init; }
 
         public required DateTimeOffset RegisteredAt { get; init; }
+
+        /// <summary>
+        /// Whether the worker's loop is still running. A worker that has stopped keeps
+        /// its row, with this false and its last outcome intact, rather than dropping off
+        /// the list: a monitoring surface on which failure is the one invisible state is
+        /// worse than no surface.
+        /// </summary>
+        public required bool IsRegistered { get; init; }
 
         public required bool IsRunning { get; init; }
 
@@ -63,6 +87,7 @@ namespace Listenarr.Api.Features.SystemDiagnostics
             DisplayName = SplitName(status.TaskName),
             IntervalSeconds = status.Interval.TotalSeconds,
             RegisteredAt = status.RegisteredAt,
+            IsRegistered = status.IsRegistered,
             IsRunning = status.IsRunning,
             IsManualRunAllowed = status.ManualTrigger == ScheduledTaskManualTrigger.Allowed,
             LastStartedAt = status.LastStartedAt,
