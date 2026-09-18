@@ -35,8 +35,9 @@ public sealed class CalendarEventStatusTests : BaseTests
         // This is the precedence the lineage parent applies: Readarr's getStatusStyle returns
         // 'downloaded' at 100 percent and 'partial' above zero before it tests 'downloading'
         // (frontend/src/Calendar/getStatusStyle.js:7-17), and Sonarr tests hasFile first the same
-        // way (frontend/src/Calendar/getStatusStyle.ts:13-19). Radarr is the one that puts the
-        // queue first; we follow the other two.
+        // way (sonarr frontend/src/Calendar/getStatusStyle.ts:13-19). Radarr is reported to put
+        // the queue first instead; it is not checked out here, so that is unverified and the
+        // choice rests on the two apps that are.
         var status = CalendarEventStatus.Compute(
             isDownloading: true,
             hasFile: true,

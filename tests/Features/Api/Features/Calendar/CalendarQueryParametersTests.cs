@@ -28,7 +28,7 @@ namespace Listenarr.Tests.Features.Api.Features.Calendar;
 public sealed class CalendarQueryParametersTests : BaseTests
 {
     [Fact]
-    public void ParseTags_ReadsTheSonarrAndRadarrSpelling()
+    public void ParseTags_ReadsTheSonarrSpelling()
     {
         Assert.Equal(
             new[] { "tbr", "classics" },
@@ -38,7 +38,7 @@ public sealed class CalendarQueryParametersTests : BaseTests
     [Fact]
     public void ParseTags_AlsoReadsReadarrsSpelling()
     {
-        // Sonarr and Radarr name this parameter "tags"
+        // Sonarr names this parameter "tags"
         // (src/Sonarr.Api.V3/Calendar/CalendarFeedController.cs:31). Readarr names it "tagList"
         // (src/Readarr.Api.V1/Calendar/CalendarFeedController.cs:31), and Readarr is the lineage
         // parent, so an operator migrating from it arrives with a URL spelled that way. Accepting
