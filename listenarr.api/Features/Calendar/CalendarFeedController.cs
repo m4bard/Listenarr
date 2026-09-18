@@ -27,13 +27,24 @@ namespace Listenarr.Api.Features.Calendar
     /// The iCalendar subscription feed.
     /// </summary>
     /// <remarks>
-    /// Route, filename and parameter names follow Sonarr, Radarr and Readarr, which all serve
-    /// feed/v{n}/calendar/{App}.ics with pastDays, futureDays, unmonitored and tags. An operator
-    /// moving from one of those copies their existing subscription shape across unchanged.
+    /// Route and filename follow Sonarr, Radarr and Readarr, which all serve
+    /// feed/v{n}/calendar/{App}.ics. Sonarr builds it from VersionedFeedControllerAttribute
+    /// (src/Sonarr.Http/VersionedFeedControllerAttribute.cs:11) with the action at
+    /// [HttpGet("Sonarr.ics")] (src/Sonarr.Api.V3/Calendar/CalendarFeedController.cs:30); Readarr
+    /// and Radarr use [V1FeedController("calendar")] and [V3FeedController("calendar")].
     ///
-    /// The feed sits outside the api/v{version} template on purpose: calendar clients fetch a
-    /// fixed URL for years, and pinning it to an API version would break every subscription the
-    /// day the API version moves.
+    /// The parameter names are not uniform across the family, which is the one place a migrating
+    /// operator's pasted URL can silently do nothing. pastDays, futureDays and unmonitored are
+    /// the same everywhere. The tag filter is "tags" in Sonarr and Radarr
+    /// (Sonarr.Api.V3/Calendar/CalendarFeedController.cs:31) and "tagList" in Readarr
+    /// (Readarr.Api.V1/Calendar/CalendarFeedController.cs:31). Both are accepted here, with tags
+    /// preferred; see CalendarQueryParameters.ParseTags.
+    ///
+    /// The feed sits outside the api/v{version} template because calendar clients hold one URL
+    /// for years. This copies the family rather than improving on it: Sonarr's feed is versioned
+    /// too, at feed/v{n}, where the version tracks the API version, so the family has the same
+    /// problem rather than having solved it. What this route avoids is being rewritten every time
+    /// the api/v{version} route template moves.
     /// </remarks>
     [ApiController]
     [Route(FeedRoute)]
@@ -67,7 +78,13 @@ namespace Listenarr.Api.Features.Calendar
         /// <param name="pastDays">Days back from today. Defaults to 7, as in the *arr feeds.</param>
         /// <param name="futureDays">Days forward from today. Defaults to 28, as in the *arr feeds.</param>
         /// <param name="unmonitored">Include unmonitored audiobooks.</param>
-        /// <param name="tags">Comma separated tag names to filter on.</param>
+        /// <param name="tags">
+        /// Comma separated tag names to filter on. The Sonarr and Radarr spelling.
+        /// </param>
+        /// <param name="tagList">
+        /// The Readarr spelling of the same filter, accepted so a URL carried over from Readarr
+        /// still filters. Ignored when <paramref name="tags"/> is present.
+        /// </param>
         /// <param name="cancellationToken">Request cancellation token.</param>
         [HttpGet(FeedFileName)]
         [Produces("text/calendar")]
@@ -77,6 +94,7 @@ namespace Listenarr.Api.Features.Calendar
             [FromQuery] int futureDays = 28,
             [FromQuery] bool unmonitored = false,
             [FromQuery] string? tags = null,
+            [FromQuery] string? tagList = null,
             CancellationToken cancellationToken = default)
         {
             var window = CalendarWindow.FromRelativeDays(
@@ -87,7 +105,7 @@ namespace Listenarr.Api.Features.Calendar
             var events = await _calendarService.GetEventsAsync(
                 window,
                 unmonitored,
-                CalendarQueryParameters.ParseTags(tags),
+                CalendarQueryParameters.ParseTags(tags, tagList),
                 cancellationToken);
 
             var document = _documentWriter.Write(events, CalendarName);
