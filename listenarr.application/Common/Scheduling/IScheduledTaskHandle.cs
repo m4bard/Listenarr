@@ -22,7 +22,9 @@ namespace Listenarr.Application.Common.Scheduling
     /// The registry's side of one registered worker. The cycle runner holds it for
     /// the life of the worker loop and routes every cycle through it, which is what
     /// makes last execution, duration and outcome observable without a worker
-    /// having to report anything itself. Disposing it deregisters the worker.
+    /// having to report anything itself. Disposing it ends the registration: the row
+    /// stays on the read surface reporting that the worker has stopped, and the task can
+    /// no longer be run on demand.
     /// </summary>
     public interface IScheduledTaskHandle : IDisposable
     {

@@ -36,6 +36,7 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
 
         private bool _isRunning;
         private volatile bool _disposed;
+        private TimeSpan _lastKnownInterval;
         private DateTimeOffset? _lastStartedAt;
         private DateTimeOffset? _lastEndedAt;
         private TimeSpan? _lastDuration;
@@ -61,6 +62,10 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
             _onDisposed = onDisposed;
             _registeredAt = timeProvider.GetUtcNow();
             _nextExecution = _registeredAt;
+
+            // Read once here, on the worker's own thread, so a handle disposed before any
+            // snapshot still reports the interval it was registered with rather than zero.
+            _lastKnownInterval = intervalProvider();
         }
 
         public string TaskName { get; }
@@ -76,7 +81,12 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
             await _gate.WaitAsync(cancellationToken);
             try
             {
-                var startedAt = BeginCycle(trigger);
+                DateTimeOffset startedAt;
+                lock (_state)
+                {
+                    startedAt = BeginCycleLocked(trigger);
+                }
+
                 await RunBodyAsync(startedAt, cancellationToken);
             }
             finally
@@ -95,8 +105,8 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
 
         /// <summary>
         /// Takes the exclusion gate without waiting and, on success, marks the manual
-        /// cycle started. Null means a cycle is already in flight, or the worker has
-        /// stopped, and the manual request should be refused rather than queued.
+        /// cycle started. Either way the row is read under the same lock as the attempt,
+        /// so the answer describes the state the decision was made on.
         /// </summary>
         /// <remarks>
         /// The state transition belongs here rather than in the cycle body because the
@@ -104,16 +114,28 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
         /// body runs on a pool thread that the caller does not wait for. Doing it in the
         /// body meant the row handed back to the caller still described the previous
         /// cycle: not running, last triggered by the schedule.
+        /// <para>
+        /// Taking the gate inside <c>lock (_state)</c> looks like a lock-ordering hazard
+        /// and is not one, because <c>Wait(0)</c> cannot block. A cycle holding the gate
+        /// does wait on <c>_state</c> in its finally, but this side never waits on the
+        /// gate, so it always releases <c>_state</c> and lets that finally through.
+        /// </para>
         /// </remarks>
-        public ScheduledTaskStatus? TryBeginManualRun()
+        public ScheduledTaskManualRunAttempt TryBeginManualRun()
         {
-            if (_disposed || !_gate.Wait(0))
-            {
-                return null;
-            }
+            // Outside the lock: the interval provider is the worker's own delegate.
+            var interval = ReadInterval();
 
-            BeginCycle(ScheduledTaskTrigger.Manual);
-            return Snapshot();
+            lock (_state)
+            {
+                if (_disposed || !_gate.Wait(0))
+                {
+                    return new ScheduledTaskManualRunAttempt(false, BuildStatusLocked(interval));
+                }
+
+                BeginCycleLocked(ScheduledTaskTrigger.Manual);
+                return new ScheduledTaskManualRunAttempt(true, BuildStatusLocked(interval));
+            }
         }
 
         /// <summary>
@@ -156,25 +178,60 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
 
         public ScheduledTaskStatus Snapshot()
         {
+            var interval = ReadInterval();
+            lock (_state)
+            {
+                return BuildStatusLocked(interval);
+            }
+        }
+
+        /// <summary>
+        /// The worker's current interval, or the last one it reported once its loop has
+        /// ended.
+        /// </summary>
+        /// <remarks>
+        /// A stopped worker keeps its row, so without this its interval delegate would go
+        /// on being invoked on API request threads for the life of the process, against a
+        /// worker whose dependencies may have been disposed. The row is a record of what
+        /// the task was doing when it stopped, so the last interval is the right answer
+        /// for it anyway.
+        /// </remarks>
+        private TimeSpan ReadInterval()
+        {
+            if (_disposed)
+            {
+                lock (_state)
+                {
+                    return _lastKnownInterval;
+                }
+            }
+
             var interval = _intervalProvider();
             lock (_state)
             {
-                return new ScheduledTaskStatus
-                {
-                    TaskName = TaskName,
-                    Interval = interval,
-                    RegisteredAt = _registeredAt,
-                    IsRegistered = !_disposed,
-                    IsRunning = _isRunning,
-                    ManualTrigger = ManualTrigger,
-                    LastStartedAt = _lastStartedAt,
-                    LastEndedAt = _lastEndedAt,
-                    LastDuration = _lastDuration,
-                    LastOutcome = _lastOutcome,
-                    LastTrigger = _lastTrigger,
-                    NextExecution = _nextExecution
-                };
+                _lastKnownInterval = interval;
             }
+
+            return interval;
+        }
+
+        private ScheduledTaskStatus BuildStatusLocked(TimeSpan interval)
+        {
+            return new ScheduledTaskStatus
+            {
+                TaskName = TaskName,
+                Interval = interval,
+                RegisteredAt = _registeredAt,
+                IsRegistered = !_disposed,
+                IsRunning = _isRunning,
+                ManualTrigger = ManualTrigger,
+                LastStartedAt = _lastStartedAt,
+                LastEndedAt = _lastEndedAt,
+                LastDuration = _lastDuration,
+                LastOutcome = _lastOutcome,
+                LastTrigger = _lastTrigger,
+                NextExecution = _nextExecution
+            };
         }
 
         /// <summary>
@@ -199,24 +256,22 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
         }
 
         /// <summary>
-        /// Records that a cycle has started, on the gate already held by the caller.
+        /// Records that a cycle has started, on the gate and the state lock already held
+        /// by the caller.
         /// </summary>
-        private DateTimeOffset BeginCycle(ScheduledTaskTrigger trigger)
+        private DateTimeOffset BeginCycleLocked(ScheduledTaskTrigger trigger)
         {
             var startedAt = _timeProvider.GetUtcNow();
-            lock (_state)
-            {
-                _isRunning = true;
-                _lastStartedAt = startedAt;
-                _lastTrigger = trigger;
+            _isRunning = true;
+            _lastStartedAt = startedAt;
+            _lastTrigger = trigger;
 
-                // A scheduled cycle consumes the deadline it was waiting for; the
-                // runner publishes the next one when this cycle ends. A manual run
-                // happens beside that wait, so it leaves the deadline alone.
-                if (trigger == ScheduledTaskTrigger.Scheduled)
-                {
-                    _nextExecution = null;
-                }
+            // A scheduled cycle consumes the deadline it was waiting for; the runner
+            // publishes the next one when this cycle ends. A manual run happens beside
+            // that wait, so it leaves the deadline alone.
+            if (trigger == ScheduledTaskTrigger.Scheduled)
+            {
+                _nextExecution = null;
             }
 
             return startedAt;
@@ -257,4 +312,17 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
             }
         }
     }
+
+    /// <summary>
+    /// The result of asking a handle for the exclusion gate: whether the manual cycle
+    /// was started, and the row as it stood when that was decided.
+    /// </summary>
+    /// <remarks>
+    /// Both halves come from one critical section on purpose. Reading the row on the
+    /// statement after a refusal let a competing cycle finish in between, so an
+    /// "already running" answer could carry a row saying nothing was running.
+    /// </remarks>
+    internal readonly record struct ScheduledTaskManualRunAttempt(
+        bool Started,
+        ScheduledTaskStatus Status);
 }
