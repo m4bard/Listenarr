@@ -166,7 +166,17 @@ public sealed class AudiobookRepositoryCalendarTests : BaseTests
             "2026-06-15  ",         // trailing padding: sorts inside the bound
             "  2026-06-15",         // leading padding: sorts below "2026" because ' ' < '2'
             "2026-13-45",           // inside the bound, not a date
-            "not a date"
+            "not a date",
+
+            // Invariant-culture forms the TryParse fallback reads, whose lexical order has
+            // nothing to do with ISO order. The first two sort below "2026" and the third sorts
+            // above "2026-99", so all three are excluded, and all three parse to 2026-06-15.
+            // Reachable: LibraryUpdateWorkflow.Metadata.cs:34 writes the column unvalidated from
+            // an API request, and tests/Builders/AudiobookBuilder.cs:60 writes a current-culture
+            // DateOnly.ToString(), which is "6/1/1996" on an en-US machine.
+            "06/15/2026",
+            "15 June 2026",
+            "June 15, 2026"
         };
 
         await using var connection = new SqliteConnection("Data Source=:memory:");
