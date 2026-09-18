@@ -78,38 +78,47 @@ namespace Listenarr.Api.Features.SystemDiagnostics
 
         /// <summary>
         /// Runs one cycle of a task now. Returns as soon as the cycle has started,
-        /// because a scan or a metadata rescan outlives any sensible request. The body is
-        /// the task's row with the manual cycle already marked started.
+        /// because a scan or a metadata rescan outlives any sensible request.
         /// </summary>
         /// <remarks>
-        /// Only tasks on the manual-run allowlist can be reached here. A registered task
-        /// that is not on it answers 403 rather than 404: it exists, the caller is simply
-        /// not allowed to bring its cycle forward, and saying "no such task" would send
-        /// them looking for a spelling mistake that is not there.
+        /// Only tasks on the manual-run allowlist can be reached here, and a registered
+        /// task that is not on one answers 403 rather than 404: it exists, the caller is
+        /// simply not allowed to bring its cycle forward, and saying "no such task" would
+        /// send them looking for a spelling mistake that is not there. A task whose worker
+        /// has stopped answers 409 for the same reason, since the row is still listed by
+        /// GET and the caller may be looking straight at it. Only a name nothing has ever
+        /// registered under gets a 404.
         /// <para>
-        /// A task already running answers 202 with the cycle that is in flight rather
-        /// than an error, which is how the family answers the same request. Sonarr's
-        /// <c>CommandQueueManager.Push</c> returns the command already queued or started
-        /// (<c>NzbDrone.Core/Messaging/Commands/CommandQueueManager.cs:111-121</c>) and
-        /// its controller hands that straight back as a success
+        /// A task already running answers 202 rather than an error, which is how the
+        /// family answers the same request. Sonarr's <c>CommandQueueManager.Push</c>
+        /// returns the command already queued or started
+        /// (<c>NzbDrone.Core/Messaging/Commands/CommandQueueManager.cs:111-121</c>) and its
+        /// controller hands that straight back as a success
         /// (<c>Sonarr.Api.V3/Commands/CommandController.cs:75-77</c>), so a user clicking
-        /// twice gets the running command to watch instead of a failure. The row says
-        /// <c>isRunning</c> and carries <c>lastStartedAt</c>, so a caller that needs to
-        /// tell the two apart still can.
+        /// twice gets the running command to watch instead of a failure.
+        /// </para>
+        /// <para>
+        /// The two 202 cases are told apart by <c>triggered</c> in the body and by nothing
+        /// else. The rows are identical: both say <c>isRunning</c>, both carry the same
+        /// <c>lastTrigger</c>, and both carry the same <c>lastStartedAt</c> to the tick,
+        /// because the second caller is being told about the cycle the first caller
+        /// started. The family does not have this problem, since it hands back a command
+        /// id the client then watches.
         /// </para>
         /// </remarks>
         [HttpPost("{taskName}/run")]
-        [ProducesResponseType(typeof(ScheduledTaskDto), StatusCodes.Status202Accepted)]
+        [ProducesResponseType(typeof(ScheduledTaskRunDto), StatusCodes.Status202Accepted)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public ActionResult<ScheduledTaskDto> Run(string taskName)
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
+        public ActionResult<ScheduledTaskRunDto> Run(string taskName)
         {
             var outcome = _scheduledTasks.Trigger(taskName);
 
             switch (outcome.Result)
             {
                 case ScheduledTaskTriggerResult.NotFound:
-                    return NotFound(new { error = $"No scheduled task named '{taskName}' is running." });
+                    return NotFound(new { error = $"No scheduled task named '{taskName}' exists." });
 
                 case ScheduledTaskTriggerResult.NotAllowed:
                     return StatusCode(
@@ -119,14 +128,26 @@ namespace Listenarr.Api.Features.SystemDiagnostics
                             error = $"'{taskName}' runs on its schedule only and cannot be started on demand."
                         });
 
-                default:
-                    // Accepted and AlreadyRunning both answer with the cycle that is in
-                    // flight. The status travels with the trigger result rather than being
-                    // re-read here, because the cycle body runs on a pool thread and a
-                    // second read would usually describe the previous cycle instead.
+                case ScheduledTaskTriggerResult.WorkerStopped:
+                    return Conflict(new
+                    {
+                        error = $"'{taskName}' is listed but its worker has stopped, so a cycle cannot be started."
+                    });
+
+                case ScheduledTaskTriggerResult.Accepted:
+                case ScheduledTaskTriggerResult.AlreadyRunning:
+                    // The row travels with the trigger result rather than being re-read
+                    // here, because the cycle body runs on a pool thread and a second read
+                    // would usually describe the previous cycle instead. Which of the two
+                    // happened is in the body, since the rows do not differ.
                     return outcome.Status is null
                         ? Accepted()
-                        : Accepted(ScheduledTaskDto.FromStatus(outcome.Status));
+                        : Accepted(ScheduledTaskRunDto.FromStatus(outcome.Result, outcome.Status));
+
+                default:
+                    // A result added later must not silently become a 202.
+                    throw new InvalidOperationException(
+                        $"Unhandled scheduled task trigger result '{outcome.Result}'.");
             }
         }
     }
