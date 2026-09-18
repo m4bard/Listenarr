@@ -80,7 +80,8 @@ namespace Listenarr.Api.Middleware
                             }
                             else if (path.StartsWith(CalendarFeedQueryKeyPathPrefix, StringComparison.OrdinalIgnoreCase))
                             {
-                                // "apikey" is the parameter name Sonarr, Radarr and Readarr all use,
+                                // "apikey" is the parameter name the family uses
+                                // (readarr src/Readarr.Http/Authentication/AuthenticationBuilderExtensions.cs:62),
                                 // so a subscription URL copied from one of those works unchanged.
                                 var qs = context.Request.Query;
                                 if (qs.TryGetValue("apikey", out var feedKeyValues)) provided = feedKeyValues.FirstOrDefault();
