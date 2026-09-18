@@ -73,13 +73,39 @@ namespace Listenarr.Application.Calendar
 
         /// <summary>
         /// Parses a stored PublishedDate. Accepts the yyyy-MM-dd the metadata path writes, any
-        /// value with a leading yyyy-MM-dd, and a bare four-digit year, which is read as 1 January.
+        /// value with a leading yyyy-MM-dd, a bare four-digit year read as 1 January, and a
+        /// single-digit month or day form such as 2026-6-15. Trailing whitespace is tolerated.
         /// Anything else yields null and the book is left off the calendar.
         /// </summary>
+        /// <remarks>
+        /// Leading whitespace is deliberately refused rather than trimmed, and that is the one
+        /// piece of this method worth explaining.
+        ///
+        /// The coarse bound in AudiobookRepository.GetCalendarRowsAsync compares the stored string
+        /// as it sits in the column, against a four-digit year. A space is 0x20 and the digits are
+        /// 0x30 upward, so a value with leading whitespace sorts below every possible lower bound
+        /// and is excluded by the query before this method ever sees it. Trimming here would
+        /// advertise a tolerance the query layer negates: the value would be asserted acceptable
+        /// in the parser's own tests and silently dropped in production.
+        ///
+        /// Trailing whitespace is a different case. It does not move the value below the lower
+        /// bound, and "{year}-99" is above every real month, so those rows do reach here and are
+        /// read. Hence TrimEnd rather than Trim.
+        ///
+        /// AudiobookRepositoryCalendarTests.GetCalendarRowsAsync_AdmitsEveryStoredFormTheParserClaimsToAccept
+        /// holds the two layers to this agreement, and PublishedDate is written unvalidated from an
+        /// API request (Features/Library/LibraryUpdateWorkflow.Metadata.cs:34), so arbitrary
+        /// strings really do reach the column.
+        /// </remarks>
         public static DateOnly? ParsePublishedDate(string? publishedDate)
         {
-            var value = publishedDate?.Trim();
+            var value = publishedDate?.TrimEnd();
             if (string.IsNullOrEmpty(value))
+            {
+                return null;
+            }
+
+            if (char.IsWhiteSpace(value[0]))
             {
                 return null;
             }
