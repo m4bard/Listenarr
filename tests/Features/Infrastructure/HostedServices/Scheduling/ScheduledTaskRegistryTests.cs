@@ -295,6 +295,85 @@ public sealed class ScheduledTaskRegistryTests : BaseTests
     }
 
     [Fact]
+    public async Task Trigger_AsACycleIsEnding_NeverRefusesWithARowSayingNothingIsRunning()
+    {
+        // The gate is released under the same lock that clears IsRunning, so "already
+        // running" and "not running" cannot both be true of one answer. Released outside
+        // that lock there was a window where the gate was still held while IsRunning was
+        // already false, and a request landing in it got exactly that pair.
+        var registry = CreateRegistry();
+        using var hold = new SemaphoreSlim(0, 1);
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "EndingWorker",
+            holdCycleOn: hold,
+            holdFromCycle: 2,
+            manualTrigger: ScheduledTaskManualTrigger.Allowed);
+
+        await worker.WaitForCycleAsync(1);
+        await WaitForIdleAsync(registry, "EndingWorker");
+        Assert.Equal(ScheduledTaskTriggerResult.Accepted, registry.Trigger("EndingWorker").Result);
+        await worker.WaitForCycleAsync(2);
+
+        // One refusal with the cycle provably still held, so the invariant is exercised
+        // even if the loop below never lands in the moment the cycle ends. Without this
+        // the test could pass by never observing a refusal at all, which is also what a
+        // dead harness looks like.
+        AssertRefusalSaysRunning(registry.Trigger("EndingWorker"));
+
+        // Then keep asking across the moment the cycle ends, which is where the window
+        // used to be: gate still held, IsRunning already cleared.
+        hold.Release();
+
+        var deadline = DateTimeOffset.UtcNow + Patience;
+        var accepted = false;
+        while (!accepted && DateTimeOffset.UtcNow < deadline)
+        {
+            var outcome = registry.Trigger("EndingWorker");
+            if (outcome.Result == ScheduledTaskTriggerResult.AlreadyRunning)
+            {
+                AssertRefusalSaysRunning(outcome);
+            }
+            else
+            {
+                accepted = outcome.Result == ScheduledTaskTriggerResult.Accepted;
+            }
+        }
+
+        Assert.True(accepted, "the ending cycle never released the gate");
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public async Task GetAll_WhenAnIntervalProviderThrows_ReportsItsLastGoodIntervalRatherThanFailing()
+    {
+        // GetAll reads every worker's interval delegate on one request thread, so without
+        // this a single worker computing a bad interval takes the whole task list down.
+        var registry = CreateRegistry();
+        var failing = false;
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "MoodyIntervalWorker",
+            intervalProvider: () => Volatile.Read(ref failing)
+                ? throw new InvalidOperationException("interval blew up")
+                : TimeSpan.FromMinutes(3));
+
+        // Wait for rest, not just for the cycle body: the runner reads the interval
+        // itself once the cycle ends, and that read is outside its own error handling.
+        // Flipping the flag before then kills the worker loop instead of testing GetAll.
+        await worker.WaitForCycleAsync(1);
+        await WaitForIdleAsync(registry, "MoodyIntervalWorker");
+        Assert.Equal(TimeSpan.FromMinutes(3), Assert.Single(registry.GetAll()).Interval);
+
+        Volatile.Write(ref failing, true);
+
+        var listed = Assert.Single(registry.GetAll());
+        Assert.Equal(TimeSpan.FromMinutes(3), listed.Interval);
+        Assert.Equal("MoodyIntervalWorker", listed.TaskName);
+        await worker.StopAsync();
+    }
+
+    [Fact]
     public async Task StoppedWorker_IsNoLongerAskedForItsInterval()
     {
         // Keeping the row means the handle outlives the worker, so its interval delegate
@@ -399,6 +478,15 @@ public sealed class ScheduledTaskRegistryTests : BaseTests
             ScheduledTaskTriggerResult.NotFound,
             registry.Trigger("NoSuchWorker").Result);
         await worker.StopAsync();
+    }
+
+    private static void AssertRefusalSaysRunning(ScheduledTaskTriggerOutcome outcome)
+    {
+        Assert.Equal(ScheduledTaskTriggerResult.AlreadyRunning, outcome.Result);
+        Assert.NotNull(outcome.Status);
+        Assert.True(
+            outcome.Status.IsRunning,
+            "A request refused as already running must carry a row that says so.");
     }
 
     private static ScheduledTaskRegistry CreateRegistry(TimeProvider? timeProvider = null) =>
