@@ -39,14 +39,24 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         /// The family sends this as <c>Interval</c>, an int in minutes
         /// (<c>Sonarr.Api.V3/System/Tasks/TaskResource.cs:10</c>, where 0 also carries a
         /// meaning: <c>NzbDrone.Core/Jobs/TaskManager.cs:49</c> treats a task with
-        /// <c>Interval</c> 0 as never due). Listenarr cannot use that shape as it stands,
-        /// because two of the workers on this surface run faster than once a minute: the
-        /// move handoff recovery poll is every 30 seconds
-        /// (<c>Library/Scanning/ScanBackgroundService.cs:42</c>) and the download monitor
-        /// takes its interval from configuration in seconds
-        /// (<c>Downloads/Monitoring/DownloadMonitorService.cs:65</c>). Minutes-as-int
-        /// would round both to 0, which in the family's own reading means "never runs".
-        /// The field is named for its unit so nothing reads it as minutes by mistake.
+        /// <c>Interval</c> 0 as never due, and the family's own fastest declared task is
+        /// <c>Interval = 1</c>, so a minute is its floor by design). Listenarr cannot use
+        /// that shape as it stands, because four of the ten workers on this surface run
+        /// faster than once a minute:
+        /// <list type="bullet">
+        /// <item><c>DirectDownloadService</c>, 10 seconds, hardcoded
+        /// (<c>Downloads/DirectDownload/DirectDownloadService.cs:25</c>)</item>
+        /// <item><c>move.scan.handoff.recovery</c>, 30 seconds, hardcoded
+        /// (<c>Library/Scanning/ScanBackgroundService.cs:42</c>)</item>
+        /// <item><c>MovedDownloadCleanupService</c>, 10 seconds by default
+        /// (<c>Downloads/Cleanup/MovedDownloadCleanupBackgroundService.cs:16</c>)</item>
+        /// <item><c>DownloadMonitorService</c>, 30 seconds by default, from configuration
+        /// (<c>Downloads/Monitoring/DownloadMonitorService.cs:37</c> and <c>:65</c>)</item>
+        /// </list>
+        /// Minutes-as-int would round all four to 0, which in the family's own reading
+        /// means "never runs", and two of them unconditionally rather than only on default
+        /// configuration. The field is named for its unit so nothing reads it as minutes
+        /// by mistake.
         /// </remarks>
         public required double IntervalSeconds { get; init; }
 
