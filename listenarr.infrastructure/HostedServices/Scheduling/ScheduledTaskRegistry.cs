@@ -17,7 +17,6 @@
  */
 
 using System.Collections.Concurrent;
-using Listenarr.Application.Common.Scheduling;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.HostedServices.Scheduling
@@ -59,9 +58,16 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
                 handle,
                 (_, replaced) =>
                 {
-                    logger.LogWarning(
-                        "Two workers registered as {TaskName}; the newer registration wins",
-                        taskName);
+                    // A stopped worker keeps its row, so finding one here is the ordinary
+                    // restart case and not a name collision. Only a live registration
+                    // losing its name is worth warning about.
+                    if (replaced.IsRegistered)
+                    {
+                        logger.LogWarning(
+                            "Two workers registered as {TaskName}; the newer registration wins",
+                            taskName);
+                    }
+
                     return handle;
                 });
 
@@ -81,11 +87,14 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
         public ScheduledTaskStatus? Find(string taskName) =>
             _tasks.TryGetValue(taskName, out var handle) ? handle.Snapshot() : null;
 
-        public ScheduledTaskTriggerResult Trigger(string taskName)
+        public ScheduledTaskTriggerOutcome Trigger(string taskName)
         {
-            if (!_tasks.TryGetValue(taskName, out var handle))
+            // A stopped worker keeps its row on the read surface, but there is no loop
+            // left to bring a cycle forward on, so a trigger against one is answered the
+            // same way as a name nobody ever registered.
+            if (!_tasks.TryGetValue(taskName, out var handle) || !handle.IsRegistered)
             {
-                return ScheduledTaskTriggerResult.NotFound;
+                return ScheduledTaskTriggerOutcome.NotFound;
             }
 
             // The allowlist is checked before the gate, so a scheduled-only worker is
@@ -95,17 +104,21 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
                 logger.LogWarning(
                     "Refused a manual run of {TaskName}: it is not on the manual-run allowlist",
                     taskName);
-                return ScheduledTaskTriggerResult.NotAllowed;
+                return ScheduledTaskTriggerOutcome.For(
+                    ScheduledTaskTriggerResult.NotAllowed,
+                    handle.Snapshot());
             }
 
-            if (!handle.TryBeginManualRun())
+            if (handle.TryBeginManualRun() is not { } started)
             {
-                return ScheduledTaskTriggerResult.AlreadyRunning;
+                return ScheduledTaskTriggerOutcome.For(
+                    ScheduledTaskTriggerResult.AlreadyRunning,
+                    handle.Snapshot());
             }
 
             _ = Task.Run(() => RunManualAsync(handle));
             logger.LogInformation("Manually triggered scheduled task {TaskName}", taskName);
-            return ScheduledTaskTriggerResult.Accepted;
+            return ScheduledTaskTriggerOutcome.For(ScheduledTaskTriggerResult.Accepted, started);
         }
 
         private async Task RunManualAsync(ScheduledTaskHandle handle)
@@ -126,11 +139,23 @@ namespace Listenarr.Infrastructure.HostedServices.Scheduling
             }
         }
 
+        /// <summary>
+        /// Ends a registration without taking the row off the surface.
+        /// </summary>
+        /// <remarks>
+        /// The handle itself reports that it has stopped, so nothing has to be moved or
+        /// copied here; what matters is that a handle whose name has since been taken
+        /// over by a newer registration does not disturb the live one. The reference
+        /// check is what guarantees that, and it is the reason the dictionary is keyed on
+        /// name rather than on the handle.
+        /// </remarks>
         private void Deregister(ScheduledTaskHandle handle)
         {
-            if (_tasks.TryRemove(new KeyValuePair<string, ScheduledTaskHandle>(handle.TaskName, handle)))
+            if (_tasks.TryGetValue(handle.TaskName, out var current) && ReferenceEquals(current, handle))
             {
-                logger.LogDebug("Deregistered scheduled task {TaskName}", handle.TaskName);
+                logger.LogDebug(
+                    "Scheduled task {TaskName} stopped; its last cycle stays on the surface",
+                    handle.TaskName);
             }
         }
     }
