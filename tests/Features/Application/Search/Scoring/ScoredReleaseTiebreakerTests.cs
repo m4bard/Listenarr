@@ -17,6 +17,7 @@
  */
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -164,8 +165,20 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             Assert.Equal("release-a", reversedScored[0].SearchResult.Id);
         }
 
+        /// <summary>
+        /// The same reversal, driven through DownloadService.SearchAndDownloadAsync so the
+        /// selection expression at that site is the thing under test.
+        /// </summary>
+        /// <remarks>
+        /// The scoring service is mocked to hand back scored results in the order the indexer
+        /// returned them. That matters: the real QualityProfileService now returns an already
+        /// tiebroken list, and LINQ ordering is stable, so with a real scoring service this test
+        /// passes whether or not DownloadService does any tiebreaking of its own. Measured, by
+        /// removing only the DownloadService tiebreak and watching all ten tests still pass.
+        /// Feeding the site an unordered list is what makes it discriminate.
+        /// </remarks>
         [Fact]
-        public async Task SearchAndDownload_GrabsSameRelease_WhenIndexerReturnsCandidatesReversed()
+        public async Task SearchAndDownload_GrabsSameRelease_WhenScoredResultsArriveInIndexerOrder()
         {
             var forward = new List<SearchResult>
             {
@@ -351,12 +364,52 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             Assert.Equal("Alpha Release", reversed[0].SearchResult.Title);
         }
 
+        /// <summary>
+        /// The third site with the same expression: the automatic search cycle. Driven the same
+        /// way, with scored results handed back in indexer order, so the ordering in
+        /// AutomaticSearchProcessor is what decides.
+        /// </summary>
+        [Fact]
+        public async Task AutomaticSearch_QueuesSameRelease_WhenScoredResultsArriveInIndexerOrder()
+        {
+            var forward = new List<SearchResult>
+            {
+                Torrent("release-b", "Bravo Release"),
+                Torrent("release-a", "Alpha Release"),
+                Torrent("release-c", "Charlie Release")
+            };
+            var reversed = Enumerable.Reverse(forward).ToList();
+
+            // Control: the scorer cannot separate these, so only the tiebreak can decide.
+            AssertAllScoresTied(await ScoreAsync([.. forward]), ExpectedTorrentScore);
+
+            var forwardGrab = await RunAutomaticSearchCycleAsync(forward);
+            var reversedGrab = await RunAutomaticSearchCycleAsync(reversed);
+
+            Assert.Equal("Alpha Release", forwardGrab);
+            Assert.Equal("Alpha Release", reversedGrab);
+        }
+
         // ------------------------------------------------------------------
-        // Harness for the DownloadService selection site.
+        // Harnesses that drive the real selection sites.
+        //
+        // Each one mocks IQualityProfileService so scored results arrive in the order the
+        // indexer returned them. That is what makes these tests discriminate: the real
+        // QualityProfileService now returns an already tiebroken list, and LINQ ordering is
+        // stable, so with a real scoring service they would pass whether or not the consuming
+        // site tiebreaks at all. Measured, by removing only the DownloadService tiebreak and
+        // watching every test still pass.
         // ------------------------------------------------------------------
 
-        private async Task<string?> RunSearchAndDownloadAsync(List<SearchResult> candidates)
+        /// <summary>
+        /// Registers the search, gateway and scoring doubles, rebuilds the provider, and seeds the
+        /// settings and download client the submission path needs. The returned holder is filled
+        /// with the list the scoring double handed back, for the ordering control.
+        /// </summary>
+        private async Task<StrongBox<List<QualityScore>?>> ArrangeSelectionHarnessAsync(List<SearchResult> candidates)
         {
+            var handedBack = new StrongBox<List<QualityScore>?>(null);
+
             var searchServiceMock = new Mock<ISearchService>();
             searchServiceMock
                 .Setup(service => service.SearchAsync(
@@ -376,8 +429,27 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
                     It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new DownloadClientSubmissionResult("ABCDEF1234567890ABCDEF1234567890ABCDEF12"));
 
+            var realScorer = CreateQualityProfileService();
+            var scoringMock = new Mock<IQualityProfileService>();
+            scoringMock
+                .Setup(service => service.ScoreSearchResults(
+                    It.IsAny<List<SearchResult>>(),
+                    It.IsAny<QualityProfile>()))
+                .Returns(async (List<SearchResult> results, QualityProfile profileArgument) =>
+                {
+                    var scored = new List<QualityScore>();
+                    foreach (var result in results)
+                    {
+                        scored.Add(await realScorer.ScoreSearchResult(result, profileArgument));
+                    }
+
+                    handedBack.Value = scored;
+                    return scored;
+                });
+
             _services.AddSingleton(searchServiceMock.Object);
             _services.AddSingleton(gatewayMock.Object);
+            _services.AddSingleton(scoringMock.Object);
             Init();
 
             await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
@@ -394,10 +466,34 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
                 IsEnabled = true
             });
 
+            return handedBack;
+        }
+
+        private async Task<Audiobook> ArrangeMonitoredAudiobookAsync()
+        {
             var profile = await _qualityProfileRepository.AddAsync(BuildProfile());
             var audiobook = await CreateAudiobook();
             audiobook.QualityProfileId = profile.Id;
+            audiobook.Monitored = true;
+            audiobook.LastSearchTime = null;
             await _audiobookRepository.UpdateAsync(audiobook);
+            return audiobook;
+        }
+
+        private static void AssertHandedBackInIndexerOrder(
+            List<SearchResult> candidates,
+            StrongBox<List<QualityScore>?> handedBack)
+        {
+            Assert.NotNull(handedBack.Value);
+            Assert.Equal(
+                candidates.Select(candidate => candidate.Id).ToArray(),
+                handedBack.Value!.Select(score => score.SearchResult.Id).ToArray());
+        }
+
+        private async Task<string?> RunSearchAndDownloadAsync(List<SearchResult> candidates)
+        {
+            var handedBack = await ArrangeSelectionHarnessAsync(candidates);
+            var audiobook = await ArrangeMonitoredAudiobookAsync();
 
             var downloadService = _provider.GetRequiredService<DownloadService>();
             var result = await downloadService.SearchAndDownloadAsync(audiobook.Id);
@@ -405,7 +501,31 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             Assert.True(result.Success, result.Message);
             Assert.NotNull(result.SearchResult);
 
+            // Control: the list DownloadService had to order really was in indexer order, so a
+            // pass cannot be explained by something upstream having sorted it already.
+            AssertHandedBackInIndexerOrder(candidates, handedBack);
+
             return result.SearchResult!.Id;
+        }
+
+        private async Task<string?> RunAutomaticSearchCycleAsync(List<SearchResult> candidates)
+        {
+            var handedBack = await ArrangeSelectionHarnessAsync(candidates);
+            var audiobook = await ArrangeMonitoredAudiobookAsync();
+
+            var processor = new AutomaticSearchProcessor(
+                _provider.GetRequiredService<ILogger<AutomaticSearchProcessor>>(),
+                _provider.GetRequiredService<IServiceScopeFactory>());
+
+            await processor.RunCycleAsync(CancellationToken.None);
+
+            var queued = await _downloadRepository.GetByAudiobookIdAsync(audiobook.Id);
+            var download = Assert.Single(queued);
+
+            // Control: the list the cycle had to order really was in indexer order.
+            AssertHandedBackInIndexerOrder(candidates, handedBack);
+
+            return download.Title;
         }
     }
 }
