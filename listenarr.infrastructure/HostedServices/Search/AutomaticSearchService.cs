@@ -16,9 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Search.Scoring;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Listenarr.Application.Search.Scoring;
 
 namespace Listenarr.Infrastructure.HostedServices.Search
 {

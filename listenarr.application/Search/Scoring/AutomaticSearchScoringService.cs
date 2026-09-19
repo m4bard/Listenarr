@@ -76,8 +76,10 @@ public sealed class AutomaticSearchScoringService(
     public AutomaticCandidateScore? SelectBest(AutomaticSearchAssessment assessment) =>
         assessment.Candidates.Where(s => !s.IsRejected)
             // Rank by TotalScore; indexer priority only breaks an exact tie, so it can never make a
-            // worse release win. See QualityScoreComparer.
+            // worse release win. See QualityScoreComparer. Candidates still tied after priority go to
+            // ScoredReleaseTiebreaker, so the winner never comes down to indexer response order.
             .OrderByDescending(s => s.Quality, QualityScoreComparer.Instance)
+            .ThenBy(s => s.Quality, ScoredReleaseTiebreaker.Instance)
             .ThenBy(s => s.SearchResult.IndexerId)
             .ThenBy(s => s.SearchResult.Id, StringComparer.Ordinal)
             .ThenBy(s => s.SearchResult.TorrentUrl, StringComparer.Ordinal)
