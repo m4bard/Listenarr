@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Search.Scoring;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Listenarr.Application.Search.Scoring;
@@ -325,10 +326,12 @@ namespace Listenarr.Infrastructure.HostedServices.Search
 
             // Rank by TotalScore (quality/format/language/seeders/age); indexer priority only
             // breaks an exact tie, so it can never make a worse release win. See
-            // QualityScoreComparer.
+            // QualityScoreComparer. Candidates still tied after priority go to
+            // ScoredReleaseTiebreaker, so the winner never comes down to indexer response order.
             var topResult = selectableResults
                 .Where(s => !s.IsRejected) // Only non-rejected results
                 .OrderByDescending(s => s, QualityScoreComparer.Instance)
+                .ThenBy(s => s, ScoredReleaseTiebreaker.Instance) // Still equal: deterministic tiebreak
                 .FirstOrDefault(); // Pick only the top scoring result
 
             if (topResult == null)
