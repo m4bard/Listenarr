@@ -152,10 +152,13 @@ namespace Listenarr.Application.Downloads.Submission
                 }
             }
 
-            // Only consider non-rejected, score > 0 results that are not already blocked
+            // Only consider non-rejected, score > 0 results that are not already blocked. Equal
+            // scores are separated by ScoredReleaseTiebreaker so the grab does not depend on
+            // indexer response order.
             var topResult = (await BlockedReleaseFilter.ExcludeAsync(blocklistService, audiobookId, scoredResults, logger))
                 .Where(s => !s.IsRejected && s.TotalScore > 0)
                 .OrderByDescending(s => s.TotalScore)
+                .ThenBy(s => s, ScoredReleaseTiebreaker.Instance)
                 .FirstOrDefault();
 
             if (topResult == null)
