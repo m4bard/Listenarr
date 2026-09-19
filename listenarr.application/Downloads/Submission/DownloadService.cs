@@ -175,10 +175,12 @@ namespace Listenarr.Application.Downloads.Submission
                 }
             }
 
-            // Only consider non-rejected, score > 0 results
+            // Only consider non-rejected, score > 0 results. Equal scores are separated by
+            // ScoredReleaseTiebreaker so the grab does not depend on indexer response order.
             var topResult = scoredResults
                 .Where(s => !s.IsRejected && s.TotalScore > 0)
                 .OrderByDescending(s => s.TotalScore)
+                .ThenBy(s => s, ScoredReleaseTiebreaker.Instance)
                 .FirstOrDefault();
 
             if (topResult == null)

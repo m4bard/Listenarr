@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Search.Scoring;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -259,6 +260,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             var topResult = scoredResults
                 .Where(s => !s.IsRejected) // Only non-rejected results
                 .OrderByDescending(s => s.TotalScore)
+                .ThenBy(s => s, ScoredReleaseTiebreaker.Instance) // Equal scores: deterministic tiebreak
                 .FirstOrDefault(); // Pick only the top scoring result
 
             if (topResult == null)

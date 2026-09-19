@@ -289,10 +289,13 @@ namespace Listenarr.Application.Audiobooks.Quality
         {
             var scores = await Task.WhenAll(searchResults.Select(result => ScoreSearchResult(result, profile)));
 
-            // Ensure rejected results are ordered last regardless of numeric TotalScore
+            // Ensure rejected results are ordered last regardless of numeric TotalScore.
+            // Equal scores are separated by ScoredReleaseTiebreaker so the ranking does not
+            // depend on the order the indexer returned results in.
             return scores
                 .OrderBy(s => s.IsRejected) // false (not rejected) first
                 .ThenByDescending(s => s.TotalScore)
+                .ThenBy(s => s, ScoredReleaseTiebreaker.Instance)
                 .ToList();
         }
 
