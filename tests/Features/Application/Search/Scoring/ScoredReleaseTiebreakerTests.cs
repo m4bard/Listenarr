@@ -328,16 +328,19 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         {
             // Readarr rounds size down to 200 MB before comparing. These two land in the same
             // bucket, so size must not decide, and the identity fallback takes over.
-            var lower = Torrent("release-b", "Bravo Release", sizeBytes: 401L * 1024 * 1024);
-            var higher = Torrent("release-a", "Alpha Release", sizeBytes: 599L * 1024 * 1024);
+            //
+            // The larger release is deliberately the one identity ranks SECOND. Give the larger
+            // release the identity-winning id instead and the test passes with or without the
+            // bucketing, which is how the first version of it was written: replacing SizeBucket
+            // with the raw byte count left all thirteen tests green.
+            var smaller = Torrent("release-a", "Alpha Release", sizeBytes: 401L * 1024 * 1024);
+            var larger = Torrent("release-b", "Bravo Release", sizeBytes: 599L * 1024 * 1024);
 
-            var forward = await ScoreAsync(lower, higher);
-            var reversed = await ScoreAsync(higher, lower);
+            var forward = await ScoreAsync(smaller, larger);
+            var reversed = await ScoreAsync(larger, smaller);
 
             AssertAllScoresTied(forward, ExpectedTorrentScore);
 
-            // The larger one is "release-a" only by coincidence of naming; what this pins is that
-            // the winner is the identity-ordered one rather than the larger one.
             Assert.Equal("release-a", forward[0].SearchResult.Id);
             Assert.Equal("release-a", reversed[0].SearchResult.Id);
         }
@@ -379,10 +382,13 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             // Control: all three tie on score, so only the tiebreak can order them.
             AssertAllScoresTied(await ScoreAsync(candidates), ExpectedCrossProtocolScore);
 
+            // The full sequence, not just the winner. Asserting only the head would pass even
+            // if positions two and three swapped from one permutation to the next.
+            string[] expected = ["release-b", "release-c", "release-a"];
             foreach (var permutation in Permutations(candidates))
             {
                 var scored = await ScoreAsync(permutation);
-                Assert.Equal("release-b", scored[0].SearchResult.Id);
+                Assert.Equal(expected, scored.Select(score => score.SearchResult.Id).ToArray());
             }
         }
 
@@ -401,6 +407,78 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
                     yield return [candidates[first], candidates[second], candidates[third]];
                 }
             }
+        }
+
+        [Fact]
+        public async Task Tiebreak_RanksDatedUsenetAheadOfDateless()
+        {
+            // Both shipping parsers store an empty PublishedDate when a feed omits pubDate, so
+            // this is an ordinary result rather than a contrived one.
+            var dateless = Usenet("release-a", "Alpha Release", publishedDate: string.Empty);
+            var dated = Usenet("release-b", "Bravo Release", DateTime.UtcNow.AddDays(-30).ToString("O"));
+
+            var forward = await ScoreAsync(dateless, dated);
+            var reversed = await ScoreAsync(dated, dateless);
+
+            // Control: the missing date costs nothing in the score, so only the tiebreak can see it.
+            AssertAllScoresTied(forward, ExpectedCrossProtocolScore);
+
+            Assert.Equal("release-b", forward[0].SearchResult.Id);
+            Assert.Equal("release-b", reversed[0].SearchResult.Id);
+        }
+
+        /// <summary>
+        /// The second cycle of the same shape as the protocol one, found in review. When the age
+        /// axis abstained on an unparseable date instead of ranking it, a dateless usenet release
+        /// sitting between a fresh one and an old one closed a loop: age separated the two dated
+        /// releases, and the identity fallback ordered each of them against the dateless one.
+        /// </summary>
+        [Fact]
+        public async Task Tiebreak_IsTransitive_AcrossADatelessUsenetCycle()
+        {
+            var fresh = Usenet("release-z", "Zulu Release", DateTime.UtcNow.AddHours(-2).ToString("O"));
+            var dateless = Usenet("release-m", "Mike Release", publishedDate: string.Empty);
+            var old = Usenet("release-a", "Alpha Release", DateTime.UtcNow.AddDays(-30).ToString("O"));
+
+            var candidates = new[] { fresh, dateless, old };
+
+            // Control: all three tie on score, so only the tiebreak can order them.
+            AssertAllScoresTied(await ScoreAsync(candidates), ExpectedCrossProtocolScore);
+
+            string[] expected = ["release-z", "release-a", "release-m"];
+            foreach (var permutation in Permutations(candidates))
+            {
+                var scored = await ScoreAsync(permutation);
+                Assert.Equal(expected, scored.Select(score => score.SearchResult.Id).ToArray());
+            }
+        }
+
+        /// <summary>
+        /// A release the submission path will hand to a torrent client, carrying only a
+        /// TorrentUrl. TrustedDownloadCandidateFactory.ResolveProtocol calls that a torrent
+        /// through its trailing branch; an earlier version of the comparer omitted that branch,
+        /// which put the release in the "neither" group behind everything and threw its seeders
+        /// away.
+        /// </summary>
+        [Fact]
+        public async Task Tiebreak_TreatsATorrentUrlOnlyResultAsATorrent()
+        {
+            var urlOnly = Torrent("release-a", "Alpha Release", seeders: 5000, leechers: 0);
+            urlOnly.MagnetLink = string.Empty;
+            urlOnly.TorrentUrl = "https://tracker.invalid/alpha.torrent";
+            urlOnly.DownloadType = string.Empty;
+
+            var magnet = Torrent("release-b", "Bravo Release", seeders: 20, leechers: 0);
+
+            var forward = await ScoreAsync(urlOnly, magnet);
+            var reversed = await ScoreAsync(magnet, urlOnly);
+
+            // Control: both tie on score, so the peers axis is the only thing that can separate
+            // them, and it only runs if both are classified as torrents.
+            AssertAllScoresTied(forward, ExpectedTorrentScore);
+
+            Assert.Equal("release-a", forward[0].SearchResult.Id);
+            Assert.Equal("release-a", reversed[0].SearchResult.Id);
         }
 
         // ------------------------------------------------------------------
