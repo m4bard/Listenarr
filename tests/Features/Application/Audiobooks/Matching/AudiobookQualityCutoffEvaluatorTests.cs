@@ -30,6 +30,15 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Matching
     /// A CutoffQuality that names a rung the profile no longer lists is a different case and
     /// must still mean "keep searching" - several tests here exist specifically to fail if that
     /// half of the original guard is deleted instead of narrowed to the blank case only.
+    ///
+    /// Forward note for whoever lands a separate per-profile "upgrades allowed" flag on top of
+    /// this: that flag does not exist on this branch, so its interaction with a blank cutoff is
+    /// not covered here. But the fix above removed the special case entirely rather than adding
+    /// a condition to it, so a blank cutoff now falls through to QualityMatcher and reads
+    /// satisfied regardless of any other flag on the profile, the same way every other read of a
+    /// blank cutoff in the codebase does. A test that pins "blank cutoff with upgrades off" must
+    /// expect the same answer as "blank cutoff alone" - True, not the pre-this-branch False - or
+    /// it is pinning a state this change already retired.
     /// </summary>
     [Trait("Name", nameof(AudiobookQualityCutoffEvaluatorTests))]
     [Trait("Category", "Application")]
