@@ -260,9 +260,14 @@ namespace Listenarr.Domain.Common
 
         /// <summary>
         /// The codec group a free-text quality label belongs to ("FLAC", "AAC", "MP3", "OPUS", ...),
-        /// or null when the label names no codec at all. A bare bitrate such as "320kbps" and a
-        /// label this codebase does not recognise both come back null, because neither says
-        /// anything about the codec. Container labels follow their codec, so "M4B" is "AAC".
+        /// or null when the label names no codec at all. A bare bitrate such as "320kbps" comes
+        /// back null because it says nothing about the codec, and so does any label this method
+        /// does not recognise.
+        ///
+        /// Recognition is <see cref="ParseQualityLabel"/>'s, not <see cref="MapCodec"/>'s, and the
+        /// two do not agree on containers. "M4B" and "M4A" resolve to AAC here; "MP4" does not,
+        /// though MapCodec accepts it, and neither does "AAX". A caller using this to decide
+        /// whether a profile has an opinion will find it has none about an Audible AAX rip.
         /// </summary>
         public static string? CodecGroupOfLabel(string? qualityLabel)
             => string.IsNullOrWhiteSpace(qualityLabel) ? null : ParseQualityLabel(qualityLabel).Codec;
