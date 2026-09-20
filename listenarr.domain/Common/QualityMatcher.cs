@@ -312,6 +312,19 @@ namespace Listenarr.Domain.Common
         /// Before that flag existed the only way to record "upgrades off" was to blank the cutoff,
         /// so the two arms of this test used to be the same arm, and callers that already treat a
         /// blank cutoff as satisfied keep the answer they had.
+        ///
+        /// This is deliberately not what the family does, and the difference is worth naming.
+        /// Readarr and Sonarr fold the flag into the cutoff VALUE rather than switching the cutoff
+        /// off, with
+        /// <c>var cutoff = profile.UpgradeAllowed ? profile.Cutoff : profile.FirstAllowedQuality().Id;</c>
+        /// (src/NzbDrone.Core/DecisionEngine/Specifications/UpgradableSpecification.cs:99 in
+        /// Readarr, :126 in Sonarr), so a file below every allowed rung is still short of the
+        /// cutoff there and still gets replaced. Listenarr says met, and never replaces it.
+        ///
+        /// Matching the family would change the answer for every profile that has been recording
+        /// upgrades-off as a blank cutoff since long before this flag existed, which is the
+        /// behaviour this branch is under instruction to leave alone. Worth revisiting once the
+        /// blank-cutoff case is settled; it is one line here.
         /// </remarks>
         private static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
         {
