@@ -819,6 +819,28 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
         }
 
         [Fact]
+        public async Task ParseTorznabResponse_FormatAttribute_ReadsABitrateTheSameWayTheTextDoes()
+        {
+            var service = CreateSearchService();
+
+            // No description, so the filetype attribute is the only thing that can label these.
+            // A resolution in the attribute used to come back as MP3 192kbps, and the attribute now
+            // outranks the description, so it cannot be corrected later.
+            var resolution = await service.ParseTorznabResponseAsync(
+                TorznabFeed("Some Book", null, "mp4 1920x1080"),
+                TestIndexer());
+
+            // Control: a real bitrate in the same attribute still resolves, 64kbps included, which
+            // the old chain had no arm for at all.
+            var bitrate = await service.ParseTorznabResponseAsync(
+                TorznabFeed("Some Book", null, "mp3 64kbps"),
+                TestIndexer());
+
+            Assert.Null(Assert.Single(resolution).Quality);
+            Assert.Equal("MP3 64kbps", Assert.Single(bitrate).Quality);
+        }
+
+        [Fact]
         public async Task TorznabProvider_X264TitleWithDescription_KeepsTheDeclaredQuality()
         {
             // The infrastructure provider carries its own copy of the same description branch and
