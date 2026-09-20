@@ -286,7 +286,7 @@ public sealed class IndexerSearchWorkflowBackoffTests : BaseTests
         new SearchQueryForm(1, "Alice Adventures", SearchQueryFormKind.TitleAuthor),
         new SearchQueryForm(2, "Alice", SearchQueryFormKind.Title),
         new SearchQueryForm(3, "Wonderland Adventures", SearchQueryFormKind.SeriesAuthor),
-        new SearchQueryForm(4, "Wonderland", SearchQueryFormKind.Series)
+        new SearchQueryForm(4, "Wonderland", SearchQueryFormKind.TitleStemAuthor)
     ]);
 
     private static IndexerQueryObservation NoMatch() =>

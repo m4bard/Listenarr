@@ -91,7 +91,7 @@ public sealed class IndexerSearchWorkflowLadderTests : BaseTests
         // When
         var observation = await workflow.RunQueryPlanAsync(indexer, plan, null, null, CancellationToken.None);
 
-        // Then: tiers 1 to 3 in order, and tier 4 never issued because tier 3 answered
+        // Then: tiers 1 to 3 in order, and there is no tier 4 to escalate to once tier 3 answers
         Assert.Equal(
             new[] { "Heavens River Dennis E Taylor", "Heavens River", "Bobiverse Dennis E Taylor" },
             provider.Queries.ToArray());
@@ -116,9 +116,9 @@ public sealed class IndexerSearchWorkflowLadderTests : BaseTests
         var observation = await workflow.RunQueryPlanAsync(indexer, plan, null, null, CancellationToken.None);
 
         // Then
-        Assert.Equal(4, provider.Queries.Count);
+        Assert.Equal(3, provider.Queries.Count);
         Assert.Equal(IndexerQueryOutcome.NoMatch, observation.Outcome);
-        Assert.Equal(4, observation.Tier);
+        Assert.Equal(3, observation.Tier);
     }
 
     [Fact]
