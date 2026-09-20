@@ -133,13 +133,107 @@ public sealed class AudiobookDeletionIntentReconcilerTests : BaseTests
             StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ReconcileAsync_OrphanedIntent_DoesNotStopLaterIntentsFromRecovering()
+    {
+        var orphan = await CreateOrphanedPlannedIntentAsync("delete-recovery-orphan-first");
+        await BackdateIntentAsync(orphan.IntentId, TimeSpan.FromMinutes(5));
+        var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+            .WithTitle("Delete Recovery After Orphan")
+            .WithBasePath(FileService.GetTempDirectory("delete-recovery-after-orphan"))
+            .Build());
+        var store = _provider.GetRequiredService<IAudiobookDeletionIntentStore>();
+        var committed = await store.GetOrCreateAsync(audiobook.Id, deleteFolder: true);
+        await store.MarkFilesystemCleanupCompletedAsync(committed.Id);
+        var reconciler = BuildReconciler(store);
+
+        await reconciler.ReconcileAsync();
+
+        Assert.Equal(
+            AudiobookDeletionIntentState.NeedsAttention,
+            (await GetIntentAsync(orphan.IntentId)).State);
+        Assert.Equal(
+            AudiobookDeletionIntentState.Completed,
+            (await GetIntentAsync(committed.Id)).State);
+        Assert.Null(await _audiobookRepository.GetByIdAsync(audiobook.Id));
+    }
+
+    [Fact]
+    public async Task ReconcileAsync_SecondPassOverParkedIntent_StillDoesNotFailRecovery()
+    {
+        var orphan = await CreateOrphanedPlannedIntentAsync("delete-recovery-orphan-restart");
+        var store = _provider.GetRequiredService<IAudiobookDeletionIntentStore>();
+        var reconciler = BuildReconciler(store);
+
+        await reconciler.ReconcileAsync();
+        Assert.Equal(
+            AudiobookDeletionIntentState.NeedsAttention,
+            (await GetIntentAsync(orphan.IntentId)).State);
+
+        await reconciler.ReconcileAsync();
+
+        Assert.Equal(
+            AudiobookDeletionIntentState.NeedsAttention,
+            (await GetIntentAsync(orphan.IntentId)).State);
+    }
+
+    [Fact]
+    public async Task ReconcileAsync_ParkedIntent_StaysDiscoverableAndIsLoggedWithItsIdentity()
+    {
+        var orphan = await CreateOrphanedPlannedIntentAsync("delete-recovery-orphan-visible");
+        var store = _provider.GetRequiredService<IAudiobookDeletionIntentStore>();
+        var logger = new CapturingLogger<AudiobookDeletionIntentReconciler>();
+        var reconciler = BuildReconciler(store, logger);
+
+        await reconciler.ReconcileAsync();
+
+        var parked = Assert.Single(
+            await store.GetActiveAsync(),
+            candidate => candidate.Id == orphan.IntentId);
+        Assert.Equal(AudiobookDeletionIntentState.NeedsAttention, parked.State);
+        Assert.False(string.IsNullOrWhiteSpace(parked.Error));
+
+        var reported = Assert.Single(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Error);
+        Assert.Equal(orphan.IntentId, Assert.IsType<Guid>(reported.State["IntentId"]));
+        Assert.Equal(orphan.AudiobookId, Assert.IsType<int>(reported.State["AudiobookId"]));
+        Assert.Equal(
+            "The audiobook row disappeared before explicit filesystem cleanup completed.",
+            Assert.IsType<string>(reported.State["Reason"]));
+    }
+
     private AudiobookDeletionIntentReconciler BuildReconciler(
-        IAudiobookDeletionIntentStore store) =>
+        IAudiobookDeletionIntentStore store,
+        ILogger<AudiobookDeletionIntentReconciler>? logger = null) =>
         new(
             store,
             _audiobookRepository,
             _provider.GetRequiredService<IAudiobookDeletionCommitService>(),
-            NullLogger<AudiobookDeletionIntentReconciler>.Instance);
+            logger ?? NullLogger<AudiobookDeletionIntentReconciler>.Instance);
+
+    private async Task<OrphanedIntent> CreateOrphanedPlannedIntentAsync(string tempDirectoryName)
+    {
+        var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+            .WithTitle("Delete Recovery Orphan")
+            .WithBasePath(FileService.GetTempDirectory(tempDirectoryName))
+            .Build());
+        var store = _provider.GetRequiredService<IAudiobookDeletionIntentStore>();
+        var intent = await store.GetOrCreateAsync(audiobook.Id, deleteFolder: true);
+        Assert.True(await _audiobookRepository.DeleteByIdAsync(audiobook.Id));
+        Assert.Null(await _audiobookRepository.GetByIdAsync(audiobook.Id));
+        return new OrphanedIntent(intent.Id, audiobook.Id);
+    }
+
+    private async Task BackdateIntentAsync(Guid intentId, TimeSpan offset)
+    {
+        var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
+        await using var db = await factory.CreateDbContextAsync();
+        var intent = await db.AudiobookDeletionIntents
+            .SingleAsync(candidate => candidate.Id == intentId);
+        intent.CreatedAt -= offset;
+        await db.SaveChangesAsync();
+    }
 
     private async Task<AudiobookDeletionIntent> GetIntentAsync(Guid intentId)
     {
@@ -148,5 +242,40 @@ public sealed class AudiobookDeletionIntentReconcilerTests : BaseTests
         return await db.AudiobookDeletionIntents
             .AsNoTracking()
             .SingleAsync(candidate => candidate.Id == intentId);
+    }
+
+    private sealed record OrphanedIntent(Guid IntentId, int AudiobookId);
+
+    private sealed record CapturedLog(
+        LogLevel Level,
+        string Message,
+        IReadOnlyDictionary<string, object?> State);
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<CapturedLog> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            var values = state as IEnumerable<KeyValuePair<string, object?>>;
+            Entries.Add(new CapturedLog(
+                logLevel,
+                formatter(state, exception),
+                values?.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value,
+                    StringComparer.Ordinal)
+                    ?? new Dictionary<string, object?>(StringComparer.Ordinal)));
+        }
     }
 }
