@@ -295,7 +295,7 @@ namespace Listenarr.Application.Audiobooks.Quality
             return scores
                 .OrderBy(s => s.IsRejected) // false (not rejected) first
                 .ThenByDescending(s => s.TotalScore)
-                .ThenBy(s => s, ScoredReleaseTiebreaker.Instance)
+                .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow())
                 .ToList();
         }
 

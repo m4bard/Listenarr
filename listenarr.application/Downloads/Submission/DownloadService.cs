@@ -163,7 +163,11 @@ namespace Listenarr.Application.Downloads.Submission
 
             // Log all scored results for debugging
             logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", scoredResults.Count, LogRedaction.SanitizeText(audiobook.Title));
-            foreach (var scoredResult in scoredResults.OrderByDescending(s => s.TotalScore))
+            // Same ordering as the selection below, so the log an operator reads to work out
+            // why a release was grabbed lists them in the order they were actually considered.
+            foreach (var scoredResult in scoredResults
+                .OrderByDescending(s => s.TotalScore)
+                .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow()))
             {
                 var status = scoredResult.IsRejected ? "REJECTED" : (scoredResult.TotalScore > 0 ? "ACCEPTABLE" : "LOW SCORE");
                 logger.LogInformation("  [{Status}] Score: {Score} | Title: {Title} | Source: {Source} | Size: {Size}MB | Seeders: {Seeders} | Quality: {Quality}",
@@ -180,7 +184,7 @@ namespace Listenarr.Application.Downloads.Submission
             var topResult = scoredResults
                 .Where(s => !s.IsRejected && s.TotalScore > 0)
                 .OrderByDescending(s => s.TotalScore)
-                .ThenBy(s => s, ScoredReleaseTiebreaker.Instance)
+                .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow())
                 .FirstOrDefault();
 
             if (topResult == null)

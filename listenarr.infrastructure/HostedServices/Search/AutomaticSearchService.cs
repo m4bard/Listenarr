@@ -244,7 +244,11 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             {
                 _logger.LogDebug(ex, "Failed to broadcast scored search results for audiobook {Id}", audiobook.Id);
             }
-            foreach (var scoredResult in scoredResults.OrderByDescending(s => s.TotalScore))
+            // Same ordering as the selection below, so the log lists candidates in the order
+            // they were actually considered.
+            foreach (var scoredResult in scoredResults
+                .OrderByDescending(s => s.TotalScore)
+                .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow()))
             {
                 var status = scoredResult.IsRejected ? "REJECTED" : (scoredResult.TotalScore > 0 ? "ACCEPTABLE" : "LOW SCORE");
                 _logger.LogInformation("  [{Status}] Score: {Score} | Title: {Title} | Source: {Source} | Size: {Size}MB | Seeders: {Seeders} | Quality: {Quality}",
@@ -260,7 +264,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             var topResult = scoredResults
                 .Where(s => !s.IsRejected) // Only non-rejected results
                 .OrderByDescending(s => s.TotalScore)
-                .ThenBy(s => s, ScoredReleaseTiebreaker.Instance) // Equal scores: deterministic tiebreak
+                .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow()) // Equal scores: deterministic tiebreak
                 .FirstOrDefault(); // Pick only the top scoring result
 
             if (topResult == null)
