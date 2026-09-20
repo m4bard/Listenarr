@@ -269,9 +269,10 @@ namespace Listenarr.Domain.Common
         /// to AAC in both. They used to disagree, so an Audible AAX rip came back null here and a
         /// caller asking whether the profile had an opinion was told it had none.
         ///
-        /// Null still means what it has always meant: this method does not recognise the label.
-        /// It does not mean permitted. <see cref="QualityGate"/> treats a null as a refusal, since
-        /// a profile's ladder is an allow-list and a label nothing can place is not on it.
+        /// Null still means what it has always meant: this method cannot name a codec for the
+        /// label. It is not a verdict, and callers should not read it as permission. What one
+        /// caller does with it: <see cref="QualityGate"/> treats null as a refusal. Another caller
+        /// is free to differ, so do not rely on that here.
         /// </summary>
         public static string? CodecGroupOfLabel(string? qualityLabel)
             => string.IsNullOrWhiteSpace(qualityLabel) ? null : ParseQualityLabel(qualityLabel).Codec;
@@ -405,8 +406,12 @@ namespace Listenarr.Domain.Common
             if (Any("opus")) groups.Add("OPUS");
             if (Any("vorbis") || Any("ogg")) groups.Add("OGG Vorbis");
             // AAC commonly lives in M4B/M4A/MP4/AAX containers; cover the legacy "M4B" codec group
-            // too. Kept in step with ParseQualityLabel deliberately: when the two disagree, a label
-            // the gate can place maps to a codec group the matcher cannot, or the reverse.
+            // too. This family is deliberately kept in step across ParseQualityLabel, MapCodec and
+            // CanonicalCodec, because when they disagree a label the gate can place maps to a codec
+            // group the matcher cannot, or the reverse. The three do NOT agree outside it:
+            // CanonicalCodec handles no aiff, ape, dsd, wav/wv or lossless and returns the raw
+            // string for them, which mostly hides behind the gate's OrdinalIgnoreCase comparison.
+            // That predates this change; do not read the MPEG-4 agreement as a general property.
             if (Any("aac") || Any("m4b") || Any("m4a") || Any("mp4") || Any("aax"))
             {
                 groups.Add("AAC");

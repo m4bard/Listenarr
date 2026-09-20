@@ -137,10 +137,13 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
         public async Task ProfileThatRefusesEveryAacRung_RefusesAnAaxRelease()
         {
             // The regression this file exists to stop coming back. AAX reached the gate as a label
-            // nothing could place, so it came back NoOpinion and scored 88 through a profile that
-            // refuses every rung it carries. The scorer ranks AAX at 95, second only to FLAC, so
-            // the profile forbidding everything grabbed the Audible rip in preference to almost
-            // anything else it had been offered.
+            // nothing could place, so it came back NoOpinion and was permitted by a profile that
+            // refuses every rung it carries, scoring 88 on the way through.
+            //
+            // Found by reading the gate's contract, not in a search log: no shipped parser emits
+            // "AAX" as a Quality today, so nothing can reach this yet. The scorer already ranks
+            // AAX at 95, second only to FLAC (SearchResultScorer.GetQualityScore), which is the
+            // branch waiting for the first parser that does.
             var service = CreateService();
             var ladder = SeededLadder(allowed: false);
             var profile = Profile(ladder, DefaultPreferredFormats());
@@ -164,10 +167,18 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
         [Fact]
         public async Task AFormatTheGateCannotPlace_IsRefusedOnTheUndeclaredQualityPath()
         {
-            // A deliberate consequence rather than a surprise, pinned so it is reviewed. The gate
+            // A deliberate consequence rather than a surprise, pinned so it is reviewed: the gate
             // on a release that declares a format but no quality now refuses a format nothing can
-            // place, which is how an EPUB from an indexer that mixes ebooks in with audiobooks
-            // stops scoring positively. The previous code kept it in the pool on a -12 mismatch.
+            // place.
+            //
+            // EPUB is a stand-in for the rule, not a field report, and the distinction matters.
+            // No shipped provider can currently put an unplaceable format on this path. Every one
+            // maps into a closed set first: TorznabResponseParser:135-139 and :370-379,
+            // SearchResultAttributeParser.DetectFormatFromTags, and the Internet Archive planner.
+            // The one line that could pass a raw indexer filetype through,
+            // MyAnonamouseSearchProvider:228, is guarded by Format being empty and the MAM parser
+            // always fills it, so it is dead. This pins the gate's contract against a parser that
+            // widens later, which is the only way the case arrives.
             var service = CreateService();
             var profile = Profile(SeededLadder(), DefaultPreferredFormats());
 
@@ -177,6 +188,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
             var audiobook = await service.ScoreSearchResult(Release("Some Book", null, "M4B"), profile);
 
             Assert.True(ebook.IsRejected, $"An unplaceable declared format must be refused (score {ebook.TotalScore})");
+            Assert.Contains(ebook.RejectionReasons, reason => reason.Contains("EPUB", StringComparison.Ordinal));
             Assert.False(audiobook.IsRejected, $"A placeable one must not be: {string.Join("; ", audiobook.RejectionReasons)}");
         }
 
