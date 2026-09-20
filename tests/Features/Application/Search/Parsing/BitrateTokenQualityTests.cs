@@ -39,6 +39,42 @@ public sealed class BitrateTokenQualityTests : BaseTests
         Assert.Null(SearchResultAttributeParser.DetectBitrateQuality(text));
     }
 
+    // A number standing on its own is not a bitrate either. These are the shapes a description
+    // really carries, and every one of them named an MP3 bitrate before this change.
+    [Theory]
+    [InlineData("Size: 320 MB")]
+    [InlineData("The Governor x264 WEBRip Size: 320 MB")]
+    [InlineData("Chapter 64")]
+    [InlineData("Part 128 of 200")]
+    [InlineData("Duration: 320 min.")]
+    [InlineData("128,000 words")]
+    [InlineData("ISBN 978-0-320-12345-6")]
+    [InlineData("Ancient Rome 64 BC")]
+    public void DetectBitrateQuality_NumberWithNoRateWordOrUnit_IsNotABitrate(string text)
+    {
+        Assert.Null(SearchResultAttributeParser.DetectBitrateQuality(text));
+    }
+
+    // Glued to a rate word it still counts, which a plain token boundary would have missed.
+    [Theory]
+    [InlineData("Some Book mp3320", "MP3 320kbps")]
+    [InlineData("Some Book MP3CBR320", "MP3 320kbps")]
+    [InlineData("Some Book MP3_320", "MP3 320kbps")]
+    [InlineData("Some Book VBR 256", "MP3 256kbps")]
+    [InlineData("Some Book 320kbs", "MP3 320kbps")]
+    public void DetectBitrateQuality_RateWordCarriesTheDigits_Resolves(string text, string expected)
+    {
+        Assert.Equal(expected, SearchResultAttributeParser.DetectBitrateQuality(text));
+    }
+
+    [Fact]
+    public void DetectBitrateQuality_KnownResidual_AKilobyteSizeStillLooksLikeABitrate()
+    {
+        // Documented, not fixed: a k unit is taken as a rate unit, so a size quoted in kb reads as
+        // a bitrate. Kept as a test so the next reader does not assume free text is now safe.
+        Assert.Equal("MP3 128kbps", SearchResultAttributeParser.DetectBitrateQuality("Sample 128 kb"));
+    }
+
     // The controls: the same digits, this time standing as a bitrate, still resolve.
     [Theory]
     [InlineData("The Governor 64kbps WEB", "MP3 64kbps")]
@@ -53,6 +89,15 @@ public sealed class BitrateTokenQualityTests : BaseTests
     public void DetectBitrateQuality_BitrateAsItsOwnToken_Resolves(string text, string expected)
     {
         Assert.Equal(expected, SearchResultAttributeParser.DetectBitrateQuality(text));
+    }
+
+    [Fact]
+    public void DetectBitrateQuality_MixedRealAndIncidentalNumbers_TakesTheRealOne()
+    {
+        // The old ladder tested 320 anywhere before 128 anywhere, so a chapter number could beat
+        // the release's own bitrate. Only the stated bitrate counts now.
+        Assert.Equal("MP3 320kbps", SearchResultAttributeParser.DetectBitrateQuality("MP3CBR320 chapter 128"));
+        Assert.Equal("MP3 128kbps", SearchResultAttributeParser.DetectBitrateQuality("128kbps, 320 pages"));
     }
 
     [Fact]
