@@ -49,45 +49,17 @@ namespace Listenarr.Application.Metadata.Core
                 return QualityMatch;
             }
 
-            var preferredFormats = (qualityProfile.PreferredFormats ?? new List<string>())
-                .Select(Normalize)
-                .Where(v => v.Length > 0)
-                .ToList();
-
-            var candidateFiles = (files ?? Array.Empty<AudiobookFormatSummary>())
-                .Where(f =>
-                {
-                    var fileFormat = Normalize(f.Format);
-                    if (fileFormat.Length == 0)
-                    {
-                        fileFormat = Normalize(f.Container);
-                    }
-                    if (fileFormat.Length == 0)
-                    {
-                        // Path-only file (no probe metadata): fall back to the path extension so a
-                        // metadata-less book.flac still satisfies a PreferredFormats = ["flac"] filter
-                        // instead of being dropped before QualityMatcher can use the extension.
-                        fileFormat = ExtensionFromPath(f.Path);
-                    }
-
-                    if (preferredFormats.Count == 0)
-                    {
-                        return true;
-                    }
-
-                    return preferredFormats.Contains(fileFormat)
-                        || preferredFormats.Any(pf => fileFormat.Contains(pf, StringComparison.Ordinal));
-                })
-                .ToList();
+            // PreferredFormats is not consulted here. It says which container the user would rather
+            // grab, not whether what is already on disk is good enough, and this status answers the
+            // second question only. Filtering the file list by it made a 320 kbps MP3 above an
+            // MP3 128kbps cutoff report QualityMismatch, which the library view renders as the words
+            // "Below Cutoff". It also put this evaluator at odds with AudiobookQualityCutoffEvaluator,
+            // which drives automatic search off the same stored files and applies no format filter.
+            var candidateFiles = files ?? Array.Empty<AudiobookFormatSummary>();
 
             if (candidateFiles.Count == 0)
             {
-                if (files == null || files.Count == 0)
-                {
-                    return QualityMatch;
-                }
-
-                return QualityMismatch;
+                return QualityMatch;
             }
 
             // A profile that is not upgrading is handled below rather than here: every cutoff
@@ -129,21 +101,6 @@ namespace Listenarr.Application.Metadata.Core
             }
 
             return QualityMismatch;
-        }
-
-        private static string Normalize(string? value)
-        {
-            return (value ?? string.Empty).Trim().ToLowerInvariant();
-        }
-
-        private static string ExtensionFromPath(string? path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return string.Empty;
-            }
-
-            return Normalize(System.IO.Path.GetExtension(path).TrimStart('.'));
         }
     }
 }
