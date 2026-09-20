@@ -26,16 +26,20 @@ public class MigrationMetadataTests
     }
 
     /// <summary>
-    /// The id is written down in two other places that have to agree with EF's own view of it:
-    /// the startup backfill gate in ListenarrDatabaseMigrationPreflight and the expected
-    /// post-canary history in SqliteMigrationSchemaTests. A rename that missed either would leave
-    /// the backfill silently never running.
+    /// The startup backfill only runs when it finds this exact id in the applied set, so a rename
+    /// that missed its constant would leave the repair silently never running and every profile
+    /// that recorded upgrades-off as a blank cutoff would come out of the upgrade upgrading again.
+    /// Asserted against the constant itself rather than a fourth copy of the string, which is what
+    /// makes this a guard rather than a restatement.
     /// </summary>
     [Fact]
-    public void AddQualityProfileUpgradeAllowedMigration_IsDiscoverableByEf()
+    public void AddQualityProfileUpgradeAllowedMigration_IsDiscoverableByEf_AtTheIdTheBackfillGatesOn()
     {
         AssertMigrationId<AddQualityProfileUpgradeAllowed>(
-            "20260920025621_AddQualityProfileUpgradeAllowed");
+            ListenarrDatabaseMigrationPreflight.QualityProfileUpgradeAllowedMigrationId);
+        Assert.Equal(
+            "20260920025621_AddQualityProfileUpgradeAllowed",
+            ListenarrDatabaseMigrationPreflight.QualityProfileUpgradeAllowedMigrationId);
     }
 
     [Fact]
