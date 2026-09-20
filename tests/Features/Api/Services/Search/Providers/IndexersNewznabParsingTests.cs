@@ -864,7 +864,8 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                     httpClient,
                     NullLogger<TorznabNewznabSearchProvider>.Instance);
 
-                return Assert.Single(await provider.SearchAsync(indexer, "the governor"));
+                var observation = await provider.SearchAsync(indexer, "the governor");
+                return Assert.Single(observation.Results);
             }
 
             var withoutDescription = await SearchOnce(
