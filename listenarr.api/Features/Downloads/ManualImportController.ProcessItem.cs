@@ -343,6 +343,13 @@ public partial class ManualImportController
                             cancellationToken);
                 if (!registered)
                 {
+                    RemoveRefusedRegistrationPublication(
+                        audiobook,
+                        registrationLease,
+                        destinationReservation,
+                        ownership,
+                        destinationPath,
+                        allowedDestinationRoots);
                     return new ManualImportResultDto
                     {
                         Success = false,
