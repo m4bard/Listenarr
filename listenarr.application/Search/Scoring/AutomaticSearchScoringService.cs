@@ -79,7 +79,7 @@ public sealed class AutomaticSearchScoringService(
             // worse release win. See QualityScoreComparer. Candidates still tied after priority go to
             // ScoredReleaseTiebreaker, so the winner never comes down to indexer response order.
             .OrderByDescending(s => s.Quality, QualityScoreComparer.Instance)
-            .ThenBy(s => s.Quality, ScoredReleaseTiebreaker.Instance)
+            .ThenBy(s => s.Quality, ScoredReleaseTiebreaker.ForNow())
             .ThenBy(s => s.SearchResult.IndexerId)
             .ThenBy(s => s.SearchResult.Id, StringComparer.Ordinal)
             .ThenBy(s => s.SearchResult.TorrentUrl, StringComparer.Ordinal)
