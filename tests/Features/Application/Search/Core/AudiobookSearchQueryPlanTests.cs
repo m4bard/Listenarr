@@ -282,9 +282,11 @@ public sealed class AudiobookSearchQueryPlanTests : BaseTests
     [Trait("Scenario", "NoAuthor")]
     public void BuildPlan_BookWithNoAuthor_DoesNotIssueTheSameQueryTwice()
     {
-        // Given: with no author the title-and-author form collapses onto the title-alone form
+        // Given: with no author the title-and-author form collapses onto the title-alone form.
+        // The title has to clear the bare-title gate, or the second form is blank and gets
+        // dropped for being blank, which would leave the deduplication untested.
         var audiobook = new AudiobookBuilder()
-            .WithTitle("Beowulf")
+            .WithTitle("The Arabian Nights Entertainments")
             .Build();
 
         // When
@@ -292,7 +294,7 @@ public sealed class AudiobookSearchQueryPlanTests : BaseTests
 
         // Then
         var form = Assert.Single(plan.Forms);
-        Assert.Equal("Beowulf", form.Query);
+        Assert.Equal("The Arabian Nights Entertainments", form.Query);
     }
 
     [Fact]
