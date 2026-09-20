@@ -106,5 +106,69 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             // Then
             Assert.False(result);
         }
+
+        [Fact]
+        [Trait("Method", "IsQualityCutoffMetAsync")]
+        [Trait("Scenario", "NonPreferredFormatAboveCutoff_AgreesWithLibraryStatus")]
+        public async Task IsQualityCutoffMetAsync_AndLibraryStatus_AgreeOnAnAboveCutoffFileInANonPreferredFormat()
+        {
+            // The two evaluators read the same stored file and used to answer differently: the search
+            // path said the cutoff was met while the library payload said quality-mismatch, because
+            // only the status side filtered by PreferredFormats. An operator saw "Below Cutoff" on a
+            // book the scheduler had already decided not to search for.
+            var profile = new QualityProfile
+            {
+                Name = "MP3 not preferred",
+                CutoffQuality = "MP3 128kbps",
+                PreferredFormats = new List<string> { "m4b" },
+                Qualities = new List<QualityDefinition>
+                {
+                    new() { Quality = "MP3 320kbps", Codec = "MP3", Bitrate = 320, Priority = 0 },
+                    new() { Quality = "MP3 128kbps", Codec = "MP3", Bitrate = 128, Priority = 1 }
+                }
+            };
+
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Marie")
+                .WithQualityProfile(profile)
+                .Build());
+
+            await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
+                .WithAudiobook(audiobook)
+                .WithPath(@"C:\books\marie\book.mp3")
+                .WithFormat("mp3")
+                .WithCoded("mp3")
+                .WithBitrate(320_000)
+                .WithSize(123_456)
+                .Build());
+
+            // When
+            var cutoffMet = await AudiobookQualityCutoffEvaluator.IsQualityCutoffMetAsync(
+                audiobook,
+                _downloadRepository,
+                _audiobookFileRepository);
+
+            var status = AudiobookStatusEvaluator.ComputeStatus(
+                isDownloading: false,
+                hasAnyFile: true,
+                audiobookQuality: null,
+                qualityProfile: profile,
+                files: new List<AudiobookFormatSummary>
+                {
+                    new()
+                    {
+                        AudiobookId = audiobook.Id,
+                        Path = @"C:\books\marie\book.mp3",
+                        Format = "mp3",
+                        Codec = "mp3",
+                        Bitrate = 320_000
+                    }
+                });
+
+            // Then
+            Assert.True(cutoffMet);
+            Assert.Equal(AudiobookStatusEvaluator.QualityMatch, status);
+            Assert.Equal(cutoffMet, status == AudiobookStatusEvaluator.QualityMatch);
+        }
     }
 }
