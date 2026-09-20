@@ -34,10 +34,20 @@ public sealed class QualityProfileUpgradeAllowedMigrationTests : BaseTests
     /// <summary>The migration immediately before the one under test.</summary>
     private const string PreviousMigrationId = "20260825021432_AddWeakStorageVerifiedCleanup";
 
+    /// <summary>
+    /// Every cutoff the engine reads as blank has to be backfilled as blank. The cases past the
+    /// space are not decoration: SQLite's one-argument trim() strips U+0020 only, so a backfill
+    /// written in SQL turns upgrades ON for a tab or a newline while the engine goes on treating
+    /// the profile as not upgrading. The space case is the control that such a backfill passes.
+    /// </summary>
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
+    [InlineData("\t")]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData("\u00a0")]
     public async Task ProfileWithABlankCutoff_ComesOutWithUpgradesOff_AndKeepsItsBlankCutoff(
         string? storedCutoff)
     {
@@ -280,6 +290,13 @@ public sealed class QualityProfileUpgradeAllowedMigrationTests : BaseTests
                 },
                 new QualityProfile
                 {
+                    Name = "Off but pinned",
+                    UpgradeAllowed = false,
+                    CutoffQuality = "AAC 256kbps",
+                    Qualities = BuildLadder()
+                },
+                new QualityProfile
+                {
                     Name = "Still upgrading",
                     UpgradeAllowed = true,
                     CutoffQuality = "MP3 320kbps",
@@ -301,6 +318,12 @@ public sealed class QualityProfileUpgradeAllowedMigrationTests : BaseTests
 
         Assert.False(flags["Off the old way"]);
         Assert.True(flags["Still upgrading"]);
+
+        // And the row whose setting the round trip loses, asserted rather than described. There is
+        // nowhere on the older schema for "off, but here is my cutoff" to live, so reapplying
+        // re-derives it from the cutoff and gets upgrades back on. Anyone rolling back and
+        // forward again has to set those profiles the way they want them.
+        Assert.True(flags["Off but pinned"]);
     }
 
     private static DbContextOptions<ListenArrDbContext> CreateOptions(SqliteConnection connection) =>
