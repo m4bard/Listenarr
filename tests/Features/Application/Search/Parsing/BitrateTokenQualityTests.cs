@@ -67,6 +67,51 @@ public sealed class BitrateTokenQualityTests : BaseTests
         Assert.Equal(expected, SearchResultAttributeParser.DetectBitrateQuality(text));
     }
 
+    // Names harvested from Readarr's own parser fixtures, where a bare tier number in brackets sits
+    // beside the codec word. The first two are in its should_parse_mp3_quality list.
+    [Theory]
+    [InlineData("Some Song [192][2014][MP3]", "MP3 192kbps")]
+    [InlineData("Other Song (192)[2014][MP3]", "MP3 192kbps")]
+    [InlineData("Some Book [MP3][320]", "MP3 320kbps")]
+    [InlineData("Some Book MP3 (320)", "MP3 320kbps")]
+    [InlineData("Author - Title [MP3~320]", "MP3 320kbps")]
+    public void DetectBitrateQuality_BracketedTierBesideTheCodecWord_Resolves(string text, string expected)
+    {
+        Assert.Equal(expected, SearchResultAttributeParser.DetectBitrateQuality(text));
+    }
+
+    // The same bracketed shape with nothing saying MP3 is a track, a volume or a running time.
+    [Theory]
+    [InlineData("Track [128] of the set")]
+    [InlineData("Read by Narrator (64) minutes")]
+    [InlineData("Volume [192] of the encyclopaedia")]
+    [InlineData("Some Book [M4B] 320 MB")]
+    public void DetectBitrateQuality_BracketedTierWithNoCodecWord_IsNotABitrate(string text)
+    {
+        Assert.Null(SearchResultAttributeParser.DetectBitrateQuality(text));
+    }
+
+    [Fact]
+    public void DetectBitrateQuality_KnownResidual_ARateWordBesideASizeStillLooksLikeABitrate()
+    {
+        // Documented, not fixed. The rate word is taken as evidence about the number next to it,
+        // and here the number next to it is a size. Narrower than what it replaced, which read any
+        // 320 anywhere in the text, but it is the same family and worth stating rather than hiding.
+        Assert.Equal("MP3 320kbps", SearchResultAttributeParser.DetectBitrateQuality("MP3 320 MB"));
+
+        // A MediaInfo dump groups thousands with a space, so a video bitrate of 1128 kb/s reads as
+        // an MP3 tier. Also pre-existing, also unfixed.
+        Assert.Equal("MP3 128kbps", SearchResultAttributeParser.DetectBitrateQuality("Bit rate : 1 128 kb/s"));
+    }
+
+    [Fact]
+    public void DetectBitrateQuality_KnownLoss_ABareTierWithNoBracketsAndNoCodecWord()
+    {
+        // Deliberately not recovered. Readarr's fixtures carry names like this one, and reading a
+        // bare standing number as a bitrate is exactly what made "Size: 320 MB" an MP3 tier.
+        Assert.Null(SearchResultAttributeParser.DetectBitrateQuality("Kehlani - SweetSexySavage (Deluxe Edition) (2017) 320"));
+    }
+
     [Fact]
     public void DetectBitrateQuality_KnownResidual_AKilobyteSizeStillLooksLikeABitrate()
     {
