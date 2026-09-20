@@ -23,11 +23,16 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Matching
 {
     /// <summary>
     /// AudiobookQualityCutoffEvaluator is deliberately not changed by the UpgradeAllowed flag, and
-    /// these pin that. Its guard on a blank cutoff is the subject of separate work, so this branch
-    /// has to leave the answer for a blank-cutoff profile exactly where it found it, and only then
-    /// make sure the state the flag newly allows, upgrades off with a cutoff still named, is
-    /// answered through QualityMatcher rather than by comparing against a cutoff nobody is
-    /// upgrading towards.
+    /// these pin that. What a blank cutoff itself answers is not this branch's decision: that
+    /// moved on fix/blank-cutoff-search-loop (commit 17d79d2b1), which stopped special-casing a
+    /// blank cutoff to "keep searching" and let it fall through to QualityMatcher instead, the
+    /// same domain rule AudiobookStatusEvaluator already read it by. So a blank cutoff now
+    /// answers satisfied (True), and the pin below expects that value, with and without the
+    /// flag. What these tests still guard is narrower and independent of which way the blank
+    /// case reads: that the flag never makes it read differently with upgrades off than with a
+    /// blank cutoff alone. The rest of this file covers the state only the flag can produce,
+    /// upgrades off with a cutoff still named, answered through QualityMatcher rather than by
+    /// comparing against a cutoff nobody is upgrading towards.
     /// </summary>
     [Trait("Name", nameof(AudiobookQualityCutoffEvaluator_UpgradeAllowedTests))]
     [Trait("Category", "Application")]
@@ -37,9 +42,13 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Matching
             new QualityProfileBuilder().WithName("Structured").WithStructuredDefaults();
 
         /// <summary>
-        /// A profile that recorded upgrades-off the old way, by blanking the cutoff, gets the same
-        /// answer it got before this branch. The migration leaves exactly this shape behind, so
-        /// this is the case that must not move.
+        /// A profile that recorded upgrades-off the old way, by blanking the cutoff, still gets
+        /// the same answer as a blank cutoff on its own. That agreement is what this pins, not
+        /// any particular value: the value itself moved from False to True on
+        /// fix/blank-cutoff-search-loop, which stopped treating a blank cutoff as "keep
+        /// searching" and let it fall through to QualityMatcher like every other blank-cutoff
+        /// read in the codebase. This test only guards against the flag reintroducing a
+        /// difference the blank case no longer has.
         /// </summary>
         [Fact]
         public async Task BlankCutoff_WithUpgradesOff_AnswersTheSameAsABlankCutoffAlone()
@@ -49,8 +58,10 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Matching
             var withoutFlag = await EvaluateAsync(StructuredProfile().WithCutoff("").Build());
 
             // Named, not merely compared. Asserting only that the two agree would still pass if
-            // the blank-cutoff answer itself moved, which is exactly what this is meant to catch.
-            Assert.False(withoutFlag);
+            // the flag made a blank cutoff disagree with itself, which is exactly what this is
+            // meant to catch. The value here is True because a blank cutoff means satisfied as of
+            // fix/blank-cutoff-search-loop (commit 17d79d2b1); it was False before that branch.
+            Assert.True(withoutFlag);
             Assert.Equal(withoutFlag, withFlag);
         }
 
