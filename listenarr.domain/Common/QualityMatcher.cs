@@ -280,10 +280,14 @@ namespace Listenarr.Domain.Common
         /// back null because it says nothing about the codec, and so does any label this method
         /// does not recognise.
         ///
-        /// Recognition is <see cref="ParseQualityLabel"/>'s, not <see cref="MapCodec"/>'s, and the
-        /// two do not agree on containers. "M4B" and "M4A" resolve to AAC here; "MP4" does not,
-        /// though MapCodec accepts it, and neither does "AAX". A caller using this to decide
-        /// whether a profile has an opinion will find it has none about an Audible AAX rip.
+        /// Recognition is <see cref="ParseQualityLabel"/>'s, and it is kept in step with
+        /// <see cref="MapCodec"/> on containers: "M4B", "M4A", "MP4", "AAX" and "AAXC" all resolve
+        /// to AAC in both. They used to disagree, so an Audible AAX rip came back null here and a
+        /// caller asking whether the profile had an opinion was told it had none.
+        ///
+        /// Null still means what it has always meant: this method does not recognise the label.
+        /// It does not mean permitted. <see cref="QualityGate"/> treats a null as a refusal, since
+        /// a profile's ladder is an allow-list and a label nothing can place is not on it.
         /// </summary>
         public static string? CodecGroupOfLabel(string? qualityLabel)
             => string.IsNullOrWhiteSpace(qualityLabel) ? null : ParseQualityLabel(qualityLabel).Codec;
@@ -359,7 +363,13 @@ namespace Listenarr.Domain.Common
 
             if (Contains(lower, "flac")) return ("FLAC", bitrate, true);
             if (Contains(lower, "alac")) return ("ALAC", bitrate, true);
-            if (Contains(lower, "aac") || Contains(lower, "m4b") || Contains(lower, "m4a")) return ("AAC", bitrate, false);
+            // Every MPEG-4 container carries AAC, so they all resolve to the AAC group: "M4B" and
+            // "M4A" as before, "MP4" because MapCodec has always accepted it here and the two
+            // diverging left a label this method could not place, and "AAX"/"AAXC" because those
+            // are Audible's MPEG-4 containers and the scorer ranks AAX second only to FLAC.
+            // "aaxc" is covered by the "aax" test.
+            if (Contains(lower, "aac") || Contains(lower, "m4b") || Contains(lower, "m4a")
+                || Contains(lower, "mp4") || Contains(lower, "aax")) return ("AAC", bitrate, false);
             if (Contains(lower, "mp3")) return ("MP3", bitrate, false);
             if (Contains(lower, "opus")) return ("OPUS", bitrate, false);
             if (Contains(lower, "vorbis") || Contains(lower, "ogg")) return ("OGG Vorbis", bitrate, false);
@@ -397,8 +407,10 @@ namespace Listenarr.Domain.Common
             if (Any("mp3")) groups.Add("MP3");
             if (Any("opus")) groups.Add("OPUS");
             if (Any("vorbis") || Any("ogg")) groups.Add("OGG Vorbis");
-            // AAC commonly lives in M4B/M4A/MP4 containers; cover the legacy "M4B" codec group too.
-            if (Any("aac") || Any("m4b") || Any("m4a") || Any("mp4"))
+            // AAC commonly lives in M4B/M4A/MP4/AAX containers; cover the legacy "M4B" codec group
+            // too. Kept in step with ParseQualityLabel deliberately: when the two disagree, a label
+            // the gate can place maps to a codec group the matcher cannot, or the reverse.
+            if (Any("aac") || Any("m4b") || Any("m4a") || Any("mp4") || Any("aax"))
             {
                 groups.Add("AAC");
                 groups.Add("M4B");
@@ -469,7 +481,8 @@ namespace Listenarr.Domain.Common
             var lower = codec.Trim().ToLowerInvariant();
             if (Contains(lower, "flac")) return "FLAC";
             if (Contains(lower, "alac")) return "ALAC";
-            if (Contains(lower, "aac") || Contains(lower, "m4b") || Contains(lower, "m4a")) return "AAC";
+            if (Contains(lower, "aac") || Contains(lower, "m4b") || Contains(lower, "m4a")
+                || Contains(lower, "mp4") || Contains(lower, "aax")) return "AAC";
             if (Contains(lower, "mp3")) return "MP3";
             if (Contains(lower, "opus")) return "OPUS";
             if (Contains(lower, "vorbis") || Contains(lower, "ogg")) return "OGG Vorbis";
