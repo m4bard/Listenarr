@@ -192,6 +192,15 @@ namespace Listenarr.Tests.Features.Domain.Utils
         /// a630572e9:287-300, minus the step that appended PreferredFormats. Dropping that step is
         /// the whole point of the change (a preference must not widen a gate), so the reference
         /// has to be the rule without it or the comparison below would only restate the change.
+        ///
+        /// One faithful-transcription caveat, deliberately not reproduced. QualityDefinition.Quality
+        /// defaults to "", and the real allow-list put that empty string in its list, where
+        /// label.Contains("") is true for every label. So a profile carrying an allowed rung with
+        /// no name accepted everything. QualityGate drops blank-named rungs instead, which means it
+        /// refuses unplaceable labels against such a profile where the old code accepted them. That
+        /// is a divergence and it is intended: a rung with no name says nothing about what it
+        /// covers, and matching everything was an accident of substring semantics rather than a
+        /// behaviour worth keeping. See TheOldAllowListsBlankRungWildcard_IsNotReproduced.
         /// </summary>
         private static bool CanaryAcceptedOnItsRungs(string label, QualityProfile profile)
         {
@@ -213,10 +222,21 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void NothingTheOldAllowListPermitted_IsRefusedHere()
         {
-            // The guard against over-correcting. Refusing a label the previous code accepted is a
-            // regression in the other direction, and the third rule is exactly the kind of change
-            // that causes one. So: over a matrix of labels and ladders, wherever the old allow-list
-            // accepted on its own rungs, this gate must not refuse.
+            // The guard against over-correcting: wherever the old allow-list accepted on its own
+            // rungs, this gate must not refuse.
+            //
+            // Be clear about what this can and cannot catch, because the obvious reading of it is
+            // wrong. The old allow-list accepted only when an allowed rung name-matched the label,
+            // so every pair it accepts here is decided by rule 1, the name match, which this commit
+            // does not touch. By construction no accepted pair ever reaches the codec-group
+            // fallback or the third rule, and mutating either of those does not fail this test.
+            // What it pins is that rule 1 still decides every pair the old code decided, and that
+            // the later rules never get a chance to overrule it.
+            //
+            // Over-correction in the other two rules is caught elsewhere, and was measured to be:
+            // turning the rule-2 miss into a refusal fails SeededDefaultLadder_HasNoOpinion...,
+            // ALabelNamingNoRung_FallsBackToItsCodecGroup, and both over-correction guards in
+            // QualityAllowedGateTests. Rule 3 is pinned by ALabelTheGateCannotPlace_IsRefused.
             var labels = new[]
             {
                 "AAX", "AAXC", "MP4", "M4P", "M4B", "M4A", "WMA", "AC3", "EAC3", "DTS",
@@ -235,8 +255,10 @@ namespace Listenarr.Tests.Features.Domain.Utils
             };
 
             var accepted = 0;
+            var acceptedWithALadder = 0;
             foreach (var profile in profiles)
             {
+                var hasLadder = profile.Qualities != null && profile.Qualities.Count > 0;
                 foreach (var label in labels)
                 {
                     if (!CanaryAcceptedOnItsRungs(label, profile))
@@ -245,13 +267,48 @@ namespace Listenarr.Tests.Features.Domain.Utils
                     }
 
                     accepted++;
+                    if (hasLadder)
+                    {
+                        acceptedWithALadder++;
+                    }
+
                     Assert.NotEqual(QualityGateVerdict.Refused, QualityGate.Evaluate(label, profile));
                 }
             }
 
-            // The control against a vacuous pass: if the reference accepted nothing, the loop above
-            // asserts nothing and proves nothing.
-            Assert.True(accepted > 20, $"the reference allow-list only accepted {accepted} pairs");
+            // The control against a vacuous pass, counted per profile rather than in total. Most
+            // of the accepted pairs come from the profile with no ladder at all, where Evaluate
+            // short-circuits before any rule runs, so a total over the whole matrix would be
+            // satisfied by the degenerate row alone and would prove nothing about the rules.
+            Assert.True(
+                acceptedWithALadder >= 7,
+                $"only {acceptedWithALadder} accepted pairs came from a profile that has a ladder");
+            Assert.True(accepted > acceptedWithALadder, "the no-ladder row contributed nothing");
+        }
+
+        [Fact]
+        public void TheOldAllowListsBlankRungWildcard_IsNotReproduced()
+        {
+            // The one place this gate refuses what the old allow-list accepted, pinned so it is a
+            // decision on the record rather than something found later. QualityDefinition.Quality
+            // defaults to "", the old list held that empty string, and Contains("") is true of
+            // every label, so one allowed unnamed rung permitted everything.
+            var blankRung = new QualityProfile
+            {
+                Qualities = new List<QualityDefinition>
+                {
+                    new() { Quality = string.Empty, Allowed = true, Priority = 0 },
+                    new() { Quality = "MP3 320kbps", Allowed = false, Priority = 1 }
+                }
+            };
+
+            Assert.True(CanaryAcceptedOnItsRungs("WMA", blankRung), "the reference accepted it");
+            Assert.Equal(QualityGateVerdict.Refused, QualityGate.Evaluate("WMA", blankRung));
+
+            // The control: the named rung in the same profile is still read normally, so the blank
+            // one is being ignored rather than the whole profile being discarded.
+            Assert.Equal(QualityGateVerdict.Refused, QualityGate.Evaluate("MP3 320kbps", blankRung));
+            Assert.Equal(QualityGateVerdict.NoOpinion, QualityGate.Evaluate("FLAC", blankRung));
         }
 
         [Fact]
