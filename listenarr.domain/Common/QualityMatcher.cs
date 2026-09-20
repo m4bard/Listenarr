@@ -297,10 +297,18 @@ namespace Listenarr.Domain.Common
         /// <summary>The profile's cutoff rung, or null when CutoffQuality names nothing the profile
         /// allows: absent, present but not Allowed, or differing only in case. A true
         /// <paramref name="cutoffBlank"/> instead means no cutoff is configured, which is satisfied.</summary>
+        /// <remarks>
+        /// A profile with <see cref="QualityProfile.UpgradeAllowed"/> false counts as blank here
+        /// even when it carries a real cutoff, because it is not going to upgrade past anything.
+        /// Before that flag existed the only way to record "upgrades off" was to blank the cutoff,
+        /// so the two arms of this test used to be the same arm, and callers that already treat a
+        /// blank cutoff as satisfied keep the answer they had.
+        /// </remarks>
         public static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
         {
             cutoffBlank = false;
             if (profile?.Qualities == null || profile.Qualities.Count == 0
+                || !profile.UpgradeAllowed
                 || string.IsNullOrWhiteSpace(profile.CutoffQuality))
             {
                 cutoffBlank = true;
