@@ -62,40 +62,69 @@ public static class AudiobookSearchQueryBuilder
     /// English function words, which carry no part of a work's identity.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Used only to decide whether a title says enough to be issued without its author.
-    /// The list is closed and holds articles, coordinating conjunctions, the commonest
-    /// prepositions and the forms of "to be"; anything absent from it counts as
-    /// significant. That direction is deliberate. A word wrongly counted as significant
-    /// lets one more title through the gate, which is the behaviour that shipped before
-    /// the gate existed, whereas a word wrongly treated as noise silently costs a rung.
-    /// Pronouns are absent for the same reason: a title that is only a pronoun already
-    /// fails the count on its own.
+    /// The list is closed and holds exactly three classes: articles, coordinating
+    /// conjunctions, and prepositions, plus the forms of "to be". Anything absent from
+    /// it counts as significant, and that direction is deliberate. A word wrongly
+    /// counted as significant lets one more title through the gate, which is the
+    /// behaviour that shipped before the gate existed; a word wrongly treated as noise
+    /// silently costs a rung nobody will notice is missing.
+    /// </para>
+    /// <para>
+    /// The classes are kept whole, because a partial class is the shape that produces
+    /// indefensible results. With "up" listed and "down" not, "Down the Snow Stairs"
+    /// scored one higher than the grammatically identical "Up the Snow Stairs" and
+    /// landed on the other side of the threshold.
+    /// </para>
+    /// <para>
+    /// Demonstratives and pronouns are deliberately outside the three classes. "This"
+    /// and "past" were tried and removed: they took "This Side of Paradise" and
+    /// "Remembrance of Things Past" below the threshold, and both are distinctive
+    /// enough to stand alone. Possessive pronouns would gate the generic
+    /// "Her Father's Daughter" correctly and gate "His Dark Materials" wrongly, so on
+    /// the stated direction of error they stay out.
+    /// </para>
     /// </remarks>
     private static readonly IReadOnlySet<string> InsignificantWords =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "a", "an", "the",
-            "and", "or", "nor", "but", "so", "yet",
-            "about", "across", "after", "against", "among", "around", "as", "at",
-            "before", "behind", "between", "beyond", "by", "during", "for", "from",
-            "in", "into", "near", "of", "off", "on", "onto", "out", "over", "past",
-            "since", "than", "through", "to", "toward", "towards", "under", "until",
-            "up", "upon", "with", "within", "without",
-            "am", "are", "be", "been", "being", "is", "was", "were",
-            "that", "this", "these", "those", "its"
+            "and", "but", "nor", "or", "so", "yet",
+            "about", "above", "across", "after", "against", "along", "amid", "among",
+            "around", "as", "at", "before", "behind", "below", "beneath", "beside",
+            "between", "beyond", "by", "down", "during", "for", "from", "in", "inside",
+            "into", "near", "of", "off", "on", "onto", "out", "outside", "over",
+            "since", "than", "through", "throughout", "till", "to", "toward", "towards",
+            "under", "until", "unto", "up", "upon", "with", "within", "without",
+            "am", "are", "be", "been", "being", "is", "was", "were"
         };
 
     /// <summary>
     /// How many significant words a title needs before it is issued without its author.
     /// </summary>
     /// <remarks>
-    /// Three, because two does not cover the observed failures. Every wrong grab traced
-    /// back to this rung on a live install came from a title of one or two significant
-    /// words, and one of them had two, so a threshold of two would have let it through.
-    /// Raising it to three costs the rung on about half the titles in a public-domain
-    /// test corpus, which is the price: those books keep tier 1 and the author-paired
-    /// rungs below, and lose only the recovery attempt. Upstream issues no author-less
-    /// query at all, so a gated rung is still strictly more than the search had before.
+    /// <para>
+    /// Three rather than two, because two does not cover what was observed. Every wrong
+    /// grab traced back to this rung came from a title of one or two significant words,
+    /// and one of them had two, so a threshold of two would have let that one through.
+    /// Measured against a public-domain corpus of audiobook titles, three withholds the
+    /// rung from about half of them. Those books keep the title-and-author form and the
+    /// author-paired rungs below it, and lose only the recovery attempt.
+    /// </para>
+    /// <para>
+    /// Readarr does issue a book title with no author, as the last tier of its Newznab
+    /// chain and with no distinctiveness test at all
+    /// (NewznabRequestGenerator.GetSearchRequests(BookSearchCriteria), the third tier).
+    /// What makes that safe there is not the query, it is the category: Readarr's
+    /// Newznab settings refuse to validate without at least one category and default to
+    /// the book categories, so a bare title is never asked of an indexer's whole
+    /// catalogue. Sonarr does the same for series titles. Here <see cref="Indexer"/>
+    /// leaves Categories nullable with no default, so on an indexer configured without
+    /// one a bare title reaches music, film and everything else. The word count is a
+    /// proxy for a constraint the family gets from the category parameter, and it is
+    /// worth saying so plainly rather than presenting it as the family's answer.
+    /// </para>
     /// </remarks>
     private const int MinimumSignificantWordsToIssueAlone = 3;
 
@@ -177,9 +206,9 @@ public static class AudiobookSearchQueryBuilder
 
             // Only ever paired with the author. Alone, a stem such as "She" is broad enough to be
             // noise, the same reason the series is never issued without the author either.
-            (Join(titleStem, author), SearchQueryFormKind.TitleStemAuthor),
+            (PairWithAuthor(titleStem, author), SearchQueryFormKind.TitleStemAuthor),
 
-            (Join(series, author), SearchQueryFormKind.SeriesAuthor)
+            (PairWithAuthor(series, author), SearchQueryFormKind.SeriesAuthor)
         };
 
         var plan = SearchQueryPlan.FromCandidates(candidates);
@@ -252,7 +281,7 @@ public static class AudiobookSearchQueryBuilder
     /// words can carry that on its own.
     /// </para>
     /// </remarks>
-    internal static bool IsDistinctiveEnoughToIssueAlone(string? queryTitle)
+    private static bool IsDistinctiveEnoughToIssueAlone(string? queryTitle)
     {
         return CountSignificantWords(queryTitle) >= MinimumSignificantWordsToIssueAlone;
     }
@@ -334,6 +363,26 @@ public static class AudiobookSearchQueryBuilder
         }
 
         return right.Length == 0 ? left : left + " " + right;
+    }
+
+    /// <summary>
+    /// A form that only exists anchored to an author, or nothing when either half is missing.
+    /// </summary>
+    /// <remarks>
+    /// The stem and the series are not searches in their own right. A stem such as "She" and a
+    /// two-word series name that is also a band name are the two cases the ladder already knows
+    /// turn into wrong grabs, and both are only safe because the author is on the query beside
+    /// them. <see cref="Join"/> is the wrong tool for them: it returns the left side by itself
+    /// when the right side is empty, which is correct for the title at tier 1 and silently
+    /// reintroduces exactly the bare forms these two rungs are documented never to produce.
+    /// A record with no author is not hypothetical. Anonymous and traditional works have none,
+    /// and a record part way through a metadata refresh has none either.
+    /// </remarks>
+    private static string PairWithAuthor(string left, string author)
+    {
+        return left.Length == 0 || author.Length == 0
+            ? string.Empty
+            : left + " " + author;
     }
 
     private static List<string> Tokenize(string? value)
