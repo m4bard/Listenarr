@@ -23,11 +23,13 @@ public sealed class AudiobookSearchQueryPlanTests : BaseTests
     [Trait("Scenario", "TitleAuthorAndSeries")]
     public void BuildPlan_BookWithSeries_OrdersTitleFormsBeforeSeriesForms()
     {
-        // Given: the shape the finding documented, where the series is the form that recovers the book
+        // Given: the shape the finding documented, where the series is the form that recovers the
+        // book. The title has to be distinctive enough to clear the bare-title gate, or this test
+        // would be asserting the order of two rungs rather than three.
         var audiobook = new AudiobookBuilder()
-            .WithTitle("Heaven's River")
-            .WithAuthor("Dennis E. Taylor")
-            .WithSeries("Bobiverse")
+            .WithTitle("Twenty Thousand Leagues Under the Sea")
+            .WithAuthor("Jules Verne")
+            .WithSeries("Extraordinary Voyages")
             .Build();
 
         // When
@@ -39,9 +41,9 @@ public sealed class AudiobookSearchQueryPlanTests : BaseTests
         Assert.Equal(
             new[]
             {
-                "Heaven's River Dennis E Taylor",
-                "Heaven's River",
-                "Bobiverse Dennis E Taylor"
+                "Twenty Thousand Leagues Under the Sea Jules Verne",
+                "Twenty Thousand Leagues Under the Sea",
+                "Extraordinary Voyages Jules Verne"
             },
             plan.Forms.Select(form => form.Query).ToArray());
 
@@ -105,9 +107,11 @@ public sealed class AudiobookSearchQueryPlanTests : BaseTests
     [Trait("Scenario", "NoSeries")]
     public void BuildPlan_BookWithoutSeries_StopsAfterTheTitleForms()
     {
-        // Given: a real library has plenty of these, and they must never reach a blank series rung
+        // Given: a real library has plenty of these, and they must never reach a blank series rung.
+        // Distinctive enough to clear the bare-title gate, so both title rungs are present to be
+        // counted; a shorter title would make this pass for the wrong reason.
         var audiobook = new AudiobookBuilder()
-            .WithTitle("The Time Machine")
+            .WithTitle("The Island of Doctor Moreau")
             .WithAuthor("H. G. Wells")
             .Build();
 
@@ -116,7 +120,7 @@ public sealed class AudiobookSearchQueryPlanTests : BaseTests
 
         // Then
         Assert.Equal(
-            new[] { "The Time Machine H G Wells", "The Time Machine" },
+            new[] { "The Island of Doctor Moreau H G Wells", "The Island of Doctor Moreau" },
             plan.Forms.Select(form => form.Query).ToArray());
     }
 
