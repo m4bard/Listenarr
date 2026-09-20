@@ -56,26 +56,19 @@ namespace Listenarr.Application.Audiobooks.Matching
                 return false;
             }
 
-            // Narrowed guard: a blank profile (no rungs, or no CutoffQuality set) is always
-            // satisfied, matching QualityMatcher.ResolveCutoff/MeetsCutoff/LabelMeetsCutoff and
-            // AudiobookStatusEvaluator's library-view answer for the same input. A CutoffQuality
-            // that names a rung the profile no longer lists, or that is present but not Allowed,
-            // is a different case and still means "keep searching": that half of the original
-            // guard is preserved below, delegated to QualityMatcher.AllowedQualities so this guard
-            // and QualityMatcher.MeetsCutoff/LabelMeetsCutoff (used further down in this same
-            // method) can no longer disagree about what Allowed means.
-            var cutoffIsBlank = profile.Qualities.Count == 0 ||
-                                 string.IsNullOrWhiteSpace(profile.CutoffQuality);
+            // The cutoff is resolved by QualityMatcher, not re-derived here, so this guard and the
+            // MeetsCutoff/LabelMeetsCutoff calls further down the same method cannot give one
+            // profile two answers. A blank profile (no rungs, or no CutoffQuality set) is satisfied,
+            // matching QualityMatcher and AudiobookStatusEvaluator's library-view answer for the
+            // same input. A CutoffQuality that resolves to no Allowed rung still means "keep
+            // searching", and "resolves" is now QualityMatcher's definition of the word: Allowed
+            // filtered and case-insensitive, where this guard used to accept a disallowed rung and
+            // reject one whose case differed.
+            var cutoff = QualityMatcher.ResolveCutoff(profile, out var cutoffIsBlank);
 
-            if (!cutoffIsBlank)
+            if (!cutoffIsBlank && cutoff == null)
             {
-                var cutoffQuality = QualityMatcher.AllowedQualities(profile)
-                    .FirstOrDefault(q => q.Quality == profile.CutoffQuality);
-
-                if (cutoffQuality == null)
-                {
-                    return false;
-                }
+                return false;
             }
 
             foreach (var download in existingDownloads)

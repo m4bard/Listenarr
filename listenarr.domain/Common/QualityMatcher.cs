@@ -305,6 +305,12 @@ namespace Listenarr.Domain.Common
         /// <summary>
         /// The rung the profile stops upgrading at, or null with <paramref name="cutoffBlank"/>
         /// set when the profile is not upgrading at all.
+        ///
+        /// Null with <paramref name="cutoffBlank"/> false is the other case and means something
+        /// else entirely: CutoffQuality names nothing the profile allows, because the rung is
+        /// absent or present but not Allowed. A caller reading that as satisfied has the answer
+        /// backwards. Matching is case-insensitive, so a cutoff differing from its rung only in
+        /// case still resolves.
         /// </summary>
         /// <remarks>
         /// A profile with <see cref="QualityProfile.UpgradeAllowed"/> false counts as blank here
@@ -331,7 +337,7 @@ namespace Listenarr.Domain.Common
         /// still declining to replace it, so the two agree on what happens and disagree on what to
         /// call it.
         /// </remarks>
-        private static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
+        public static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
         {
             cutoffBlank = false;
             if (profile?.Qualities == null || profile.Qualities.Count == 0
