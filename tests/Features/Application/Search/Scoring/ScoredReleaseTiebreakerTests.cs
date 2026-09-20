@@ -41,6 +41,12 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         /// </summary>
         private const int ExpectedTorrentScore = 91;
 
+        /// <summary>
+        /// The score both the usenet shape and <see cref="TorrentMatchingUsenetScore"/> land on,
+        /// also below the clamp.
+        /// </summary>
+        private const int ExpectedCrossProtocolScore = 86;
+
         private static QualityProfile BuildProfile()
         {
             return new QualityProfileBuilder()
@@ -71,7 +77,9 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             int seeders = 20,
             int leechers = 5,
             long sizeBytes = 500L * 1024 * 1024,
-            string quality = "MP3 320kbps")
+            string quality = "MP3 320kbps",
+            string format = "mp3",
+            string language = "English")
         {
             return new SearchResult
             {
@@ -80,13 +88,24 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
                 Artist = "A Public Domain Author",
                 DownloadType = "Torrent",
                 MagnetLink = $"magnet:?xt=urn:btih:{InfoHashFor(id)}&dn={Uri.EscapeDataString(title)}",
-                Format = "mp3",
+                Format = format,
                 Quality = quality,
-                Language = "English",
+                Language = language,
                 Seeders = seeders,
                 Leechers = leechers,
                 Size = sizeBytes
             };
+        }
+
+        /// <summary>
+        /// A torrent built to land on the same score as the usenet shape above, so the two can
+        /// be compared without the score deciding. Both take the language mismatch penalty; the
+        /// torrent's quality deduction and its seeders bonus cancel out, and usenet takes
+        /// neither. Both come out at <see cref="ExpectedCrossProtocolScore"/>.
+        /// </summary>
+        private static SearchResult TorrentMatchingUsenetScore(string id, string title, int seeders = 20)
+        {
+            return Torrent(id, title, seeders: seeders, leechers: 0, quality: "M4B", format: "m4b", language: "German");
         }
 
         private static SearchResult Usenet(
@@ -282,7 +301,7 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             var forward = await ScoreAsync(older, newer);
             var reversed = await ScoreAsync(newer, older);
 
-            AssertAllScoresTied(forward, 86);
+            AssertAllScoresTied(forward, ExpectedCrossProtocolScore);
 
             Assert.Equal("release-b", forward[0].SearchResult.Id);
             Assert.Equal("release-b", reversed[0].SearchResult.Id);
@@ -321,6 +340,67 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             // the winner is the identity-ordered one rather than the larger one.
             Assert.Equal("release-a", forward[0].SearchResult.Id);
             Assert.Equal("release-a", reversed[0].SearchResult.Id);
+        }
+
+        [Fact]
+        public async Task Tiebreak_PrefersUsenet_WhenProtocolsDifferAndScoresTie()
+        {
+            // Matches the family's default preferred protocol. Readarr and Sonarr both seed
+            // their delay profile with PreferredProtocol = 1, which is Usenet.
+            var torrent = TorrentMatchingUsenetScore("release-a", "Alpha Release");
+            var usenet = Usenet("release-b", "Bravo Release", DateTime.UtcNow.AddDays(-30).ToString("O"));
+
+            var forward = await ScoreAsync(torrent, usenet);
+            var reversed = await ScoreAsync(usenet, torrent);
+
+            // Control: the two protocols really did land on the same score, below the clamp.
+            AssertAllScoresTied(forward, ExpectedCrossProtocolScore);
+            Assert.True(ExpectedCrossProtocolScore < 100, "The tie must sit below the score clamp.");
+
+            Assert.Equal("release-b", forward[0].SearchResult.Id);
+            Assert.Equal("release-b", reversed[0].SearchResult.Id);
+        }
+
+        /// <summary>
+        /// The protocol grouping is not decoration. Without it the chain is not transitive and a
+        /// sort handed a cycle answers differently depending on input order. This is that cycle:
+        /// peers puts the well seeded torrent ahead of the quiet one, while the identity fallback
+        /// puts the usenet release between them.
+        /// </summary>
+        [Fact]
+        public async Task Tiebreak_IsTransitive_AcrossAMixedProtocolCycle()
+        {
+            var quietTorrent = TorrentMatchingUsenetScore("release-a", "Alpha Release", seeders: 20);
+            var usenet = Usenet("release-b", "Bravo Release", DateTime.UtcNow.AddDays(-30).ToString("O"));
+            var busyTorrent = TorrentMatchingUsenetScore("release-c", "Charlie Release", seeders: 5000);
+
+            var candidates = new[] { quietTorrent, usenet, busyTorrent };
+
+            // Control: all three tie on score, so only the tiebreak can order them.
+            AssertAllScoresTied(await ScoreAsync(candidates), ExpectedCrossProtocolScore);
+
+            foreach (var permutation in Permutations(candidates))
+            {
+                var scored = await ScoreAsync(permutation);
+                Assert.Equal("release-b", scored[0].SearchResult.Id);
+            }
+        }
+
+        private static IEnumerable<SearchResult[]> Permutations(SearchResult[] candidates)
+        {
+            for (var first = 0; first < candidates.Length; first++)
+            {
+                for (var second = 0; second < candidates.Length; second++)
+                {
+                    if (second == first)
+                    {
+                        continue;
+                    }
+
+                    var third = 3 - first - second;
+                    yield return [candidates[first], candidates[second], candidates[third]];
+                }
+            }
         }
 
         // ------------------------------------------------------------------
