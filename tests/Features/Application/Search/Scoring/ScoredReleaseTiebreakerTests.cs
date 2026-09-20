@@ -463,12 +463,16 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         [Fact]
         public async Task Tiebreak_TreatsATorrentUrlOnlyResultAsATorrent()
         {
-            var urlOnly = Torrent("release-a", "Alpha Release", seeders: 5000, leechers: 0);
+            // The well seeded release is deliberately the one identity ranks SECOND, so the only
+            // way it wins is by being classified as a torrent and then winning the peers axis.
+            // With the ids the other way round the test passes even when nothing is ever
+            // classified as a torrent, which is how it was first written.
+            var urlOnly = Torrent("release-b", "Bravo Release", seeders: 5000, leechers: 0);
             urlOnly.MagnetLink = string.Empty;
-            urlOnly.TorrentUrl = "https://tracker.invalid/alpha.torrent";
+            urlOnly.TorrentUrl = "https://tracker.invalid/bravo.torrent";
             urlOnly.DownloadType = string.Empty;
 
-            var magnet = Torrent("release-b", "Bravo Release", seeders: 20, leechers: 0);
+            var magnet = Torrent("release-a", "Alpha Release", seeders: 20, leechers: 0);
 
             var forward = await ScoreAsync(urlOnly, magnet);
             var reversed = await ScoreAsync(magnet, urlOnly);
@@ -477,8 +481,8 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             // them, and it only runs if both are classified as torrents.
             AssertAllScoresTied(forward, ExpectedTorrentScore);
 
-            Assert.Equal("release-a", forward[0].SearchResult.Id);
-            Assert.Equal("release-a", reversed[0].SearchResult.Id);
+            Assert.Equal("release-b", forward[0].SearchResult.Id);
+            Assert.Equal("release-b", reversed[0].SearchResult.Id);
         }
 
         // ------------------------------------------------------------------
