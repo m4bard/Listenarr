@@ -41,6 +41,11 @@ namespace Listenarr.Domain.Audiobooks
         /// <summary>
         /// The quality level to stop upgrading at (cutoff)
         /// </summary>
+        /// <remarks>
+        /// Validated on save only. A profile stored before this rule existed keeps whatever it
+        /// holds and is still returned by the API unchanged.
+        /// </remarks>
+        [ValidCutoff]
         public string? CutoffQuality { get; set; }
 
         /// <summary>
