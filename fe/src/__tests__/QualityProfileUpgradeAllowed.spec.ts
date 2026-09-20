@@ -144,12 +144,18 @@ describe('QualityProfileFormModal upgrade toggle', () => {
     expect(savedProfile(wrapper).upgradeAllowed).toBe(true)
   })
 
-  it('offers no cutoff option that the server would refuse', async () => {
+  it('offers no selectable cutoff option that the server would refuse', async () => {
     const wrapper = await mountModal(buildProfile({ upgradeAllowed: true }))
 
     const options = wrapper.find('#cutoff-quality').findAll('option')
-    expect(options.length).toBeGreaterThan(0)
-    expect(options.every((option) => option.attributes('value') !== '')).toBe(true)
+    expect(options.length).toBeGreaterThan(1)
+
+    // The empty entry is a prompt, not a choice. It used to say "No Cutoff (Always Upgrade)" and
+    // be selectable, and picking it could only ever produce a validation error.
+    const empty = options.filter((option) => option.attributes('value') === '')
+    expect(empty).toHaveLength(1)
+    expect(empty[0].attributes('disabled')).toBeDefined()
+    expect(empty[0].text()).not.toContain('Always Upgrade')
   })
 })
 
