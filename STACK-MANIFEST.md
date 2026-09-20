@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        a630572e983614a52ea409a23da52a99e3b8b91b
     base short:  a630572e9
-    patches:     293
-    version:     1.3.4+m4bard.293
+    patches:     295
+    version:     1.3.4+m4bard.295
 
 ## Patches, oldest first
 
@@ -302,6 +302,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     5d89a0468  #-    notifications: let the EnableNotifications switch gate the subscriber fan-out
     965217c88  #-    configuration: keep stored custom scripts when a save omits them
     2b066e661  #-    stack: reconcile the manual-run allowlist with the stacked tree
+    4ea7b2cb1  #-    stack: manifest for a630572e9 plus 293 patches
+    7f0cea860  #-    search: drop the bare series-name query rung
 
 ## Items, in application order
 
@@ -419,5 +421,6 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     183  feat/183-task-scheduler                      0 patches
     185  local/185-on-123                             0 patches
     189  local/189-on-95                              0 patches
+    79   fix/format-preference-is-not-a-quality-mismatch 0 patches
 
 Regenerate with tools/local_stack.sh in the tracker repo.
