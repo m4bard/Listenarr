@@ -48,6 +48,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Matching
                 StructuredProfile().WithCutoff("").WithUpgradesDisabled().Build());
             var withoutFlag = await EvaluateAsync(StructuredProfile().WithCutoff("").Build());
 
+            // Named, not merely compared. Asserting only that the two agree would still pass if
+            // the blank-cutoff answer itself moved, which is exactly what this is meant to catch.
+            Assert.False(withoutFlag);
             Assert.Equal(withoutFlag, withFlag);
         }
 
