@@ -148,27 +148,24 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 _downloadRepository,
                 _audiobookFileRepository);
 
+            // The summaries come out of the repository rather than being hand-built, so the two
+            // sides really are reading one stored file. A hand-written summary would still pass if
+            // the projection that feeds the library payload lost Path or collapsed the bitrate.
+            var summaries = (await _audiobookFileRepository.GetFormatSummariesAsync())
+                .Where(s => s.AudiobookId == audiobook.Id)
+                .ToList();
+
             var status = AudiobookStatusEvaluator.ComputeStatus(
                 isDownloading: false,
                 hasAnyFile: true,
                 audiobookQuality: null,
                 qualityProfile: profile,
-                files: new List<AudiobookFormatSummary>
-                {
-                    new()
-                    {
-                        AudiobookId = audiobook.Id,
-                        Path = @"C:\books\marie\book.mp3",
-                        Format = "mp3",
-                        Codec = "mp3",
-                        Bitrate = 320_000
-                    }
-                });
+                files: summaries);
 
             // Then
+            Assert.NotEmpty(summaries);
             Assert.True(cutoffMet);
             Assert.Equal(AudiobookStatusEvaluator.QualityMatch, status);
-            Assert.Equal(cutoffMet, status == AudiobookStatusEvaluator.QualityMatch);
         }
     }
 }
