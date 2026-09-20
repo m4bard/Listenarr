@@ -37,8 +37,20 @@ public static class SearchResultAttributeParser
     // other number in a release name is something else, and reading it as a bitrate is how "x264"
     // became MP3 64kbps and "Size: 320 MB" became MP3 320kbps.
     private static readonly Regex BitrateTokenPattern = new(
-        @"(?<=(?:mp3|cbr|vbr|abr)[\s@_./|+-]{0,3})(?<rate>320|256|192|128|64)(?![\p{L}\p{N}])"
+        @"(?<=(?:mp3|cbr|vbr|abr)[\s@_./|+~\u2013\u2014-]{0,3})(?<rate>320|256|192|128|64)(?![\p{L}\p{N}])"
         + @"|(?<![\p{L}\p{N}])(?<rate>320|256|192|128|64)[\s_-]{0,2}k(?:bit/s|bits?|bps|bs|b)?(?![\p{L}\p{N}])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    // A tier number that a bracket pair encloses on its own, which is a common way to write one:
+    // "Some Song [192][2014][MP3]" and "Malibu (320)(2016)" are both in Readarr's own list of names
+    // that must parse as MP3. On its own that shape is too weak to trust, so it counts only where
+    // the text also says MP3 somewhere. "Track [128] of the set" stays a track number.
+    private static readonly Regex BracketedTierPattern = new(
+        @"(?<=[\[({])(?<rate>320|256|192|128|64)(?=[\])}])",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex Mp3CodecWordPattern = new(
+        @"(?<![\p{L}\p{N}])(?:mp3|cbr|vbr|abr)(?![\p{L}\p{N}])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>
@@ -52,12 +64,9 @@ public static class SearchResultAttributeParser
         if (string.IsNullOrEmpty(text))
             return null;
 
-        var bestKbps = 0;
-        foreach (Match match in BitrateTokenPattern.Matches(text))
-        {
-            if (int.TryParse(match.Groups["rate"].Value, out var kbps) && kbps > bestKbps)
-                bestKbps = kbps;
-        }
+        var bestKbps = HighestTier(BitrateTokenPattern.Matches(text));
+        if (bestKbps == 0 && Mp3CodecWordPattern.IsMatch(text))
+            bestKbps = HighestTier(BracketedTierPattern.Matches(text));
 
         return bestKbps switch
         {
@@ -68,6 +77,18 @@ public static class SearchResultAttributeParser
             64 => "MP3 64kbps",
             _ => null
         };
+    }
+
+    private static int HighestTier(MatchCollection matches)
+    {
+        var best = 0;
+        foreach (Match match in matches)
+        {
+            if (int.TryParse(match.Groups["rate"].Value, out var kbps) && kbps > best)
+                best = kbps;
+        }
+
+        return best;
     }
 
     public static string DetectQualityFromTags(string tags)
