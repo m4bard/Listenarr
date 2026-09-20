@@ -52,14 +52,22 @@ namespace Listenarr.Domain.Audiobooks
         /// always done. The migration that adds the column derives the value from the stored
         /// cutoff instead, so no existing profile changes meaning.
         ///
-        /// That default is also what a PUT which omits the field will store, because the
-        /// controller binds this entity straight from the request body and a whole-document
-        /// replace has nothing to distinguish "absent" from "false". Every other field on this
-        /// profile has always behaved the same way, and both callers in the UI send back the whole
-        /// object they read; the fix for all of them together is an API resource with nullable
-        /// fields, the way Readarr keeps QualityProfileResource separate from QualityProfile.
-        /// Pinned, with its control, by
+        /// That default is also what a PUT which omits the field will store, because the controller
+        /// binds this entity straight from the request body and a whole-document replace has
+        /// nothing to distinguish "absent" from "false". Every other field on this profile has
+        /// always behaved the same way, and the UI sends back the whole object it read
+        /// (fe/src/views/settings/QualityProfilesTab.vue:535 on save, :563 for the set-default
+        /// button), so nothing in the application hits it. Pinned, with MinimumSeeders as the
+        /// control that shows it is the endpoint's contract rather than this field's, by
         /// Update_OmittingAField_ResetsItToItsDefault_ForTheFlagAndForItsNeighbour.
+        ///
+        /// Worth saying that the family does not solve this either: their API resource is a
+        /// separate type but declares the same non-nullable
+        /// <c>public bool UpgradeAllowed</c> (src/Readarr.Api.V1/Profiles/Quality/QualityProfileResource.cs:13,
+        /// src/Sonarr.Api.V3/Profiles/Quality/QualityProfileResource.cs:13), so a PUT that omits
+        /// it lands on false there for the same reason it lands on true here. Fixing it properly
+        /// means nullable fields on an inbound resource, which is a change to every field at once
+        /// and does not belong on this branch.
         /// </remarks>
         public bool UpgradeAllowed { get; set; } = true;
 

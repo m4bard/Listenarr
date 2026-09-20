@@ -144,6 +144,36 @@ describe('QualityProfileFormModal upgrade toggle', () => {
     expect(savedProfile(wrapper).upgradeAllowed).toBe(true)
   })
 
+  it('refuses to save a cutoff naming a quality that is no longer enabled', async () => {
+    const withDisabledCutoffRung = buildProfile({
+      upgradeAllowed: true,
+      qualities: [{ ...ladder[0] }, { ...ladder[1], allowed: false }, { ...ladder[2] }],
+    })
+
+    const wrapper = await mountModal(withDisabledCutoffRung)
+    await (wrapper.vm as unknown as { handleSubmit: () => void }).handleSubmit()
+
+    // The cutoff is still 'AAC 256kbps' and that rung is now disallowed, which is the second of
+    // the two guards in handleSubmit and the same shape the server refuses.
+    expect(wrapper.emitted('save')).toBeUndefined()
+  })
+
+  it('saves that same profile once upgrades are turned off', async () => {
+    const withDisabledCutoffRung = buildProfile({
+      upgradeAllowed: false,
+      qualities: [{ ...ladder[0] }, { ...ladder[1], allowed: false }, { ...ladder[2] }],
+    })
+
+    const wrapper = await mountModal(withDisabledCutoffRung)
+    await (wrapper.vm as unknown as { handleSubmit: () => void }).handleSubmit()
+
+    // The control for the test above: same profile, same disallowed cutoff, and it saves, so what
+    // refused it was the upgrade flag rather than anything else about the payload.
+    const saved = savedProfile(wrapper)
+    expect(saved.upgradeAllowed).toBe(false)
+    expect(saved.cutoffQuality).toBe('AAC 256kbps')
+  })
+
   it('offers no selectable cutoff option that the server would refuse', async () => {
     const wrapper = await mountModal(buildProfile({ upgradeAllowed: true }))
 
