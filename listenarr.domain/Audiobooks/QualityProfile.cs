@@ -51,6 +51,15 @@ namespace Listenarr.Domain.Audiobooks
         /// Defaults to true so a caller that omits the field gets what a profile with a cutoff has
         /// always done. The migration that adds the column derives the value from the stored
         /// cutoff instead, so no existing profile changes meaning.
+        ///
+        /// That default is also what a PUT which omits the field will store, because the
+        /// controller binds this entity straight from the request body and a whole-document
+        /// replace has nothing to distinguish "absent" from "false". Every other field on this
+        /// profile has always behaved the same way, and both callers in the UI send back the whole
+        /// object they read; the fix for all of them together is an API resource with nullable
+        /// fields, the way Readarr keeps QualityProfileResource separate from QualityProfile.
+        /// Pinned, with its control, by
+        /// Update_OmittingAField_ResetsItToItsDefault_ForTheFlagAndForItsNeighbour.
         /// </remarks>
         public bool UpgradeAllowed { get; set; } = true;
 
