@@ -272,8 +272,14 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             var targetIsBundle = ReleaseShapeDetector.IsBundleSeriesNumber(audiobook.SeriesNumber);
             var scoredResults = await qualityProfileService.ScoreSearchResults(searchResults, audiobook.QualityProfile, targetIsBundle);
 
-            // Log all scored results for debugging
-            _logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", scoredResults.Count, audiobook.Title);
+            // Ranked once, so the debug log and the grab agree and neither inherits indexer
+            // order. TotalScore first, then indexer priority as an exact-tie break
+            // (QualityScoreComparer), then ScoredReleaseTiebreaker for anything still level.
+            var ranked = scoredResults
+                .OrderByDescending(s => s, QualityScoreComparer.Instance)
+                .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow())
+                .ToList();
+            _logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", ranked.Count, audiobook.Title);
 
             // Broadcast scored result summaries (score + rejection reasons) to aid debugging
             try
@@ -299,11 +305,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             {
                 _logger.LogDebug(ex, "Failed to broadcast scored search results for audiobook {Id}", audiobook.Id);
             }
-            // Same ordering as the selection below, so the log lists candidates in the order
-            // they were actually considered.
-            foreach (var scoredResult in scoredResults
-                .OrderByDescending(s => s, QualityScoreComparer.Instance)
-                .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow()))
+            foreach (var scoredResult in ranked)
             {
                 var status = scoredResult.IsRejected ? "REJECTED" : (scoredResult.TotalScore > 0 ? "ACCEPTABLE" : "LOW SCORE");
                 _logger.LogInformation("  [{Status}] Score: {Score} | Title: {Title} | Source: {Source} | Size: {Size}MB | Seeders: {Seeders} | Quality: {Quality}",
@@ -326,17 +328,10 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             using var blocklistScope = _serviceScopeFactory.CreateScope();
             var blocklistService = blocklistScope.ServiceProvider.GetRequiredService<IBlocklistService>();
             var selectableResults = await BlockedReleaseFilter.ExcludeAsync(
-                blocklistService, audiobook.Id, scoredResults, _logger);
+                blocklistService, audiobook.Id, ranked, _logger);
 
-            // Rank by TotalScore (quality/format/language/seeders/age); indexer priority only
-            // breaks an exact tie, so it can never make a worse release win. See
-            // QualityScoreComparer. Candidates still tied after priority go to
-            // ScoredReleaseTiebreaker, so the winner never comes down to indexer response order.
-            var topResult = selectableResults
-                .Where(s => !s.IsRejected) // Only non-rejected results
-                .OrderByDescending(s => s, QualityScoreComparer.Instance)
-                .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow()) // Still equal: deterministic tiebreak
-                .FirstOrDefault(); // Pick only the top scoring result
+            // ExcludeAsync keeps the order it is given, so this is the top of the ranked list.
+            var topResult = selectableResults.FirstOrDefault(s => !s.IsRejected);
 
             if (topResult == null)
             {
