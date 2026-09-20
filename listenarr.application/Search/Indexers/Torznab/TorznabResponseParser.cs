@@ -141,11 +141,11 @@ namespace Listenarr.Application.Search.Indexers.Torznab
                                     // Also set Quality from format where possible
                                     if (string.IsNullOrEmpty(result.Quality))
                                     {
-                                        if (normalizedFmt.Contains("320")) result.Quality = "MP3 320kbps";
-                                        else if (normalizedFmt.Contains("256")) result.Quality = "MP3 256kbps";
-                                        else if (normalizedFmt.Contains("192")) result.Quality = "MP3 192kbps";
-                                        else if (normalizedFmt.Contains("128")) result.Quality = "MP3 128kbps";
-                                        else if (normalizedFmt.Contains("m4b")) result.Quality = "M4B";
+                                        // The same bitrate test the description branch uses, so a filetype of
+                                        // "1920x1080" is not read as 192kbps. This attribute outranks the text
+                                        // below, so it has to be at least as careful.
+                                        result.Quality = SearchResultAttributeParser.DetectBitrateQuality(normalizedFmt)
+                                            ?? (normalizedFmt.Contains("m4b") ? "M4B" : null);
                                     }
                                     break;
                                 case "lang_code":
