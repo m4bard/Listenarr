@@ -219,6 +219,13 @@
               />
               <FormRow v-if="upgradesEnabled" label="Upgrade Until" labelFor="cutoff-quality">
                 <select id="cutoff-quality" v-model="formData.cutoffQuality">
+                  <!--
+                    Disabled, so a new profile shows a prompt rather than an empty box. It used to
+                    read "No Cutoff (Always Upgrade)" and be selectable, which it should not have
+                    been: saving it has always been refused by the check in handleSubmit, and the
+                    server refuses it too.
+                  -->
+                  <option value="" disabled>Select a cutoff quality</option>
                   <option v-for="quality in enabledQualities" :key="quality.id" :value="quality.id">
                     {{ quality.label }}
                   </option>
