@@ -156,7 +156,34 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
                 Assert.False(
                     score.IsRejected,
                     $"'{candidate.Title}' must not be rejected by a default-shaped profile: {string.Join("; ", score.RejectionReasons)}");
+
+                // Positive assertions, because an inert scorer returning an empty result would
+                // satisfy every IsRejected check above and prove nothing.
+                Assert.True(score.TotalScore > 0, $"'{candidate.Title}' scored {score.TotalScore}");
+                Assert.NotEmpty(score.ScoreBreakdown);
             }
+        }
+
+        [Fact]
+        public async Task CuratedProfile_RefusesTheRungItNamesAndNothingElse()
+        {
+            // The guard above pins the stock default, where every rung is allowed and the gate can
+            // only ever return allowed or no opinion. This one puts a live refusal in the ladder,
+            // which is the shape where over-correction would actually show up.
+            var service = CreateService();
+            var ladder = SeededLadder();
+            ladder.Single(rung => rung.Quality == "MP3 64kbps").Allowed = false;
+            var profile = Profile(ladder, DefaultPreferredFormats());
+
+            var refused = await service.ScoreSearchResult(Release("Book (MP3 64)", "MP3 64kbps", "MP3"), profile);
+            var neighbour = await service.ScoreSearchResult(Release("Book (MP3 128)", "MP3 128kbps", "MP3"), profile);
+            var otherCodec = await service.ScoreSearchResult(Release("Book (AAC 64)", "AAC 64kbps", "AAC"), profile);
+            var unlisted = await service.ScoreSearchResult(Release("Book (FLAC)", "FLAC", "FLAC"), profile);
+
+            Assert.True(refused.IsRejected, "The refused rung must be refused");
+            Assert.False(neighbour.IsRejected, $"The rung next to it must not be: {string.Join("; ", neighbour.RejectionReasons)}");
+            Assert.False(otherCodec.IsRejected, $"The same bitrate in another codec must not be: {string.Join("; ", otherCodec.RejectionReasons)}");
+            Assert.False(unlisted.IsRejected, $"A codec the ladder does not list must not be: {string.Join("; ", unlisted.RejectionReasons)}");
         }
 
         [Fact]
