@@ -35,9 +35,6 @@ public enum SearchQueryFormKind
     /// <summary>Series name followed by the first author.</summary>
     SeriesAuthor,
 
-    /// <summary>Series name alone.</summary>
-    Series,
-
     /// <summary>Text an operator typed, passed through untouched.</summary>
     Verbatim
 }
