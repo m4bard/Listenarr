@@ -274,6 +274,32 @@ namespace Listenarr.Domain.Common
             return FindAllowedRung(profile, profile.CutoffQuality);
         }
 
+        /// <summary>
+        /// The codec group a free-text quality label belongs to ("FLAC", "AAC", "MP3", "OPUS", ...),
+        /// or null when the label names no codec at all. A bare bitrate such as "320kbps" and a
+        /// label this codebase does not recognise both come back null, because neither says
+        /// anything about the codec. Container labels follow their codec, so "M4B" is "AAC".
+        /// </summary>
+        public static string? CodecGroupOfLabel(string? qualityLabel)
+            => string.IsNullOrWhiteSpace(qualityLabel) ? null : ParseQualityLabel(qualityLabel).Codec;
+
+        /// <summary>
+        /// The codec group a profile rung belongs to, preferring its structured
+        /// <see cref="QualityDefinition.Codec"/> and parsing its label otherwise, since seed and
+        /// legacy rungs carry only Quality and Priority.
+        /// </summary>
+        public static string? CodecGroupOfRung(QualityDefinition? rung)
+        {
+            if (rung is null)
+            {
+                return null;
+            }
+
+            return string.IsNullOrWhiteSpace(rung.Codec)
+                ? CodecGroupOfLabel(rung.Quality)
+                : CanonicalCodec(rung.Codec!);
+        }
+
         // ---- internals --------------------------------------------------------------------
 
         private readonly record struct EffectiveRungInfo(QualityDefinition Source, string? Codec, int? BitrateKbps, bool IsLossless)
