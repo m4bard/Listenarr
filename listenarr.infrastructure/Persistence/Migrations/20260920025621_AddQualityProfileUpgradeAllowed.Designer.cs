@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20260920024902_AddQualityProfileUpgradeAllowed")]
+    [Migration("20260920025621_AddQualityProfileUpgradeAllowed")]
     partial class AddQualityProfileUpgradeAllowed
     {
         /// <inheritdoc />
@@ -1360,7 +1360,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("UpgradeAllowed")
-                        .HasColumnType("INTEGER");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
 
                     b.HasKey("Id");
 
