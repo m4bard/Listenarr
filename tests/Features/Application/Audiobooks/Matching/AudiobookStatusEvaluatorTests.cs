@@ -34,12 +34,31 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Matching
         }
 
         [Fact]
-        public void ComputeStatus_ReturnsQualityMismatch_WhenNoFilesMatchPreferredFormats()
+        public void ComputeStatus_ReturnsQualityMatch_WhenAboveCutoffFileIsNotInAPreferredFormat()
         {
+            // The file is well above the cutoff and its only sin is its container. PreferredFormats
+            // used to gate the candidate list, so this returned QualityMismatch, which the library
+            // view renders as "Below Cutoff" about a file that is nothing of the sort.
             var profile = CreateProfile(cutoffQuality: "256kbps", preferredFormats: new List<string> { "m4b" });
             var files = new List<AudiobookFormatSummary>
             {
                 new() { Format = "mp3", Bitrate = 320000 }
+            };
+
+            var status = AudiobookStatusEvaluator.ComputeStatus(false, true, null, profile, files);
+
+            Assert.Equal(AudiobookStatusEvaluator.QualityMatch, status);
+        }
+
+        [Fact]
+        public void ComputeStatus_ReturnsQualityMismatch_WhenBelowCutoffFileIsAlsoNotInAPreferredFormat()
+        {
+            // Control for the test above: dropping the format gate must not make every book match.
+            // Same non-preferred container, this time genuinely under the cutoff.
+            var profile = CreateProfile(cutoffQuality: "256kbps", preferredFormats: new List<string> { "m4b" });
+            var files = new List<AudiobookFormatSummary>
+            {
+                new() { Format = "mp3", Bitrate = 192000 }
             };
 
             var status = AudiobookStatusEvaluator.ComputeStatus(false, true, null, profile, files);
@@ -116,8 +135,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Matching
             // QualityMatcher (as AudiobookQualityCutoffEvaluator does) so a "book.flac" maps to the
             // FLAC lossless rung. Previously Path was dropped, so this resolved as quality-mismatch
             // and disagreed with the automatic-search cutoff.
-            // PreferredFormats = ["flac"] exercises the candidate filter too: a metadata-less file
-            // must match the preferred format via its path extension, not be dropped before the matcher.
+            // PreferredFormats = ["flac"] is left on the profile deliberately: the status no longer
+            // filters by it, and the extension is what tells the matcher which rung this file is on.
             var profile = new QualityProfile
             {
                 Name = "Lossless Profile",
@@ -139,11 +158,11 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Matching
         }
 
         [Fact]
-        public void ComputeStatus_ReturnsQualityMatch_ForPathOnlyLossyFile_WhenPreferredFormatMatchesExtension()
+        public void ComputeStatus_ReturnsQualityMatch_ForPathOnlyLossyFile_WhenOnlyTheExtensionIdentifiesTheCodec()
         {
             // Generality beyond FLAC: the path-extension fallback is format-agnostic. A metadata-less
-            // book.m4b with PreferredFormats = ["m4b"] must pass the candidate filter via its extension
-            // (AAC group) and resolve through the matcher, not be dropped as quality-mismatch.
+            // book.m4b must reach the matcher and resolve on the AAC group through its extension
+            // alone, rather than being reported as quality-mismatch.
             var profile = new QualityProfile
             {
                 Name = "AAC Profile",
