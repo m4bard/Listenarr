@@ -302,10 +302,22 @@ namespace Listenarr.Domain.Common
         private static EffectiveRungInfo Worst(IEnumerable<EffectiveRungInfo> rungs)
             => rungs.OrderByDescending(r => r.Priority).First();
 
+        /// <summary>
+        /// The rung the profile stops upgrading at, or null with <paramref name="cutoffBlank"/>
+        /// set when the profile is not upgrading at all.
+        /// </summary>
+        /// <remarks>
+        /// A profile with <see cref="QualityProfile.UpgradeAllowed"/> false counts as blank here
+        /// even when it carries a real cutoff, because it is not going to upgrade past anything.
+        /// Before that flag existed the only way to record "upgrades off" was to blank the cutoff,
+        /// so the two arms of this test used to be the same arm, and callers that already treat a
+        /// blank cutoff as satisfied keep the answer they had.
+        /// </remarks>
         private static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
         {
             cutoffBlank = false;
             if (profile?.Qualities == null || profile.Qualities.Count == 0
+                || !profile.UpgradeAllowed
                 || string.IsNullOrWhiteSpace(profile.CutoffQuality))
             {
                 cutoffBlank = true;
