@@ -50,13 +50,18 @@ internal static class ListenarrDatabaseMigrationPreflight
 
         var applied = context.Database.GetAppliedMigrations()
             .ToHashSet(StringComparer.Ordinal);
+
+        // Each repair carries its own gate. The move-job repair used to own this method and its
+        // gate sat here, which would have made the quality profile backfill depend on a migration
+        // it has nothing to do with: a later squash or rename of that one would have stopped this
+        // one running, silently and with no test to notice.
+        var upgradeFlagsRepaired = RepairQualityProfileUpgradeFlags(context, applied);
         if (!applied.Contains(DurableFilesystemRecoveryMigrationId))
         {
-            return default;
+            return new ListenarrDatabasePostMigrationRepairResult(0, upgradeFlagsRepaired);
         }
 
         using var transaction = context.Database.BeginTransaction();
-        var upgradeFlagsRepaired = RepairQualityProfileUpgradeFlags(context, applied);
         var moveJobsRepaired = context.Database.ExecuteSqlRaw(
             """
             UPDATE "MoveJobs"
@@ -99,6 +104,21 @@ internal static class ListenarrDatabaseMigrationPreflight
     /// ValidCutoffAttribute refuses it, and every reader in the engine already treats a blank
     /// cutoff as "not upgrading" (QualityMatcher.ResolveCutoff). Writing that agreement into the
     /// row rather than leaving the two fields contradicting each other is the point.
+    ///
+    /// "Blank" is decided in C#, by the same string.IsNullOrWhiteSpace the two readers use
+    /// (listenarr.domain/Common/QualityMatcher.cs:290 and
+    /// listenarr.domain/Audiobooks/ValidCutoffAttribute.cs:94). Expressing it in SQL does not
+    /// work: SQLite's one-argument trim() strips U+0020 and nothing else, so a cutoff of a single
+    /// tab or newline reads as blank to every part of the engine and as non-blank to the backfill,
+    /// and that row would come out of the upgrade with upgrades switched ON, which is the exact
+    /// inversion this is here to prevent. The table holds a handful of rows and only the two
+    /// columns this needs are read.
+    ///
+    /// Note that rolling this migration back and reapplying it re-derives the flag from the
+    /// cutoff, so a profile saved as upgrades-off while still naming a cutoff comes back as
+    /// upgrades-on. Down() cannot carry the flag into the cutoff itself, because post-canary
+    /// migrations have to stay direct EF scaffolds
+    /// (tests/Features/Architecture/MigrationProvenanceArchitectureTests.cs:60-66).
     /// </remarks>
     private static int RepairQualityProfileUpgradeFlags(
         ListenArrDbContext context,
@@ -109,13 +129,26 @@ internal static class ListenarrDatabaseMigrationPreflight
             return 0;
         }
 
-        return context.Database.ExecuteSqlRaw(
-            """
-            UPDATE "QualityProfiles"
-            SET "UpgradeAllowed" = 0
-            WHERE "UpgradeAllowed" <> 0
-              AND ("CutoffQuality" IS NULL OR trim("CutoffQuality") = '');
-            """);
+        // Projected rather than materialised: the entity's Qualities column goes through a JSON
+        // value converter, and one malformed row must not turn a backfill into a failed start.
+        var contradictoryIds = context.QualityProfiles
+            .Where(profile => profile.UpgradeAllowed)
+            .Select(profile => new { profile.Id, profile.CutoffQuality })
+            .ToList()
+            .Where(row => string.IsNullOrWhiteSpace(row.CutoffQuality))
+            .Select(row => row.Id)
+            .ToList();
+
+        if (contradictoryIds.Count == 0)
+        {
+            return 0;
+        }
+
+        return context.QualityProfiles
+            .Where(profile => contradictoryIds.Contains(profile.Id))
+            .ExecuteUpdate(setters => setters.SetProperty(
+                profile => profile.UpgradeAllowed,
+                false));
     }
 }
 
