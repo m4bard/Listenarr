@@ -131,6 +131,55 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
             Assert.False(mp3.IsRejected, $"MP3 must be unaffected (score {mp3.TotalScore})");
         }
 
+        // --------------------------------------------------------- the AAX regression
+
+        [Fact]
+        public async Task ProfileThatRefusesEveryAacRung_RefusesAnAaxRelease()
+        {
+            // The regression this file exists to stop coming back. AAX reached the gate as a label
+            // nothing could place, so it came back NoOpinion and scored 88 through a profile that
+            // refuses every rung it carries. The scorer ranks AAX at 95, second only to FLAC, so
+            // the profile forbidding everything grabbed the Audible rip in preference to almost
+            // anything else it had been offered.
+            var service = CreateService();
+            var ladder = SeededLadder(allowed: false);
+            var profile = Profile(ladder, DefaultPreferredFormats());
+
+            var aax = await service.ScoreSearchResult(Release("Book (AAX)", "AAX", "AAX"), profile);
+            var aaxc = await service.ScoreSearchResult(Release("Book (AAXC)", "AAXC", "AAXC"), profile);
+            var mp4 = await service.ScoreSearchResult(Release("Book (MP4)", "MP4", "MP4"), profile);
+
+            // The control that must come out differently, and the reason it is not enough to assert
+            // three rejections: a profile refusing everything rejects everything, so the same
+            // release has to be accepted by a ladder that allows the AAC rungs.
+            var permissive = Profile(SeededLadder(), DefaultPreferredFormats());
+            var accepted = await service.ScoreSearchResult(Release("Book (AAX)", "AAX", "AAX"), permissive);
+
+            Assert.True(aax.IsRejected, $"AAX must be refused by a profile that refuses every rung (score {aax.TotalScore})");
+            Assert.True(aaxc.IsRejected, $"AAXC must be refused too (score {aaxc.TotalScore})");
+            Assert.True(mp4.IsRejected, $"MP4 must be refused too (score {mp4.TotalScore})");
+            Assert.False(accepted.IsRejected, $"AAX must still be accepted where the AAC rungs are allowed: {string.Join("; ", accepted.RejectionReasons)}");
+        }
+
+        [Fact]
+        public async Task AFormatTheGateCannotPlace_IsRefusedOnTheUndeclaredQualityPath()
+        {
+            // A deliberate consequence rather than a surprise, pinned so it is reviewed. The gate
+            // on a release that declares a format but no quality now refuses a format nothing can
+            // place, which is how an EPUB from an indexer that mixes ebooks in with audiobooks
+            // stops scoring positively. The previous code kept it in the pool on a -12 mismatch.
+            var service = CreateService();
+            var profile = Profile(SeededLadder(), DefaultPreferredFormats());
+
+            var ebook = await service.ScoreSearchResult(Release("Some Book", null, "EPUB"), profile);
+
+            // Control: a format the gate can place, through the same branch, is unaffected.
+            var audiobook = await service.ScoreSearchResult(Release("Some Book", null, "M4B"), profile);
+
+            Assert.True(ebook.IsRejected, $"An unplaceable declared format must be refused (score {ebook.TotalScore})");
+            Assert.False(audiobook.IsRejected, $"A placeable one must not be: {string.Join("; ", audiobook.RejectionReasons)}");
+        }
+
         // ------------------------------------------------- over-correction guard
 
         [Fact]
