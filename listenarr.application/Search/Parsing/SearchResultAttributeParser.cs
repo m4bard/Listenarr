@@ -32,17 +32,20 @@ public static class SearchResultAttributeParser
             { "SPA", "Spanish" }, { "ES", "Spanish" }
         };
 
-    // A bitrate counts only where it stands as a token of its own. "x264" and "1964" both contain
-    // the digits 64 and neither is a 64kbps release, so the digits are required to start on a
-    // boundary and to end on one once an optional k/kb/kbps suffix has been taken.
+    // Digits are a bitrate only where the text says they are one: either a rate word carries them
+    // (mp3 320, MP3CBR320, mp3-320) or a rate unit follows them (320kbps, 64 kbps, [64k]). Every
+    // other number in a release name is something else, and reading it as a bitrate is how "x264"
+    // became MP3 64kbps and "Size: 320 MB" became MP3 320kbps.
     private static readonly Regex BitrateTokenPattern = new(
-        @"(?<![\p{L}\p{N}])(320|256|192|128|64)\s*(?:k(?:bit/s|bits?|bps|b)?)?(?![\p{L}\p{N}])",
+        @"(?<=(?:mp3|cbr|vbr|abr)[\s@_./|+-]{0,3})(?<rate>320|256|192|128|64)(?![\p{L}\p{N}])"
+        + @"|(?<![\p{L}\p{N}])(?<rate>320|256|192|128|64)[\s_-]{0,2}k(?:bit/s|bits?|bps|bs|b)?(?![\p{L}\p{N}])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// Returns the highest recognised MP3 bitrate label that <paramref name="text"/> declares as a
-    /// standalone token, or null when it declares none. Digits inside a longer token (a video codec
-    /// such as x264, a year such as 1964, a resolution such as 1280x720) are not a bitrate.
+    /// Returns the highest recognised MP3 bitrate label that <paramref name="text"/> states as a
+    /// bitrate, or null when it states none. A number that merely happens to be 64, 128, 192, 256
+    /// or 320 is not one: not inside a longer token (x264, 1964, 1280x720) and not standing on its
+    /// own either (Size: 320 MB, Chapter 64, 128,000 words).
     /// </summary>
     public static string? DetectBitrateQuality(string text)
     {
@@ -52,7 +55,7 @@ public static class SearchResultAttributeParser
         var bestKbps = 0;
         foreach (Match match in BitrateTokenPattern.Matches(text))
         {
-            if (int.TryParse(match.Groups[1].Value, out var kbps) && kbps > bestKbps)
+            if (int.TryParse(match.Groups["rate"].Value, out var kbps) && kbps > bestKbps)
                 bestKbps = kbps;
         }
 
