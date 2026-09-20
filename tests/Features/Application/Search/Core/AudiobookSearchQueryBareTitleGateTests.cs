@@ -78,9 +78,8 @@ public sealed class AudiobookSearchQueryBareTitleGateTests : BaseTests
     [Theory]
     [Trait("Method", "BuildPlan")]
     [Trait("Scenario", "DistinctiveTitle")]
-    // Exactly at the threshold, so the boundary is pinned from the passing side too
-    [InlineData("The Glassmaker's Quiet Rebellion")]
-    [InlineData("Notes Toward a Cartography of Salt Marshes")]
+    [InlineData("The Glassmaker's Quiet Rebellion")]   // exactly at the threshold, three
+    [InlineData("Notes Toward a Cartography of Salt Marshes")] // comfortably past it, four
     public void BuildPlan_DistinctiveTitle_StillProducesTheBareTitleForm(string title)
     {
         // Given: a title carrying enough of its own words to be a search for a work on its own.
@@ -101,6 +100,47 @@ public sealed class AudiobookSearchQueryBareTitleGateTests : BaseTests
         Assert.Equal(SearchQueryFormKind.Title, plan.Forms[1].Kind);
     }
 
+    [Fact]
+    [Trait("Method", "BuildPlan")]
+    [Trait("Scenario", "NoAuthorDoesNotUnanchorTheOtherRungs")]
+    public void BuildPlan_RecordWithNoAuthor_StillNeverIssuesABareStemOrBareSeries()
+    {
+        // Given: an anonymous or traditional work, or a record part way through a metadata
+        // refresh. The stem and series rungs are built by pairing with the author, and pairing
+        // with nothing used to yield the left side on its own, so the two rungs documented as
+        // never standing alone were doing exactly that whenever the author was missing.
+        var anonymous = new AudiobookBuilder()
+            .WithTitle("Thornlight: A Tale of the Fen Country")
+            .WithSeries("Amber Static")
+            .Build();
+
+        // When
+        var plan = AudiobookSearchQueryBuilder.BuildPlan(anonymous);
+
+        // Then: neither half reaches an indexer without something anchoring it
+        Assert.DoesNotContain("Thornlight", plan.Forms.Select(form => form.Query));
+        Assert.DoesNotContain("Amber Static", plan.Forms.Select(form => form.Query));
+
+        // Control: the record is still searched, and the same record with an author does get
+        // both of those rungs, so this is the author being absent rather than the rungs being
+        // gone. Without it the assertions above would pass on a builder that had dropped the
+        // stem and series rungs altogether.
+        Assert.Contains("Thornlight: A Tale of the Fen Country", plan.Forms.Select(form => form.Query));
+
+        var attributed = new AudiobookBuilder()
+            .WithTitle("Thornlight: A Tale of the Fen Country")
+            .WithAuthor("Imre Halloway")
+            .WithSeries("Amber Static")
+            .Build();
+
+        var attributedQueries = AudiobookSearchQueryBuilder.BuildPlan(attributed)
+            .Forms.Select(form => form.Query)
+            .ToArray();
+
+        Assert.Contains("Thornlight Imre Halloway", attributedQueries);
+        Assert.Contains("Amber Static Imre Halloway", attributedQueries);
+    }
+
     [Theory]
     [Trait("Method", "CountSignificantWords")]
     [Trait("Scenario", "StopWords")]
@@ -112,6 +152,16 @@ public sealed class AudiobookSearchQueryBareTitleGateTests : BaseTests
     [InlineData("The Glassmaker's Quiet Rebellion", 3)]
     [InlineData("Notes Toward a Cartography of Salt Marshes", 4)]
     [InlineData("A Wind Through Thornwold Dunes", 3)]
+    // Prepositions are listed as whole classes, so a word and its opposite score alike
+    [InlineData("Down the Amber Stair", 2)]
+    [InlineData("Up the Amber Stair", 2)]
+    // Demonstratives are not function words for this purpose, and neither are pronouns
+    [InlineData("This Amber Shore", 3)]
+    [InlineData("Her Amber Shore", 3)]
+    // No word segmentation exists for a script that does not space its words, so a title in
+    // one is a single token and can never clear the threshold. Pinned so it is a known
+    // limitation rather than a surprise.
+    [InlineData("\u6749\u6728\u306e\u68ee", 1)]
     public void CountSignificantWords_IgnoresFunctionWords(string title, int expected)
     {
         Assert.Equal(expected, AudiobookSearchQueryBuilder.CountSignificantWords(title));
@@ -135,6 +185,9 @@ public sealed class AudiobookSearchQueryBareTitleGateTests : BaseTests
 
         // Then
         Assert.DoesNotContain("A Wind in the Dunes", paddedPlan.Forms.Select(form => form.Query));
+
+        // and the book is still searched, so the assertion above cannot pass on an empty plan
+        Assert.Contains("A Wind in the Dunes Odile Marchetti", paddedPlan.Forms.Select(form => form.Query));
 
         // Control, and it has to come out differently: the same five words, three of them
         // significant, does produce the bare form. Without this the assertion above would also
