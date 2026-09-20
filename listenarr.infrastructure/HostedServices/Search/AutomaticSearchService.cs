@@ -227,7 +227,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             // Broadcast scored result summaries (score + rejection reasons) to aid debugging
             try
             {
-                var scoredSummaries = scoredResults.Select(s => new
+                var scoredSummaries = ranked.Select(s => new
                 {
                     title = s.SearchResult.Title,
                     asin = s.SearchResult.Asin,
@@ -242,7 +242,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
 
                 using var scope2 = _serviceScopeFactory.CreateScope();
                 var hub2 = scope2.ServiceProvider.GetRequiredService<IHubContext<DownloadHub>>();
-                await hub2.Clients.All.SendCoreAsync("SearchProgress", new object[] { new { message = $"Scored results for '{audiobook.Title}'", details = new { scoredCount = scoredResults.Count, scoredSamples = scoredSummaries }, type = "automatic", audiobookId = audiobook.Id } });
+                await hub2.Clients.All.SendCoreAsync("SearchProgress", new object[] { new { message = $"Scored results for '{audiobook.Title}'", details = new { scoredCount = ranked.Count, scoredSamples = scoredSummaries }, type = "automatic", audiobookId = audiobook.Id } });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
