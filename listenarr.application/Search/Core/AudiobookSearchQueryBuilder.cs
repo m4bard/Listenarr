@@ -100,6 +100,15 @@ public static class AudiobookSearchQueryBuilder
     /// the full title stays at tier 1 and the shortened form is an extra rung further down, so a
     /// bad guess about which half carries the work costs a later request rather than the search.
     /// </para>
+    /// <para>
+    /// A rung once searched the series alone, with no author, on the reasoning that the widest
+    /// possible query belonged at the bottom of the ladder. It was wrong for the same reason a
+    /// bare title stem is: a short, generic-enough name can be right about which book it hits and
+    /// wrong about which record entirely. On a live install that rung searched a two-word series
+    /// name that is also a band name and the grab went to a music artist. The rung is gone;
+    /// <see cref="SearchQueryFormKind.SeriesAuthor"/> still recovers a book only the series
+    /// carries, just never without the author anchor.
+    /// </para>
     /// </remarks>
     public static SearchQueryPlan BuildPlan(Audiobook audiobook)
     {
@@ -122,11 +131,10 @@ public static class AudiobookSearchQueryBuilder
             (queryTitle, SearchQueryFormKind.Title),
 
             // Only ever paired with the author. Alone, a stem such as "She" is broad enough to be
-            // noise, and the bare series rung below already covers the wide end of the ladder.
+            // noise, the same reason the series is never issued without the author either.
             (Join(titleStem, author), SearchQueryFormKind.TitleStemAuthor),
 
-            (Join(series, author), SearchQueryFormKind.SeriesAuthor),
-            (series, SearchQueryFormKind.Series)
+            (Join(series, author), SearchQueryFormKind.SeriesAuthor)
         };
 
         var plan = SearchQueryPlan.FromCandidates(candidates);
