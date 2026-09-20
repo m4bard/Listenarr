@@ -36,8 +36,9 @@ namespace Listenarr.Application.Search.Scoring
     ///                            verdict in, and a scored result carries no separate quality
     ///                            index to re-compare.
     ///   CompareCustomFormatScore skipped: Listenarr has no custom formats.
-    ///   CompareProtocol          skipped: Listenarr has no delay profile, so there is no
-    ///                            configured preferred protocol to compare against.
+    ///   CompareProtocol          used, in a fixed form. Listenarr has no delay profile, so
+    ///                            there is nothing configured to compare against, but the step
+    ///                            cannot simply be dropped. See CompareProtocolGroup.
     ///   CompareIndexerPriority   skipped: Indexer.Priority is not on a scored result, only
     ///                            IndexerId is. See the note below.
     ///   ComparePeersIfTorrent    used.
@@ -98,6 +99,12 @@ namespace Listenarr.Application.Search.Scoring
             var left = x.SearchResult;
             var right = y.SearchResult;
 
+            var byProtocol = CompareProtocolGroup(left, right);
+            if (byProtocol != 0)
+            {
+                return byProtocol;
+            }
+
             var byPeers = ComparePeersIfTorrent(left, right);
             if (byPeers != 0)
             {
@@ -117,6 +124,49 @@ namespace Listenarr.Application.Search.Scoring
             }
 
             return CompareIdentity(left, right);
+        }
+
+        /// <summary>
+        /// Readarr's CompareProtocol asks whether each candidate matches the delay profile's
+        /// preferred protocol (DownloadDecisionComparer.cs:84-93). Exactly one of the two
+        /// protocols is the preferred one, so that step separates every mixed-protocol pair
+        /// before the protocol-conditional axes below can see one. That is what keeps Readarr's
+        /// chain transitive, and it is not optional.
+        ///
+        /// Drop it and ComparePeersIfTorrent fires for some pairs and not others, which is
+        /// enough to break transitivity outright. Take a usenet release y, a torrent x with few
+        /// seeders and a torrent z with many, ids "a", "b" and "c" respectively. Peers puts z
+        /// ahead of x, identity puts y ahead of z and x ahead of y, and the three together are a
+        /// cycle. A sort handed a cycle gives an answer that depends on input order, which is
+        /// the whole thing this comparer exists to stop.
+        ///
+        /// Listenarr has no delay profile and so nothing configured to compare against, so the
+        /// grouping is fixed, and it takes the family's default rather than a taste. Readarr and
+        /// Sonarr both seed their delay profile with PreferredProtocol = 1, which is Usenet:
+        /// readarr src/NzbDrone.Core/Datastore/Migration/001_initial_setup.cs:344-353, sonarr
+        /// src/NzbDrone.Core/Datastore/Migration/070_delay_profile.cs:26-35, both against
+        /// src/NzbDrone.Core/Indexers/DownloadProtocol.cs where Usenet = 1 and Torrent = 2.
+        /// Anything that is neither, a direct download for instance, sorts after both.
+        ///
+        /// This is the one place in the comparer that expresses a preference rather than a
+        /// mechanical rule. If Listenarr grows a configurable preferred protocol, it belongs
+        /// here. If a protocol preference is unwanted altogether, the alternative is to drop
+        /// ComparePeersIfTorrent and CompareAgeIfUsenet as well and rank on size and identity
+        /// alone, which is protocol neutral and transitive but throws both axes away.
+        /// </summary>
+        private static int CompareProtocolGroup(SearchResult left, SearchResult right)
+        {
+            return ProtocolRank(left).CompareTo(ProtocolRank(right));
+        }
+
+        private static int ProtocolRank(SearchResult result)
+        {
+            if (IsUsenet(result))
+            {
+                return 0;
+            }
+
+            return IsTorrent(result) ? 1 : 2;
         }
 
         /// <summary>
