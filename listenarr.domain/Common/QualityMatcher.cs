@@ -294,6 +294,22 @@ namespace Listenarr.Domain.Common
                 : CanonicalCodec(rung.Codec!);
         }
 
+        /// <summary>The profile's cutoff rung, or null when CutoffQuality names nothing the profile
+        /// allows: absent, present but not Allowed, or differing only in case. A true
+        /// <paramref name="cutoffBlank"/> instead means no cutoff is configured, which is satisfied.</summary>
+        public static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
+        {
+            cutoffBlank = false;
+            if (profile?.Qualities == null || profile.Qualities.Count == 0
+                || string.IsNullOrWhiteSpace(profile.CutoffQuality))
+            {
+                cutoffBlank = true;
+                return null;
+            }
+
+            return FindAllowedRung(profile, profile.CutoffQuality);
+        }
+
         // ---- internals --------------------------------------------------------------------
 
         private readonly record struct EffectiveRungInfo(QualityDefinition Source, string? Codec, int? BitrateKbps, bool IsLossless)
@@ -306,19 +322,6 @@ namespace Listenarr.Domain.Common
 
         private static EffectiveRungInfo Worst(IEnumerable<EffectiveRungInfo> rungs)
             => rungs.OrderByDescending(r => r.Priority).First();
-
-        private static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
-        {
-            cutoffBlank = false;
-            if (profile?.Qualities == null || profile.Qualities.Count == 0
-                || string.IsNullOrWhiteSpace(profile.CutoffQuality))
-            {
-                cutoffBlank = true;
-                return null;
-            }
-
-            return FindAllowedRung(profile, profile.CutoffQuality);
-        }
 
         private static IEnumerable<QualityDefinition> AllowedQualities(QualityProfile profile)
             => profile.Qualities
