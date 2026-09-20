@@ -22,12 +22,19 @@ namespace Listenarr.Domain.Audiobooks
 {
     /// <summary>
     /// Requires a quality profile's cutoff to name one of the profile's own qualities,
-    /// and for that quality to be allowed.
+    /// and for that quality to be allowed, whenever the profile allows upgrades.
     /// </summary>
     /// <remarks>
     /// This runs only where DataAnnotations run: model binding of an inbound request body.
     /// Reading a profile back out of the database does not go through it, so a profile that
     /// was stored before this rule existed still loads and still serialises.
+    ///
+    /// The rule is skipped when <see cref="QualityProfile.UpgradeAllowed"/> is false. Readarr and
+    /// Sonarr apply theirs unconditionally (src/Readarr.Api.V1/Profiles/Quality/QualityProfileController.cs:25,
+    /// src/Sonarr.Api.V3/Profiles/Quality/QualityProfileController.cs:25) but can afford to,
+    /// because their cutoff is a non-nullable quality id that always resolves. Listenarr's is a
+    /// nullable string whose blank value is how every profile saved before this branch recorded
+    /// "upgrades off", and those profiles have to keep round-tripping through PUT.
     /// </remarks>
     [AttributeUsage(AttributeTargets.Property, AllowMultiple = false)]
     public sealed class ValidCutoffAttribute : ValidationAttribute
@@ -42,6 +49,11 @@ namespace Listenarr.Domain.Audiobooks
         protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
         {
             if (validationContext.ObjectInstance is not QualityProfile profile)
+            {
+                return ValidationResult.Success;
+            }
+
+            if (!profile.UpgradeAllowed)
             {
                 return ValidationResult.Success;
             }
