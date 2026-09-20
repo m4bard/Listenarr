@@ -8,6 +8,8 @@ internal static class ListenarrDatabaseMigrationPreflight
         "20260810160602_AddDurableFilesystemRecovery";
     internal const string RootFoldersMigrationId =
         "20260101172733_AddRootFolders";
+    internal const string QualityProfileUpgradeAllowedMigrationId =
+        "20260920025621_AddQualityProfileUpgradeAllowed";
 
     public static ListenarrDatabaseMigrationPreflightResult RepairLegacyData(
         ListenArrDbContext context)
@@ -54,6 +56,7 @@ internal static class ListenarrDatabaseMigrationPreflight
         }
 
         using var transaction = context.Database.BeginTransaction();
+        var upgradeFlagsRepaired = RepairQualityProfileUpgradeFlags(context, applied);
         var moveJobsRepaired = context.Database.ExecuteSqlRaw(
             """
             UPDATE "MoveJobs"
@@ -74,7 +77,45 @@ internal static class ListenarrDatabaseMigrationPreflight
             """);
         transaction.Commit();
 
-        return new ListenarrDatabasePostMigrationRepairResult(moveJobsRepaired);
+        return new ListenarrDatabasePostMigrationRepairResult(
+            moveJobsRepaired,
+            upgradeFlagsRepaired);
+    }
+
+    /// <summary>
+    /// Turns upgrades off on every profile that was recording "do not upgrade" the only way the
+    /// old schema allowed, by leaving the cutoff blank.
+    /// </summary>
+    /// <remarks>
+    /// The column arrives defaulted to 1 so that profiles which DO name a cutoff keep upgrading,
+    /// which is what they have always done, and this turns it back off for the blank ones. That
+    /// direction is the one that can be run repeatedly without doing harm: it only ever touches a
+    /// profile whose cutoff is blank, so a profile saved with upgrades off and a real cutoff, a
+    /// state that only became expressible with this column, is never disturbed. The reverse
+    /// backfill would have had to switch upgrades ON from a blank column, and rerunning that would
+    /// undo the user's own choice.
+    ///
+    /// A profile with upgrades on and a blank cutoff cannot be saved through the API, because
+    /// ValidCutoffAttribute refuses it, and every reader in the engine already treats a blank
+    /// cutoff as "not upgrading" (QualityMatcher.ResolveCutoff). Writing that agreement into the
+    /// row rather than leaving the two fields contradicting each other is the point.
+    /// </remarks>
+    private static int RepairQualityProfileUpgradeFlags(
+        ListenArrDbContext context,
+        HashSet<string> appliedMigrations)
+    {
+        if (!appliedMigrations.Contains(QualityProfileUpgradeAllowedMigrationId))
+        {
+            return 0;
+        }
+
+        return context.Database.ExecuteSqlRaw(
+            """
+            UPDATE "QualityProfiles"
+            SET "UpgradeAllowed" = 0
+            WHERE "UpgradeAllowed" <> 0
+              AND ("CutoffQuality" IS NULL OR trim("CutoffQuality") = '');
+            """);
     }
 
     /// <summary>
@@ -175,7 +216,8 @@ internal readonly record struct ListenarrDatabaseMigrationPreflightResult(
     int DefaultRootsNormalized);
 
 internal readonly record struct ListenarrDatabasePostMigrationRepairResult(
-    int MoveJobsRepaired);
+    int MoveJobsRepaired,
+    int QualityProfileUpgradeFlagsRepaired);
 
 internal readonly record struct ListenarrAmbiguousAuthorAsinRepairResult(
     int MonitoredAuthorsRepaired,

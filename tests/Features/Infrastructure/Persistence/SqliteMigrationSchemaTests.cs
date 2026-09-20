@@ -63,6 +63,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260914171829_AddHistoryReleaseMetadata";
     private const string CustomScriptNotificationsMigrationId =
         "20260916112317_AddCustomScriptNotifications";
+    private const string QualityProfileUpgradeAllowedMigrationId =
+        "20260920025621_AddQualityProfileUpgradeAllowed";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -373,7 +375,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 IndexerFailureBackoffMigrationId,
                 PreferredReleaseShapeMigrationId,
                 HistoryReleaseMetadataMigrationId,
-                CustomScriptNotificationsMigrationId
+                CustomScriptNotificationsMigrationId,
+                QualityProfileUpgradeAllowedMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
