@@ -67,6 +67,39 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Matching
         }
 
         [Fact]
+        public void ComputeStatus_ReturnsQualityMatch_WhenOneFileOfAMixedFormatBookIsAboveCutoff()
+        {
+            // Pins a consequence of dropping the format gate that is easy to miss: any one file
+            // clearing the cutoff now satisfies the whole book, including a file whose container
+            // the profile did not ask for. This is what AudiobookQualityCutoffEvaluator has always
+            // done with the same stored files, so agreeing with it is the point, but the book below
+            // would have read as a mismatch before.
+            var profile = CreateProfile(cutoffQuality: "256kbps", preferredFormats: new List<string> { "m4b" });
+            var files = new List<AudiobookFormatSummary>
+            {
+                new() { Format = "m4b", Bitrate = 64000 },
+                new() { Format = "mp3", Bitrate = 320000 }
+            };
+
+            var status = AudiobookStatusEvaluator.ComputeStatus(false, true, null, profile, files);
+
+            Assert.Equal(AudiobookStatusEvaluator.QualityMatch, status);
+        }
+
+        [Fact]
+        public void ComputeStatus_ReturnsQualityMatch_WhenTheFileListIsEmptyRatherThanNull()
+        {
+            // The empty-files guard now covers null and empty in one line, and only the null shape
+            // was pinned. A book with hasAnyFile but nothing to measure must not read as a mismatch.
+            var profile = CreateProfile(cutoffQuality: "256kbps", preferredFormats: new List<string> { "m4b" });
+
+            var status = AudiobookStatusEvaluator.ComputeStatus(
+                false, true, null, profile, new List<AudiobookFormatSummary>());
+
+            Assert.Equal(AudiobookStatusEvaluator.QualityMatch, status);
+        }
+
+        [Fact]
         public void ComputeStatus_ReturnsQualityMatch_WhenDerivedQualityMeetsCutoffBoundary()
         {
             var profile = CreateProfile(cutoffQuality: "256kbps", preferredFormats: new List<string> { "m4b" });
