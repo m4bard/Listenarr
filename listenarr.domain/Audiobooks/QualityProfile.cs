@@ -39,11 +39,28 @@ namespace Listenarr.Domain.Audiobooks
         public List<QualityDefinition> Qualities { get; set; } = new();
 
         /// <summary>
+        /// Whether an already-acquired audiobook may be replaced by a better release.
+        /// </summary>
+        /// <remarks>
+        /// The same flag Readarr and Sonarr carry (<c>public bool UpgradeAllowed</c>, at
+        /// src/NzbDrone.Core/Profiles/Qualities/QualityProfile.cs:17 in both). Listenarr used to
+        /// encode "upgrades off" as a blank <see cref="CutoffQuality"/>. That left no way to say
+        /// "upgrades off, and here is the cutoff I had picked", and no way for a profile with
+        /// upgrades off to satisfy a cutoff rule at all.
+        ///
+        /// Defaults to true so a caller that omits the field gets what a profile with a cutoff has
+        /// always done. The migration that adds the column derives the value from the stored
+        /// cutoff instead, so no existing profile changes meaning.
+        /// </remarks>
+        public bool UpgradeAllowed { get; set; } = true;
+
+        /// <summary>
         /// The quality level to stop upgrading at (cutoff)
         /// </summary>
         /// <remarks>
-        /// Validated on save only. A profile stored before this rule existed keeps whatever it
-        /// holds and is still returned by the API unchanged.
+        /// Validated on save only, and only while <see cref="UpgradeAllowed"/> is true. A profile
+        /// stored before this rule existed keeps whatever it holds and is still returned by the
+        /// API unchanged.
         /// </remarks>
         [ValidCutoff]
         public string? CutoffQuality { get; set; }

@@ -258,22 +258,6 @@ namespace Listenarr.Domain.Common
             return cand.Priority < exist.Priority;
         }
 
-        /// <summary>The profile's cutoff rung, or null when CutoffQuality names nothing the profile
-        /// allows: absent, present but not Allowed, or differing only in case. A true
-        /// <paramref name="cutoffBlank"/> instead means no cutoff is configured, which is satisfied.</summary>
-        public static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
-        {
-            cutoffBlank = false;
-            if (profile?.Qualities == null || profile.Qualities.Count == 0
-                || string.IsNullOrWhiteSpace(profile.CutoffQuality))
-            {
-                cutoffBlank = true;
-                return null;
-            }
-
-            return FindAllowedRung(profile, profile.CutoffQuality);
-        }
-
         /// <summary>
         /// The codec group a free-text quality label belongs to ("FLAC", "AAC", "MP3", "OPUS", ...),
         /// or null when the label names no codec at all. A bare bitrate such as "320kbps" comes
@@ -322,6 +306,33 @@ namespace Listenarr.Domain.Common
 
         private static EffectiveRungInfo Worst(IEnumerable<EffectiveRungInfo> rungs)
             => rungs.OrderByDescending(r => r.Priority).First();
+
+        /// <summary>
+        /// The rung the profile stops upgrading at, or null with <paramref name="cutoffBlank"/>
+        /// set when the profile is not upgrading at all. Null with <paramref name="cutoffBlank"/>
+        /// false is the other case: CutoffQuality names nothing the profile allows, because it is
+        /// absent, present but not Allowed, or differing only in case.
+        /// </summary>
+        /// <remarks>
+        /// A profile with <see cref="QualityProfile.UpgradeAllowed"/> false counts as blank here
+        /// even when it carries a real cutoff, because it is not going to upgrade past anything.
+        /// Before that flag existed the only way to record "upgrades off" was to blank the cutoff,
+        /// so the two arms of this test used to be the same arm, and callers that already treat a
+        /// blank cutoff as satisfied keep the answer they had.
+        /// </remarks>
+        public static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
+        {
+            cutoffBlank = false;
+            if (profile?.Qualities == null || profile.Qualities.Count == 0
+                || !profile.UpgradeAllowed
+                || string.IsNullOrWhiteSpace(profile.CutoffQuality))
+            {
+                cutoffBlank = true;
+                return null;
+            }
+
+            return FindAllowedRung(profile, profile.CutoffQuality);
+        }
 
         private static IEnumerable<QualityDefinition> AllowedQualities(QualityProfile profile)
             => profile.Qualities

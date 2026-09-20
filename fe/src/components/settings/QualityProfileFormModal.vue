@@ -219,7 +219,6 @@
               />
               <FormRow v-if="upgradesEnabled" label="Upgrade Until" labelFor="cutoff-quality">
                 <select id="cutoff-quality" v-model="formData.cutoffQuality">
-                  <option value="">No Cutoff (Always Upgrade)</option>
                   <option v-for="quality in enabledQualities" :key="quality.id" :value="quality.id">
                     {{ quality.label }}
                   </option>
@@ -597,9 +596,6 @@ const qualityItems = ref<QualityItem[]>([])
 // Track which codecs are enabled
 const enabledCodecs = ref<Set<string>>(new Set())
 
-// Track upgrades enabled
-const upgradesEnabled = ref(true)
-
 // Drag state
 const draggedQuality = ref<QualityItem | null>(null)
 
@@ -818,6 +814,7 @@ const formData = ref<QualityProfile>({
   name: '',
   description: '',
   qualities: [],
+  upgradeAllowed: true,
   cutoffQuality: '',
   minimumSize: undefined,
   maximumSize: undefined,
@@ -835,6 +832,19 @@ const formData = ref<QualityProfile>({
 })
 
 const preferM4b = ref(false)
+
+/**
+ * The "Enable Quality Upgrades" checkbox. This used to be local state that the save handler
+ * turned into a blank cutoff, which meant a saved profile could not say "upgrades off" and name
+ * a cutoff at the same time, and the server could not tell the two apart. It now reads and
+ * writes the profile's own upgradeAllowed field.
+ */
+const upgradesEnabled = computed({
+  get: () => formData.value.upgradeAllowed !== false,
+  set: (value: boolean) => {
+    formData.value.upgradeAllowed = value
+  },
+})
 // Tag input refs
 const newPreferredWord = ref('')
 const newMustContain = ref('')
@@ -850,6 +860,9 @@ watch(
       formData.value.id = newProfile.id // CRITICAL: Preserve ID for update operations
       formData.value.name = newProfile.name
       formData.value.description = newProfile.description
+      // A server that predates the flag sends no upgradeAllowed, and there a blank cutoff is
+      // what "upgrades off" looked like.
+      formData.value.upgradeAllowed = newProfile.upgradeAllowed ?? !!newProfile.cutoffQuality
       formData.value.cutoffQuality = newProfile.cutoffQuality || ''
       formData.value.minimumSize = newProfile.minimumSize
       formData.value.maximumSize = newProfile.maximumSize
@@ -888,14 +901,13 @@ watch(
       // Initialize quality items from saved qualities
       initializeQualitiesFromProfile(newProfile)
 
-      // Check if upgrades are disabled
-      upgradesEnabled.value = !!newProfile.cutoffQuality
     } else {
       // Reset to defaults
       formData.value = {
         name: '',
         description: '',
         qualities: [],
+        upgradeAllowed: true,
         cutoffQuality: '',
         minimumSize: undefined,
         maximumSize: undefined,
@@ -918,7 +930,6 @@ watch(
       // Reset quality items
       qualityItems.value = []
       enabledCodecs.value = new Set()
-      upgradesEnabled.value = true
     }
   },
   { immediate: true },
@@ -1243,9 +1254,6 @@ const handleSubmit = () => {
       saving.value = false
       return
     }
-  } else {
-    // Clear cutoff if upgrades disabled
-    formData.value.cutoffQuality = ''
   }
 
   emit('save', formData.value)
