@@ -108,7 +108,9 @@
                       v-for="quality in group.qualities"
                       :key="quality.id"
                       class="quality-badge"
-                      :class="{ 'is-cutoff': showsCutoff(profile) && quality.id === profile.cutoffQuality }"
+                      :class="{
+                        'is-cutoff': showsCutoff(profile) && quality.id === profile.cutoffQuality,
+                      }"
                     >
                       {{ quality.label }}
                       <template v-if="showsCutoff(profile) && quality.id === profile.cutoffQuality">
