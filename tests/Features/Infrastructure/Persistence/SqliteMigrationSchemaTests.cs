@@ -63,6 +63,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260914171829_AddHistoryReleaseMetadata";
     private const string CustomScriptNotificationsMigrationId =
         "20260916112317_AddCustomScriptNotifications";
+    private const string QualityProfileUpgradeAllowedMigrationId =
+        "20260920025621_AddQualityProfileUpgradeAllowed";
     private const string HousekeepingRetentionMigrationId =
         "20260922220833_AddHousekeepingRetention";
 
@@ -376,6 +378,7 @@ public class SqliteMigrationSchemaTests : BaseTests
                 PreferredReleaseShapeMigrationId,
                 HistoryReleaseMetadataMigrationId,
                 CustomScriptNotificationsMigrationId,
+                QualityProfileUpgradeAllowedMigrationId,
                 HousekeepingRetentionMigrationId
             ],
             postCanary);
