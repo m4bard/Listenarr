@@ -33,14 +33,15 @@ public sealed class AudiobookSearchQueryPlanTests : BaseTests
         // When
         var plan = AudiobookSearchQueryBuilder.BuildPlan(audiobook);
 
-        // Then: title forms first, so a book that was already being found still costs one request
+        // Then: title forms first, so a book that was already being found still costs one request.
+        // Control: the series-plus-author form is still produced, so the series is not simply
+        // dropped from the ladder, only the bare form of it.
         Assert.Equal(
             new[]
             {
                 "Heaven's River Dennis E Taylor",
                 "Heaven's River",
-                "Bobiverse Dennis E Taylor",
-                "Bobiverse"
+                "Bobiverse Dennis E Taylor"
             },
             plan.Forms.Select(form => form.Query).ToArray());
 
@@ -49,12 +50,11 @@ public sealed class AudiobookSearchQueryPlanTests : BaseTests
             {
                 SearchQueryFormKind.TitleAuthor,
                 SearchQueryFormKind.Title,
-                SearchQueryFormKind.SeriesAuthor,
-                SearchQueryFormKind.Series
+                SearchQueryFormKind.SeriesAuthor
             },
             plan.Forms.Select(form => form.Kind).ToArray());
 
-        Assert.Equal(new[] { 1, 2, 3, 4 }, plan.Forms.Select(form => form.Tier).ToArray());
+        Assert.Equal(new[] { 1, 2, 3 }, plan.Forms.Select(form => form.Tier).ToArray());
     }
 
     [Fact]
@@ -75,6 +75,29 @@ public sealed class AudiobookSearchQueryPlanTests : BaseTests
         // Then: the sweep used to send title, author and series as one query, which fails whenever
         // the indexer's own title does not carry the series name
         Assert.DoesNotContain("Bobiverse", plan.PrimaryQuery, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    [Trait("Method", "BuildPlan")]
+    [Trait("Scenario", "BareSeriesNeverStandsAlone")]
+    public void BuildPlan_SeriesIsAGenericWordOrShortPhrase_NeverProducesABareSeriesForm()
+    {
+        // Given: the incident shape. A generic two-word series name is also a band name, and a
+        // bare "series" form with no author is what an indexer matched to a music artist.
+        var audiobook = new AudiobookBuilder()
+            .WithTitle("The Long Way Home")
+            .WithAuthor("Ann Leckie")
+            .WithSeries("Radio Silence")
+            .Build();
+
+        // When
+        var plan = AudiobookSearchQueryBuilder.BuildPlan(audiobook);
+
+        // Then: the series never appears as a standalone query form, only paired with the author.
+        // Control: the series-plus-author form is still present, so this is not a blanket
+        // assertion that would also pass if the series were dropped from the ladder entirely.
+        Assert.DoesNotContain("Radio Silence", plan.Forms.Select(form => form.Query));
+        Assert.Contains("Radio Silence Ann Leckie", plan.Forms.Select(form => form.Query));
     }
 
     [Fact]
@@ -159,8 +182,7 @@ public sealed class AudiobookSearchQueryPlanTests : BaseTests
                 "She: A History of Adventure H Rider Haggard",
                 "She: A History of Adventure",
                 "She H Rider Haggard",
-                "Ayesha H Rider Haggard",
-                "Ayesha"
+                "Ayesha H Rider Haggard"
             },
             plan.Forms.Select(form => form.Query).ToArray());
 
