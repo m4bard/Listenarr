@@ -200,6 +200,94 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
             Assert.Empty(Validate(profile));
         }
 
+        /// <summary>
+        /// The rule and the disabled-upgrades checkbox have to be able to coexist, because every
+        /// profile saved before UpgradeAllowed existed recorded "upgrades off" as a blank cutoff
+        /// and has to keep saving. Readarr and Sonarr never had to make this exemption: their
+        /// cutoff is a quality id that always resolves
+        /// (src/Readarr.Api.V1/Profiles/Quality/QualityProfileController.cs:25).
+        /// </summary>
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public void BlankCutoff_WithUpgradesOff_IsAccepted(string? cutoff)
+        {
+            var profile = new QualityProfileBuilder()
+                .WithName("Upgrades off, blank cutoff")
+                .WithStructuredDefaults()
+                .WithUpgradesDisabled()
+                .Build();
+            profile.CutoffQuality = cutoff;
+
+            Assert.Empty(Validate(profile));
+        }
+
+        /// <summary>
+        /// The control. The same three cutoffs the rule refuses are still refused the moment
+        /// upgrades are on, so turning the flag off is what excuses them and not some weakening of
+        /// the rule itself.
+        /// </summary>
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("OPUS 96kbps")]
+        public void TheSameCutoffs_AreStillRefused_WhenUpgradesAreOn(string? cutoff)
+        {
+            var profile = new QualityProfileBuilder()
+                .WithName("Upgrades on")
+                .WithStructuredDefaults()
+                .Build();
+            profile.CutoffQuality = cutoff;
+
+            Assert.True(profile.UpgradeAllowed);
+            AssertRefusedForCutoff(profile);
+        }
+
+        /// <summary>
+        /// Upgrades off no longer forces the cutoff to be thrown away, so a disallowed one can be
+        /// saved alongside it. That is deliberate: the user turned upgrades off, the cutoff is
+        /// inert, and blanking it on their behalf is what made the modal's checkbox destructive in
+        /// the first place.
+        /// </summary>
+        [Fact]
+        public void UpgradesOff_AlsoExcusesACutoffOnADisallowedRung()
+        {
+            var profile = new QualityProfileBuilder()
+                .WithName("Upgrades off, disallowed cutoff")
+                .WithStructuredDefaults()
+                .WithQuality("OPUS 96kbps", 11, codec: "OPUS", bitrate: 96, allowed: false)
+                .WithUpgradesDisabled()
+                .WithCutoff("OPUS 96kbps")
+                .Build();
+
+            Assert.Empty(Validate(profile));
+        }
+
+        /// <summary>
+        /// Turning upgrades off must not swallow the profile's other failures; the exemption is
+        /// scoped to the cutoff.
+        /// </summary>
+        [Fact]
+        public void UpgradesOff_DoesNotSuppressTheOtherProfileRules()
+        {
+            var profile = new QualityProfileBuilder()
+                .WithStructuredDefaults()
+                .WithUpgradesDisabled()
+                .Build();
+            profile.Name = string.Empty;
+            profile.CutoffQuality = null;
+
+            var results = Validate(profile);
+
+            Assert.DoesNotContain(
+                results,
+                result => result.MemberNames.Contains(nameof(QualityProfile.CutoffQuality)));
+            Assert.Contains(
+                results,
+                result => result.MemberNames.Contains(nameof(QualityProfile.Name)));
+        }
+
         [Fact]
         public void CutoffFailure_DoesNotSuppressTheOtherProfileRules()
         {
