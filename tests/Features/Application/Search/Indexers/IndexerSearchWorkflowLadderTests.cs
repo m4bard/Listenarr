@@ -20,15 +20,23 @@ namespace Listenarr.Tests.Features.Application.Search.Indexers;
 public sealed class IndexerSearchWorkflowLadderTests : BaseTests
 {
     /// <summary>
-    /// The book the finding was measured against: every word of the title searchable on the
-    /// indexer except the first, so no form built from the title can ever match.
+    /// The three-rung plan these tests walk, stated rather than derived.
     /// </summary>
-    private static Audiobook BobiverseBook() =>
-        new AudiobookBuilder()
-            .WithTitle("Heaven's River")
-            .WithAuthor("Dennis E. Taylor")
-            .WithSeries("Bobiverse")
-            .Build();
+    /// <remarks>
+    /// These tests are about what the workflow does with a plan, not about which rungs
+    /// <see cref="AudiobookSearchQueryBuilder"/> decides an audiobook deserves. Building the plan
+    /// here keeps the two apart, so a change to the builder's rung policy shows up in the builder's
+    /// own tests instead of silently shortening the ladder these ones need. It was derived before:
+    /// gating the bare-title rung took this fixture from three rungs to two and broke four tests
+    /// that had nothing to say about gating.
+    /// </remarks>
+    private static SearchQueryPlan LadderPlan() =>
+        new(new[]
+        {
+            new SearchQueryForm(1, "Heaven's River Dennis E Taylor", SearchQueryFormKind.TitleAuthor),
+            new SearchQueryForm(2, "Heaven's River", SearchQueryFormKind.Title),
+            new SearchQueryForm(3, "Bobiverse Dennis E Taylor", SearchQueryFormKind.SeriesAuthor)
+        });
 
     [Fact]
     [Trait("Method", "SearchIndexersAsync")]
@@ -39,7 +47,7 @@ public sealed class IndexerSearchWorkflowLadderTests : BaseTests
         var provider = new RecordingSearchProvider(query =>
             IndexerQueryObservation.FromResults(new List<IndexerSearchResult> { CreateResult("hit") }, query));
 
-        var plan = AudiobookSearchQueryBuilder.BuildPlan(BobiverseBook());
+        var plan = LadderPlan();
         var workflow = CreateWorkflow(provider, CreateIndexer(1, "Torznab One"));
 
         // When
@@ -61,7 +69,7 @@ public sealed class IndexerSearchWorkflowLadderTests : BaseTests
                 ? IndexerQueryObservation.NoMatch(IndexerQueryReason.EmptyChannel, query)
                 : IndexerQueryObservation.FromResults(new List<IndexerSearchResult> { CreateResult("hit") }, query));
 
-        var plan = AudiobookSearchQueryBuilder.BuildPlan(BobiverseBook());
+        var plan = LadderPlan();
         var workflow = CreateWorkflow(provider, CreateIndexer(1, "Torznab One"));
 
         // When
@@ -84,7 +92,7 @@ public sealed class IndexerSearchWorkflowLadderTests : BaseTests
                 ? IndexerQueryObservation.NoMatch(IndexerQueryReason.EmptyChannel, query)
                 : IndexerQueryObservation.FromResults(new List<IndexerSearchResult> { CreateResult("hit") }, query));
 
-        var plan = AudiobookSearchQueryBuilder.BuildPlan(BobiverseBook());
+        var plan = LadderPlan();
         var indexer = CreateIndexer(1, "Torznab One");
         var workflow = CreateWorkflow(provider, indexer);
 
@@ -108,7 +116,7 @@ public sealed class IndexerSearchWorkflowLadderTests : BaseTests
         var provider = new RecordingSearchProvider(query =>
             IndexerQueryObservation.NoMatch(IndexerQueryReason.EmptyChannel, query));
 
-        var plan = AudiobookSearchQueryBuilder.BuildPlan(BobiverseBook());
+        var plan = LadderPlan();
         var indexer = CreateIndexer(1, "Torznab One");
         var workflow = CreateWorkflow(provider, indexer);
 
@@ -130,7 +138,7 @@ public sealed class IndexerSearchWorkflowLadderTests : BaseTests
         var provider = new RecordingSearchProvider(query =>
             IndexerQueryObservation.Unavailable(IndexerQueryReason.Timeout, query, "TaskCanceledException"));
 
-        var plan = AudiobookSearchQueryBuilder.BuildPlan(BobiverseBook());
+        var plan = LadderPlan();
         var workflow = CreateWorkflow(provider, CreateIndexer(1, "Torznab One"));
 
         // When
@@ -163,7 +171,7 @@ public sealed class IndexerSearchWorkflowLadderTests : BaseTests
             _ => IndexerQueryObservation.Unavailable(reason, query)
         });
 
-        var plan = AudiobookSearchQueryBuilder.BuildPlan(BobiverseBook());
+        var plan = LadderPlan();
         var indexer = CreateIndexer(1, "Torznab One");
         var workflow = CreateWorkflow(provider, indexer);
 
@@ -195,7 +203,7 @@ public sealed class IndexerSearchWorkflowLadderTests : BaseTests
                 : IndexerQueryObservation.FromResults(new List<IndexerSearchResult> { CreateResult("hit") }, query);
         });
 
-        var plan = AudiobookSearchQueryBuilder.BuildPlan(BobiverseBook());
+        var plan = LadderPlan();
         var workflow = CreateWorkflow(provider, CreateIndexer(1, "Throwing"), CreateIndexer(2, "Healthy"));
 
         // When
