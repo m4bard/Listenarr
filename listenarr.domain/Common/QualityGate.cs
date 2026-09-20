@@ -28,9 +28,10 @@ namespace Listenarr.Domain.Common
         Refused,
 
         /// <summary>
-        /// The label names a codec the profile's ladder carries no rung for at all, so the
-        /// profile describes nothing that covers it. This is the only absence that reads as
-        /// silence; a label the gate cannot place at all is <see cref="Refused"/>.
+        /// The profile describes nothing that covers this quality: there is no label to judge,
+        /// or no ladder to judge it against, or the label names a codec the ladder carries no
+        /// rung for. Those are the absences that read as silence. The absence that does not is a
+        /// label the gate cannot place at all, which is <see cref="Refused"/>.
         /// </summary>
         NoOpinion
     }
@@ -65,7 +66,11 @@ namespace Listenarr.Domain.Common
         /// ladder names.
         ///
         /// The third rule is for a label the gate cannot place at all: no rung names it, and
-        /// <see cref="QualityMatcher.CodecGroupOfLabel"/> cannot say what codec it is. That is
+        /// <see cref="QualityMatcher.CodecGroupOfLabel"/> cannot say what codec it is. Read that
+        /// literally, because it is narrower than "unrecognised". "Lossless" is recognised by
+        /// ParseQualityLabel, which reports it as lossless with no codec, and a bare bitrate is
+        /// recognised as a bitrate with no codec; both have no codec to report and so both land
+        /// here. That is
         /// <see cref="QualityGateVerdict.Refused"/>. A ladder is an allow-list, and a label nobody
         /// can map onto it is not on it. The argument for the other reading is that absence is not
         /// refusal, and it is a good argument about a *rung*, but it does not reach this far: the
@@ -75,6 +80,13 @@ namespace Listenarr.Domain.Common
         /// permitted one is a grab, and it wins the ranking on the way through, because the labels
         /// in this gap are containers the scorer ranks highly: AAX is 95, second only to FLAC
         /// (SearchResultScorer.GetQualityScore).
+        ///
+        /// Reachability, stated so nobody has to re-derive it: no parser in this repo emits AAX,
+        /// AAXC or MP4 as a quality or a format today, so neither the defect nor the risk of
+        /// over-refusing is reachable through a shipped indexer. Both sides of the argument above
+        /// are about the contract rather than about an observed grab. The scorer's aax branch is
+        /// already there waiting for the first parser that emits one, which is the case this rule
+        /// is here to meet.
         ///
         /// Two things this is NOT. It is not new severity. The scorer used to build this allow-list
         /// inline from the Allowed=true rungs and refuse any label that matched none of them, so
@@ -127,9 +139,11 @@ namespace Listenarr.Domain.Common
             if (group == null)
             {
                 // No rung names it and nothing can say what codec it is. Refused, per the third
-                // rule above. Note the ordering that makes this narrow: a bare bitrate such as
-                // "320kbps" has no codec group either, and reaches here only when no rung name
-                // carries that bitrate.
+                // rule above. A bare bitrate has no codec group either and reaches here only when
+                // no rung name carries that bitrate, so "320kbps" is decided by rule 1 against the
+                // seeded ladder while "96kbps" is refused here. That is an accident of which
+                // bitrates the seed lists rather than a designed boundary, and it matches what the
+                // allow-list this replaced did with the same two labels.
                 return QualityGateVerdict.Refused;
             }
 
