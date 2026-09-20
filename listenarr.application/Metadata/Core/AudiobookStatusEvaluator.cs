@@ -62,12 +62,10 @@ namespace Listenarr.Application.Metadata.Core
                 return QualityMatch;
             }
 
-            // A profile that is not upgrading has nothing to be short of, so the library view
-            // reports a match. This is the same test QualityMatcher.ResolveCutoff makes, and it
-            // covers both the blank cutoff older profiles used to mean it with and the explicit
-            // flag that replaced it.
-            if (!qualityProfile.UpgradeAllowed
-                || string.IsNullOrWhiteSpace(qualityProfile.CutoffQuality)
+            // A profile that is not upgrading is handled below rather than here: every cutoff
+            // comparison past this point runs through QualityMatcher, which already treats
+            // UpgradeAllowed = false the same way it treats a blank cutoff.
+            if (string.IsNullOrWhiteSpace(qualityProfile.CutoffQuality)
                 || qualityProfile.Qualities == null
                 || qualityProfile.Qualities.Count == 0)
             {
