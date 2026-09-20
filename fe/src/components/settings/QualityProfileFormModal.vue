@@ -869,7 +869,6 @@ watch(
 
       // Initialize quality items from saved qualities
       initializeQualitiesFromProfile(newProfile)
-
     } else {
       // Reset to defaults
       formData.value = {
