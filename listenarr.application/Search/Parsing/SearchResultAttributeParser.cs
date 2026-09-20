@@ -32,22 +32,52 @@ public static class SearchResultAttributeParser
             { "SPA", "Spanish" }, { "ES", "Spanish" }
         };
 
+    // A bitrate counts only where it stands as a token of its own. "x264" and "1964" both contain
+    // the digits 64 and neither is a 64kbps release, so the digits are required to start on a
+    // boundary and to end on one once an optional k/kb/kbps suffix has been taken.
+    private static readonly Regex BitrateTokenPattern = new(
+        @"(?<![\p{L}\p{N}])(320|256|192|128|64)\s*(?:k(?:bit/s|bits?|bps|b)?)?(?![\p{L}\p{N}])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Returns the highest recognised MP3 bitrate label that <paramref name="text"/> declares as a
+    /// standalone token, or null when it declares none. Digits inside a longer token (a video codec
+    /// such as x264, a year such as 1964, a resolution such as 1280x720) are not a bitrate.
+    /// </summary>
+    public static string? DetectBitrateQuality(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return null;
+
+        var bestKbps = 0;
+        foreach (Match match in BitrateTokenPattern.Matches(text))
+        {
+            if (int.TryParse(match.Groups[1].Value, out var kbps) && kbps > bestKbps)
+                bestKbps = kbps;
+        }
+
+        return bestKbps switch
+        {
+            320 => "MP3 320kbps",
+            256 => "MP3 256kbps",
+            192 => "MP3 192kbps",
+            128 => "MP3 128kbps",
+            64 => "MP3 64kbps",
+            _ => null
+        };
+    }
+
     public static string DetectQualityFromTags(string tags)
     {
         var lowerTags = tags.ToLowerInvariant();
 
         if (lowerTags.Contains("flac"))
             return "FLAC";
-        if (lowerTags.Contains("320") || lowerTags.Contains("320kbps"))
-            return "MP3 320kbps";
-        if (lowerTags.Contains("256") || lowerTags.Contains("256kbps"))
-            return "MP3 256kbps";
-        if (lowerTags.Contains("192") || lowerTags.Contains("192kbps"))
-            return "MP3 192kbps";
-        if (lowerTags.Contains("128") || lowerTags.Contains("128kbps"))
-            return "MP3 128kbps";
-        if (lowerTags.Contains("64") || lowerTags.Contains("64kbps"))
-            return "MP3 64kbps";
+
+        var bitrate = DetectBitrateQuality(lowerTags);
+        if (bitrate != null)
+            return bitrate;
+
         if (lowerTags.Contains("m4b"))
             return "M4B";
 
