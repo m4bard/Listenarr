@@ -48,14 +48,14 @@ namespace Listenarr.Application.Search.Scoring
     ///   CompareSize              used.
     ///
     /// EVERY AXIS IS A TOTAL FUNCTION OF A SINGLE RELEASE, once the pair has been narrowed to
-    /// one protocol group. That is a requirement, not a style. An axis that consults both
-    /// candidates to decide whether it has an opinion, and abstains for some pairs, is enough
-    /// to make the whole chain intransitive: a later axis then bridges a pair the earlier one
-    /// separated, and x beats y beats z beats x. A sort handed a cycle answers according to
-    /// input order, which is the defect this comparer exists to remove. Both cycles found so
-    /// far in this file were exactly that shape, one from the protocol step being absent and
-    /// one from the age step abstaining on an unparseable date. Anything added here has to be
-    /// checked against that rule.
+    /// one protocol group. That is a requirement, not a style. An axis abstaining for a whole
+    /// group is harmless. An axis that consults both candidates to decide whether it has an
+    /// opinion, and so abstains for some pairs within a group, makes the whole chain
+    /// intransitive: a later axis bridges a pair the earlier one separated, and x beats y beats
+    /// z beats x. A sort handed a cycle answers according to input order, which is the defect
+    /// this comparer exists to remove. Anything added here has to be checked against that rule,
+    /// and the check is cheap: can this axis be written as a key per release, or does it need
+    /// to see the pair?
     ///
     /// Indexer priority is deliberately absent. Listenarr's own convention is that a lower
     /// Indexer.Priority wins (listenarr.domain/Search/Indexer.cs:94-96 says so, CompositeScorer
@@ -100,14 +100,6 @@ namespace Listenarr.Application.Search.Scoring
         }
 
         /// <summary>
-        /// Builds a comparer against a fixed instant, for tests that need a stable clock.
-        /// </summary>
-        public static ScoredReleaseTiebreaker AsOf(DateTime utcNow)
-        {
-            return new ScoredReleaseTiebreaker(utcNow);
-        }
-
-        /// <summary>
         /// Orders two equally scored candidates. Negative means x is preferred.
         /// </summary>
         public int Compare(QualityScore? x, QualityScore? y)
@@ -130,22 +122,34 @@ namespace Listenarr.Application.Search.Scoring
             var left = x.SearchResult;
             var right = y.SearchResult;
 
-            var byProtocol = CompareProtocolGroup(left, right);
+            var leftProtocol = ProtocolOf(left);
+            var rightProtocol = ProtocolOf(right);
+
+            var byProtocol = leftProtocol.CompareTo(rightProtocol);
             if (byProtocol != 0)
             {
                 return byProtocol;
             }
 
-            var byPeers = ComparePeersIfTorrent(left, right);
-            if (byPeers != 0)
+            // Past this point both sides are in the same group, so each remaining axis either
+            // applies to the whole group or to none of it. That uniformity is the point: an axis
+            // abstaining for a whole group is harmless, an axis abstaining for some pairs within
+            // one is what makes the chain intransitive.
+            if (leftProtocol == ReleaseProtocol.Torrent)
             {
-                return byPeers;
+                var byPeers = ComparePeers(left, right);
+                if (byPeers != 0)
+                {
+                    return byPeers;
+                }
             }
-
-            var byAge = CompareAgeIfUsenet(left, right);
-            if (byAge != 0)
+            else if (leftProtocol == ReleaseProtocol.Usenet)
             {
-                return byAge;
+                var byAge = CompareAge(left, right);
+                if (byAge != 0)
+                {
+                    return byAge;
+                }
             }
 
             var bySize = CompareSize(left, right);
@@ -158,50 +162,11 @@ namespace Listenarr.Application.Search.Scoring
         }
 
         /// <summary>
-        /// Readarr's CompareProtocol asks whether each candidate matches the delay profile's
-        /// preferred protocol (DownloadDecisionComparer.cs:84-93). With a preferred protocol set
-        /// to one of the two real ones, exactly one side of any mixed pair matches, so the step
-        /// separates every mixed-protocol pair before the protocol-conditional axes below can
-        /// see one. That is what keeps Readarr's chain transitive, though not unconditionally:
-        /// set PreferredProtocol to Unknown and neither side matches, the step returns 0, and
-        /// Readarr has the same cycle.
-        ///
-        /// Listenarr has no delay profile and nothing configured to compare against, so the
-        /// grouping is fixed, and it takes the family's default rather than a taste. Readarr and
-        /// Sonarr both seed their delay profile with PreferredProtocol = 1, which is Usenet:
-        /// readarr src/NzbDrone.Core/Datastore/Migration/001_initial_setup.cs:344-353, sonarr
-        /// src/NzbDrone.Core/Datastore/Migration/070_delay_profile.cs:26-35, both against
-        /// src/NzbDrone.Core/Indexers/DownloadProtocol.cs where Usenet = 1 and Torrent = 2.
-        ///
-        /// Two ways this is not a literal port, both deliberate. Readarr's boolean collapses
-        /// everything that is not the preferred protocol into a single group; Listenarr has more
-        /// than two protocols, so a direct download would share a group with torrents and
-        /// ComparePeersIfTorrent would start abstaining again. Anything that is neither gets its
-        /// own rank here. And in the family this preference is a per-tag setting an operator can
-        /// see and change, where here it is hard-coded and invisible. That second difference is
-        /// worth a maintainer's opinion rather than a contributor's: a mixed-protocol tie now
-        /// goes to usenet over a torrent with thousands of seeders, and nobody can tell why or
-        /// change it. If Listenarr grows a configurable preferred protocol, this is where it
-        /// belongs.
+        /// Readarr's ComparePeersIfTorrent. The "if torrent" half is the caller's job here:
+        /// prefers more seeders on a log10 scale, then more peers.
         /// </summary>
-        private static int CompareProtocolGroup(SearchResult left, SearchResult right)
+        private static int ComparePeers(SearchResult left, SearchResult right)
         {
-            return ProtocolOf(left).CompareTo(ProtocolOf(right));
-        }
-
-        /// <summary>
-        /// Readarr ComparePeersIfTorrent: only applies when both candidates are torrents, and
-        /// prefers more seeders on a log10 scale, then more peers. The protocol group above has
-        /// already established that the two share a protocol by the time this runs, so the guard
-        /// documents the axis rather than being the thing that keeps it total.
-        /// </summary>
-        private static int ComparePeersIfTorrent(SearchResult left, SearchResult right)
-        {
-            if (ProtocolOf(left) != ReleaseProtocol.Torrent || ProtocolOf(right) != ReleaseProtocol.Torrent)
-            {
-                return 0;
-            }
-
             var bySeeders = PeerMagnitude(left.Seeders).CompareTo(PeerMagnitude(right.Seeders));
             if (bySeeders != 0)
             {
@@ -212,16 +177,11 @@ namespace Listenarr.Application.Search.Scoring
         }
 
         /// <summary>
-        /// Readarr CompareAgeIfUsenet: only applies when both candidates are usenet, and prefers
-        /// the newer release using Readarr's own age buckets.
+        /// Readarr's CompareAgeIfUsenet. The "if usenet" half is the caller's job here: prefers
+        /// the newer release, using Readarr's own age buckets.
         /// </summary>
-        private int CompareAgeIfUsenet(SearchResult left, SearchResult right)
+        private int CompareAge(SearchResult left, SearchResult right)
         {
-            if (ProtocolOf(left) != ReleaseProtocol.Usenet || ProtocolOf(right) != ReleaseProtocol.Usenet)
-            {
-                return 0;
-            }
-
             return -(AgeBucket(left).CompareTo(AgeBucket(right)));
         }
 
@@ -302,11 +262,11 @@ namespace Listenarr.Application.Search.Scoring
         /// </summary>
         /// <remarks>
         /// A release with no usable PublishedDate gets bucket 0, so it sorts after every dated
-        /// one, rather than the axis abstaining for that pair. Abstaining is what made this axis
-        /// intransitive: put a dateless release between a fresh one and an old one, and age
-        /// separates the two dated releases while the identity fallback orders each of them
-        /// against the dateless one, which is a cycle. Both shipping parsers store string.Empty
-        /// when a feed omits or mangles pubDate
+        /// one. It has to rank rather than make the axis abstain for that pair: a dateless
+        /// release between a fresh one and an old one would otherwise close a cycle, with age
+        /// separating the two dated releases and the identity fallback ordering each of them
+        /// against the dateless one. Both shipping parsers store string.Empty when a feed omits
+        /// or mangles pubDate
         /// (Search/Indexers/Torznab/TorznabResponseParser.cs:89-91 and
         /// Search/Indexers/MyAnonamouse/MyAnonamouseResponseParser.cs:351), so one dateless NZB
         /// in a result set is all it takes.
@@ -365,9 +325,34 @@ namespace Listenarr.Application.Search.Scoring
         }
 
         /// <summary>
-        /// Protocol groups, in the order they rank. Usenet first, per the family's default
-        /// preferred protocol; anything that is neither usenet nor torrent last.
+        /// Protocol groups, in the order they rank.
         /// </summary>
+        /// <remarks>
+        /// This is Readarr's CompareProtocol step (DownloadDecisionComparer.cs:84-93), which asks
+        /// whether each candidate matches the delay profile's preferred protocol. With a preferred
+        /// protocol set to one of the two real ones, exactly one side of any mixed pair matches,
+        /// so the step separates every mixed-protocol pair before the group-specific axes can see
+        /// one. That is what keeps Readarr's chain transitive, though not unconditionally: set
+        /// PreferredProtocol to Unknown and neither side matches, the step returns 0, and Readarr
+        /// has the same cycle.
+        ///
+        /// Listenarr has no delay profile and nothing configured to compare against, so the order
+        /// is fixed, and it takes the family's default rather than a taste. Readarr and Sonarr
+        /// both seed their delay profile with PreferredProtocol = 1, which is Usenet: readarr
+        /// src/NzbDrone.Core/Datastore/Migration/001_initial_setup.cs:344-353, sonarr
+        /// src/NzbDrone.Core/Datastore/Migration/070_delay_profile.cs:26-35, both against
+        /// src/NzbDrone.Core/Indexers/DownloadProtocol.cs where Usenet = 1 and Torrent = 2.
+        ///
+        /// Two deliberate differences from a literal port. Readarr's boolean collapses everything
+        /// that is not the preferred protocol into a single group; Listenarr has more than two
+        /// protocols, so a direct download would share a group with torrents and the peers axis
+        /// would start abstaining within a group again. Anything that is neither gets its own
+        /// rank here. And in the family this preference is a per-tag setting an operator can see
+        /// and change, where here it is hard-coded and invisible, so a mixed-protocol tie goes to
+        /// usenet over a torrent with thousands of seeders and nobody can tell why. That second
+        /// difference wants a maintainer's opinion rather than a contributor's. If Listenarr
+        /// grows a configurable preferred protocol, this is where it belongs.
+        /// </remarks>
         private enum ReleaseProtocol
         {
             Usenet = 0,
@@ -385,9 +370,9 @@ namespace Listenarr.Application.Search.Scoring
         /// <remarks>
         /// Anchoring on the submission path matters because this decides a grab. If the tiebreak
         /// and the submitter disagree about what a release is, a result the submitter would hand
-        /// to a torrent client can be classified as neither, ranked behind everything, and have
-        /// its seeders ignored. The trailing TorrentUrl branch is the one that catches this; an
-        /// earlier version of this file left it out and claimed to mirror the method anyway.
+        /// to a torrent client gets classified as neither, ranked behind everything, and has its
+        /// seeders ignored. The trailing TorrentUrl branch is the one that catches that case, so
+        /// keep it in step if ResolveProtocol ever changes.
         ///
         /// This is a third protocol classifier in the codebase and the other two do not agree
         /// with it. SearchResultScorer.IsNzbResult
