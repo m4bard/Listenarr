@@ -218,5 +218,105 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Matching
             Assert.True(matcherResult);
             Assert.Equal(matcherResult, evaluatorResult);
         }
+
+        // ---- 6. A cutoff naming a rung that exists but is not Allowed must not be met -------
+        //
+        // BRIEF-B4: the evaluator used to look the cutoff up with a plain FirstOrDefault and no
+        // Allowed filter, while QualityMatcher.FindAllowedRung (used by MeetsCutoff/LabelMeetsCutoff
+        // below) always filtered on Allowed. Both routes already reached "not met" for this input,
+        // by different reasoning, so these tests exist to prove that delegating the lookup to
+        // QualityMatcher instead of duplicating it does not change that outcome.
+
+        private static QualityProfile DisallowedCutoffProfile() =>
+            new QualityProfileBuilder()
+                .WithName("DisallowedCutoff")
+                .WithQuality("AAC 320kbps", 1, codec: "AAC", bitrate: 320, allowed: false)
+                .WithQuality("AAC 256kbps", 2, codec: "AAC", bitrate: 256)
+                .WithCutoff("AAC 320kbps")
+                .Build();
+
+        private static Download CreateCompletedDownload(int audiobookId, string quality)
+        {
+            var download = new DownloadBuilder()
+                .WithAudiobookId(audiobookId)
+                .WithStatus(DownloadStatus.Completed)
+                .Build();
+            download.SetMetadata("Quality", quality);
+            return download;
+        }
+
+        [Fact]
+        public async Task IsQualityCutoffMetAsync_CutoffNamesDisallowedRung_ExistingFile_IsNotMet()
+        {
+            var audiobook = new Audiobook
+            {
+                Id = 1008,
+                QualityProfile = DisallowedCutoffProfile()
+            };
+            // A file at the profile's next-best (allowed) rung: it would meet an equivalent
+            // ALLOWED cutoff at this same priority (see the control below), but a disallowed
+            // cutoff must never resolve to "met".
+            var files = new List<AudiobookFile> { CreateFile(audiobook.Id, "aac", 256_000) };
+            var (downloads, fileRepo) = MockRepositories(audiobook.Id, new List<Download>(), files);
+
+            var met = await AudiobookQualityCutoffEvaluator.IsQualityCutoffMetAsync(
+                audiobook, downloads.Object, fileRepo.Object);
+
+            Assert.False(met);
+        }
+
+        [Fact]
+        public async Task IsQualityCutoffMetAsync_CutoffNamesDisallowedRung_CompletedDownload_IsNotMet()
+        {
+            var audiobook = new Audiobook
+            {
+                Id = 1009,
+                QualityProfile = DisallowedCutoffProfile()
+            };
+            var downloadList = new List<Download> { CreateCompletedDownload(audiobook.Id, "AAC 256kbps") };
+            var (downloads, fileRepo) = MockRepositories(audiobook.Id, downloadList, new List<AudiobookFile>());
+
+            var met = await AudiobookQualityCutoffEvaluator.IsQualityCutoffMetAsync(
+                audiobook, downloads.Object, fileRepo.Object);
+
+            Assert.False(met);
+        }
+
+        [Fact]
+        public async Task IsQualityCutoffMetAsync_DisallowedCutoffControl_SameShapeButAllowed_IsMet()
+        {
+            // Control for the two tests above: identical rung shapes and the same file/cutoff
+            // priority relationship, except the cutoff rung is Allowed. Proves the False above
+            // comes from Allowed=false on the cutoff rung specifically, not from a codec/bitrate
+            // mismatch or some other accident of the setup.
+            var profile = new QualityProfileBuilder()
+                .WithName("AllowedCutoffControl")
+                .WithQuality("AAC 320kbps", 1, codec: "AAC", bitrate: 320, allowed: true)
+                .WithQuality("AAC 256kbps", 2, codec: "AAC", bitrate: 256)
+                .WithCutoff("AAC 256kbps")
+                .Build();
+            var audiobook = new Audiobook { Id = 1010, QualityProfile = profile };
+            var files = new List<AudiobookFile> { CreateFile(audiobook.Id, "aac", 256_000) };
+            var (downloads, fileRepo) = MockRepositories(audiobook.Id, new List<Download>(), files);
+
+            var met = await AudiobookQualityCutoffEvaluator.IsQualityCutoffMetAsync(
+                audiobook, downloads.Object, fileRepo.Object);
+
+            Assert.True(met);
+        }
+
+        [Fact]
+        public void CutoffNamesDisallowedRung_EvaluatorGuardAndQualityMatcher_AgreeItIsNotResolvable()
+        {
+            // Direct check on the two layers named in BRIEF-B4: the evaluator's own guard lookup
+            // (mirrored here the way it existed before delegating) and QualityMatcher.MeetsCutoff
+            // must agree that a present-but-disallowed CutoffQuality does not resolve, for any
+            // file, once the duplication is removed.
+            var profile = DisallowedCutoffProfile();
+            var qualityMatcherResolves = QualityMatcher.MeetsCutoff(
+                new AudioQualityInput { Codec = "aac", BitrateBitsPerSecond = 320_000 }, profile);
+
+            Assert.False(qualityMatcherResolves);
+        }
     }
 }

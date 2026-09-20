@@ -59,14 +59,17 @@ namespace Listenarr.Application.Audiobooks.Matching
             // Narrowed guard: a blank profile (no rungs, or no CutoffQuality set) is always
             // satisfied, matching QualityMatcher.ResolveCutoff/MeetsCutoff/LabelMeetsCutoff and
             // AudiobookStatusEvaluator's library-view answer for the same input. A CutoffQuality
-            // that names a rung the profile no longer lists is a different case and still means
-            // "keep searching": that half of the original guard is preserved below.
+            // that names a rung the profile no longer lists, or that is present but not Allowed,
+            // is a different case and still means "keep searching": that half of the original
+            // guard is preserved below, delegated to QualityMatcher.AllowedQualities so this guard
+            // and QualityMatcher.MeetsCutoff/LabelMeetsCutoff (used further down in this same
+            // method) can no longer disagree about what Allowed means.
             var cutoffIsBlank = profile.Qualities.Count == 0 ||
                                  string.IsNullOrWhiteSpace(profile.CutoffQuality);
 
             if (!cutoffIsBlank)
             {
-                var cutoffQuality = profile.Qualities
+                var cutoffQuality = QualityMatcher.AllowedQualities(profile)
                     .FirstOrDefault(q => q.Quality == profile.CutoffQuality);
 
                 if (cutoffQuality == null)

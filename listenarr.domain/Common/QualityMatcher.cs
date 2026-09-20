@@ -315,7 +315,13 @@ namespace Listenarr.Domain.Common
             return FindAllowedRung(profile, profile.CutoffQuality);
         }
 
-        private static IEnumerable<QualityDefinition> AllowedQualities(QualityProfile profile)
+        /// <summary>
+        /// A profile's Allowed, labelled rungs. The single definition of "Allowed" a caller should
+        /// filter a profile's <see cref="QualityProfile.Qualities"/> through before treating any of
+        /// them (a cutoff included) as resolvable, so no other layer re-derives its own answer to
+        /// "does Allowed matter here" and drifts from this one.
+        /// </summary>
+        public static IEnumerable<QualityDefinition> AllowedQualities(QualityProfile profile)
             => profile.Qualities
                 .Where(q => q.Allowed && !string.IsNullOrWhiteSpace(q.Quality));
 
