@@ -25,6 +25,19 @@ public class MigrationMetadataTests
             "20260825021432_AddWeakStorageVerifiedCleanup");
     }
 
+    /// <summary>
+    /// The id is written down in two other places that have to agree with EF's own view of it:
+    /// the startup backfill gate in ListenarrDatabaseMigrationPreflight and the expected
+    /// post-canary history in SqliteMigrationSchemaTests. A rename that missed either would leave
+    /// the backfill silently never running.
+    /// </summary>
+    [Fact]
+    public void AddQualityProfileUpgradeAllowedMigration_IsDiscoverableByEf()
+    {
+        AssertMigrationId<AddQualityProfileUpgradeAllowed>(
+            "20260920025621_AddQualityProfileUpgradeAllowed");
+    }
+
     [Fact]
     public void AddImportBlacklistExtensionsMigration_IsDiscoverableByEf()
     {
