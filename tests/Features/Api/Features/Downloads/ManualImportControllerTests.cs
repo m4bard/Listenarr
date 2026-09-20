@@ -2916,6 +2916,253 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 Times.Never);
         }
 
+        // The refusal these four tests drive is the one a real refusal takes:
+        // registration returns false after FileMover has already published the
+        // destination during preparation. Each has a control that must come out
+        // differently, and the two pre-existing-destination cases are what stop
+        // the cleanup from deleting a file the import did not write.
+        private static ApplicationSettings RefusedRegistrationSettings(
+            string basePath) =>
+            new()
+            {
+                OutputPath = basePath,
+                FolderNamingPattern = "",
+                FileNamingPattern = "{Title}"
+            };
+
+        private static ManualImportRequestDto RefusedRegistrationRequest(
+            string sourceDirectory,
+            string source,
+            FileAction action,
+            int audiobookId) =>
+            new()
+            {
+                Path = sourceDirectory,
+                Mode = "interactive",
+                Action = action,
+                Items =
+                [
+                    new ManualImportItemDto
+                    {
+                        FullPath = source,
+                        MatchedAudiobookId = audiobookId
+                    }
+                ]
+            };
+
+        private static Mock<IAudiobookFileService> RefusingAudiobookFileService()
+        {
+            var fileService = new Mock<IAudiobookFileService>();
+            fileService.Setup(candidate => candidate.CheckAudiobookFileOwnershipAsync(
+                    It.IsAny<Audiobook>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AudiobookFileOwnershipCheckResult(
+                    AudiobookFileOwnershipCheckOutcome.Available));
+            fileService.Setup(candidate =>
+                    candidate.RegisterPublishedGenerationWithBasePathAsync(
+                        It.IsAny<Audiobook>(),
+                        It.IsAny<AudiobookFileOwnershipCheckResult>(),
+                        It.IsAny<IAudiobookFileRegistrationLease>(),
+                        It.IsAny<string>(),
+                        It.IsAny<string?>(),
+                        It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
+            return fileService;
+        }
+
+        [Fact]
+        public async Task InteractiveManualImport_CopyRefusedAtRegistration_LeavesNoFileInTheLibraryFolder()
+        {
+            var basePath = CreateTempDirectory("listenarr-manual-refused-copy-dst");
+            var srcDir = CreateTempDirectory("listenarr-manual-refused-copy-src");
+            var source = Path.Join(srcDir, "book.mp3");
+            await File.WriteAllTextAsync(source, "audio");
+            var book = new Audiobook
+            {
+                Id = 511,
+                Title = "Refused Copy",
+                BasePath = basePath
+            };
+
+            var mover = CreateMarkerlessFileMover();
+            var controller = GetController(
+                book,
+                RefusedRegistrationSettings(basePath),
+                fileMover: mover,
+                filePublicationSourceCapability: mover,
+                audiobookFileService: RefusingAudiobookFileService().Object);
+
+            var action = await controller.Start(RefusedRegistrationRequest(
+                srcDir,
+                source,
+                FileAction.Copy,
+                book.Id));
+
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+            Assert.False(File.Exists(Path.Join(basePath, "Refused Copy.mp3")));
+            Assert.Empty(Directory.GetFiles(basePath));
+            Assert.True(File.Exists(source));
+            Assert.Equal("audio", await File.ReadAllTextAsync(source));
+        }
+
+        [Fact]
+        public async Task InteractiveManualImport_CopyRegistered_KeepsThePublishedFile()
+        {
+            // Control for the test above: the cleanup must not fire when the
+            // import succeeds.
+            var basePath = CreateTempDirectory("listenarr-manual-accepted-copy-dst");
+            var srcDir = CreateTempDirectory("listenarr-manual-accepted-copy-src");
+            var source = Path.Join(srcDir, "book.mp3");
+            await File.WriteAllTextAsync(source, "audio");
+            var book = new Audiobook
+            {
+                Id = 512,
+                Title = "Accepted Copy",
+                BasePath = basePath
+            };
+
+            var mover = CreateMarkerlessFileMover();
+            var controller = GetController(
+                book,
+                RefusedRegistrationSettings(basePath),
+                fileMover: mover,
+                filePublicationSourceCapability: mover);
+
+            var action = await controller.Start(RefusedRegistrationRequest(
+                srcDir,
+                source,
+                FileAction.Copy,
+                book.Id));
+
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+            var destination = Path.Join(basePath, "Accepted Copy.mp3");
+            Assert.True(File.Exists(destination));
+            Assert.Equal("audio", await File.ReadAllTextAsync(destination));
+        }
+
+        [Fact]
+        public async Task InteractiveManualImport_MoveRefusedAtRegistration_RemovesDestinationAndKeepsSource()
+        {
+            var basePath = CreateTempDirectory("listenarr-manual-refused-move-dst");
+            var srcDir = CreateTempDirectory("listenarr-manual-refused-move-src");
+            var source = Path.Join(srcDir, "book.mp3");
+            await File.WriteAllTextAsync(source, "audio");
+            var book = new Audiobook
+            {
+                Id = 513,
+                Title = "Refused Move",
+                BasePath = basePath
+            };
+
+            var mover = CreateMarkerlessFileMover();
+            var controller = GetController(
+                book,
+                RefusedRegistrationSettings(basePath),
+                fileMover: mover,
+                filePublicationSourceCapability: mover,
+                audiobookFileService: RefusingAudiobookFileService().Object);
+
+            var action = await controller.Start(RefusedRegistrationRequest(
+                srcDir,
+                source,
+                FileAction.Move,
+                book.Id));
+
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+            Assert.False(File.Exists(Path.Join(basePath, "Refused Move.mp3")));
+            Assert.Empty(Directory.GetFiles(basePath));
+            // A same-volume move publishes the destination as a second link to the
+            // source generation, so retiring the destination must not take the
+            // source with it.
+            Assert.True(File.Exists(source));
+            Assert.Equal("audio", await File.ReadAllTextAsync(source));
+        }
+
+        [Fact]
+        public async Task InteractiveManualImport_RefusedAtRegistration_KeepsAnAdoptedPreExistingDestination()
+        {
+            // The destination holds the same bytes as the source, so the import
+            // adopts the file that is already there instead of writing one. A
+            // cleanup that deletes by pathname would take a file this import never
+            // created.
+            var basePath = CreateTempDirectory("listenarr-manual-refused-adopt-dst");
+            var srcDir = CreateTempDirectory("listenarr-manual-refused-adopt-src");
+            var source = Path.Join(srcDir, "book.mp3");
+            await File.WriteAllTextAsync(source, "audio");
+            var book = new Audiobook
+            {
+                Id = 514,
+                Title = "Refused Adoption",
+                BasePath = basePath
+            };
+            var destination = Path.Join(basePath, "Refused Adoption.mp3");
+            await File.WriteAllTextAsync(destination, "audio");
+
+            var mover = CreateMarkerlessFileMover();
+            var controller = GetController(
+                book,
+                RefusedRegistrationSettings(basePath),
+                fileMover: mover,
+                filePublicationSourceCapability: mover,
+                audiobookFileService: RefusingAudiobookFileService().Object);
+
+            var action = await controller.Start(RefusedRegistrationRequest(
+                srcDir,
+                source,
+                FileAction.Copy,
+                book.Id));
+
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+            Assert.True(File.Exists(destination));
+            Assert.Equal("audio", await File.ReadAllTextAsync(destination));
+            Assert.Single(Directory.GetFiles(basePath));
+            Assert.True(File.Exists(source));
+        }
+
+        [Fact]
+        public async Task InteractiveManualImport_RefusedAtRegistration_KeepsAnUnrelatedFileAtTheDesiredDestination()
+        {
+            // The desired pathname is taken by a file with different content, so
+            // the import publishes beside it. The refusal must retire what it
+            // published and leave the file it found alone.
+            var basePath = CreateTempDirectory("listenarr-manual-refused-neighbour-dst");
+            var srcDir = CreateTempDirectory("listenarr-manual-refused-neighbour-src");
+            var source = Path.Join(srcDir, "book.mp3");
+            await File.WriteAllTextAsync(source, "audio");
+            var book = new Audiobook
+            {
+                Id = 515,
+                Title = "Refused Neighbour",
+                BasePath = basePath
+            };
+            var occupied = Path.Join(basePath, "Refused Neighbour.mp3");
+            await File.WriteAllTextAsync(occupied, "a different recording entirely");
+
+            var mover = CreateMarkerlessFileMover();
+            var controller = GetController(
+                book,
+                RefusedRegistrationSettings(basePath),
+                fileMover: mover,
+                filePublicationSourceCapability: mover,
+                audiobookFileService: RefusingAudiobookFileService().Object);
+
+            var action = await controller.Start(RefusedRegistrationRequest(
+                srcDir,
+                source,
+                FileAction.Copy,
+                book.Id));
+
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+            Assert.True(File.Exists(occupied));
+            Assert.Equal(
+                "a different recording entirely",
+                await File.ReadAllTextAsync(occupied));
+            Assert.Single(Directory.GetFiles(basePath));
+            Assert.True(File.Exists(source));
+        }
+
         [Fact]
         public async Task InteractiveManualImport_MoveCleanupDetectsStalePublication_RollsBackPhysicalClaim()
         {
