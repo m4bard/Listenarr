@@ -105,20 +105,18 @@ internal static class ListenarrDatabaseMigrationPreflight
     /// cutoff as "not upgrading" (QualityMatcher.ResolveCutoff). Writing that agreement into the
     /// row rather than leaving the two fields contradicting each other is the point.
     ///
-    /// "Blank" is decided in C#, by the same string.IsNullOrWhiteSpace the two readers use
-    /// (listenarr.domain/Common/QualityMatcher.cs:290 and
-    /// listenarr.domain/Audiobooks/ValidCutoffAttribute.cs:94). Expressing it in SQL does not
-    /// work: SQLite's one-argument trim() strips U+0020 and nothing else, so a cutoff of a single
-    /// tab or newline reads as blank to every part of the engine and as non-blank to the backfill,
-    /// and that row would come out of the upgrade with upgrades switched ON, which is the exact
-    /// inversion this is here to prevent. The table holds a handful of rows and only the two
-    /// columns this needs are read.
+    /// "Blank" is decided in C#, by the same string.IsNullOrWhiteSpace that
+    /// QualityMatcher.ResolveCutoff and ValidCutoffAttribute.IsAllowedCutoff use. Expressing it in
+    /// SQL does not work: SQLite's one-argument trim() strips U+0020 and nothing else, so a cutoff
+    /// of a single tab, newline or non-breaking space reads as blank to every part of the engine
+    /// and as non-blank to the backfill, and that row would come out of the upgrade with upgrades
+    /// switched ON, which is the exact inversion this is here to prevent.
     ///
     /// Note that rolling this migration back and reapplying it re-derives the flag from the
     /// cutoff, so a profile saved as upgrades-off while still naming a cutoff comes back as
     /// upgrades-on. Down() cannot carry the flag into the cutoff itself, because post-canary
-    /// migrations have to stay direct EF scaffolds
-    /// (tests/Features/Architecture/MigrationProvenanceArchitectureTests.cs:60-66).
+    /// migrations may not contain migrationBuilder.Sql; see the scaffolding rule in
+    /// MigrationProvenanceArchitectureTests.PullRequestMigrations_KeepEfScaffoldingAsSourceOfTruth.
     /// </remarks>
     private static int RepairQualityProfileUpgradeFlags(
         ListenArrDbContext context,
@@ -129,8 +127,8 @@ internal static class ListenarrDatabaseMigrationPreflight
             return 0;
         }
 
-        // Projected rather than materialised: the entity's Qualities column goes through a JSON
-        // value converter, and one malformed row must not turn a backfill into a failed start.
+        // A projection rather than the entity, because two columns is all this needs and it runs
+        // on every start.
         var contradictoryIds = context.QualityProfiles
             .Where(profile => profile.UpgradeAllowed)
             .Select(profile => new { profile.Id, profile.CutoffQuality })
@@ -139,16 +137,21 @@ internal static class ListenarrDatabaseMigrationPreflight
             .Select(row => row.Id)
             .ToList();
 
-        if (contradictoryIds.Count == 0)
+        // Chunked because EF expands Contains into one parameter per id on this path, and SQLite
+        // refuses a statement with too many of them. An install will not have hundreds of quality
+        // profiles, but a startup that throws is a refused start, and nothing here needs to be one
+        // statement.
+        var repaired = 0;
+        foreach (var chunk in contradictoryIds.Chunk(200))
         {
-            return 0;
+            repaired += context.QualityProfiles
+                .Where(profile => chunk.Contains(profile.Id))
+                .ExecuteUpdate(setters => setters.SetProperty(
+                    profile => profile.UpgradeAllowed,
+                    false));
         }
 
-        return context.QualityProfiles
-            .Where(profile => contradictoryIds.Contains(profile.Id))
-            .ExecuteUpdate(setters => setters.SetProperty(
-                profile => profile.UpgradeAllowed,
-                false));
+        return repaired;
     }
 
     /// <summary>
