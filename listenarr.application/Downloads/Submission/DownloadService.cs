@@ -161,13 +161,13 @@ namespace Listenarr.Application.Downloads.Submission
             // Score results against quality profile
             var scoredResults = await qualityProfileService.ScoreSearchResults(searchResults, audiobook.QualityProfile);
 
-            // Log all scored results for debugging
-            logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", scoredResults.Count, LogRedaction.SanitizeText(audiobook.Title));
-            // Same ordering as the selection below, so the log an operator reads to work out
-            // why a release was grabbed lists them in the order they were actually considered.
-            foreach (var scoredResult in scoredResults
+            // Ranked once, so the debug log and the grab agree and neither inherits indexer order
+            var ranked = scoredResults
                 .OrderByDescending(s => s.TotalScore)
-                .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow()))
+                .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow())
+                .ToList();
+            logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", ranked.Count, LogRedaction.SanitizeText(audiobook.Title));
+            foreach (var scoredResult in ranked)
             {
                 var status = scoredResult.IsRejected ? "REJECTED" : (scoredResult.TotalScore > 0 ? "ACCEPTABLE" : "LOW SCORE");
                 logger.LogInformation("  [{Status}] Score: {Score} | Title: {Title} | Source: {Source} | Size: {Size}MB | Seeders: {Seeders} | Quality: {Quality}",
@@ -179,13 +179,8 @@ namespace Listenarr.Application.Downloads.Submission
                 }
             }
 
-            // Only consider non-rejected, score > 0 results. Equal scores are separated by
-            // ScoredReleaseTiebreaker so the grab does not depend on indexer response order.
-            var topResult = scoredResults
-                .Where(s => !s.IsRejected && s.TotalScore > 0)
-                .OrderByDescending(s => s.TotalScore)
-                .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow())
-                .FirstOrDefault();
+            // Only consider non-rejected, score > 0 results
+            var topResult = ranked.FirstOrDefault(s => !s.IsRejected && s.TotalScore > 0);
 
             if (topResult == null)
             {
