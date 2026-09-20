@@ -474,15 +474,17 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         ///
         /// The control is MinimumSeeders, which has behaved exactly this way since long before
         /// this branch: stored as 5, omitted from the PUT, back to its initialiser of 1. So this
-        /// is the contract of the endpoint and not something the flag introduced. The fix is an
-        /// API resource with nullable fields, the way Readarr and Sonarr separate
-        /// QualityProfileResource from QualityProfile
-        /// (src/Readarr.Api.V1/Profiles/Quality/QualityProfileResource.cs), which is a larger
-        /// change than this branch and would touch every field at once.
+        /// is the contract of the endpoint and not something the flag introduced. The family does
+        /// not solve it either: Readarr and Sonarr do separate a resource type from the model, but
+        /// both declare a non-nullable <c>public bool UpgradeAllowed</c> on it
+        /// (src/Readarr.Api.V1/Profiles/Quality/QualityProfileResource.cs:13,
+        /// src/Sonarr.Api.V3/Profiles/Quality/QualityProfileResource.cs:13), so an omitted field
+        /// lands on false there for the same reason it lands on true here. The real fix is
+        /// nullable fields on an inbound resource, which touches every field at once.
         ///
-        /// Both clients that write profiles send the whole object they read
-        /// (fe/src/views/settings/QualityProfilesTab.vue:535, 543, 563), so nothing in the
-        /// application hits this.
+        /// The UI sends back the whole object it read, on save
+        /// (fe/src/views/settings/QualityProfilesTab.vue:535) and from the set-default button
+        /// (:563), so nothing in the application hits this.
         /// </summary>
         [Fact]
         public async Task Update_OmittingAField_ResetsItToItsDefault_ForTheFlagAndForItsNeighbour()
