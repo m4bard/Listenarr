@@ -282,18 +282,23 @@ namespace Listenarr.Domain.Common
         /// so the two arms of this test used to be the same arm, and callers that already treat a
         /// blank cutoff as satisfied keep the answer they had.
         ///
-        /// This is deliberately not what the family does, and the difference is worth naming.
-        /// Readarr and Sonarr fold the flag into the cutoff VALUE rather than switching the cutoff
-        /// off, with
+        /// Readarr and Sonarr reach the same outcome by a different route, and the difference is
+        /// worth naming because it is where a reviewer will look. They do not switch the cutoff
+        /// off; they lower it, with
         /// <c>var cutoff = profile.UpgradeAllowed ? profile.Cutoff : profile.FirstAllowedQuality().Id;</c>
         /// (src/NzbDrone.Core/DecisionEngine/Specifications/UpgradableSpecification.cs:99 in
-        /// Readarr, :126 in Sonarr), so a file below every allowed rung is still short of the
-        /// cutoff there and still gets replaced. Listenarr says met, and never replaces it.
+        /// Readarr; Sonarr's :126 is the same line, spelling its own helper FirststAllowedQuality).
+        /// The flag is then checked again on its own, and refuses the upgrade outright: Sonarr
+        /// returns UpgradeableRejectReason.UpgradesNotAllowed at :64 and Readarr's
+        /// CheckUpgradeAllowed returns false at :171-174. So the file is not replaced there
+        /// either.
         ///
-        /// Matching the family would change the answer for every profile that has been recording
-        /// upgrades-off as a blank cutoff since long before this flag existed, which is the
-        /// behaviour this branch is under instruction to leave alone. Worth revisiting once the
-        /// blank-cutoff case is settled; it is one line here.
+        /// Listenarr has one question instead of two, and answers it here. That keeps the flag and
+        /// the blank cutoff it replaces on the same code path, which is what lets every profile
+        /// that has been recording upgrades-off as a blank cutoff keep the answer it had. The cost
+        /// is that "meets cutoff" reports true for a file the family would call below cutoff while
+        /// still declining to replace it, so the two agree on what happens and disagree on what to
+        /// call it.
         /// </remarks>
         private static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
         {
