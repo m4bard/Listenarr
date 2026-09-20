@@ -580,7 +580,8 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
                     It.IsAny<List<string>?>(),
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
-                    true))
+                    true,
+                    It.IsAny<SearchQueryPlan?>()))
                 .ReturnsAsync(candidates);
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
@@ -596,13 +597,14 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             scoringMock
                 .Setup(service => service.ScoreSearchResults(
                     It.IsAny<List<SearchResult>>(),
-                    It.IsAny<QualityProfile>()))
-                .Returns(async (List<SearchResult> results, QualityProfile profileArgument) =>
+                    It.IsAny<QualityProfile>(),
+                    It.IsAny<bool>()))
+                .Returns(async (List<SearchResult> results, QualityProfile profileArgument, bool targetIsBundle) =>
                 {
                     var scored = new List<QualityScore>();
                     foreach (var result in results)
                     {
-                        scored.Add(await realScorer.ScoreSearchResult(result, profileArgument));
+                        scored.Add(await realScorer.ScoreSearchResult(result, profileArgument, targetIsBundle));
                     }
 
                     handedBack.Value = scored;
