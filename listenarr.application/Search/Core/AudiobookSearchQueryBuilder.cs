@@ -59,6 +59,47 @@ public static class AudiobookSearchQueryBuilder
         };
 
     /// <summary>
+    /// English function words, which carry no part of a work's identity.
+    /// </summary>
+    /// <remarks>
+    /// Used only to decide whether a title says enough to be issued without its author.
+    /// The list is closed and holds articles, coordinating conjunctions, the commonest
+    /// prepositions and the forms of "to be"; anything absent from it counts as
+    /// significant. That direction is deliberate. A word wrongly counted as significant
+    /// lets one more title through the gate, which is the behaviour that shipped before
+    /// the gate existed, whereas a word wrongly treated as noise silently costs a rung.
+    /// Pronouns are absent for the same reason: a title that is only a pronoun already
+    /// fails the count on its own.
+    /// </remarks>
+    private static readonly IReadOnlySet<string> InsignificantWords =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "a", "an", "the",
+            "and", "or", "nor", "but", "so", "yet",
+            "about", "across", "after", "against", "among", "around", "as", "at",
+            "before", "behind", "between", "beyond", "by", "during", "for", "from",
+            "in", "into", "near", "of", "off", "on", "onto", "out", "over", "past",
+            "since", "than", "through", "to", "toward", "towards", "under", "until",
+            "up", "upon", "with", "within", "without",
+            "am", "are", "be", "been", "being", "is", "was", "were",
+            "that", "this", "these", "those", "its"
+        };
+
+    /// <summary>
+    /// How many significant words a title needs before it is issued without its author.
+    /// </summary>
+    /// <remarks>
+    /// Three, because two does not cover the observed failures. Every wrong grab traced
+    /// back to this rung on a live install came from a title of one or two significant
+    /// words, and one of them had two, so a threshold of two would have let it through.
+    /// Raising it to three costs the rung on about half the titles in a public-domain
+    /// test corpus, which is the price: those books keep tier 1 and the author-paired
+    /// rungs below, and lose only the recovery attempt. Upstream issues no author-less
+    /// query at all, so a gated rung is still strictly more than the search had before.
+    /// </remarks>
+    private const int MinimumSignificantWordsToIssueAlone = 3;
+
+    /// <summary>
     /// A parenthesised or bracketed span, captured without its delimiters.
     /// </summary>
     private static readonly Regex DelimitedSpan = new(
@@ -128,7 +169,11 @@ public static class AudiobookSearchQueryBuilder
         var candidates = new List<(string Query, SearchQueryFormKind Kind)>
         {
             (Join(queryTitle, author), SearchQueryFormKind.TitleAuthor),
-            (queryTitle, SearchQueryFormKind.Title),
+
+            // Dropped when the title is too short to stand on its own, for the same reason the
+            // stem and the series below are never issued without the author.
+            (IsDistinctiveEnoughToIssueAlone(queryTitle) ? queryTitle : string.Empty,
+                SearchQueryFormKind.Title),
 
             // Only ever paired with the author. Alone, a stem such as "She" is broad enough to be
             // noise, the same reason the series is never issued without the author either.
@@ -189,6 +234,40 @@ public static class AudiobookSearchQueryBuilder
         return string.IsNullOrWhiteSpace(author)
             ? string.Empty
             : Collapse(Initial.Replace(author, "$1 "));
+    }
+
+    /// <summary>
+    /// Reports whether a title says enough to be worth issuing with no author beside it.
+    /// </summary>
+    /// <remarks>
+    /// The author is what tells an indexer the query is about a book at all. Take it away and a
+    /// short title is no longer a search for a work, it is a search for a word, and the top
+    /// result can as easily be a record, a film or a game. That is not hypothetical: a burst of
+    /// wrong grabs on a live install was traced to this rung, every one of them a title of one or
+    /// two significant words.
+    /// <para>
+    /// The rung still earns its place, which is why it is gated rather than removed. An indexer
+    /// that spells an author differently answers nothing to the title-and-author form, and the
+    /// bare title is the only rung that recovers the release. A title with enough of its own
+    /// words can carry that on its own.
+    /// </para>
+    /// </remarks>
+    internal static bool IsDistinctiveEnoughToIssueAlone(string? queryTitle)
+    {
+        return CountSignificantWords(queryTitle) >= MinimumSignificantWordsToIssueAlone;
+    }
+
+    /// <summary>
+    /// The number of words in <paramref name="text"/> that are not English function words.
+    /// </summary>
+    /// <remarks>
+    /// Counted from the same tokens <see cref="ContainsPhrase"/> matches on, so punctuation,
+    /// accents and apostrophes cannot change the answer and a title padded out with articles is
+    /// measured by what it actually names.
+    /// </remarks>
+    internal static int CountSignificantWords(string? text)
+    {
+        return Tokenize(text).Count(token => !InsignificantWords.Contains(token));
     }
 
     /// <summary>
