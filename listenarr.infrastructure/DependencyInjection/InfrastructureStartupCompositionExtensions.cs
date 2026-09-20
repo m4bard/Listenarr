@@ -89,6 +89,13 @@ public static class InfrastructureStartupCompositionExtensions
                     repairedPostMigrationData.MoveJobTerminalTimestampsBackfilled);
             }
 
+            if (repairedPostMigrationData.QualityProfileUpgradeFlagsRepaired > 0)
+            {
+                Log.Logger.Information(
+                    "[Startup] Turned quality upgrades off on {Count} profile(s) that recorded it with a blank cutoff",
+                    repairedPostMigrationData.QualityProfileUpgradeFlagsRepaired);
+            }
+
             var repairedAuthorAsins =
                 ListenarrDatabaseMigrationPreflight.RepairAmbiguousAuthorAsins(ctx);
             if (repairedAuthorAsins.MonitoredAuthorsRepaired > 0
