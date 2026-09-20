@@ -1,0 +1,179 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using System.ComponentModel.DataAnnotations;
+using DataAnnotationsValidationResult = System.ComponentModel.DataAnnotations.ValidationResult;
+using Listenarr.Tests.Builders;
+using Listenarr.Tests.Common;
+
+namespace Listenarr.Tests.Features.Domain.Audiobooks
+{
+    /// <summary>
+    /// The cutoff rule mirrors Readarr and Sonarr, which both express it as
+    /// <c>return cutoffItem is { Allowed: true };</c> against the profile's own items
+    /// (src/Readarr.Api.V1/Profiles/Quality/QualityCutoffValidator.cs:26-28,
+    /// src/Sonarr.Api.V3/Profiles/Quality/QualityCutoffValidator.cs:26-28).
+    ///
+    /// These exercise the rule the way ASP.NET Core does during model binding: DataAnnotations
+    /// over the whole object.
+    /// </summary>
+    [Trait("Name", "QualityProfileCutoffValidationTests")]
+    [Trait("Category", "Domain")]
+    public sealed class QualityProfileCutoffValidationTests : BaseTests
+    {
+        [Fact]
+        public void ValidCutoff_NamingAnAllowedQuality_IsAccepted()
+        {
+            var profile = new QualityProfileBuilder()
+                .WithName("Accepts a good cutoff")
+                .WithStructuredDefaults()
+                .WithCutoff("AAC 128kbps")
+                .Build();
+
+            var results = Validate(profile);
+
+            Assert.Empty(results);
+        }
+
+        [Fact]
+        public void ValidCutoff_NamingTheOnlyAllowedQuality_IsAcceptedAmongDisallowedRungs()
+        {
+            var profile = new QualityProfileBuilder()
+                .WithName("Accepts the one allowed rung")
+                .WithQuality("FLAC", 0, codec: "FLAC", lossless: true, allowed: false)
+                .WithQuality("AAC 320kbps", 1, codec: "AAC", bitrate: 320, allowed: true)
+                .WithQuality("MP3 128kbps", 2, codec: "MP3", bitrate: 128, allowed: false)
+                .WithCutoff("AAC 320kbps")
+                .Build();
+
+            var results = Validate(profile);
+
+            Assert.Empty(results);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public void BlankCutoff_IsRefused(string? cutoff)
+        {
+            var profile = new QualityProfileBuilder()
+                .WithName("Blank cutoff")
+                .WithStructuredDefaults()
+                .Build();
+            profile.CutoffQuality = cutoff;
+
+            AssertRefusedForCutoff(profile);
+        }
+
+        [Fact]
+        public void CutoffNamingAQualityTheProfileDoesNotCarry_IsRefused()
+        {
+            var profile = new QualityProfileBuilder()
+                .WithName("Cutoff off the ladder")
+                .WithStructuredDefaults()
+                .WithCutoff("OPUS 96kbps")
+                .Build();
+
+            Assert.DoesNotContain(profile.Qualities, quality => quality.Quality == "OPUS 96kbps");
+            AssertRefusedForCutoff(profile);
+        }
+
+        [Fact]
+        public void CutoffNamingAPresentButDisallowedQuality_IsRefused()
+        {
+            var profile = new QualityProfileBuilder()
+                .WithName("Cutoff on a disabled rung")
+                .WithStructuredDefaults()
+                .WithQuality("OPUS 96kbps", 11, codec: "OPUS", bitrate: 96, allowed: false)
+                .WithCutoff("OPUS 96kbps")
+                .Build();
+
+            Assert.Contains(profile.Qualities, quality => quality.Quality == "OPUS 96kbps" && !quality.Allowed);
+            AssertRefusedForCutoff(profile);
+        }
+
+        [Fact]
+        public void CutoffComparison_IsCaseSensitive_MatchingTheStoredQualityName()
+        {
+            var profile = new QualityProfileBuilder()
+                .WithName("Cutoff case")
+                .WithStructuredDefaults()
+                .WithCutoff("aac 128kbps")
+                .Build();
+
+            AssertRefusedForCutoff(profile);
+        }
+
+        [Fact]
+        public void DuplicateQualityRungs_AreRefusedOrAcceptedWithoutThrowing()
+        {
+            var duplicatedAllowed = new QualityProfileBuilder()
+                .WithName("Duplicate allowed rung")
+                .WithQuality("AAC 320kbps", 0, codec: "AAC", bitrate: 320, allowed: true)
+                .WithQuality("AAC 320kbps", 1, codec: "AAC", bitrate: 320, allowed: true)
+                .WithCutoff("AAC 320kbps")
+                .Build();
+
+            var duplicatedDisallowed = new QualityProfileBuilder()
+                .WithName("Duplicate disallowed rung")
+                .WithQuality("AAC 320kbps", 0, codec: "AAC", bitrate: 320, allowed: false)
+                .WithQuality("AAC 320kbps", 1, codec: "AAC", bitrate: 320, allowed: false)
+                .WithCutoff("AAC 320kbps")
+                .Build();
+
+            Assert.Empty(Validate(duplicatedAllowed));
+            AssertRefusedForCutoff(duplicatedDisallowed);
+        }
+
+        [Fact]
+        public void CutoffFailure_DoesNotSuppressTheOtherProfileRules()
+        {
+            var profile = new QualityProfileBuilder()
+                .WithStructuredDefaults()
+                .Build();
+            profile.Name = string.Empty;
+            profile.CutoffQuality = null;
+
+            var results = Validate(profile);
+
+            Assert.Contains(results, result => result.MemberNames.Contains(nameof(QualityProfile.CutoffQuality)));
+            Assert.Contains(results, result => result.MemberNames.Contains(nameof(QualityProfile.Name)));
+        }
+
+        private static void AssertRefusedForCutoff(QualityProfile profile)
+        {
+            var results = Validate(profile);
+
+            var cutoffFailure = Assert.Single(
+                results,
+                result => result.MemberNames.Contains(nameof(QualityProfile.CutoffQuality)));
+            Assert.Equal(ValidCutoffAttribute.CutoffMessage, cutoffFailure.ErrorMessage);
+        }
+
+        private static List<DataAnnotationsValidationResult> Validate(QualityProfile profile)
+        {
+            var results = new List<DataAnnotationsValidationResult>();
+            Validator.TryValidateObject(
+                profile,
+                new ValidationContext(profile),
+                results,
+                validateAllProperties: true);
+            return results;
+        }
+    }
+}
