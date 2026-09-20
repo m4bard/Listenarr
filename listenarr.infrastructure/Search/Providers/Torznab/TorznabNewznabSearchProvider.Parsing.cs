@@ -345,22 +345,14 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
                         // Try to extract quality/format from description or title
                         var titleAndDesc = $"{result.Title} {description}".ToLower();
 
-                        if (titleAndDesc.Contains("flac"))
-                            result.Quality = "FLAC";
-                        else if (titleAndDesc.Contains("320") || titleAndDesc.Contains("320kbps"))
-                            result.Quality = "MP3 320kbps";
-                        else if (titleAndDesc.Contains("256") || titleAndDesc.Contains("256kbps"))
-                            result.Quality = "MP3 256kbps";
-                        else if (titleAndDesc.Contains("192") || titleAndDesc.Contains("192kbps"))
-                            result.Quality = "MP3 192kbps";
-                        else if (titleAndDesc.Contains("128") || titleAndDesc.Contains("128kbps"))
-                            result.Quality = "MP3 128kbps";
-                        else if (titleAndDesc.Contains("64") || titleAndDesc.Contains("64kbps"))
-                            result.Quality = "MP3 64kbps";
-                        else if (titleAndDesc.Contains("m4b"))
-                            result.Quality = "M4B";
-                        else
-                            result.Quality = "Unknown";
+                        // A filetype/format attribute is the indexer stating what the release is;
+                        // the title and description are free text we are guessing from. Only fill
+                        // Quality from the text when the attributes left it empty, so the guess
+                        // cannot overwrite a label the indexer declared.
+                        if (string.IsNullOrEmpty(result.Quality))
+                        {
+                            result.Quality = SearchResultAttributeParser.DetectQualityFromTags(titleAndDesc);
+                        }
 
                         // Detect format
                         if (titleAndDesc.Contains("m4b"))
