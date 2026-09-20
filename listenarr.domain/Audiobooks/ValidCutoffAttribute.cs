@@ -49,7 +49,7 @@ namespace Listenarr.Domain.Audiobooks
             return IsAllowedCutoff(value as string, profile.Qualities)
                 ? ValidationResult.Success
                 : new ValidationResult(
-                    ErrorMessage ?? CutoffMessage,
+                    FormatErrorMessage(validationContext.DisplayName),
                     [validationContext.MemberName ?? nameof(QualityProfile.CutoffQuality)]);
         }
 
@@ -60,10 +60,19 @@ namespace Listenarr.Domain.Audiobooks
         /// Readarr and Sonarr express the same rule as
         /// <c>return cutoffItem is { Allowed: true };</c>
         /// (src/Readarr.Api.V1/Profiles/Quality/QualityCutoffValidator.cs:28 and
-        /// src/Sonarr.Api.V3/Profiles/Quality/QualityCutoffValidator.cs:28). They select the item
-        /// with SingleOrDefault, which throws when a profile carries the same rung twice; Listenarr
-        /// stores its rungs as a JSON list with no uniqueness constraint, so the first match is
-        /// taken here instead of turning a malformed payload into a 500.
+        /// src/Sonarr.Api.V3/Profiles/Quality/QualityCutoffValidator.cs:28). Two deliberate
+        /// differences, both so that this agrees with the code that later consumes the value:
+        ///
+        /// The comparison is OrdinalIgnoreCase, matching QualityMatcher.FindAllowedRung, which
+        /// resolves a stored cutoff with
+        /// <c>AllowedQualities(profile).FirstOrDefault(q =&gt; string.Equals(q.Quality, label,
+        /// StringComparison.OrdinalIgnoreCase))</c>. An ordinal comparison here would refuse a
+        /// cutoff the matcher resolves happily, so a profile that works today would stop saving.
+        ///
+        /// The family selects with SingleOrDefault, which throws when a profile carries the same
+        /// rung twice. Listenarr stores its rungs as a JSON list with no uniqueness constraint, so
+        /// any allowed match counts, which keeps a malformed payload a 400 rather than a 500 and
+        /// again matches the matcher, which takes the first allowed rung.
         /// </remarks>
         public static bool IsAllowedCutoff(string? cutoffQuality, IEnumerable<QualityDefinition>? qualities)
         {
@@ -72,10 +81,10 @@ namespace Listenarr.Domain.Audiobooks
                 return false;
             }
 
-            var cutoffItem = qualities.FirstOrDefault(quality =>
-                string.Equals(quality.Quality, cutoffQuality, StringComparison.Ordinal));
-
-            return cutoffItem is { Allowed: true };
+            return qualities.Any(quality =>
+                quality.Allowed
+                && !string.IsNullOrWhiteSpace(quality.Quality)
+                && string.Equals(quality.Quality, cutoffQuality, StringComparison.OrdinalIgnoreCase));
         }
     }
 }
