@@ -107,8 +107,14 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
             AssertRefusedForCutoff(profile);
         }
 
+        /// <summary>
+        /// The validator has to agree with the code that later resolves the stored value.
+        /// QualityMatcher.FindAllowedRung (listenarr.domain/Common/QualityMatcher.cs:295-297)
+        /// matches OrdinalIgnoreCase, so refusing a case-mismatched cutoff here would stop a
+        /// profile saving that the matcher resolves perfectly well.
+        /// </summary>
         [Fact]
-        public void CutoffComparison_IsCaseSensitive_MatchingTheStoredQualityName()
+        public void CutoffDifferingOnlyInCase_IsAccepted_AsTheMatcherResolvesIt()
         {
             var profile = new QualityProfileBuilder()
                 .WithName("Cutoff case")
@@ -116,11 +122,39 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
                 .WithCutoff("aac 128kbps")
                 .Build();
 
+            Assert.DoesNotContain(profile.Qualities, quality => quality.Quality == "aac 128kbps");
+            AssertEngineResolvesTheCutoff(profile);
+            Assert.Empty(Validate(profile));
+        }
+
+        [Fact]
+        public void CutoffDifferingOnlyInCase_OnADisallowedRung_IsStillRefused()
+        {
+            var profile = new QualityProfileBuilder()
+                .WithName("Cutoff case on a disabled rung")
+                .WithStructuredDefaults()
+                .WithQuality("OPUS 96kbps", 11, codec: "OPUS", bitrate: 96, allowed: false)
+                .WithCutoff("opus 96KBPS")
+                .Build();
+
             AssertRefusedForCutoff(profile);
         }
 
         [Fact]
-        public void DuplicateQualityRungs_AreRefusedOrAcceptedWithoutThrowing()
+        public void BlankQualityNames_AreNeverMatchedByABlankCutoff()
+        {
+            var profile = new QualityProfileBuilder()
+                .WithName("Blank rung name")
+                .WithQuality("   ", 0, allowed: true)
+                .WithQuality("AAC 320kbps", 1, codec: "AAC", bitrate: 320, allowed: true)
+                .WithCutoff("   ")
+                .Build();
+
+            AssertRefusedForCutoff(profile);
+        }
+
+        [Fact]
+        public void DuplicateRungsOfTheSameAllowedState_FollowThatState()
         {
             var duplicatedAllowed = new QualityProfileBuilder()
                 .WithName("Duplicate allowed rung")
@@ -140,6 +174,32 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
             AssertRefusedForCutoff(duplicatedDisallowed);
         }
 
+        /// <summary>
+        /// The mixed pair is the case that separates the engine's predicate from a
+        /// match-by-name-then-check-Allowed one. Matching by name first picks whichever duplicate
+        /// comes earlier in the list, so a disallowed rung sitting ahead of an allowed one would be
+        /// refused here while QualityMatcher.FindAllowedRung
+        /// (listenarr.domain/Common/QualityMatcher.cs:295-297) resolves it. Both orderings have to
+        /// be accepted, or the validator is order-dependent and the engine is not.
+        /// </summary>
+        [Theory]
+        [InlineData(false, true)]
+        [InlineData(true, false)]
+        public void DuplicateRungs_WithOnlyOneAllowed_AreAccepted_InEitherOrder(
+            bool firstAllowed,
+            bool secondAllowed)
+        {
+            var profile = new QualityProfileBuilder()
+                .WithName("Mixed duplicate rung")
+                .WithQuality("AAC 320kbps", 0, codec: "AAC", bitrate: 320, allowed: firstAllowed)
+                .WithQuality("AAC 320kbps", 1, codec: "AAC", bitrate: 320, allowed: secondAllowed)
+                .WithCutoff("AAC 320kbps")
+                .Build();
+
+            AssertEngineResolvesTheCutoff(profile);
+            Assert.Empty(Validate(profile));
+        }
+
         [Fact]
         public void CutoffFailure_DoesNotSuppressTheOtherProfileRules()
         {
@@ -153,6 +213,23 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
 
             Assert.Contains(results, result => result.MemberNames.Contains(nameof(QualityProfile.CutoffQuality)));
             Assert.Contains(results, result => result.MemberNames.Contains(nameof(QualityProfile.Name)));
+        }
+
+        /// <summary>
+        /// QualityMatcher.LabelMeetsCutoff runs the stored cutoff through ResolveCutoff and so
+        /// FindAllowedRung (listenarr.domain/Common/QualityMatcher.cs:274-284,295-297). Asking it
+        /// whether the cutoff label itself meets the cutoff is therefore exactly "can the engine
+        /// resolve this cutoff to an allowed rung", which is the question the validator has to give
+        /// the same answer to. Meaningless for a blank cutoff, which short-circuits to true, so
+        /// only the non-blank acceptance cases use it.
+        /// </summary>
+        private static void AssertEngineResolvesTheCutoff(QualityProfile profile)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(profile.CutoffQuality));
+            Assert.True(
+                QualityMatcher.LabelMeetsCutoff(profile.CutoffQuality, profile),
+                $"The engine could not resolve cutoff '{profile.CutoffQuality}', so this profile "
+                + "is not a case where the validator and the engine ought to agree on acceptance.");
         }
 
         private static void AssertRefusedForCutoff(QualityProfile profile)

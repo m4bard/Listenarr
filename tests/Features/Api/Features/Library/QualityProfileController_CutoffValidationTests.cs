@@ -25,10 +25,16 @@ namespace Listenarr.Tests.Features.Api.Features.Library
 {
     /// <summary>
     /// The cutoff rule has to refuse the three bad shapes at the API, accept a good one, and
-    /// leave reads alone. The last part matters more in Listenarr than it does in Readarr:
-    /// QualityProfileService.GetAllAsync, GetByIdAsync and GetDefaultAsync all write back
-    /// through EnsureProfileHasRequiredQualitiesAsync, so a rule in the service or repository
-    /// write path would have turned a GET of an existing bad profile into a failure.
+    /// leave reads alone. The last part matters more in Listenarr than it does in Readarr: for a
+    /// DEFAULT profile, QualityProfileService.GetAllAsync, GetByIdAsync and GetDefaultAsync each
+    /// write back through EnsureProfileHasRequiredQualitiesAsync
+    /// (listenarr.application/Audiobooks/Quality/QualityProfileService.cs:41,53,66), so a rule in
+    /// the service or repository write path would have turned a GET of an existing bad default
+    /// profile into a failure. Non-default profiles take a plain read.
+    ///
+    /// Reading a stored bad profile works. Writing one back does NOT, and
+    /// StoredBadProfile_CannotBeWrittenBackUnchanged records that, because it is the part of this
+    /// rule that still needs a product decision rather than a code change.
     /// </summary>
     [Trait("Name", "QualityProfileController_CutoffValidationTests")]
     [Trait("Category", "Api")]
@@ -216,7 +222,81 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             Assert.Equal("MP3 128kbps", parsed.RootElement.GetProperty("cutoffQuality").GetString());
         }
 
+        /// <summary>
+        /// Reading a stored bad profile is not the same as being able to keep it. Any client that
+        /// GETs a profile and PUTs it back unchanged is now refused, which is what the star button
+        /// at fe/src/views/settings/QualityProfilesTab.vue:549-553 does, and what the edit modal
+        /// does for a profile saved with upgrades disabled. The control is the second half: the
+        /// identical round trip on a profile with a good cutoff succeeds, so the refusal is the
+        /// cutoff rule and not the round trip itself.
+        ///
+        /// This test asserts current behaviour deliberately. If blank is later accepted as
+        /// "upgrades off", or an UpgradeAllowed field is added the way Readarr and Sonarr have one
+        /// (readarr-src/src/NzbDrone.Core/Profiles/Qualities/QualityProfile.cs:17), this test is
+        /// meant to fail and be rewritten.
+        /// </summary>
+        [Fact]
+        public async Task StoredBadProfile_CannotBeWrittenBackUnchanged()
+        {
+            var badId = await StoreProfileDirectlyAsync(
+                "Stored blank cutoff, round trip",
+                cutoffQuality: string.Empty,
+                isDefault: false);
+
+            using var client = _factory.CreateClient();
+            var csrfToken = await GetAntiforgeryTokenAsync(client);
+
+            using var read = await client.GetAsync($"{ProfilesRoute}/{badId}");
+            var storedBytes = await read.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+
+            using var writeBack = await SendRawAsync(
+                client,
+                csrfToken,
+                HttpMethod.Put,
+                $"{ProfilesRoute}/{badId}",
+                storedBytes);
+            await AssertRefusedForCutoffAsync(writeBack);
+
+            // Control: the same GET then PUT of identical bytes succeeds for a good cutoff, so the
+            // refusal above is the cutoff rule rather than anything about the round trip.
+            var goodId = await StoreProfileDirectlyAsync(
+                "Stored good cutoff, round trip",
+                cutoffQuality: "AAC 256kbps",
+                isDefault: false);
+
+            using var readGood = await client.GetAsync($"{ProfilesRoute}/{goodId}");
+            var goodBytes = await readGood.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.OK, readGood.StatusCode);
+
+            using var writeBackGood = await SendRawAsync(
+                client,
+                csrfToken,
+                HttpMethod.Put,
+                $"{ProfilesRoute}/{goodId}",
+                goodBytes);
+            var goodBody = await writeBackGood.Content.ReadAsStringAsync();
+            Assert.True(
+                writeBackGood.StatusCode == HttpStatusCode.OK,
+                $"Control round trip should succeed, got {(int)writeBackGood.StatusCode}: {goodBody}");
+        }
+
         private string ProfilesRoute => $"{TestUtils.ResolveApiBasePath(_factory.Services)}/qualityprofile";
+
+        private static async Task<HttpResponseMessage> SendRawAsync(
+            HttpClient client,
+            string csrfToken,
+            HttpMethod method,
+            string route,
+            string json)
+        {
+            using var request = new HttpRequestMessage(method, route)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+            request.Headers.Add("X-XSRF-TOKEN", csrfToken);
+            return await client.SendAsync(request);
+        }
 
         private Task<HttpResponseMessage> PostProfileAsync(
             HttpClient client,
