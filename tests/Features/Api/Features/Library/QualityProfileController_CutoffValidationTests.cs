@@ -464,6 +464,74 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             Assert.True(created.RootElement.GetProperty("upgradeAllowed").GetBoolean());
         }
 
+        /// <summary>
+        /// PUT on this controller is a whole-document replace: the body binds straight onto the
+        /// domain entity (listenarr.api/Features/Library/QualityProfileController.cs:132), so a
+        /// field the client leaves out comes back as that property's initialiser rather than as
+        /// what was stored. UpgradeAllowed inherits that, and for this field the direction is the
+        /// unpleasant one, because the initialiser is true and the value being discarded is a
+        /// user's decision to stop upgrading.
+        ///
+        /// The control is MinimumSeeders, which has behaved exactly this way since long before
+        /// this branch: stored as 5, omitted from the PUT, back to its initialiser of 1. So this
+        /// is the contract of the endpoint and not something the flag introduced. The fix is an
+        /// API resource with nullable fields, the way Readarr and Sonarr separate
+        /// QualityProfileResource from QualityProfile
+        /// (src/Readarr.Api.V1/Profiles/Quality/QualityProfileResource.cs), which is a larger
+        /// change than this branch and would touch every field at once.
+        ///
+        /// Both clients that write profiles send the whole object they read
+        /// (fe/src/views/settings/QualityProfilesTab.vue:535, 543, 563), so nothing in the
+        /// application hits this.
+        /// </summary>
+        [Fact]
+        public async Task Update_OmittingAField_ResetsItToItsDefault_ForTheFlagAndForItsNeighbour()
+        {
+            var id = await StoreProfileDirectlyAsync(
+                "Partial update",
+                cutoffQuality: "AAC 256kbps",
+                isDefault: false,
+                upgradeAllowed: false);
+
+            using (var seedScope = _factory.Services.CreateScope())
+            {
+                var db = seedScope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+                var seeded = db.QualityProfiles.Single(profile => profile.Id == id);
+                seeded.MinimumSeeders = 5;
+                await db.SaveChangesAsync();
+            }
+
+            using var client = _factory.CreateClient();
+            var csrfToken = await GetAntiforgeryTokenAsync(client);
+
+            using var read = await client.GetAsync($"{ProfilesRoute}/{id}");
+            var storedBytes = await read.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+
+            var body = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(storedBytes)!;
+            Assert.False(body["upgradeAllowed"].GetBoolean());
+            Assert.Equal(5, body["minimumSeeders"].GetInt32());
+            body.Remove("upgradeAllowed");
+            body.Remove("minimumSeeders");
+
+            using var writeBack = await SendRawAsync(
+                client,
+                csrfToken,
+                HttpMethod.Put,
+                $"{ProfilesRoute}/{id}",
+                JsonSerializer.Serialize(body));
+            var writeBackBody = await writeBack.Content.ReadAsStringAsync();
+            Assert.True(
+                writeBack.StatusCode == HttpStatusCode.OK,
+                $"Expected 200, got {(int)writeBack.StatusCode}: {writeBackBody}");
+
+            using var reread = await client.GetAsync($"{ProfilesRoute}/{id}");
+            using var stored = JsonDocument.Parse(await reread.Content.ReadAsStringAsync());
+
+            Assert.True(stored.RootElement.GetProperty("upgradeAllowed").GetBoolean());
+            Assert.Equal(1, stored.RootElement.GetProperty("minimumSeeders").GetInt32());
+        }
+
         private string ProfilesRoute => $"{TestUtils.ResolveApiBasePath(_factory.Services)}/qualityprofile";
 
         private static async Task<HttpResponseMessage> SendRawAsync(
