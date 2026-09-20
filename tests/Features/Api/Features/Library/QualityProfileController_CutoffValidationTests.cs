@@ -32,9 +32,10 @@ namespace Listenarr.Tests.Features.Api.Features.Library
     /// the service or repository write path would have turned a GET of an existing bad default
     /// profile into a failure. Non-default profiles take a plain read.
     ///
-    /// Reading a stored bad profile works. Writing one back does NOT, and
-    /// StoredBadProfile_CannotBeWrittenBackUnchanged records that, because it is the part of this
-    /// rule that still needs a product decision rather than a code change.
+    /// Reading a stored bad profile works, and so does writing one back when the profile says
+    /// upgrades are off, which is what every profile that used to record that with a blank cutoff
+    /// now says after the UpgradeAllowed migration. The round-trip tests below carry both answers
+    /// and each other's controls.
     /// </summary>
     [Trait("Name", "QualityProfileController_CutoffValidationTests")]
     [Trait("Category", "Api")]
@@ -223,30 +224,72 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         /// <summary>
-        /// Reading a stored bad profile is not the same as being able to keep it. Any client that
-        /// GETs a profile and PUTs it back unchanged is now refused, which is what the star button
-        /// at fe/src/views/settings/QualityProfilesTab.vue:549-553 does, and what the edit modal
-        /// does for a profile saved with upgrades disabled. The control is the second half: the
-        /// identical round trip on a profile with a good cutoff succeeds, so the refusal is the
-        /// cutoff rule and not the round trip itself.
-        ///
-        /// This test asserts current behaviour deliberately. If blank is later accepted as
-        /// "upgrades off", or an UpgradeAllowed field is added the way Readarr and Sonarr have one
-        /// (readarr-src/src/NzbDrone.Core/Profiles/Qualities/QualityProfile.cs:17), this test is
-        /// meant to fail and be rewritten.
+        /// The regression this branch exists for. Before UpgradeAllowed, a profile with upgrades
+        /// off was stored with a blank cutoff, so GET then PUT of the same bytes came back 400 and
+        /// there was no way out through the UI: the cutoff select is hidden behind the very
+        /// checkbox that blanked it
+        /// (fe/src/components/settings/QualityProfileFormModal.vue:215-219). The round trip is
+        /// what the star button at fe/src/views/settings/QualityProfilesTab.vue:549-553 does and
+        /// what the edit modal does on save.
         /// </summary>
         [Fact]
-        public async Task StoredBadProfile_CannotBeWrittenBackUnchanged()
+        public async Task StoredProfileWithUpgradesOff_RoundTripsUnchanged()
         {
-            var badId = await StoreProfileDirectlyAsync(
-                "Stored blank cutoff, round trip",
+            var id = await StoreProfileDirectlyAsync(
+                "Upgrades off, round trip",
                 cutoffQuality: string.Empty,
                 isDefault: false);
 
             using var client = _factory.CreateClient();
             var csrfToken = await GetAntiforgeryTokenAsync(client);
 
-            using var read = await client.GetAsync($"{ProfilesRoute}/{badId}");
+            using var read = await client.GetAsync($"{ProfilesRoute}/{id}");
+            var storedBytes = await read.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+
+            using var stored = JsonDocument.Parse(storedBytes);
+            Assert.False(stored.RootElement.GetProperty("upgradeAllowed").GetBoolean());
+
+            using var writeBack = await SendRawAsync(
+                client,
+                csrfToken,
+                HttpMethod.Put,
+                $"{ProfilesRoute}/{id}",
+                storedBytes);
+            var writeBackBody = await writeBack.Content.ReadAsStringAsync();
+            Assert.True(
+                writeBack.StatusCode == HttpStatusCode.OK,
+                $"A profile with upgrades off must round trip, got {(int)writeBack.StatusCode}: {writeBackBody}");
+
+            // And it comes back the same, rather than merely being accepted. The repository copies
+            // scalars by hand, so a missed assignment would show up right here.
+            using var reread = await client.GetAsync($"{ProfilesRoute}/{id}");
+            using var rereadBody = JsonDocument.Parse(await reread.Content.ReadAsStringAsync());
+            Assert.False(rereadBody.RootElement.GetProperty("upgradeAllowed").GetBoolean());
+            Assert.Equal(
+                string.Empty,
+                rereadBody.RootElement.GetProperty("cutoffQuality").GetString());
+        }
+
+        /// <summary>
+        /// The control for the round trip above. A stored profile that says upgrades are ON while
+        /// naming no cutoff is still refused, so what excused the first one is the flag and not a
+        /// weakening of the cutoff rule. That shape cannot be reached through the API or left
+        /// behind by the migration, so it is written straight to the database here.
+        /// </summary>
+        [Fact]
+        public async Task StoredProfileWithUpgradesOnAndNoCutoff_IsStillRefusedOnWriteBack()
+        {
+            var id = await StoreProfileDirectlyAsync(
+                "Upgrades on, no cutoff, round trip",
+                cutoffQuality: string.Empty,
+                isDefault: false,
+                upgradeAllowed: true);
+
+            using var client = _factory.CreateClient();
+            var csrfToken = await GetAntiforgeryTokenAsync(client);
+
+            using var read = await client.GetAsync($"{ProfilesRoute}/{id}");
             var storedBytes = await read.Content.ReadAsStringAsync();
             Assert.Equal(HttpStatusCode.OK, read.StatusCode);
 
@@ -254,31 +297,171 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 client,
                 csrfToken,
                 HttpMethod.Put,
-                $"{ProfilesRoute}/{badId}",
+                $"{ProfilesRoute}/{id}",
                 storedBytes);
             await AssertRefusedForCutoffAsync(writeBack);
+        }
 
-            // Control: the same GET then PUT of identical bytes succeeds for a good cutoff, so the
-            // refusal above is the cutoff rule rather than anything about the round trip.
-            var goodId = await StoreProfileDirectlyAsync(
-                "Stored good cutoff, round trip",
+        /// <summary>
+        /// The other half of the control: the same round trip on a profile with a good cutoff
+        /// succeeds, so neither result above is about the round trip itself.
+        /// </summary>
+        [Fact]
+        public async Task StoredProfileWithAGoodCutoff_RoundTripsUnchanged()
+        {
+            var id = await StoreProfileDirectlyAsync(
+                "Good cutoff, round trip",
                 cutoffQuality: "AAC 256kbps",
                 isDefault: false);
 
-            using var readGood = await client.GetAsync($"{ProfilesRoute}/{goodId}");
-            var goodBytes = await readGood.Content.ReadAsStringAsync();
-            Assert.Equal(HttpStatusCode.OK, readGood.StatusCode);
+            using var client = _factory.CreateClient();
+            var csrfToken = await GetAntiforgeryTokenAsync(client);
 
-            using var writeBackGood = await SendRawAsync(
+            using var read = await client.GetAsync($"{ProfilesRoute}/{id}");
+            var storedBytes = await read.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+
+            using var writeBack = await SendRawAsync(
                 client,
                 csrfToken,
                 HttpMethod.Put,
-                $"{ProfilesRoute}/{goodId}",
-                goodBytes);
-            var goodBody = await writeBackGood.Content.ReadAsStringAsync();
+                $"{ProfilesRoute}/{id}",
+                storedBytes);
+            var body = await writeBack.Content.ReadAsStringAsync();
             Assert.True(
-                writeBackGood.StatusCode == HttpStatusCode.OK,
-                $"Control round trip should succeed, got {(int)writeBackGood.StatusCode}: {goodBody}");
+                writeBack.StatusCode == HttpStatusCode.OK,
+                $"Control round trip should succeed, got {(int)writeBack.StatusCode}: {body}");
+        }
+
+        [Fact]
+        public async Task Create_WithUpgradesOff_AndNoCutoff_IsAccepted()
+        {
+            using var client = _factory.CreateClient();
+            var csrfToken = await GetAntiforgeryTokenAsync(client);
+
+            using var response = await PostProfileAsync(
+                client,
+                csrfToken,
+                BuildProfilePayload(
+                    "Upgrades off, no cutoff",
+                    cutoffQuality: null,
+                    upgradeAllowed: false));
+
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.True(
+                response.StatusCode == HttpStatusCode.Created,
+                $"Expected 201 with upgrades off, got {(int)response.StatusCode}: {body}");
+
+            using var created = JsonDocument.Parse(body);
+            Assert.False(created.RootElement.GetProperty("upgradeAllowed").GetBoolean());
+        }
+
+        /// <summary>
+        /// Turning upgrades off no longer throws the cutoff away, which is the whole reason the
+        /// modal's checkbox was destructive. The saved profile keeps what it was given.
+        /// </summary>
+        [Fact]
+        public async Task Create_WithUpgradesOff_KeepsTheCutoffItWasGiven()
+        {
+            using var client = _factory.CreateClient();
+            var csrfToken = await GetAntiforgeryTokenAsync(client);
+
+            using var response = await PostProfileAsync(
+                client,
+                csrfToken,
+                BuildProfilePayload(
+                    "Upgrades off, cutoff kept",
+                    cutoffQuality: "AAC 256kbps",
+                    upgradeAllowed: false));
+
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.True(
+                response.StatusCode == HttpStatusCode.Created,
+                $"Expected 201, got {(int)response.StatusCode}: {body}");
+
+            using var created = JsonDocument.Parse(body);
+            var id = created.RootElement.GetProperty("id").GetInt32();
+
+            using var reread = await client.GetAsync($"{ProfilesRoute}/{id}");
+            using var stored = JsonDocument.Parse(await reread.Content.ReadAsStringAsync());
+            Assert.False(stored.RootElement.GetProperty("upgradeAllowed").GetBoolean());
+            Assert.Equal(
+                "AAC 256kbps",
+                stored.RootElement.GetProperty("cutoffQuality").GetString());
+        }
+
+        /// <summary>
+        /// QualityProfileRepository.UpdateAsync copies scalars onto the tracked entity one by one,
+        /// so a field it forgets is silently dropped on every PUT while the response still looks
+        /// right. This turns the flag off through the API and reads it back from a fresh request.
+        /// </summary>
+        [Fact]
+        public async Task Update_TurningUpgradesOff_IsPersisted()
+        {
+            using var client = _factory.CreateClient();
+            var csrfToken = await GetAntiforgeryTokenAsync(client);
+
+            using var createResponse = await PostProfileAsync(
+                client,
+                csrfToken,
+                BuildProfilePayload("Upgrades toggled off", cutoffQuality: "AAC 256kbps"));
+            var createdBody = await createResponse.Content.ReadAsStringAsync();
+            Assert.True(
+                createResponse.StatusCode == HttpStatusCode.Created,
+                $"Setup expected 201, got {(int)createResponse.StatusCode}: {createdBody}");
+
+            using var created = JsonDocument.Parse(createdBody);
+            var id = created.RootElement.GetProperty("id").GetInt32();
+            Assert.True(created.RootElement.GetProperty("upgradeAllowed").GetBoolean());
+
+            var payload = BuildProfilePayload(
+                "Upgrades toggled off",
+                cutoffQuality: "AAC 256kbps",
+                upgradeAllowed: false);
+            payload["id"] = id;
+
+            using var updateResponse = await SendProfileAsync(
+                client,
+                csrfToken,
+                HttpMethod.Put,
+                $"{ProfilesRoute}/{id}",
+                payload);
+            var updateBody = await updateResponse.Content.ReadAsStringAsync();
+            Assert.True(
+                updateResponse.StatusCode == HttpStatusCode.OK,
+                $"Expected 200, got {(int)updateResponse.StatusCode}: {updateBody}");
+
+            using var reread = await client.GetAsync($"{ProfilesRoute}/{id}");
+            using var stored = JsonDocument.Parse(await reread.Content.ReadAsStringAsync());
+            Assert.False(stored.RootElement.GetProperty("upgradeAllowed").GetBoolean());
+            Assert.Equal(
+                "AAC 256kbps",
+                stored.RootElement.GetProperty("cutoffQuality").GetString());
+        }
+
+        /// <summary>
+        /// A client that never heard of the flag still gets what it always got. Omitting the field
+        /// leaves upgrades on, so an old integration posting a profile with a valid cutoff keeps
+        /// working and does not quietly acquire a profile that has stopped upgrading.
+        /// </summary>
+        [Fact]
+        public async Task Create_WithoutTheFlag_LeavesUpgradesOn()
+        {
+            using var client = _factory.CreateClient();
+            var csrfToken = await GetAntiforgeryTokenAsync(client);
+
+            using var response = await PostProfileAsync(
+                client,
+                csrfToken,
+                BuildProfilePayload("No flag sent", cutoffQuality: "AAC 256kbps"));
+
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.True(
+                response.StatusCode == HttpStatusCode.Created,
+                $"Expected 201, got {(int)response.StatusCode}: {body}");
+
+            using var created = JsonDocument.Parse(body);
+            Assert.True(created.RootElement.GetProperty("upgradeAllowed").GetBoolean());
         }
 
         private string ProfilesRoute => $"{TestUtils.ResolveApiBasePath(_factory.Services)}/qualityprofile";
@@ -335,11 +518,17 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             return token!;
         }
 
+        /// <summary>
+        /// Writes a profile the way the database holds one after the UpgradeAllowed migration. The
+        /// flag defaults to what that migration derives from the cutoff, so a caller that does not
+        /// name it gets the row an upgraded install would actually have.
+        /// </summary>
         private async Task<int> StoreProfileDirectlyAsync(
             string name,
             string? cutoffQuality,
             bool isDefault,
-            string? disallow = null)
+            string? disallow = null,
+            bool? upgradeAllowed = null)
         {
             using var scope = _factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
@@ -348,6 +537,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             {
                 Name = name,
                 CutoffQuality = cutoffQuality,
+                UpgradeAllowed = upgradeAllowed ?? !string.IsNullOrWhiteSpace(cutoffQuality),
                 IsDefault = isDefault,
                 Qualities = BuildLadder(disallow)
             };
@@ -382,9 +572,10 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         private static Dictionary<string, object?> BuildProfilePayload(
             string name,
             string? cutoffQuality,
-            string? disallow = null)
+            string? disallow = null,
+            bool? upgradeAllowed = null)
         {
-            return new Dictionary<string, object?>(StringComparer.Ordinal)
+            var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["name"] = name,
                 ["cutoffQuality"] = cutoffQuality,
@@ -401,6 +592,15 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                     })
                     .ToList()
             };
+
+            // Left out entirely when not named, so the omitted-field default is what gets
+            // exercised rather than an explicit true.
+            if (upgradeAllowed.HasValue)
+            {
+                payload["upgradeAllowed"] = upgradeAllowed.Value;
+            }
+
+            return payload;
         }
 
         private static async Task AssertRefusedForCutoffAsync(HttpResponseMessage response)
