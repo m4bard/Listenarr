@@ -64,8 +64,10 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
         }
 
         [Fact]
-        public void ToAudiobook_KeepsBothGenuineCoAuthors()
+        public void ToAudiobook_KeepsBothCreditsWhenNeitherNamesARole()
         {
+            // These two names are one man, his pen name and his legal name, which is its own
+            // problem and not this one. What matters is that neither credit names a role.
             var audiobook = Metadata("O. Henry", "William Sydney Porter").ToAudiobook();
 
             Assert.Equal(new[] { "O. Henry", "William Sydney Porter" }, audiobook.Authors);
@@ -97,15 +99,16 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
         }
 
         [Fact]
-        public void ToAudiobook_LeavesTheAuthorAsinListForTheResolverToFill()
+        public void ToAudiobook_DoesNotPopulateAuthorAsins()
         {
-            // The pairing this fix is meant to protect: with one stored author there is at most
-            // one resolved ASIN, so "the first ASIN on the book" and "this author's ASIN" are
-            // the same value rather than two that can drift apart.
+            // Stated as what it is rather than dressed up as an ASIN guarantee. This asserted
+            // that AuthorAsins held at most one entry, which was vacuous: ToAudiobook never
+            // assigns the field. Resolution happens later, in the add workflow, and nothing
+            // here is evidence about it.
             var audiobook = Metadata("Fyodor Dostoevsky", "Constance Garnett - translator").ToAudiobook();
 
             Assert.Single(audiobook.Authors!);
-            Assert.True(audiobook.AuthorAsins == null || audiobook.AuthorAsins.Count <= 1);
+            Assert.Null(audiobook.AuthorAsins);
         }
     }
 }

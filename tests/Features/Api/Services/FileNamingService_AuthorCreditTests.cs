@@ -83,7 +83,7 @@ namespace Listenarr.Tests.Features.Api.Services
         }
 
         [Fact]
-        public void AuthorFolder_StillTakesTheFirstOfTwoGenuineCoAuthors()
+        public void AuthorFolder_StillTakesTheFirstOfTwoPlainCredits()
         {
             // B007ZEANIS. Neither credit names a role, so there is nothing to prefer between
             // them and the first still wins. Dropping role credits must not turn into
