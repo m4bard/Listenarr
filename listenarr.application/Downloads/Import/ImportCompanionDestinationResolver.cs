@@ -30,8 +30,8 @@ namespace Listenarr.Application.Downloads.Import;
 /// from. A companion that belongs to no root falls back to travelling with the audio file
 /// imported out of its own directory, and is refused if there is no such file.
 ///
-/// The manual import path reaches the same code with <see cref="CompanionSourceRoots.None"/>,
-/// because it has no source structure worth reproducing at all: its audio destinations are
+/// The manual import path calls <see cref="TryResolveBesideImportedFile"/> directly, because it
+/// has no source structure worth reproducing at all: its audio destinations are
 /// built from naming patterns and never carry the source's shape, so mirroring a companion's
 /// source position gives the sidecar a structure the file it accompanies has just lost. Every
 /// companion it sweeps up sits in the directory of a selected file, so the fallback is the whole
@@ -55,14 +55,7 @@ public static class ImportCompanionDestinationResolver
     /// </param>
     public sealed record CompanionSourceRoots(
         IReadOnlyList<string> ExtractionRoots,
-        string? UnextractedCommonDirectory)
-    {
-        /// <summary>
-        /// A batch with no source structure to reproduce. Every companion is then placed beside
-        /// the file imported out of its own directory, or refused when there is none.
-        /// </summary>
-        public static CompanionSourceRoots None { get; } = new([], null);
-    }
+        string? UnextractedCommonDirectory);
 
     /// <summary>
     /// A file the batch has already published: where it was read from, and where it landed.
@@ -108,7 +101,10 @@ public static class ImportCompanionDestinationResolver
     /// Deferred on purpose. The fallback is not reached for most companions, and the caller's
     /// results grow as the batch is imported, so materialising this per companion costs work
     /// nobody asked for. Deferring it also keeps the projection inside the resolver's own
-    /// exception guard rather than in an argument list outside it.
+    /// exception guard rather than in an argument list outside it. It closes over
+    /// <paramref name="results"/>, so enumerate it where you build it: a caller that stores it
+    /// and reads it later sees whatever the list holds then, and one that reads it while the
+    /// list is being appended to gets an <see cref="InvalidOperationException"/>.
     /// </remarks>
     public static IEnumerable<ImportedFilePlacement> ImportedAudioFrom(
         IEnumerable<ImportResult> results) =>
@@ -190,6 +186,45 @@ public static class ImportCompanionDestinationResolver
     }
 
     /// <summary>
+    /// Places the companion beside the file imported out of its own source directory, without
+    /// asking whether any source structure should be reproduced first. This is the whole rule for
+    /// a caller whose destinations carry none of the source's shape, which is the manual import
+    /// path; it asks for this by name rather than declaring an empty set of roots to make the
+    /// mirror branch decline.
+    /// </summary>
+    public static bool TryResolveBesideImportedFile(
+        string companionFile,
+        string? basePath,
+        IEnumerable<ImportedFilePlacement> importedFiles,
+        FileSystemPathSemantics sourceSemantics,
+        FileSystemPathSemantics destinationSemantics,
+        out string relativePath)
+    {
+        relativePath = string.Empty;
+        if (string.IsNullOrWhiteSpace(companionFile) || string.IsNullOrWhiteSpace(basePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            return TryPlaceBesideImportedFile(
+                FileSystemPathIdentity.ResolveNativeAbsolutePath(companionFile),
+                basePath,
+                importedFiles,
+                sourceSemantics,
+                destinationSemantics,
+                out relativePath);
+        }
+        catch (Exception exception) when (exception is not (
+            OperationCanceledException or OutOfMemoryException or StackOverflowException))
+        {
+            relativePath = string.Empty;
+            return false;
+        }
+    }
+
+    /// <summary>
     /// The root whose structure this companion's position is meaningful against: the archive
     /// it was extracted from, or the directory the batch's un-extracted files share.
     /// </summary>
@@ -244,6 +279,48 @@ public static class ImportCompanionDestinationResolver
     }
 
     /// <summary>
+    /// Whether an already-imported file was read out of the companion's own directory.
+    ///
+    /// Compared by path identity rather than by string, because the two sides reach here from
+    /// different places and nothing in this class makes them agree on spelling. A companion's
+    /// directory descends from <c>Path.GetFullPath</c>; an imported file's source path is
+    /// whatever its caller put in the results, and
+    /// <see cref="FileSystemPathIdentity.ResolveNativeAbsolutePath"/> hands back an
+    /// already-qualified path untouched, so a <c>.</c> segment survives it and a string
+    /// comparison calls two spellings of one directory different.
+    ///
+    /// Both of today's callers happen to be safe: the manual path's source paths come from
+    /// <c>ManualImportItemDto.FullPath</c>, whose setter rejects <c>..</c>, <c>./</c> and
+    /// <c>.\</c> and then canonicalises, and the automatic path's come from its own file
+    /// enumeration. That is the callers' property, not this method's, and this method is public.
+    ///
+    /// A malformed entry is skipped rather than abandoning the search: canonicalisation throws on
+    /// a path that does not fit the declared syntax, and one such entry should not cost the rest
+    /// of the batch its companions.
+    /// </summary>
+    private static bool CameFromTheSameDirectory(
+        ImportedFilePlacement imported,
+        string companionDirectory,
+        FileSystemPathSemantics sourceSemantics)
+    {
+        try
+        {
+            var importedDirectory = Path.GetDirectoryName(
+                FileSystemPathIdentity.ResolveNativeAbsolutePath(imported.SourcePath));
+            return !string.IsNullOrEmpty(importedDirectory)
+                && FileSystemPathIdentity.AreEquivalent(
+                    importedDirectory,
+                    companionDirectory,
+                    sourceSemantics);
+        }
+        catch (Exception exception) when (exception is not (
+            OperationCanceledException or OutOfMemoryException or StackOverflowException))
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Places the companion, by name only, in the destination directory of a file that was
     /// imported out of the same source directory. A companion with no such neighbour has
     /// nowhere to go and is refused.
@@ -264,10 +341,7 @@ public static class ImportCompanionDestinationResolver
         }
 
         var neighbour = importedFiles.FirstOrDefault(imported =>
-            sourceSemantics.Comparer.Equals(
-                Path.GetDirectoryName(
-                    FileSystemPathIdentity.ResolveNativeAbsolutePath(imported.SourcePath)),
-                companionDirectory));
+            CameFromTheSameDirectory(imported, companionDirectory, sourceSemantics));
         if (neighbour == null)
         {
             return false;
