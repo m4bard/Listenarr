@@ -370,9 +370,19 @@ public sealed partial class MetadataRefreshCoordinator : IMetadataRefreshCoordin
     /// and did nothing. A windowed run ends as Truncated with its unreached books still unstamped
     /// and still at the head of the queue, which is where the scheduled walk will find them.
     /// </remarks>
-    private MetadataRefreshRunBudget AcquireBudget()
+    private MetadataRefreshRunBudget AcquireBudget() =>
+        BeginRunOnSharedBucket(TimeSpan.FromHours(Math.Max(1, Options.IntervalHours)));
+
+    /// <inheritdoc />
+    public IMetadataRefreshBudget LeaseBudget(TimeSpan window) =>
+        BeginRunOnSharedBucket(window <= TimeSpan.Zero ? TimeSpan.FromHours(1) : window);
+
+    /// <summary>
+    /// Builds the process's one bucket if it does not exist yet, re-applies the operator's
+    /// current settings to it, and hands back a view bounded by <paramref name="window"/>.
+    /// </summary>
+    private MetadataRefreshRunBudget BeginRunOnSharedBucket(TimeSpan window)
     {
-        var window = TimeSpan.FromHours(Math.Max(1, Options.IntervalHours));
         lock (_stateGate)
         {
             _budget ??= new MetadataRefreshBudget(
