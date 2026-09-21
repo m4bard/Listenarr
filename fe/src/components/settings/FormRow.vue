@@ -22,11 +22,12 @@
       <slot />
     </div>
     <span v-if="help" class="form-help">{{ help }}</span>
+    <span v-if="error" class="error-text" role="alert">{{ error }}</span>
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps<{ label?: string; help?: string; labelFor?: string }>()
+defineProps<{ label?: string; help?: string; labelFor?: string; error?: string }>()
 </script>
 
 <style scoped>
@@ -44,6 +45,13 @@ defineProps<{ label?: string; help?: string; labelFor?: string }>()
   margin-top: 0.5rem;
   font-size: 0.85rem;
   color: #adb5bd;
+  line-height: 1.5;
+}
+.error-text {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #ff6b6b;
   line-height: 1.5;
 }
 </style>
