@@ -42,6 +42,11 @@ public sealed class AudiobookRepositoryAuthorIdentityRepairTests : BaseTests
         return (connection, context);
     }
 
+    // A cutoff far enough in the future that every row is due, so the existing tests keep
+    // asking about ordering and bounds rather than about staleness. The cutoff has its own
+    // tests below.
+    private static readonly DateTime Everything = new(2099, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
     private static AuthorCacheEntry Row(string name, string? asin, DateTime? checkedAt = null) =>
         new()
         {
@@ -68,7 +73,7 @@ public sealed class AudiobookRepositoryAuthorIdentityRepairTests : BaseTests
         await context.SaveChangesAsync();
 
         var repository = new AudiobookRepository(context);
-        var due = await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(3);
+        var due = await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(Everything, 3);
 
         Assert.Equal(
             new[] { "Never Checked", "Checked Long Ago", "Checked Recently" },
@@ -90,7 +95,7 @@ public sealed class AudiobookRepositoryAuthorIdentityRepairTests : BaseTests
             Row("Has Empty", string.Empty));
         await context.SaveChangesAsync();
 
-        var due = await new AudiobookRepository(context).GetAuthorCacheEntriesDueForIdentityCheckAsync(10);
+        var due = await new AudiobookRepository(context).GetAuthorCacheEntriesDueForIdentityCheckAsync(Everything, 10);
 
         Assert.Equal(new[] { "Has One" }, due.Select(entry => entry.AuthorName));
     }
@@ -110,9 +115,9 @@ public sealed class AudiobookRepositoryAuthorIdentityRepairTests : BaseTests
         await context.SaveChangesAsync();
         var repository = new AudiobookRepository(context);
 
-        Assert.Equal(2, (await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(2)).Count);
-        Assert.Empty(await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(0));
-        Assert.Empty(await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(-1));
+        Assert.Equal(2, (await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(Everything, 2)).Count);
+        Assert.Empty(await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(Everything, 0));
+        Assert.Empty(await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(Everything, -1));
     }
 
     // Resumption, which is the point of the cursor: what a run stamped is at the back of the
@@ -130,14 +135,14 @@ public sealed class AudiobookRepositoryAuthorIdentityRepairTests : BaseTests
         await context.SaveChangesAsync();
 
         var repository = new AudiobookRepository(context);
-        var head = (await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(1)).Single();
+        var head = (await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(Everything, 1)).Single();
         Assert.Equal("First", head.AuthorName);
 
         await repository.StampAuthorCacheIdentityCheckedAsync(head.Id, DateTime.UtcNow);
 
         Assert.Equal(
             "Second",
-            (await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(1)).Single().AuthorName);
+            (await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(Everything, 1)).Single().AuthorName);
     }
 
     // The control for the whole pass, at the store rather than at the service: a row that was
@@ -245,6 +250,64 @@ public sealed class AudiobookRepositoryAuthorIdentityRepairTests : BaseTests
             "https://example.invalid/right.jpg",
             DateTime.UtcNow);
         Assert.Equal(before, (await context.AuthorCacheEntries.AsNoTracking().SingleAsync()).AuthorAsin);
+    }
+
+    // The cutoff is what makes the queue finite. Without it, a library with more cached authors
+    // than the per-run ceiling re-asks the provider about the same least recently checked rows
+    // on every cycle forever, and the second store never gets a turn.
+    [Fact]
+    public async Task Due_SkipsRowsCheckedInsideTheRecheckWindow()
+    {
+        var (connection, context) = await OpenAsync();
+        await using var _ = connection;
+        await using var __ = context;
+
+        var cutoff = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
+        context.AuthorCacheEntries.AddRange(
+            Row("Checked After The Cutoff", "B000000001", cutoff.AddDays(5)),
+            Row("Checked Before The Cutoff", "B000000002", cutoff.AddDays(-5)),
+            Row("Never Checked", "B000000003"));
+        await context.SaveChangesAsync();
+
+        var due = await new AudiobookRepository(context).GetAuthorCacheEntriesDueForIdentityCheckAsync(cutoff, 10);
+
+        Assert.Equal(
+            new[] { "Never Checked", "Checked Before The Cutoff" },
+            due.Select(entry => entry.AuthorName));
+    }
+
+    // The two together: a row this pass stamps drops out of the queue until the window passes,
+    // so a library larger than the ceiling drains instead of walking the same head forever.
+    [Fact]
+    public async Task StampingARow_TakesItOutOfTheQueueUntilTheWindowPasses()
+    {
+        var (connection, context) = await OpenAsync();
+        await using var _ = connection;
+        await using var __ = context;
+
+        context.AuthorCacheEntries.AddRange(
+            Row("First", "B000000001"),
+            Row("Second", "B000000002"));
+        await context.SaveChangesAsync();
+
+        var repository = new AudiobookRepository(context);
+        var now = new DateTime(2026, 9, 21, 12, 0, 0, DateTimeKind.Utc);
+        var cutoff = now.AddDays(-30);
+
+        var head = (await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(cutoff, 1)).Single();
+        await repository.StampAuthorCacheIdentityCheckedAsync(head.Id, now);
+
+        var next = await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(cutoff, 10);
+        Assert.Equal(new[] { "Second" }, next.Select(entry => entry.AuthorName));
+
+        await repository.StampAuthorCacheIdentityCheckedAsync(next.Single().Id, now);
+        Assert.Empty(await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(cutoff, 10));
+
+        // And they come back once the window has passed, which is the control: the cutoff
+        // postpones a row rather than retiring it.
+        Assert.Equal(
+            2,
+            (await repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(now.AddDays(31), 10)).Count);
     }
 
     [Fact]
