@@ -289,10 +289,11 @@ public static class ImportCompanionDestinationResolver
     /// already-qualified path untouched, so a <c>.</c> segment survives it and a string
     /// comparison calls two spellings of one directory different.
     ///
-    /// Both of today's callers happen to be safe: the manual path's source paths come from
-    /// <c>ManualImportItemDto.FullPath</c>, whose setter rejects <c>..</c>, <c>./</c> and
-    /// <c>.\</c> and then canonicalises, and the automatic path's come from its own file
-    /// enumeration. That is the callers' property, not this method's, and this method is public.
+    /// Both of today's callers happen to be safe, and for a structural reason rather than a
+    /// hygienic one: each draws both sides of this comparison from one list of source paths, so
+    /// whatever spelling that list uses appears on both sides and still matches. Divergence would
+    /// need one batch to spell one directory two ways. That is the callers' property, not this
+    /// method's, and this method is public.
     ///
     /// A malformed entry is skipped rather than abandoning the search: canonicalisation throws on
     /// a path that does not fit the declared syntax, and one such entry should not cost the rest
