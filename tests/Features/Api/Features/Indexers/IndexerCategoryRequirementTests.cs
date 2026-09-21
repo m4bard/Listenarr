@@ -112,6 +112,32 @@ namespace Listenarr.Tests.Features.Api.Features.Indexers
         }
 
         [Fact]
+        public async Task Create_WithAnExplicitNullCategoryList_IsNotAWayPastTheRule()
+        {
+            // An explicit null binds the same as an omitted field, so it has to behave the same:
+            // the default is applied rather than an unconstrained indexer being stored.
+            using var client = _factory.CreateClient();
+
+            var json = JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["name"] = $"ExplicitNull {Guid.NewGuid():N}",
+                ["type"] = "Usenet",
+                ["implementation"] = "Newznab",
+                ["url"] = "https://indexer.example.com",
+                ["categories"] = null
+            });
+
+            var response = await PostIndexerAsync(client, json);
+
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(
+                IndexerCategorySelection.AudiobookDefault,
+                document.RootElement.GetProperty("categories").GetString());
+        }
+
+        [Fact]
         public async Task Update_OmittingCategories_LeavesTheStoredListAlone()
         {
             // An omitted field means "not supplied", so it must not rewrite what is stored. The
