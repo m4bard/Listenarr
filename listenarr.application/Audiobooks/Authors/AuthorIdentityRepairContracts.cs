@@ -23,10 +23,11 @@ namespace Listenarr.Application.Audiobooks.Authors
         bool Enabled,
         bool DryRun,
         int IntervalHours,
-        int MaxRowsPerRun)
+        int MaxRowsPerRun,
+        int RecheckAfterDays)
     {
         public static AuthorIdentityRepairOptions Shipped { get; } =
-            new(Enabled: false, DryRun: true, IntervalHours: 24, MaxRowsPerRun: 25);
+            new(Enabled: false, DryRun: true, IntervalHours: 24, MaxRowsPerRun: 25, RecheckAfterDays: 30);
     }
 
     /// <summary>
