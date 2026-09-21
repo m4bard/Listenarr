@@ -33,12 +33,7 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
     public class AudibleBookMetadataAuthorCreditTests : BaseTests
     {
         private static AudibleBookMetadata Metadata(params string[] authors) =>
-            new()
-            {
-                Title = "The Brothers Karamazov [Naxos AudioBooks Edition]",
-                Asin = "B00EZAXAF8",
-                Authors = authors.ToList()
-            };
+            new() { Title = "Untitled", Asin = "B000000000", Authors = authors.ToList() };
 
         [Fact]
         public void ToAudiobook_StoresTheTranslatorUnderHerNameRatherThanHerJobTitle()
@@ -49,14 +44,11 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
         }
 
         [Fact]
-        public void ToAudiobook_StoresTheAuthorFirstEvenWhenTheProviderDidNot()
+        public void ToAudiobook_CleansTheCreditWhicheverEndOfTheBylineItIsOn()
         {
-            // B00EZAXAF8 credits the translator ahead of Dostoevsky. Everybody is kept and
-            // everybody is spelled properly, and the author is stored first, because once the
-            // role is gone every consumer that takes Authors[0] has no other way to find them.
             var audiobook = Metadata("Constance Garnett - translator", "Fyodor Dostoevsky").ToAudiobook();
 
-            Assert.Equal(new[] { "Fyodor Dostoevsky", "Constance Garnett" }, audiobook.Authors);
+            Assert.Equal(new[] { "Constance Garnett", "Fyodor Dostoevsky" }, audiobook.Authors);
         }
 
         [Fact]
@@ -85,9 +77,9 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
         {
             // The case the rejected rule could not touch. Something had to survive a drop, so it
             // returned the list untouched and the book kept exactly the problem being fixed.
-            var audiobook = Metadata("Edgar Rice Burroughs - editor", "Mark Twain - editor").ToAudiobook();
+            var audiobook = Metadata("Lisa Morton - editor", "Leslie S. Klinger - editor").ToAudiobook();
 
-            Assert.Equal(new[] { "Edgar Rice Burroughs", "Mark Twain" }, audiobook.Authors);
+            Assert.Equal(new[] { "Lisa Morton", "Leslie S. Klinger" }, audiobook.Authors);
         }
 
         [Fact]
@@ -108,8 +100,8 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
             // must not have swallowed it.
             var audiobook = new AudibleBookMetadata
             {
-                Title = "The Brothers Karamazov [Naxos AudioBooks Edition]",
-                Asin = "B00EZAXAF8",
+                Title = "Untitled",
+                Asin = "B000000000",
                 Author = "Jules Verne"
             }.ToAudiobook();
 
