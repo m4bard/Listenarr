@@ -88,6 +88,7 @@ namespace Listenarr.Application.Downloads.Cleanup
                     if (client != null && !client.IsEnabled)
                     {
                         _logger.LogInformation("Skipping removal of {DownloadId} from disabled client {ClientName}", downloadId, client.Name);
+                        removedFromClient = true; // Treat as success so DB record is cleaned up
                     }
                     else if (client != null)
                     {
@@ -193,6 +194,13 @@ namespace Listenarr.Application.Downloads.Cleanup
                 // The download record's Metadata dictionary stores the mapping set during AddAsync.
                 // Without this, Transmission/qBittorrent receive the Listenarr UUID which they don't recognise.
                 var clientItemId = downloadId;
+
+                // Whether the line above was actually replaced by the client's own identifier. If it
+                // was not, clientItemId is still the Listenarr download id and nothing in the client's
+                // queue can ever equal it, so the queue reads below cannot answer the question they
+                // are asked. They have to say so rather than read "no match" as "already gone".
+                var resolvedClientItemId = false;
+
                 if (downloadRecord?.Metadata != null)
                 {
                     if ((string.Equals(client.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase) ||
@@ -203,6 +211,7 @@ namespace Listenarr.Application.Downloads.Cleanup
                         if (!string.IsNullOrEmpty(hash))
                         {
                             clientItemId = hash;
+                            resolvedClientItemId = true;
                             _logger.LogDebug("RemoveFromClientAsync: Using torrent hash {Hash} instead of download ID for {ClientType} removal",
                                 hash, client.Type);
                         }
@@ -213,6 +222,7 @@ namespace Listenarr.Application.Downloads.Cleanup
                         if (!string.IsNullOrEmpty(resolvedId))
                         {
                             clientItemId = resolvedId;
+                            resolvedClientItemId = true;
                             _logger.LogDebug("RemoveFromClientAsync: Using client-specific ID {ClientId} for {ClientType} removal",
                                 resolvedId, client.Type);
                         }
@@ -240,6 +250,17 @@ namespace Listenarr.Application.Downloads.Cleanup
                         // DownloadQueueService writes onto matched items. A Listenarr id can never equal
                         // a torrent hash, so comparing downloadId here reported every genuine removal
                         // failure as a success and deleted the database row while the item kept running.
+                        //
+                        // Which is also why an unresolved identifier cannot be checked at all. The
+                        // comparison would be the same mismatched one, always finding nothing and
+                        // always reading that as "already gone". Report the failure instead: keeping a
+                        // row whose item may still be running is recoverable, deleting it is not.
+                        if (!resolvedClientItemId)
+                        {
+                            _logger.LogWarning("Client reported removal failed for {DownloadId} on {ClientName} and no client item id is recorded for it, so the queue cannot confirm whether it is gone. Reporting failure.", downloadId, client.Name ?? client.Id);
+                            return false;
+                        }
+
                         _logger.LogWarning("Client reported removal failed for {DownloadId}, checking if client item {ClientItemId} still exists in queue", downloadId, clientItemId);
                         try
                         {
@@ -268,7 +289,15 @@ namespace Listenarr.Application.Downloads.Cleanup
 
                         // Check if item still exists in queue - if not, consider removal successful.
                         // Same identifier rule as the branch above: the gateway queue is keyed by the
-                        // client's own identifier, so clientItemId is the only value that can match.
+                        // client's own identifier, so clientItemId is the only value that can match,
+                        // and without one there is no question the queue can answer.
+                        if (!resolvedClientItemId)
+                        {
+                            _logger.LogWarning("Removal of {DownloadId} from {ClientName} errored and no client item id is recorded for it, so the queue cannot confirm whether it is gone. Reporting failure.",
+                                LogRedaction.SanitizeText(downloadId), LogRedaction.SanitizeText(client.Name ?? client.Id));
+                            return false;
+                        }
+
                         try
                         {
                             var queue = await _clientGateway.GetQueueAsync(client);
