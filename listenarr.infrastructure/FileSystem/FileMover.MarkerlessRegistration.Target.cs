@@ -117,8 +117,12 @@ public partial class FileMover
                 }
                 return journal;
             }
-            catch (Exception exception) when (exception is
-                IOException or Win32Exception or PlatformNotSupportedException)
+            catch (Exception exception) when (
+                exception is IOException
+                    or Win32Exception
+                    or PlatformNotSupportedException
+                || (action == FileAction.HardlinkCopy
+                    && exception is InvalidOperationException))
             {
                 if (action == FileAction.Move && !OperatingSystem.IsWindows())
                 {
@@ -132,9 +136,9 @@ public partial class FileMover
                         exception);
                 }
 
-                _logger.LogInformation(
+                _logger.LogWarning(
                     exception,
-                    "Markerless hardlink publication was unavailable; falling back to a direct final-name copy: {Source} -> {Destination}",
+                    "Markerless hardlink publication was unavailable; falling back to a direct final-name copy. The destination will be an independent copy rather than a link, and the source is retained: {Source} -> {Destination}",
                     LogRedaction.SanitizeFilePath(gate.SourcePath),
                     LogRedaction.SanitizeFilePath(gate.DestinationPath));
             }
