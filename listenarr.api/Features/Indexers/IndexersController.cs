@@ -220,6 +220,13 @@ namespace Listenarr.Api.Features.Indexers
             indexer.CreatedAt = DateTime.UtcNow;
             indexer.UpdatedAt = DateTime.UtcNow;
 
+            // A request that never mentioned categories gets the audiobook default rather than an
+            // unconstrained search, the way the family's provider schema supplies one.
+            if (indexer.Categories == null && IndexerCategorySelection.RequiresCategories(indexer.Implementation))
+            {
+                indexer.Categories = IndexerCategorySelection.AudiobookDefault;
+            }
+
             indexer = await _indexerRepository.AddAsync(indexer);
 
             _logger.LogInformation("Created indexer '{Name}' (ID: {Id}, Type: {Type})",
@@ -282,7 +289,10 @@ namespace Listenarr.Api.Features.Indexers
             existing.Implementation = indexer.Implementation;
             existing.Url = indexer.Url;
             existing.ApiKey = indexer.ApiKey == ApiResponseRedactor.RedactedValue ? existing.ApiKey : indexer.ApiKey;
-            existing.Categories = indexer.Categories;
+            // An omitted category list means the request did not mention them, so the stored list
+            // stands. Assigning unconditionally used to blank it, and would now quietly narrow it
+            // to whatever default the binder supplied.
+            existing.Categories = indexer.Categories ?? existing.Categories;
             existing.AnimeCategories = indexer.AnimeCategories;
             existing.EnableRss = indexer.EnableRss;
             existing.EnableAutomaticSearch = indexer.EnableAutomaticSearch;
