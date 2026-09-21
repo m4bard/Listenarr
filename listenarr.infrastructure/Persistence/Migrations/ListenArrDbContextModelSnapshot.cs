@@ -1833,6 +1833,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("AuthorIdentityRepairMaxRowsPerRun")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("AuthorIdentityRepairRecheckAfterDays")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("CompletedFileAction")
                         .HasColumnType("INTEGER");
 
