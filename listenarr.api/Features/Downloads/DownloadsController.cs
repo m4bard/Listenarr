@@ -300,11 +300,16 @@ public class DownloadsController : ControllerBase
 
 
     /// <summary>
-    /// Delete a download record from the database. This does not cancel an active download in the client.
+    /// Delete a download record and, by default, remove the download from its download client.
+    /// Pass removeFromClient=false to delete only the database record and leave the client alone.
     /// </summary>
     /// <param name="id">Download record ID.</param>
+    /// <param name="removeFromClient">
+    /// When true, the default, the item is also removed from the download client and the record is
+    /// kept if the client does not confirm the removal. When false only the database record goes.
+    /// </param>
     [HttpDelete("{id}")]
-    public async Task<ActionResult> DeleteDownload(string id)
+    public async Task<ActionResult> DeleteDownload(string id, [FromQuery] bool removeFromClient = true)
     {
         try
         {
@@ -315,10 +320,21 @@ public class DownloadsController : ControllerBase
                 return NotFound(new { error = "Download not found", id });
             }
 
-            await _downloadRepository.RemoveAsync(id);
+            var removed = await RemoveDownloadAsync(download, removeFromClient);
 
-            _logger.LogInformation("Deleted download record {DownloadId}", LogRedaction.SanitizeText(id));
-            return Ok(new { message = "Download deleted successfully", id });
+            if (!removed)
+            {
+                _logger.LogWarning("Kept download record {DownloadId} because the download client did not confirm removal", LogRedaction.SanitizeText(id));
+                return Conflict(new
+                {
+                    error = "Download client removal failed",
+                    message = "The download client did not confirm removal, so the record was kept. Retry with removeFromClient=false to delete the record only.",
+                    id
+                });
+            }
+
+            _logger.LogInformation("Deleted download record {DownloadId} (removeFromClient: {RemoveFromClient})", LogRedaction.SanitizeText(id), removeFromClient);
+            return Ok(new { message = "Download deleted successfully", id, removeFromClient });
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
@@ -328,19 +344,31 @@ public class DownloadsController : ControllerBase
     }
 
     /// <summary>
-    /// Delete all download records with Completed status.
+    /// Delete all download records with Completed status, by default removing each one from its
+    /// download client as well.
     /// </summary>
+    /// <param name="removeFromClient">
+    /// When true, the default, each item is also removed from its download client. Records the
+    /// client would not confirm are kept and listed in the response.
+    /// </param>
     [HttpDelete("completed")]
-    public async Task<ActionResult> ClearCompletedDownloads()
+    public async Task<ActionResult> ClearCompletedDownloads([FromQuery] bool removeFromClient = true)
     {
         try
         {
             var all = await _downloadRepository.GetAllAsync();
             var completedDownloads = all.Where(d => d.Status == DownloadStatus.Completed).ToList();
-            foreach (var d in completedDownloads) await _downloadRepository.RemoveAsync(d.Id);
+            var (removedIds, keptIds) = await RemoveDownloadsAsync(completedDownloads, removeFromClient);
 
-            _logger.LogInformation("Cleared {Count} completed downloads", completedDownloads.Count);
-            return Ok(new { message = "Completed downloads cleared", count = completedDownloads.Count });
+            _logger.LogInformation("Cleared {Count} completed downloads, kept {KeptCount} the download client would not confirm", removedIds.Count, keptIds.Count);
+            return Ok(new
+            {
+                message = "Completed downloads cleared",
+                count = removedIds.Count,
+                kept = keptIds.Count,
+                keptIds,
+                removeFromClient
+            });
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
@@ -350,25 +378,90 @@ public class DownloadsController : ControllerBase
     }
 
     /// <summary>
-    /// Delete all download records with Failed or ImportBlocked status.
+    /// Delete all download records with Failed or ImportBlocked status, by default removing each one
+    /// from its download client as well.
     /// </summary>
+    /// <param name="removeFromClient">
+    /// When true, the default, each item is also removed from its download client. Records the
+    /// client would not confirm are kept and listed in the response.
+    /// </param>
     [HttpDelete("failed")]
-    public async Task<ActionResult> ClearFailedDownloads()
+    public async Task<ActionResult> ClearFailedDownloads([FromQuery] bool removeFromClient = true)
     {
         try
         {
             var all = await _downloadRepository.GetAllAsync();
             var failedDownloads = all.Where(d => d.IsTerminalFailure()).ToList();
-            foreach (var d in failedDownloads) await _downloadRepository.RemoveAsync(d.Id);
+            var (removedIds, keptIds) = await RemoveDownloadsAsync(failedDownloads, removeFromClient);
 
-            _logger.LogInformation("Cleared {Count} failed downloads", failedDownloads.Count);
-            return Ok(new { message = "Failed downloads cleared", count = failedDownloads.Count });
+            _logger.LogInformation("Cleared {Count} failed downloads, kept {KeptCount} the download client would not confirm", removedIds.Count, keptIds.Count);
+            return Ok(new
+            {
+                message = "Failed downloads cleared",
+                count = removedIds.Count,
+                kept = keptIds.Count,
+                keptIds,
+                removeFromClient
+            });
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error clearing failed downloads");
             return StatusCode(500, new { error = "Failed to clear failed downloads", message = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Remove one download through the shared removal workflow, which contacts the download client
+    /// and only drops the database record once the client side is settled. The workflow's force flag
+    /// is the record-only path, so it is exactly the opt-out that removeFromClient=false asks for.
+    /// </summary>
+    private async Task<bool> RemoveDownloadAsync(Download download, bool removeFromClient)
+    {
+        // An empty client id means the record never recorded which client holds the item. Passing
+        // null rather than the empty string lets the workflow sweep every enabled client for it.
+        var downloadClientId = string.IsNullOrWhiteSpace(download.DownloadClientId)
+            ? null
+            : download.DownloadClientId;
+
+        return await _downloadService.RemoveFromQueueAsync(download.Id, downloadClientId, force: !removeFromClient);
+    }
+
+    /// <summary>
+    /// Remove a set of downloads one at a time, reporting per item rather than per sweep. One client
+    /// refusing must not abort the rest of the clear, and must not take the record with it either.
+    /// </summary>
+    private async Task<(List<string> RemovedIds, List<string> KeptIds)> RemoveDownloadsAsync(IEnumerable<Download> downloads, bool removeFromClient)
+    {
+        var removedIds = new List<string>();
+        var keptIds = new List<string>();
+
+        foreach (var download in downloads)
+        {
+            bool removed;
+
+            try
+            {
+                removed = await RemoveDownloadAsync(download, removeFromClient);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error removing download {DownloadId} during bulk clear", LogRedaction.SanitizeText(download.Id));
+                removed = false;
+            }
+
+            if (removed)
+            {
+                removedIds.Add(download.Id);
+            }
+            else
+            {
+                _logger.LogWarning("Kept download record {DownloadId} because the download client did not confirm removal", LogRedaction.SanitizeText(download.Id));
+                keptIds.Add(download.Id);
+            }
+        }
+
+        return (removedIds, keptIds);
     }
 
     /// <summary>
