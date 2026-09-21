@@ -283,6 +283,8 @@ namespace Listenarr.Api.Features.Indexers
                 return NotFound(new { message = "Indexer not found" });
             }
 
+            var previousImplementation = existing.Implementation;
+
             // Update properties
             existing.Name = indexer.Name;
             existing.Type = indexer.Type;
@@ -293,6 +295,17 @@ namespace Listenarr.Api.Features.Indexers
             // stands. Assigning unconditionally used to blank it, and would now quietly narrow it
             // to whatever default the binder supplied.
             existing.Categories = indexer.Categories ?? existing.Categories;
+            // Validation judged the request; this judges what the merge produced. Moving an
+            // indexer onto an implementation that searches by category must not carry a
+            // category-less list across. A row already on such an implementation is left alone:
+            // it predates the rule and this request did not touch its categories.
+            if (!IndexerCategorySelection.RequiresCategories(previousImplementation)
+                && IndexerCategorySelection.RequiresCategories(existing.Implementation)
+                && !IndexerCategorySelection.HasUsableCategory(existing.Categories))
+            {
+                existing.Categories = IndexerCategorySelection.AudiobookDefault;
+            }
+
             existing.AnimeCategories = indexer.AnimeCategories;
             existing.Tags = indexer.Tags;
             existing.EnableRss = indexer.EnableRss;
