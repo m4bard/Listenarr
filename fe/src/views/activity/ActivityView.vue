@@ -246,6 +246,10 @@
           <p v-else-if="clientHasQueueEntry === true">
             Are you sure you want to remove this download?
           </p>
+          <p v-else-if="clientRemovalRefused">
+            The download client would not confirm that it removed this download, so the record was
+            kept. Do you want to remove it from Listenarr only and deal with the client yourself?
+          </p>
           <p v-else>
             This download was not found in the selected download client's queue. Do you want to
             remove it from Listenarr only (this will delete the record from Listenarr's downloads)?
@@ -267,6 +271,11 @@
             <PhInfo />
             This will remove the download from your download client. Files may or may not be deleted
             depending on your client settings.
+          </p>
+          <p class="warning-text" v-else-if="clientRemovalRefused">
+            <PhInfo />
+            Removing it here will only delete the Listenarr record. The download may still be
+            running in your download client, so remove it there as well if you want it gone.
           </p>
           <p class="warning-text" v-else>
             <PhInfo />
@@ -335,6 +344,7 @@ const queueClientStatuses = ref<QueueClientStatus[]>([])
 const loading = ref(false)
 const showRemoveModal = ref(false)
 const clientHasQueueEntry = ref<boolean | null>(null)
+const clientRemovalRefused = ref(false)
 const itemToRemove = ref<QueueItem | null>(null)
 const removing = ref(false)
 let unsubscribeQueue: (() => void) | null = null
@@ -799,6 +809,7 @@ const refreshQueue = async () => {
 
 const removeFromQueue = async (item: QueueItem) => {
   itemToRemove.value = item
+  clientRemovalRefused.value = false
 
   if (
     (item.downloadClientId || '').toString().toUpperCase() === 'DDL' ||
@@ -817,32 +828,39 @@ const removeFromQueue = async (item: QueueItem) => {
 const confirmRemove = async () => {
   if (!itemToRemove.value) return
 
+  const attemptedClientRemoval = !(
+    (itemToRemove.value.downloadClientId || '').toString().toUpperCase() === 'DDL' ||
+    (itemToRemove.value.downloadClientType || '').toString().toUpperCase() === 'DDL' ||
+    clientHasQueueEntry.value === false
+  )
+
   removing.value = true
   try {
-    if (
-      (itemToRemove.value.downloadClientId || '').toString().toUpperCase() === 'DDL' ||
-      (itemToRemove.value.downloadClientType || '').toString().toUpperCase() === 'DDL'
-    ) {
-      await apiService.cancelDownload(itemToRemove.value.id)
-      await downloadsStore.loadDownloads()
+    if (attemptedClientRemoval) {
+      await apiService.removeFromQueue(itemToRemove.value.id, itemToRemove.value.downloadClientId)
+      await refreshQueue()
     } else {
-      if (clientHasQueueEntry.value === false) {
-        await apiService.cancelDownload(itemToRemove.value.id)
-        await downloadsStore.loadDownloads()
-      } else {
-        await apiService.removeFromQueue(itemToRemove.value.id, itemToRemove.value.downloadClientId)
-        await refreshQueue()
-      }
+      // A direct download has no external client, and the other branch is the one whose modal
+      // copy promises that nothing will be asked of the client. Both mean the record only.
+      await apiService.cancelDownload(itemToRemove.value.id, false)
+      await downloadsStore.loadDownloads()
     }
 
     showRemoveModal.value = false
     itemToRemove.value = null
     clientHasQueueEntry.value = null
+    clientRemovalRefused.value = false
   } catch (err) {
     errorTracking.captureException(err as Error, {
       component: 'ActivityView',
       operation: 'removeFromQueue',
     })
+    if (attemptedClientRemoval) {
+      // The modal stays open. Put it into the record-only state so the user has a way out
+      // instead of a row that refuses to go.
+      clientHasQueueEntry.value = false
+      clientRemovalRefused.value = true
+    }
     const toast = useToast()
     toast.error('Remove failed', (err as Error).message)
   } finally {
