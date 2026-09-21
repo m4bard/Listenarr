@@ -140,8 +140,10 @@ describe('AuthorIdentityRepairSection', () => {
     const repairInput = wrapper.findAll('input[type="radio"]')[REPAIR].element as HTMLInputElement
     expect(repairInput.disabled).toBe(true)
 
-    // Both routes into the option, because a disabled attribute closes only one of them: the
-    // browser still delivers a click on the label wrapping a disabled input.
+    // Both routes into the option. Two guards stand behind this and either one alone is enough,
+    // which is why the assertion is on the section emitting nothing rather than on whichever
+    // guard caught it: RadioCard refuses a disabled card, and selectMode refuses a repair the
+    // acknowledgement did not arm.
     await clickCard(wrapper, REPAIR)
     await wrapper.findAll('input[type="radio"]')[REPAIR].trigger('change')
 
