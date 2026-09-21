@@ -83,7 +83,7 @@ public sealed class FileMoverHardlinkFallbackTests : BaseTests
     }
 
     /// <summary>
-    /// A cross-device link error surfaces as a <see cref="Win32Exception"/> carrying EXDEV,
+    /// A cross-device link error surfaces as a a <c>Win32Exception</c> carrying EXDEV,
     /// because PinnedFileEntry.CreateHardLinkTo raises Marshal.GetLastWin32Error() when linkat
     /// returns nonzero. That shape must reach the copy fallback.
     /// </summary>
@@ -98,20 +98,61 @@ public sealed class FileMoverHardlinkFallbackTests : BaseTests
     }
 
     /// <summary>
-    /// CreateHardLinkTo also raises InvalidOperationException, for an endpoint that changed
-    /// before link creation and for a created link that does not identify the pinned source
-    /// generation. Both are transient races on one filesystem, and both must degrade to a copy
-    /// rather than failing the import, exactly as the IOException and Win32Exception shapes do.
+    /// CreateHardLinkTo raises InvalidOperationException before the link exists when a pinned
+    /// endpoint changed. Nothing has been published at that point, so it must degrade to a copy
+    /// exactly as the IOException and Win32Exception shapes do.
     /// </summary>
-    [Theory]
-    [InlineData("A pinned hardlink endpoint changed before link creation.")]
-    [InlineData("The created hardlink does not identify the pinned source generation.")]
-    public async Task PerformActionOn_HardlinkCopy_PinnedEndpointRaceFallsBackToCopy(
-        string message)
+    [Fact]
+    public async Task PerformActionOn_HardlinkCopy_EndpointRaceBeforeLinkFallsBackToCopy()
     {
         await AssertHardlinkFailureFallsBackAsync(
             "hardlink-fallback-race",
-            new InvalidOperationException(message));
+            new InvalidOperationException(
+                "A pinned hardlink endpoint changed before link creation."));
+    }
+
+    /// <summary>
+    /// The other direction, and the one that must NOT become a copy. When the link is created and
+    /// the destination name is then replaced, CreateHardLinkTo raises InvalidOperationException
+    /// and deliberately leaves the entry alone, because it cannot prove the entry is its own. A
+    /// copy there would be reported as a success it did not achieve, so the publication fails and
+    /// the replacement survives untouched.
+    /// </summary>
+    [LinuxFact]
+    [SupportedOSPlatform("linux")]
+    public async Task PerformActionOn_HardlinkCopy_RaceAfterLinkFailsClosedAndKeepsReplacement()
+    {
+        var root = FileService.GetTempDirectory(
+            $"hardlink-fallback-post-link-{Guid.NewGuid():N}");
+        var source = await FileService.GetFileAsync(root, "source.mp3", "audio content");
+        var destination = Path.Join(root, "destination.mp3");
+        var operationId = Guid.NewGuid();
+        var mover = CreateMover(afterHardlinkCreated: () =>
+        {
+            File.Delete(destination);
+            File.WriteAllText(destination, "a replacement that is not our link");
+        });
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            mover.PerformActionOn(
+                FileAction.HardlinkCopy,
+                source,
+                destination,
+                operationId));
+
+        // The reported cause has to be the race itself. Letting this shape reach the copy
+        // fallback produces the same visible outcome, because creating the final name
+        // exclusively then fails on the replacement, so asserting only "it threw and the
+        // replacement survived" would pass either way. The inner exception is what separates
+        // them, and with it the wasted source rehash and the untrue fallback log line.
+        var inner = Assert.IsType<InvalidOperationException>(failure.InnerException);
+        Assert.Equal(
+            "The created hardlink does not identify the pinned source generation.",
+            inner.Message);
+        Assert.Equal(
+            "a replacement that is not our link",
+            await File.ReadAllTextAsync(destination));
+        Assert.Equal("audio content", await File.ReadAllTextAsync(source));
     }
 
     /// <summary>
@@ -128,9 +169,10 @@ public sealed class FileMoverHardlinkFallbackTests : BaseTests
         var source = await FileService.GetFileAsync(root, "source.mp3", "audio content");
         var destination = Path.Join(root, "destination.mp3");
         var mover = CreateMover(() => Task.FromException(
-            new IOException("the pinned move endpoint changed before link creation")));
+            new InvalidOperationException(
+                "A pinned hardlink endpoint changed before link creation.")));
 
-        await Assert.ThrowsAsync<IOException>(() =>
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
             mover.PrepareActionForRegistrationAsync(
                 FileAction.Move,
                 source,
@@ -159,6 +201,7 @@ public sealed class FileMoverHardlinkFallbackTests : BaseTests
             destination,
             operationId));
 
+        Assert.Equal("audio content", await File.ReadAllTextAsync(destination));
         await AssertIsIndependentCopyAsync(source, destination);
         await AssertCompletedJournalAsync(operationId, FileAction.Copy);
     }
@@ -257,7 +300,9 @@ public sealed class FileMoverHardlinkFallbackTests : BaseTests
         Assert.Equal(original, await File.ReadAllTextAsync(source));
     }
 
-    private FileMover CreateMover(Func<Task>? beforeHardlinkCreation = null)
+    private FileMover CreateMover(
+        Func<Task>? beforeHardlinkCreation = null,
+        Action? afterHardlinkCreated = null)
     {
         var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
         return new FileMover(
@@ -267,7 +312,8 @@ public sealed class FileMoverHardlinkFallbackTests : BaseTests
         {
             FileMoveLockDirectoryForTest = FileService.GetTempDirectory(
                 $"hardlink-fallback-locks-{Guid.NewGuid():N}"),
-            BeforePinnedHardlinkCreationForTestAsync = beforeHardlinkCreation
+            BeforePinnedHardlinkCreationForTestAsync = beforeHardlinkCreation,
+            AfterPinnedHardlinkCreatedForTest = afterHardlinkCreated
         };
     }
 
