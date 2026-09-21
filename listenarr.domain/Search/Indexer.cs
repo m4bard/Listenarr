@@ -51,9 +51,15 @@ namespace Listenarr.Domain.Search
         public string? ApiKey { get; set; }
 
         /// <summary>
-        /// Categories to search (comma-separated or JSON array)
+        /// Newznab categories to search, comma-separated (e.g. "3030,3040")
         /// </summary>
-        public string? Categories { get; set; }
+        /// <remarks>
+        /// New indexers start on <see cref="IndexerCategorySelection.AudiobookDefault"/>, so a
+        /// caller that omits the field gets that rather than an unconstrained search. The property
+        /// stays nullable: indexers stored before categories were required must keep loading.
+        /// </remarks>
+        [IndexerCategoriesRequired]
+        public string? Categories { get; set; } = IndexerCategorySelection.AudiobookDefault;
 
         /// <summary>
         /// Anime categories (comma-separated or JSON array)
