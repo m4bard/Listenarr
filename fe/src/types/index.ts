@@ -497,6 +497,15 @@ export interface ApplicationSettings {
   metadataRefreshStaleAfterDays?: number
   metadataRefreshRequestsPerHour?: number
   metadataRefreshMinimumSpacingMs?: number
+
+  // Scheduled repair of stored author identities. Enabled and dryRun are two switches with
+  // three meaningful states between them: off, preview (looks up and writes nothing) and
+  // repair (looks up and rewrites the stored records).
+  authorIdentityRepairEnabled?: boolean
+  authorIdentityRepairDryRun?: boolean
+  authorIdentityRepairIntervalHours?: number
+  authorIdentityRepairMaxRowsPerRun?: number
+  authorIdentityRepairRecheckAfterDays?: number
 }
 
 export interface ProwlarrImportConnectionSettings {
