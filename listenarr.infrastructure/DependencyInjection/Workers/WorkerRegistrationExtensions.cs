@@ -63,6 +63,17 @@ internal static class WorkerRegistrationExtensions
             DownloadProcessingJobCleanupService>(services);
 
         AddHostedProcessor<UnmatchedScanProcessor, IUnmatchedScanProcessor, UnmatchedScanBackgroundService>(services);
+
+        // The identity repair pass. The holder is a singleton because the hosted service reads
+        // the interval off it between cycles while a cycle already running reads the rest; the
+        // pass itself is scoped, because it holds repositories and one cycle is one scope.
+        services.AddSingleton<AuthorIdentityRepairOptionsHolder>();
+        services.AddScoped<IAuthorIdentityRepairService, AuthorIdentityRepairService>();
+        AddHostedProcessor<
+            AuthorIdentityRepairProcessor,
+            IAuthorIdentityRepairProcessor,
+            AuthorIdentityRepairBackgroundService>(services);
+
         return services;
     }
 
