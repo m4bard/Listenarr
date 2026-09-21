@@ -54,12 +54,13 @@ namespace Listenarr.Domain.Search
         /// Newznab categories to search, comma-separated (e.g. "3030,3040")
         /// </summary>
         /// <remarks>
-        /// New indexers start on <see cref="IndexerCategorySelection.AudiobookDefault"/>, so a
-        /// caller that omits the field gets that rather than an unconstrained search. The property
-        /// stays nullable: indexers stored before categories were required must keep loading.
+        /// Null means no list is stored, which is how indexers saved before categories were
+        /// required still load. The property carries no default of its own, so it mirrors the row
+        /// faithfully and an omitted field stays distinguishable from a cleared one. A new indexer
+        /// picks up <see cref="IndexerCategorySelection.AudiobookDefault"/> on the create path.
         /// </remarks>
         [IndexerCategoriesRequired]
-        public string? Categories { get; set; } = IndexerCategorySelection.AudiobookDefault;
+        public string? Categories { get; set; }
 
         /// <summary>
         /// Anime categories (comma-separated or JSON array)
