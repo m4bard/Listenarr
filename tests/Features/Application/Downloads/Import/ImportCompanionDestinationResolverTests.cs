@@ -180,6 +180,42 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
     }
 
     /// <summary>
+    /// The fallback finds its neighbour by path identity, not by string comparison. Both of
+    /// today's callers canonicalise their source paths before the results are built, so this is
+    /// the guarantee the resolver makes on its own account rather than a defect either of them
+    /// can currently reach; it is public API, and a string comparison here would refuse a
+    /// companion over a <c>.</c> segment somebody else's caller put in a path.
+    /// </summary>
+    [Fact]
+    public void BesideImportedFile_MatchesTheNeighbourByPathIdentityNotSpelling()
+    {
+        var companion = Path.Join(DownloadDirectory, "book.nfo");
+        var audio = Path.Join(DownloadDirectory, "release.m4b");
+        var withDotSegment = Path.Join(
+            Path.GetDirectoryName(DownloadDirectory)!,
+            ".",
+            Path.GetFileName(DownloadDirectory),
+            "release.m4b");
+        var elsewhere = Path.Join(ExtractionRoot, "release.m4b");
+
+        bool Resolve(string neighbourSourcePath) =>
+            ImportCompanionDestinationResolver.TryResolveBesideImportedFile(
+                companion,
+                BasePath,
+                [new ImportCompanionDestinationResolver.ImportedFilePlacement(
+                    neighbourSourcePath,
+                    Path.Join(BasePath, "The Valley of Fear.m4b"))],
+                HostSemantics,
+                HostSemantics,
+                out _);
+
+        Assert.NotEqual(audio, withDotSegment);
+        Assert.True(Resolve(withDotSegment));
+        Assert.True(Resolve(audio));
+        Assert.False(Resolve(elsewhere));
+    }
+
+    /// <summary>
     /// The automatic batch's results carry its already-imported companions as well as its audio,
     /// and a companion is not something to place another companion beside. The manual path has
     /// no such entries, which is why the filter lives in this projection rather than in the

@@ -325,7 +325,11 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
                 bookFolder);
 
             Assert.Equal(2, outcome.Imported);
-            AssertPlacedAt(bookFolder, outcome.Destinations.Order().ToList(), "book.nfo", "part2.nfo");
+            AssertPlacedAt(
+                bookFolder,
+                [.. outcome.Destinations.OrderBy(destination => destination, StringComparer.Ordinal)],
+                "book.nfo",
+                "part2.nfo");
             AssertNoDirectoriesUnder(bookFolder);
         }
         finally
