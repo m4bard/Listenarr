@@ -135,9 +135,10 @@ namespace Listenarr.Tests.Features.Application.Downloads.Cleanup
         public async Task RemoveAsync_ClientAnswersNothing_FailsAndKeepsRecord()
         {
             // Second control, and the one that bounds the claim. A client that is down throws on the
-            // delete AND on the verification queue read, so the inner catch takes over and the method
-            // already returned false before this change. The identifier fix must not disturb that:
-            // this test has to come out the same on both trees.
+            // delete AND on the verification queue read. It does reach the outer catch, and the catch
+            // around the read in there only logs, so control falls through to the return false that
+            // follows it. The method already answered false before this change, and the identifier
+            // work must not disturb that: this test has to come out the same on both trees.
             await AddDownloadAsync();
 
             _gateway.RemoveException = new InvalidOperationException("no route to client");
