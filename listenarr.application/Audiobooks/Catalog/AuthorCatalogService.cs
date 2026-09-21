@@ -174,10 +174,19 @@ namespace Listenarr.Application.Audiobooks.Catalog
             try
             {
                 var audnexResults = await _audnexusService.SearchAuthorsAsync(normalizedName, region);
-                var audnexAuthor = audnexResults?.FirstOrDefault(a =>
-                    !string.IsNullOrWhiteSpace(a.Name) &&
-                    a.Name.Equals(normalizedName, StringComparison.OrdinalIgnoreCase))
-                    ?? audnexResults?.FirstOrDefault();
+
+                // Same rule as the metadata lookup, and this site matters more: what it returns
+                // is written straight into the author cache. There is no identifier held here to
+                // fall back on, so naming the author is the only way in.
+                var audnexAuthor = AudnexusAuthorIdentity.Select(audnexResults, normalizedName);
+
+                if (audnexAuthor == null && audnexResults is { Count: > 0 })
+                {
+                    _logger.LogDebug(
+                        "Audnexus returned {Count} candidates for '{Author}' and none of them is that author; leaving the ASIN unresolved",
+                        audnexResults.Count,
+                        normalizedName);
+                }
 
                 if (audnexAuthor != null)
                 {
