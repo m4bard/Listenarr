@@ -33,9 +33,11 @@ vi.mock('@/services/api', () => ({
 
 const AUDIOBOOK_CATEGORY = '3030'
 
+// Kept identical to IndexerCategoriesRequiredAttribute's message in the backend, so this
+// fixture stays a faithful stand-in for what the server actually sends.
 const VALIDATION_MESSAGE =
-  'At least one category must be selected. Newznab and Torznab indexers search every category ' +
-  'when none is given, which lets unrelated releases match an audiobook search.'
+  'At least one category is required. Without one, Newznab and Torznab search every category, ' +
+  'so unrelated releases can match.'
 
 const mountModal = () =>
   mount(IndexerFormModal, {
