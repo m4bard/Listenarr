@@ -238,57 +238,68 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(seriesCacheEntry.Region) ?? "us";
             var normalizedAsin = NormalizeAsin(seriesCacheEntry.SeriesAsin);
 
-            SeriesCacheEntry? existing = null;
-
-            if (!string.IsNullOrWhiteSpace(normalizedAsin))
+            for (var attempt = 1; ; attempt++)
             {
-                existing = await _db.SeriesCacheEntries.FirstOrDefaultAsync(entry =>
-                    entry.SeriesAsin != null &&
-                    entry.SeriesAsin.ToUpper() == normalizedAsin &&
-                    entry.Region == normalizedRegion);
-            }
+                SeriesCacheEntry? existing = null;
 
-            if (existing == null && !string.IsNullOrWhiteSpace(normalizedName))
-            {
-                existing = await _db.SeriesCacheEntries.FirstOrDefaultAsync(entry =>
-                    entry.SeriesNameNormalized == normalizedName &&
-                    entry.Region == normalizedRegion);
-            }
-
-            var now = DateTime.UtcNow;
-            if (existing == null)
-            {
-                existing = new SeriesCacheEntry
+                if (!string.IsNullOrWhiteSpace(normalizedAsin))
                 {
-                    CreatedAt = now
-                };
+                    existing = await _db.SeriesCacheEntries.FirstOrDefaultAsync(entry =>
+                        entry.SeriesAsin != null &&
+                        entry.SeriesAsin.ToUpper() == normalizedAsin &&
+                        entry.Region == normalizedRegion);
+                }
 
-                _db.SeriesCacheEntries.Add(existing);
+                if (existing == null && !string.IsNullOrWhiteSpace(normalizedName))
+                {
+                    existing = await _db.SeriesCacheEntries.FirstOrDefaultAsync(entry =>
+                        entry.SeriesNameNormalized == normalizedName &&
+                        entry.Region == normalizedRegion);
+                }
+
+                var now = DateTime.UtcNow;
+                var inserting = existing == null;
+                if (existing == null)
+                {
+                    existing = new SeriesCacheEntry
+                    {
+                        CreatedAt = now
+                    };
+
+                    _db.SeriesCacheEntries.Add(existing);
+                }
+
+                existing.SeriesName = string.IsNullOrWhiteSpace(seriesCacheEntry.SeriesName)
+                    ? (string.IsNullOrWhiteSpace(existing.SeriesName) ? normalizedName : existing.SeriesName)
+                    : seriesCacheEntry.SeriesName.Trim();
+                existing.SeriesNameNormalized = string.IsNullOrWhiteSpace(normalizedName)
+                    ? NormalizeSeriesName(existing.SeriesName)
+                    : normalizedName;
+                existing.SeriesAsin = string.IsNullOrWhiteSpace(normalizedAsin)
+                    ? existing.SeriesAsin
+                    : normalizedAsin;
+                existing.Region = normalizedRegion;
+                existing.ImageUrl = seriesCacheEntry.ImageUrl ?? existing.ImageUrl;
+                existing.Description = seriesCacheEntry.Description ?? existing.Description;
+
+                if (seriesCacheEntry.CatalogBooks != null)
+                {
+                    existing.CatalogBooks = seriesCacheEntry.CatalogBooks;
+                }
+
+                existing.LastFetchedAt = seriesCacheEntry.LastFetchedAt ?? existing.LastFetchedAt ?? now;
+                existing.UpdatedAt = now;
+
+                try
+                {
+                    await _db.SaveChangesAsync();
+                    return existing;
+                }
+                catch (UniqueConstraintViolationException) when (inserting && attempt < CacheUpsertAttempts)
+                {
+                    _db.Entry(existing).State = EntityState.Detached;
+                }
             }
-
-            existing.SeriesName = string.IsNullOrWhiteSpace(seriesCacheEntry.SeriesName)
-                ? (string.IsNullOrWhiteSpace(existing.SeriesName) ? normalizedName : existing.SeriesName)
-                : seriesCacheEntry.SeriesName.Trim();
-            existing.SeriesNameNormalized = string.IsNullOrWhiteSpace(normalizedName)
-                ? NormalizeSeriesName(existing.SeriesName)
-                : normalizedName;
-            existing.SeriesAsin = string.IsNullOrWhiteSpace(normalizedAsin)
-                ? existing.SeriesAsin
-                : normalizedAsin;
-            existing.Region = normalizedRegion;
-            existing.ImageUrl = seriesCacheEntry.ImageUrl ?? existing.ImageUrl;
-            existing.Description = seriesCacheEntry.Description ?? existing.Description;
-
-            if (seriesCacheEntry.CatalogBooks != null)
-            {
-                existing.CatalogBooks = seriesCacheEntry.CatalogBooks;
-            }
-
-            existing.LastFetchedAt = seriesCacheEntry.LastFetchedAt ?? existing.LastFetchedAt ?? now;
-            existing.UpdatedAt = now;
-
-            await _db.SaveChangesAsync();
-            return existing;
         }
 
         private static string NormalizeAsin(string? value)
