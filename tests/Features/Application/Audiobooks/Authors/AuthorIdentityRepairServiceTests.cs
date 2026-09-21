@@ -86,6 +86,37 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Authors
                 MonitoredAuthors
                     .Setup(repository => repository.GetAllAsync(It.IsAny<CancellationToken>()))
                     .ReturnsAsync(new List<MonitoredAuthor>());
+
+                // An empty queue unless a test seeds one. Moq answers an unconfigured
+                // Task<List<T>> with a null list rather than an empty one, so leaving this out
+                // fails as a NullReferenceException inside the pass, which reads as a defect in
+                // the code under test rather than as a gap in the fixture.
+                Repository
+                    .Setup(repository => repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(
+                        It.IsAny<int>(),
+                        It.IsAny<CancellationToken>()))
+                    .ReturnsAsync(new List<AuthorCacheEntry>());
+
+                // Nothing to clean unless a test says otherwise. The credit repair shares this
+                // pass's schedule and preview switch and nothing else, so it is out of the way
+                // of every test about identities.
+                Repository
+                    .Setup(repository => repository.CleanRoleSuffixesFromStoredAuthorsAsync(
+                        It.IsAny<int>(),
+                        It.IsAny<bool>(),
+                        It.IsAny<CancellationToken>()))
+                    .ReturnsAsync(StoredAuthorCreditCleanupResult.Nothing);
+            }
+
+            public Harness WithCreditsToClean(params StoredAuthorCreditChange[] changes)
+            {
+                Repository
+                    .Setup(repository => repository.CleanRoleSuffixesFromStoredAuthorsAsync(
+                        It.IsAny<int>(),
+                        It.IsAny<bool>(),
+                        It.IsAny<CancellationToken>()))
+                    .ReturnsAsync(new StoredAuthorCreditCleanupResult(changes.Length, changes));
+                return this;
             }
 
             public Harness WithCachedRows(params AuthorCacheEntry[] rows)
@@ -429,6 +460,61 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Authors
             harness.Coordinator.Verify(
                 coordinator => coordinator.LeaseBudget(TimeSpan.FromHours(24)),
                 Times.Once);
+        }
+
+        // The credit repair is bounded by the same ceiling and gated by the same preview switch,
+        // and by nothing else. It asks the provider nothing, so a run with no budget left still
+        // does it: spelling a credit correctly needs no request.
+        [Fact]
+        public async Task Run_OutOfBudget_StillCleansTheCreditsItAlreadyHolds()
+        {
+            var harness = new Harness(budget: new BudgetOf(0))
+                .WithCachedRows(CachedRow(1, "Constance Garnett", "B000APTDDU"))
+                .WithCreditsToClean(new StoredAuthorCreditChange(
+                    42,
+                    new[] { "Fyodor Dostoevsky", "Constance Garnett - translator" },
+                    new[] { "Fyodor Dostoevsky", "Constance Garnett" }));
+
+            var report = await harness.Build().RunAsync(CancellationToken.None);
+
+            Assert.True(report.BudgetExhausted);
+            Assert.Equal(0, report.Examined);
+            Assert.Equal(1, report.CreditsCleaned);
+            harness.Repository.Verify(
+                repository => repository.CleanRoleSuffixesFromStoredAuthorsAsync(
+                    It.IsAny<int>(),
+                    true,
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        // The control for the pair above: the same call, the same run, and the flag that decides
+        // whether it writes follows the preview switch rather than being hardcoded either way.
+        [Fact]
+        public async Task Run_DryRun_AsksTheCreditRepairToExamineWithoutApplying()
+        {
+            var harness = new Harness(dryRun: true)
+                .WithCreditsToClean(new StoredAuthorCreditChange(
+                    42,
+                    new[] { "Fyodor Dostoevsky", "Constance Garnett - translator" },
+                    new[] { "Fyodor Dostoevsky", "Constance Garnett" }));
+
+            var report = await harness.Build().RunAsync(CancellationToken.None);
+
+            Assert.True(report.DryRun);
+            Assert.Equal(1, report.CreditsCleaned);
+            harness.Repository.Verify(
+                repository => repository.CleanRoleSuffixesFromStoredAuthorsAsync(
+                    It.IsAny<int>(),
+                    false,
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+            harness.Repository.Verify(
+                repository => repository.CleanRoleSuffixesFromStoredAuthorsAsync(
+                    It.IsAny<int>(),
+                    true,
+                    It.IsAny<CancellationToken>()),
+                Times.Never);
         }
 
         [Fact]
