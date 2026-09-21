@@ -143,7 +143,11 @@ namespace Listenarr.Application.Audiobooks.Authors
                     continue;
                 }
 
-                if (verdict == AuthorIdentityVerdict.AlreadyCorrect)
+                // A row that was already right, and a row nothing could be concluded about, are
+                // both stamped and not written. The first because it needs no repair; the second
+                // because the pass has to keep moving, and the dangerous operation is the write
+                // rather than the cursor.
+                if (verdict is AuthorIdentityVerdict.AlreadyCorrect or AuthorIdentityVerdict.Unresolved)
                 {
                     await _audiobookRepository.StampAuthorCacheIdentityCheckedAsync(
                         row.Id,
@@ -195,7 +199,7 @@ namespace Listenarr.Application.Audiobooks.Authors
                         continue;
                     }
 
-                    if (verdict != AuthorIdentityVerdict.AlreadyCorrect)
+                    if (verdict is AuthorIdentityVerdict.Corrected or AuthorIdentityVerdict.Cleared)
                     {
                         row.AuthorAsin = resolution.Asin;
                         row.UpdatedAt = checkedAt;
@@ -266,15 +270,15 @@ namespace Listenarr.Application.Audiobooks.Authors
 
         private static AuthorIdentityVerdict Decide(string? storedAsin, AuthorIdentityResolution resolution)
         {
-            if (!resolution.Asked)
+            if (!resolution.Answered)
             {
                 return AuthorIdentityVerdict.Unresolved;
             }
 
             if (string.IsNullOrWhiteSpace(resolution.Asin))
             {
-                // The provider does not carry an identifier for this name, so whatever is stored
-                // under it did not come from asking about this author.
+                // The provider answered, named this person, and carries no identifier for them,
+                // so whatever is stored under the name did not come from asking about them.
                 return AuthorIdentityVerdict.Cleared;
             }
 
@@ -301,7 +305,7 @@ namespace Listenarr.Application.Audiobooks.Authors
         {
             if (string.IsNullOrWhiteSpace(name))
             {
-                return AuthorIdentityResolution.NotAsked;
+                return AuthorIdentityResolution.Inconclusive;
             }
 
             if (!await budget.ChargeAsync(cancellationToken))
@@ -309,18 +313,41 @@ namespace Listenarr.Application.Audiobooks.Authors
                 return AuthorIdentityResolution.NotAsked;
             }
 
+            AuthorLookupItem? audible;
             try
             {
-                var audible = await _audibleService.LookupAuthorAsync(name, region);
-                if (!string.IsNullOrWhiteSpace(audible?.Asin))
-                {
-                    return new AuthorIdentityResolution(true, audible!.Asin, audible.Description, audible.Image);
-                }
+                audible = await _audibleService.LookupAuthorAsync(name, region);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogWarning(ex, "Author identity repair could not ask Audible about '{Author}'", name);
                 return AuthorIdentityResolution.NotAsked;
+            }
+
+            if (!string.IsNullOrWhiteSpace(audible?.Asin))
+            {
+                return AuthorIdentityResolution.Is(audible!.Asin, audible.Description, audible.Image);
+            }
+
+            // Null is not the same answer as an item with no ASIN, and telling them apart is what
+            // stops this pass doing damage during a provider outage.
+            //
+            // An item naming the author with no ASIN is Audible saying, positively, that it
+            // credits this person and holds no identifier for them. A null is the ambiguous one:
+            // the lookup returns null when the search found no products at all AND when it could
+            // not reach the provider, because the failure is swallowed below this call and an
+            // unreachable Audible yields an empty candidate list. Clearing on that would mean an
+            // Audible outage wiping the ASIN off every correct row the pass reached, on the
+            // strength of a question nobody answered.
+            //
+            // So a null ends the examination here, inconclusively. The row is stamped so the pass
+            // still makes progress, and nothing on it is written.
+            if (audible == null)
+            {
+                _logger.LogDebug(
+                    "Audible returned nothing for '{Author}', which does not distinguish an unknown author from an unreachable provider; leaving the row alone",
+                    name);
+                return AuthorIdentityResolution.Inconclusive;
             }
 
             if (!await budget.ChargeAsync(cancellationToken))
@@ -331,11 +358,19 @@ namespace Listenarr.Application.Audiobooks.Authors
             try
             {
                 var candidates = await _audnexusService.SearchAuthorsAsync(name, region);
+                if (candidates == null)
+                {
+                    _logger.LogDebug(
+                        "Audnexus did not answer for '{Author}'; leaving the row alone",
+                        name);
+                    return AuthorIdentityResolution.Inconclusive;
+                }
+
                 var matched = AudnexusAuthorIdentity.Select(candidates, name);
 
-                // Nobody named them, and that is an answer: this author has no identifier, rather
-                // than the pass having failed to find one.
-                return new AuthorIdentityResolution(true, matched?.Asin, matched?.Description, matched?.Image);
+                // Both providers answered and neither names an identifier for this author, which
+                // is an answer rather than a failure to find one.
+                return AuthorIdentityResolution.Is(matched?.Asin, matched?.Description, matched?.Image);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -378,13 +413,34 @@ namespace Listenarr.Application.Audiobooks.Authors
             }
         }
 
+        /// <summary>
+        /// What one resolution attempt came back with, in three states rather than two.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Asked"/> false means the attempt did not happen: out of budget, or a
+        /// provider threw. The run stops, and the row is not stamped, so it stays at the head of
+        /// the queue.
+        ///
+        /// <see cref="Answered"/> false with <see cref="Asked"/> true means it happened and
+        /// settled nothing. The row is stamped so the pass keeps moving and nothing on it is
+        /// written; it comes round again on the next sweep.
+        ///
+        /// Both true is a conclusion, and a null <see cref="Asin"/> is a real one: this author
+        /// has no identifier.
+        /// </remarks>
         private readonly record struct AuthorIdentityResolution(
             bool Asked,
+            bool Answered,
             string? Asin,
             string? Description,
             string? Image)
         {
-            public static AuthorIdentityResolution NotAsked { get; } = new(false, null, null, null);
+            public static AuthorIdentityResolution NotAsked { get; } = new(false, false, null, null, null);
+
+            public static AuthorIdentityResolution Inconclusive { get; } = new(true, false, null, null, null);
+
+            public static AuthorIdentityResolution Is(string? asin, string? description, string? image) =>
+                new(true, true, asin, description, image);
         }
     }
 }
