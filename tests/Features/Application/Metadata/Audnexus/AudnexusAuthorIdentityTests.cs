@@ -112,6 +112,39 @@ namespace Listenarr.Tests.Features.Application.Metadata.Audnexus
             Assert.Null(AudnexusAuthorIdentity.Select(candidates, askedName));
         }
 
+        // Case and diacritics are spelling, not identity, and the two providers do not agree on
+        // them. On the live path refusing this pair merely leaves the author unresolved; in the
+        // repair pass that reads as "the provider has no identifier for them" and clears a
+        // correct one, so the comparison has to match the one the Audible side already uses.
+        [Theory]
+        [InlineData("Jose Saramago", "Jos\u00e9 Saramago")]
+        [InlineData("Jos\u00e9 Saramago", "Jose Saramago")]
+        [InlineData("Emile Zola", "\u00c9mile Zola")]
+        public void Select_IgnoresDiacriticsTheWayTheAudibleSideDoes(string candidateName, string askedName)
+        {
+            var candidates = new List<AudnexusAuthorSearchResult>
+            {
+                new() { Asin = "B000APBJ7S", Name = "Someone Else" },
+                new() { Asin = "B001SARAMAGO", Name = candidateName }
+            };
+
+            Assert.Equal("B001SARAMAGO", AudnexusAuthorIdentity.Select(candidates, askedName)?.Asin);
+        }
+
+        // The control against that widening: two different people are still two different people.
+        [Fact]
+        public void Select_DoesNotTreatADifferentNameAsASpellingVariant()
+        {
+            var candidates = new List<AudnexusAuthorSearchResult>
+            {
+                new() { Asin = "B000APBJ7S", Name = "Constance Briscoe" }
+            };
+
+            Assert.Null(AudnexusAuthorIdentity.Select(candidates, "Constance Garnett"));
+            Assert.Null(AudnexusAuthorIdentity.Select(candidates, "Constance"));
+            Assert.Null(AudnexusAuthorIdentity.Select(candidates, "Constance Briscoe Jr."));
+        }
+
         [Fact]
         public void Select_NothingToChooseFrom()
         {
