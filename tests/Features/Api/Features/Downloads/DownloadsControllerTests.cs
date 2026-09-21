@@ -17,6 +17,7 @@
  */
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
+using Listenarr.Tests.Mocks;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Tests.Features.Api.Features.Downloads
@@ -26,9 +27,15 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
     [Trait("Category", "DownloadsController")]
     public class DownloadsControllerTests : BaseTests
     {
+        private readonly DownloadClientGatewayMock _gateway = new();
         private DownloadClientConfiguration _client = new DownloadClientConfigurationBuilder().Build();
         public override async Task InitializeAsync()
         {
+            // The delete endpoints now contact the download client, so the fixture has to provide one
+            // that can be asserted against rather than leaving the default gateway in place.
+            _services.AddSingleton<IDownloadClientGateway>(_gateway);
+            Init();
+
             _client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
                 .WithId("client-enabled")
                 .WithName("Enabled Client")
@@ -242,11 +249,13 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 .WithCompletedStatus(DateTime.UtcNow)
                 .Build());
 
-            // removeFromClient: false keeps this test about the status filter it was written for.
-            // The client-contacting default is covered in DownloadsControllerRemovalTests, which
-            // registers a download client gateway it can assert against.
+            // On the default path, which is what the endpoint does in production. The client accepts
+            // the removals, so what this test still measures is the status filter: which records the
+            // endpoint selects, and which it leaves alone.
+            _gateway.RemoveResult = true;
+
             var controller = MockUtils.CreateDownloadsController(_provider);
-            var action = await controller.ClearFailedDownloads(removeFromClient: false);
+            var action = await controller.ClearFailedDownloads();
             var ok = Assert.IsType<OkObjectResult>(action);
             Assert.NotNull(ok.Value);
 
@@ -259,6 +268,11 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             Assert.Contains("keep-completed", remaining);
             Assert.DoesNotContain("remove-failed", remaining);
             Assert.DoesNotContain("remove-importblocked", remaining);
+
+            // Only the two selected records reached the client. A filter that picked up the queued or
+            // completed ones would show extra calls here even though the counts above still matched.
+            Assert.Equal(2, _gateway.RemovedIds.Count);
+            Assert.False(_gateway.LastRemoveDeleteFiles);
         }
 
         [Fact]
