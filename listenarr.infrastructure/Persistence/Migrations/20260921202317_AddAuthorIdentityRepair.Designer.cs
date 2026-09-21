@@ -3,6 +3,7 @@ using System;
 using Listenarr.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    partial class ListenArrDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260921202317_AddAuthorIdentityRepair")]
+    partial class AddAuthorIdentityRepair
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
@@ -995,9 +998,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("AudiobookId")
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("TEXT");
-
                     b.Property<bool>("DeleteEmptySource")
                         .HasColumnType("INTEGER");
 
@@ -1944,20 +1944,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("HistoryRetentionDays")
                         .HasColumnType("INTEGER");
 
-                    b.Property<bool>("HousekeepingDryRun")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("HousekeepingRetentionDays")
-                        .HasColumnType("INTEGER");
-
                     b.Property<string>("ImportBlacklistExtensions")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<int>("MaxConcurrentDownloads")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("MaxConcurrentIndexerSearches")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("MetadataRefreshEnabled")
