@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Globalization;
+
 namespace Listenarr.Application.Metadata.Audnexus
 {
     /// <summary>
@@ -41,6 +43,15 @@ namespace Listenarr.Application.Metadata.Audnexus
     /// </remarks>
     public static class AudnexusAuthorIdentity
     {
+        private static readonly CompareInfo CompareInfo = CultureInfo.InvariantCulture.CompareInfo;
+
+        // The same comparison the Audible side confirms a contributor with. Case and diacritics
+        // are spelling, not identity: one provider writes "Jose Saramago" and the other writes
+        // "Jose Saramago" with the accent, and refusing that pair means refusing to resolve the
+        // author at all. Nothing looser than this, because the loose forms are what bound a
+        // stranger in the first place.
+        private const CompareOptions DiacriticIgnore = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
+
         /// <summary>
         /// The row that is <paramref name="askedName"/>, or null when none of them is.
         /// </summary>
@@ -60,9 +71,7 @@ namespace Listenarr.Application.Metadata.Audnexus
                 return null;
             }
 
-            var named = candidates.FirstOrDefault(candidate =>
-                !string.IsNullOrWhiteSpace(candidate.Name) &&
-                candidate.Name.Equals(askedName, StringComparison.OrdinalIgnoreCase));
+            var named = candidates.FirstOrDefault(candidate => NamesAgree(candidate.Name, askedName));
 
             if (named != null)
             {
@@ -77,6 +86,16 @@ namespace Listenarr.Application.Metadata.Audnexus
             return candidates.FirstOrDefault(candidate =>
                 !string.IsNullOrWhiteSpace(candidate.Asin) &&
                 string.Equals(candidate.Asin, heldAsin, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool NamesAgree(string? candidateName, string? askedName)
+        {
+            if (string.IsNullOrWhiteSpace(candidateName) || string.IsNullOrWhiteSpace(askedName))
+            {
+                return false;
+            }
+
+            return CompareInfo.Compare(candidateName.Trim(), askedName.Trim(), DiacriticIgnore) == 0;
         }
     }
 }
