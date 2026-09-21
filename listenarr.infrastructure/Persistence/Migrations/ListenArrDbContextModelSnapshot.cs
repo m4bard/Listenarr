@@ -605,6 +605,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("AuthorIdentityCheckedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("AuthorName")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -869,6 +872,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("AuthorAsin")
                         .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("AuthorIdentityCheckedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("AuthorName")
@@ -1836,6 +1842,18 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<string>("AudnexusApiUrl")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("AuthorIdentityRepairDryRun")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("AuthorIdentityRepairEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AuthorIdentityRepairIntervalHours")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AuthorIdentityRepairMaxRowsPerRun")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int>("CompletedFileAction")
                         .HasColumnType("INTEGER");
