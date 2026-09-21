@@ -15,6 +15,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
+
 namespace Listenarr.Domain.Audiobooks
 {
     public class AudibleBookMetadata
@@ -57,8 +59,14 @@ namespace Listenarr.Domain.Audiobooks
             {
                 Title = Title ?? string.Empty,
                 Subtitle = Subtitle,
-                Authors = (Authors != null && Authors.Count != 0) ? Authors :
-                    (!string.IsNullOrWhiteSpace(Author) ? [Author!] : new List<string>()),
+                // Contributor credits are dropped here rather than at the read boundary, so
+                // that everything downstream of storage sees one consistent author list. The
+                // ASIN resolver in particular walks this list by name and pairs any match with
+                // the book's first resolved ASIN, so leaving a translator in it is how a
+                // contributor ends up wearing the author's identifier.
+                Authors = AuthorCredits.AuthorsOnly(
+                    (Authors != null && Authors.Count != 0) ? Authors :
+                        (!string.IsNullOrWhiteSpace(Author) ? [Author!] : new List<string>())).ToList(),
                 PublishYear = PublishYear,
                 PublishedDate = PublishedDate,
                 Series = Series ?? string.Empty,

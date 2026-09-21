@@ -5,6 +5,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Caching.Memory;
+using Listenarr.Domain.Common;
 namespace Listenarr.Api.Features.Library
 {
     public sealed partial class LibraryMetadataRescanWorkflow
@@ -60,10 +61,13 @@ namespace Listenarr.Api.Features.Library
                     metadata.SeriesNumber);
             }
 
-            var authors = NormalizeMetadataStringList(
+            // A rescan replays provider metadata over an existing row, so it has to apply the
+            // same contributor filter as the add path or a rescan would reintroduce credits the
+            // add path had already dropped.
+            var authors = AuthorCredits.AuthorsOnly(NormalizeMetadataStringList(
                 (metadata.Authors != null && metadata.Authors.Any())
                     ? metadata.Authors
-                    : (!string.IsNullOrWhiteSpace(metadata.Author) ? new List<string> { metadata.Author! } : null));
+                    : (!string.IsNullOrWhiteSpace(metadata.Author) ? new List<string> { metadata.Author! } : null))).ToList();
             if (authors.Count > 0) audiobook.Authors = authors;
 
             var narrators = NormalizeMetadataStringList(

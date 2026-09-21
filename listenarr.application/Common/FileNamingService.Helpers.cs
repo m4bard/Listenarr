@@ -99,8 +99,14 @@ namespace Listenarr.Application.Common
             var author = metadata.Author ?? "Unknown Author";
             if (metadata.Authors != null && metadata.Authors.Count > 0)
             {
-                // Assume first one is the main author
-                author = metadata.Authors.First();
+                // The first credit that names an author rather than a role. This used to be
+                // whichever credit came first, on the assumption that a publisher always lists
+                // the author ahead of the translator. Measured against the catalogue that does
+                // not hold: B002V9ZF3K credits Dostoevsky then Garnett and B00EZAXAF8 credits
+                // Garnett then Dostoevsky, so taking index 0 files one of those two editions
+                // under its translator. Ingestion drops contributor credits before they are
+                // stored, and this covers rows written before that started happening.
+                author = AuthorCredits.Primary(metadata.Authors) ?? author;
             }
 
             return new Dictionary<string, object>
