@@ -110,11 +110,21 @@ namespace Listenarr.Application.Audiobooks.Authors
             var decisions = new List<AuthorIdentityDecision>();
             var budgetExhausted = false;
 
-            // The two stores share one ceiling rather than getting one each, because they share
-            // one budget. Cached rows go first: they are the larger store and the one the lookup
-            // path reads back, so correcting them is what stops a wrong answer being served.
+            // A row is due again once its last check is this old. The cutoff is what makes the
+            // queue finite; without it a library with more cached authors than the ceiling would
+            // re-ask about the same rows every run and never reach the rest.
+            var checkedBefore = checkedAt.AddDays(-Math.Max(0, options.RecheckAfterDays));
+
+            // The two stores share one budget, so they share one ceiling. They do not share it
+            // first-come: the cached table is the larger of the two by orders of magnitude and
+            // would take the whole ceiling on every run, and the monitored rows -- the ones an
+            // operator actually looks at -- would never be examined at all. So the monitored
+            // store is guaranteed its share, and whatever it does not use goes to the cache.
+            var monitoredShare = Math.Max(1, ceiling / 4);
+            var monitored = await MonitoredDueForCheckAsync(checkedBefore, monitoredShare, cancellationToken);
             var cached = await _audiobookRepository.GetAuthorCacheEntriesDueForIdentityCheckAsync(
-                ceiling,
+                checkedBefore,
+                ceiling - monitored.Count,
                 cancellationToken);
 
             foreach (var row in cached)
@@ -168,11 +178,8 @@ namespace Listenarr.Application.Audiobooks.Authors
                     cancellationToken);
             }
 
-            var remaining = ceiling - decisions.Count;
-            if (!budgetExhausted && remaining > 0)
+            if (!budgetExhausted)
             {
-                var monitored = await MonitoredDueForCheckAsync(remaining, cancellationToken);
-
                 foreach (var row in monitored)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -227,8 +234,8 @@ namespace Listenarr.Application.Audiobooks.Authors
                     "{Mode} audiobook {AudiobookId} credits: [{Before}] becomes [{After}]",
                     options.DryRun ? "Would clean" : "Cleaned",
                     change.AudiobookId,
-                    string.Join(" // ", change.Before),
-                    string.Join(" // ", change.After));
+                    LogRedaction.SanitizeText(string.Join(" // ", change.Before)),
+                    LogRedaction.SanitizeText(string.Join(" // ", change.After)));
             }
 
             var report = new AuthorIdentityRepairReport(
@@ -255,12 +262,15 @@ namespace Listenarr.Application.Audiobooks.Authors
         /// two repositories drifting apart.
         /// </summary>
         private async Task<List<MonitoredAuthor>> MonitoredDueForCheckAsync(
+            DateTime checkedBefore,
             int limit,
             CancellationToken cancellationToken)
         {
             var all = await _monitoredAuthorRepository.GetAllAsync(cancellationToken);
             return all
                 .Where(row => !string.IsNullOrWhiteSpace(row.AuthorAsin))
+                .Where(row => row.AuthorIdentityCheckedAt == null
+                    || row.AuthorIdentityCheckedAt < checkedBefore)
                 .OrderBy(row => row.AuthorIdentityCheckedAt.HasValue)
                 .ThenBy(row => row.AuthorIdentityCheckedAt)
                 .ThenBy(row => row.Id)
@@ -320,7 +330,10 @@ namespace Listenarr.Application.Audiobooks.Authors
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Author identity repair could not ask Audible about '{Author}'", name);
+                _logger.LogWarning(
+                    ex,
+                    "Author identity repair could not ask Audible about '{Author}'",
+                    LogRedaction.SanitizeText(name));
                 return AuthorIdentityResolution.NotAsked;
             }
 
@@ -346,7 +359,7 @@ namespace Listenarr.Application.Audiobooks.Authors
             {
                 _logger.LogDebug(
                     "Audible returned nothing for '{Author}', which does not distinguish an unknown author from an unreachable provider; leaving the row alone",
-                    name);
+                    LogRedaction.SanitizeText(name));
                 return AuthorIdentityResolution.Inconclusive;
             }
 
@@ -362,7 +375,7 @@ namespace Listenarr.Application.Audiobooks.Authors
                 {
                     _logger.LogDebug(
                         "Audnexus did not answer for '{Author}'; leaving the row alone",
-                        name);
+                        LogRedaction.SanitizeText(name));
                     return AuthorIdentityResolution.Inconclusive;
                 }
 
@@ -374,7 +387,10 @@ namespace Listenarr.Application.Audiobooks.Authors
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Author identity repair could not ask Audnexus about '{Author}'", name);
+                _logger.LogWarning(
+                    ex,
+                    "Author identity repair could not ask Audnexus about '{Author}'",
+                    LogRedaction.SanitizeText(name));
                 return AuthorIdentityResolution.NotAsked;
             }
         }
@@ -388,10 +404,10 @@ namespace Listenarr.Application.Audiobooks.Authors
                     report.DryRun ? "Would change" : "Changed",
                     decision.Store,
                     decision.RowId,
-                    decision.AuthorName,
-                    decision.Region,
-                    decision.StoredAsin ?? "no ASIN",
-                    decision.ResolvedAsin ?? "no ASIN",
+                    LogRedaction.SanitizeText(decision.AuthorName),
+                    LogRedaction.SanitizeText(decision.Region),
+                    LogRedaction.SanitizeText(decision.StoredAsin ?? "no ASIN"),
+                    LogRedaction.SanitizeText(decision.ResolvedAsin ?? "no ASIN"),
                     decision.Verdict);
             }
 
