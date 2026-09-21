@@ -8,6 +8,7 @@ public partial class FileMover
         init;
     }
     internal Func<Task>? BeforePinnedHardlinkCreationForTestAsync { get; init; }
+    internal Action? AfterPinnedHardlinkCreatedForTest { get; init; }
     internal Func<Task>?
         AfterMarkerlessRegistrationTargetCreatedBeforeStateForTestAsync
     {
