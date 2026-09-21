@@ -32,8 +32,14 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string AuthorIdentityRepairMigrationId =
         "20260921202317_AddAuthorIdentityRepair";
 
+    private const string AuthorIdentityRecheckWindowMigrationId =
+        "20260921210504_AddAuthorIdentityRecheckWindow";
+
     private static readonly string[] BranchMigrationIds =
-        [AuthorIdentityRepairMigrationId];
+    [
+        AuthorIdentityRepairMigrationId,
+        AuthorIdentityRecheckWindowMigrationId
+    ];
 
     private const string CanaryMigrationFrontierId =
         "20260621002226_AddApplicationSettingsConcurrency";
@@ -435,6 +441,7 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.Equal("1", await ColumnDefaultAsync(connection, "ApplicationSettings", "AuthorIdentityRepairDryRun"));
         Assert.Equal("24", await ColumnDefaultAsync(connection, "ApplicationSettings", "AuthorIdentityRepairIntervalHours"));
         Assert.Equal("25", await ColumnDefaultAsync(connection, "ApplicationSettings", "AuthorIdentityRepairMaxRowsPerRun"));
+        Assert.Equal("30", await ColumnDefaultAsync(connection, "ApplicationSettings", "AuthorIdentityRepairRecheckAfterDays"));
         Assert.True(await ForeignKeyHasDeleteActionAsync(
             connection,
             "LibraryDirectoryOwnerships",

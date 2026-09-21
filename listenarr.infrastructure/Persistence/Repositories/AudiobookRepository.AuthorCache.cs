@@ -193,6 +193,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
         /// <inheritdoc />
         public async Task<List<AuthorCacheEntry>> GetAuthorCacheEntriesDueForIdentityCheckAsync(
+            DateTime checkedBefore,
             int limit,
             CancellationToken ct = default)
         {
@@ -208,6 +209,8 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             return await _db.AuthorCacheEntries
                 .AsNoTracking()
                 .Where(entry => entry.AuthorAsin != null && entry.AuthorAsin != string.Empty)
+                .Where(entry => entry.AuthorIdentityCheckedAt == null
+                    || entry.AuthorIdentityCheckedAt < checkedBefore)
                 .OrderBy(entry => entry.AuthorIdentityCheckedAt.HasValue)
                 .ThenBy(entry => entry.AuthorIdentityCheckedAt)
                 .ThenBy(entry => entry.Id)
