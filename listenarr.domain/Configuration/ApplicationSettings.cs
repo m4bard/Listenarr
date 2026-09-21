@@ -309,5 +309,11 @@ namespace Listenarr.Domain.Configuration
         // ordinary refresh for as long as it ran. Rows it does not reach stay at the head of the
         // queue for the next run.
         public int AuthorIdentityRepairMaxRowsPerRun { get; set; } = 25;
+
+        // How long a row's identity stays settled before the pass asks about it again. Thirty
+        // days matches MetadataRefreshStaleAfterDays beside it, and it is what makes the queue
+        // finite: without a cutoff a library with more cached authors than the per-run ceiling
+        // re-asks the provider about the same rows every day forever and never reaches the rest.
+        public int AuthorIdentityRepairRecheckAfterDays { get; set; } = 30;
     }
 }
