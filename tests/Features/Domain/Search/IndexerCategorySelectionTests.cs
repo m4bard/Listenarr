@@ -32,7 +32,6 @@ namespace Listenarr.Tests.Features.Domain.Search
         [InlineData(" 3030 , 3040 ")]
         [InlineData("3030,,")]
         [InlineData("abc,3030")]
-        [InlineData("0")]
         public void HasUsableCategory_ValueNamingANumericCategory_IsUsable(string categories)
         {
             Assert.True(IndexerCategorySelection.HasUsableCategory(categories));
@@ -47,11 +46,13 @@ namespace Listenarr.Tests.Features.Domain.Search
         [InlineData("abc")]
         [InlineData("all")]
         [InlineData("-1")]
+        [InlineData("0")]
         public void HasUsableCategory_ValueNamingNoCategory_IsNotUsable(string? categories)
         {
             // A Newznab cat= parameter is a list of numeric ids, so a value carrying no number
-            // cannot narrow a search however it is spelled. "[]" is covered by the JSON-array case
-            // below, which the storage format has never actually supported.
+            // cannot narrow a search however it is spelled. "0" parses but is not a category, and
+            // "-1" does not parse at all because a sign is not accepted. "[]" is covered by the
+            // JSON-array case below, which the storage format has never actually supported.
             Assert.False(IndexerCategorySelection.HasUsableCategory(categories));
         }
 
@@ -97,9 +98,25 @@ namespace Listenarr.Tests.Features.Domain.Search
         }
 
         [Fact]
-        public void NewIndexer_StartsOnTheAudiobookDefault()
+        public void NewIndexer_CarriesNoCategoryListOfItsOwn()
         {
-            Assert.Equal(IndexerCategorySelection.AudiobookDefault, new Indexer().Categories);
+            // The entity mirrors the row. The default belongs to the create path, so that an
+            // omitted field stays distinguishable from a cleared one and an update cannot narrow
+            // a stored list to a value the binder supplied.
+            Assert.Null(new Indexer().Categories);
+        }
+
+        [Fact]
+        public void Validation_IgnoresACategoryListThatWasNotSupplied()
+        {
+            var indexer = new Indexer { Implementation = "Newznab", Categories = null };
+            var results = new List<DataAnnotationsValidationResult>();
+
+            Assert.True(Validator.TryValidateObject(
+                indexer,
+                new ValidationContext(indexer),
+                results,
+                validateAllProperties: true));
         }
 
         [Fact]
