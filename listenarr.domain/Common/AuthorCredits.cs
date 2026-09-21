@@ -38,17 +38,16 @@ namespace Listenarr.Domain.Common
     /// So this drops the credits that name a role and keeps the ones that do not, which gives
     /// the same answer whichever order they arrive in.
     ///
-    /// Two deliberate limits, both of which exist because the alternative is worse:
-    ///
-    /// The role is never removed from a name that is kept. Audible's contributor catalogue holds
-    /// entities whose own name carries the role, so <c>"Eleanor Marx-Aveling - translator"</c> is
-    /// a key in its own right rather than a decoration on a clean one. Rewriting a stored name
-    /// would silently move it to a different identity. Surplus entries are dropped; no name is
-    /// ever edited.
-    ///
     /// A book is never left with nobody. An anthology credited only to its editors would
     /// otherwise lose every credit it has, which is worse than showing an editor as an author.
     /// When every credit names a role the list is returned untouched.
+    ///
+    /// Open question, deliberately not settled here: whether a detected contributor should be
+    /// omitted, as this does, or kept with the role removed from the end of its name. The two
+    /// share this detector and differ only in the consequence. Omitting keeps the provider's
+    /// strings exactly as they arrived on the books it does act on, and cannot help a book whose
+    /// every credit names a role. Stripping helps those books and makes a detector mistake cost
+    /// a shortened name rather than a deleted person.
     /// </remarks>
     public static class AuthorCredits
     {
@@ -56,37 +55,54 @@ namespace Listenarr.Domain.Common
         // including the non-English spellings it carries for translated editions.
         private const string RoleWords =
             "translator|traducteur|traductrice|traduttore|tradutor|tradutora|traducao|tradução|" +
-            "translated|translation|ubersetzer|übersetzer|editor|editeur|éditeur|edited|" +
-            "foreword|afterword|postface|introduction|introductions|preface|preface|préface|" +
-            "avant-propos|illustrator|adapter|adaptateur|adaptation|adapted|contributor|" +
-            "compiler|annotation|annotator|prologue|essay|notes";
+            "traductor|traductora|traduccion|traducción|translated|translation|ubersetzer|" +
+            "übersetzer|editor|editora|editeur|éditeur|edited|foreword|afterword|postface|" +
+            "introduction|introductions|introduccion|introducción|preface|préface|prefacio|" +
+            "avant-propos|illustrator|illustrated|adapter|adaptateur|adaptation|adapted|" +
+            "adaptado|contributor|compiler|annotation|annotator|prologue|prologo|prólogo|" +
+            "essay|notes";
 
-        // Words that may sit inside a role tail without making it something other than a role:
-        // joiners, and the post-nominals Audible leaves stranded after one ("editor Jr.").
+        // Words that may sit inside a role tail without being the role themselves: joiners, and
+        // the post-nominals Audible leaves stranded after one ("editor Jr."). On their own they
+        // mean nothing, which is why the tail below requires an actual role word as well.
         private const string TailFiller = "by|and|or|jr\\.?|sr\\.?|ph\\.?d\\.?|m\\.?d\\.?|series";
 
+        // A role tail is filler, then at least one role word, then anything of either kind.
+        //
+        // Two properties are deliberate and both were bought by a review. Requiring a role word
+        // stops a tail of pure post-nominals matching, which had been classifying
+        // "Martin Luther King (Jr.)" and "Gabor Maté (M.D.)" as contributor credits. And every
+        // separator is a mandatory \s+ rather than an optional \s* on both sides of an
+        // alternation inside a +, which is the shape that made this regex take ninety seconds
+        // on a 133 character input: there is now exactly one way to split a given tail.
         private const string TailBody =
-            "(?:\\s*(?:" + RoleWords + "|" + TailFiller + ")\\s*)+";
+            "(?:(?:" + TailFiller + ")\\s+)*(?:" + RoleWords + ")(?:\\s+(?:" + RoleWords + "|" + TailFiller + "))*";
+
+        // NonBacktracking removes the blowup by construction rather than by careful authoring,
+        // and the timeout is there for the case where that reasoning is wrong. Compiled is not
+        // requested alongside it.
+        private static readonly TimeSpan MatchTimeout = TimeSpan.FromMilliseconds(100);
+
+        private const RegexOptions TailOptions =
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking;
 
         // A trailing role tail introduced by a dash. Audible is inconsistent about the spacing
-        // ("Gems -introduction by" as well as "Garnett - translator") and uses both hyphen and
-        // en dash, so the separator is whitespace plus a dash plus optional whitespace.
+        // ("Gems -introduction by" as well as "Garnett - translator") and uses hyphen, en dash
+        // and em dash, so the separator is whitespace, a dash, then optional whitespace.
         private static readonly Regex DashTail = new(
-            "\\s[-\u2013]\\s*" + TailBody + "$",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+            "\\s[-\u2013\u2014]\\s*" + TailBody + "$", TailOptions, MatchTimeout);
 
         // The same thing in parentheses, which Audible uses interchangeably and sometimes as
         // well: "A. M. Sheridan Smith(Translated by)", "Alfred Lin (Foreword By) - introduction".
         private static readonly Regex ParenthesisedTail = new(
-            "\\s*\\(" + TailBody + "\\)\\s*$",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+            "\\s*\\(" + TailBody + "\\)\\s*$", TailOptions, MatchTimeout);
 
         /// <summary>
         /// True when a credited name ends in a contributor role rather than naming an author.
         /// </summary>
         /// <remarks>
-        /// Only a trailing tail counts, and only when every word in that tail is role vocabulary
-        /// or a joiner. Three things it deliberately does not match:
+        /// Only a trailing tail counts, and only when it contains at least one role word and
+        /// nothing but role vocabulary and joiners. Four things it deliberately does not match:
         ///
         /// A dashed tail that is not a role. Audible credits transliterated names as
         /// <c>"Yang Jing - Yang Jing"</c>, and a rule keying on the dash alone would discard a
@@ -98,6 +114,10 @@ namespace Listenarr.Domain.Common
         ///
         /// A role word anywhere but the tail. An author surnamed Editor, or one whose name
         /// contains "Foreword", is a name and not a credit.
+        ///
+        /// A tail of post-nominals with no role in it. <c>"Martin Luther King (Jr.)"</c> and
+        /// <c>"Gabor Maté (M.D.)"</c> are names. Those suffixes are only tolerated when they
+        /// trail an actual role, as Audible leaves them in <c>"editor Jr."</c>.
         /// </remarks>
         public static bool IsRoleCredit(string? name)
         {
