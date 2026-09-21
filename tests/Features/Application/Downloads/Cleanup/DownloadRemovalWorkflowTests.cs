@@ -37,8 +37,11 @@ namespace Listenarr.Tests.Features.Application.Downloads.Cleanup
         private const string TorrentHash = "0123456789abcdef0123456789abcdef01234567";
         private const string DownloadId = "d-still-in-client";
 
+        private const string ExternalId = "SABnzbd-nzo-0f3a9c";
+
         private readonly DownloadClientGatewayMock _gateway = new();
         private DownloadClientConfiguration _client = new DownloadClientConfigurationBuilder().Build();
+        private DownloadClientConfiguration _disabledClient = new DownloadClientConfigurationBuilder().Build();
 
         public override async Task InitializeAsync()
         {
@@ -52,6 +55,13 @@ namespace Listenarr.Tests.Features.Application.Downloads.Cleanup
                 .WithName("Torrent Client")
                 .WithType("qbittorrent")
                 .Enabled()
+                .Build());
+
+            _disabledClient = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithId("client-qbit-off")
+                .WithName("Switched Off Client")
+                .WithType("qbittorrent")
+                .Disabled()
                 .Build());
         }
 
@@ -167,21 +177,122 @@ namespace Listenarr.Tests.Features.Application.Downloads.Cleanup
             Assert.Empty(_gateway.RemovedIds);
         }
 
+        [Fact]
+        [Trait("Method", "RemoveAsync")]
+        [Trait("Scenario", "RefusedRemovalOfARecordCarryingNoClientIdentifierCannotBeVerified")]
+        public async Task RemoveAsync_ClientRefuses_AndNoClientItemIdIsRecorded_FailsAndKeepsRecord()
+        {
+            // The hole the identifier fix left behind. With neither TorrentHash nor ClientDownloadId
+            // on the record there is nothing to resolve, so the id sent to the client stays the
+            // Listenarr one and the queue can never contain it. Reading that empty result as "already
+            // gone" is how a refused removal became a success and took the row with it. The queue is
+            // deliberately non-empty here, holding the item under its real hash, so the run is against
+            // a client that plainly still has it.
+            await AddDownloadAsync(torrentHash: null);
+
+            _gateway.RemoveResult = false;
+            _gateway.QueueItems.Add(BuildClientQueueItem(TorrentHash));
+
+            var removed = await ResolveWorkflow().RemoveAsync(DownloadId, _client.Id);
+
+            Assert.False(removed);
+            Assert.NotNull(await _downloadRepository.GetByIdAsync(DownloadId));
+
+            // What reached the client was the Listenarr id, which is the reason the check cannot mean
+            // anything. Asserting it keeps the test honest about why it expects failure.
+            Assert.Equal(DownloadId, Assert.Single(_gateway.RemovedIds));
+        }
+
+        [Fact]
+        [Trait("Method", "RemoveAsync")]
+        [Trait("Scenario", "ErroredRemovalOfARecordCarryingNoClientIdentifierCannotBeVerifiedEither")]
+        public async Task RemoveAsync_DeleteCallThrows_AndNoClientItemIdIsRecorded_FailsAndKeepsRecord()
+        {
+            // Same hole on the exception path, which had its own copy of the comparison.
+            await AddDownloadAsync(torrentHash: null);
+
+            _gateway.RemoveException = new InvalidOperationException("delete request failed");
+            _gateway.QueueItems.Add(BuildClientQueueItem(TorrentHash));
+
+            var removed = await ResolveWorkflow().RemoveAsync(DownloadId, _client.Id);
+
+            Assert.False(removed);
+            Assert.NotNull(await _downloadRepository.GetByIdAsync(DownloadId));
+        }
+
+        [Fact]
+        [Trait("Method", "RemoveAsync")]
+        [Trait("Scenario", "ARecordMappedByClientDownloadIdIsStillVerifiable")]
+        public async Task RemoveAsync_ClientRefuses_ButClientDownloadIdResolves_AndItemIsGone_SucceedsAndRemovesRecord()
+        {
+            // Control for the two tests above, and the one that stops them passing for the wrong
+            // reason. TorrentHash is not the only mapping: ClientDownloadId resolves too, and a record
+            // carrying it must still be verifiable and must still be able to succeed. If the new
+            // "was it resolved" flag were simply always false, this test would fail.
+            await AddDownloadAsync(torrentHash: null, clientDownloadId: ExternalId);
+
+            _gateway.RemoveResult = false;
+            _gateway.QueueItems.Add(BuildClientQueueItem("SABnzbd-nzo-something-else"));
+
+            var removed = await ResolveWorkflow().RemoveAsync(DownloadId, _client.Id);
+
+            Assert.True(removed);
+            Assert.Null(await _downloadRepository.GetByIdAsync(DownloadId));
+            Assert.Equal(ExternalId, Assert.Single(_gateway.RemovedIds));
+        }
+
+        [Fact]
+        [Trait("Method", "RemoveAsync")]
+        [Trait("Scenario", "DisabledClientDropsTheRecordRatherThanBlockingItForever")]
+        public async Task RemoveAsync_ClientIsDisabled_RemovesRecord_WithoutContactingTheClient()
+        {
+            // A disabled client is not a client refusing anything, because nothing was asked of it.
+            // Reporting failure here left the record undeletable: the single delete answers 409 and
+            // the queue delete answers 404, both naming an opt-out the UI has no way to send, and
+            // every bulk clear would skip the record again forever.
+            await AddDownloadAsync(client: _disabledClient);
+
+            _gateway.RemoveResult = false;
+            _gateway.QueueItems.Add(BuildClientQueueItem(TorrentHash));
+
+            var removed = await ResolveWorkflow().RemoveAsync(DownloadId, _disabledClient.Id);
+
+            Assert.True(removed);
+            Assert.Null(await _downloadRepository.GetByIdAsync(DownloadId));
+
+            // The point of the branch: the client was never contacted. A gateway with no calls
+            // recorded is what separates this from a removal that was attempted and happened to work.
+            Assert.Empty(_gateway.RemovedIds);
+        }
+
         private DownloadRemovalWorkflow ResolveWorkflow()
         {
             return _provider.GetRequiredService<DownloadRemovalWorkflow>();
         }
 
-        private async Task<Download> AddDownloadAsync()
+        private async Task<Download> AddDownloadAsync(
+            string? torrentHash = TorrentHash,
+            string? clientDownloadId = null,
+            DownloadClientConfiguration? client = null)
         {
-            return await _downloadRepository.AddAsync(new DownloadBuilder()
+            var builder = new DownloadBuilder()
                 .WithId(DownloadId)
                 .WithTitle("A Download Still Running In The Client")
                 .WithStatus(DownloadStatus.Downloading)
                 .WithStartDate(DateTime.UtcNow.AddMinutes(-5))
-                .WithDownloadClientConfiguration(_client)
-                .WithTorrentHash(TorrentHash)
-                .Build());
+                .WithDownloadClientConfiguration(client ?? _client);
+
+            if (torrentHash != null)
+            {
+                builder = builder.WithTorrentHash(torrentHash);
+            }
+
+            if (clientDownloadId != null)
+            {
+                builder = builder.WithClientDownloadId(clientDownloadId);
+            }
+
+            return await _downloadRepository.AddAsync(builder.Build());
         }
 
         private QueueItem BuildClientQueueItem(string clientItemId)
