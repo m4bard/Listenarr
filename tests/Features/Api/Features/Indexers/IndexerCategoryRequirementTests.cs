@@ -112,6 +112,47 @@ namespace Listenarr.Tests.Features.Api.Features.Indexers
         }
 
         [Fact]
+        public async Task Update_OmittingCategories_LeavesTheStoredListAlone()
+        {
+            // An omitted field means "not supplied", so it must not rewrite what is stored. The
+            // hazard this guards is quiet: narrowing a list to the default looks like a success
+            // and reads back as a plausible value.
+            using var client = _factory.CreateClient();
+
+            var created = await PostIndexerAsync(client, BuildIndexerJson("Newznab", "3030,3040,7020"));
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+            using var createdDocument = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+            var id = createdDocument.RootElement.GetProperty("id").GetInt32();
+            var name = createdDocument.RootElement.GetProperty("name").GetString();
+
+            var updated = await PutIndexerAsync(client, id, BuildIndexerJson("Newznab", null, name));
+            Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+
+            using var document = JsonDocument.Parse(await updated.Content.ReadAsStringAsync());
+            Assert.Equal("3030,3040,7020", document.RootElement.GetProperty("categories").GetString());
+        }
+
+        [Fact]
+        public async Task Update_OmittingCategories_DoesNotBackfillAStoredNullList()
+        {
+            // The same rule seen from the legacy side. Quietly writing a default here would
+            // repair a row the user never touched and report success while doing it.
+            var id = await InsertLegacyCategorylessIndexerAsync();
+
+            using var client = _factory.CreateClient();
+            var response = await PutIndexerAsync(
+                client,
+                id,
+                BuildIndexerJson("Newznab", null, "Legacy Categoryless"));
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            AssertCategoriesReadAsUnset(document.RootElement);
+        }
+
+        [Fact]
         public async Task TestDraft_WithoutCategories_IsRefusedBeforeTheIndexerIsContacted()
         {
             // The draft-test action binds the same entity, so the rule reaches it too. That
@@ -167,7 +208,7 @@ namespace Listenarr.Tests.Features.Api.Features.Indexers
             var id = await InsertLegacyCategorylessIndexerAsync();
 
             using var client = _factory.CreateClient();
-            var (token, cookie) = await GetAntiforgeryTokenAsync(client);
+            var token = await GetAntiforgeryTokenAsync(client);
 
             using var request = new HttpRequestMessage(HttpMethod.Put, $"{ApiBase}/indexers/{id}")
             {
@@ -176,7 +217,6 @@ namespace Listenarr.Tests.Features.Api.Features.Indexers
                     Encoding.UTF8,
                     "application/json")
             };
-            request.Headers.Add("Cookie", cookie);
             request.Headers.Add("X-XSRF-TOKEN", token);
 
             var response = await client.SendAsync(request);
@@ -238,13 +278,25 @@ namespace Listenarr.Tests.Features.Api.Features.Indexers
             string json,
             string path = "indexers")
         {
-            var (token, cookie) = await GetAntiforgeryTokenAsync(client);
+            var token = await GetAntiforgeryTokenAsync(client);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/{path}")
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             };
-            request.Headers.Add("Cookie", cookie);
+            request.Headers.Add("X-XSRF-TOKEN", token);
+
+            return await client.SendAsync(request);
+        }
+
+        private async Task<HttpResponseMessage> PutIndexerAsync(HttpClient client, int id, string json)
+        {
+            var token = await GetAntiforgeryTokenAsync(client);
+
+            using var request = new HttpRequestMessage(HttpMethod.Put, $"{ApiBase}/indexers/{id}")
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
             request.Headers.Add("X-XSRF-TOKEN", token);
 
             return await client.SendAsync(request);
@@ -271,7 +323,11 @@ namespace Listenarr.Tests.Features.Api.Features.Indexers
             return JsonSerializer.Serialize(payload);
         }
 
-        private static async Task<(string Token, string Cookie)> GetAntiforgeryTokenAsync(HttpClient client)
+        /// <summary>
+        /// Fetches a CSRF token. The test client carries its own cookie container, so the paired
+        /// antiforgery cookie travels on its own and is only issued on the first call.
+        /// </summary>
+        private static async Task<string> GetAntiforgeryTokenAsync(HttpClient client)
         {
             var response = await client.GetAsync($"{ApiBase}/antiforgery/token");
             response.EnsureSuccessStatusCode();
@@ -280,13 +336,7 @@ namespace Listenarr.Tests.Features.Api.Features.Indexers
             var token = json.RootElement.GetProperty("token").GetString();
             Assert.False(string.IsNullOrWhiteSpace(token));
 
-            Assert.True(response.Headers.TryGetValues("Set-Cookie", out var setCookieValues));
-            var cookie = setCookieValues
-                .Select(value => value.Split(';', 2)[0])
-                .FirstOrDefault(value => value.StartsWith(".AspNetCore.Antiforgery.", StringComparison.Ordinal));
-
-            Assert.False(string.IsNullOrWhiteSpace(cookie));
-            return (token!, cookie!);
+            return token!;
         }
     }
 }

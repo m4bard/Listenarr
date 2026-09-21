@@ -70,8 +70,10 @@ namespace Listenarr.Domain.Search
 
             foreach (var token in categories.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
             {
+                // NumberStyles.None rejects a sign, so a negative token never parses here. The
+                // comparison is what rules out "0", which is not a Newznab category.
                 if (int.TryParse(token, NumberStyles.None, CultureInfo.InvariantCulture, out var categoryId)
-                    && categoryId >= 0)
+                    && categoryId > 0)
                 {
                     return true;
                 }
@@ -95,12 +97,21 @@ namespace Listenarr.Domain.Search
     public sealed class IndexerCategoriesRequiredAttribute : ValidationAttribute
     {
         private const string DefaultErrorMessage =
-            "At least one category must be selected. Newznab and Torznab indexers search every "
-            + "category when none is given, which lets unrelated releases match an audiobook search.";
+            "At least one category is required. Without one, Newznab and Torznab search every "
+            + "category, so unrelated releases can match.";
+
+        /// <summary>
+        /// This validator reads the rest of the indexer, so it cannot run without a context.
+        /// </summary>
+        public override bool RequiresValidationContext => true;
 
         protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
         {
-            if (validationContext.ObjectInstance is not Indexer indexer
+            // Null is "the request did not mention categories", which is not the same as clearing
+            // them. An omitted field leaves a stored list alone and gets the default on create;
+            // only a supplied value that names no category is refused.
+            if (value is null
+                || validationContext.ObjectInstance is not Indexer indexer
                 || !IndexerCategorySelection.RequiresCategories(indexer.Implementation)
                 || IndexerCategorySelection.HasUsableCategory(value as string))
             {
