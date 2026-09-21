@@ -392,12 +392,18 @@ public sealed partial class ManualImportCompanionImporter
     /// given a home somebody made up for it.
     ///
     /// The decision is <see cref="ImportCompanionDestinationResolver"/>'s, which the automatic
-    /// download import asks the same question. This path declares no source roots, because it has
-    /// no source structure worth reproducing: the audio destination comes from the naming pattern
-    /// (<see cref="ManualImportPathPlanner.GeneratePathAsync"/>) and never carries the source's
-    /// shape, so mirroring the companion's source position hands the sidecar a structure the file
-    /// it accompanies has just lost. Both paths ask one implementation because two copies of a
-    /// containment rule is how a fix to one of them leaves the other broken.
+    /// download import reaches through the same method for its own fallback. This path asks no
+    /// question about source structure, because it has none to reproduce: the audio destination
+    /// comes from the naming pattern (<see cref="ManualImportPathPlanner.GeneratePathAsync"/>)
+    /// and never reproduces the source's directory structure, so mirroring a companion's source
+    /// position hands the sidecar a shape the file it accompanies has just lost. The source path
+    /// is read on this path, but only for numbers: <c>MultiFileImportPlanner.InferOrderHints</c>
+    /// takes a disc or part hint from the parent directory's name, which a <c>{DiskNumber}</c>
+    /// pattern may turn into a destination subfolder. A companion follows the audio into that
+    /// subfolder, because it follows the audio wherever it went.
+    ///
+    /// Both paths ask one implementation because two copies of a containment rule is how a fix to
+    /// one of them leaves the other broken.
     ///
     /// The resolver answers with a path relative to the destination root. Resolving that back
     /// under the root is what rejects a relative path that would escape it.
@@ -412,8 +418,7 @@ public sealed partial class ManualImportCompanionImporter
     {
         destinationPath = string.Empty;
         var destination = FileSystemPathIdentity.ResolveNativeAbsolutePath(destinationRoot);
-        return ImportCompanionDestinationResolver.TryResolveRelativeDestination(
-                   ImportCompanionDestinationResolver.CompanionSourceRoots.None,
+        return ImportCompanionDestinationResolver.TryResolveBesideImportedFile(
                    companionFile,
                    destination,
                    ImportedFilesFrom(results),
