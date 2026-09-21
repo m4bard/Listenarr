@@ -160,6 +160,58 @@ namespace Listenarr.Tests.Features.Api.Features.Indexers
         }
 
         [Fact]
+        public async Task Update_SupplyingCategories_ReplacesTheStoredList()
+        {
+            // The apparatus check for the preservation tests either side of this one. Both of
+            // those assert that a stored list survives, so an Update that never wrote categories
+            // at all would satisfy them; this is the one that fails in that case.
+            using var client = _factory.CreateClient();
+
+            var created = await PostIndexerAsync(client, BuildIndexerJson("Newznab", "3030"));
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+            using var createdDocument = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+            var id = createdDocument.RootElement.GetProperty("id").GetInt32();
+            var name = createdDocument.RootElement.GetProperty("name").GetString();
+
+            var updated = await PutIndexerAsync(client, id, BuildIndexerJson("Newznab", "3030,7020", name));
+            Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+
+            using var document = JsonDocument.Parse(await updated.Content.ReadAsStringAsync());
+            Assert.Equal("3030,7020", document.RootElement.GetProperty("categories").GetString());
+
+            // Re-read, so this cannot pass on a response that merely echoed the request back.
+            var reread = await client.GetAsync($"{ApiBase}/indexers/{id}");
+            using var rereadDocument = JsonDocument.Parse(await reread.Content.ReadAsStringAsync());
+            Assert.Equal("3030,7020", rereadDocument.RootElement.GetProperty("categories").GetString());
+        }
+
+        [Fact]
+        public async Task Update_SwitchingOntoACategoryAwareImplementation_DoesNotCarryAnEmptyListAcross()
+        {
+            // The validator judges the request and Update merges it, so the two come apart here.
+            // An Internet Archive indexer is exempt and may be stored with no categories; moving
+            // it onto Newznab would otherwise take that empty list across, through the very
+            // endpoint the rule guards.
+            using var client = _factory.CreateClient();
+
+            var created = await PostIndexerAsync(client, BuildIndexerJson("InternetArchive", ""));
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+            using var createdDocument = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+            var id = createdDocument.RootElement.GetProperty("id").GetInt32();
+            var name = createdDocument.RootElement.GetProperty("name").GetString();
+
+            var updated = await PutIndexerAsync(client, id, BuildIndexerJson("Newznab", null, name));
+            Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+
+            using var document = JsonDocument.Parse(await updated.Content.ReadAsStringAsync());
+            Assert.Equal(
+                IndexerCategorySelection.AudiobookDefault,
+                document.RootElement.GetProperty("categories").GetString());
+        }
+
+        [Fact]
         public async Task Update_OmittingCategories_DoesNotBackfillAStoredNullList()
         {
             // The same rule seen from the legacy side. Quietly writing a default here would
