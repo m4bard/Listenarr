@@ -30,10 +30,14 @@ namespace Listenarr.Application.Downloads.Import;
 /// from. A companion that belongs to no root falls back to travelling with the audio file
 /// imported out of its own directory, and is refused if there is no such file.
 ///
-/// The manual import path reaches the same rule. It has no archives, so its only root is the
-/// common directory of the files the caller selected. What it must not use is the caller's own
-/// <c>request.Path</c>: that is a browse location rather than a source structure, and when it
-/// sits above the selected files the segments in between get recreated inside the book folder.
+/// The manual import path reaches the same code with <see cref="CompanionSourceRoots.None"/>,
+/// because it has no source structure worth reproducing at all: its audio destinations are
+/// built from naming patterns and never carry the source's shape, so mirroring a companion's
+/// source position gives the sidecar a structure the file it accompanies has just lost. Every
+/// companion it sweeps up sits in the directory of a selected file, so the fallback is the whole
+/// rule there. Readarr and Sonarr place extras the same way, in the imported file's own folder
+/// (<c>src/NzbDrone.Core/Extras/Files/ExtraFileManager.cs</c>, <c>ImportFile</c>, in both).
+///
 /// Deciding containment in one place is deliberate; the same rule written twice is how this
 /// class of defect survives being fixed once.
 /// </summary>
@@ -51,7 +55,14 @@ public static class ImportCompanionDestinationResolver
     /// </param>
     public sealed record CompanionSourceRoots(
         IReadOnlyList<string> ExtractionRoots,
-        string? UnextractedCommonDirectory);
+        string? UnextractedCommonDirectory)
+    {
+        /// <summary>
+        /// A batch with no source structure to reproduce. Every companion is then placed beside
+        /// the file imported out of its own directory, or refused when there is none.
+        /// </summary>
+        public static CompanionSourceRoots None { get; } = new([], null);
+    }
 
     /// <summary>
     /// A file the batch has already published: where it was read from, and where it landed.
@@ -93,14 +104,20 @@ public static class ImportCompanionDestinationResolver
     /// because the automatic batch's results carry its companions too, while the manual batch's
     /// carry only the items the caller selected.
     /// </summary>
-    public static IReadOnlyCollection<ImportedFilePlacement> ImportedAudioFrom(
+    /// <remarks>
+    /// Deferred on purpose. The fallback is not reached for most companions, and the caller's
+    /// results grow as the batch is imported, so materialising this per companion costs work
+    /// nobody asked for. Deferring it also keeps the projection inside the resolver's own
+    /// exception guard rather than in an argument list outside it.
+    /// </remarks>
+    public static IEnumerable<ImportedFilePlacement> ImportedAudioFrom(
         IEnumerable<ImportResult> results) =>
-        [.. results
+        results
             .Where(result => result.Success
                 && !string.IsNullOrWhiteSpace(result.SourcePath)
                 && !string.IsNullOrWhiteSpace(result.FinalPath)
                 && FileUtils.IsAudioFile(result.SourcePath!))
-            .Select(result => new ImportedFilePlacement(result.SourcePath!, result.FinalPath!))];
+            .Select(result => new ImportedFilePlacement(result.SourcePath!, result.FinalPath!));
 
     /// <summary>
     /// Resolves the companion's path relative to <paramref name="basePath"/>, or returns false
@@ -131,7 +148,7 @@ public static class ImportCompanionDestinationResolver
         CompanionSourceRoots sourceRoots,
         string companionFile,
         string? basePath,
-        IReadOnlyCollection<ImportedFilePlacement> importedFiles,
+        IEnumerable<ImportedFilePlacement> importedFiles,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics destinationSemantics,
         out string relativePath)
@@ -188,9 +205,12 @@ public static class ImportCompanionDestinationResolver
 
     /// <summary>
     /// Mirrors the companion's position under its own source root. A root that is a bare
-    /// filesystem root describes no structure and is refused rather than mirrored; that is what
-    /// <see cref="FileUtils.GetCommonPathForDirectories(IEnumerable{string})"/> returns for
-    /// inputs in disjoint trees.
+    /// filesystem root describes no structure and is refused rather than mirrored. That is what
+    /// <see cref="FileUtils.GetCommonDirectory(IEnumerable{string})"/> yields for inputs in
+    /// disjoint Unix trees; on Windows the same inputs yield the first directory instead,
+    /// because <see cref="FileUtils.GetCommonPathForDirectories(IEnumerable{string})"/> returns
+    /// null across two drives and the caller substitutes one of them. So this check is a Unix
+    /// backstop rather than a general one.
     /// </summary>
     private static bool TryMirrorUnderSourceRoot(
         string? sourceRootPath,
@@ -231,7 +251,7 @@ public static class ImportCompanionDestinationResolver
     private static bool TryPlaceBesideImportedFile(
         string companion,
         string basePath,
-        IReadOnlyCollection<ImportedFilePlacement> importedFiles,
+        IEnumerable<ImportedFilePlacement> importedFiles,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics destinationSemantics,
         out string relativePath)
@@ -244,9 +264,7 @@ public static class ImportCompanionDestinationResolver
         }
 
         var neighbour = importedFiles.FirstOrDefault(imported =>
-            !string.IsNullOrWhiteSpace(imported.SourcePath)
-            && !string.IsNullOrWhiteSpace(imported.FinalPath)
-            && sourceSemantics.Comparer.Equals(
+            sourceSemantics.Comparer.Equals(
                 Path.GetDirectoryName(
                     FileSystemPathIdentity.ResolveNativeAbsolutePath(imported.SourcePath)),
                 companionDirectory));
