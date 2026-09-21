@@ -175,6 +175,7 @@ public sealed class DownloadImportCompanionPlacementTests : BaseTests
         Assert.False(File.Exists(Path.Join(basePath, "book.nfo")));
         Assert.Contains(results, result =>
             result.Success
+            && result.SourcePath == null
             && result.Message != null
             && result.Message.Contains("book.nfo", StringComparison.Ordinal));
         Assert.DoesNotContain(results, result => !result.Success);
