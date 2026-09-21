@@ -38,7 +38,7 @@
             value="preview"
             name="authorIdentityRepairMode"
             title="Preview only"
-            description="Look up each stored author and write what a repair would change to the log. Read it on the Logs page, or under Recent Logs on the System page. No author record changes, so you can run this as often as you like and read the same answer twice."
+            description="Look up each stored author and write what a repair would change to the log. Read it on the Logs page, or under Recent Logs on the System page. No author record changes, so a preview read twice gives the same answer."
           />
           <RadioCard
             :modelValue="mode"
