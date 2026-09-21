@@ -133,6 +133,53 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<AuthorCacheEntry?> GetCachedAuthorByNameAsync(string name, string region);
         Task<AuthorCacheEntry?> GetCachedAuthorByAsinAsync(string asin, string region);
         Task<AuthorCacheEntry> UpsertCachedAuthorAsync(AuthorCacheEntry authorCacheEntry);
+
+        /// <summary>
+        /// Cached author rows carrying an ASIN, least recently identity-checked first, never
+        /// examined ahead of everything else. The bound is the caller's per-run ceiling.
+        /// </summary>
+        /// <remarks>
+        /// Only rows with an ASIN are returned, because a row with none cannot be holding a
+        /// stranger's. The ordering is the whole resumption story: a run stamps what it examined,
+        /// so the next run starts where it stopped rather than at the beginning, and an install
+        /// that has never run the pass is one long queue of nulls.
+        /// </remarks>
+        Task<List<AuthorCacheEntry>> GetAuthorCacheEntriesDueForIdentityCheckAsync(
+            int limit,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// Writes one identity decision onto a cached author row: the ASIN, and the biography and
+        /// portrait that came with it, plus the cursor. Returns false when the row is gone.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately not <see cref="UpsertCachedAuthorAsync"/>, for two reasons that both
+        /// matter. That path merges and never clears, so it cannot express "this ASIN belongs to
+        /// somebody else, so this author has none", which is the commonest correct outcome here.
+        /// And its ASIN-collision guard refuses to move an ASIN to a different name, which is
+        /// exactly what a repair sometimes has to do -- the guard is right for an ingestion write
+        /// and wrong for a correction.
+        ///
+        /// It writes identity and the cursor and nothing else. A row's catalogue, its similar
+        /// authors, its name and its cache timestamps are somebody else's business, and a repair
+        /// that touched them would be indistinguishable from a cache refresh.
+        /// </remarks>
+        Task<bool> ApplyAuthorCacheIdentityAsync(
+            int id,
+            string? authorAsin,
+            string? description,
+            string? imageUrl,
+            DateTime checkedAt,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// Stamps a cached author row as identity-checked without changing anything on it, for a
+        /// row a run examined and found correct.
+        /// </summary>
+        Task<bool> StampAuthorCacheIdentityCheckedAsync(
+            int id,
+            DateTime checkedAt,
+            CancellationToken ct = default);
         Task<SeriesCacheEntry?> GetCachedSeriesByNameAsync(string name, string region);
         Task<SeriesCacheEntry?> GetCachedSeriesByAsinAsync(string asin, string region);
         Task<SeriesCacheEntry> UpsertCachedSeriesAsync(SeriesCacheEntry seriesCacheEntry);
