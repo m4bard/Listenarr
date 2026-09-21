@@ -28,9 +28,14 @@ namespace Listenarr.Application.Downloads.Import;
 /// one. Each extraction directory is its own root, the files that stayed in the download
 /// directory share theirs, and a companion is mirrored only under the root it actually came
 /// from. A companion that belongs to no root falls back to travelling with the audio file
-/// imported out of its own directory, as
-/// <c>ManualImportCompanionImporter.TryResolveCompanionDestination</c> does, and is refused if
-/// there is no such file.
+/// imported out of its own directory, and is refused if there is no such file.
+///
+/// The manual import path reaches the same rule. It has no archives, so its only root is the
+/// common directory of the files the caller selected. What it must not use is the caller's own
+/// <c>request.Path</c>: that is a browse location rather than a source structure, and when it
+/// sits above the selected files the segments in between get recreated inside the book folder.
+/// Deciding containment in one place is deliberate; the same rule written twice is how this
+/// class of defect survives being fixed once.
 /// </summary>
 public static class ImportCompanionDestinationResolver
 {
@@ -47,6 +52,15 @@ public static class ImportCompanionDestinationResolver
     public sealed record CompanionSourceRoots(
         IReadOnlyList<string> ExtractionRoots,
         string? UnextractedCommonDirectory);
+
+    /// <summary>
+    /// A file the batch has already published: where it was read from, and where it landed.
+    /// The two import paths carry their results in different types, so the fallback below is
+    /// given this rather than either of them.
+    /// </summary>
+    /// <param name="SourcePath">The file's absolute source path.</param>
+    /// <param name="FinalPath">The absolute path it was published to.</param>
+    public sealed record ImportedFilePlacement(string SourcePath, string FinalPath);
 
     /// <summary>
     /// Works out the batch's source roots. Call this once per batch and reuse the result for
@@ -74,6 +88,21 @@ public static class ImportCompanionDestinationResolver
     }
 
     /// <summary>
+    /// The audio files an automatic import batch has published so far, in the shape the
+    /// fallback below wants. The audio filter is applied here rather than inside the resolver
+    /// because the automatic batch's results carry its companions too, while the manual batch's
+    /// carry only the items the caller selected.
+    /// </summary>
+    public static IReadOnlyCollection<ImportedFilePlacement> ImportedAudioFrom(
+        IEnumerable<ImportResult> results) =>
+        [.. results
+            .Where(result => result.Success
+                && !string.IsNullOrWhiteSpace(result.SourcePath)
+                && !string.IsNullOrWhiteSpace(result.FinalPath)
+                && FileUtils.IsAudioFile(result.SourcePath!))
+            .Select(result => new ImportedFilePlacement(result.SourcePath!, result.FinalPath!))];
+
+    /// <summary>
     /// Resolves the companion's path relative to <paramref name="basePath"/>, or returns false
     /// when the companion cannot be placed without inventing structure for it.
     /// </summary>
@@ -82,6 +111,27 @@ public static class ImportCompanionDestinationResolver
         string companionFile,
         string? basePath,
         IReadOnlyCollection<ImportResult> results,
+        FileSystemPathSemantics sourceSemantics,
+        FileSystemPathSemantics destinationSemantics,
+        out string relativePath) =>
+        TryResolveRelativeDestination(
+            sourceRoots,
+            companionFile,
+            basePath,
+            ImportedAudioFrom(results),
+            sourceSemantics,
+            destinationSemantics,
+            out relativePath);
+
+    /// <summary>
+    /// Resolves the companion's path relative to <paramref name="basePath"/>, or returns false
+    /// when the companion cannot be placed without inventing structure for it.
+    /// </summary>
+    public static bool TryResolveRelativeDestination(
+        CompanionSourceRoots sourceRoots,
+        string companionFile,
+        string? basePath,
+        IReadOnlyCollection<ImportedFilePlacement> importedFiles,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics destinationSemantics,
         out string relativePath)
@@ -106,10 +156,10 @@ public static class ImportCompanionDestinationResolver
                 return true;
             }
 
-            return TryPlaceBesideImportedAudio(
+            return TryPlaceBesideImportedFile(
                 companion,
                 basePath,
-                results,
+                importedFiles,
                 sourceSemantics,
                 destinationSemantics,
                 out relativePath);
@@ -174,14 +224,14 @@ public static class ImportCompanionDestinationResolver
     }
 
     /// <summary>
-    /// Places the companion, by name only, in the destination directory of an audio file that
-    /// was imported out of the same source directory. A companion with no such neighbour has
+    /// Places the companion, by name only, in the destination directory of a file that was
+    /// imported out of the same source directory. A companion with no such neighbour has
     /// nowhere to go and is refused.
     /// </summary>
-    private static bool TryPlaceBesideImportedAudio(
+    private static bool TryPlaceBesideImportedFile(
         string companion,
         string basePath,
-        IReadOnlyCollection<ImportResult> results,
+        IReadOnlyCollection<ImportedFilePlacement> importedFiles,
         FileSystemPathSemantics sourceSemantics,
         FileSystemPathSemantics destinationSemantics,
         out string relativePath)
@@ -193,14 +243,12 @@ public static class ImportCompanionDestinationResolver
             return false;
         }
 
-        var neighbour = results.FirstOrDefault(result =>
-            result.Success
-            && !string.IsNullOrWhiteSpace(result.SourcePath)
-            && !string.IsNullOrWhiteSpace(result.FinalPath)
-            && FileUtils.IsAudioFile(result.SourcePath!)
+        var neighbour = importedFiles.FirstOrDefault(imported =>
+            !string.IsNullOrWhiteSpace(imported.SourcePath)
+            && !string.IsNullOrWhiteSpace(imported.FinalPath)
             && sourceSemantics.Comparer.Equals(
                 Path.GetDirectoryName(
-                    FileSystemPathIdentity.ResolveNativeAbsolutePath(result.SourcePath!)),
+                    FileSystemPathIdentity.ResolveNativeAbsolutePath(imported.SourcePath)),
                 companionDirectory));
         if (neighbour == null)
         {
@@ -208,7 +256,7 @@ public static class ImportCompanionDestinationResolver
         }
 
         var neighbourDirectory = Path.GetDirectoryName(
-            FileSystemPathIdentity.ResolveNativeAbsolutePath(neighbour.FinalPath!));
+            FileSystemPathIdentity.ResolveNativeAbsolutePath(neighbour.FinalPath));
         if (string.IsNullOrWhiteSpace(neighbourDirectory)
             || !FileSystemPathIdentity.TryGetRelativePathWithinBase(
                 basePath,
