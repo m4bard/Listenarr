@@ -35,6 +35,7 @@ type ActivityViewVm = {
   filterText: string
   showRemoveModal: boolean
   clientHasQueueEntry: boolean | null
+  clientRemovalRefused: boolean
   queueHealthClients: Array<{ name: string; isUnavailable?: boolean }>
   removeFromQueue: (item: ActivityItem) => Promise<void> | void
   confirmRemove: () => Promise<void>
@@ -113,6 +114,14 @@ const mockDownloadsStore = (overrides: Record<string, unknown> = {}) => {
   }))
 
   return store
+}
+
+const mockToast = () => {
+  const toast = { success: vi.fn(), error: vi.fn(), info: vi.fn() }
+  vi.doMock('@/services/toastService', () => ({
+    useToast: () => toast,
+  }))
+  return toast
 }
 
 const mountActivityView = async () => {
@@ -309,6 +318,59 @@ describe('ActivityView', () => {
 
     await vm.confirmRemove()
     expect(apiService.removeFromQueue).toHaveBeenCalledWith('q1', 'qbittorrent')
+    expect(apiService.cancelDownload).not.toHaveBeenCalled()
+    expect(vm.showRemoveModal).toBe(false)
+    expect(vm.clientRemovalRefused).toBe(false)
+  })
+
+  it('offers record-only removal when the download client refuses', async () => {
+    const queueItem = {
+      id: 'q1',
+      title: 'Queue Item',
+      status: 'downloading',
+      progress: 50,
+      size: 1000,
+      downloaded: 500,
+      downloadClientId: 'qbittorrent',
+      downloadClient: 'qbittorrent',
+      canRemove: true,
+    }
+
+    mockSignalR()
+    const apiService = mockApi({
+      getQueue: vi.fn(async () => [queueItem]),
+      removeFromQueue: vi.fn(async () => {
+        throw Object.assign(new Error('API error: 404 removal failed'), { status: 404 })
+      }),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
+    const toast = mockToast()
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const item = vm.allActivityItems.find((entry) => entry.id === 'q1')
+
+    await vm.removeFromQueue(item!)
+    await vm.confirmRemove()
+
+    expect(apiService.removeFromQueue).toHaveBeenCalledWith('q1', 'qbittorrent')
+    expect(toast.error).toHaveBeenCalled()
+
+    // The row is still there and the modal is still up, now offering the way out rather
+    // than the same button that just failed.
+    expect(vm.showRemoveModal).toBe(true)
+    await flushPromises()
+    expect(wrapper.text()).toContain('would not confirm')
+    expect(wrapper.text()).toContain('Remove from Listenarr')
+
+    // Clicking it again takes the offer, and only the record goes.
+    await vm.confirmRemove()
+    expect(apiService.cancelDownload).toHaveBeenCalledWith('q1', false)
+    expect(apiService.removeFromQueue).toHaveBeenCalledTimes(1)
+    expect(vm.showRemoveModal).toBe(false)
+    expect(vm.clientRemovalRefused).toBe(false)
   })
 
   it('offers Listenarr-only removal when an external item is no longer in the client queue', async () => {
@@ -344,7 +406,7 @@ describe('ActivityView', () => {
     expect(vm.clientHasQueueEntry).toBe(false)
 
     await vm.confirmRemove()
-    expect(apiService.cancelDownload).toHaveBeenCalledWith('ext-1')
+    expect(apiService.cancelDownload).toHaveBeenCalledWith('ext-1', false)
     expect(downloadsStore.loadDownloads).toHaveBeenCalled()
   })
 
@@ -408,7 +470,7 @@ describe('ActivityView', () => {
     expect(vm.clientHasQueueEntry).toBe(true)
 
     await vm.confirmRemove()
-    expect(apiService.cancelDownload).toHaveBeenCalledWith('d1')
+    expect(apiService.cancelDownload).toHaveBeenCalledWith('d1', false)
     expect(downloadsStore.loadDownloads).toHaveBeenCalled()
   })
 
