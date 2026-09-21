@@ -52,6 +52,11 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [InlineData("Gerald R. Gems -introduction by")]
         [InlineData("A. M. Sheridan Smith(Translated by)")]
         [InlineData("Alfred Lin (Foreword By) - introduction")]
+        [InlineData("Ned Asta(Illustrated by)")]
+        [InlineData("Ned Asta (Illustrator)")]
+        [InlineData("A. M. Sheridan Smith( Translated by )")]
+        [InlineData("Someone - translators")]
+        [InlineData("Someone - editors")]
         public void IsRoleCredit_RecognisesTheNotationsAudibleActuallyUses(string credit)
         {
             Assert.True(AuthorCredits.IsRoleCredit(credit));
@@ -67,6 +72,19 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [InlineData("Yang Jing - Yang Jing")]
         [InlineData("Jonathan Maberry - editor/author")]
         [InlineData("Alison Tyler - author/editor")]
+        [InlineData("Lewis Carroll (Illustrated)")]
+        [InlineData("Jules Verne (Illustrated)")]
+        [InlineData("Beatrix Potter (Illustrated)")]
+        [InlineData("Miguel de Cervantes (adapted)")]
+        [InlineData("Mary Shelley (Adapted)")]
+        [InlineData("Homer (Translated)")]
+        [InlineData("Homer (Translation)")]
+        [InlineData("Leo Tolstoy (Adaptation)")]
+        [InlineData("Victor Hugo (Edited)")]
+        [InlineData("Jane Austen (Introduction)")]
+        [InlineData("Jane Austen (Foreword)")]
+        [InlineData("Franz Kafka (Notes)")]
+        [InlineData("Virginia Woolf (Essay)")]
         [InlineData("Martin Luther King (Jr.)")]
         [InlineData("Sammy Davis (Jr.)")]
         [InlineData("Gabor Maté (M.D.)")]
@@ -111,6 +129,31 @@ namespace Listenarr.Tests.Features.Domain.Utils
             // The same suffixes stay tolerated trailing a real role, which is how Audible emits
             // them. Without this the fix above would have traded one defect for another.
             Assert.True(AuthorCredits.IsRoleCredit("Theodore C. Van Alst - editor Jr."));
+        }
+
+        [Fact]
+        public void IsRoleCredit_DoesNotReadAnEditionDescriptorAsACredit()
+        {
+            // Amazon and Audible put "(Illustrated)", "(Annotated)" and "(Adapted)" on a large
+            // share of public-domain classics, describing the WORK rather than the person. An
+            // earlier version of this detector read them as contributor credits, which deleted
+            // the author: ["Lewis Carroll (Illustrated)", "Martin Gardner"] came back as just
+            // the annotator. That is this class's own failure mode with the sign flipped.
+            Assert.False(AuthorCredits.IsRoleCredit("Lewis Carroll (Illustrated)"));
+            Assert.False(AuthorCredits.IsRoleCredit("Miguel de Cervantes (adapted)"));
+            Assert.Equal(
+                new[] { "Lewis Carroll (Illustrated)", "Martin Gardner" },
+                AuthorCredits.AuthorsOnly(new List<string> { "Lewis Carroll (Illustrated)", "Martin Gardner" }));
+
+            // The controls that stop this being solved by never matching a parenthetical: an
+            // agent noun in brackets names a person, and a participle in brackets does too once
+            // "by" follows it. Both are forms Audible really returns.
+            Assert.True(AuthorCredits.IsRoleCredit("Ned Asta (Illustrator)"));
+            Assert.True(AuthorCredits.IsRoleCredit("A. M. Sheridan Smith(Translated by)"));
+
+            // And after a dash the bare participle still counts, because that is how Audible
+            // writes a role suffix.
+            Assert.True(AuthorCredits.IsRoleCredit("Ralph Manheim - translated"));
         }
 
         [Fact]

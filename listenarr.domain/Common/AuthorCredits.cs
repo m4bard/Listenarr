@@ -51,51 +51,80 @@ namespace Listenarr.Domain.Common
     /// </remarks>
     public static class AuthorCredits
     {
-        // Role words Audible actually uses, gathered from its own catalogue rather than guessed,
-        // including the non-English spellings it carries for translated editions.
-        private const string RoleWords =
-            "translator|traducteur|traductrice|traduttore|tradutor|tradutora|traducao|tradução|" +
-            "traductor|traductora|traduccion|traducción|translated|translation|ubersetzer|" +
-            "übersetzer|editor|editora|editeur|éditeur|edited|foreword|afterword|postface|" +
-            "introduction|introductions|introduccion|introducción|preface|préface|prefacio|" +
-            "avant-propos|illustrator|illustrated|adapter|adaptateur|adaptation|adapted|" +
-            "adaptado|contributor|compiler|annotation|annotator|prologue|prologo|prólogo|" +
-            "essay|notes";
+        // The vocabulary is split because the two notations are not equally trustworthy.
+        //
+        // An agent noun names a person, so it can only be a credit. A participle or an abstract
+        // noun describes an activity, and Amazon and Audible use exactly those words in brackets
+        // to describe the WORK rather than the person: "(Illustrated)", "(Annotated)",
+        // "(Adapted)" sit on a large share of public-domain classics. Reading one of those as a
+        // contributor credit removes the actual author, which is the failure this class exists
+        // to prevent, arrived at from the other direction.
+        private const string AgentRoleWords =
+            "translator|traducteur|traductrice|traduttore|tradutor|tradutora|traductor|" +
+            "traductora|ubersetzer|übersetzer|editor|editora|editeur|éditeur|illustrator|" +
+            "adapter|adaptateur|annotator|compiler|contributor";
+
+        // "editora" is deliberately in the list above and is the weakest member of it: in
+        // Portuguese it usually means a publishing house, and Listenarr has a Publisher field of
+        // its own. It is kept because a Brazilian edited volume does credit an "editora" as a
+        // person, and dropped credits are cheaper to notice than missing ones. Noted so the next
+        // reader knows the ambiguity was seen rather than missed.
+
+        private const string WorkRoleWords =
+            "translated|translation|traducao|tradução|traduccion|traducción|edited|adapted|" +
+            "adaptado|adaptation|illustrated|annotation|introduction|introductions|introduccion|" +
+            "introducción|foreword|afterword|preface|préface|prefacio|postface|avant-propos|" +
+            "prologue|prologo|prólogo|essay|notes";
 
         // Words that may sit inside a role tail without being the role themselves: joiners, and
         // the post-nominals Audible leaves stranded after one ("editor Jr."). On their own they
-        // mean nothing, which is why the tail below requires an actual role word as well.
+        // mean nothing, which is why both tails below require an actual role word as well.
         private const string TailFiller = "by|and|or|jr\\.?|sr\\.?|ph\\.?d\\.?|m\\.?d\\.?|series";
 
-        // A role tail is filler, then at least one role word, then anything of either kind.
-        //
-        // Two properties are deliberate and both were bought by a review. Requiring a role word
-        // stops a tail of pure post-nominals matching, which had been classifying
-        // "Martin Luther King (Jr.)" and "Gabor Maté (M.D.)" as contributor credits. And every
-        // separator is a mandatory \s+ rather than an optional \s* on both sides of an
-        // alternation inside a +, which is the shape that made this regex take ninety seconds
-        // on a 133 character input: there is now exactly one way to split a given tail.
-        private const string TailBody =
-            "(?:(?:" + TailFiller + ")\\s+)*(?:" + RoleWords + ")(?:\\s+(?:" + RoleWords + "|" + TailFiller + "))*";
+        // Agent nouns take a plural: Audible credits "translators" and "editors" on volumes with
+        // more than one. The work words are left alone, since "notes" is already the plural form
+        // and the rest do not pluralise as credits.
+        private const string AgentAny = "(?:" + AgentRoleWords + ")s?";
 
+        private const string AnyRole = AgentAny + "|" + WorkRoleWords;
+        private const string TailRest = "(?:\\s+(?:" + AnyRole + "|" + TailFiller + "))*";
+        private const string TailLead = "(?:(?:" + TailFiller + ")\\s+)*";
+
+        // After a dash, both halves of the vocabulary are safe. A dash tail is how Audible writes
+        // a role suffix, so "Ralph Manheim - translated" has to keep matching.
+        private const string DashTailBody =
+            TailLead + "(?:" + AnyRole + ")" + TailRest;
+
+        // Inside brackets, a participle or an abstract noun only counts as a credit when it is
+        // followed by "by". That keeps "Smith(Translated by)" and "Ned Asta (Illustrator)" while
+        // refusing "Lewis Carroll (Illustrated)" and "Miguel de Cervantes (adapted)".
+        private const string ParenTailBody =
+            TailLead + "(?:" + AgentAny + "|(?:" + WorkRoleWords + ")\\s+by)" + TailRest;
+
+        // Every separator inside a tail is mandatory whitespace. That is not tidiness: the
+        // previous pattern put optional whitespace on both sides of an alternation inside a
+        // repetition, which let a tail be split exponentially many ways and took ninety seconds
+        // on a 133 character input. There is now exactly one way to split any tail.
+        //
         // NonBacktracking removes the blowup by construction rather than by careful authoring,
-        // and the timeout is there for the case where that reasoning is wrong. Compiled is not
-        // requested alongside it.
+        // and the timeout is a backstop for that reasoning being wrong. Compiled is not requested
+        // alongside it.
         private static readonly TimeSpan MatchTimeout = TimeSpan.FromMilliseconds(100);
 
         private const RegexOptions TailOptions =
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking;
 
-        // A trailing role tail introduced by a dash. Audible is inconsistent about the spacing
-        // ("Gems -introduction by" as well as "Garnett - translator") and uses hyphen, en dash
-        // and em dash, so the separator is whitespace, a dash, then optional whitespace.
+        // Audible is inconsistent about the spacing ("Gems -introduction by" as well as
+        // "Garnett - translator") and uses hyphen, en dash and em dash.
         private static readonly Regex DashTail = new(
-            "\\s[-\u2013\u2014]\\s*" + TailBody + "$", TailOptions, MatchTimeout);
+            "\\s[-\u2013\u2014]\\s*" + DashTailBody + "$", TailOptions, MatchTimeout);
 
-        // The same thing in parentheses, which Audible uses interchangeably and sometimes as
-        // well: "A. M. Sheridan Smith(Translated by)", "Alfred Lin (Foreword By) - introduction".
+        // The padding inside the brackets lives here rather than inside the shared tail constant.
+        // Putting it back in the constant is what made the pattern exponential, and while
+        // NonBacktracking would now absorb that, the call-site version stays correct if anyone
+        // ever removes the option.
         private static readonly Regex ParenthesisedTail = new(
-            "\\s*\\(" + TailBody + "\\)\\s*$", TailOptions, MatchTimeout);
+            "\\s*\\(\\s*" + ParenTailBody + "\\s*\\)\\s*$", TailOptions, MatchTimeout);
 
         /// <summary>
         /// True when a credited name ends in a contributor role rather than naming an author.
@@ -109,8 +138,11 @@ namespace Listenarr.Domain.Common
         /// real author.
         ///
         /// A combined credit such as <c>"Jonathan Maberry - editor/author"</c>. The person is
-        /// also an author of the book, so the credit stays. This is the reason the tail has to
-        /// be entirely role words: "editor/author" contains one and is not one.
+        /// also an author of the book, so the credit stays. Note how that actually works: a
+        /// slash is not a separator the tail knows about, so it simply ends the tail and the
+        /// match fails. The side effect is that <c>"someone - editor/translator"</c> is kept
+        /// too, which is a credit that should have gone. That is the safe direction to be
+        /// wrong in and it is not worth a second separator to fix.
         ///
         /// A role word anywhere but the tail. An author surnamed Editor, or one whose name
         /// contains "Foreword", is a name and not a credit.
@@ -133,10 +165,12 @@ namespace Listenarr.Domain.Common
             }
             catch (RegexMatchTimeoutException)
             {
-                // Should be unreachable: a non-backtracking match is linear in the input, and
-                // the timeout is only here in case that reasoning is wrong. If it ever does
-                // fire, the answer has to be "not a contributor". This runs per credited name
-                // during ingestion, so throwing would fail the import over a punctuation
+                // Not unreachable, just far away: a non-backtracking match is linear in the
+                // input, and linear on a long enough string still passes 100 ms. Measured, it
+                // takes somewhere between one and fifteen million characters, which no author
+                // name will ever be, but a mangled provider payload might. If it does fire the
+                // answer has to be "not a contributor". This runs per credited name during
+                // ingestion, so throwing would fail the whole import over a punctuation
                 // pattern, and guessing the other way would delete somebody from their own
                 // book. Keeping the credit is the recoverable mistake.
                 return false;
