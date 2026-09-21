@@ -17,11 +17,12 @@
 -->
 <template>
   <div class="form-group radio-group">
-    <label :class="['radio-label', { active: isActive }]" @click="select">
+    <label :class="['radio-label', { active: isActive, disabled: disabled }]" @click="select">
       <input
         type="radio"
         :name="name"
         :checked="isActive"
+        :disabled="disabled"
         @change="onChange"
         :aria-checked="isActive"
       />
@@ -43,17 +44,22 @@ const props = defineProps<{
   title: string
   description?: string
   name?: string
+  disabled?: boolean
 }>()
 const emit = defineEmits(['update:modelValue'])
 
 const isActive = computed(() => props.modelValue === props.value)
 
 function onChange() {
+  if (props.disabled) return
   emit('update:modelValue', props.value)
 }
 
 function select() {
-  // Clicking the label should select the radio
+  // Clicking the label should select the radio. A disabled card refuses both routes: the
+  // input's own disabled attribute stops the change event, and this stops the label click,
+  // which the browser does not suppress on its own.
+  if (props.disabled) return
   emit('update:modelValue', props.value)
 }
 </script>
