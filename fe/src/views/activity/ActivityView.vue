@@ -671,6 +671,16 @@ const removeFromQueue = async (item: QueueItem) => {
     return
   }
 
+  const clientStatus = queueClientStatuses.value.find((c) => c.clientId === item.downloadClientId)
+  if (clientStatus && (clientStatus.isUnavailable || clientStatus.isStaleSnapshot)) {
+    // The snapshot for this client is missing or old, so it contributes no items and every
+    // row looks absent. That is not evidence the client has finished with the download, and
+    // acting on it would drop the record while the download is still running.
+    clientHasQueueEntry.value = null
+    showRemoveModal.value = true
+    return
+  }
+
   const found = queue.value.some((q) => q.id === item.id)
   clientHasQueueEntry.value = found
   showRemoveModal.value = true
@@ -694,7 +704,7 @@ const confirmRemove = async () => {
       // A direct download has no external client, and the other branch is the one whose modal
       // copy promises that nothing will be asked of the client. Both mean the record only.
       await apiService.cancelDownload(itemToRemove.value.id, false)
-      await downloadsStore.loadDownloads()
+      await refreshQueue()
     }
 
     showRemoveModal.value = false
@@ -706,13 +716,31 @@ const confirmRemove = async () => {
       component: 'ActivityView',
       operation: 'removeFromQueue',
     })
-    if (attemptedClientRemoval) {
-      // The modal stays open. Put it into the record-only state so the user has a way out
-      // instead of a row that refuses to go.
+    const status = (err as { status?: number }).status
+    const toast = useToast()
+
+    if (!attemptedClientRemoval && clientRemovalRefused.value && status === 404) {
+      // The record-only fallback found no record to delete, so this row exists only in the
+      // download client. Offering it again would loop, so say what has to happen instead.
+      showRemoveModal.value = false
+      itemToRemove.value = null
+      clientHasQueueEntry.value = null
+      clientRemovalRefused.value = false
+      toast.error(
+        'Nothing for Listenarr to remove',
+        'Listenarr has no record of this download, so it exists only in your download client. Remove it there.',
+      )
+      return
+    }
+
+    if (attemptedClientRemoval && status === 404) {
+      // The client would not confirm removal. The modal stays open, now offering the
+      // record-only way out instead of the button that just failed. Other failures, a
+      // dropped connection or a 500, say nothing about what the client did.
       clientHasQueueEntry.value = false
       clientRemovalRefused.value = true
     }
-    const toast = useToast()
+
     toast.error('Remove failed', (err as Error).message)
   } finally {
     removing.value = false
