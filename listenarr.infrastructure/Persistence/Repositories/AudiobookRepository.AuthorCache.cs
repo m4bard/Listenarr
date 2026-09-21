@@ -113,82 +113,96 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(authorCacheEntry.Region) ?? "us";
             var normalizedAsin = NormalizeAsin(authorCacheEntry.AuthorAsin);
 
-            AuthorCacheEntry? existing = null;
-
-            if (!string.IsNullOrWhiteSpace(normalizedAsin))
+            for (var attempt = 1; ; attempt++)
             {
-                existing = await _db.AuthorCacheEntries.FirstOrDefaultAsync(entry =>
-                    entry.AuthorAsin != null &&
-                    entry.AuthorAsin.ToUpper() == normalizedAsin &&
-                    entry.Region == normalizedRegion);
+                AuthorCacheEntry? existing = null;
 
-                if (existing != null &&
-                    !string.IsNullOrWhiteSpace(normalizedName) &&
-                    !StringUtils.MatchesAuthorKey(existing.AuthorNameNormalized, existing.AuthorName, normalizedName))
+                if (!string.IsNullOrWhiteSpace(normalizedAsin))
                 {
-                    // The ASIN-first match becomes a miss here, and only here. Falling through to
-                    // the name lookup lets this write land on its own row, or make one, so both
-                    // rows survive and neither is renamed. Sharing an ASIN across rows stays
-                    // allowed -- two spellings of one author legitimately produce two rows with
-                    // one ASIN, which is why (AuthorAsin, Region) is not a unique index.
-                    _logger?.LogWarning(
-                        "Refusing to rebind cached author ASIN {AuthorAsin} in region {Region}: it is already "
-                        + "associated with {ExistingAuthor}, and this write names {IncomingAuthor}. "
-                        + "Both rows are kept.",
-                        normalizedAsin,
-                        normalizedRegion,
-                        existing.AuthorName,
-                        authorCacheEntry.AuthorName);
-                    existing = null;
+                    existing = await _db.AuthorCacheEntries.FirstOrDefaultAsync(entry =>
+                        entry.AuthorAsin != null &&
+                        entry.AuthorAsin.ToUpper() == normalizedAsin &&
+                        entry.Region == normalizedRegion);
+
+                    if (existing != null &&
+                        !string.IsNullOrWhiteSpace(normalizedName) &&
+                        !StringUtils.MatchesAuthorKey(existing.AuthorNameNormalized, existing.AuthorName, normalizedName))
+                    {
+                        // The ASIN-first match becomes a miss here, and only here. Falling through to
+                        // the name lookup lets this write land on its own row, or make one, so both
+                        // rows survive and neither is renamed. Sharing an ASIN across rows stays
+                        // allowed -- two spellings of one author legitimately produce two rows with
+                        // one ASIN, which is why (AuthorAsin, Region) is not a unique index.
+                        _logger?.LogWarning(
+                            "Refusing to rebind cached author ASIN {AuthorAsin} in region {Region}: it is already "
+                            + "associated with {ExistingAuthor}, and this write names {IncomingAuthor}. "
+                            + "Both rows are kept.",
+                            normalizedAsin,
+                            normalizedRegion,
+                            existing.AuthorName,
+                            authorCacheEntry.AuthorName);
+                        existing = null;
+                    }
+                }
+
+                if (existing == null && !string.IsNullOrWhiteSpace(normalizedName))
+                {
+                    existing = await _db.AuthorCacheEntries.FirstOrDefaultAsync(entry =>
+                        entry.AuthorNameNormalized == normalizedName &&
+                        entry.Region == normalizedRegion);
+                }
+
+                var now = DateTime.UtcNow;
+                var inserting = existing == null;
+                if (existing == null)
+                {
+                    existing = new AuthorCacheEntry
+                    {
+                        CreatedAt = now
+                    };
+
+                    _db.AuthorCacheEntries.Add(existing);
+                }
+
+                existing.AuthorName = string.IsNullOrWhiteSpace(authorCacheEntry.AuthorName)
+                    ? (string.IsNullOrWhiteSpace(existing.AuthorName) ? normalizedName : existing.AuthorName)
+                    : authorCacheEntry.AuthorName.Trim();
+                existing.AuthorNameNormalized = string.IsNullOrWhiteSpace(normalizedName)
+                    ? StringUtils.NormalizeAuthorName(existing.AuthorName)
+                    : normalizedName;
+                existing.AuthorAsin = string.IsNullOrWhiteSpace(normalizedAsin)
+                    ? existing.AuthorAsin
+                    : normalizedAsin;
+                existing.Region = normalizedRegion;
+                existing.ImageUrl = authorCacheEntry.ImageUrl ?? existing.ImageUrl;
+                existing.Description = authorCacheEntry.Description ?? existing.Description;
+
+                if (authorCacheEntry.SimilarAuthors != null)
+                {
+                    existing.SimilarAuthors = authorCacheEntry.SimilarAuthors;
+                }
+
+                if (authorCacheEntry.CatalogBooks != null)
+                {
+                    existing.CatalogBooks = authorCacheEntry.CatalogBooks;
+                }
+
+                existing.LastFetchedAt = authorCacheEntry.LastFetchedAt ?? existing.LastFetchedAt ?? now;
+                existing.UpdatedAt = now;
+
+                try
+                {
+                    await _db.SaveChangesAsync();
+                    return existing;
+                }
+                // Only an insert that lost a race is retried. A violation on the update path means
+                // the row this resolved to cannot hold the incoming key, which re-reading will not
+                // change, so that one still surfaces to the caller.
+                catch (UniqueConstraintViolationException) when (inserting && attempt < CacheUpsertAttempts)
+                {
+                    _db.Entry(existing).State = EntityState.Detached;
                 }
             }
-
-            if (existing == null && !string.IsNullOrWhiteSpace(normalizedName))
-            {
-                existing = await _db.AuthorCacheEntries.FirstOrDefaultAsync(entry =>
-                    entry.AuthorNameNormalized == normalizedName &&
-                    entry.Region == normalizedRegion);
-            }
-
-            var now = DateTime.UtcNow;
-            if (existing == null)
-            {
-                existing = new AuthorCacheEntry
-                {
-                    CreatedAt = now
-                };
-
-                _db.AuthorCacheEntries.Add(existing);
-            }
-
-            existing.AuthorName = string.IsNullOrWhiteSpace(authorCacheEntry.AuthorName)
-                ? (string.IsNullOrWhiteSpace(existing.AuthorName) ? normalizedName : existing.AuthorName)
-                : authorCacheEntry.AuthorName.Trim();
-            existing.AuthorNameNormalized = string.IsNullOrWhiteSpace(normalizedName)
-                ? StringUtils.NormalizeAuthorName(existing.AuthorName)
-                : normalizedName;
-            existing.AuthorAsin = string.IsNullOrWhiteSpace(normalizedAsin)
-                ? existing.AuthorAsin
-                : normalizedAsin;
-            existing.Region = normalizedRegion;
-            existing.ImageUrl = authorCacheEntry.ImageUrl ?? existing.ImageUrl;
-            existing.Description = authorCacheEntry.Description ?? existing.Description;
-
-            if (authorCacheEntry.SimilarAuthors != null)
-            {
-                existing.SimilarAuthors = authorCacheEntry.SimilarAuthors;
-            }
-
-            if (authorCacheEntry.CatalogBooks != null)
-            {
-                existing.CatalogBooks = authorCacheEntry.CatalogBooks;
-            }
-
-            existing.LastFetchedAt = authorCacheEntry.LastFetchedAt ?? existing.LastFetchedAt ?? now;
-            existing.UpdatedAt = now;
-
-            await _db.SaveChangesAsync();
-            return existing;
         }
     }
 }
