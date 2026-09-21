@@ -38,7 +38,7 @@
             value="preview"
             name="authorIdentityRepairMode"
             title="Preview only"
-            description="Look up each stored author and write what a repair would change to the log. Read it on the Logs page, or under Recent Logs on the System page. No author record changes, so a preview read twice gives the same answer."
+            description="Look up the authors at the head of the queue that already carry an Audible ID, and write what a repair would change to the log. Read it on the Logs page, or under Recent Logs on the System page. Nothing is written, not even a note that the author was checked, so every preview covers the same authors. A preview shows you what a repair would do. It does not survey the library."
           />
           <RadioCard
             :modelValue="mode"
@@ -47,8 +47,12 @@
             value="repair"
             name="authorIdentityRepairMode"
             title="Repair stored author identities"
-            description="Look up each stored author and write the corrections. This replaces or clears the Audible ID, biography and portrait in the author cache, replaces the Audible ID on the authors you monitor, and rewrites the author credits stored against your books. Listenarr keeps no copy of what those fields held before. Read a preview first."
-          />
+            description="Look up the authors at the head of the queue and write the corrections, a batch per run, working through the library over several runs. This replaces or clears the Audible ID, biography and portrait in the author cache, replaces the Audible ID on the authors you monitor, and rewrites the author credits stored against your books. Listenarr keeps no copy of what those fields held before. Read a preview first."
+          >
+            <span v-if="!canSelectRepair" class="locked-hint">
+              Not selectable yet. Tick the box below to make it selectable.
+            </span>
+          </RadioCard>
         </div>
       </FormRow>
 
@@ -62,7 +66,7 @@
 
       <FormRow
         label="Run Every (hours)"
-        help="How long Listenarr waits between runs (1 to 168). A run stops once it reaches the limit below and leaves the rest at the head of the queue for the next one."
+        help="How long Listenarr waits between runs (1 to 168). A repair run stops at the limit below and the authors it did not reach wait for the next run. A preview run does not move through the queue at all."
       >
         <input
           :value="numericValue('authorIdentityRepairIntervalHours')"
@@ -106,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { ApplicationSettings } from '@/types'
 import { PhUserCircle } from '@phosphor-icons/vue'
 import FormRow from '@/components/settings/FormRow.vue'
@@ -128,8 +132,13 @@ type NumericField =
 // The bounds AuthorIdentityRepairOptionsLoader clamps to when it reads a value, and the shipped
 // defaults from ApplicationSettings. GET /settings hands back whatever was stored rather than
 // what the pass will use, so a row holding an interval of 9999 would otherwise be displayed as
-// 9999 while the pass ran hourly at 168. Both ends are handled here: what is displayed is put
-// through the same clamp, and what is written is clamped before it leaves.
+// 9999 while the pass ran hourly at 168.
+//
+// Three places have to agree for that to be fixed rather than moved: what is displayed, what is
+// written, and the row itself. Displaying the clamp alone leaves the row saying 9999 for ever,
+// because the section only emits a field the operator typed in and the save posts the settings
+// object verbatim, so the number on screen becomes a claim about the row that nothing reconciles.
+// So an out-of-range row is corrected once on mount and the next save carries the correction.
 const BOUNDS: Record<NumericField, { min: number; max: number }> = {
   authorIdentityRepairIntervalHours: { min: 1, max: 168 },
   authorIdentityRepairMaxRowsPerRun: { min: 1, max: 500 },
@@ -203,6 +212,32 @@ function numericValue(field: NumericField) {
   if (typeof stored !== 'number' || Number.isNaN(stored)) return DEFAULTS[field]
   return clamp(field, stored)
 }
+
+// Only the fields that are actually out of range, and only when there is one, so an ordinary
+// visit to the settings page emits nothing and leaves the page unchanged.
+function outOfRangeCorrections(): Partial<ApplicationSettings> {
+  const corrections: Record<string, number> = {}
+  for (const field of Object.keys(BOUNDS) as NumericField[]) {
+    const stored = props.settings?.[field]
+    if (typeof stored !== 'number' || Number.isNaN(stored)) continue
+    const clamped = clamp(field, stored)
+    if (clamped !== stored) corrections[field] = clamped
+  }
+  return corrections as Partial<ApplicationSettings>
+}
+
+onMounted(async () => {
+  // After the tab has finished seeding its local copy from the props, not during it. Its sync
+  // window is closed on a nextTick callback registered before this component mounted, and a
+  // callback registered here therefore runs behind it. Emitting inside the window instead gets
+  // the correction applied to the local copy and then dropped on the way up to the view, so the
+  // box would show 168 while the save still posted 9999. There is a test at the view level on
+  // the posted body, which is the only level that can tell the difference.
+  await nextTick()
+  const corrections = outOfRangeCorrections()
+  if (Object.keys(corrections).length === 0) return
+  updateSettings(corrections)
+})
 
 function updateNumericField(field: NumericField, event: Event) {
   const raw = (event.target as HTMLInputElement).value
@@ -283,12 +318,6 @@ h3 {
   line-height: 1.5;
 }
 
-.form-row-label {
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: #fff;
-}
-
 .form-group input[type='number'],
 .form-row-control input[type='number'] {
   width: 100%;
@@ -313,11 +342,14 @@ h3 {
   box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.08);
 }
 
-.form-help {
+/* FormRow owns .form-row-label and .form-help; they carry its scope id, not this section's, so
+   a rule for them here can never match. The card and input rules below are on elements this
+   template owns. */
+.locked-hint {
   display: block;
-  margin-top: 0.5rem;
+  margin-top: 0.35rem;
   font-size: 0.85rem;
-  color: #adb5bd;
+  color: #ffd43b;
   line-height: 1.5;
 }
 </style>

@@ -44,6 +44,9 @@ const props = defineProps<{
   title: string
   description?: string
   name?: string
+  // Refuses selection by both routes. It does NOT carry a disabled appearance: every visual this
+  // component has comes from the .modal-content rules in styles/components/modals.css, so a
+  // consumer outside a modal styles its own cards and has to style the refused state too.
   disabled?: boolean
 }>()
 const emit = defineEmits(['update:modelValue'])

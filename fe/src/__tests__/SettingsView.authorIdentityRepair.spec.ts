@@ -35,13 +35,14 @@ const toast = vi.hoisted(() => ({
 vi.mock('@/services/toastService', () => ({ useToast: () => toast }))
 
 // The pass as an install that has been switched on to preview would have it.
-const storedSettings = () =>
+const storedSettings = (overrides: Partial<ApplicationSettings> = {}) =>
   ({
     authorIdentityRepairEnabled: true,
     authorIdentityRepairDryRun: true,
     authorIdentityRepairIntervalHours: 6,
     authorIdentityRepairMaxRowsPerRun: 40,
     authorIdentityRepairRecheckAfterDays: 14,
+    ...overrides,
   }) as ApplicationSettings
 
 vi.mock('@/services/api', () => ({
@@ -136,6 +137,67 @@ describe('SettingsView, the author identity repair section', () => {
     // as having gone wrong.
     expect(toast.success).toHaveBeenCalled()
     expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('posts the number it displayed when the stored one was out of range', async () => {
+    // The whole point of clamping on display: an operator who is shown 168 and saves must not
+    // leave a row saying 9999 behind. This is the level the disagreement would show up at,
+    // because the section emits a numeric field only when it is typed in and the view posts the
+    // settings object verbatim.
+    ;(apiService.getApplicationSettings as Mock).mockImplementation(async () =>
+      storedSettings({ authorIdentityRepairIntervalHours: 9999 }),
+    )
+    ;(apiService.saveApplicationSettings as Mock).mockImplementation(
+      async (s: ApplicationSettings) => s,
+    )
+    const { wrapper, vm } = await mountSettingsOnGeneral()
+
+    const displayed = wrapper
+      .findComponent(AuthorIdentityRepairSection)
+      .findAll('input[type="number"]')
+      .map((i) => (i.element as HTMLInputElement).value)
+    expect(displayed[0]).toBe('168')
+
+    await vm.saveSettings()
+    await flush()
+
+    const posted = (apiService.saveApplicationSettings as Mock).mock
+      .calls[0][0] as ApplicationSettings
+    expect(posted.authorIdentityRepairIntervalHours).toBe(168)
+    // The two that were already in range are posted exactly as they were stored.
+    expect(posted.authorIdentityRepairMaxRowsPerRun).toBe(40)
+    expect(posted.authorIdentityRepairRecheckAfterDays).toBe(14)
+  })
+
+  it('re-arms the repair gate when the save that would have stored it failed', async () => {
+    // The one path that can leave the acknowledgement ticked across a mode change the operator
+    // did not make: the view reloads the server's copy on a failed save, so the section is put
+    // back to preview while the box that unlocked repair is still ticked. One further click
+    // would then store a repair nobody acknowledged twice.
+    ;(apiService.saveApplicationSettings as Mock).mockImplementation(async () => {
+      throw new Error('the settings row was refused')
+    })
+    const { wrapper, vm } = await mountSettingsOnGeneral()
+
+    const section = () => wrapper.findComponent(AuthorIdentityRepairSection)
+    await section().find('input[type="checkbox"]').setValue(true)
+    await section().findAll('.radio-label')[2].trigger('click')
+    await flush()
+    expect((section().findAll('input[type="radio"]')[2].element as HTMLInputElement).checked).toBe(
+      true,
+    )
+
+    await vm.saveSettings()
+    await flush()
+    await wrapper.vm.$nextTick()
+
+    // Back to preview, and back behind the gate.
+    const radios = section().findAll('input[type="radio"]')
+    expect((radios[1].element as HTMLInputElement).checked).toBe(true)
+    expect((radios[2].element as HTMLInputElement).disabled).toBe(true)
+    const box = section().find('input[type="checkbox"]')
+    expect(box.exists()).toBe(true)
+    expect((box.element as HTMLInputElement).checked).toBe(false)
   })
 
   it('surfaces a save that failed rather than letting it pass for a saved change', async () => {
