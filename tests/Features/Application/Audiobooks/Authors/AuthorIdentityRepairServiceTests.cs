@@ -20,9 +20,14 @@
 // B00O0C6Z26 is George Bodenheimer, which is what a fresh instance bound to the name
 // "George Makepeace Towle - translator"; B000APTDDU really is Constance Garnett, which is what
 // makes her the control rather than a second example.
+using Listenarr.Tests.Common;
+
 namespace Listenarr.Tests.Features.Application.Audiobooks.Authors
 {
-    public class AuthorIdentityRepairServiceTests
+    [Trait("Area", "Library")]
+    [Trait("Name", "AuthorIdentityRepairServiceTests")]
+    [Trait("Category", "Application")]
+    public class AuthorIdentityRepairServiceTests : BaseTests
     {
         private static readonly HttpClient SharedHttpClient = new();
 
