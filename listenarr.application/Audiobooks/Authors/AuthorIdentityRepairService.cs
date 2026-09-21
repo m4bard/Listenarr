@@ -206,6 +206,27 @@ namespace Listenarr.Application.Audiobooks.Authors
                 }
             }
 
+            // The stored credits, which is a different repair sharing this pass's schedule and
+            // its preview switch and nothing else. It asks the provider nothing, so it is not
+            // bounded by the budget and does not stop when that runs out: a run that could not
+            // afford to check a single identity can still spell the credits it already holds
+            // correctly. It keeps the same per-run ceiling anyway, so one cycle cannot rewrite
+            // the whole library's bylines in a single transaction.
+            var credits = await _audiobookRepository.CleanRoleSuffixesFromStoredAuthorsAsync(
+                ceiling,
+                apply: !options.DryRun,
+                cancellationToken);
+
+            foreach (var change in credits.Changes)
+            {
+                _logger.LogInformation(
+                    "{Mode} audiobook {AudiobookId} credits: [{Before}] becomes [{After}]",
+                    options.DryRun ? "Would clean" : "Cleaned",
+                    change.AudiobookId,
+                    string.Join(" // ", change.Before),
+                    string.Join(" // ", change.After));
+            }
+
             var report = new AuthorIdentityRepairReport(
                 options.DryRun,
                 decisions.Count,
@@ -214,7 +235,10 @@ namespace Listenarr.Application.Audiobooks.Authors
                 decisions.Count(decision => decision.Verdict == AuthorIdentityVerdict.Cleared),
                 decisions.Count(decision => decision.Verdict == AuthorIdentityVerdict.Unresolved),
                 budgetExhausted,
-                decisions);
+                decisions)
+            {
+                CreditsCleaned = credits.Changes.Count
+            };
 
             Report(report);
             return report;
@@ -344,6 +368,14 @@ namespace Listenarr.Application.Audiobooks.Authors
                 report.Corrected,
                 report.Cleared,
                 report.BudgetExhausted ? ", stopped early on the request budget" : string.Empty);
+
+            if (report.CreditsCleaned > 0)
+            {
+                _logger.LogInformation(
+                    "Author identity repair {Mode} contributor roles from {Count} book(s) stored credits",
+                    report.DryRun ? "would remove" : "removed",
+                    report.CreditsCleaned);
+            }
         }
 
         private readonly record struct AuthorIdentityResolution(

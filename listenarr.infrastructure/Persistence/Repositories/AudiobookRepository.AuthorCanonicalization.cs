@@ -343,4 +343,78 @@ public partial class AudiobookRepository
 
         return (corrected, skipped);
     }
+
+    /// <inheritdoc />
+    public async Task<StoredAuthorCreditCleanupResult> CleanRoleSuffixesFromStoredAuthorsAsync(
+        int limit,
+        bool apply,
+        CancellationToken ct = default)
+    {
+        if (limit <= 0)
+        {
+            return StoredAuthorCreditCleanupResult.Nothing;
+        }
+
+        // Authors is a JSON-backed list column, so there is no SQL predicate for "this list
+        // names a role" and the candidate scan reads the two columns it needs from every row.
+        // That is the same shape the by-name author query has always had. Only the books that
+        // actually disagree with the rule are then re-read as tracked entities to be written,
+        // and there are at most `limit` of those.
+        var rows = await _db.Audiobooks
+            .AsNoTracking()
+            .OrderBy(audiobook => audiobook.Id)
+            .Select(audiobook => new { audiobook.Id, audiobook.Authors })
+            .ToListAsync(ct);
+
+        var changes = new List<StoredAuthorCreditChange>();
+        var examined = 0;
+
+        foreach (var row in rows)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (row.Authors == null || row.Authors.Count == 0)
+            {
+                continue;
+            }
+
+            examined++;
+            var cleaned = AuthorCredits.WithoutRoleSuffixes(row.Authors);
+            if (cleaned.SequenceEqual(row.Authors, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            changes.Add(new StoredAuthorCreditChange(row.Id, row.Authors, cleaned));
+            if (changes.Count >= limit)
+            {
+                break;
+            }
+        }
+
+        if (!apply || changes.Count == 0)
+        {
+            return new StoredAuthorCreditCleanupResult(examined, changes);
+        }
+
+        var ids = changes.Select(change => change.AudiobookId).ToList();
+        var tracked = await _db.Audiobooks
+            .Where(audiobook => ids.Contains(audiobook.Id))
+            .ToListAsync(ct);
+
+        foreach (var audiobook in tracked)
+        {
+            // Re-derived from the tracked entity rather than taken from the plan, so a row that
+            // changed between the scan and the write is cleaned as it is now instead of being
+            // overwritten with what it used to be.
+            var cleaned = AuthorCredits.WithoutRoleSuffixes(audiobook.Authors);
+            if (!cleaned.SequenceEqual(audiobook.Authors ?? [], StringComparer.Ordinal))
+            {
+                audiobook.Authors = [.. cleaned];
+            }
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return new StoredAuthorCreditCleanupResult(examined, changes);
+    }
 }
