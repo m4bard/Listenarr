@@ -35,12 +35,50 @@ namespace Listenarr.Application.Downloads.Import;
 public static class ImportCompanionDestinationResolver
 {
     /// <summary>
+    /// The source roots of one import batch: one per archive that was extracted, plus the
+    /// directory the files that stayed behind share. Resolved once per batch, because the
+    /// answer does not depend on which companion is being placed.
+    /// </summary>
+    /// <param name="ExtractionRoots">Temporary directories archives were extracted into.</param>
+    /// <param name="UnextractedCommonDirectory">
+    /// The common directory of the batch files that came from no archive, or null when the
+    /// batch has none.
+    /// </param>
+    public sealed record CompanionSourceRoots(
+        IReadOnlyList<string> ExtractionRoots,
+        string? UnextractedCommonDirectory);
+
+    /// <summary>
+    /// Works out the batch's source roots. Call this once per batch and reuse the result for
+    /// every companion in it.
+    /// </summary>
+    public static CompanionSourceRoots ResolveRoots(
+        IEnumerable<string> batchFiles,
+        IEnumerable<string> extractionRoots,
+        FileSystemPathSemantics? sourceSemantics)
+    {
+        var roots = extractionRoots
+            .Where(root => !string.IsNullOrWhiteSpace(root))
+            .ToList();
+        var candidates = batchFiles.Where(file => !string.IsNullOrWhiteSpace(file));
+        // Without resolved source semantics there is no sound way to ask whether a file sits
+        // under an extraction root, and guessing at host defaults is what the path-identity
+        // rules exist to stop. A batch in that state has no files to place anyway.
+        if (sourceSemantics.HasValue)
+        {
+            candidates = candidates.Where(file => !roots.Any(root =>
+                FileSystemPathIdentity.IsSameOrInside(file, root, sourceSemantics.Value)));
+        }
+
+        return new CompanionSourceRoots(roots, FileUtils.GetCommonDirectory(candidates));
+    }
+
+    /// <summary>
     /// Resolves the companion's path relative to <paramref name="basePath"/>, or returns false
     /// when the companion cannot be placed without inventing structure for it.
     /// </summary>
     public static bool TryResolveRelativeDestination(
-        IReadOnlyCollection<string> batchFiles,
-        IReadOnlyCollection<string> extractionRoots,
+        CompanionSourceRoots sourceRoots,
         string companionFile,
         string? basePath,
         IReadOnlyCollection<ImportResult> results,
@@ -57,7 +95,7 @@ public static class ImportCompanionDestinationResolver
         try
         {
             var companion = FileSystemPathIdentity.ResolveNativeAbsolutePath(companionFile);
-            var sourceRoot = ResolveSourceRoot(batchFiles, extractionRoots, companion, sourceSemantics);
+            var sourceRoot = SelectSourceRoot(sourceRoots, companion, sourceSemantics);
             if (TryMirrorUnderSourceRoot(
                     sourceRoot,
                     companion,
@@ -88,28 +126,14 @@ public static class ImportCompanionDestinationResolver
     /// The root whose structure this companion's position is meaningful against: the archive
     /// it was extracted from, or the directory the batch's un-extracted files share.
     /// </summary>
-    private static string? ResolveSourceRoot(
-        IReadOnlyCollection<string> batchFiles,
-        IReadOnlyCollection<string> extractionRoots,
+    private static string? SelectSourceRoot(
+        CompanionSourceRoots sourceRoots,
         string companion,
         FileSystemPathSemantics sourceSemantics)
     {
-        var owningExtractionRoot = extractionRoots
-            .Where(root => !string.IsNullOrWhiteSpace(root))
-            .FirstOrDefault(root => FileSystemPathIdentity.IsSameOrInside(
-                companion,
-                root,
-                sourceSemantics));
-        if (owningExtractionRoot != null)
-        {
-            return owningExtractionRoot;
-        }
-
-        return FileUtils.GetCommonDirectory(batchFiles.Where(file =>
-            !string.IsNullOrWhiteSpace(file)
-            && !extractionRoots.Any(root =>
-                !string.IsNullOrWhiteSpace(root)
-                && FileSystemPathIdentity.IsSameOrInside(file, root, sourceSemantics))));
+        return sourceRoots.ExtractionRoots.FirstOrDefault(root =>
+                   FileSystemPathIdentity.IsSameOrInside(companion, root, sourceSemantics))
+            ?? sourceRoots.UnextractedCommonDirectory;
     }
 
     /// <summary>
