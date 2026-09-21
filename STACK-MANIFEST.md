@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        a630572e983614a52ea409a23da52a99e3b8b91b
     base short:  a630572e9
-    patches:     295
-    version:     1.3.4+m4bard.295
+    patches:     356
+    version:     1.3.4+m4bard.356
 
 ## Patches, oldest first
 
@@ -304,6 +304,67 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     2b066e661  #-    stack: reconcile the manual-run allowlist with the stacked tree
     4ea7b2cb1  #-    stack: manifest for a630572e9 plus 293 patches
     7f0cea860  #-    search: drop the bare series-name query rung
+    e561fd227  #-    stack: manifest for a630572e9 plus 295 patches
+    e57c46a8d  #-    WIP fix(quality): a blank cutoff means satisfied, not "search forever"
+    ec4eff278  #-    test: bring the new cutoff tests up to the repository's test conventions
+    067894da1  #-    torznab: a bitrate has to be its own token, not digits inside one
+    31dc185d4  #-    torznab: tests for the x264 mislabel, each with its control
+    df53e2fc3  #-    torznab: a number is a bitrate only where the text says it is
+    e1adf03ee  #-    torznab: recover the bracketed bitrate the tightening had lost
+    a9b5ae526  #-    fix(search): let a quality profile's Allowed flag actually gate
+    356cd2e19  #-    fix(search): correct the claims around the quality gate, and pin what it does not decide
+    64f4cc27d  #-    quality profile: refuse a cutoff the profile does not allow
+    22244f086  #-    tests: cover the cutoff rule at the API and at the attribute
+    4da35c2ea  #-    quality profile: make the cutoff rule agree with the code that reads it
+    bee76b55c  #-    WIP fix(quality): one definition of Allowed, not two
+    9e72e20ec  #-    quality profile: give it the UpgradeAllowed flag the family has
+    a65dec266  #-    quality profile: carry upgrades-off across the upgrade, in a startup repair
+    b594df132  #-    tests: pin both directions of the upgrade flag, each against its control
+    88c0067f7  #-    status evaluator: drop the upgrades-off guard, it was never the reason
+    bac3c51d4  #-    tests: pin the new migration id, the backfill gate depends on it
+    cfe9d3377  #-    quality profile: decide "blank cutoff" the way the readers decide it
+    92888272b  #-    comments: correct three claims a reviewer could check and find false
+    86f8b285c  #-    tests: read the observation's results, the way its sibling case already does
+    04ad75a46  #-    Break release selection ties deterministically instead of by indexer order
+    10506fb92  #-    Make the consuming-site tests actually discriminate their own site
+    ca5c06241  #-    Restore Readarr's protocol step, without which the chain is not transitive
+    7160839b3  #-    Close the second intransitivity, and three more review findings
+    a1d9c7f9b  #-    Rank once per site instead of twice, to stay inside the focus budget
+    7587e01b8  #-    Put the same-group invariant in the code, and close the last apparatus gap
+    cbb75246f  #-    tests: point the tiebreak harness at the signatures the stack actually has
+    6f62b7cfc  #-    tests: move the blank-cutoff pin to the answer fix/blank-cutoff-search-loop gave it
+    fe47095cd  #51   test(downloads): pin the release identity wire format with golden vectors
+    be03c5b15  #183  scheduled tasks: answer the trigger with the row it started, and keep stopped workers
+    fd1a532df  #183  scheduled tasks: say which request started the cycle, and stop 404ing a listed task
+    61b6fff06  #183  scheduled tasks: release the gate under the lock that ends the cycle
+    acf34a969  #183  scheduled tasks: publish the interval in whole seconds, and refuse what will not fit
+    e80254824  #183  scheduled tasks: put the interval refusal on the row, and correct two claims made for it
+    26b213cf5  #183  scheduled tasks: make the interval refusal audible, and stop overclaiming what it buys
+    9d17ce8f3  #79   fix(status): stop reporting a non-preferred format as below cutoff
+    96447b6c4  #79   test(status): make the agreement test read the real projection, and pin the widened cases
+    aed7e0a8b  #252  test: flag the blank-cutoff consequence for the not-yet-landed upgrades flag
+    289d53195  #257  fix(quality): resolve the cutoff through QualityMatcher, changing two answers
+    10b3850d8  #255  fix(search): refuse a quality label the gate cannot place
+    6409ad63b  #255  fix(search): answer the review of the quality gate fix
+    f6a644c0b  #261  search: skip the bare-title rung when the title cannot carry a query alone
+    b4af09652  #261  search: stop the stem and series rungs unanchoring themselves when there is no author
+    e63f2d986  #262  Require indexer categories, the way the rest of the *arr family does
+    8360a0909  #262  tests: pin that the draft test is gated too, since it binds the same entity
+    4310392ee  #262  Make the indexer form usable now that categories are required
+    b39a6c737  #262  Move the category default off the entity, where it rewrote stored values
+    451205196  #262  tests: pin that an explicit null category list is not a way past the rule
+    48627ac29  #262  Validate the merged indexer on update, not just the request body
+    28b2521a0  #190  fix(myanonamouse): send the page size as perpage, not tor[perpage]
+    92ff9816d  #190  fix(myanonamouse): send the language the caller asked for
+    c3e1dca8b  #268  import: give each companion file the source root it actually came from
+    ce8c6ad09  #268  import: resolve the companion source roots once per batch, not per file
+    1d17d4fae  #269  manual-import: place companions by the selected files' structure, not the caller's path
+    0523c9d92  #269  manual-import: a companion goes where the file it accompanies went, and nowhere else
+    cf5322744  #269  import: match the companion's neighbour by path identity, and name the rule the manual path uses
+    437b5d3ed  #269  import: say why the neighbour comparison is safe for the reason that is actually true
+    c2ece6dce  #21   tests: give the companion placement pass the root folder this branch now requires
+    de2de1846  #-    quality: split QualityMatcher's internals out, so the file is under the ceiling again
+    a433ec0b2  #258  fix(recovery): one unrecoverable deletion intent must not disable the whole filesystem gate
 
 ## Items, in application order
 
@@ -311,7 +372,7 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     106  fix/767-series-asin                          1 patch
     43   fix/777-macos-ffprobe-url                    1 patch
     23   fix/bug24-queue-guard                        3 patches
-    21   fix/bug12-companion-import-boundary          4 patches
+    21   fix/bug12-companion-import-boundary          5 patches
     24   fix/bug11-taglib-writestream                 2 patches
     22   fix/bug4-n-of-m-chapter-stem                 1 patch
     17   fix/bug5-library-import-series-memberships   1 patch
@@ -333,7 +394,7 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     25   prreview/914-on-843                          0 patches
     60   fix/surface-file-mutation-cause              2 patches
     61   fix/retry-import-requeues                    0 patches
-    51   feat/release-blocklist                       3 patches
+    51   feat/release-blocklist                       4 patches
     62   fix/894-download-finalization-settings       0 patches
     65   fix/895-maximum-age-visibility               0 patches
     46   fix/899-indexer-age-and-size                 0 patches
@@ -418,9 +479,23 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     205  fix/redacted-sentinel-round-trip             0 patches
     209  fix/private-address-ipv4-mapped              0 patches
     190  fix/indexer-flags                            0 patches
-    183  feat/183-task-scheduler                      0 patches
+    183  feat/183-task-scheduler                      6 patches
     185  local/185-on-123                             0 patches
     189  local/189-on-95                              0 patches
-    79   fix/format-preference-is-not-a-quality-mismatch 0 patches
+    79   fix/format-preference-is-not-a-quality-mismatch 2 patches
+    252  fix/blank-cutoff-search-loop                 1 patch
+    257  fix/cutoff-lookup-respects-allowed           1 patch
+    254  fix/torznab-quality-substring-match          0 patches
+    255  fix/quality-gate-respects-allowed            2 patches
+    253  fix/deterministic-release-tiebreak           0 patches
+    256  fix/validate-quality-profile-cutoff          0 patches
+    256  fix/quality-profile-upgrade-allowed          0 patches
+    261  fix/gate-bare-title-on-166                   2 patches
+    262  fix/require-indexer-categories               6 patches
+    190  fix/mam-ignored-search-parameters            2 patches
+    268  fix/companion-relative-path-escape           2 patches
+    269  fix/manual-companion-relative-path           4 patches
+    258  fix/deletion-intent-does-not-brick-startup   1 patch
+    273  fix/author-cache-upsert-is-atomic            0 patches
 
 Regenerate with tools/local_stack.sh in the tracker repo.
