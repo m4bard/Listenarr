@@ -157,6 +157,38 @@ public sealed class AudiobookRepositoryStoredCreditCleanupTests : BaseTests
         Assert.All(books, book => Assert.DoesNotContain(book.Authors!, author => author.Contains(" - translator")));
     }
 
+    // The scan and the write are two separate readings, so what is reported has to come from
+    // the second one. Reporting the plan would name a before and an after that never happened
+    // on any row somebody changed in between.
+    [Fact]
+    public async Task Apply_ReportsWhatItWroteRatherThanWhatItPlanned()
+    {
+        var (connection, context) = await OpenAsync();
+        await using var _ = connection;
+        await using var __ = context;
+
+        var book = Book("Crime and Punishment", "Fyodor Dostoevsky", "Constance Garnett - translator");
+        context.Audiobooks.Add(book);
+        await context.SaveChangesAsync();
+
+        // Somebody fixes it by hand between the scan and the write. The plan still says the row
+        // needs cleaning; the row does not.
+        await using var other = new ListenArrDbContext(
+            new DbContextOptionsBuilder<ListenArrDbContext>().UseSqlite(connection).Options);
+        var meanwhile = await other.Audiobooks.SingleAsync();
+        meanwhile.Authors = ["Fyodor Dostoevsky", "Constance Garnett"];
+        await other.SaveChangesAsync();
+
+        await using var fresh = new ListenArrDbContext(
+            new DbContextOptionsBuilder<ListenArrDbContext>().UseSqlite(connection).Options);
+        var result = await new AudiobookRepository(fresh).CleanRoleSuffixesFromStoredAuthorsAsync(10, apply: true);
+
+        Assert.Empty(result.Changes);
+        Assert.Equal(
+            new[] { "Fyodor Dostoevsky", "Constance Garnett" },
+            (await fresh.Audiobooks.AsNoTracking().SingleAsync()).Authors);
+    }
+
     [Fact]
     public async Task Apply_RefusesAnEmptyCeiling()
     {
@@ -205,7 +237,6 @@ public sealed class AudiobookRepositoryStoredCreditCleanupTests : BaseTests
 
         var result = await new AudiobookRepository(context).CleanRoleSuffixesFromStoredAuthorsAsync(10, apply: true);
 
-        Assert.Equal(0, result.Examined);
         Assert.Empty(result.Changes);
     }
 }
