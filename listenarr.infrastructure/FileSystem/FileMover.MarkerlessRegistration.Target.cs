@@ -6,6 +6,54 @@ namespace Listenarr.Infrastructure.FileSystem;
 
 public partial class FileMover
 {
+    /// <summary>
+    /// Creates the pinned hardlink, translating the races that <see cref="FileAction.HardlinkCopy"/>
+    /// should survive into the exception type the copy fallback already recognises.
+    /// </summary>
+    /// <remarks>
+    /// PinnedFileEntry.CreateHardLinkTo raises InvalidOperationException both before the link
+    /// exists (an endpoint changed) and after it exists (the created link does not identify the
+    /// pinned source generation, or the entry changed while it was being opened). Only the first
+    /// can be answered with a copy. In the others the destination name is already occupied, the
+    /// cleanup inside CreateHardLinkTo deliberately does not remove an entry it cannot prove is
+    /// its own, and the copy path would fail on the existing name anyway, so the original failure
+    /// is the more useful one to report. The destination is therefore probed to tell them apart
+    /// rather than assumed.
+    /// </remarks>
+    private async Task<PinnedDirectoryCreation.PinnedFileEntry>
+        CreateHardLinkOrTranslateRaceAsync(
+            FileAction action,
+            PinnedDirectoryCreation.PinnedFileEntry sourceEntry,
+            FileMoveGateLease gate)
+    {
+        try
+        {
+            if (BeforePinnedHardlinkCreationForTestAsync != null)
+            {
+                await BeforePinnedHardlinkCreationForTestAsync();
+            }
+            return sourceEntry.CreateHardLinkTo(
+                gate.DestinationParent,
+                gate.DestinationName,
+                AfterPinnedHardlinkCreatedForTest);
+        }
+        catch (InvalidOperationException exception)
+            when (action == FileAction.HardlinkCopy)
+        {
+            using var strayTarget = gate.DestinationParent.TryOpenExistingFile(
+                gate.DestinationName,
+                requireDeleteAccess: false);
+            if (strayTarget != null)
+            {
+                throw;
+            }
+
+            throw new IOException(
+                "A pinned hardlink endpoint raced its own publication before the link was created.",
+                exception);
+        }
+    }
+
     private async Task<FileMutationJournal> PublishMarkerlessRegistrationTargetAsync(
         FileAction action,
         FileMoveGateLease gate,
@@ -92,13 +140,10 @@ public partial class FileMover
         {
             try
             {
-                if (BeforePinnedHardlinkCreationForTestAsync != null)
-                {
-                    await BeforePinnedHardlinkCreationForTestAsync();
-                }
-                publishedHardlink = sourceEntry.CreateHardLinkTo(
-                    gate.DestinationParent,
-                    gate.DestinationName);
+                publishedHardlink = await CreateHardLinkOrTranslateRaceAsync(
+                    action,
+                    sourceEntry,
+                    gate);
                 targetIdentity = publishedHardlink.GetObjectIdentity();
                 if (AfterMarkerlessRegistrationTargetCreatedBeforeStateForTestAsync != null)
                 {
@@ -117,12 +162,8 @@ public partial class FileMover
                 }
                 return journal;
             }
-            catch (Exception exception) when (
-                exception is IOException
-                    or Win32Exception
-                    or PlatformNotSupportedException
-                || (action == FileAction.HardlinkCopy
-                    && exception is InvalidOperationException))
+            catch (Exception exception) when (exception is
+                IOException or Win32Exception or PlatformNotSupportedException)
             {
                 if (action == FileAction.Move && !OperatingSystem.IsWindows())
                 {
@@ -138,7 +179,7 @@ public partial class FileMover
 
                 _logger.LogWarning(
                     exception,
-                    "Markerless hardlink publication was unavailable; falling back to a direct final-name copy. The destination will be an independent copy rather than a link, and the source is retained: {Source} -> {Destination}",
+                    "Markerless hardlink publication was unavailable; falling back to a direct final-name copy, so the destination will be an independent copy rather than a link: {Source} -> {Destination}",
                     LogRedaction.SanitizeFilePath(gate.SourcePath),
                     LogRedaction.SanitizeFilePath(gate.DestinationPath));
             }
