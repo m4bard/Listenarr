@@ -284,5 +284,30 @@ namespace Listenarr.Domain.Configuration
         // well under any plausible ceiling; pushback narrows it further at runtime.
         public int MetadataRefreshRequestsPerHour { get; set; } = 60;
         public int MetadataRefreshMinimumSpacingMs { get; set; } = 1000;
+
+        // The author identity repair pass. Three states out of two switches, and the order they
+        // are reached in is the point.
+        //
+        // Off, shipped, so an upgrade costs nothing and nothing is rewritten by surprise. Turned
+        // on, it previews: DryRun stays true, so the pass resolves every name it examines and
+        // says what it would change without changing anything, and it can be read twice and give
+        // the same answer. Only when the operator turns DryRun off does it write.
+        //
+        // A pass that rewrites who an author is has to be seen before it runs, which is why the
+        // preview is the state you land in rather than a flag you have to find. The family's
+        // housekeepers do not need this: every Readarr housekeeper is a local recomputation, and
+        // none of them asks a provider who somebody is.
+        public bool AuthorIdentityRepairEnabled { get; set; }
+        public bool AuthorIdentityRepairDryRun { get; set; } = true;
+
+        // Daily, which is HousekeepingCommand's interval in Readarr's TaskManager and the same
+        // one the metadata walk uses here.
+        public int AuthorIdentityRepairIntervalHours { get; set; } = 24;
+
+        // Deliberately small. Every row examined costs at least one provider request out of the
+        // same hourly budget the metadata walk spends, so an unbounded pass would starve the
+        // ordinary refresh for as long as it ran. Rows it does not reach stay at the head of the
+        // queue for the next run.
+        public int AuthorIdentityRepairMaxRowsPerRun { get; set; } = 25;
     }
 }
