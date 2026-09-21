@@ -180,6 +180,38 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
     }
 
     /// <summary>
+    /// The automatic batch's results carry its already-imported companions as well as its audio,
+    /// and a companion is not something to place another companion beside. The manual path has
+    /// no such entries, which is why the filter lives in this projection rather than in the
+    /// fallback both paths share.
+    /// </summary>
+    [Fact]
+    public void ImportedAudioFrom_KeepsOnlyTheSuccessfulAudioImports()
+    {
+        IReadOnlyCollection<ImportResult> results =
+        [
+            ImportResult.ImportSuccess(
+                FileAction.Copy,
+                Path.Join(DownloadDirectory, "release.m4b"),
+                Path.Join(BasePath, "The Valley of Fear.m4b")),
+            ImportResult.ImportSuccess(
+                FileAction.Copy,
+                Path.Join(DownloadDirectory, "book.nfo"),
+                Path.Join(BasePath, "book.nfo")),
+            ImportResult.ImportFailure(
+                FileAction.Copy,
+                Path.Join(DownloadDirectory, "failed.m4b"),
+                BasePath)
+        ];
+
+        var imported = ImportCompanionDestinationResolver.ImportedAudioFrom(results);
+
+        Assert.Equal(
+            [Path.Join(DownloadDirectory, "release.m4b")],
+            imported.Select(placement => placement.SourcePath));
+    }
+
+    /// <summary>
     /// A companion outside every root in the batch is refused outright rather than described
     /// with a traversing relative path. <c>Path.GetRelativePath</c>, which this replaced, is a
     /// total function: it answered this case with <c>../../../etc/passwd</c> and left the
