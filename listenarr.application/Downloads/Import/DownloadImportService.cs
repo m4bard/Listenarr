@@ -128,7 +128,7 @@ namespace Listenarr.Application.Downloads.Import
                     sourcePathComparer = sourceSemantics.Value.Comparer;
                 }
                 var sourceFiles = candidateFiles.Distinct(sourcePathComparer).ToList();
-                sourceRootPath = FileUtils.GetCommonDirectory(sourceFiles);
+                var companionSourceRoots = ImportCompanionDestinationResolver.ResolveRoots(sourceFiles, archiveImportExtractor.ExtractionRoots, sourceSemantics);
                 var plannedAudioFiles = MultiFileImportPlanner.BuildPlans(
                     sourceFiles.Where(FileUtils.IsAudioFile).Select(f => (f, (string?)null)),
                     sourcePathComparer);
@@ -184,7 +184,7 @@ namespace Listenarr.Application.Downloads.Import
 
                             try
                             {
-                                var companionPlaced = ImportCompanionDestinationResolver.TryResolveRelativeDestination(sourceFiles, archiveImportExtractor.ExtractionRoots, file, audiobook.BasePath, results, fileSourceSemantics, destinationSemantics, out var relativePath);
+                                var companionPlaced = ImportCompanionDestinationResolver.TryResolveRelativeDestination(companionSourceRoots, file, audiobook.BasePath, results, fileSourceSemantics, destinationSemantics, out var relativePath);
                                 if (!companionPlaced || !destinationPlanner.TryResolve(audiobook.BasePath, relativePath, destinationSemantics, out var destination))
                                 {
                                     results.Add(companionPlaced ? ImportResult.ImportFailure(completedFileAction, file, audiobook.BasePath) : ImportResult.Skipped($"Companion file {Path.GetFileName(file)} has no destination inside the audiobook folder: it came from neither the batch's source directory nor an archive, and no audio file was imported from its own directory"));
