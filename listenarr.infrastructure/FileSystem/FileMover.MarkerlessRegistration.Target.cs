@@ -120,9 +120,9 @@ public partial class FileMover
                 }
                 if (exception is InvalidOperationException) throw;
 
-                _logger.LogInformation(
+                _logger.LogWarning(
                     exception,
-                    "Markerless hardlink publication was unavailable; falling back to a direct final-name copy: {Source} -> {Destination}",
+                    "Markerless hardlink publication was unavailable; falling back to a direct final-name copy. The destination will be an independent copy rather than a link, and the source is retained: {Source} -> {Destination}",
                     LogRedaction.SanitizeFilePath(gate.SourcePath),
                     LogRedaction.SanitizeFilePath(gate.DestinationPath));
             }
