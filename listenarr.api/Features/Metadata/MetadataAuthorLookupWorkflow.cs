@@ -239,13 +239,22 @@ namespace Listenarr.Api.Features.Metadata
                     try
                     {
                         var audnexResults = await _audnexusService.SearchAuthorsAsync(normalizedName, region);
-                        audnexusSearchAuthor = audnexResults?.FirstOrDefault(a =>
-                            !string.IsNullOrWhiteSpace(a.Name) &&
-                            a.Name.Equals(normalizedName, StringComparison.OrdinalIgnoreCase))
-                            ?? audnexResults?.FirstOrDefault(a =>
-                                !string.IsNullOrWhiteSpace(a.Asin) &&
-                                string.Equals(a.Asin, resolvedAsin, StringComparison.OrdinalIgnoreCase))
-                            ?? audnexResults?.FirstOrDefault();
+
+                        // Taking the first row bound a stranger's ASIN, biography and portrait to
+                        // the name, and the binding is persisted. AudnexusAuthorIdentity has the
+                        // rule and why it is that rule.
+                        audnexusSearchAuthor = AudnexusAuthorIdentity.Select(
+                            audnexResults,
+                            normalizedName,
+                            resolvedAsin);
+
+                        if (audnexusSearchAuthor == null && audnexResults is { Count: > 0 })
+                        {
+                            _logger.LogDebug(
+                                "Audnexus returned {Count} candidates for '{Author}' and none of them is that author; leaving the ASIN unresolved",
+                                audnexResults.Count,
+                                normalizedName);
+                        }
 
                         if (audnexusSearchAuthor != null)
                         {
