@@ -366,8 +366,7 @@ public partial class AudiobookRepository
             .Select(audiobook => new { audiobook.Id, audiobook.Authors })
             .ToListAsync(ct);
 
-        var changes = new List<StoredAuthorCreditChange>();
-        var examined = 0;
+        var planned = new List<StoredAuthorCreditChange>();
 
         foreach (var row in rows)
         {
@@ -378,43 +377,49 @@ public partial class AudiobookRepository
                 continue;
             }
 
-            examined++;
             var cleaned = AuthorCredits.WithoutRoleSuffixes(row.Authors);
             if (cleaned.SequenceEqual(row.Authors, StringComparer.Ordinal))
             {
                 continue;
             }
 
-            changes.Add(new StoredAuthorCreditChange(row.Id, row.Authors, cleaned));
-            if (changes.Count >= limit)
+            planned.Add(new StoredAuthorCreditChange(row.Id, row.Authors, cleaned));
+            if (planned.Count >= limit)
             {
                 break;
             }
         }
 
-        if (!apply || changes.Count == 0)
+        if (!apply || planned.Count == 0)
         {
-            return new StoredAuthorCreditCleanupResult(examined, changes);
+            return new StoredAuthorCreditCleanupResult(planned);
         }
 
-        var ids = changes.Select(change => change.AudiobookId).ToList();
+        var ids = planned.Select(change => change.AudiobookId).ToList();
         var tracked = await _db.Audiobooks
             .Where(audiobook => ids.Contains(audiobook.Id))
             .ToListAsync(ct);
 
+        var applied = new List<StoredAuthorCreditChange>(planned.Count);
         foreach (var audiobook in tracked)
         {
             // Re-derived from the tracked entity rather than taken from the plan, so a row that
             // changed between the scan and the write is cleaned as it is now instead of being
-            // overwritten with what it used to be.
-            var cleaned = AuthorCredits.WithoutRoleSuffixes(audiobook.Authors);
-            if (!cleaned.SequenceEqual(audiobook.Authors ?? [], StringComparer.Ordinal))
+            // overwritten with what it used to be. The report is rebuilt from the same reading,
+            // for the same reason: reporting the plan would name a before and an after that
+            // never happened, and would count a row that no longer needed cleaning.
+            var before = audiobook.Authors ?? [];
+            var cleaned = AuthorCredits.WithoutRoleSuffixes(before);
+            if (cleaned.SequenceEqual(before, StringComparer.Ordinal))
             {
-                audiobook.Authors = [.. cleaned];
+                continue;
             }
+
+            applied.Add(new StoredAuthorCreditChange(audiobook.Id, [.. before], cleaned));
+            audiobook.Authors = [.. cleaned];
         }
 
         await _db.SaveChangesAsync(ct);
-        return new StoredAuthorCreditCleanupResult(examined, changes);
+        return new StoredAuthorCreditCleanupResult(applied);
     }
 }
