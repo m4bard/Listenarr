@@ -249,5 +249,113 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Catalog
                     entry.CatalogBooks[0].Title == "The Way of Kings")),
                 Times.Once);
         }
+
+        // The defect: `/authors?name=` is a fuzzy search. Asked for a name Audible carries no
+        // identifier for, it answers with 25 people who merely share a word of it, in an order
+        // that changes between calls, and the catalogue used to take whichever came back first
+        // and file it as this author. Five fresh instances asked the same question and bound
+        // five different strangers.
+        [Fact]
+        public async Task GetCatalogAsync_BindsNobodyWhenNoAudnexusCandidateNamesTheAuthor()
+        {
+            var audible = new Mock<AudibleService>(SharedHttpClient, Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audnexus = new Mock<IAudnexusService>();
+            var audiobookRepository = new Mock<IAudiobookRepository>();
+            var searchService = new Mock<ISearchService>();
+            var logger = new Mock<ILogger<AuthorCatalogService>>();
+
+            audible
+                .Setup(service => service.LookupAuthorAsync("George Makepeace Towle", "us"))
+                .ReturnsAsync(new AuthorLookupItem { Asin = null, Name = "George Makepeace Towle" });
+
+            audnexus
+                .Setup(service => service.SearchAuthorsAsync("George Makepeace Towle", "us"))
+                .ReturnsAsync(new List<AudnexusAuthorSearchResult>
+                {
+                    new() { Asin = "B00O0C6Z26", Name = "George Bodenheimer" },
+                    new() { Asin = "B001K8SNEG", Name = "George Meegan" },
+                    new() { Asin = "B000APBJ7S", Name = "George Plimpton" }
+                });
+
+            var service = new AuthorCatalogService(
+                audible.Object,
+                audnexus.Object,
+                audiobookRepository.Object,
+                searchService.Object,
+                logger.Object);
+
+            var result = await service.GetCatalogAsync("George Makepeace Towle", "us", 10);
+
+            Assert.Null(result);
+
+            // Nothing may be fetched under a stranger's identifier, and nothing may be cached
+            // under one. Without the fix the first row is bound and both of these fire.
+            audible.Verify(
+                svc => svc.GetAllBooksByAuthorAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<int>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>()),
+                Times.Never);
+            audiobookRepository.Verify(
+                repository => repository.UpsertCachedAuthorAsync(It.IsAny<AuthorCacheEntry>()),
+                Times.Never);
+        }
+
+        // The control, and it has to come out differently. Refusing the unnamed rows must not
+        // amount to refusing the fallback: where audnexus does name the author, that row is still
+        // the answer, and it is the answer even when it is not the row that came back first.
+        [Fact]
+        public async Task GetCatalogAsync_StillTakesTheAudnexusRowThatNamesTheAuthor()
+        {
+            var audible = new Mock<AudibleService>(SharedHttpClient, Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audnexus = new Mock<IAudnexusService>();
+            var audiobookRepository = new Mock<IAudiobookRepository>();
+            var searchService = new Mock<ISearchService>();
+            var logger = new Mock<ILogger<AuthorCatalogService>>();
+
+            audible
+                .Setup(service => service.LookupAuthorAsync("Constance Garnett", "us"))
+                .ReturnsAsync(new AuthorLookupItem { Asin = null, Name = "Constance Garnett" });
+
+            audnexus
+                .Setup(service => service.SearchAuthorsAsync("Constance Garnett", "us"))
+                .ReturnsAsync(new List<AudnexusAuthorSearchResult>
+                {
+                    new() { Asin = "B000APBJ7S", Name = "Constance Briscoe" },
+                    new() { Asin = "B000APTDDU", Name = "Constance Garnett" },
+                    new() { Asin = "B001K8SNEG", Name = "Constance Hall" }
+                });
+
+            audible
+                .Setup(service => service.GetAllBooksByAuthorAsync("Constance Garnett", "B000APTDDU", 10, "us", null))
+                .ReturnsAsync(new AudibleSearchResponse
+                {
+                    Results = new List<AudibleSearchResult>
+                    {
+                        new()
+                        {
+                            Asin = "B002V9ZF3K",
+                            Title = "Crime and Punishment",
+                            Authors = new List<AudibleAuthor> { new() { Name = "Fyodor Dostoevsky" } }
+                        }
+                    },
+                    TotalResults = 1
+                });
+
+            var service = new AuthorCatalogService(
+                audible.Object,
+                audnexus.Object,
+                audiobookRepository.Object,
+                searchService.Object,
+                logger.Object);
+
+            var result = await service.GetCatalogAsync("Constance Garnett", "us", 10);
+
+            Assert.NotNull(result);
+            Assert.Equal("B000APTDDU", result!.Author.Asin);
+            Assert.Single(result.Books);
+        }
     }
 }
