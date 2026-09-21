@@ -43,5 +43,18 @@ namespace Listenarr.Domain.Audiobooks
         public DateTime? LastSuccessfulSyncAt { get; set; }
 
         public string? LastError { get; set; }
+
+        /// <summary>
+        /// When the author identity repair pass last resolved this row's name against the
+        /// provider and decided whether the ASIN on it is that author's.
+        /// </summary>
+        /// <remarks>
+        /// This is the pass's cursor, and it is why an interrupted run does not start over. Null
+        /// means never examined, so an upgraded database is one long queue of nulls and the pass
+        /// works through it oldest first. A preview run never writes this, which is what makes a
+        /// preview repeatable and what makes "the dry run changed nothing" a claim about the
+        /// whole row rather than about the ASIN alone.
+        /// </remarks>
+        public DateTime? AuthorIdentityCheckedAt { get; set; }
     }
 }
