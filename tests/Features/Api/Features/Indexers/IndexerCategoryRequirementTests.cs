@@ -112,6 +112,28 @@ namespace Listenarr.Tests.Features.Api.Features.Indexers
         }
 
         [Fact]
+        public async Task TestDraft_WithoutCategories_IsRefusedBeforeTheIndexerIsContacted()
+        {
+            // The draft-test action binds the same entity, so the rule reaches it too. That
+            // matches the family: Sonarr and Readarr pass forceValidate: true on Test, making it
+            // the strictest path rather than a way around the validator.
+            using var client = _factory.CreateClient();
+
+            var response = await PostIndexerAsync(
+                client,
+                BuildIndexerJson("Newznab", categories: ""),
+                path: "indexers/test");
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.True(
+                document.RootElement.TryGetProperty("errors", out var errors)
+                    && errors.TryGetProperty("Categories", out _),
+                "Expected the draft test to be refused by validation, not by the connection attempt.");
+        }
+
+        [Fact]
         public async Task StoredIndexerWithNullCategories_StillLoadsAndIsReadable()
         {
             // The row is written as raw SQL so the column really is NULL, the way it is on an
@@ -211,11 +233,14 @@ namespace Listenarr.Tests.Features.Api.Features.Indexers
             return stored.Id;
         }
 
-        private async Task<HttpResponseMessage> PostIndexerAsync(HttpClient client, string json)
+        private async Task<HttpResponseMessage> PostIndexerAsync(
+            HttpClient client,
+            string json,
+            string path = "indexers")
         {
             var (token, cookie) = await GetAntiforgeryTokenAsync(client);
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/indexers")
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/{path}")
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             };
