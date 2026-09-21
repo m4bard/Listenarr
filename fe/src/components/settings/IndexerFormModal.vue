@@ -192,12 +192,14 @@
               v-if="formData.implementation !== 'InternetArchive'"
               label="Categories"
               labelFor="categories"
-              help="Leave empty to search all categories"
+              help="Comma-separated Newznab category ids (3030 is Audio/Audiobook), required by Newznab and Torznab and ignored by the other implementations."
+              :error="categoriesError"
             >
               <input
                 id="categories"
                 v-model="formData.categories"
                 type="text"
+                :aria-invalid="categoriesError ? 'true' : undefined"
                 placeholder="Comma-separated category IDs (e.g., 3030,3040)"
               />
             </FormRow>
@@ -323,6 +325,26 @@ const toast = useToast()
 const saving = ref(false)
 const testing = ref(false)
 
+// Newznab standard category 3030 is "Audio/Audiobook", the only audiobook category in the
+// standard, so it is the whole of the default the server applies when the field is omitted.
+const AUDIOBOOK_CATEGORY_DEFAULT = '3030'
+
+// Only Newznab and Torznab put a `cat=` parameter on the outbound query, so only those two
+// refuse a save without categories. MyAnonamouse sends its own fixed list and Internet Archive
+// searches a named collection, and both ignore this field.
+const CATEGORY_AWARE_IMPLEMENTATIONS = ['newznab', 'torznab']
+
+const requiresCategories = (implementation: string | undefined | null): boolean =>
+  CATEGORY_AWARE_IMPLEMENTATIONS.includes(
+    String(implementation ?? '')
+      .trim()
+      .toLowerCase(),
+  )
+
+// Server-side validation message for the Categories field, cleared as soon as the user changes
+// anything the server complained about.
+const categoriesError = ref('')
+
 // MyAnonamouse authentication field
 const mamId = ref('')
 // MyAnonamouse options
@@ -344,7 +366,7 @@ const defaultFormData = {
   implementation: 'Torznab',
   url: '',
   apiKey: '',
-  categories: '',
+  categories: AUDIOBOOK_CATEGORY_DEFAULT,
   enableRss: true,
   enableAutomaticSearch: true,
   enableInteractiveSearch: true,
@@ -474,7 +496,31 @@ watch(
 // Watch for implementation changes to auto-set type
 watch(
   () => formData.value.implementation,
-  (newImplementation) => {
+  (newImplementation, oldImplementation) => {
+    // Distinguish the user picking a different implementation from the form being repopulated
+    // for an indexer that is being edited. Loading an existing indexer must not rewrite its
+    // stored categories; only a deliberate change of implementation does.
+    const isFormReload =
+      props.editingIndexer != null && newImplementation === props.editingIndexer.implementation
+
+    if (!isFormReload) {
+      if (requiresCategories(newImplementation)) {
+        // The server refuses a save with no categories, so offer the default rather than an
+        // empty box the user has no way to fill in correctly.
+        if (!formData.value.categories.trim()) {
+          formData.value.categories = AUDIOBOOK_CATEGORY_DEFAULT
+        }
+      } else if (
+        requiresCategories(oldImplementation) &&
+        formData.value.categories.trim() === AUDIOBOOK_CATEGORY_DEFAULT
+      ) {
+        // This implementation ignores categories, so drop the default we supplied. Anything the
+        // user typed themselves is left alone.
+        formData.value.categories = ''
+      }
+      categoriesError.value = ''
+    }
+
     // Internet Archive is DDL only, set type to Usenet
     if (newImplementation === 'InternetArchive') {
       formData.value.type = 'Usenet'
@@ -496,9 +542,90 @@ watch(
   },
 )
 
+// A server complaint about the categories stops applying the moment the value changes.
+watch(
+  () => formData.value.categories,
+  () => {
+    categoriesError.value = ''
+  },
+)
+
 const closeModal = () => {
   formData.value = { ...defaultFormData }
+  categoriesError.value = ''
   emit('close')
+}
+
+/**
+ * Pulls a usable message out of a failed API call.
+ *
+ * The fetch wrapper attaches the raw response body to the thrown error, so an ASP.NET
+ * `ValidationProblemDetails` arrives intact and its per-field messages can be shown against the
+ * field they belong to. The body may equally be plain text, empty, or absent entirely when the
+ * call failed for a network reason, so every step here is allowed to come up with nothing.
+ */
+const describeSaveFailure = (
+  error: unknown,
+  fallback: string,
+): { message: string; fieldErrors: Record<string, string> } => {
+  const err = error as { body?: unknown; message?: string } | null | undefined
+  const fieldErrors: Record<string, string> = {}
+  let message = ''
+
+  let parsed: Record<string, unknown> | null = null
+  if (typeof err?.body === 'string') {
+    const raw = err.body.trim()
+    if (raw.length > 0) {
+      try {
+        const candidate: unknown = JSON.parse(raw)
+        if (candidate && typeof candidate === 'object') {
+          parsed = candidate as Record<string, unknown>
+        }
+      } catch {
+        // Not JSON. The body is still the most specific thing we have.
+        message = raw
+      }
+    }
+  } else if (err?.body && typeof err.body === 'object') {
+    parsed = err.body as Record<string, unknown>
+  }
+
+  if (parsed) {
+    const errors = parsed.errors
+    if (errors && typeof errors === 'object') {
+      for (const [field, value] of Object.entries(errors as Record<string, unknown>)) {
+        const text = Array.isArray(value)
+          ? value.filter((entry): entry is string => typeof entry === 'string').join(' ')
+          : typeof value === 'string'
+            ? value
+            : ''
+        if (text) {
+          fieldErrors[field.toLowerCase()] = text
+        }
+      }
+    }
+
+    const fieldMessages = Object.values(fieldErrors)
+    if (fieldMessages.length > 0) {
+      message = fieldMessages.join(' ')
+    } else {
+      // `title` is last: on a ValidationProblemDetails it is only ever the generic
+      // "One or more validation errors occurred."
+      for (const key of ['detail', 'message', 'error', 'title']) {
+        const candidate = parsed[key]
+        if (typeof candidate === 'string' && candidate.trim().length > 0) {
+          message = candidate
+          break
+        }
+      }
+    }
+  }
+
+  if (!message && typeof err?.message === 'string' && err.message.trim().length > 0) {
+    message = err.message
+  }
+
+  return { message: message || fallback, fieldErrors }
 }
 
 const testConnection = async () => {
@@ -518,30 +645,14 @@ const testConnection = async () => {
   } catch (error: unknown) {
     console.error('Failed to test indexer:', error)
 
-    // Try to parse error response body for detailed message
-    let errorMessage = 'Failed to test indexer connection'
-    const err = error as { body?: unknown; message?: string }
-    if (err?.body) {
-      try {
-        const errorData =
-          typeof err.body === 'string'
-            ? JSON.parse(err.body)
-            : (err.body as Record<string, unknown>)
-        errorMessage =
-          (errorData as { message?: string; error?: string }).message ||
-          (errorData as { message?: string; error?: string }).error ||
-          errorMessage
-      } catch {
-        // If body isn't JSON, use it as-is if it's a string
-        if (typeof err.body === 'string' && err.body.length > 0) {
-          errorMessage = err.body
-        }
-      }
-    } else if (err?.message) {
-      errorMessage = err.message
-    }
+    // The draft test posts the indexer itself, so the same field validation that refuses a save
+    // refuses it. That arrives as a ValidationProblemDetails, which carries neither `message` nor
+    // `error`, so it needs the reader the save path uses or the reason is lost. The reader still
+    // prefers `message` and `error`, which is what an ordinary failed connection returns.
+    const { message, fieldErrors } = describeSaveFailure(error, 'Failed to test indexer connection')
+    categoriesError.value = fieldErrors.categories || ''
 
-    toast.error('Test failed', errorMessage)
+    toast.error('Test failed', message)
   } finally {
     testing.value = false
   }
@@ -549,6 +660,7 @@ const testConnection = async () => {
 
 const handleSubmit = async () => {
   saving.value = true
+  categoriesError.value = ''
   try {
     const submitData = buildIndexerPayload()
 
@@ -566,7 +678,9 @@ const handleSubmit = async () => {
     closeModal()
   } catch (error) {
     console.error('Failed to save indexer:', error)
-    toast.error('Save failed', 'Failed to save indexer')
+    const { message, fieldErrors } = describeSaveFailure(error, 'Failed to save indexer')
+    categoriesError.value = fieldErrors.categories || ''
+    toast.error('Save failed', message)
   } finally {
     saving.value = false
   }
