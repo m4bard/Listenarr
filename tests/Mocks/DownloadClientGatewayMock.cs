@@ -28,6 +28,30 @@ namespace Listenarr.Tests.Mocks
         public List<string> SourceFiles { get; set; } = [];
         public bool RemoveResult { get; set; }
         public bool? LastRemoveDeleteFiles { get; private set; }
+
+        /// <summary>
+        /// Identifiers passed to RemoveAsync, in call order. Tests that care which item reached the
+        /// client, rather than only that something did, assert on this.
+        /// </summary>
+        public List<string> RemovedIds { get; } = [];
+
+        /// <summary>
+        /// Queue contents handed back by GetQueueAsync. These stand in for a real client queue, so
+        /// their Id values are the client's own identifiers, not Listenarr download ids.
+        /// </summary>
+        public List<QueueItem> QueueItems { get; } = [];
+
+        /// <summary>
+        /// When set, RemoveAsync throws instead of returning a clean false. This is a client that
+        /// errors on the delete call itself: a timeout, an auth failure, a server-side error.
+        /// </summary>
+        public Exception? RemoveException { get; set; }
+
+        /// <summary>
+        /// When set, GetQueueAsync throws. Together with RemoveException this is a client that is
+        /// not answering at all, rather than one that only refuses the delete.
+        /// </summary>
+        public Exception? QueueException { get; set; }
         public bool MarkImportedResult { get; set; } = true;
         private readonly Dictionary<string, int> MethodCalls = [];
 
@@ -52,6 +76,12 @@ namespace Listenarr.Tests.Mocks
         {
             RegisterMethodCall(nameof(RemoveAsync));
             LastRemoveDeleteFiles = deleteFiles;
+            RemovedIds.Add(id);
+
+            if (RemoveException != null)
+            {
+                throw RemoveException;
+            }
 
             return Task.FromResult(RemoveResult);
         }
@@ -60,7 +90,12 @@ namespace Listenarr.Tests.Mocks
         {
             RegisterMethodCall(nameof(GetQueueAsync));
 
-            return [];
+            if (QueueException != null)
+            {
+                throw QueueException;
+            }
+
+            return [.. QueueItems];
         }
 
         public async Task<List<(string Id, string Name)>> GetRecentHistoryAsync(DownloadClientConfiguration client, int limit = 100, CancellationToken ct = default)
