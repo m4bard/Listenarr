@@ -3,6 +3,7 @@ using System;
 using Listenarr.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    partial class ListenArrDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260921210504_AddAuthorIdentityRecheckWindow")]
+    partial class AddAuthorIdentityRecheckWindow
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
@@ -995,9 +998,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("AudiobookId")
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("TEXT");
-
                     b.Property<bool>("DeleteEmptySource")
                         .HasColumnType("INTEGER");
 
@@ -1945,12 +1945,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int>("HistoryRetentionDays")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("HousekeepingDryRun")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("HousekeepingRetentionDays")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("ImportBlacklistExtensions")
