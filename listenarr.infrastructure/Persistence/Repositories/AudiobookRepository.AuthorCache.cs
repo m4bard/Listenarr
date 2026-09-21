@@ -245,5 +245,79 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 }
             }
         }
+
+        /// <inheritdoc />
+        public async Task<List<AuthorCacheEntry>> GetAuthorCacheEntriesDueForIdentityCheckAsync(
+            int limit,
+            CancellationToken ct = default)
+        {
+            if (limit <= 0)
+            {
+                return new List<AuthorCacheEntry>();
+            }
+
+            // Nulls first, then oldest. SQLite sorts NULL before any value on an ascending
+            // order, which is the order wanted here, but it is ordered explicitly rather than
+            // relying on that: a provider that sorted them last would silently make a library
+            // that has never run the pass look entirely up to date.
+            return await _db.AuthorCacheEntries
+                .AsNoTracking()
+                .Where(entry => entry.AuthorAsin != null && entry.AuthorAsin != string.Empty)
+                .OrderBy(entry => entry.AuthorIdentityCheckedAt.HasValue)
+                .ThenBy(entry => entry.AuthorIdentityCheckedAt)
+                .ThenBy(entry => entry.Id)
+                .Take(limit)
+                .ToListAsync(ct);
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> ApplyAuthorCacheIdentityAsync(
+            int id,
+            string? authorAsin,
+            string? description,
+            string? imageUrl,
+            DateTime checkedAt,
+            CancellationToken ct = default)
+        {
+            var existing = await _db.AuthorCacheEntries.FirstOrDefaultAsync(entry => entry.Id == id, ct);
+            if (existing == null)
+            {
+                return false;
+            }
+
+            // Null rather than the empty string NormalizeAsin answers with, because "this author
+            // has no identifier" is the commonest correct outcome here and the column is nullable
+            // precisely so it can say so. An empty string is a third state every reader would
+            // then have to know about.
+            var normalized = NormalizeAsin(authorAsin);
+            existing.AuthorAsin = string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+            existing.Description = description;
+            existing.ImageUrl = imageUrl;
+            existing.AuthorIdentityCheckedAt = checkedAt;
+            existing.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            return true;
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> StampAuthorCacheIdentityCheckedAsync(
+            int id,
+            DateTime checkedAt,
+            CancellationToken ct = default)
+        {
+            var existing = await _db.AuthorCacheEntries.FirstOrDefaultAsync(entry => entry.Id == id, ct);
+            if (existing == null)
+            {
+                return false;
+            }
+
+            // The cursor moves and nothing else does, UpdatedAt included. A row that was already
+            // right must come out of the pass byte for byte what it went in as, apart from the
+            // stamp saying it was looked at, or "the repair left the correct rows alone" is not
+            // a claim anybody can check.
+            existing.AuthorIdentityCheckedAt = checkedAt;
+            await _db.SaveChangesAsync(ct);
+            return true;
+        }
     }
 }
