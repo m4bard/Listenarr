@@ -20,9 +20,14 @@
 // "George Makepeace Towle - translator" on six fresh instances, audnexus put a different George
 // first nearly every time and Towle was never among them, which is what a fuzzy search over a
 // name the provider carries no identifier for looks like.
+using Listenarr.Tests.Common;
+
 namespace Listenarr.Tests.Features.Application.Metadata.Audnexus
 {
-    public class AudnexusAuthorIdentityTests
+    [Trait("Area", "Metadata")]
+    [Trait("Name", "AudnexusAuthorIdentityTests")]
+    [Trait("Category", "Application")]
+    public class AudnexusAuthorIdentityTests : BaseTests
     {
         private static List<AudnexusAuthorSearchResult> Strangers() =>
             new()
