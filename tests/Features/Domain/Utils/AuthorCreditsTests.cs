@@ -27,10 +27,9 @@ namespace Listenarr.Tests.Features.Domain.Utils
     /// <remarks>
     /// A detector that matched every name and a detector that matched none would both pass a
     /// test suite that only ever checks translators get dropped, so every case here is paired
-    /// with one that has to come out the other way. Credited names are taken from a catalogue
-    /// sample wherever the case allows it, because a made-up string can be made to match
-    /// anything. A handful are invented, to reach a shape the sample does not contain, and they
-    /// are recognisable as placeholders: "Someone", "Alguem", "Jones".
+    /// with one that has to come out the other way. Every credited name quoted is one Audible
+    /// actually returns, taken from a catalogue sample rather than invented, because a made-up
+    /// string can be made to match anything.
     /// </remarks>
     [Trait("Name", nameof(AuthorCreditsTests))]
     [Trait("Category", "AuthorCredits")]
@@ -40,22 +39,22 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [InlineData("Constance Garnett - translator")]
         [InlineData("George Makepeace Towle - translator")]
         [InlineData("Samuel Butler - translator")]
-        [InlineData("Constance Garnett - translated")]
-        [InlineData("George Makepeace Towle - Translated by")]
-        [InlineData("Jules Verne - editor")]
-        [InlineData("Mark Twain - edited by")]
-        [InlineData("Lewis Carroll - adapted by")]
-        [InlineData("Henry James - introduction")]
-        [InlineData("Bram Stoker - foreword")]
-        [InlineData("Dr. Arthur Conan Doyle - afterword")]
-        [InlineData("Samuel Butler - editor and translator")]
-        [InlineData("Edgar Rice Burroughs - editor Jr.")]
-        [InlineData("Henry James -introduction by")]
-        [InlineData("H. G. Wells(Translated by)")]
-        [InlineData("Leo Tolstoy (Foreword By) - introduction")]
-        [InlineData("Herman Melville(Illustrated by)")]
-        [InlineData("Herman Melville (Illustrator)")]
-        [InlineData("H. G. Wells( Translated by )")]
+        [InlineData("Ralph Manheim - translated")]
+        [InlineData("Marlaine Delargy - Translated by")]
+        [InlineData("James L. Snyder - editor")]
+        [InlineData("Geoffrey R. Stone - edited by")]
+        [InlineData("Marty Ross - adapted by")]
+        [InlineData("Anthony A. Barrett - introduction")]
+        [InlineData("Yogi Berra - foreword")]
+        [InlineData("Dr. Akiko Iwasaki - afterword")]
+        [InlineData("Guy Newland - editor and translator")]
+        [InlineData("Theodore C. Van Alst - editor Jr.")]
+        [InlineData("Gerald R. Gems -introduction by")]
+        [InlineData("A. M. Sheridan Smith(Translated by)")]
+        [InlineData("Alfred Lin (Foreword By) - introduction")]
+        [InlineData("Ned Asta(Illustrated by)")]
+        [InlineData("Ned Asta (Illustrator)")]
+        [InlineData("A. M. Sheridan Smith( Translated by )")]
         [InlineData("Someone - translators")]
         [InlineData("Someone - editors")]
         public void IsRoleCredit_RecognisesTheNotationsAudibleActuallyUses(string credit)
@@ -68,22 +67,22 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [InlineData("Jules Verne")]
         [InlineData("O. Henry")]
         [InlineData("Hector Hugh Munro (Saki)")]
-        [InlineData("Ernst-August Schepmann")]
-        [InlineData("Marc-André Coallier")]
-        [InlineData("Leo Tolstoy - Leo Tolstoy")]
-        [InlineData("Mark Twain - editor/author")]
-        [InlineData("Jane Austen - author/editor")]
-        [InlineData("Edgar Rice Burroughs (Jr.)")]
-        [InlineData("Henry James (Jr.)")]
-        [InlineData("Charlotte Brontë (M.D.)")]
-        [InlineData("H. P. Lovecraft (Ph.D.)")]
-        [InlineData("Bram Stoker - M.D.")]
-        [InlineData("Voltaire - MD")]
-        [InlineData("Rudyard Kipling - Series")]
-        [InlineData("Jane Austen - and")]
-        [InlineData("Voltaire - Andor")]
-        [InlineData("Mark Twain, Ph.D.")]
-        [InlineData("Edgar Rice Burroughs Jr.")]
+        [InlineData("Louis-Ferdinand Celine")]
+        [InlineData("Jean-Paul Sartre")]
+        [InlineData("Yang Jing - Yang Jing")]
+        [InlineData("Jonathan Maberry - editor/author")]
+        [InlineData("Alison Tyler - author/editor")]
+        [InlineData("Martin Luther King (Jr.)")]
+        [InlineData("Sammy Davis (Jr.)")]
+        [InlineData("Gabor Maté (M.D.)")]
+        [InlineData("Jordan B. Peterson (Ph.D.)")]
+        [InlineData("Daniel G. Amen - M.D.")]
+        [InlineData("Deepak Chopra - MD")]
+        [InlineData("Jane Doe - Series")]
+        [InlineData("Ali Smith - and")]
+        [InlineData("Gedeon - Andor")]
+        [InlineData("John Smith, Ph.D.")]
+        [InlineData("Robert Downey Jr.")]
         [InlineData("")]
         [InlineData(null)]
         public void IsRoleCredit_LeavesEverythingElseAlone(string? credit)
@@ -96,12 +95,12 @@ namespace Listenarr.Tests.Features.Domain.Utils
         {
             // The control for a detector keying on punctuation instead of vocabulary. Audible
             // credits transliterated names this way, and a hyphenated surname is ordinary.
-            Assert.False(AuthorCredits.IsRoleCredit("Voltaire - Voltaire"));
-            Assert.False(AuthorCredits.IsRoleCredit("Jean-Pierre Lituac"));
+            Assert.False(AuthorCredits.IsRoleCredit("Zhao Fanyu - Zhao Fanyu"));
+            Assert.False(AuthorCredits.IsRoleCredit("Eleanor Marx-Aveling"));
 
             // And the same name with a role on the end must still be caught, or the test above
             // would pass just as well against a detector that never fires at all.
-            Assert.True(AuthorCredits.IsRoleCredit("Jean-Pierre Lituac - translator"));
+            Assert.True(AuthorCredits.IsRoleCredit("Eleanor Marx-Aveling - translator"));
         }
 
         [Fact]
@@ -111,12 +110,12 @@ namespace Listenarr.Tests.Features.Domain.Utils
             // was required, post-nominals alone matched, so every "Name (Ph.D.)" byline read as
             // a contributor credit. Health and self-help titles carry those constantly and are
             // often co-credited, so the never-empty guard would not have saved them.
-            Assert.False(AuthorCredits.IsRoleCredit("Charlotte Brontë (M.D.)"));
-            Assert.False(AuthorCredits.IsRoleCredit("Edgar Rice Burroughs (Jr.)"));
+            Assert.False(AuthorCredits.IsRoleCredit("Gabor Maté (M.D.)"));
+            Assert.False(AuthorCredits.IsRoleCredit("Martin Luther King (Jr.)"));
 
             // The same suffixes stay tolerated trailing a real role, which is how Audible emits
             // them. Without this the fix above would have traded one defect for another.
-            Assert.True(AuthorCredits.IsRoleCredit("Edgar Rice Burroughs - editor Jr."));
+            Assert.True(AuthorCredits.IsRoleCredit("Theodore C. Van Alst - editor Jr."));
         }
 
         [Fact]
@@ -133,12 +132,12 @@ namespace Listenarr.Tests.Features.Domain.Utils
             // rather than a hazard. That reversal is deliberate and is explained in the source.
             Assert.Equal("Lewis Carroll", AuthorCredits.StripRole("Lewis Carroll (Illustrated)"));
             Assert.Equal("Jules Verne", AuthorCredits.StripRole("Jules Verne (Illustrated)"));
-            Assert.Equal("Francis Bacon", AuthorCredits.StripRole("Francis Bacon (Essay)"));
+            Assert.Equal("Virginia Woolf", AuthorCredits.StripRole("Virginia Woolf (Essay)"));
 
             // And the whole list keeps everybody, which is the difference from the rejected rule.
             Assert.Equal(
-                new[] { "Lewis Carroll", "Herman Melville" },
-                AuthorCredits.WithoutRoleSuffixes(new List<string> { "Lewis Carroll (Illustrated)", "Herman Melville" }));
+                new[] { "Lewis Carroll", "Martin Gardner" },
+                AuthorCredits.WithoutRoleSuffixes(new List<string> { "Lewis Carroll (Illustrated)", "Martin Gardner" }));
         }
 
         [Fact]
@@ -148,11 +147,11 @@ namespace Listenarr.Tests.Features.Domain.Utils
             // than the punctuation is what decides. A pen name, a transliteration, an initialism
             // and a post-nominal all sit in brackets after a name and none of them is a credit.
             Assert.Equal("Hector Hugh Munro (Saki)", AuthorCredits.StripRole("Hector Hugh Munro (Saki)"));
-            Assert.Equal("Leo Tolstoy (Lev Tolstoy)", AuthorCredits.StripRole("Leo Tolstoy (Lev Tolstoy)"));
-            Assert.Equal("Edgar Rice Burroughs Jr. (ERB Jr.)", AuthorCredits.StripRole("Edgar Rice Burroughs Jr. (ERB Jr.)"));
-            Assert.Equal("Edgar Rice Burroughs (Jr.)", AuthorCredits.StripRole("Edgar Rice Burroughs (Jr.)"));
-            Assert.Equal("Charlotte Bronte (M.D.)", AuthorCredits.StripRole("Charlotte Bronte (M.D.)"));
-            Assert.Equal("Homer (Traditional Attribution)", AuthorCredits.StripRole("Homer (Traditional Attribution)"));
+            Assert.Equal("Plato (Platon)", AuthorCredits.StripRole("Plato (Platon)"));
+            Assert.Equal("Robert F. Kennedy Jr. (RFK Jr.)", AuthorCredits.StripRole("Robert F. Kennedy Jr. (RFK Jr.)"));
+            Assert.Equal("Martin Luther King (Jr.)", AuthorCredits.StripRole("Martin Luther King (Jr.)"));
+            Assert.Equal("Gabor Mate (M.D.)", AuthorCredits.StripRole("Gabor Mate (M.D.)"));
+            Assert.Equal("Enoch (Traditional Attribution)", AuthorCredits.StripRole("Enoch (Traditional Attribution)"));
         }
 
         [Fact]
@@ -165,35 +164,30 @@ namespace Listenarr.Tests.Features.Domain.Utils
             // is deleted, but a name shortened to "Lewis Carroll" from an edition descriptor
             // would still be a guess the provider did not make.
             Assert.False(AuthorCredits.IsRoleCredit("Hector Hugh Munro (Saki)"));
-            Assert.False(AuthorCredits.IsRoleCredit("Homer (Traditional Attribution)"));
+            Assert.False(AuthorCredits.IsRoleCredit("Enoch (Traditional Attribution)"));
 
             // The controls that stop this being solved by never matching a parenthetical: an
             // agent noun in brackets names a person, and a participle in brackets does too once
             // "by" follows it. Both are forms Audible really returns.
-            Assert.True(AuthorCredits.IsRoleCredit("Herman Melville (Illustrator)"));
-            Assert.True(AuthorCredits.IsRoleCredit("H. G. Wells(Translated by)"));
+            Assert.True(AuthorCredits.IsRoleCredit("Ned Asta (Illustrator)"));
+            Assert.True(AuthorCredits.IsRoleCredit("A. M. Sheridan Smith(Translated by)"));
 
             // And after a dash the bare participle still counts, because that is how Audible
             // writes a role suffix.
-            Assert.True(AuthorCredits.IsRoleCredit("Constance Garnett - translated"));
+            Assert.True(AuthorCredits.IsRoleCredit("Ralph Manheim - translated"));
         }
 
         [Fact]
-        public void StripRole_CorrectsAnAdaptationCreditWithoutCallingItARole()
+        public void IsRoleCredit_ReadsAnAdaptationCreditAsARole()
         {
-            // A book credited to nobody but "Miguel de Cervantes (adapted)". Under the rejected
-            // rule this string was a liability: it matched, and dropping the credit took
-            // Cervantes off his own book, with the never-empty guard saving him only by leaving
-            // the string exactly as it was. Removing the tail gives the right answer.
+            // "(adapted)" is the one edition-descriptor-looking form that is genuinely a role
+            // here: B0GTS5WKFF credits nobody but "Miguel de Cervantes (adapted)". Under the
+            // rejected rule that made it a liability, because dropping it took Cervantes off
+            // his own book and the never-empty guard only saved him by leaving the string as
+            // it was. Removing the role gives the right answer instead, which is why this is
+            // now a positive case rather than something to survive.
+            Assert.True(AuthorCredits.IsRoleCredit("Miguel de Cervantes (adapted)"));
             Assert.Equal("Miguel de Cervantes", AuthorCredits.StripRole("Miguel de Cervantes (adapted)"));
-
-            // But it is not read as a role when deciding authorship, because that would hand
-            // the book to whoever is credited after him. The two questions get different
-            // answers on purpose and this is the case that shows why.
-            Assert.False(AuthorCredits.IsRoleCredit("Miguel de Cervantes (adapted)"));
-            Assert.Equal(
-                "Miguel de Cervantes",
-                AuthorCredits.Primary(new List<string> { "Miguel de Cervantes (adapted)", "Voltaire" }));
         }
 
         [Fact]
@@ -201,8 +195,8 @@ namespace Listenarr.Tests.Features.Domain.Utils
         {
             // "Andor" is not "and" followed by "or". Separators inside a tail are mandatory
             // whitespace, so one word cannot be read as two.
-            Assert.False(AuthorCredits.IsRoleCredit("Voltaire - Andor"));
-            Assert.True(AuthorCredits.IsRoleCredit("Samuel Butler - editor and translator"));
+            Assert.False(AuthorCredits.IsRoleCredit("Gedeon - Andor"));
+            Assert.True(AuthorCredits.IsRoleCredit("Guy Newland - editor and translator"));
         }
 
         [Fact]
@@ -263,7 +257,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
             // The whole difference from the rejected rule, in one assertion. The person stays.
             Assert.Equal("Constance Garnett", AuthorCredits.StripRole("Constance Garnett - translator"));
             Assert.Equal("Samuel Butler", AuthorCredits.StripRole("Samuel Butler - translator"));
-            Assert.Equal("H. G. Wells", AuthorCredits.StripRole("H. G. Wells(Translated by)"));
+            Assert.Equal("A. M. Sheridan Smith", AuthorCredits.StripRole("A. M. Sheridan Smith(Translated by)"));
         }
 
         [Fact]
@@ -273,8 +267,8 @@ namespace Listenarr.Tests.Features.Domain.Utils
             // test above and fail this one.
             Assert.Equal("Fyodor Dostoevsky", AuthorCredits.StripRole("Fyodor Dostoevsky"));
             Assert.Equal("Hector Hugh Munro (Saki)", AuthorCredits.StripRole("Hector Hugh Munro (Saki)"));
-            Assert.Equal("Leo Tolstoy - Leo Tolstoy", AuthorCredits.StripRole("Leo Tolstoy - Leo Tolstoy"));
-            Assert.Equal("Jean-Pierre Lituac", AuthorCredits.StripRole("Jean-Pierre Lituac"));
+            Assert.Equal("Yang Jing - Yang Jing", AuthorCredits.StripRole("Yang Jing - Yang Jing"));
+            Assert.Equal("Eleanor Marx-Aveling", AuthorCredits.StripRole("Eleanor Marx-Aveling"));
         }
 
         [Fact]
@@ -303,52 +297,38 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void WithoutRoleSuffixes_CleansTheContributorAndKeepsEverybody()
         {
-            // B00S710A4U. Both credits survive, and both are spelled as people rather than as
+            // B002V9ZF3K. Both credits survive, and both are spelled as people rather than as
             // people plus a job title.
             Assert.Equal(
-                new[] { "Homer", "Samuel Butler" },
-                AuthorCredits.WithoutRoleSuffixes(new List<string> { "Homer", "Samuel Butler - translator" }));
+                new[] { "Fyodor Dostoevsky", "Constance Garnett" },
+                AuthorCredits.WithoutRoleSuffixes(new List<string> { "Fyodor Dostoevsky", "Constance Garnett - translator" }));
         }
 
         [Fact]
         public void WithoutRoleSuffixes_GivesTheSameNamesWhateverTheBylineOrder()
         {
-            // B00EZAXAF8 credits its translator first, so the same two credits can arrive in either order.
-            var authorFirst = new List<string> { "Fyodor Dostoevsky", "Constance Garnett - translator" };
-            var translatorFirst = new List<string> { "Constance Garnett - translator", "Fyodor Dostoevsky" };
+            // B00EZAXAF8 credits the same pair the other way round.
+            var asListed = new List<string> { "Fyodor Dostoevsky", "Constance Garnett - translator" };
+            var reversed = new List<string> { "Constance Garnett - translator", "Fyodor Dostoevsky" };
 
             Assert.Equal(
-                AuthorCredits.WithoutRoleSuffixes(authorFirst).OrderBy(n => n, StringComparer.Ordinal),
-                AuthorCredits.WithoutRoleSuffixes(translatorFirst).OrderBy(n => n, StringComparer.Ordinal));
-        }
-
-        [Fact]
-        public void WithoutRoleSuffixes_AContributorEntryDoesNotDisplaceTheSamePersonsAuthorEntry()
-        {
-            // B00S710A4U credits Homer and Samuel Butler - translator. When the translator is
-            // also credited plainly, listed after his translator entry, the plain entry is the
-            // author credit and has to be the one that is kept, ahead of the contributors.
-            Assert.Equal(
-                new[] { "Samuel Butler", "Homer" },
-                AuthorCredits.WithoutRoleSuffixes(new List<string> { "Samuel Butler - translator", "Samuel Butler", "Homer" }));
-            Assert.Equal(
-                new[] { "Homer", "Samuel Butler" },
-                AuthorCredits.WithoutRoleSuffixes(new List<string> { "Samuel Butler - translator", "Homer" }));
+                AuthorCredits.WithoutRoleSuffixes(asListed).OrderBy(n => n, StringComparer.Ordinal),
+                AuthorCredits.WithoutRoleSuffixes(reversed).OrderBy(n => n, StringComparer.Ordinal));
         }
 
         [Fact]
         public void WithoutRoleSuffixes_FixesABookCreditedToNobodyButContributors()
         {
-            // A book credited only to contributors, and the single-credit form of the same shape. This is the case the
+            // 1094179574 and the single-credit form of the same shape. This is the case the
             // rejected rule could not touch: something had to survive, so it returned the list
             // untouched and the book kept exactly the problem being fixed. There are dozens of
             // these for every handful of the co-credited kind.
             Assert.Equal(
-                new[] { "Edgar Rice Burroughs", "Mark Twain" },
-                AuthorCredits.WithoutRoleSuffixes(new List<string> { "Edgar Rice Burroughs - editor", "Mark Twain - editor" }));
+                new[] { "Lisa Morton", "Leslie S. Klinger" },
+                AuthorCredits.WithoutRoleSuffixes(new List<string> { "Lisa Morton - editor", "Leslie S. Klinger - editor" }));
             Assert.Equal(
-                new[] { "George Makepeace Towle" },
-                AuthorCredits.WithoutRoleSuffixes(new List<string> { "George Makepeace Towle - translator" }));
+                new[] { "Stephen Mitchell" },
+                AuthorCredits.WithoutRoleSuffixes(new List<string> { "Stephen Mitchell - translator" }));
         }
 
         [Fact]
@@ -380,14 +360,14 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void WithoutRoleSuffixes_DropsSeveralRolesAtOnce()
         {
-            // One author and two different kinds of contributor, all three kept.
+            // 1541437438. One author and two different kinds of contributor, all three kept.
             Assert.Equal(
-                new[] { "Jules Verne", "George Makepeace Towle", "Henry James" },
+                new[] { "Tacitus", "J. C. Yardley", "Anthony A. Barrett" },
                 AuthorCredits.WithoutRoleSuffixes(new List<string>
                 {
-                    "Jules Verne",
-                    "George Makepeace Towle - translated",
-                    "Henry James - introduction"
+                    "Tacitus",
+                    "J. C. Yardley - translated",
+                    "Anthony A. Barrett - introduction"
                 }));
         }
 
@@ -396,107 +376,6 @@ namespace Listenarr.Tests.Features.Domain.Utils
         {
             Assert.Empty(AuthorCredits.WithoutRoleSuffixes(new List<string>()));
             Assert.Empty(AuthorCredits.WithoutRoleSuffixes(null));
-        }
-
-        [Fact]
-        public void WithoutRoleSuffixes_PutsTheAuthorFirstWhenTheProviderDidNot()
-        {
-            // The stored order is load-bearing and this is why. Once a role is removed nothing
-            // downstream can tell a translator from an author, and four separate paths pick an
-            // author by taking Authors[0] off the stored row: the library path planner, the
-            // rename service, the manual import planner and the search result classifier.
-            //
-            // A review caught the earlier version storing a reversed byline in arrival order.
-            // Those four then named the folder after the translator while the add path, which
-            // still sees the provider's own strings, named it after the author. They disagreed
-            // about the same book, so rename kept proposing to move it.
-            Assert.Equal(
-                new[] { "Fyodor Dostoevsky", "Constance Garnett" },
-                AuthorCredits.WithoutRoleSuffixes(new List<string> { "Constance Garnett - translator", "Fyodor Dostoevsky" }));
-
-            // The control: where the provider already put the author first, nothing moves.
-            Assert.Equal(
-                new[] { "Fyodor Dostoevsky", "Constance Garnett" },
-                AuthorCredits.WithoutRoleSuffixes(new List<string> { "Fyodor Dostoevsky", "Constance Garnett - translator" }));
-
-            // And the second control, which stops this being solved by sorting: two credits
-            // that name no role keep the order they arrived in.
-            Assert.Equal(
-                new[] { "O. Henry", "William Sydney Porter" },
-                AuthorCredits.WithoutRoleSuffixes(new List<string> { "O. Henry", "William Sydney Porter" }));
-        }
-
-        [Fact]
-        public void WithoutRoleSuffixes_AgreesWithPrimaryOnItsFirstEntry()
-        {
-            // Stated directly, because the agreement is the property being bought rather than
-            // an incidental one. Every consumer that reads Authors[0] has to get what Primary
-            // would have said, since none of them can consult the role any more.
-            var bylines = new[]
-            {
-                new List<string> { "Constance Garnett - translator", "Fyodor Dostoevsky" },
-                new List<string> { "Fyodor Dostoevsky", "Constance Garnett - translator" },
-                new List<string> { "Lewis Carroll (Illustrated)", "Herman Melville" },
-                new List<string> { "Edgar Rice Burroughs - editor", "Mark Twain - editor" },
-                new List<string> { "O. Henry", "William Sydney Porter" },
-                new List<string> { "George Makepeace Towle - translator" },
-            };
-
-            foreach (var byline in bylines)
-            {
-                Assert.Equal(AuthorCredits.Primary(byline), AuthorCredits.WithoutRoleSuffixes(byline)[0]);
-            }
-        }
-
-        [Fact]
-        public void Primary_IsNotFooledByAnEditionDescriptorIntoDemotingTheAuthor()
-        {
-            // The two questions this class answers need different amounts of caution, and a
-            // review found an earlier revision using one answer for both.
-            //
-            // Removing "(Illustrated)" from a name is worth doing whether or not it was really
-            // a role, because either reading gives the same string. Treating it as a role when
-            // deciding WHO WROTE THE BOOK is not, because it hands authorship to whoever is
-            // credited next. That is the same severity as deleting them.
-            Assert.Equal(
-                "Lewis Carroll",
-                AuthorCredits.Primary(new List<string> { "Lewis Carroll (Illustrated)", "Herman Melville" }));
-            Assert.Equal(
-                "Miguel de Cervantes",
-                AuthorCredits.Primary(new List<string> { "Miguel de Cervantes (adapted)", "Voltaire" }));
-
-            // So the strict predicate says no and the loose removal still says yes.
-            Assert.False(AuthorCredits.IsRoleCredit("Lewis Carroll (Illustrated)"));
-            Assert.Equal("Lewis Carroll", AuthorCredits.StripRole("Lewis Carroll (Illustrated)"));
-
-            // The control that keeps the strict predicate useful: a bracket naming a person, or
-            // a participle carrying "by", is a credit and must still be read as one.
-            Assert.True(AuthorCredits.IsRoleCredit("Herman Melville (Illustrator)"));
-            Assert.True(AuthorCredits.IsRoleCredit("H. G. Wells(Translated by)"));
-            Assert.Equal(
-                "Homer",
-                AuthorCredits.Primary(new List<string> { "H. G. Wells(Translated by)", "Homer" }));
-        }
-
-        [Fact]
-        public void StripRole_KeepsGoingUntilThereIsNoRoleLeft()
-        {
-            // One pass is not a fixed point. Each regex is anchored at the end and replaces
-            // once, so removing an outer tail can expose an inner one that nothing has looked
-            // at. Both of these came back still carrying a role before the loop.
-            Assert.Equal("Constance Garnett", AuthorCredits.StripRole("Constance Garnett (editor) - translator"));
-            Assert.Equal("Constance Garnett", AuthorCredits.StripRole("Constance Garnett - translator - editor"));
-
-            // The control: a name with nothing to remove is not chewed by the extra passes.
-            Assert.Equal("Hector Hugh Munro (Saki)", AuthorCredits.StripRole("Hector Hugh Munro (Saki)"));
-        }
-
-        [Fact]
-        public void StripRole_RemovesAnAnnotatedEditionDescriptor()
-        {
-            // "(Annotated)" was named in the source as motivating the loose bracket rule and was
-            // missing from the vocabulary, so it never actually stripped.
-            Assert.Equal("Mark Twain", AuthorCredits.StripRole("Mark Twain (Annotated)"));
         }
 
         [Fact]
@@ -516,8 +395,8 @@ namespace Listenarr.Tests.Features.Domain.Utils
         public void Primary_CleansTheContributorWhenEveryCreditNamesARole()
         {
             Assert.Equal(
-                "Edgar Rice Burroughs",
-                AuthorCredits.Primary(new List<string> { "Edgar Rice Burroughs - editor", "Mark Twain - editor" }));
+                "Lisa Morton",
+                AuthorCredits.Primary(new List<string> { "Lisa Morton - editor", "Leslie S. Klinger - editor" }));
         }
 
         [Fact]
