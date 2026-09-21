@@ -39,6 +39,12 @@ public static class AuthorIdentityRepairOptionsLoader
     private const int MinMaxRowsPerRun = 1;
     private const int MaxMaxRowsPerRun = 500;
 
+    // Zero is meaningful and is the floor on purpose: it asks about every row on every run,
+    // which is what an operator working through a known-bad library wants and is exactly the
+    // behaviour the cutoff was added to stop happening by default.
+    private const int MinRecheckAfterDays = 0;
+    private const int MaxRecheckAfterDays = 3650;
+
     public static async Task LoadAsync(
         IServiceProvider scopeProvider,
         AuthorIdentityRepairOptionsHolder holder,
@@ -64,7 +70,8 @@ public static class AuthorIdentityRepairOptionsLoader
                 settings.AuthorIdentityRepairEnabled,
                 settings.AuthorIdentityRepairDryRun,
                 Math.Clamp(settings.AuthorIdentityRepairIntervalHours, MinIntervalHours, MaxIntervalHours),
-                Math.Clamp(settings.AuthorIdentityRepairMaxRowsPerRun, MinMaxRowsPerRun, MaxMaxRowsPerRun));
+                Math.Clamp(settings.AuthorIdentityRepairMaxRowsPerRun, MinMaxRowsPerRun, MaxMaxRowsPerRun),
+                Math.Clamp(settings.AuthorIdentityRepairRecheckAfterDays, MinRecheckAfterDays, MaxRecheckAfterDays));
         }
         catch (OperationCanceledException)
         {
