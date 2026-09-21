@@ -82,7 +82,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Authors
                     Enabled: true,
                     DryRun: dryRun,
                     IntervalHours: 24,
-                    MaxRowsPerRun: maxRowsPerRun);
+                    MaxRowsPerRun: maxRowsPerRun,
+                    RecheckAfterDays: 30);
 
                 Coordinator
                     .Setup(coordinator => coordinator.LeaseBudget(It.IsAny<TimeSpan>()))
@@ -98,6 +99,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Authors
                 // the code under test rather than as a gap in the fixture.
                 Repository
                     .Setup(repository => repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(
+                        It.IsAny<DateTime>(),
                         It.IsAny<int>(),
                         It.IsAny<CancellationToken>()))
                     .ReturnsAsync(new List<AuthorCacheEntry>());
@@ -120,7 +122,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Authors
                         It.IsAny<int>(),
                         It.IsAny<bool>(),
                         It.IsAny<CancellationToken>()))
-                    .ReturnsAsync(new StoredAuthorCreditCleanupResult(changes.Length, changes));
+                    .ReturnsAsync(new StoredAuthorCreditCleanupResult(changes));
                 return this;
             }
 
@@ -128,9 +130,10 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Authors
             {
                 Repository
                     .Setup(repository => repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(
+                        It.IsAny<DateTime>(),
                         It.IsAny<int>(),
                         It.IsAny<CancellationToken>()))
-                    .ReturnsAsync((int limit, CancellationToken _) => rows.Take(limit).ToList());
+                    .ReturnsAsync((DateTime _, int limit, CancellationToken __) => rows.Take(limit).ToList());
                 return this;
             }
 
@@ -404,6 +407,96 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Authors
             harness.MonitoredAuthors.Verify(
                 repository => repository.UpsertAsync(
                     It.Is<MonitoredAuthor>(row => row.Id == 4 && row.AuthorAsin == null && row.AuthorIdentityCheckedAt != null),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        // The monitored store is half of what this pass exists for and it is the smaller table by
+        // orders of magnitude. Handing the ceiling out first-come meant the cache took all of it
+        // on every run of any real library, and the monitored rows were never examined once.
+        [Fact]
+        public async Task Run_ACacheLargerThanTheCeiling_DoesNotStarveTheMonitoredStore()
+        {
+            var cached = Enumerable.Range(1, 100)
+                .Select(id => CachedRow(id, $"Cached Author {id}", $"B000000{id:D3}"))
+                .ToArray();
+            var harness = new Harness(maxRowsPerRun: 8)
+                .WithCachedRows(cached)
+                .WithMonitoredRows(
+                    new MonitoredAuthor { Id = 900, AuthorName = "Monitored Author", AuthorAsin = "B00MONITOR", Region = "us" });
+
+            foreach (var row in cached)
+            {
+                ProviderSays(harness, row.AuthorName, row.AuthorAsin!);
+            }
+
+            ProviderSays(harness, "Monitored Author", "B00MONITOR");
+
+            var report = await harness.Build().RunAsync(CancellationToken.None);
+
+            Assert.Equal(8, report.Examined);
+            Assert.Contains(report.Decisions, decision => decision.Store == "MonitoredAuthors" && decision.RowId == 900);
+
+            // And the cache still gets the rest of the ceiling rather than a quarter of it.
+            Assert.Equal(7, report.Decisions.Count(decision => decision.Store == "AuthorCacheEntries"));
+        }
+
+        // The control: an empty monitored store gives its whole share back to the cache, so
+        // reserving one does not cost a run anything when there is nothing to reserve it for.
+        [Fact]
+        public async Task Run_NothingMonitored_GivesTheWholeCeilingToTheCache()
+        {
+            var cached = Enumerable.Range(1, 100)
+                .Select(id => CachedRow(id, $"Cached Author {id}", $"B000000{id:D3}"))
+                .ToArray();
+            var harness = new Harness(maxRowsPerRun: 8).WithCachedRows(cached);
+            foreach (var row in cached)
+            {
+                ProviderSays(harness, row.AuthorName, row.AuthorAsin!);
+            }
+
+            var report = await harness.Build().RunAsync(CancellationToken.None);
+
+            Assert.Equal(8, report.Examined);
+            Assert.Equal(8, report.Decisions.Count(decision => decision.Store == "AuthorCacheEntries"));
+        }
+
+        // A row checked inside the recheck window is not asked about again. Without this the
+        // pass re-asks the provider about the same least recently checked rows on every cycle
+        // for as long as the library is larger than the ceiling, learning nothing and spending
+        // the shared budget to do it.
+        [Fact]
+        public async Task Run_AskedTheQueueForRowsOlderThanTheRecheckWindow()
+        {
+            var harness = new Harness();
+            harness.Options.Current = harness.Options.Current with { RecheckAfterDays = 30 };
+
+            await harness.Build().RunAsync(CancellationToken.None);
+
+            var before = DateTime.UtcNow.AddDays(-30);
+            harness.Repository.Verify(
+                repository => repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(
+                    It.Is<DateTime>(cutoff => Math.Abs((cutoff - before).TotalMinutes) < 5),
+                    It.IsAny<int>(),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        // The control for that: zero days means every row is due, which is what an operator
+        // working through a known-bad library asks for.
+        [Fact]
+        public async Task Run_ARecheckWindowOfZero_AsksAboutEverything()
+        {
+            var harness = new Harness();
+            harness.Options.Current = harness.Options.Current with { RecheckAfterDays = 0 };
+
+            await harness.Build().RunAsync(CancellationToken.None);
+
+            var now = DateTime.UtcNow;
+            harness.Repository.Verify(
+                repository => repository.GetAuthorCacheEntriesDueForIdentityCheckAsync(
+                    It.Is<DateTime>(cutoff => Math.Abs((cutoff - now).TotalMinutes) < 5),
+                    It.IsAny<int>(),
                     It.IsAny<CancellationToken>()),
                 Times.Once);
         }

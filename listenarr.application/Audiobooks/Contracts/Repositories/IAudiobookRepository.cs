@@ -30,12 +30,7 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         int AudiobookId,
         string? PrimaryAuthor,
         DateTime? LastMetadataRefreshAt);
-    /// <summary>
-    /// Counts from one re-derivation pass over the normalized author-name columns.
-    /// Skipped rows are those whose re-derived key is already held by another row in the same
-    /// uniqueness slot; they keep the key they have rather than failing the pass.
-    /// </summary>
-    /// <summary>One book whose stored author credits name a role.</summary>
+    /// <summary>One book whose stored author credits named a role, and what they become.</summary>
     public sealed record StoredAuthorCreditChange(
         int AudiobookId,
         IReadOnlyList<string> Before,
@@ -43,13 +38,17 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
 
     /// <summary>What one credit cleanup pass did, or would have done.</summary>
     public sealed record StoredAuthorCreditCleanupResult(
-        int Examined,
         IReadOnlyList<StoredAuthorCreditChange> Changes)
     {
         public static StoredAuthorCreditCleanupResult Nothing { get; } =
-            new(0, Array.Empty<StoredAuthorCreditChange>());
+            new(Array.Empty<StoredAuthorCreditChange>());
     }
 
+    /// <summary>
+    /// Counts from one re-derivation pass over the normalized author-name columns.
+    /// Skipped rows are those whose re-derived key is already held by another row in the same
+    /// uniqueness slot; they keep the key they have rather than failing the pass.
+    /// </summary>
     public sealed record AuthorNameKeyRederivationResult(
         int AuthorCacheEntriesCorrected,
         int MonitoredAuthorsCorrected,
@@ -150,16 +149,25 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<AuthorCacheEntry> UpsertCachedAuthorAsync(AuthorCacheEntry authorCacheEntry);
 
         /// <summary>
-        /// Cached author rows carrying an ASIN, least recently identity-checked first, never
-        /// examined ahead of everything else. The bound is the caller's per-run ceiling.
+        /// Cached author rows carrying an ASIN that have not been identity-checked since
+        /// <paramref name="checkedBefore"/>, least recently checked first and never checked
+        /// ahead of everything else. The bound is the caller's per-run ceiling.
         /// </summary>
         /// <remarks>
         /// Only rows with an ASIN are returned, because a row with none cannot be holding a
-        /// stranger's. The ordering is the whole resumption story: a run stamps what it examined,
-        /// so the next run starts where it stopped rather than at the beginning, and an install
-        /// that has never run the pass is one long queue of nulls.
+        /// stranger's. The ordering is the resumption story: a run stamps what it examined, so
+        /// the next run starts where it stopped rather than at the beginning, and an install that
+        /// has never run the pass is one long queue of nulls.
+        ///
+        /// The cutoff is what makes the queue finite, and without it the pass has two faults
+        /// rather than one. A library with more cached authors than the per-run ceiling would
+        /// re-ask the provider about the same least-recently-checked rows every cycle forever,
+        /// learning nothing and spending the budget to do it; and because the two stores share
+        /// one ceiling, the cached rows would take all of it on every run and the monitored rows
+        /// would never be examined at all.
         /// </remarks>
         Task<List<AuthorCacheEntry>> GetAuthorCacheEntriesDueForIdentityCheckAsync(
+            DateTime checkedBefore,
             int limit,
             CancellationToken ct = default);
 
@@ -211,7 +219,19 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         ///
         /// No cursor, and it does not need one. The rule is idempotent and local, so a cleaned
         /// book stops being a candidate and successive runs converge without anything having to
-        /// remember where the last one stopped.
+        /// remember where the last one stopped. The candidate SCAN does not converge: every
+        /// cycle reads every row's author list back, because the column is JSON and there is no
+        /// SQL predicate for "this list names a role".
+        ///
+        /// <b>This can change a book's folder, and that is not a side effect to discover later.</b>
+        /// The rule places credits naming a role after the ones that do not, so a byline the
+        /// provider gave in the other order has a different <c>Authors[0]</c> afterwards, and the
+        /// four things that pick a primary author off the stored row (the library path planner,
+        /// the rename service, the manual import planner and the search classifier) will then
+        /// compute a different author folder for it. That is the point rather than an accident,
+        /// since those four were already filing such books under a job title, but it means a
+        /// repair can produce a rename proposal. It is visible in the preview, which is where an
+        /// operator gets to decide whether they want it.
         /// </remarks>
         Task<StoredAuthorCreditCleanupResult> CleanRoleSuffixesFromStoredAuthorsAsync(
             int limit,
