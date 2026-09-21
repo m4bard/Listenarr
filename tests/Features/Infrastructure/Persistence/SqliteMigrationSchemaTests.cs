@@ -32,8 +32,11 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string EmbedCoverArtSettingMigrationId =
         "20260828190320_AddEmbedCoverArtInAudioFilesSetting";
 
+    private const string AuthorIdentityRepairMigrationId =
+        "20260921202317_AddAuthorIdentityRepair";
+
     private static readonly string[] BranchMigrationIds =
-        [EmbedCoverArtSettingMigrationId];
+        [EmbedCoverArtSettingMigrationId, AuthorIdentityRepairMigrationId];
 
     private const string CanaryMigrationFrontierId =
         "20260621002226_AddApplicationSettingsConcurrency";
@@ -581,6 +584,17 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.Equal("30", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshStaleAfterDays"));
         Assert.Equal("60", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshRequestsPerHour"));
         Assert.Equal("1000", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshMinimumSpacingMs"));
+
+        // Off, and previewing. The scaffolder writes a column default from the CLR default
+        // rather than from the property initializer, so the dry-run switch was generated as 0
+        // and had to be corrected by hand; an upgraded database landing on 0 here would rewrite
+        // author identities on its first enabled cycle with nothing shown first. That is the
+        // whole reason this assertion exists, and it is why it asserts 1 rather than "whatever
+        // the entity says".
+        Assert.Equal("0", await ColumnDefaultAsync(connection, "ApplicationSettings", "AuthorIdentityRepairEnabled"));
+        Assert.Equal("1", await ColumnDefaultAsync(connection, "ApplicationSettings", "AuthorIdentityRepairDryRun"));
+        Assert.Equal("24", await ColumnDefaultAsync(connection, "ApplicationSettings", "AuthorIdentityRepairIntervalHours"));
+        Assert.Equal("25", await ColumnDefaultAsync(connection, "ApplicationSettings", "AuthorIdentityRepairMaxRowsPerRun"));
         Assert.True(await ForeignKeyHasDeleteActionAsync(
             connection,
             "LibraryDirectoryOwnerships",
