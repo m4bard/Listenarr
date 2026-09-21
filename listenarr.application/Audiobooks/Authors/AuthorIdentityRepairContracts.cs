@@ -88,11 +88,19 @@ namespace Listenarr.Application.Audiobooks.Authors
         bool BudgetExhausted,
         IReadOnlyList<AuthorIdentityDecision> Decisions)
     {
+        /// <summary>
+        /// Books whose stored author credits named a contributor role and had it removed, or
+        /// would have. Counted apart from the ASIN work because it is a different repair with a
+        /// different cost: it asks the provider nothing and it cannot be wrong about who
+        /// somebody is, only about how their credit was spelled.
+        /// </summary>
+        public int CreditsCleaned { get; init; }
+
         public static AuthorIdentityRepairReport Nothing(bool dryRun) =>
             new(dryRun, 0, 0, 0, 0, 0, false, Array.Empty<AuthorIdentityDecision>());
 
         /// <summary>Rows a repair run wrote, or a preview run would have written.</summary>
-        public int Changed => Corrected + Cleared;
+        public int Changed => Corrected + Cleared + CreditsCleaned;
     }
 
     public interface IAuthorIdentityRepairService

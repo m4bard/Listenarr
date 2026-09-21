@@ -35,6 +35,21 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
     /// Skipped rows are those whose re-derived key is already held by another row in the same
     /// uniqueness slot; they keep the key they have rather than failing the pass.
     /// </summary>
+    /// <summary>One book whose stored author credits name a role.</summary>
+    public sealed record StoredAuthorCreditChange(
+        int AudiobookId,
+        IReadOnlyList<string> Before,
+        IReadOnlyList<string> After);
+
+    /// <summary>What one credit cleanup pass did, or would have done.</summary>
+    public sealed record StoredAuthorCreditCleanupResult(
+        int Examined,
+        IReadOnlyList<StoredAuthorCreditChange> Changes)
+    {
+        public static StoredAuthorCreditCleanupResult Nothing { get; } =
+            new(0, Array.Empty<StoredAuthorCreditChange>());
+    }
+
     public sealed record AuthorNameKeyRederivationResult(
         int AuthorCacheEntriesCorrected,
         int MonitoredAuthorsCorrected,
@@ -179,6 +194,28 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<bool> StampAuthorCacheIdentityCheckedAsync(
             int id,
             DateTime checkedAt,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// Removes contributor roles from the author credits already stored on books, up to
+        /// <paramref name="limit"/> books whose stored list disagrees with the rule.
+        /// </summary>
+        /// <remarks>
+        /// The credit rule cleans what arrives; rows written before it landed keep their roles
+        /// until the book happens to be refreshed, and on an install that has been running a
+        /// while that is most of them. This is the same rule applied to what is already there.
+        ///
+        /// <paramref name="apply"/> false examines and reports and writes nothing, which is what
+        /// the repair pass's preview calls. Preview and write are one method on purpose: two
+        /// would be two chances for what is reported and what is done to drift apart.
+        ///
+        /// No cursor, and it does not need one. The rule is idempotent and local, so a cleaned
+        /// book stops being a candidate and successive runs converge without anything having to
+        /// remember where the last one stopped.
+        /// </remarks>
+        Task<StoredAuthorCreditCleanupResult> CleanRoleSuffixesFromStoredAuthorsAsync(
+            int limit,
+            bool apply,
             CancellationToken ct = default);
         Task<SeriesCacheEntry?> GetCachedSeriesByNameAsync(string name, string region);
         Task<SeriesCacheEntry?> GetCachedSeriesByAsinAsync(string asin, string region);
