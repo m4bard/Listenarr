@@ -19,6 +19,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Listenarr.Domain.Common;
 
 namespace Listenarr.Application.Metadata.Refresh;
 
@@ -225,10 +226,12 @@ public sealed partial class MetadataRefreshService
                 metadata.SeriesAsin);
         }
 
-        var authors = NormalizeMetadataStringList(
+        // A refresh replays provider metadata over an existing row, so it applies the same
+        // cleanup as the add path. Without this a refresh would put the roles back.
+        var authors = AuthorCredits.WithoutRoleSuffixes(NormalizeMetadataStringList(
             (metadata.Authors != null && metadata.Authors.Any())
                 ? metadata.Authors
-                : (!string.IsNullOrWhiteSpace(metadata.Author) ? new List<string> { metadata.Author! } : null));
+                : (!string.IsNullOrWhiteSpace(metadata.Author) ? new List<string> { metadata.Author! } : null))).ToList();
         if (authors.Count > 0) audiobook.Authors = authors;
 
         var narrators = NormalizeMetadataStringList(
