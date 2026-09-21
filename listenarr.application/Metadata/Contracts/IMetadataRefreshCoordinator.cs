@@ -83,4 +83,25 @@ public interface IMetadataRefreshCoordinator
     MetadataRefreshRunSnapshot? Current();
 
     bool Cancel(Guid runId);
+
+    /// <summary>
+    /// A view of the shared provider budget for a caller that is not a refresh run, bounded by
+    /// how long it may keep waiting for a slot.
+    /// </summary>
+    /// <remarks>
+    /// The bucket is per process and already shared across every refresh entry point, and the
+    /// reason for that is not refresh-specific: it is one provider, and two schedulers pointed at
+    /// it are two schedulers' worth of requests however carefully each one paces itself. Anything
+    /// else that walks the library asking the provider questions spends out of this, rather than
+    /// bringing its own limiter and quietly doubling the rate.
+    ///
+    /// It leases budget and nothing else. The one-run gate is deliberately not taken here: a
+    /// caller holding it would make every scheduled refresh cycle in its window do nothing, and
+    /// these passes are not mutually exclusive, only jointly rate limited. Sharing the bucket is
+    /// what keeps them honest with each other.
+    ///
+    /// The settings the bucket is configured from are the operator's current ones, so a caller
+    /// that has just loaded them gets the rate they asked for rather than the shipped default.
+    /// </remarks>
+    IMetadataRefreshBudget LeaseBudget(TimeSpan window);
 }
