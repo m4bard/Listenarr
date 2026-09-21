@@ -3,6 +3,7 @@ using System;
 using Listenarr.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    partial class ListenArrDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260921210504_AddAuthorIdentityRecheckWindow")]
+    partial class AddAuthorIdentityRecheckWindow
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
@@ -135,6 +138,10 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Indexer")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Message")
                         .HasColumnType("TEXT");
 
@@ -148,6 +155,13 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int?>("Protocol")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Quality")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("Size")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Source")
@@ -1358,6 +1372,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("PreferredLanguages");
 
+                    b.Property<int>("PreferredReleaseShape")
+                        .HasColumnType("INTEGER");
+
                     b.PrimitiveCollection<string>("PreferredWords")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -1369,6 +1386,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("UpgradeAllowed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
 
                     b.HasKey("Id");
 
@@ -1838,6 +1860,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("CompletedFileAction")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("CustomScripts")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("DefaultSearchLanguage")
                         .IsRequired()
@@ -2585,6 +2610,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("DisabledTill")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("EnableAnimeStandardSearch")
                         .HasColumnType("INTEGER");
 
@@ -2597,12 +2625,21 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<bool>("EnableRss")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("EscalationLevel")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Implementation")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("InitialFailure")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastFailureReason")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("LastTestError")
                         .HasColumnType("TEXT");
@@ -2618,6 +2655,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("MinimumAge")
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("MostRecentFailure")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
                         .IsRequired()
