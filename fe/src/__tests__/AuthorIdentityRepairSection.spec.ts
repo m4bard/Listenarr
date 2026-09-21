@@ -18,6 +18,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import Checkbox from '@/components/form/Checkbox.vue'
+import RadioCard from '@/components/settings/RadioCard.vue'
 import type { ApplicationSettings } from '@/types'
 
 // Deliberately all different from each other and from the shipped defaults, so a control bound
@@ -53,6 +54,10 @@ function lastPayload(wrapper: Wrapper) {
   const emitted = payloads(wrapper)
   return emitted[emitted.length - 1][0]
 }
+
+// The mount-time correction lands a tick after mount, so the section is behind the settings tab
+// rather than inside its sync window. Anything asserting on it has to get past that tick.
+const flushTicks = () => new Promise((r) => setTimeout(r, 0))
 
 // Clicking the card, not the input. The label is the surface an operator actually hits, and it
 // is the route a disabled attribute on the input does not close.
@@ -148,6 +153,62 @@ describe('AuthorIdentityRepairSection', () => {
     await wrapper.findAll('input[type="radio"]')[REPAIR].trigger('change')
 
     expect(payloads(wrapper)).toHaveLength(0)
+  })
+
+  it('refuses a repair that reached the section without passing the card', async () => {
+    // Straight at the section's own handler, with RadioCard's two guards stepped over entirely.
+    // Without this the suite cannot tell that the redundancy has decayed to a single guard:
+    // removing either layer on its own leaves the click test green, because the other still
+    // holds.
+    const wrapper = await mountSection()
+    const cards = wrapper.findAllComponents(RadioCard)
+
+    cards[REPAIR].vm.$emit('update:modelValue', 'repair')
+    await wrapper.vm.$nextTick()
+
+    expect(payloads(wrapper)).toHaveLength(0)
+
+    // The control, through the same back door: preview is not refused, so the section is
+    // refusing repair specifically rather than ignoring the event.
+    cards[PREVIEW].vm.$emit('update:modelValue', 'preview')
+    await wrapper.vm.$nextTick()
+    expect(payloads(wrapper)).toHaveLength(1)
+    expect(lastPayload(wrapper).authorIdentityRepairDryRun).toBe(true)
+  })
+
+  it('corrects an out-of-range stored number once, so the row catches up with the display', async () => {
+    // The display clamp alone would leave the row saying 9999 for ever: the section emits a
+    // numeric field only when the operator types in it, and the save posts the settings object
+    // verbatim, so nothing would ever heal the row it is displaying a different number for.
+    const wrapper = await mountSection({
+      authorIdentityRepairIntervalHours: 9999,
+      authorIdentityRepairMaxRowsPerRun: 0,
+    })
+    await flushTicks()
+
+    const emitted = payloads(wrapper)
+    expect(emitted).toHaveLength(1)
+    expect(emitted[0][0].authorIdentityRepairIntervalHours).toBe(168)
+    expect(emitted[0][0].authorIdentityRepairMaxRowsPerRun).toBe(1)
+    // The one that was already in range is not rewritten.
+    expect(emitted[0][0].authorIdentityRepairRecheckAfterDays).toBe(14)
+  })
+
+  it('emits nothing on mount when every stored number is in range, which is the control', async () => {
+    const wrapper = await mountSection()
+    await flushTicks()
+
+    expect(payloads(wrapper)).toHaveLength(0)
+  })
+
+  it('shows the repair card as unavailable and says how to make it available', async () => {
+    const wrapper = await mountSection()
+
+    expect(wrapper.text()).toContain('Tick the box below to make it selectable')
+
+    // Gone once the option is armed, so the hint never contradicts the card beside it.
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+    expect(wrapper.text()).not.toContain('Tick the box below to make it selectable')
   })
 
   it('leaves off and preview reachable in one click, which is the control', async () => {
