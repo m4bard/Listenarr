@@ -198,8 +198,9 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
             "release.m4b");
         var elsewhere = Path.Join(ExtractionRoot, "release.m4b");
 
-        bool Resolve(string neighbourSourcePath) =>
-            ImportCompanionDestinationResolver.TryResolveBesideImportedFile(
+        (bool Resolved, string RelativePath) Resolve(string neighbourSourcePath)
+        {
+            var resolved = ImportCompanionDestinationResolver.TryResolveBesideImportedFile(
                 companion,
                 BasePath,
                 [new ImportCompanionDestinationResolver.ImportedFilePlacement(
@@ -207,12 +208,14 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
                     Path.Join(BasePath, "The Valley of Fear.m4b"))],
                 HostSemantics,
                 HostSemantics,
-                out _);
+                out var relativePath);
+            return (resolved, relativePath);
+        }
 
         Assert.NotEqual(audio, withDotSegment);
-        Assert.True(Resolve(withDotSegment));
-        Assert.True(Resolve(audio));
-        Assert.False(Resolve(elsewhere));
+        Assert.Equal((true, "book.nfo"), Resolve(withDotSegment));
+        Assert.Equal((true, "book.nfo"), Resolve(audio));
+        Assert.Equal((false, string.Empty), Resolve(elsewhere));
     }
 
     /// <summary>
