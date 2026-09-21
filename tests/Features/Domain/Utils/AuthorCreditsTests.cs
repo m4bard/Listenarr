@@ -99,6 +99,71 @@ namespace Listenarr.Tests.Features.Domain.Utils
         }
 
         [Fact]
+        public void IsRoleCredit_NeedsAnActualRoleWordAndNotJustAPostNominal()
+        {
+            // A tail made only of the words tolerated *around* a role is not a role. Before this
+            // was required, post-nominals alone matched, so every "Name (Ph.D.)" byline read as
+            // a contributor credit. Health and self-help titles carry those constantly and are
+            // often co-credited, so the never-empty guard would not have saved them.
+            Assert.False(AuthorCredits.IsRoleCredit("Gabor Maté (M.D.)"));
+            Assert.False(AuthorCredits.IsRoleCredit("Martin Luther King (Jr.)"));
+
+            // The same suffixes stay tolerated trailing a real role, which is how Audible emits
+            // them. Without this the fix above would have traded one defect for another.
+            Assert.True(AuthorCredits.IsRoleCredit("Theodore C. Van Alst - editor Jr."));
+        }
+
+        [Fact]
+        public void IsRoleCredit_DoesNotSplitAWordIntoTwoJoiners()
+        {
+            // "Andor" is not "and" followed by "or". Separators inside a tail are mandatory
+            // whitespace, so one word cannot be read as two.
+            Assert.False(AuthorCredits.IsRoleCredit("Gedeon - Andor"));
+            Assert.True(AuthorCredits.IsRoleCredit("Guy Newland - editor and translator"));
+        }
+
+        [Fact]
+        public void IsRoleCredit_ReturnsPromptlyOnAPathologicalInput()
+        {
+            // A regression test for a measured denial of service. The previous pattern put
+            // optional whitespace on both sides of an alternation inside a repetition, so a tail
+            // of repeated role words could be split exponentially many ways: 133 characters took
+            // about ninety seconds. Ingestion feeds provider data straight in, so that is an
+            // outage rather than a slow test.
+            var pathological = "A -" + string.Concat(Enumerable.Repeat("  editor", 32)) + " Z";
+
+            var started = System.Diagnostics.Stopwatch.StartNew();
+            var matched = AuthorCredits.IsRoleCredit(pathological);
+            started.Stop();
+
+            Assert.False(matched);
+            Assert.True(
+                started.ElapsedMilliseconds < 1000,
+                $"took {started.ElapsedMilliseconds} ms, which means the tail is ambiguous again");
+        }
+
+        [Fact]
+        public void IsRoleCredit_KeepsTheCreditRatherThanThrowingOnAHugeInput()
+        {
+            // Ingestion calls this once per credited name, so an exception here fails the whole
+            // import. Nothing should reach the match timeout now, and if anything ever does the
+            // answer has to be "keep the credit": that is the mistake somebody can see and undo,
+            // where the other direction removes a person from their own book silently.
+            var enormous = new string('a', 200_000) + " - "
+                + string.Concat(Enumerable.Repeat("editor ", 5_000));
+
+            Assert.Null(Record.Exception(() => AuthorCredits.IsRoleCredit(enormous)));
+        }
+
+        [Fact]
+        public void IsRoleCredit_MatchesTheNonEnglishVocabularyWhateverTheCase()
+        {
+            Assert.True(AuthorCredits.IsRoleCredit("Someone - ÜBERSETZER"));
+            Assert.True(AuthorCredits.IsRoleCredit("Alguem - TRADUÇÃO"));
+            Assert.True(AuthorCredits.IsRoleCredit("Quelqu'un - PRÉFACE"));
+        }
+
+        [Fact]
         public void IsRoleCredit_DoesNotFireOnARoleWordThatIsPartOfTheName()
         {
             // A role word only counts as a credit in the trailing tail. Somebody surnamed

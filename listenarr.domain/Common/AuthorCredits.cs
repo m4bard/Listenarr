@@ -127,7 +127,20 @@ namespace Listenarr.Domain.Common
             }
 
             var trimmed = name.Trim();
-            return ParenthesisedTail.IsMatch(trimmed) || DashTail.IsMatch(trimmed);
+            try
+            {
+                return ParenthesisedTail.IsMatch(trimmed) || DashTail.IsMatch(trimmed);
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                // Should be unreachable: a non-backtracking match is linear in the input, and
+                // the timeout is only here in case that reasoning is wrong. If it ever does
+                // fire, the answer has to be "not a contributor". This runs per credited name
+                // during ingestion, so throwing would fail the import over a punctuation
+                // pattern, and guessing the other way would delete somebody from their own
+                // book. Keeping the credit is the recoverable mistake.
+                return false;
+            }
         }
 
         /// <summary>
