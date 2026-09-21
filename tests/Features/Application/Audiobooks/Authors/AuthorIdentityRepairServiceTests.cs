@@ -467,6 +467,126 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Authors
                 Times.Once);
         }
 
+        // An Audible outage must not read as "this author does not exist". The lookup returns
+        // null both when the search found no products and when the provider could not be
+        // reached, because the failure is swallowed below it and an unreachable Audible yields
+        // an empty candidate list. Clearing on that would wipe the ASIN off every correct row
+        // the pass reached, for as long as the outage lasted.
+        [Fact]
+        public async Task Run_AudibleAnsweringNothing_LeavesTheRowAloneAndStampsIt()
+        {
+            var harness = new Harness().WithCachedRows(CachedRow(5, "Constance Garnett", "B000APTDDU"));
+            harness.Audible
+                .Setup(service => service.LookupAuthorAsync("Constance Garnett", "us"))
+                .ReturnsAsync((AuthorLookupItem?)null);
+
+            var report = await harness.Build().RunAsync(CancellationToken.None);
+
+            Assert.Equal(1, report.Unresolved);
+            Assert.Equal(0, report.Cleared);
+            Assert.Equal(0, report.Corrected);
+
+            // Not written, so a correct row survives the outage.
+            harness.Repository.Verify(
+                repository => repository.ApplyAuthorCacheIdentityAsync(
+                    It.IsAny<int>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<DateTime>(),
+                    It.IsAny<CancellationToken>()),
+                Times.Never);
+
+            // Stamped anyway, so a name the provider genuinely has nothing for cannot sit at the
+            // head of the queue forever and stop the pass ever reaching anything else.
+            harness.Repository.Verify(
+                repository => repository.StampAuthorCacheIdentityCheckedAsync(
+                    5,
+                    It.IsAny<DateTime>(),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+
+            // And it never got as far as the second provider, because there was nothing to
+            // corroborate.
+            harness.Audnexus.Verify(
+                service => service.SearchAuthorsAsync(It.IsAny<string>(), It.IsAny<string>()),
+                Times.Never);
+        }
+
+        // THE CONTROL for the pair above, and the two differ by one field. Audible answering with
+        // the author and no identifier is positive evidence; Audible answering with nothing is
+        // not. Same row, same audnexus reply, opposite verdicts.
+        [Fact]
+        public async Task Run_AudibleNamingTheAuthorWithNoAsin_IsEvidenceAndDoesClear()
+        {
+            var harness = new Harness().WithCachedRows(CachedRow(5, "Constance Garnett", "B000APTDDU"));
+            harness.Audible
+                .Setup(service => service.LookupAuthorAsync("Constance Garnett", "us"))
+                .ReturnsAsync(new AuthorLookupItem { Asin = null, Name = "Constance Garnett" });
+            harness.Audnexus
+                .Setup(service => service.SearchAuthorsAsync("Constance Garnett", "us"))
+                .ReturnsAsync(new List<AudnexusAuthorSearchResult>
+                {
+                    new() { Asin = "B00OV1JERO", Name = "Constance Gillam" }
+                });
+
+            var report = await harness.Build().RunAsync(CancellationToken.None);
+
+            Assert.Equal(1, report.Cleared);
+            Assert.Equal(0, report.Unresolved);
+        }
+
+        [Fact]
+        public async Task Run_AudnexusNotAnswering_LeavesTheRowAloneAndStampsIt()
+        {
+            var harness = new Harness().WithCachedRows(CachedRow(5, "Constance Garnett", "B000APTDDU"));
+            harness.Audible
+                .Setup(service => service.LookupAuthorAsync("Constance Garnett", "us"))
+                .ReturnsAsync(new AuthorLookupItem { Asin = null, Name = "Constance Garnett" });
+            harness.Audnexus
+                .Setup(service => service.SearchAuthorsAsync("Constance Garnett", "us"))
+                .ReturnsAsync((List<AudnexusAuthorSearchResult>?)null);
+
+            var report = await harness.Build().RunAsync(CancellationToken.None);
+
+            Assert.Equal(1, report.Unresolved);
+            Assert.Equal(0, report.Cleared);
+            harness.Repository.Verify(
+                repository => repository.StampAuthorCacheIdentityCheckedAsync(
+                    5,
+                    It.IsAny<DateTime>(),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        // An empty answer is still an answer: audnexus knows nobody even loosely by that name.
+        [Fact]
+        public async Task Run_AudnexusAnsweringWithNobodyAtAll_StillClears()
+        {
+            var harness = new Harness().WithCachedRows(CachedRow(5, "Constance Garnett", "B000APTDDU"));
+            harness.Audible
+                .Setup(service => service.LookupAuthorAsync("Constance Garnett", "us"))
+                .ReturnsAsync(new AuthorLookupItem { Asin = null, Name = "Constance Garnett" });
+            harness.Audnexus
+                .Setup(service => service.SearchAuthorsAsync("Constance Garnett", "us"))
+                .ReturnsAsync(new List<AudnexusAuthorSearchResult>());
+
+            Assert.Equal(1, (await harness.Build().RunAsync(CancellationToken.None)).Cleared);
+        }
+
+        [Fact]
+        public async Task Run_ARowWithNoNameAtAll_IsLeftAloneWithoutSpendingARequest()
+        {
+            var harness = new Harness().WithCachedRows(CachedRow(5, "   ", "B000APTDDU"));
+
+            var report = await harness.Build().RunAsync(CancellationToken.None);
+
+            Assert.Equal(1, report.Unresolved);
+            harness.Audible.Verify(
+                service => service.LookupAuthorAsync(It.IsAny<string>(), It.IsAny<string>()),
+                Times.Never);
+        }
+
         // The credit repair is bounded by the same ceiling and gated by the same preview switch,
         // and by nothing else. It asks the provider nothing, so a run with no budget left still
         // does it: spelling a credit correctly needs no request.
