@@ -42,6 +42,14 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
     private static string Under(params string[] segments) =>
         Path.Join([FilesystemRoot, .. segments]);
 
+    private static ImportCompanionDestinationResolver.CompanionSourceRoots Roots(
+        IReadOnlyCollection<string> batchFiles,
+        IReadOnlyCollection<string> extractionRoots) =>
+        ImportCompanionDestinationResolver.ResolveRoots(
+            batchFiles,
+            extractionRoots,
+            HostSemantics);
+
     /// <summary>The batch a release with one archive and three loose sidecars produces.</summary>
     private static IReadOnlyCollection<string> ArchiveBatch() =>
     [
@@ -64,8 +72,7 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
     public void CompanionFromAnArchive_IsMirroredUnderItsOwnExtractionRoot()
     {
         var resolved = ImportCompanionDestinationResolver.TryResolveRelativeDestination(
-            ArchiveBatch(),
-            [ExtractionRoot],
+            Roots(ArchiveBatch(), [ExtractionRoot]),
             Path.Join(ExtractionRoot, "inner.nfo"),
             BasePath,
             ExtractedAudioImported(),
@@ -86,8 +93,7 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
     public void CompanionLeftInTheDownloadDirectory_IsMirroredUnderThatDirectory()
     {
         var resolved = ImportCompanionDestinationResolver.TryResolveRelativeDestination(
-            ArchiveBatch(),
-            [ExtractionRoot],
+            Roots(ArchiveBatch(), [ExtractionRoot]),
             Path.Join(DownloadDirectory, "book.nfo"),
             BasePath,
             ExtractedAudioImported(),
@@ -104,8 +110,7 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
     {
         var companion = Path.Join(DownloadDirectory, "extras", "cover.jpg");
         var resolved = ImportCompanionDestinationResolver.TryResolveRelativeDestination(
-            [.. ArchiveBatch(), companion],
-            [ExtractionRoot],
+            Roots([.. ArchiveBatch(), companion], [ExtractionRoot]),
             companion,
             BasePath,
             ExtractedAudioImported(),
@@ -125,8 +130,7 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
     public void NoArchiveInTheBatch_CompanionUsesTheOneSourceDirectory()
     {
         var resolved = ImportCompanionDestinationResolver.TryResolveRelativeDestination(
-            [Path.Join(DownloadDirectory, "release.m4b"), Path.Join(DownloadDirectory, "book.nfo")],
-            [],
+            Roots([Path.Join(DownloadDirectory, "release.m4b"), Path.Join(DownloadDirectory, "book.nfo")], []),
             Path.Join(DownloadDirectory, "book.nfo"),
             BasePath,
             ExtractedAudioImported(),
@@ -147,8 +151,7 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
     public void BatchWithNoCommonDirectoryButTheFilesystemRoot_UsesTheImportedAudioDestination()
     {
         var resolved = ImportCompanionDestinationResolver.TryResolveRelativeDestination(
-            ArchiveBatch(),
-            [],
+            Roots(ArchiveBatch(), []),
             Path.Join(ExtractionRoot, "inner.nfo"),
             BasePath,
             ExtractedAudioImported(),
@@ -164,8 +167,7 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
     public void BatchWithNoCommonDirectoryButTheFilesystemRoot_CompanionWithNoNeighbour_IsRefused()
     {
         var resolved = ImportCompanionDestinationResolver.TryResolveRelativeDestination(
-            ArchiveBatch(),
-            [],
+            Roots(ArchiveBatch(), []),
             Path.Join(DownloadDirectory, "book.nfo"),
             BasePath,
             ExtractedAudioImported(),
@@ -188,8 +190,7 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
     public void CompanionOutsideEveryRootInTheBatch_IsRefused()
     {
         var resolved = ImportCompanionDestinationResolver.TryResolveRelativeDestination(
-            [Path.Join(DownloadDirectory, "release.m4b"), Path.Join(DownloadDirectory, "book.nfo")],
-            [],
+            Roots([Path.Join(DownloadDirectory, "release.m4b"), Path.Join(DownloadDirectory, "book.nfo")], []),
             Under("etc", "passwd"),
             BasePath,
             ExtractedAudioImported(),
@@ -213,8 +214,7 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
         ];
 
         var resolved = ImportCompanionDestinationResolver.TryResolveRelativeDestination(
-            ArchiveBatch(),
-            [],
+            Roots(ArchiveBatch(), []),
             Path.Join(ExtractionRoot, "inner.nfo"),
             BasePath,
             results,
@@ -243,8 +243,7 @@ public sealed class ImportCompanionDestinationResolverTests : BaseTests
         ];
 
         var resolved = ImportCompanionDestinationResolver.TryResolveRelativeDestination(
-            ArchiveBatch(),
-            [],
+            Roots(ArchiveBatch(), []),
             Path.Join(ExtractionRoot, "inner.nfo"),
             BasePath,
             results,
