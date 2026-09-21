@@ -700,8 +700,15 @@ class ApiService {
     })
   }
 
-  async cancelDownload(id: string): Promise<boolean> {
-    return this.request<boolean>(`/downloads/${id}`, { method: 'DELETE' })
+  /**
+   * Delete a download record. The server also removes the item from its download client
+   * unless removeFromClient is false, in which case only the Listenarr record goes and the
+   * client is left alone. Callers pass the value their UI has promised the user.
+   */
+  async cancelDownload(id: string, removeFromClient: boolean = true): Promise<boolean> {
+    return this.request<boolean>(`/downloads/${id}?removeFromClient=${removeFromClient}`, {
+      method: 'DELETE',
+    })
   }
 
   async getCachedAnnounces(
