@@ -139,7 +139,7 @@ public sealed class FileNamingService_AuthorFolderTests : BaseTests
     public void ApplyNamingPattern_KeepsATranslatorOutOfThePath()
     {
         // A second name on a book is often a translator rather than a co-author, so nothing here
-        // may join the list together. Only the byline's first name reaches the folder.
+        // may join the list together. One name reaches the folder and it is the author's.
         var metadata = new AudibleBookMetadata
         {
             Title = "The Odyssey",
@@ -172,18 +172,28 @@ public sealed class FileNamingService_AuthorFolderTests : BaseTests
     }
 
     [Fact]
-    public void ApplyNamingPattern_StillSplitsOnBylineOrder()
+    public void ApplyNamingPattern_StillSplitsOnTheOrderOfTwoCoAuthors()
     {
-        // The other half of the defect, also unfixed. Choosing between two names on a byline
-        // needs to know which of them the book belongs to, and nothing available here does.
+        // Documents a limit rather than an intention, and the limit is narrower than it looks.
+        // Two names that both belong to authors give the naming layer nothing to choose
+        // between, so the first one still wins and the two orders still disagree.
+        //
+        // This used to be written with a translator as the second name, on the reading that
+        // byline order was simply unrecoverable. It is recoverable when one of the names
+        // announces itself as a contributor, which most of them do, and measuring the
+        // catalogue showed why that matters: B002V9ZF3K credits Dostoevsky then Garnett and
+        // B00EZAXAF8 credits Garnett then Dostoevsky, so a rule that takes the first name
+        // files one of those two editions under its translator. That half is addressed on
+        // fix/drop-role-suffixed-credits. What is left, and what this now pins, is the case
+        // where neither name carries a role.
         var service = CreateService();
 
         var oneOrder = service.ApplyNamingPattern(
             FolderPattern,
-            new AudibleBookMetadata { Title = "The Odyssey", Authors = ["Homer", "Samuel Butler - translator"] });
+            new AudibleBookMetadata { Title = "Short Stories", Authors = ["O. Henry", "William Sydney Porter"] });
         var otherOrder = service.ApplyNamingPattern(
             FolderPattern,
-            new AudibleBookMetadata { Title = "The Odyssey", Authors = ["Samuel Butler - translator", "Homer"] });
+            new AudibleBookMetadata { Title = "Short Stories", Authors = ["William Sydney Porter", "O. Henry"] });
 
         Assert.NotEqual(AuthorFolderOf(oneOrder), AuthorFolderOf(otherOrder));
     }
