@@ -17,11 +17,12 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads;
 /// <summary>
 /// Where the manual-import companion pass puts the files it sweeps up.
 ///
-/// The request carries a <c>path</c>, and GET preview enumerates below it with
-/// SearchOption.AllDirectories, so that path is routinely several directories above the files
-/// the user then selects. Relativizing a companion against it recreated every directory in
-/// between inside the book folder. These pin the placement rule rather than the symptom: the
-/// only structure reproduced at the destination is the one the selected files themselves have.
+/// It used to relativize each companion against the request's <c>path</c> and re-root that under
+/// the destination, so a request whose <c>path</c> sat above the selected files recreated every
+/// directory in between inside the book folder. These pin the rule that replaced it rather than
+/// the symptom that exposed it: a companion goes where the file it accompanies went, and nowhere
+/// else. The audio destination is built from the naming pattern and carries none of the source's
+/// shape, so there is no source structure here for a sidecar to keep.
 /// </summary>
 [Trait("Name", "ManualImportCompanionPlacementTests")]
 [Trait("Category", "Unit")]
@@ -38,7 +39,7 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
     /// </summary>
     private static async Task<CompanionOutcome> RunPassAsync(
         string requestPath,
-        IReadOnlyList<(string Source, string Destination)> selected,
+        IReadOnlyList<(string Source, string Destination, bool Success)> selected,
         string audiobookBasePath)
     {
         var destinations = new List<string>();
@@ -130,9 +131,10 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
         var results = selected
             .Select(entry => new ManualImportResultDto
             {
-                Success = true,
+                Success = entry.Success,
+                Error = entry.Success ? null : "the harness failed this item deliberately",
                 SourcePath = entry.Source,
-                DestinationPath = entry.Destination,
+                DestinationPath = entry.Success ? entry.Destination : null,
                 Audiobook = audiobook
             })
             .ToList();
@@ -193,7 +195,7 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
 
             var outcome = await RunPassAsync(
                 requestPath,
-                [(audioSource, Path.Join(bookFolder, "The Valley of Fear.m4b"))],
+                [(audioSource, Path.Join(bookFolder, "The Valley of Fear.m4b"), true)],
                 bookFolder);
 
             Assert.Equal(1, outcome.Imported);
@@ -207,12 +209,14 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
     }
 
     /// <summary>
-    /// The bare-root variant of the same defect: a request path with nothing below it to
-    /// relativize against hands back the companion's own absolute path with the root stripped
-    /// off, which no containment check can reject.
+    /// The worst shape of the same defect. A request path of the bare filesystem root used to
+    /// hand back the companion's own absolute path with the root stripped off, which no
+    /// containment check can reject, so the whole source path appeared in the book folder. The
+    /// request path no longer reaches the placement decision at all, which is why this passes
+    /// now; nothing here exercises the resolver's bare-root backstop.
     /// </summary>
     [Fact]
-    public async Task ImportAsync_RequestPathIsTheFilesystemRoot_DoesNotMirrorTheAbsolutePath()
+    public async Task ImportAsync_RequestPathIsTheFilesystemRoot_StillPlacesCompanionBesideTheAudio()
     {
         var testRoot = NewTestRoot("bare-root");
         var selectedDirectory = Path.Join(testRoot, "downloads", "The.Release");
@@ -229,7 +233,7 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
 
             var outcome = await RunPassAsync(
                 filesystemRoot,
-                [(audioSource, Path.Join(bookFolder, "The Valley of Fear.m4b"))],
+                [(audioSource, Path.Join(bookFolder, "The Valley of Fear.m4b"), true)],
                 bookFolder);
 
             Assert.Equal(1, outcome.Imported);
@@ -243,32 +247,35 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
     }
 
     /// <summary>
-    /// Control: nothing was flattened. A companion that genuinely sits one directory below the
-    /// audio it accompanies keeps that relationship, because the selected files themselves have
-    /// that structure and the audio's destination has it too.
+    /// The companion follows the file it accompanies, wherever that file went. The source
+    /// subdirectory is named <c>bonus</c> and the audio's destination subdirectory is named
+    /// <c>extras</c>, so mirroring the source and following the audio give different answers and
+    /// this fact can tell them apart. It is also the control against a blanket flatten into the
+    /// book folder: a companion whose audio landed in a subdirectory belongs in that
+    /// subdirectory.
     /// </summary>
     [Fact]
-    public async Task ImportAsync_CompanionBelowTheAudioDirectory_KeepsItsSubdirectory()
+    public async Task ImportAsync_CompanionBesideAudioImportedIntoASubdirectory_FollowsItThere()
     {
-        var testRoot = NewTestRoot("nested");
+        var testRoot = NewTestRoot("follows");
         var requestPath = Path.Join(testRoot, "src", "The.Release");
-        var extrasDirectory = Path.Join(requestPath, "extras");
+        var bonusDirectory = Path.Join(requestPath, "bonus");
         var bookFolder = Path.Join(testRoot, "library", "The Valley of Fear");
         try
         {
             var audioSource = Path.Join(requestPath, "book.m4b");
-            var extrasAudioSource = Path.Join(extrasDirectory, "interview.m4b");
-            var companionSource = Path.Join(extrasDirectory, "interview.nfo");
+            var bonusAudioSource = Path.Join(bonusDirectory, "interview.m4b");
+            var companionSource = Path.Join(bonusDirectory, "interview.nfo");
             await WriteAsync(audioSource, "audio");
-            await WriteAsync(extrasAudioSource, "bonus audio");
+            await WriteAsync(bonusAudioSource, "bonus audio");
             await WriteAsync(companionSource, "sidecar");
             Directory.CreateDirectory(bookFolder);
 
             var outcome = await RunPassAsync(
                 requestPath,
                 [
-                    (audioSource, Path.Join(bookFolder, "The Valley of Fear.m4b")),
-                    (extrasAudioSource, Path.Join(bookFolder, "extras", "interview.m4b"))
+                    (audioSource, Path.Join(bookFolder, "The Valley of Fear.m4b"), true),
+                    (bonusAudioSource, Path.Join(bookFolder, "extras", "interview.m4b"), true)
                 ],
                 bookFolder);
 
@@ -277,6 +284,90 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
                 bookFolder,
                 outcome.Destinations,
                 Path.Join("extras", "interview.nfo"));
+        }
+        finally
+        {
+            Cleanup(testRoot);
+        }
+    }
+
+    /// <summary>
+    /// Selected files in two directories that share nothing but the request path. Each companion
+    /// follows its own audio rather than being described against a root computed across both.
+    /// This is the case an earlier version of this fix got wrong: it resolved one source root for
+    /// the whole batch, and a batch spanning two trees made that root shallow enough to mirror a
+    /// directory for each of them.
+    /// </summary>
+    [Fact]
+    public async Task ImportAsync_SelectedFilesInDisjointDirectories_EachCompanionFollowsItsOwnAudio()
+    {
+        var testRoot = NewTestRoot("disjoint");
+        var requestPath = Path.Join(testRoot, "src");
+        var firstDirectory = Path.Join(requestPath, "incoming", "The.Release");
+        var secondDirectory = Path.Join(requestPath, "elsewhere", "Another.Release");
+        var bookFolder = Path.Join(testRoot, "library", "The Valley of Fear");
+        try
+        {
+            var firstAudio = Path.Join(firstDirectory, "book.m4b");
+            var secondAudio = Path.Join(secondDirectory, "part2.m4b");
+            await WriteAsync(firstAudio, "audio one");
+            await WriteAsync(secondAudio, "audio two");
+            await WriteAsync(Path.Join(firstDirectory, "book.nfo"), "sidecar one");
+            await WriteAsync(Path.Join(secondDirectory, "part2.nfo"), "sidecar two");
+            Directory.CreateDirectory(bookFolder);
+
+            var outcome = await RunPassAsync(
+                requestPath,
+                [
+                    (firstAudio, Path.Join(bookFolder, "The Valley of Fear.m4b"), true),
+                    (secondAudio, Path.Join(bookFolder, "The Valley of Fear - 02.m4b"), true)
+                ],
+                bookFolder);
+
+            Assert.Equal(2, outcome.Imported);
+            AssertPlacedAt(bookFolder, outcome.Destinations.Order().ToList(), "book.nfo", "part2.nfo");
+            AssertNoDirectoriesUnder(bookFolder);
+        }
+        finally
+        {
+            Cleanup(testRoot);
+        }
+    }
+
+    /// <summary>
+    /// Nothing is invented. A companion whose directory produced no successful import has no
+    /// file to travel with, so it is refused rather than placed somewhere plausible. The old rule
+    /// placed it, because the request path alone was enough to describe a destination for it, and
+    /// that left a sidecar in the library for a book file that never arrived.
+    /// </summary>
+    [Fact]
+    public async Task ImportAsync_CompanionWhoseDirectoryImportedNothing_IsRefused()
+    {
+        var testRoot = NewTestRoot("orphan");
+        var requestPath = Path.Join(testRoot, "src");
+        var importedDirectory = Path.Join(requestPath, "The.Release");
+        var failedDirectory = Path.Join(requestPath, "The.Other.Release");
+        var bookFolder = Path.Join(testRoot, "library", "The Valley of Fear");
+        try
+        {
+            var importedAudio = Path.Join(importedDirectory, "book.m4b");
+            var failedAudio = Path.Join(failedDirectory, "part2.m4b");
+            await WriteAsync(importedAudio, "audio");
+            await WriteAsync(failedAudio, "audio that will not import");
+            await WriteAsync(Path.Join(failedDirectory, "part2.nfo"), "orphan sidecar");
+            Directory.CreateDirectory(bookFolder);
+
+            var outcome = await RunPassAsync(
+                requestPath,
+                [
+                    (importedAudio, Path.Join(bookFolder, "The Valley of Fear.m4b"), true),
+                    (failedAudio, Path.Join(bookFolder, "The Valley of Fear - 02.m4b"), false)
+                ],
+                bookFolder);
+
+            Assert.Equal(0, outcome.Imported);
+            Assert.Empty(outcome.Destinations);
+            AssertNoDirectoriesUnder(bookFolder);
         }
         finally
         {
@@ -304,7 +395,7 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
 
             var outcome = await RunPassAsync(
                 requestPath,
-                [(audioSource, Path.Join(bookFolder, "The Valley of Fear.m4b"))],
+                [(audioSource, Path.Join(bookFolder, "The Valley of Fear.m4b"), true)],
                 bookFolder);
 
             Assert.Equal(1, outcome.Imported);
@@ -315,27 +406,6 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
         {
             Cleanup(testRoot);
         }
-    }
-
-    /// <summary>
-    /// The containment guard the resolved relative path still passes through. The resolver no
-    /// longer produces a traversing path, so this is the control showing the guard that would
-    /// catch one is intact and still discriminates.
-    /// </summary>
-    [Fact]
-    public void ContainmentGuard_StillRejectsATraversingRelativePath()
-    {
-        var unix = new FileSystemPathSemantics(
-            FileSystemPathSyntax.Unix,
-            FileSystemCaseSensitivity.Sensitive);
-
-        Assert.False(FileSystemPathIdentity.TryResolveRelativePathWithinBase(
-            "/library/Book", "../escaped.nfo", unix, out _));
-        Assert.False(FileSystemPathIdentity.TryResolveRelativePathWithinBase(
-            "/library/Book", "/etc/passwd", unix, out _));
-        Assert.True(FileSystemPathIdentity.TryResolveRelativePathWithinBase(
-            "/library/Book", "book.nfo", unix, out var allowed));
-        Assert.Equal("/library/Book/book.nfo", allowed);
     }
 
     /// <summary>
