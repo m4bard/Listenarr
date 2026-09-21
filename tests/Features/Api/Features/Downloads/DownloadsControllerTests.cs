@@ -204,8 +204,11 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 .WithCompletedStatus(DateTime.UtcNow)
                 .Build());
 
+            // removeFromClient: false keeps this test about the status filter it was written for.
+            // The client-contacting default is covered in DownloadsControllerRemovalTests, which
+            // registers a download client gateway it can assert against.
             var controller = MockUtils.CreateDownloadsController(_provider);
-            var action = await controller.ClearFailedDownloads();
+            var action = await controller.ClearFailedDownloads(removeFromClient: false);
             var ok = Assert.IsType<OkObjectResult>(action);
             Assert.NotNull(ok.Value);
 
