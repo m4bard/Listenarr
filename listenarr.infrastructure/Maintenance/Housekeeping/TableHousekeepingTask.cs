@@ -51,9 +51,12 @@ public abstract class TableHousekeepingTask<TEntity>(
     where TEntity : class
 {
     /// <summary>
-    /// The existing retention sweep's batch size, reused rather than re-argued.
+    /// Rows per write transaction. Five hundred is the existing retention sweep's batch size,
+    /// reused rather than re-argued. A housekeeper whose table has a large per-row fan-out into
+    /// child tables lowers it, because what the batching bounds is the size of one transaction
+    /// and not the number of parents in it.
     /// </summary>
-    protected const int DeleteBatchSize = 500;
+    protected virtual int DeleteBatchSize => 500;
 
     public abstract string Name { get; }
 
