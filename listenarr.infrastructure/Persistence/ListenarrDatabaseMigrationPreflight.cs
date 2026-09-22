@@ -85,9 +85,13 @@ internal static class ListenarrDatabaseMigrationPreflight
             // better estimate and is what almost every terminal transition stamps; EnqueuedAt is
             // the fallback for the two reconciliation paths that reach a terminal status without
             // stamping it, and it is non-nullable. Falling back to EnqueuedAt ages a row from
-            // when it was queued rather than from when it finished, so such a row becomes
-            // eligible slightly early; what keeps it safe is the sweep's relocation and handoff
-            // clauses rather than this timestamp.
+            // when it was queued rather than from when it finished, so a job that sat queued a
+            // long time and finished recently can become eligible the day the install upgrades.
+            // Nothing prevents that: an ordinary single-audiobook move has no relocation and a
+            // Succeeded handoff, so neither of the sweep's other clauses holds it back. The cost
+            // is losing a recent move job history row early, the population is one-time, and the
+            // preview default means an operator sees the count before anything is deleted, which
+            // is why this is accepted rather than guarded against.
             //
             // It runs on every start rather than once, and is idempotent by the IS NULL guard.
             // That is deliberate: a row written terminal by a build that predates the stamping
