@@ -424,6 +424,30 @@ namespace Listenarr.Tests.Features.Application.Configuration.Core
             Assert.Equal("Household", Assert.Single(after.Emails!).Name);
         }
 
+        [Theory]
+        [InlineData("redacted")]
+        [InlineData("Redacted")]
+        [InlineData("REDACTED ")]
+        public async Task SaveApplicationSettings_APasswordThatMerelyResemblesTheSentinel_IsStoredAsTyped(
+            string password)
+        {
+            // The match is exact on purpose. An operator whose real password happens to be the
+            // word redacted in some other casing has to be able to save it, and a case-insensitive
+            // or trimmed comparison would silently keep the old one instead.
+            var svc = _provider.GetRequiredService<IConfigurationService>();
+            var saved = await SaveOneEmailAsync(svc);
+
+            await svc.SaveApplicationSettingsAsync(new ApplicationSettings
+            {
+                Id = 1,
+                Version = saved.Version,
+                Emails = [AnEmail(password: password)]
+            });
+
+            var after = await svc.GetApplicationSettingsAsync();
+            Assert.Equal(password, Assert.Single(after.Emails!).Password);
+        }
+
         [Fact]
         public async Task SaveApplicationSettings_SentinelOnADatabaseWithNoSettingsRowYet_StillStoresNothing()
         {
