@@ -106,5 +106,10 @@ namespace Listenarr.Application.Configuration.Contracts
         /// Gets the configured custom scripts, or an empty list when none are configured.
         /// </summary>
         Task<List<CustomScriptConfiguration>> GetCustomScriptConfigurationsAsync();
+
+        /// <summary>
+        /// Gets the configured email notification targets, or an empty list when none are configured.
+        /// </summary>
+        Task<List<EmailConfiguration>> GetEmailConfigurationsAsync();
     }
 }
