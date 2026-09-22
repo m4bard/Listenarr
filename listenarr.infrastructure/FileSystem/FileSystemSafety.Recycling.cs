@@ -180,6 +180,19 @@ internal static partial class FileSystemSafety
                     binTargetPath,
                     createMissing: true);
 
+                // Stamped BEFORE the rename, not after. Retention ages a file from when
+                // it was deleted rather than from whenever it was last written, and a
+                // rename keeps the original timestamps, so a file last written years ago
+                // would be swept on the very next cycle. Readarr stamps for the same
+                // reason at RecycleBinProvider.cs:56.
+                //
+                // Doing it after the rename leaves a window where the file is in the bin
+                // carrying its old timestamp, and the daily sweep could see it there and
+                // remove it immediately. The cost of stamping first is that a rename which
+                // then fails leaves a modified timestamp on a file we were about to delete
+                // anyway, which is the cheaper of the two.
+                entry.SetLastWriteTimeUtc(timeProvider.GetUtcNow().UtcDateTime);
+
                 var moved = TryPublishIntoRecycleBin(
                     entry,
                     binAnchor,
@@ -195,13 +208,6 @@ internal static partial class FileSystemSafety
                 }
 
                 recycledPath = Path.Join(binAnchor.FullPath, publishedName);
-
-                // Stamp the recycle time so retention ages the file from when it was
-                // deleted rather than from whenever it was last written. A rename keeps
-                // the original timestamps, and a file last written years ago would
-                // otherwise be swept on the very next cycle. Readarr stamps for the same
-                // reason at RecycleBinProvider.cs:56.
-                entry.SetLastWriteTimeUtc(timeProvider.GetUtcNow().UtcDateTime);
                 return RecycleFileOutcome.Recycled;
             }
         }
