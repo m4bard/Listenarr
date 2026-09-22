@@ -301,7 +301,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
         }
 
         [Fact]
-        public async Task UsenetResults_AreLeftExactlyAsTheyWere()
+        public async Task UsenetResults_TakeTheSameGateAsTheirTorrentTwin()
         {
             var service = CreateService();
             var profile = Profile(
@@ -314,12 +314,13 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
 
             var nzbScore = await service.ScoreSearchResult(usenet, profile);
 
-            // The torrent twin, which the profile does refuse. The two differing is the point:
-            // every profile gate in this scorer already sits inside a torrent-only branch, and
-            // moving them is a separate, unmeasured change.
+            // The torrent twin. This assertion used to be the interesting one, because the gate
+            // sat inside a torrent-only branch and the two protocols came out differently for a
+            // release the operator had switched off. It is now the control: the twins have to
+            // agree, and the torrent side has to keep refusing, or the NZB result proves nothing.
             var torrentScore = await service.ScoreSearchResult(Release("Book (FLAC)", "FLAC", "FLAC"), profile);
 
-            Assert.False(nzbScore.IsRejected, "Usenet results keep their existing exemption from the quality gate");
+            Assert.True(nzbScore.IsRejected, "A quality the operator switched off is refused over Usenet too");
             Assert.True(torrentScore.IsRejected, "The torrent twin is refused");
         }
 
