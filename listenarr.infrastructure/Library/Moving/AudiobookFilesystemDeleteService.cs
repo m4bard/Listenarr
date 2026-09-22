@@ -163,6 +163,12 @@ namespace Listenarr.Infrastructure.Library.Moving
                 var allowedRoots = protectedRoots
                     .Concat(string.IsNullOrWhiteSpace(fallbackFolderRoot) ? [] : [fallbackFolderRoot])
                     .ToList();
+                // Resolved before the non-cancelable phase and outside the loop, so every
+                // file in one audiobook takes the same route. A settings change mid-delete
+                // must not bin half a book and unlink the rest.
+                var recycleBinPolicy = await ResolveRecycleBinPolicyAsync(
+                    protectedRoots,
+                    cancellationToken);
                 var mutationToken = RequestCancellationBoundary.EnterNonCancelablePhase(
                     cancellationToken);
                 foreach (var trackedFilePath in trackedFilePaths)
@@ -170,6 +176,18 @@ namespace Listenarr.Infrastructure.Library.Moving
                     trackedPhysicalObjectIdentities.TryGetValue(
                         trackedFilePath,
                         out var expectedPhysicalObjectIdentity);
+                    if (recycleBinPolicy.Enabled)
+                    {
+                        TryRecycleTrackedFile(
+                            trackedFilePath,
+                            expectedPhysicalObjectIdentity,
+                            result,
+                            recycleBinPolicy,
+                            allowedRoots,
+                            deleteSemantics);
+                        continue;
+                    }
+
                     TryDeleteFile(
                         trackedFilePath,
                         expectedPhysicalObjectIdentity,
