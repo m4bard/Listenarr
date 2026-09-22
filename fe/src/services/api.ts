@@ -853,6 +853,42 @@ class ApiService {
     })
   }
 
+  // Exercises one configured notification subscriber instance (e.g. Custom Script) and reports
+  // whether it works. See NotificationsController.TestSubscriber; the endpoint answers 200 on
+  // success and 400/404 on a reported or unresolvable failure, so a non-2xx here is a normal
+  // outcome and is parsed rather than treated as a transport error.
+  async testNotificationSubscriber(
+    subscriberName: string,
+    configurationId: string,
+  ): Promise<{ success: boolean; message: string; failures?: string[] }> {
+    try {
+      return await this.request<{ success: boolean; message: string; failures?: string[] }>(
+        `/notifications/subscribers/${encodeURIComponent(subscriberName)}/test/${encodeURIComponent(configurationId)}`,
+        { method: 'POST' },
+      )
+    } catch (error: unknown) {
+      const err = error as { body?: unknown; message?: string }
+      let message = 'Failed to test notification subscriber'
+      let failures: string[] | undefined
+      if (err?.body) {
+        try {
+          const parsed =
+            typeof err.body === 'string' ? JSON.parse(err.body) : (err.body as Record<string, unknown>)
+          const data = parsed as { message?: string; failures?: string[] }
+          message = data.message || message
+          failures = data.failures
+        } catch {
+          if (typeof err.body === 'string' && err.body.length > 0) {
+            message = err.body
+          }
+        }
+      } else if (err?.message) {
+        message = err.message
+      }
+      return { success: false, message, failures }
+    }
+  }
+
   // Application Settings
   async getApplicationSettings(): Promise<ApplicationSettings> {
     return this.request<ApplicationSettings>('/configuration/settings')
