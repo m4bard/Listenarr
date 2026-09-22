@@ -147,6 +147,19 @@ public class SqliteMigrationSchemaTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "ProcessExecutionLogsTableDropped")]
+    public async Task ProcessExecutionLogsTable_DoesNotExistAfterMigrate()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.False(await TableExistsAsync(connection, "ProcessExecutionLogs"));
+    }
+
+    [Fact]
     [Trait("Scenario", "MoveSourceCleanupPolicySnapshot")]
     public async Task WeakStorageMigration_AddsFailClosedMovePolicySnapshot()
     {
