@@ -357,15 +357,39 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
             }
         }
 
-        private static bool IsWithin(string candidate, string basePath)
+        /// <summary>
+        /// Containment test for the bin against a root folder, checked both ordinally and
+        /// case-insensitively.
+        ///
+        /// This is a validator, so it has to fail closed in the direction of REFUSING a
+        /// bin path. An ordinal-only test would accept a bin at "/MNT/library/recycled"
+        /// against a root of "/mnt/library" on the case-insensitive filesystems Windows
+        /// and macOS usually present, and that bin would then be walked by the library
+        /// scan and its contents re-imported. Refusing a path that only collides under
+        /// case folding costs the operator a rename; accepting one costs them the deletes
+        /// the bin was holding.
+        ///
+        /// Note this is the opposite choice from FileSystemSafety.TryValidateMutationTarget,
+        /// which is ordinal on purpose. There, failing closed means refusing to mutate, so
+        /// the strict comparison is the safe one. Here it is the loose one.
+        /// </summary>
+        private static bool IsWithin(string candidate, string basePath) =>
+            IsWithinUsing(candidate, basePath, StringComparison.Ordinal)
+            || IsWithinUsing(candidate, basePath, StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsWithinUsing(
+            string candidate,
+            string basePath,
+            StringComparison comparison)
         {
-            if (string.Equals(candidate, basePath, StringComparison.Ordinal))
+            if (string.Equals(candidate, basePath, comparison))
             {
                 return true;
             }
 
+            // The trailing separator is what stops "/a/bc" reading as inside "/a/b".
             var boundary = basePath + Path.DirectorySeparatorChar;
-            return candidate.StartsWith(boundary, StringComparison.Ordinal);
+            return candidate.StartsWith(boundary, comparison);
         }
     }
 }
