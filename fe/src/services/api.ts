@@ -22,6 +22,7 @@ import type {
   DownloadClientConfiguration,
   ApplicationSettings,
   ProwlarrImportConnectionSettings,
+  NamingPatternPreview,
   Audiobook,
   AudiobookUpdateRequest,
   History,
@@ -878,6 +879,24 @@ class ApiService {
 
   async getProwlarrImportSettings(): Promise<ProwlarrImportConnectionSettings> {
     return this.request<ProwlarrImportConnectionSettings>('/configuration/prowlarr-import')
+  }
+
+  /**
+   * Render the folder, single-file and multi-file naming patterns through the real backend
+   * renderer against a fixed sample. Patterns are sent as typed, not saved settings, so the
+   * preview reflects what the operator has entered before they save it.
+   */
+  async previewNamingPatterns(patterns: {
+    folderPattern?: string
+    filePattern?: string
+    multiFilePattern?: string
+  }): Promise<NamingPatternPreview> {
+    const params = new URLSearchParams()
+    if (patterns.folderPattern) params.append('folderPattern', patterns.folderPattern)
+    if (patterns.filePattern) params.append('filePattern', patterns.filePattern)
+    if (patterns.multiFilePattern) params.append('multiFilePattern', patterns.multiFilePattern)
+
+    return this.request<NamingPatternPreview>(`/configuration/naming/examples?${params}`)
   }
 
   // Root Folders

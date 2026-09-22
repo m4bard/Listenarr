@@ -35,7 +35,9 @@
         </div>
         <div class="pattern-preview" v-if="folderPattern">
           <span class="preview-label">Preview:</span>
-          <code>{{ applyPattern(folderPattern) }}</code>
+          <code v-if="preview">{{ preview.folderExample }}</code>
+          <span v-else-if="previewError" class="preview-error">Preview unavailable</span>
+          <span v-else class="preview-pending">Loading preview&hellip;</span>
         </div>
       </FormRow>
 
@@ -56,7 +58,9 @@
         </div>
         <div class="pattern-preview" v-if="filePatternSingleFile">
           <span class="preview-label">Preview:</span>
-          <code>{{ applyPattern(filePatternSingleFile, 'file') }}.ext</code>
+          <code v-if="preview">{{ preview.singleFileExample }}</code>
+          <span v-else-if="previewError" class="preview-error">Preview unavailable</span>
+          <span v-else class="preview-pending">Loading preview&hellip;</span>
         </div>
       </FormRow>
 
@@ -79,7 +83,13 @@
         </div>
         <div class="pattern-preview" v-if="filePatternMultiFile">
           <span class="preview-label">Preview:</span>
-          <code>{{ applyPattern(filePatternMultiFile, 'file', true) }}</code>
+          <code v-if="preview">
+            <PhWarning v-if="preview.multiFileAmbiguous" :size="14" />
+            {{ preview.multiFileExamples.join(', ')
+            }}<span v-if="preview.multiFileAmbiguous"> (every file would get the same name!)</span>
+          </code>
+          <span v-else-if="previewError" class="preview-error">Preview unavailable</span>
+          <span v-else class="preview-pending">Loading preview&hellip;</span>
         </div>
       </FormRow>
 
@@ -204,10 +214,11 @@
 </template>
 
 <script setup lang="ts">
-import type { ApplicationSettings } from '@/types'
-import { ref, computed } from 'vue'
+import type { ApplicationSettings, NamingPatternPreview } from '@/types'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { PhFolder, PhQuestion, PhX, PhWarning } from '@phosphor-icons/vue'
 import FormRow from '@/components/settings/FormRow.vue'
+import { apiService } from '@/services/api'
 
 const props = defineProps<{ settings: Partial<ApplicationSettings> }>()
 const emit = defineEmits<{
@@ -220,90 +231,52 @@ const folderPattern = ref(props.settings.folderNamingPattern || '')
 const filePatternSingleFile = ref(props.settings.fileNamingPattern || '')
 const filePatternMultiFile = ref(props.settings.multiFileNamingPattern || '{Title}-{DiskNumber:00}')
 
-// Sample values for testing patterns
-const sampleVariables = {
-  Author: 'Stephen King',
-  Narrator: 'George Guidall',
-  Series: 'The Dark Tower',
-  Title: 'The Gunslinger',
-  Subtitle: 'The Dark Tower Begins',
-  Edition: 'Revised Edition',
-  Publisher: 'Penguin Audio',
-  Language: 'English',
-  Asin: 'B000FC1R84',
-  SeriesNumber: '1',
-  Year: '1982',
-  DiskNumber: '3',
-  ChapterNumber: '3',
-  Quality: '128kbps',
-}
-
 const modalTitle = computed(() =>
   activePatternType.value === 'folder' ? 'Folder Naming Pattern Help' : 'File Naming Pattern Help',
 )
 
-function applyPattern(
-  pattern: string,
-  type: 'folder' | 'file' = 'folder',
-  multiFile: boolean = false,
-): string {
-  if (!pattern) return ''
+// --- Server-rendered pattern preview ---
+// The preview used to be a second, frontend-only implementation of the naming renderer
+// (a hardcoded sample table plus per-token regex replacement). It disagreed with the
+// backend's FileNamingService.ApplyNamingPattern on token case matching, path sanitization,
+// empty-token elision, and whether a file pattern implies its own subfolders, so it could not
+// show what an import or rename would actually write. The three rows below are now fed by
+// GET configuration/naming/examples, which runs the same renderer against a fixed sample.
+const preview = ref<NamingPatternPreview | null>(null)
+const previewError = ref(false)
+let previewDebounceHandle: ReturnType<typeof setTimeout> | undefined
+let previewRequestToken = 0
 
-  let result = pattern
-
-  // Replace all variables with sample values
-  for (const [key, value] of Object.entries(sampleVariables)) {
-    if (key === 'DiskNumber' || key === 'ChapterNumber' || key === 'SeriesNumber') {
-      // Handle zero-padding for disk, chapter, and series numbers using the sample value
-      const paddedRegex = new RegExp(`\\{${key}:00\\}`, 'g')
-      const paddedSample = value.toString().padStart(2, '0')
-      result = result.replace(paddedRegex, paddedSample)
-      result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value)
-    } else {
-      const regex = new RegExp(`\\{${key}\\}`, 'g')
-      result = result.replace(regex, value)
-    }
+async function refreshPreview(): Promise<void> {
+  const token = ++previewRequestToken
+  try {
+    const result = await apiService.previewNamingPatterns({
+      folderPattern: folderPattern.value,
+      filePattern: filePatternSingleFile.value,
+      multiFilePattern: filePatternMultiFile.value,
+    })
+    if (token !== previewRequestToken) return // a newer request already landed
+    preview.value = result
+    previewError.value = false
+  } catch {
+    if (token !== previewRequestToken) return
+    // Deliberately no fallback to a local approximation here: that is exactly the defect
+    // this preview replaces. An explicit "Preview unavailable" beats a preview that lies.
+    previewError.value = true
   }
-
-  // For multi-file preview, show how files would be named
-  if (type === 'file' && multiFile) {
-    // Check if pattern includes DiskNumber or ChapterNumber for uniqueness
-    const hasDiskNumber = pattern.includes('{DiskNumber')
-    const hasChapterNumber = pattern.includes('{ChapterNumber')
-
-    if (!hasDiskNumber && !hasChapterNumber) {
-      // Pattern doesn't differentiate files - show warning
-      return `⚠️ ${result}.ext (all files would have the same name!)`
-    }
-
-    // Generate unique filenames by simulating different disk/chapter numbers
-    let file1 = result
-    let file2 = result
-    const file3 = result
-
-    // Replace DiskNumber variants
-    if (hasDiskNumber) {
-      const diskSample = sampleVariables.DiskNumber.toString().padStart(2, '0')
-      const diskRegex = new RegExp(diskSample, 'g')
-      file1 = file1.replace(diskRegex, '01')
-      file2 = file2.replace(diskRegex, '02')
-      // file3 already contains the sample value for the third file — no-op replacement removed
-    }
-
-    // Replace ChapterNumber variants
-    if (hasChapterNumber) {
-      const chapterSample = sampleVariables.ChapterNumber.toString().padStart(2, '0')
-      const chapterRegex = new RegExp(chapterSample, 'g')
-      file1 = file1.replace(chapterRegex, '01')
-      file2 = file2.replace(chapterRegex, '02')
-      // file3 already contains the sample value for the third file — no-op replacement removed
-    }
-
-    return `${file1}.ext, ${file2}.ext, ${file3}.ext...`
-  }
-
-  return result
 }
+
+function schedulePreviewRefresh(): void {
+  if (previewDebounceHandle) clearTimeout(previewDebounceHandle)
+  previewDebounceHandle = setTimeout(refreshPreview, 300)
+}
+
+watch([folderPattern, filePatternSingleFile, filePatternMultiFile], schedulePreviewRefresh)
+
+onMounted(refreshPreview)
+onUnmounted(() => {
+  if (previewDebounceHandle) clearTimeout(previewDebounceHandle)
+})
 
 function updateField(field: keyof ApplicationSettings, value: unknown) {
   const payload = { ...(props.settings || {}), [field]: value } as Partial<ApplicationSettings>
@@ -325,13 +298,13 @@ function formatExtensionList(value: string[] | undefined): string {
 // --- Path length estimation ---
 const WINDOWS_MAX_PATH = 259
 
-/** Build a sample full path from the current patterns and output path to estimate length. */
+/** Build a sample full path from the server-rendered preview and output path to estimate length. */
 const estimatedPathLength = computed(() => {
+  if (!preview.value) return 0
+
   const outputPath = (props.settings.outputPath || 'D:\\Audiobooks').replace(/[\/\\]+$/, '')
-  const folder = folderPattern.value ? applyPattern(folderPattern.value) : ''
-  const file = filePatternSingleFile.value
-    ? applyPattern(filePatternSingleFile.value, 'file') + '.m4b'
-    : 'Unknown Title.m4b'
+  const folder = folderPattern.value ? preview.value.folderExample : ''
+  const file = filePatternSingleFile.value ? preview.value.singleFileExample : 'Unknown.m4b'
 
   const parts = [outputPath, folder, file].filter(Boolean)
   const fullPath = parts.join('\\')
@@ -621,6 +594,17 @@ h3 svg {
   font-family: 'Courier New', monospace;
   flex: 1;
   word-break: break-all;
+}
+
+.pattern-preview .preview-error {
+  color: #ff8787;
+  font-size: 0.85rem;
+}
+
+.pattern-preview .preview-pending {
+  color: #adb5bd;
+  font-size: 0.85rem;
+  font-style: italic;
 }
 
 /* Path length feedback */
