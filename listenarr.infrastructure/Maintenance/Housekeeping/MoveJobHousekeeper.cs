@@ -42,12 +42,20 @@ namespace Listenarr.Infrastructure.Maintenance.Housekeeping;
 /// </para>
 /// <para>
 /// The relocation clause is the important one. RootFolderRelocationService recomputes its
-/// completed-job count from the rows themselves and branches on it, so deleting one Failed job of
-/// an unfinished relocation while its Completed siblings survive makes the next reconciliation
-/// pass finalize a relocation that never finished. The abandon path is worse: it offers
-/// filesystem retirement when the job set is empty, and emptying that set is exactly what a sweep
-/// does. Requiring the relocation to be finished, meaning no active root folder and a Completed
-/// status, removes every one of those cases at once.
+/// completed-job count from the surviving rows and branches on it, so a job set that a sweep has
+/// thinned makes the next reconciliation pass reach a different conclusion than the history
+/// warrants. The sharp edge is an empty set, where the all-jobs-completed test is vacuously true
+/// and the relocation would be finalized or offered for abandonment, which performs filesystem
+/// retirement.
+/// <para>
+/// Note what actually protects against that, because it is not what it looks like. It is not that
+/// a sweep cannot thin a relocation's job set partially: the per-cycle ceiling and the batch size
+/// mean it certainly can. It is that the only writer of the recomputed count is reachable only
+/// from a move job state change, and every job under a finished relocation is already terminal
+/// and cannot change state again, so that code is never re-entered for one. Requiring the
+/// relocation to be finished, meaning no active root folder and a Completed status, is what buys
+/// that.
+/// </para>
 /// </para>
 /// <para>
 /// The handoff clause is the second. A Completed job is terminal for recovery and not terminal
@@ -64,12 +72,15 @@ namespace Listenarr.Infrastructure.Maintenance.Housekeeping;
 /// </para>
 /// <para>
 /// <b>Children go first, explicitly, in the same transaction.</b> The three child relationships
-/// are configured Cascade, but on SQLite a database level cascade is only enforced when the
-/// connection has set PRAGMA foreign_keys, and nothing in this repository sets it. Deleting the
-/// children by MoveJobId before the parents is correct whether or not that pragma is on, it needs
-/// no Include on a navigation that is configured AutoInclude(false), and it cannot silently
-/// orphan the largest table of the three. MoveJobHousekeeperCascadeTests measures the pragma and
-/// the cascade rather than leaving either as an assumption.
+/// are configured Cascade, and the database level cascade does fire here: MoveJobHousekeeperTests
+/// measures that PRAGMA foreign_keys reports on and that a bare delete of the parent empties all
+/// three child tables. The point is that nothing in this repository asks for that. It is the
+/// driver's default, and one connection string keyword would turn it off. Deleting the children
+/// by MoveJobId before the parents is correct either way, it needs no Include on a navigation
+/// configured AutoInclude(false), and it cannot silently orphan the largest table of the three.
+/// Being plain about it: with the pragma on, no test here can tell the explicit delete apart from
+/// relying on the cascade. It is insurance against that default moving, not something the suite
+/// currently catches.
 /// </para>
 /// <para>
 /// <b>Batch size.</b> Smaller than the five hundred the other housekeepers use, because the
