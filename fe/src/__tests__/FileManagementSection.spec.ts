@@ -244,6 +244,36 @@ describe('FileManagementSection', () => {
     expect(wrapper.text()).not.toContain('Stephen King')
   })
 
+  it('clears a stale preview when a later refresh fails, rather than leaving it on screen for the new pattern', async () => {
+    vi.mocked(apiService.previewNamingPatterns).mockResolvedValueOnce(
+      mockPreview({ folderExample: 'Old/Result' }),
+    )
+    const { default: FileManagementSection } =
+      await import('@/components/settings/FileManagementSection.vue')
+    const wrapper = mount(FileManagementSection, {
+      props: {
+        settings: {
+          folderNamingPattern: '{Author}/{Title}',
+        },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.find('.pattern-preview code').text()).toContain('Old/Result')
+
+    vi.mocked(apiService.previewNamingPatterns).mockRejectedValueOnce(new Error('network error'))
+    const folderInput = wrapper.find('input[placeholder="{Author}/{Series}/{Title}"]')
+    await folderInput.setValue('{Narrator}')
+    await folderInput.trigger('change')
+    // Wait past the debounce window for the second, failing request to land.
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Old/Result')
+    expect(wrapper.find('.preview-error').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
   it('debounces the preview refresh while typing and re-fetches with the latest pattern', async () => {
     vi.useFakeTimers()
     const { default: FileManagementSection } =
@@ -270,5 +300,37 @@ describe('FileManagementSection', () => {
     expect(apiService.previewNamingPatterns).toHaveBeenLastCalledWith(
       expect.objectContaining({ folderPattern: '{Author}/{Series}/{Title}' }),
     )
+
+    wrapper.unmount()
+  })
+
+  it('collapses two edits inside the debounce window into a single extra request', async () => {
+    vi.useFakeTimers()
+    const { default: FileManagementSection } =
+      await import('@/components/settings/FileManagementSection.vue')
+    const wrapper = mount(FileManagementSection, {
+      props: {
+        settings: {
+          folderNamingPattern: '{Author}/{Title}',
+        },
+      },
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(apiService.previewNamingPatterns).toHaveBeenCalledTimes(1)
+
+    const folderInput = wrapper.find('input[placeholder="{Author}/{Series}/{Title}"]')
+    await folderInput.setValue('{Author}/{Series}')
+    await vi.advanceTimersByTimeAsync(100)
+    await folderInput.setValue('{Author}/{Series}/{Title}')
+
+    // An implementation that starts a fresh, independent timer per keystroke instead of
+    // resetting a single pending one would produce two extra calls here, not one.
+    await vi.advanceTimersByTimeAsync(300)
+    expect(apiService.previewNamingPatterns).toHaveBeenCalledTimes(2)
+    expect(apiService.previewNamingPatterns).toHaveBeenLastCalledWith(
+      expect.objectContaining({ folderPattern: '{Author}/{Series}/{Title}' }),
+    )
+
+    wrapper.unmount()
   })
 })

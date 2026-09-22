@@ -256,12 +256,27 @@ async function refreshPreview(): Promise<void> {
       multiFilePattern: filePatternMultiFile.value,
     })
     if (token !== previewRequestToken) return // a newer request already landed
+    // Normalize defensively: a malformed or unexpected response should show as an error, not
+    // throw inside the template (multiFileExamples.join) or render undefined as "undefined".
+    if (
+      typeof result?.folderExample !== 'string' ||
+      typeof result?.singleFileExample !== 'string' ||
+      !Array.isArray(result?.multiFileExamples)
+    ) {
+      preview.value = null
+      previewError.value = true
+      return
+    }
     preview.value = result
     previewError.value = false
   } catch {
     if (token !== previewRequestToken) return
     // Deliberately no fallback to a local approximation here: that is exactly the defect
-    // this preview replaces. An explicit "Preview unavailable" beats a preview that lies.
+    // this preview replaces. An explicit "Preview unavailable" beats a preview that lies, and
+    // that includes a STALE preview left over from an earlier, successful request: clear it
+    // rather than let it sit next to (or instead of) an error for a pattern that has since
+    // changed.
+    preview.value = null
     previewError.value = true
   }
 }
