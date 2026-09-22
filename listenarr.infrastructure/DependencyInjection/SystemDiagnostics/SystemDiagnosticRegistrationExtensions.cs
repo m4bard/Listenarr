@@ -28,6 +28,7 @@ internal static class SystemDiagnosticRegistrationExtensions
         services.AddSingleton<IDiskSpaceProbe, DiskSpaceProbe>();
         services.AddScoped<ISystemService, SystemService>();
         services.AddScoped<ISystemReadinessService, SystemReadinessService>();
+        services.AddScoped<IBackupService, BackupService>();
         return services;
     }
 
