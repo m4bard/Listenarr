@@ -145,6 +145,21 @@ namespace Listenarr.Domain.Configuration
         /// </summary>
         public bool HousekeepingDryRun { get; set; } = true;
 
+        // --- Recycle bin settings (kept as one contiguous block) ---
+
+        // Directory that deleted audiobook files are moved into instead of being unlinked.
+        // Empty means there is no recycle bin and deletion stays permanent. That opt-in
+        // default matches the rest of the family: Readarr ConfigService.cs:93 and Sonarr
+        // ConfigService.cs:100 both default RecycleBin to an empty string.
+        public string RecycleBinPath { get; set; } = string.Empty;
+
+        // How many days a recycled file is kept before the retention sweep removes it.
+        // Zero keeps recycled files until the operator empties the bin by hand. Seven
+        // matches Readarr ConfigService.cs:99 and Sonarr ConfigService.cs:106.
+        public int RecycleBinCleanupDays { get; set; } = 7;
+
+        // --- end recycle bin settings ---
+
         // Failed download handling settings
         public bool FailedDownloadHandlingEnabled { get; set; } = true;
         public bool FailedDownloadAutoSearch { get; set; } = false;
