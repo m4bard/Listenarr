@@ -402,6 +402,18 @@ const toast = useToast()
 const saving = ref(false)
 const testing = ref(false)
 
+// v-model.number yields an empty string when the operator clears the box, and the API
+// binds this straight onto an int, so posting it raw is a JSON parse error rather than the
+// validation message. Coerce here and clamp to the range the backend accepts.
+const MIN_CLIENT_PRIORITY = 1
+const MAX_CLIENT_PRIORITY = 50
+
+function normalizePriority(value: unknown): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return MIN_CLIENT_PRIORITY
+  return Math.min(MAX_CLIENT_PRIORITY, Math.max(MIN_CLIENT_PRIORITY, Math.trunc(parsed)))
+}
+
 const defaultFormData = {
   name: '',
   type: 'qbittorrent' as 'qbittorrent' | 'transmission' | 'sabnzbd' | 'nzbget',
@@ -598,7 +610,7 @@ const testConnection = async () => {
       downloadPath: formData.value.downloadPath || '',
       useSSL: formData.value.useSSL,
       isEnabled: formData.value.isEnabled,
-      priority: formData.value.priority,
+      priority: normalizePriority(formData.value.priority),
       removeCompletedDownloads: formData.value.removeCompletedDownloads,
       settings: {
         ...(formData.value.type === 'sabnzbd' && formData.value.apiKey
@@ -656,7 +668,7 @@ const handleSubmit = async () => {
       downloadPath: formData.value.downloadPath || '',
       useSSL: formData.value.useSSL,
       isEnabled: formData.value.isEnabled,
-      priority: formData.value.priority,
+      priority: normalizePriority(formData.value.priority),
       removeCompletedDownloads: formData.value.removeCompletedDownloads,
       settings: {
         ...(formData.value.type === 'sabnzbd' && formData.value.apiKey
