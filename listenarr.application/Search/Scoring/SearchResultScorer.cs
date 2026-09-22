@@ -145,7 +145,7 @@ namespace Listenarr.Application.Search.Scoring
                         if (!isNzb && !string.IsNullOrWhiteSpace(idx.Type) && string.Equals(idx.Type, "Usenet", StringComparison.OrdinalIgnoreCase))
                         {
                             isNzb = true;
-                            _logger.LogDebug("Indexer {IndexerId} type '{Type}' detected as Usenet; applying NZB/Usenet exemptions", searchResult.IndexerId.Value, idx.Type);
+                            _logger.LogDebug("Indexer {IndexerId} type '{Type}' detected as Usenet", searchResult.IndexerId.Value, idx.Type);
                         }
                     }
                 }
