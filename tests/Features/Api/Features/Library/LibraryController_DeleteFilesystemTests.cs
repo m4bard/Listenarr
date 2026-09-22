@@ -2912,5 +2912,114 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                         cancellationToken);
             }
         }
+
+        /// <summary>
+        /// Build an audiobook whose base path IS the root folder, so
+        /// ResolveDeleteFolderTargetAsync refuses to treat the root as a deletable folder
+        /// and DeleteAsync takes the per-tracked-file branch. That is the branch the
+        /// recycle bin is wired into.
+        /// </summary>
+        private async Task<(Audiobook Audiobook, string FilePath)> ArrangeRootLevelBookAsync(
+            int id,
+            string rootPath)
+        {
+            var filePath = Path.Join(rootPath, $"book-{id}.m4b");
+            await File.WriteAllTextAsync(filePath, "audio");
+            await AddAuthorizedRootAsync(new RootFolderBuilder()
+                .WithId(id)
+                .WithPath(rootPath)
+                .Build());
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithId(id)
+                .WithTitle($"Recycle Book {id}")
+                .WithBasePath(rootPath)
+                .Build());
+
+            // The delete refuses outright when a tracked file has no persisted physical
+            // generation, so the identity has to be real rather than a builder default.
+            await AddTrackedGenerationAsync(audiobook, filePath);
+            var reloaded = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(reloaded);
+            return (reloaded!, filePath);
+        }
+
+        [Fact]
+        public async Task DeleteAudiobook_NoRecycleBinConfigured_UnlinksAsBefore()
+        {
+            var root = FileService.GetTempDirectory("listenarr-delete-nobin");
+            var (audiobook, filePath) = await ArrangeRootLevelBookAsync(610, root);
+
+            var result = await _provider.GetRequiredService<LibraryController>()
+                .DeleteAudiobook(audiobook.Id, deleteFiles: true, deleteFolder: false);
+
+            // This is the control for the two tests below. It proves the arrangement
+            // actually reaches the delete and removes the file, so a later test that
+            // finds the file still present is telling us about the bin and not about a
+            // delete that never ran.
+            Assert.IsType<OkObjectResult>(result);
+            Assert.False(File.Exists(filePath));
+        }
+
+        [Fact]
+        public async Task DeleteAudiobook_RecycleBinConfigured_MovesTheFileIntoItRatherThanUnlinking()
+        {
+            var root = FileService.GetTempDirectory("listenarr-delete-withbin");
+            var bin = FileService.GetTempDirectory("listenarr-delete-withbin-bin");
+            await _applicationSettingsRepository.SaveAsync(
+                new ApplicationSettingsBuilder()
+                    .WithRecycleBinPath(bin)
+                    .Build());
+            var (audiobook, filePath) = await ArrangeRootLevelBookAsync(611, root);
+
+            var result = await _provider.GetRequiredService<LibraryController>()
+                .DeleteAudiobook(audiobook.Id, deleteFiles: true, deleteFolder: false);
+
+            Assert.IsType<OkObjectResult>(result);
+
+            // Both halves matter. Gone from the library, and present in the bin with its
+            // bytes intact. An unlink satisfies the first only; a copy satisfies the
+            // second only.
+            Assert.False(File.Exists(filePath));
+            var recycled = Directory
+                .EnumerateFiles(bin, "*", SearchOption.AllDirectories)
+                .ToList();
+            var landed = Assert.Single(recycled);
+            Assert.Equal("audio", await File.ReadAllTextAsync(landed));
+            Assert.Equal(Path.GetFileName(filePath), Path.GetFileName(landed));
+        }
+
+        [Fact]
+        public async Task DeleteAudiobook_RecycleBinUnusable_RefusesRatherThanDeletingPermanently()
+        {
+            var root = FileService.GetTempDirectory("listenarr-delete-badbin");
+            var blocker = FileService.GetTempDirectory("listenarr-delete-badbin-blocker");
+
+            // A bin path whose parent component is a regular file. The pinned hierarchy
+            // walk cannot create a directory under it, so the recycle fails.
+            var blockingFile = Path.Join(blocker, "not-a-directory");
+            await File.WriteAllTextAsync(blockingFile, "blocker");
+            var unusableBin = Path.Join(blockingFile, "bin");
+
+            await _applicationSettingsRepository.SaveAsync(
+                new ApplicationSettingsBuilder()
+                    .WithRecycleBinPath(unusableBin)
+                    .Build());
+            var (audiobook, filePath) = await ArrangeRootLevelBookAsync(612, root);
+
+            var result = await _provider.GetRequiredService<LibraryController>()
+                .DeleteAudiobook(audiobook.Id, deleteFiles: true, deleteFolder: false);
+
+            // The whole point of the wiring: an operator who configured a bin asked for
+            // deletes to be recoverable, so a bin we cannot reach must not silently
+            // become a permanent delete. The file stays, the library row stays, and the
+            // caller gets a retryable failure rather than a success.
+            Assert.True(
+                File.Exists(filePath),
+                "The file was deleted permanently even though a recycle bin was configured.");
+            var objectResult = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(500, objectResult.StatusCode);
+            Assert.NotNull(await _audiobookRepository.GetByIdAsync(audiobook.Id));
+        }
+
     }
 }
