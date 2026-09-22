@@ -18,6 +18,7 @@
 // Settings components barrel export
 export { default as AuthenticationSection } from './AuthenticationSection.vue'
 export { default as AuthorIdentityRepairSection } from './AuthorIdentityRepairSection.vue'
+export { default as BackupSection } from './BackupSection.vue'
 export { default as CheckboxCard } from './CheckboxCard.vue'
 export { default as DownloadSettingsSection } from './DownloadSettingsSection.vue'
 export { default as ExternalRequestsSection } from './ExternalRequestsSection.vue'
