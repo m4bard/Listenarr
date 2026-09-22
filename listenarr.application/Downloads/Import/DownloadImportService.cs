@@ -37,6 +37,7 @@ namespace Listenarr.Application.Downloads.Import
         IFileRegistrationRecoveryService fileRegistrationRecoveryService,
         IMoveQueueService moveQueueService,
         ILibraryDirectoryOwnershipStore directoryOwnershipStore,
+        IFreeSpaceImportGuard freeSpaceImportGuard,
         ILogger<DownloadImportService> logger,
         IFilePublicationCapabilityResolver? filePublicationCapabilityResolver = null,
         ICompatibilitySourceCleanupCoordinator? compatibilitySourceCleanupCoordinator = null)
@@ -133,6 +134,14 @@ namespace Listenarr.Application.Downloads.Import
                 }
                 var sourceFiles = candidateFiles.Distinct(sourcePathComparer).ToList();
                 var companionSourceRoots = ImportCompanionDestinationResolver.ResolveRoots(sourceFiles, archiveImportExtractor.ExtractionRoots, sourceSemantics);
+                var freeSpaceFailures = EvaluateFreeSpaceOrNull(
+                    audiobook.Id, normalizedBasePath, sourceFiles, completedFileAction, settings);
+                if (freeSpaceFailures != null)
+                {
+                    results.AddRange(freeSpaceFailures);
+                    return results;
+                }
+
                 var plannedAudioFiles = MultiFileImportPlanner.BuildPlans(
                     sourceFiles.Where(f => FileUtils.IsAudioFile(f, settings.AllowedFileExtensions)).Select(f => (f, (string?)null)),
                     sourcePathComparer);
