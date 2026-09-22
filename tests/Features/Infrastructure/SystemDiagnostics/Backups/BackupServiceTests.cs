@@ -58,6 +58,9 @@ public sealed class BackupServiceTests : BaseTests
 
         // A real table with a real row, so the assertion can be "the data came back", not
         // "a file exists". An empty file would satisfy the weaker assertion either way.
+        // WAL on purpose. Without it the journal-mode assertion below would pass whether or not
+        // the copier normalises anything, since a fresh SQLite file is already in delete mode.
+        _context.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
         _context.Database.ExecuteSqlRaw(
             """
             CREATE TABLE IF NOT EXISTS "BackupProbe" ("Id" INTEGER PRIMARY KEY, "Value" TEXT NOT NULL);
@@ -120,8 +123,112 @@ public sealed class BackupServiceTests : BaseTests
         command.CommandText = """SELECT "Value" FROM "BackupProbe" WHERE "Id" = 1;""";
         Assert.Equal(ProbeValue, await command.ExecuteScalarAsync() as string);
 
-        // And it needs no sidecar: the extracted file stands alone, with no -wal beside it.
+        // And the copy's journal mode was normalised rather than inherited. The source was put
+        // into WAL above, so without the pragma this reads "wal"; the assertion that there is no
+        // sidecar is not enough on its own, because closing the connection removes one anyway.
+        await using var journalMode = restored.CreateCommand();
+        journalMode.CommandText = "PRAGMA journal_mode;";
+        Assert.Equal("delete", (await journalMode.ExecuteScalarAsync() as string)?.ToLowerInvariant());
         Assert.False(File.Exists(Path.Combine(extracted, "listenarr.db-wal")));
+
+        // And nothing is left behind. Staging holds an unzipped copy of the whole database, so a
+        // leak here quietly accumulates one of those per backup.
+        var staging = paths.ResolveFromConfig("backups", ".staging");
+        Assert.Empty(Directory.Exists(staging) ? Directory.GetFileSystemEntries(staging) : []);
+    }
+
+    [LinuxFact]
+    [Trait("Scenario", "ArchivesAreNotWorldReadable")]
+    public async Task CreateAsync_WritesAnArchiveOnlyItsOwnerCanRead()
+    {
+        // Given a live database, on a platform with Unix permissions
+        var (service, paths) = CreateService();
+
+        // When a backup is taken
+        var archive = await service.CreateAsync(BackupTrigger.Manual);
+        var directory = TriggerDirectory(paths, BackupTrigger.Manual);
+        var archivePath = Path.Combine(directory, archive.Name);
+
+        // Then neither the archive nor the directory holding it carries group or other bits. One
+        // file concentrates the API key, the SSL certificate password, indexer keys, download
+        // client credentials and the admin password hash.
+        var groupAndOther =
+            UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
+            | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
+
+        Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(archivePath) & groupAndOther);
+        Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(directory) & groupAndOther);
+
+        // Control: the owner can still read and write it, so this is not simply "no permissions".
+        Assert.True(File.GetUnixFileMode(archivePath).HasFlag(UnixFileMode.UserRead));
+        Assert.True(File.GetUnixFileMode(archivePath).HasFlag(UnixFileMode.UserWrite));
+    }
+
+    [Fact]
+    [Trait("Scenario", "RetentionSurvivesAnAbsurdSetting")]
+    public async Task ApplyRetentionAsync_DoesNotThrow_WhenRetentionIsBeyondWhatADateCanHold()
+    {
+        // Given a retention value the settings screen would never send but the settings endpoint
+        // will happily persist, since it binds the entity straight off the wire
+        var (service, paths) = CreateService(retentionDays: int.MaxValue);
+        var migration = await service.CreateAsync(BackupTrigger.Migration);
+        var path = Path.Combine(TriggerDirectory(paths, BackupTrigger.Migration), migration.Name);
+
+        // When the sweep runs
+        var removed = await service.ApplyRetentionAsync();
+
+        // Then it clamps instead of throwing out of DateTime.AddDays, and keeps everything, which
+        // is what an enormous window means
+        Assert.Equal(0, removed);
+        Assert.True(File.Exists(path));
+    }
+
+    [Fact]
+    [Trait("Scenario", "ManualBackupsAreBoundedByCount")]
+    public async Task ApplyRetentionAsync_KeepsOnlyTheNewestManualArchives()
+    {
+        // Given more manual archives than the limit, none of them old enough to expire by age
+        var (service, paths) = CreateService(retentionDays: 28);
+        var directory = TriggerDirectory(paths, BackupTrigger.Manual);
+        var created = new List<string>();
+        for (var index = 0; index < 25; index++)
+        {
+            var archive = await service.CreateAsync(BackupTrigger.Manual);
+            var path = Path.Combine(directory, archive.Name);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-index));
+            created.Add(archive.Name);
+        }
+
+        // When the sweep runs
+        var removed = await service.ApplyRetentionAsync();
+
+        // Then the oldest are gone and the newest survive. Manual archives never expire by age, so
+        // without a count an unauthenticated caller could fill the config volume, and a full config
+        // volume is what makes the next pre-migration backup refuse the start.
+        Assert.Equal(5, removed);
+        var remaining = (await service.ListAsync()).Select(entry => entry.Name).ToList();
+        Assert.Equal(20, remaining.Count);
+        Assert.Contains(created[0], remaining);
+        Assert.DoesNotContain(created[24], remaining);
+    }
+
+    [Fact]
+    [Trait("Scenario", "NoPartialArchiveIsEverListed")]
+    public async Task CreateAsync_PublishesTheArchiveOnlyOnceItIsComplete()
+    {
+        // Given a live database
+        var (service, paths) = CreateService();
+        var directory = TriggerDirectory(paths, BackupTrigger.Manual);
+
+        // When a backup is taken
+        var archive = await service.CreateAsync(BackupTrigger.Manual);
+
+        // Then the trigger directory holds exactly the finished archive and nothing part-written.
+        // The zip is built in staging and moved in, so a process killed mid-zip cannot leave a
+        // truncated file under a name the listing accepts and the sweep is willing to delete.
+        Assert.Equal([archive.Name], Directory.GetFiles(directory).Select(Path.GetFileName));
+        using var opened = ZipFile.OpenRead(Path.Combine(directory, archive.Name));
+        Assert.Contains("listenarr.db", opened.Entries.Select(entry => entry.FullName));
     }
 
     [Fact]
