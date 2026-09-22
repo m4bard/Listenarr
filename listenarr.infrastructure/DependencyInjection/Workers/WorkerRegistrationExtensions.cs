@@ -106,6 +106,7 @@ internal static class WorkerRegistrationExtensions
         services.AddSingleton<IHousekeepingTask, AuthorCacheHousekeeper>();
         services.AddSingleton<IHousekeepingTask, SeriesCacheHousekeeper>();
         services.AddSingleton<IHousekeepingTask, FileMutationJournalHousekeeper>();
+        services.AddSingleton<IHousekeepingTask, MoveJobHousekeeper>();
 
         AddHostedProcessor<HousekeepingProcessor, IHousekeepingProcessor, HousekeepingService>(services);
     }
