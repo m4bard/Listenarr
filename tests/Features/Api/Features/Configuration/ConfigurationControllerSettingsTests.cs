@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Common.Exceptions;
+using Listenarr.Application.Library.RecycleBin;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text.Json;
@@ -38,7 +39,8 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
             var controller = new SettingsController(
                 configurationService.Object,
                 NullLogger<SettingsController>.Instance,
-                broadcaster.Object);
+                broadcaster.Object,
+                PermissiveRecycleBinService());
 
             var result = await controller.SaveApplicationSettings(
                 new ApplicationSettings { Version = 0 });
@@ -75,7 +77,8 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
             var controller = new SettingsController(
                 configurationService.Object,
                 NullLogger<SettingsController>.Instance,
-                broadcaster.Object);
+                broadcaster.Object,
+                PermissiveRecycleBinService());
 
             var result = await controller.SaveApplicationSettings(
                 new ApplicationSettings { Version = 7, OutputPath = "library" });
@@ -113,7 +116,8 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
             var controller = new SettingsController(
                 configurationService.Object,
                 NullLogger<SettingsController>.Instance,
-                Mock.Of<IHubBroadcaster>());
+                Mock.Of<IHubBroadcaster>(),
+                PermissiveRecycleBinService());
 
             var result = await controller.GetApplicationSettings();
             var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -127,5 +131,21 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
             configurationService.Verify(x => x.GetApplicationSettingsAsync(), Times.Once);
             configurationService.VerifyNoOtherCalls();
         }
+
+        /// <summary>
+        /// These tests are about the settings save path, not the recycle bin, so the bin
+        /// validator accepts everything. A strict mock would fail them for the wrong reason.
+        /// </summary>
+        private static IRecycleBinService PermissiveRecycleBinService()
+        {
+            var recycleBinService = new Mock<IRecycleBinService>();
+            recycleBinService
+                .Setup(service => service.ValidatePathAsync(
+                    It.IsAny<string?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(RecycleBinPathValidation.Valid);
+            return recycleBinService.Object;
+        }
+
     }
 }

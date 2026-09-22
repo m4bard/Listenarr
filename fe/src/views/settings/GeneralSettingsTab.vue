@@ -34,6 +34,10 @@
           :settings="localSettings"
           @update:settings="(val) => Object.assign(localSettings, val)"
         ></FileManagementSection>
+        <RecycleBinSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></RecycleBinSection>
         <DownloadSettingsSection
           :settings="localSettings"
           @update:settings="(val) => Object.assign(localSettings, val)"
@@ -70,6 +74,7 @@ import type { ApplicationSettings, StartupConfig } from '@/types'
 // icons not used directly in this view
 
 import FileManagementSection from '@/components/settings/FileManagementSection.vue'
+import RecycleBinSection from '@/components/settings/RecycleBinSection.vue'
 import DownloadSettingsSection from '@/components/settings/DownloadSettingsSection.vue'
 import FeaturesSection from '@/components/settings/FeaturesSection.vue'
 import SearchSettingsSection from '@/components/settings/SearchSettingsSection.vue'
