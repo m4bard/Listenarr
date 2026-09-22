@@ -124,6 +124,17 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
 
             // MP3 320kbps sits 20 below FLAC on the hardcoded ladder, and five preferred words are
             // worth 25, so the operator's own terms are what decide this pair.
+            //
+            // This is a deliberate consequence of Listenarr folding quality and preference into one
+            // number, and it is not new: below the ceiling a preference could already outrank a
+            // higher rung, because MP3 320kbps at 80 plus two preferred words beats AAC 256kbps at
+            // 74. What changes here is that it can now also beat the top rung instead of tying with
+            // it. Readarr reaches the opposite answer by structure rather than by weight: its
+            // comparer runs CompareQuality before CompareCustomFormatScore and returns the first
+            // non-zero result (src/NzbDrone.Core/DecisionEngine/DownloadDecisionComparer.cs:26-41),
+            // so a format score there can only break a tie within a rung, never invert one. Sonarr
+            // is the same. Anyone revisiting this should treat the single summed score as the thing
+            // to argue about, not this test.
             var preferredMp3 = await scorer.Score(Release("MP3 320kbps", matchesPreferredWords: true, seeders: 0), profile);
             var plainFlac = await scorer.Score(Release("FLAC", matchesPreferredWords: false, seeders: 0), profile);
 
@@ -140,17 +151,29 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             var scorer = CreateScorer();
             var profile = CreateProfile();
 
-            var score = await scorer.Score(Release("FLAC", matchesPreferredWords: true, seeders: 10), profile);
+            var atTheCeiling = await scorer.Score(Release("FLAC", matchesPreferredWords: true, seeders: 10), profile);
+            var belowIt = await scorer.Score(Release("MP3 128kbps", matchesPreferredWords: true, seeders: 10), profile);
+            var penalised = await scorer.Score(Release("MP3 64kbps", matchesPreferredWords: false, seeders: 0), profile);
 
-            // This is the sum the settings UI already computes for its breakdown popover, at
-            // fe/src/composables/useScore.ts:143 and :163. While the total was capped it printed a
-            // "Backend Total" line disagreeing with its own arithmetic.
-            var quality = score.ScoreBreakdown["Quality"];
-            var nonQuality = score.ScoreBreakdown
+            AssertBreakdownReconciles(atTheCeiling);
+            AssertBreakdownReconciles(belowIt);
+            AssertBreakdownReconciles(penalised);
+
+            // Every site that moves TotalScore also writes its delta into ScoreBreakdown, so the
+            // total is reconstructible from the base and the breakdown. The ceiling broke that: the
+            // breakdown kept describing a release that scored 135 while the total said 100.
+        }
+
+        private static void AssertBreakdownReconciles(QualityScore score)
+        {
+            // The quality entry is the ladder's raw value rather than a delta, so its contribution
+            // is that value minus the 100 the release started with.
+            var quality = score.ScoreBreakdown.TryGetValue("Quality", out var ladder) ? ladder - 100 : 0;
+            var everythingElse = score.ScoreBreakdown
                 .Where(entry => entry.Key != "Quality")
                 .Sum(entry => entry.Value);
 
-            Assert.Equal(BaseScore + (quality - 100) + nonQuality, score.TotalScore);
+            Assert.Equal(BaseScore + quality + everythingElse, score.TotalScore);
         }
 
         [Fact]
