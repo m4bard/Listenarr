@@ -22,12 +22,16 @@ import { apiService } from '@/services/api'
 import type { ApplicationSettings } from '@/types'
 
 // The globally mocked apiService (fe/src/__tests__/test-setup.ts) does not stub every
-// method on the real service, only the ones existing specs already needed. Add this one
-// if it is missing rather than assuming it is there.
-if (!(apiService as unknown as Record<string, unknown>).emptyRecycleBin) {
-  ;(apiService as unknown as { emptyRecycleBin: () => Promise<unknown> }).emptyRecycleBin =
-    vi.fn(async () => ({ filesRemoved: 0, directoriesRemoved: 0 }))
-}
+// method on the real service, only the ones existing specs already needed, so this spec
+// installs its own stub per test.
+//
+// It asserts the real method exists first, on the unmocked module. Stubbing it in
+// unconditionally would let every test below keep passing after emptyRecycleBin was
+// deleted from api.ts, which is the case the empty button actually depends on.
+it('exposes emptyRecycleBin on the real api service', async () => {
+  const actual = await vi.importActual<typeof import('@/services/api')>('@/services/api')
+  expect(typeof actual.apiService.emptyRecycleBin).toBe('function')
+})
 
 // Deliberately different from the shipped defaults, so a control bound to the wrong key
 // shows the wrong value instead of accidentally matching.
