@@ -103,6 +103,18 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public ApplicationSettingsBuilder WithMinimumFreeSpaceWhenImporting(int megabytes)
+        {
+            _applicationSettings.MinimumFreeSpaceWhenImporting = megabytes;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithSkipFreeSpaceCheckWhenImporting(bool value = true)
+        {
+            _applicationSettings.SkipFreeSpaceCheckWhenImporting = value;
+            return this;
+        }
+
         public ApplicationSettingsBuilder WithImportBlacklistExtension(string value)
         {
             _importBlacklistExtensions.Add(value);

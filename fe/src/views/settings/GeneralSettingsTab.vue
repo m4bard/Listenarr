@@ -48,6 +48,11 @@
           @update:settings="(val) => Object.assign(localSettings, val)"
         ></DownloadSettingsSection>
 
+        <ImportSafeguardsSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></ImportSafeguardsSection>
+
         <FeaturesSection
           :settings="localSettings"
           @update:settings="(val) => Object.assign(localSettings, val)"
@@ -107,6 +112,7 @@ import HostSettingsSection from '@/components/settings/HostSettingsSection.vue'
 import FileManagementSection from '@/components/settings/FileManagementSection.vue'
 import RecycleBinSection from '@/components/settings/RecycleBinSection.vue'
 import DownloadSettingsSection from '@/components/settings/DownloadSettingsSection.vue'
+import ImportSafeguardsSection from '@/components/settings/ImportSafeguardsSection.vue'
 import FeaturesSection from '@/components/settings/FeaturesSection.vue'
 import MetadataRefreshSection from '@/components/settings/MetadataRefreshSection.vue'
 import HousekeepingSection from '@/components/settings/HousekeepingSection.vue'

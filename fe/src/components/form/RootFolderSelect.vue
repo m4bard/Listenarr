@@ -28,7 +28,7 @@
       <select class="form-select" :value="selectValue" @change="onChange">
         <option :value="NULL_VALUE">Use default</option>
         <option v-for="folder in store.folders" :key="folder.id" :value="String(folder.id)">
-          {{ folder.name }} — {{ folder.path }}
+          {{ folder.name }} — {{ folder.path }}{{ freeSpaceSuffix(folder) }}
         </option>
       </select>
     </div>
@@ -39,6 +39,8 @@
 import { computed, onMounted } from 'vue'
 import { PhSpinner } from '@phosphor-icons/vue'
 import { useRootFoldersStore } from '@/stores/rootFolders'
+import { formatBytes } from '@/utils/formatBytes'
+import type { RootFolder } from '@/types'
 
 const NULL_VALUE = '__null__'
 
@@ -66,6 +68,16 @@ onMounted(() => {
 })
 
 const selectValue = computed(() => (props.rootId == null ? NULL_VALUE : String(props.rootId)))
+
+// Readarr shows "{formatBytes(freeSpace)} Free" next to each option
+// (frontend/src/Components/Form/RootFolderSelectInputOption.js:50-53). Picking a root when
+// adding a book is a capacity decision, so the same information belongs here.
+function freeSpaceSuffix(folder: RootFolder): string {
+  if (folder.freeSpaceBytes == null) {
+    return ''
+  }
+  return ` (${formatBytes(folder.freeSpaceBytes)} free)`
+}
 
 function onChange(event: Event) {
   const value = (event.target as HTMLSelectElement).value
