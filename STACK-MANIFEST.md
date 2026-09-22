@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        a630572e983614a52ea409a23da52a99e3b8b91b
     base short:  a630572e9
-    patches:     356
-    version:     1.3.4+m4bard.356
+    patches:     387
+    version:     1.3.4+m4bard.387
 
 ## Patches, oldest first
 
@@ -365,6 +365,37 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     c2ece6dce  #21   tests: give the companion placement pass the root folder this branch now requires
     de2de1846  #-    quality: split QualityMatcher's internals out, so the file is under the ceiling again
     a433ec0b2  #258  fix(recovery): one unrecoverable deletion intent must not disable the whole filesystem gate
+    95c31690f  #-    stack: manifest for a630572e9 plus 356 patches
+    698c75081  #273  cache: make the author and series cache upserts survive a lost race
+    42b742a01  #273  cache: do not retry a collision that re-reading cannot resolve
+    cf9989737  #275  fix(metadata): spell a contributor's name without their job title
+    24a73a884  #275  fix(metadata): store the author first, and keep an edition out of the byline
+    d8b0dad58  #276  fix(metadata): bind an author's ASIN only to a row that names them
+    4d2b07abb  #276  metadata: lease the shared request budget to callers that are not a refresh run
+    1fc6598c6  #276  repair: a scheduled pass that corrects author identities already written
+    3ccfcf7f9  #276  repair: remove contributor roles from the credits already stored
+    aaf87a515  #276  test(naming): pin byline order on two co-authors, not on a translator
+    be39f3878  #276  test: give the two new test classes the conventions the suite enforces
+    b3ddf6583  #276  repair: a provider that did not answer is not evidence that an author has no ASIN
+    02ca69fda  #276  repair: answer the fresh review, including a starvation defect nothing was checking
+    312fd1649  #270  filesystem: let a raced pinned hardlink fall back to a copy, and say so
+    b428ec540  #270  filesystem: narrow the hardlink race fallback, because the first attempt claimed too much
+    9f4c04341  #277  Fix the fail-open identifier check in DownloadRemovalWorkflow
+    0d057f7dd  #277  Route the downloads delete endpoints through the client removal workflow
+    caa31c37c  #277  Add tests for the client-removing delete and the identifier check
+    38a2ffd9b  #277  Make a disabled client deletable again, and fail closed when no client id is known
+    9304e5e83  #277  Correct the outer-catch mechanism described in a test comment
+    edcde60b5  #277  Cover the disabled client, the unmapped record, and deleteFiles on the delete path
+    9c91ca057  #277  Let the delete control say whether the download client is involved
+    4a4d65feb  #277  Make the record-only way out actually work, and stop it claiming too much
+    f18a36051  #276  fe: an Author Identity Repair section in the settings screen
+    ee3df2c40  #276  fe: the preview card promised a run button the frontend does not have
+    9d135941d  #276  fe: the review's findings, one of which the UI could not have shown
+    66a8aaa7f  #-    downloads: split the client-name projection out, so the controller is under the ceiling again
+    d272dfc1a  #-    cache: the author upsert cannot reach that collision on this build, so pin what it does instead
+    c7ee6318a  #-    cache: say only once that a rebind was refused, and describe the collision that can actually happen
+    ed66ae7cd  #-    cache: a refusal that first happens on a retry must still be reported
+    e3c8a6730  #-    cache: the comment on the test still described the guard that was removed
 
 ## Items, in application order
 
@@ -496,6 +527,11 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     268  fix/companion-relative-path-escape           2 patches
     269  fix/manual-companion-relative-path           4 patches
     258  fix/deletion-intent-does-not-brick-startup   1 patch
-    273  fix/author-cache-upsert-is-atomic            0 patches
+    273  fix/author-cache-upsert-is-atomic            2 patches
+    275  fix/strip-role-suffix-from-credits           2 patches
+    276  feat/author-identity-repair                  8 patches
+    270  fix/hardlink-falls-back-to-copy              2 patches
+    277  fix/delete-removes-from-client               8 patches
+    276  feat/author-repair-settings-ui               3 patches
 
 Regenerate with tools/local_stack.sh in the tracker repo.
