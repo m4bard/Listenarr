@@ -467,12 +467,19 @@
             </FormRow>
 
             <FormRow label="Minimum Score Threshold" labelFor="minimumScore">
+              <!--
+                No maximum. A release starts at 100 and every preference on this form adds to
+                that, so an accepted score is routinely above 100 and a ceiling of 100 here would
+                stop an operator expressing a threshold in the range their own profile produces.
+                Readarr's equivalent, Minimum Custom Format Score, is an unbounded number input
+                (frontend/src/Settings/Profiles/Quality/EditQualityProfileModalContent.js:213-219).
+                The floor stays at 0 because the backend reads 0 as "no minimum".
+              -->
               <input
                 id="minimumScore"
                 v-model.number="formData.minimumScore"
                 type="number"
                 min="0"
-                max="100"
                 placeholder="0 = allow any score"
               />
             </FormRow>
