@@ -336,6 +336,8 @@ export interface RootFolder {
   weakStoragePolicyRevision?: number
   confirmationToken?: string | null
   activeRelocation?: RootFolderPathChangeResult | null
+  freeSpaceBytes?: number | null
+  totalSpaceBytes?: number | null
 }
 
 export interface AudiobookDeleteCapabilities {
@@ -441,6 +443,9 @@ export interface ApplicationSettings {
   importBlacklistExtensions?: string[]
   // Action to perform for completed downloads.
   completedFileAction?: 'none' | 'move' | 'copy' | 'hardlink/copy'
+  // Free-space guard applied before an import writes to its destination
+  minimumFreeSpaceWhenImporting?: number
+  skipFreeSpaceCheckWhenImporting?: boolean
   // Show completed external downloads (torrents/NZBs) in the Activity view
   showCompletedExternalDownloads?: boolean
   // Failed download handling
