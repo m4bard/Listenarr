@@ -177,8 +177,20 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
+                    // FileInfo rather than File.GetLastWriteTimeUtc, which returns
+                    // 1601-01-01 for a path it cannot stat instead of throwing. That
+                    // reads as older than any cutoff, so a file that vanished between
+                    // the walk and here was counted as removed, and a file whose
+                    // metadata genuinely cannot be read was deleted as ancient rather
+                    // than skipped.
+                    var info = new FileInfo(file);
+                    if (!info.Exists)
+                    {
+                        continue;
+                    }
+
                     if (olderThanUtc.HasValue
-                        && File.GetLastWriteTimeUtc(file) > olderThanUtc.Value)
+                        && info.LastWriteTimeUtc > olderThanUtc.Value)
                     {
                         continue;
                     }
@@ -300,6 +312,9 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
             var directories = EnumerateBinDirectoriesWithoutFollowingLinks(
                     binRoot,
                     cancellationToken)
+                // Deepest first. A child path is always longer than its own ancestor,
+                // so length descending is a valid topological order here even though it
+                // is not a general one.
                 .OrderByDescending(path => path.Length)
                 .ToList();
 
@@ -380,22 +395,6 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
             }
         }
 
-        /// <summary>
-        /// Containment test for the bin against a root folder, checked both ordinally and
-        /// case-insensitively.
-        ///
-        /// This is a validator, so it has to fail closed in the direction of REFUSING a
-        /// bin path. An ordinal-only test would accept a bin at "/MNT/library/recycled"
-        /// against a root of "/mnt/library" on the case-insensitive filesystems Windows
-        /// and macOS usually present, and that bin would then be walked by the library
-        /// scan and its contents re-imported. Refusing a path that only collides under
-        /// case folding costs the operator a rename; accepting one costs them the deletes
-        /// the bin was holding.
-        ///
-        /// Note this is the opposite choice from FileSystemSafety.TryValidateMutationTarget,
-        /// which is ordinal on purpose. There, failing closed means refusing to mutate, so
-        /// the strict comparison is the safe one. Here it is the loose one.
-        /// </summary>
 
 
         /// <summary>
@@ -456,6 +455,22 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
                     StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>
+        /// Containment test for the bin against a root folder, checked both ordinally and
+        /// case-insensitively.
+        ///
+        /// This is a validator, so it has to fail closed in the direction of REFUSING a
+        /// bin path. An ordinal-only test would accept a bin at "/MNT/library/recycled"
+        /// against a root of "/mnt/library" on the case-insensitive filesystems Windows
+        /// and macOS usually present, and that bin would then be walked by the library
+        /// scan and its contents re-imported. Refusing a path that only collides under
+        /// case folding costs the operator a rename; accepting one costs them the deletes
+        /// the bin was holding.
+        ///
+        /// Note this is the opposite choice from FileSystemSafety.TryValidateMutationTarget,
+        /// which is ordinal on purpose. There, failing closed means refusing to mutate, so
+        /// the strict comparison is the safe one. Here it is the loose one.
+        /// </summary>
         private static bool IsWithin(string candidate, string basePath) =>
             IsWithinUsing(candidate, basePath, StringComparison.Ordinal)
             || IsWithinUsing(candidate, basePath, StringComparison.OrdinalIgnoreCase);
