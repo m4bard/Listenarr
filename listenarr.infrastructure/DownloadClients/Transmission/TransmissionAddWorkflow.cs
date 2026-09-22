@@ -82,12 +82,34 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
                 throw;
             }
 
+            // Never applied to a torrent Transmission already had (torrent-duplicate): that
+            // torrent's own seed limits, whether set by hand or by an earlier grab, are not
+            // ours to overwrite just because this add happened to collide with it.
+            if (result.WasDuplicate)
+            {
+                return result;
+            }
+
+            // Non-fatal by design, same as the qBittorrent workflow: a failure resolving the
+            // indexer's seed criteria (for example a transient database error) must never
+            // surface as a failed add, since the torrent was already accepted by Transmission
+            // above. Falling back to no seed configuration is the same "leave the client's own
+            // configuration alone" behavior as an indexer that genuinely has none configured.
+            TorrentSeedConfiguration? seedConfiguration = null;
+            try
+            {
+                seedConfiguration = await seedCriteriaResolver.ResolveAsync(torrent.IndexerId, ct);
+            }
+            catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+            {
+                logger.LogDebug(exception, "Non-fatal failure resolving indexer seed criteria; proceeding without them");
+            }
+
             // Uses the info hash computed at prepare time, the same identifier Transmission
             // accepts for "ids" in torrent-set, so this does not depend on which add-response
             // branch above returned. Only issued when the grabbing indexer actually has a seed
             // ratio or seed time configured (BuildSeedLimitArguments returns null otherwise),
             // so an indexer with no seed criteria never produces a torrent-set call for it.
-            var seedConfiguration = await seedCriteriaResolver.ResolveAsync(torrent.IndexerId, ct);
             var seedLimitArguments = TransmissionTorrentAddPlanner.BuildSeedLimitArguments(torrent.InfoHash, seedConfiguration);
             if (seedLimitArguments != null)
             {
