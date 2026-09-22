@@ -49,6 +49,11 @@
           @update:settings="(val) => Object.assign(localSettings, val)"
         ></SearchSettingsSection>
 
+        <BackupSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></BackupSection>
+
         <AuthenticationSection
           :settings="localSettings"
           :apiKey="props.apiKey"
@@ -73,6 +78,7 @@ import FileManagementSection from '@/components/settings/FileManagementSection.v
 import DownloadSettingsSection from '@/components/settings/DownloadSettingsSection.vue'
 import FeaturesSection from '@/components/settings/FeaturesSection.vue'
 import SearchSettingsSection from '@/components/settings/SearchSettingsSection.vue'
+import BackupSection from '@/components/settings/BackupSection.vue'
 import AuthenticationSection from '@/components/settings/AuthenticationSection.vue'
 
 interface Props {

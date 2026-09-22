@@ -1955,6 +1955,14 @@ class ApiService {
     return this.request<SystemInfo>('/system/info')
   }
 
+  async getBackups(): Promise<import('@/types').BackupArchive[]> {
+    return this.request<import('@/types').BackupArchive[]>('/system/backup')
+  }
+
+  async createBackup(): Promise<import('@/types').BackupArchive> {
+    return this.request<import('@/types').BackupArchive>('/system/backup', { method: 'POST' })
+  }
+
   async getStorageInfo(): Promise<StorageInfo> {
     return this.request<StorageInfo>('/system/storage')
   }
@@ -2306,6 +2314,8 @@ export const getStorageInfo = () => apiService.getStorageInfo()
 export const getServiceHealth = () => apiService.getServiceHealth()
 export const getLogs = (limit?: number) => apiService.getLogs(limit)
 export const downloadLogs = () => apiService.downloadLogs()
+export const getBackups = () => apiService.getBackups()
+export const createBackup = () => apiService.createBackup()
 
 // Export individual quality profile functions for convenience
 export const getQualityProfiles = () => apiService.getQualityProfiles()
