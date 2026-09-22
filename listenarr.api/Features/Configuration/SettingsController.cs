@@ -122,6 +122,7 @@ namespace Listenarr.Api.Features.Configuration
             clone.AdminUsername = null;
             clone.AdminPassword = null;
             clone.ProwlarrApiKeyEncrypted = null;
+            ApiResponseRedactor.RedactEmailPasswords(clone);
             return clone;
         }
 
