@@ -200,6 +200,28 @@
       </div>
     </section>
 
+    <!-- Author Tabs -->
+    <div v-if="isAuthorCollection" class="author-tabs">
+      <button
+        type="button"
+        class="author-tab"
+        :class="{ active: activeAuthorTab === 'books' }"
+        :aria-pressed="activeAuthorTab === 'books'"
+        @click="activeAuthorTab = 'books'"
+      >
+        Books
+      </button>
+      <button
+        type="button"
+        class="author-tab"
+        :class="{ active: activeAuthorTab === 'series' }"
+        :aria-pressed="activeAuthorTab === 'series'"
+        @click="activeAuthorTab = 'series'"
+      >
+        Series
+      </button>
+    </div>
+
     <!-- Top Toolbar -->
     <div
       class="toolbar"
@@ -213,19 +235,21 @@
           <PhArrowLeft />
           Back
         </button>
-        <button class="toolbar-btn" @click="toggleViewMode" title="Toggle view">
-          <PhGridFour v-if="viewMode === 'list'" />
-          <PhList v-else />
-        </button>
-        <button
-          class="toolbar-btn"
-          :class="{ active: showItemDetails }"
-          @click="toggleItemDetails"
-          :aria-pressed="showItemDetails"
-          title="Toggle item details"
-        >
-          <PhInfo />
-        </button>
+        <template v-if="showBooksGridChrome">
+          <button class="toolbar-btn" @click="toggleViewMode" title="Toggle view">
+            <PhGridFour v-if="viewMode === 'list'" />
+            <PhList v-else />
+          </button>
+          <button
+            class="toolbar-btn"
+            :class="{ active: showItemDetails }"
+            @click="toggleItemDetails"
+            :aria-pressed="showItemDetails"
+            title="Toggle item details"
+          >
+            <PhInfo />
+          </button>
+        </template>
         <span class="count-badge" v-if="audiobooks.length > 0">
           {{ audiobooks.length }} book{{ audiobooks.length !== 1 ? 's' : '' }}
         </span>
@@ -233,30 +257,36 @@
           <PhArrowClockwise />
           Refresh
         </button>
-        <button v-if="selectedCount > 0" class="toolbar-btn" @click="libraryStore.clearSelection()">
-          <PhX />
-          Clear Selection
-        </button>
-        <button
-          v-if="selectableAudiobookCount > 0 && selectedCount === 0"
-          class="toolbar-btn"
-          @click="selectAllVisible()"
-        >
-          <PhCheckSquare />
-          Select All
-        </button>
-        <button v-if="selectedCount > 0" class="toolbar-btn edit-btn" @click="showBulkEdit">
-          <PhPencil />
-          Edit Selected
-        </button>
-        <button v-if="selectedCount > 0" class="toolbar-btn" @click="showOrganize">
-          <PhFolderOpen />
-          Organize Selected
-        </button>
-        <button v-if="selectedCount > 0" class="toolbar-btn delete-btn" @click="confirmBulkDelete">
-          <PhTrash />
-          Delete Selected ({{ selectedCount }})
-        </button>
+        <template v-if="showBooksGridChrome">
+          <button
+            v-if="selectedCount > 0"
+            class="toolbar-btn"
+            @click="libraryStore.clearSelection()"
+          >
+            <PhX />
+            Clear Selection
+          </button>
+          <button
+            v-if="selectableAudiobookCount > 0 && selectedCount === 0"
+            class="toolbar-btn"
+            @click="selectAllVisible()"
+          >
+            <PhCheckSquare />
+            Select All
+          </button>
+          <button v-if="selectedCount > 0" class="toolbar-btn edit-btn" @click="showBulkEdit">
+            <PhPencil />
+            Edit Selected
+          </button>
+          <button v-if="selectedCount > 0" class="toolbar-btn" @click="showOrganize">
+            <PhFolderOpen />
+            Organize Selected
+          </button>
+          <button v-if="selectedCount > 0" class="toolbar-btn delete-btn" @click="confirmBulkDelete">
+            <PhTrash />
+            Delete Selected ({{ selectedCount }})
+          </button>
+        </template>
       </div>
       <div class="toolbar-right">
         <div v-if="isAuthorCollection" class="author-monitoring-controls">
@@ -313,7 +343,7 @@
             </button>
           </div>
         </div>
-        <div class="toolbar-filters">
+        <div v-if="showBooksGridChrome" class="toolbar-filters">
           <CustomSelect
             v-model="sortKeyProxy"
             :options="sortOptions"
@@ -348,6 +378,14 @@
         <PhBookOpen :size="48" />
       </template>
     </EmptyState>
+
+    <AuthorSeriesTab
+      v-else-if="isAuthorCollection && activeAuthorTab === 'series'"
+      :books="audiobooks"
+      :region="authorCatalogRegion"
+      :language="preferredAuthorMonitoringLanguage"
+      @monitoring-changed="refreshLibrary"
+    />
 
     <div v-else class="audiobooks-container">
       <!-- List View (match AudiobooksView styling) -->
@@ -801,6 +839,7 @@ import { errorTracking } from '@/services/errorTracking'
 import { useToast } from '@/services/toastService'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
+import AuthorSeriesTab from '@/components/domain/collection/AuthorSeriesTab.vue'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
@@ -870,6 +909,16 @@ const isGenreCollection = computed(() => type.value === 'genre')
 const isNarratorCollection = computed(() => type.value === 'narrator')
 const isPublisherCollection = computed(() => type.value === 'publisher')
 const isMetadataCollection = computed(() => isAuthorCollection.value || isSeriesCollection.value)
+
+// Option B on issue 952: the author page's series information lives in its own tab rather
+// than a section above the book grid. showBooksGridChrome hides the grid-only toolbar
+// controls (view mode, item details, selection, sort) while the Series tab is active, since
+// they act on a list that is not currently visible; it is a no-op for every collection type
+// that has no tabs.
+const activeAuthorTab = ref<'books' | 'series'>('books')
+const showBooksGridChrome = computed(
+  () => !isAuthorCollection.value || activeAuthorTab.value === 'books',
+)
 
 const viewMode = ref<'grid' | 'list'>('grid')
 const showItemDetails = ref(false)
@@ -2341,6 +2390,7 @@ watch([type, name], async () => {
   lastClickedIndex.value = null
   showFullAuthorDescription.value = false
   showFullSeriesDescription.value = false
+  activeAuthorTab.value = 'books'
   libraryStore.clearSelection()
   await loadCollectionData(false)
 })
@@ -2582,6 +2632,37 @@ defineExpose({
 .toolbar-select option {
   background: #2a2a2a;
   color: #e6eef8;
+}
+
+.author-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 20px;
+  background-color: #2a2a2a;
+  border-bottom: 1px solid #333;
+}
+
+.author-tab {
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: rgba(230, 238, 248, 0.65);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.author-tab:hover {
+  color: #e6eef8;
+}
+
+.author-tab.active {
+  color: #e6eef8;
+  border-bottom-color: var(--brand-500);
 }
 
 .toolbar {
