@@ -2010,6 +2010,13 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<string>("ProwlarrUrl")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("RecycleBinCleanupDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RecycleBinPath")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("ShowCompletedExternalDownloads")
                         .HasColumnType("INTEGER");
 
