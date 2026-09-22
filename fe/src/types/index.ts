@@ -106,6 +106,7 @@ export interface SearchResult extends BaseSearchResult {
   downloadType: string // "Torrent", "Usenet", or "DDL"
   quality?: string
   resultUrl?: string // Canonical indexer page for the result
+  indexerFlags?: string[] // Release flags advertised by the tracker (freeleech, internal, scene, ...)
 
   // Metadata-specific properties
   description?: string
@@ -262,9 +263,6 @@ export interface DownloadClientSettings {
   category?: string
   tags?: string
   recentPriority?: string
-  olderPriority?: string
-  removeCompleted?: boolean
-  removeFailed?: boolean
   initialState?: string
   sequentialOrder?: boolean
   firstAndLastFirst?: boolean
@@ -426,7 +424,7 @@ export interface ApplicationSettings {
   fileNamingPattern: string
   multiFileNamingPattern: string
   enableMetadataProcessing: boolean
-  enableCoverArtDownload: boolean
+  embedCoverArtInAudioFiles: boolean
   audnexusApiUrl: string
   maxConcurrentDownloads: number
   unmatchedScanConcurrency?: number
@@ -439,10 +437,15 @@ export interface ApplicationSettings {
   enableNotifications: boolean
   allowedFileExtensions: string[]
   importBlacklistExtensions?: string[]
+  // Automatically extract archive files found during library import and completed-download import
+  extractArchives?: boolean
   // Action to perform for completed downloads.
   completedFileAction?: 'none' | 'move' | 'copy' | 'hardlink/copy'
   // Show completed external downloads (torrents/NZBs) in the Activity view
   showCompletedExternalDownloads?: boolean
+  // Number of days to retain activity history. A background job prunes entries
+  // older than this window daily. Zero keeps history indefinitely.
+  historyRetentionDays?: number
   // Failed download handling
   failedDownloadHandlingEnabled?: boolean
   failedDownloadAutoSearch?: boolean
@@ -481,8 +484,19 @@ export interface ApplicationSettings {
   // Search behavior settings
   // Enable OpenLibrary augmentation/search
   enableOpenLibrarySearch?: boolean
+  // Enable direct ASIN (Amazon identifier) lookups during intelligent searches
+  enableAmazonSearch?: boolean
+  // Enable the Audible-first lookup attempt during intelligent searches
+  enableAudibleSearch?: boolean
   defaultSearchRegion?: string
   defaultSearchLanguage?: string
+
+  // Scheduled provider-metadata refresh
+  metadataRefreshEnabled?: boolean
+  metadataRefreshIntervalHours?: number
+  metadataRefreshStaleAfterDays?: number
+  metadataRefreshRequestsPerHour?: number
+  metadataRefreshMinimumSpacingMs?: number
 }
 
 export interface ProwlarrImportConnectionSettings {
@@ -498,6 +512,7 @@ export interface StartupConfig {
   port?: number
   sslPort?: number
   urlBase?: string
+  applicationUrl?: string
   bindAddress?: string
   apiKey?: string
   authenticationMethod?: string
@@ -836,7 +851,6 @@ export interface Indexer {
   apiKey?: string
   categories?: string
   animeCategories?: string
-  tags?: string
   enableRss: boolean
   enableAutomaticSearch: boolean
   enableInteractiveSearch: boolean
@@ -944,12 +958,49 @@ export interface ClientStatus {
   name: string
   status: string // "connected", "disconnected", "unknown"
   type?: string
+  /** Why status is not "connected" (e.g. "timeout", "error"). Null when connected or unknown. */
+  failureReason?: string | null
 }
 
 export interface ApiStatus {
   name: string
   status: string // "connected", "disconnected", "unknown"
   enabled: boolean
+}
+
+// One periodic worker as GET /system/tasks reports it.
+export interface ScheduledTask {
+  name: string
+  displayName: string
+  /**
+   * The gap between cycles in whole seconds, or null when the worker's interval cannot be
+   * stated in that unit. Nullable and not optional: the server always sends the key, and
+   * null is a value rather than an absence. Test for null on purpose, because null and 0
+   * are indistinguishable here under `> 0`, `??` and arithmetic, and a real 0 means a
+   * worker that declared a zero interval.
+   */
+  intervalSeconds: number | null
+  /** Why intervalSeconds is null, on the rows where it is, and absent on the rest. */
+  intervalError?: string
+  registeredAt: string // ISO date string
+  /** False once the worker's loop has ended. The row stays so the failure stays visible. */
+  isRegistered: boolean
+  isRunning: boolean
+  /** Whether POST to this task's run route will be accepted, so a button can say so first. */
+  isManualRunAllowed: boolean
+  lastStartedAt?: string // ISO date string
+  lastEndedAt?: string // ISO date string
+  lastDurationSeconds?: number
+  lastOutcome: string // "Unknown", "Succeeded", "Failed", "Canceled"
+  lastTrigger?: string // "Scheduled", "Manual"
+  nextExecution?: string // ISO date string
+}
+
+// The answer to POST /system/tasks/{name}/run. Both outcomes are 202 with an otherwise
+// identical row, so `triggered` is the only thing that tells them apart.
+export interface ScheduledTaskRun {
+  triggered: 'started' | 'already-running'
+  task: ScheduledTask
 }
 
 export interface LogEntry {
