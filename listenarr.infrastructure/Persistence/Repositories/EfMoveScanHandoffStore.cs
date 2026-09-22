@@ -165,6 +165,7 @@ public sealed partial class EfMoveScanHandoffStore(
             }
 
             job.Status = MoveJobStatus.Completed;
+            job.CompletedAt = now;
             if (job.Phase < MoveJobPhase.RecordingCompletion)
             {
                 job.Phase = MoveJobPhase.RecordingCompletion;
