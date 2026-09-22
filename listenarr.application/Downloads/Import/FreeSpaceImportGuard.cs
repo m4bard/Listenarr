@@ -50,6 +50,7 @@ namespace Listenarr.Application.Downloads.Import
 
     public class FreeSpaceImportGuard(
         IDiskSpaceProbe diskSpaceProbe,
+        IFileSystem fileSystem,
         ILogger<FreeSpaceImportGuard> logger) : IFreeSpaceImportGuard
     {
         public FreeSpaceCheckResult Evaluate(
@@ -68,7 +69,7 @@ namespace Listenarr.Application.Downloads.Import
                     "Free space check skipped by configuration");
             }
 
-            if (requiredBytes <= 0 || string.IsNullOrWhiteSpace(destinationPath))
+            if (string.IsNullOrWhiteSpace(destinationPath))
             {
                 return new FreeSpaceCheckResult(true, null, requiredBytes, null);
             }
@@ -77,9 +78,10 @@ namespace Listenarr.Application.Downloads.Import
 
             if (!diskSpaceProbe.TryGetDiskSpace(probePath, out _, out var freeBytes))
             {
-                // A network filesystem or a not-yet-created destination folder can make the
-                // probe unable to answer. Fail open, same as Readarr's specification: a check
-                // that cannot measure anything must not block every import.
+                // A network filesystem, or a destination whose every ancestor up to a
+                // filesystem root is missing, can make the probe unable to answer. Fail
+                // open, same as Readarr's specification: a check that cannot measure
+                // anything must not block every import.
                 logger.LogDebug(
                     "Free space could not be determined for {Path}; allowing import",
                     LogRedaction.SanitizeFilePath(probePath));
@@ -90,7 +92,10 @@ namespace Listenarr.Application.Downloads.Import
                     "Free space could not be determined");
             }
 
-            var minimumBytes = settings.MinimumFreeSpaceWhenImporting * 1024L * 1024L;
+            // A stored negative value (never possible through the shipped UI, which clamps
+            // to zero, but reachable through a direct API write) must not shrink the
+            // required-bytes threshold below the raw file size.
+            var minimumBytes = Math.Max(0, settings.MinimumFreeSpaceWhenImporting) * 1024L * 1024L;
             if (freeBytes < requiredBytes + minimumBytes)
             {
                 logger.LogWarning(
@@ -105,19 +110,45 @@ namespace Listenarr.Application.Downloads.Import
             return new FreeSpaceCheckResult(true, freeBytes, requiredBytes, null);
         }
 
-        // Readarr checks the parent of the author path, not the book folder itself, because
-        // the book folder may not exist yet at import time. The same reasoning applies here:
-        // audiobook.BasePath is the destination folder for this book and may be about to be
-        // created by the import that is asking the question.
-        private static string GetProbePath(string destinationPath)
+        // Readarr checks the parent of the author path (the .NET parent-of-path lookup
+        // applied to item.Author.Path), not the book folder itself, because the book folder
+        // may not exist yet at import time. In Readarr's shallower Author/Book layout that
+        // parent is reliably the already-existing root folder. Listenarr's default
+        // FolderNamingPattern is {Author}/{Series}/{Title} (ApplicationSettings.cs), so the
+        // immediate parent of a new audiobook's BasePath is itself frequently missing too (a
+        // new author, or a new series under an existing author): DiskSpaceProbe's underlying
+        // probe requires the target folder to already exist on disk, and reports that it
+        // could not measure a path that is missing, which would make the guard fail open on
+        // exactly the imports it exists to check. Walking up to the nearest ancestor that
+        // already exists reaches the same guarantee Readarr's shallower layout gets for free,
+        // and terminates at the root folder in the worst case, since a root folder's own
+        // existence is enforced when it is configured.
+        private string GetProbePath(string destinationPath)
         {
             try
             {
-                var trimmed = destinationPath.TrimEnd(
+                var current = destinationPath.TrimEnd(
                     Path.DirectorySeparatorChar,
                     Path.AltDirectorySeparatorChar);
-                var parent = Path.GetDirectoryName(trimmed);
-                return string.IsNullOrWhiteSpace(parent) ? destinationPath : parent;
+                current = Path.GetDirectoryName(current) is { } immediateParent
+                    && !string.IsNullOrWhiteSpace(immediateParent)
+                        ? immediateParent
+                        : destinationPath;
+
+                var iterations = 0;
+                while (!fileSystem.DirectoryExists(current) && iterations++ < 64)
+                {
+                    var ancestor = Path.GetDirectoryName(current);
+                    if (string.IsNullOrWhiteSpace(ancestor)
+                        || string.Equals(ancestor, current, StringComparison.Ordinal))
+                    {
+                        break;
+                    }
+
+                    current = ancestor;
+                }
+
+                return current;
             }
             catch (ArgumentException)
             {
