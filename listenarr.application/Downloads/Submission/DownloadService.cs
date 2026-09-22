@@ -17,6 +17,7 @@
  */
 
 using Listenarr.Application.Common;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Downloads.Submission
@@ -138,9 +139,10 @@ namespace Listenarr.Application.Downloads.Submission
             var targetIsBundle = ReleaseShapeDetector.IsBundleSeriesNumber(audiobook.SeriesNumber);
             var scoredResults = await qualityProfileService.ScoreSearchResults(searchResults, audiobook.QualityProfile, targetIsBundle);
 
-            // Ranked once, so the debug log and the grab agree and neither inherits indexer order
+            // Ranked once, so the debug log and the grab agree and neither inherits indexer order.
+            // The profile's own quality ordering decides first and the score breaks its ties.
             var ranked = scoredResults
-                .OrderByDescending(s => s.TotalScore)
+                .InPreferenceOrder(audiobook.QualityProfile)
                 .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow())
                 .ToList();
             logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", ranked.Count, LogRedaction.SanitizeText(audiobook.Title));
