@@ -231,6 +231,13 @@ namespace Listenarr.Domain.Common
         /// goes through, so that a release labelled "M4B" lands on the profile's AAC rungs instead
         /// of matching nothing. A plain name comparison would return null for most of what an
         /// indexer actually reports.
+        ///
+        /// Two inherited behaviours worth knowing, both deliberate. A label carrying no bitrate
+        /// takes the WORST rung of its codec group, because <see cref="Match"/> rounds down rather
+        /// than over-claim; so a bare "AAC" ranks below a known "AAC 320kbps" and can rank below a
+        /// known MP3 rung too. And the bitrate is the first run of two or more digits in the
+        /// label, so a label whose leading number is not a bitrate, a year for instance, is read
+        /// as one.
         /// </remarks>
         public static QualityDefinition? RankingRung(string? qualityLabel, QualityProfile? profile)
         {
@@ -251,7 +258,12 @@ namespace Listenarr.Domain.Common
                 {
                     Codec = codec,
                     Format = qualityLabel,
-                    BitrateBitsPerSecond = bitrateKbps,
+                    // ParseQualityLabel returns kbps and this field is bits per second. Passing
+                    // the kbps straight through survived by accident below 1000 and corrupted
+                    // everything at or above it: NormalizeKbps divides by 1000 when the value
+                    // looks like bits, so "MP3 1411kbps" arrived as 1 kbps and landed on the
+                    // worst rung in the profile.
+                    BitrateBitsPerSecond = bitrateKbps * 1000,
                 },
                 profile).Rung;
         }
