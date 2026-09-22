@@ -64,6 +64,38 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
         }
 
         [Fact]
+        public void Body_OpensWithRealWordingForEveryChannel()
+        {
+            // Summary ends in a default arm that prints "Frankenstein: SomeNewChannel." A channel
+            // added without wording would otherwise reach the operator looking like that.
+            foreach (var channel in Enum.GetValues<NotificationChannel>().Where(c => c != NotificationChannel.Test))
+            {
+                var body = EmailMessageBuilder.Body(new NotificationEvent
+                {
+                    Channel = channel,
+                    Book = new NotificationEventBook { Id = 1, Title = "Frankenstein" },
+                });
+
+                Assert.DoesNotContain($"Frankenstein: {channel}.", body, StringComparison.Ordinal);
+            }
+        }
+
+        [Fact]
+        public void Body_ListsEveryAddedPathAndNotJustTheFirst()
+        {
+            var body = EmailMessageBuilder.Body(new NotificationEvent
+            {
+                Channel = NotificationChannel.Download,
+                Book = new NotificationEventBook { Id = 1, Title = "Frankenstein" },
+                AddedPaths = ["/library/one.m4b", "/library/two.m4b", "/library/three.m4b"],
+            });
+
+            Assert.Contains("/library/one.m4b", body, StringComparison.Ordinal);
+            Assert.Contains("/library/two.m4b", body, StringComparison.Ordinal);
+            Assert.Contains("/library/three.m4b", body, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void Body_CarriesEveryFieldTheEventPopulated()
         {
             var body = EmailMessageBuilder.Body(new NotificationEvent

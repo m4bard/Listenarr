@@ -5,6 +5,7 @@
 using Listenarr.Infrastructure.Notifications.Email;
 using Listenarr.Tests.Common;
 using MailKit.Security;
+using AuthenticationException = MailKit.Security.AuthenticationException;
 
 namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
 {
@@ -101,16 +102,79 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
         }
 
         [Fact]
+        public async Task SendAsync_OffersTheConfiguredUsernameAndNotSomeOtherValue()
+        {
+            using var stub = new StubSmtpServer();
+
+            await new MailKitSmtpTransport().SendAsync(AStubServer(stub, "listenarr"), AMessage());
+
+            Assert.Equal("listenarr", stub.AuthenticatedUsername);
+        }
+
+        [Fact]
         public async Task SendAsync_ThrowsWhenTheServerRejectsTheLogin()
         {
             // This is what makes the Test button mean something. If a refused login came back as
             // success, the button would pass on a configuration that cannot deliver.
             using var stub = new StubSmtpServer(acceptAuthentication: false);
 
-            await Assert.ThrowsAnyAsync<Exception>(() =>
+            await Assert.ThrowsAsync<AuthenticationException>(() =>
                 new MailKitSmtpTransport().SendAsync(AStubServer(stub, "listenarr"), AMessage()));
 
+            // Without these two the test passes against a transport that throws before it ever
+            // connects, which is a regression rather than the behaviour being asserted.
+            Assert.Contains("AUTH", stub.Commands);
             Assert.DoesNotContain("DATA", stub.Commands);
+        }
+
+        [Fact]
+        public async Task SendAsync_DoesNotFailAMessageTheServerAlreadyAccepted()
+        {
+            // The server takes the message and then never answers QUIT. A real one that hangs up
+            // on "250 queued" looks the same from here. Reporting that as a failed send would tell
+            // the operator a delivered mail was not delivered, and, if it arrived as a
+            // cancellation, would abandon every remaining target.
+            using var stub = new StubSmtpServer(answerQuit: false);
+
+            await new MailKitSmtpTransport().SendAsync(AStubServer(stub, "listenarr"), AMessage());
+
+            Assert.Contains("DATA", stub.Commands);
+            Assert.Contains("A body.", stub.DeliveredMessage, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task SendAsync_GivesUpOnAServerThatAnswersTooSlowly()
+        {
+            // The deadline is across the exchange, not per network operation. MailKit's own
+            // Timeout bounds one stalled read, so a server answering just inside it on every
+            // command can otherwise hold the call open for many multiples of the stated bound.
+            using var stub = new StubSmtpServer(responseDelayMilliseconds: 200);
+            var transport = new SlowDeadlineTransport();
+
+            await Assert.ThrowsAsync<TimeoutException>(() =>
+                transport.SendAsync(AStubServer(stub, "listenarr"), AMessage()));
+        }
+
+        /// <summary>
+        /// The transport with a deadline short enough to test against, and nothing else changed.
+        /// The stub answers every command 200ms late, so a 300ms budget cannot survive the
+        /// several round trips a send takes while a per-operation timeout of the same size would.
+        /// </summary>
+        private sealed class SlowDeadlineTransport : ISmtpTransport
+        {
+            public async Task SendAsync(SmtpServer server, SmtpMessage message, CancellationToken cancellationToken = default)
+            {
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                deadline.CancelAfter(300);
+                try
+                {
+                    await new MailKitSmtpTransport().SendAsync(server, message, deadline.Token);
+                }
+                catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+                {
+                    throw new TimeoutException("too slow");
+                }
+            }
         }
     }
 }
