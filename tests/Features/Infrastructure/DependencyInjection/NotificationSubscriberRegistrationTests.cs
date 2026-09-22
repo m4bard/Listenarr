@@ -6,7 +6,6 @@ using Listenarr.Infrastructure.DependencyInjection.Notifications;
 using Listenarr.Infrastructure.Notifications.CustomScript;
 using Listenarr.Infrastructure.Notifications.Email;
 using Listenarr.Tests.Common;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Listenarr.Tests.Features.Infrastructure.DependencyInjection
 {
@@ -65,7 +64,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DependencyInjection
             services.AddNotificationAndRealtimeServices();
 
             var transport = Assert.Single(
-                services.Where(descriptor => descriptor.ServiceType == typeof(ISmtpTransport)));
+                services,
+                descriptor => descriptor.ServiceType == typeof(ISmtpTransport));
             Assert.Equal(typeof(MailKitSmtpTransport), transport.ImplementationType);
         }
     }

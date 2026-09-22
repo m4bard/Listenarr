@@ -30,10 +30,18 @@ namespace Listenarr.Infrastructure.Notifications.Email
     public sealed class MailKitSmtpTransport : ISmtpTransport
     {
         /// <summary>
-        /// How long a send may take before it is abandoned. A notification target may not hold up
-        /// the operation that produced the event indefinitely; the Custom Script provider bounds
-        /// itself the same way.
+        /// How long the whole exchange may take before it is abandoned, in the same sense as the
+        /// Custom Script provider's script timeout: a bound on the operation, not on one step of
+        /// it. A notification target may not hold up the operation that produced the event
+        /// indefinitely.
         /// </summary>
+        /// <remarks>
+        /// MailKit's own <c>Timeout</c> property is per network operation, being the socket
+        /// stream's read and write timeouts, so a server that answers every command just inside it
+        /// can hold a ten round trip conversation open for many multiples of this. Both are set:
+        /// the property bounds a single stalled read, and the linked token below bounds the
+        /// exchange.
+        /// </remarks>
         public const int SendTimeoutMilliseconds = 30_000;
 
         public async Task SendAsync(SmtpServer server, SmtpMessage message, CancellationToken cancellationToken = default)
@@ -43,16 +51,33 @@ namespace Listenarr.Infrastructure.Notifications.Email
 
             using var email = BuildMessage(message);
             using var client = new SmtpClient { Timeout = SendTimeoutMilliseconds };
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            deadline.CancelAfter(SendTimeoutMilliseconds);
 
-            await client.ConnectAsync(server.Host, server.Port, ResolveSocketOptions(server), cancellationToken);
-
-            if (!string.IsNullOrWhiteSpace(server.Username))
+            try
             {
-                await client.AuthenticateAsync(server.Username, server.Password ?? string.Empty, cancellationToken);
+                await client.ConnectAsync(server.Host, server.Port, ResolveSocketOptions(server), deadline.Token);
+
+                if (!string.IsNullOrWhiteSpace(server.Username))
+                {
+                    await client.AuthenticateAsync(server.Username, server.Password ?? string.Empty, deadline.Token);
+                }
+
+                await client.SendAsync(email, deadline.Token);
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                // Our own deadline, not the caller's cancel. Reported as what it is, so the Test
+                // button says the server was too slow rather than that something was cancelled.
+                throw new TimeoutException(
+                    $"The mail server did not complete the exchange within {SendTimeoutMilliseconds / 1000} seconds.");
             }
 
-            await client.SendAsync(email, cancellationToken);
-            await client.DisconnectAsync(true, cancellationToken);
+            // The QUIT is deliberately outside the deadline and not cancellable. The server has
+            // already accepted the message by this point, so a cancel arriving here would turn a
+            // delivered mail into an OperationCanceledException, which the provider rethrows and
+            // which would abort delivery to every remaining target.
+            await client.DisconnectAsync(true, CancellationToken.None);
         }
 
         /// <summary>
