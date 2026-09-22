@@ -2,6 +2,7 @@
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  */
+using System.Text;
 
 namespace Listenarr.Application.Notifications.Contracts
 {
@@ -26,6 +27,24 @@ namespace Listenarr.Application.Notifications.Contracts
         public string? Username { get; init; }
 
         public string? Password { get; init; }
+
+        /// <summary>
+        /// Keeps the credential out of the compiler-generated ToString.
+        /// </summary>
+        /// <remarks>
+        /// A record prints every property by default, so <c>$"{server}"</c>, a structured log
+        /// argument or a failing assertion's message would all render the password verbatim.
+        /// Nothing does that today. The point of this type is that it cannot, and that has to be
+        /// structural rather than a convention nobody can see.
+        /// </remarks>
+        private bool PrintMembers(StringBuilder builder)
+        {
+            ArgumentNullException.ThrowIfNull(builder);
+
+            builder.Append(System.Globalization.CultureInfo.InvariantCulture,
+                $"Host = {Host}, Port = {Port}, RequireEncryption = {RequireEncryption}");
+            return true;
+        }
     }
 
     /// <summary>One message, already addressed and rendered.</summary>

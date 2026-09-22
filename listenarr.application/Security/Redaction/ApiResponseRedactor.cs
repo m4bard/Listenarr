@@ -83,7 +83,7 @@ public static class ApiResponseRedactor
             }
         }
 
-        RedactEmailPasswords(clone);
+        RedactEmailPasswordsInPlace(clone);
 
         return clone;
     }
@@ -99,7 +99,7 @@ public static class ApiResponseRedactor
     /// screen needs the password legible, because a save that carries the sentinel back keeps the
     /// stored value.
     /// </remarks>
-    public static void RedactEmailPasswords(ApplicationSettings settings)
+    public static void RedactEmailPasswordsInPlace(ApplicationSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
 
@@ -108,7 +108,7 @@ public static class ApiResponseRedactor
             return;
         }
 
-        foreach (var email in settings.Emails.Where(e => !string.IsNullOrWhiteSpace(e.Password)))
+        foreach (var email in settings.Emails.Where(e => !string.IsNullOrEmpty(e.Password)))
         {
             email.Password = RedactedValue;
         }
