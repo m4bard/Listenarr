@@ -146,7 +146,11 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
                 Name = fileName,
                 Trigger = trigger,
                 SizeBytes = info.Length,
-                CreatedAtUtc = timestamp
+
+                // Read back off the file rather than reusing the timestamp the name was built
+                // from, so this archive reports one creation time and not two. The listing and the
+                // retention sweep both read LastWriteTimeUtc.
+                CreatedAtUtc = info.LastWriteTimeUtc
             };
         }
 
