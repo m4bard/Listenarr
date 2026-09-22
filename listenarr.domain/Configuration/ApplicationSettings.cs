@@ -87,6 +87,11 @@ namespace Listenarr.Domain.Configuration
         public int PollingIntervalSeconds { get; set; } = 30;
         public bool EnableNotifications { get; set; } = false;
 
+        // Days an automatic backup is kept before it is swept. Manual backups are never swept.
+        // 28 matches the *arr family: Readarr ConfigService.cs:398, Sonarr :422, Prowlarr :179.
+        // Zero or less disables the sweep.
+        public int BackupRetentionDays { get; set; } = 28;
+
         // Audio file extensions FileUtils.IsAudioFile treats as recognized. Defaults to the same
         // set FileUtils.AudioExtensions has always used, so an untouched setting reproduces
         // today's hardcoded behavior exactly.
