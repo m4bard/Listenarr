@@ -190,6 +190,29 @@ public sealed class RecycleBinServiceTests : BaseTests
         Assert.True(File.Exists(stale));
     }
 
+    [DirectoryLinkFact]
+    public async Task EmptyAsync_BinContainsALinkToTheLibrary_DoesNotFollowIt()
+    {
+        var root = FileService.GetTempDirectory("recycle-symlink-root");
+        var bin = FileService.GetTempDirectory("recycle-symlink-bin");
+        var precious = await FileService.GetFileAsync(root, "precious.m4b", "library-content");
+        Directory.CreateSymbolicLink(Path.Join(bin, "sneaky"), root);
+        var ordinary = await FileService.GetFileAsync(bin, "ordinary.m4b", "recycled");
+
+        var service = BuildService(bin, retentionDays: 7, rootPaths: [root]);
+        var result = await service.EmptyAsync();
+
+        // The control: the bin genuinely had something to remove, and it was removed, so
+        // a pass here is not the sweep failing to run. What must NOT happen is the sweep
+        // walking through the link and deleting library content.
+        Assert.False(File.Exists(ordinary));
+        Assert.Equal(1, result.FilesRemoved);
+        Assert.True(
+            File.Exists(precious),
+            "The sweep followed a directory link out of the bin and deleted library content.");
+        Assert.Equal("library-content", await File.ReadAllTextAsync(precious));
+    }
+
     [Fact]
     public async Task CleanupAsync_NoBinConfigured_DoesNothing()
     {
