@@ -246,18 +246,21 @@ namespace Listenarr.Tests.Features.Infrastructure.Repositories
 
 
 
-        // Control with teeth, and the assertion that gives it teeth is the save count rather
-        // than the throw. The unique violation raised on the UPDATE path is a different defect:
-        // the by-ASIN lookup resolved a row belonging to another name, and renaming it collides
-        // with that other name's own row. Re-reading resolves the same row every pass, so it
-        // must not be retried.
+        // The author half of this case cannot reach the database on this build, and that is the
+        // point of the assertion. UpsertCachedAuthorAsync refuses to rebind an ASIN onto a row
+        // named for somebody else: the ASIN-first match becomes a miss, the write falls through
+        // to the name lookup and lands on the incoming name's own row, so there is no rename and
+        // no unique violation to retry. On a build without that refusal this same call renames
+        // the other author's row, collides with the incoming name's row and throws.
         //
-        // The throw alone proves nothing here. Drop the `inserting` term from the retry filter
-        // and this still throws, because the attempt bound stops it either way. What separates
-        // the two is how many times it reaches the database: once when the filter is right,
-        // three times when it is not.
+        // So this pins that the retry never fires here, by save count, rather than pinning a
+        // throw that no longer happens. The `inserting` term in the retry filter still has a test
+        // with teeth: the series upsert below has no such refusal, so it still produces the
+        // update-path violation, and dropping `inserting` there moves its save count from one to
+        // three. The refusal's own behaviour is pinned separately in
+        // AudiobookRepositoryAuthorAsinIdentityTests.
         [Fact]
-        public async Task UpsertCachedAuthor_WhenTheResolvedRowCannotTakeTheIncomingName_ThrowsWithoutRetrying()
+        public async Task UpsertCachedAuthor_WhenTheResolvedRowCannotTakeTheIncomingName_WritesToTheIncomingNamesRowWithoutRetrying()
         {
             using var db = new SharedDb();
             var context = db.NewContext();
@@ -269,10 +272,18 @@ namespace Listenarr.Tests.Features.Infrastructure.Repositories
             var saves = 0;
             context.SavingChanges += (_, _) => saves++;
 
-            await Assert.ThrowsAsync<UniqueConstraintViolationException>(() =>
-                repository.UpsertCachedAuthorAsync(Author("Bram Stoker", asin: "B000AP9A2E")));
+            await repository.UpsertCachedAuthorAsync(Author("Bram Stoker", asin: "B000AP9A2E"));
 
             Assert.Equal(1, saves);
+
+            var rows = await db.NewContext().AuthorCacheEntries
+                .AsNoTracking()
+                .OrderBy(entry => entry.Id)
+                .ToListAsync();
+            Assert.Equal(2, rows.Count);
+            Assert.Equal("Mary Shelley", rows[0].AuthorName);
+            Assert.Equal("Bram Stoker", rows[1].AuthorName);
+            Assert.All(rows, row => Assert.Equal("B000AP9A2E", row.AuthorAsin));
         }
 
         [Fact]
