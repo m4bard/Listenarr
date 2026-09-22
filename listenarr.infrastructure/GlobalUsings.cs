@@ -111,3 +111,5 @@ global using Listenarr.Infrastructure.DownloadClients.Transmission;
 global using Listenarr.Infrastructure.ActivityHistory.Jobs;
 global using Listenarr.Infrastructure.ActivityHistory.Persistence;
 global using Listenarr.Infrastructure.ActivityHistory.Services;
+global using Listenarr.Application.Common.Housekeeping;
+global using Listenarr.Infrastructure.Maintenance.Housekeeping;
