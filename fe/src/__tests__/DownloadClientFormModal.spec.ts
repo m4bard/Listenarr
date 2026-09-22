@@ -18,8 +18,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
-import { createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
 import DownloadClientFormModal from '@/components/domain/download/DownloadClientFormModal.vue'
+import { useConfigurationStore } from '@/stores/configuration'
 
 describe('DownloadClientFormModal', () => {
   it('renders password input for qbittorrent', async () => {
@@ -341,5 +342,77 @@ describe('DownloadClientFormModal', () => {
 
     const calledWith = (api.testDownloadClient as unknown).mock.calls[0][0]
     expect(calledWith.priority).toBe(9)
+  })
+
+  it('sends Client Priority on the save path, not only the test path', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConfigurationStore()
+    store.saveDownloadClientConfiguration = vi.fn(async () => 'saved-id')
+
+    const wrapper = mount(DownloadClientFormModal, {
+      global: { plugins: [pinia] },
+      props: { visible: true, editingClient: null },
+    })
+
+    await wrapper.setProps({
+      editingClient: {
+        id: '6',
+        name: 'seedbox',
+        type: 'qbittorrent',
+        host: 'host.local',
+        port: 8080,
+        isEnabled: true,
+        useSSL: false,
+        downloadPath: '',
+        username: '',
+        password: '',
+        priority: 2,
+        settings: {},
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('input[id="clientPriority"]').setValue('6')
+    // Save, not Test. The test-connection payload is a separate builder, and asserting on
+    // it proves nothing about what actually gets persisted.
+    await wrapper.find('button.btn-primary').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(store.saveDownloadClientConfiguration).toHaveBeenCalled()
+    const saved = (store.saveDownloadClientConfiguration as unknown).mock.calls[0][0]
+    expect(saved.priority).toBe(6)
+  })
+
+  it('never posts a blank priority, which the API cannot parse as an int', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConfigurationStore()
+    store.saveDownloadClientConfiguration = vi.fn(async () => 'saved-id')
+
+    const wrapper = mount(DownloadClientFormModal, {
+      global: { plugins: [pinia] },
+      props: { visible: true, editingClient: null },
+    })
+    await wrapper.vm.$nextTick()
+
+    // Clearing the box makes v-model.number yield an empty string. Posting that raw is a
+    // JSON parse failure on an int property, so the operator gets an opaque 400 instead of
+    // the range message.
+    await wrapper.find('input[id="clientPriority"]').setValue('')
+    await wrapper.find('button.btn-primary').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const saved = (store.saveDownloadClientConfiguration as unknown).mock.calls[0][0]
+    expect(saved.priority).toBe(1)
+
+    // Control: a value that is out of range but parseable is clamped rather than sent on,
+    // so the two paths are distinguishable.
+    await wrapper.find('input[id="clientPriority"]').setValue('999')
+    await wrapper.find('button.btn-primary').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const clamped = (store.saveDownloadClientConfiguration as unknown).mock.calls[1][0]
+    expect(clamped.priority).toBe(50)
   })
 })
