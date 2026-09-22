@@ -114,150 +114,18 @@ namespace Listenarr.Application.Search.Scoring
                 return score;
             }
 
-            // Detect NZB/Usenet more broadly
-            var isNzb = IsNzbResult(searchResult);
-
-            // The indexer is read before the size and age gates because all three depend on it.
-            // It also corrects isNzb from the indexer's own type, and that correction used to
-            // happen after the size gate had already run, so a Usenet result recognised only by
-            // its indexer type was size-checked despite the exemption just below.
-            int indexerRetention = 0;
-            int indexerMaximumSizeMb = 0;
-            int indexerMinimumAgeMinutes = 0;
-            if (searchResult.IndexerId.HasValue
-                && (_resolvedIndexers != null || _indexerRepository != null))
+            // Every gate that can reject a release outright lives in SearchResultScorer.Gates.cs:
+            // the indexer lookup all three size and age gates depend on, the profile's size
+            // bounds, the seeders minimum and the age and retention ceilings. It settles isNzb
+            // once, before anything reads it, and hands back the age the penalties below need.
+            var gates = await ApplyRejectionGates(searchResult, profile, score);
+            if (gates.Rejected)
             {
-                try
-                {
-                    var idx = _resolvedIndexers != null
-                        ? (_resolvedIndexers.TryGetValue(searchResult.IndexerId.Value, out var preresolved)
-                            ? preresolved
-                            : null)
-                        : await _indexerRepository!.GetByIdAsync(searchResult.IndexerId.Value);
-                    if (idx != null)
-                    {
-                        indexerRetention = idx.Retention;
-                        indexerMaximumSizeMb = idx.MaximumSize;
-                        indexerMinimumAgeMinutes = idx.MinimumAge;
-                        // Captured for tie-break purposes only (see QualityScoreComparer) - never
-                        // added into TotalScore, so indexer choice cannot override release quality.
-                        score.IndexerPriority = idx.Priority;
-                        if (!isNzb && !string.IsNullOrWhiteSpace(idx.Type) && string.Equals(idx.Type, "Usenet", StringComparison.OrdinalIgnoreCase))
-                        {
-                            isNzb = true;
-                            _logger.LogDebug("Indexer {IndexerId} type '{Type}' detected as Usenet", searchResult.IndexerId.Value, idx.Type);
-                        }
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                {
-                    _logger.LogDebug(ex, "Failed to fetch indexer settings for IndexerId {Id}", searchResult.IndexerId.Value);
-                }
-            }
-
-            if (indexerMaximumSizeMb > 0 && searchResult.Size > (long)indexerMaximumSizeMb * 1024 * 1024)
-            {
-                score.RejectionReasons.Add($"File too large for indexer (> {indexerMaximumSizeMb} MB)");
-                score.TotalScore = -1;
                 return score;
             }
 
-            // Size checks. MinimumSize and MaximumSize are operator settings on the profile,
-            // not properties of a protocol, so they apply to every result that reports a size.
-            // They used to sit behind !isNzb, which meant a size ceiling and a size floor did
-            // nothing at all over Usenet.
-            if (searchResult.Size > 0)
-            {
-                // (long) before the multiply, not after. MinimumSize and MaximumSize are int MB
-                // and the settings form puts no ceiling on either, so 2048 or more overflows int
-                // and wraps negative: the maximum gate then rejects every release as too large,
-                // and the minimum gate stops rejecting anything at all.
-                if (profile.MinimumSize > 0 && searchResult.Size < (long)profile.MinimumSize * 1024 * 1024)
-                {
-                    score.RejectionReasons.Add($"File too small (< {profile.MinimumSize} MB)");
-                    score.TotalScore = -1;
-                    return score;
-                }
-                if (profile.MaximumSize > 0 && searchResult.Size > (long)profile.MaximumSize * 1024 * 1024)
-                {
-                    score.RejectionReasons.Add($"File too large (> {profile.MaximumSize} MB)");
-                    score.TotalScore = -1;
-                    return score;
-                }
-            }
-
-            // Seeders requirement (treat null as 0).
-            //
-            // Case-insensitive on purpose. Every indexer parser writes this field capitalised,
-            // "Torrent", and an ordinal `==` against a lowercase literal is always false, so the
-            // configured MinimumSeeders never applied to a real torrent. Every other protocol
-            // comparison in this codebase already compares case-insensitively, including the nzb
-            // and usenet check further down this same method.
-            if (string.Equals(searchResult.DownloadType, "torrent", StringComparison.OrdinalIgnoreCase)
-                && (searchResult.Seeders ?? 0) < profile.MinimumSeeders)
-            {
-                var seedersValue = (searchResult.Seeders.HasValue) ? searchResult.Seeders.Value.ToString() : "(none)";
-                score.RejectionReasons.Add($"Not enough seeders ({seedersValue} < {profile.MinimumSeeders})");
-                score.TotalScore = -1;
-                return score;
-            }
-
-            double ageDays = 0;
-
-            // Parsed to UTC explicitly, in TryParsePublishedDateUtc, so the subtraction from
-            // DateTime.UtcNow below is between two UTC instants whatever the host's offset is.
-            if (TryParsePublishedDateUtc(searchResult.PublishedDate, out var publishDate))
-            {
-                ageDays = (DateTime.UtcNow - publishDate).TotalDays;
-
-                // Usenet only, and the reason is propagation rather than preference: a post that
-                // has not finished propagating downloads as an incomplete or failed grab. Sonarr
-                // and Radarr expose the same per-indexer minimum for the same reason.
-                if (isNzb && indexerMinimumAgeMinutes > 0)
-                {
-                    var ageMinutes = (DateTime.UtcNow - publishDate).TotalMinutes;
-                    if (ageMinutes < indexerMinimumAgeMinutes)
-                    {
-                        score.RejectionReasons.Add($"Too new ({(int)ageMinutes} minutes < indexer minimum age {indexerMinimumAgeMinutes} minutes)");
-                        score.TotalScore = -1;
-                        return score;
-                    }
-                }
-
-                if (isNzb)
-                {
-                    if (indexerRetention > 0 && ageDays > indexerRetention)
-                    {
-                        score.RejectionReasons.Add($"Too old ({(int)ageDays} days > indexer retention {indexerRetention} days)");
-                        score.TotalScore = -1;
-                        return score;
-                    }
-                    if (profile.MaximumAge > 0 && ageDays > profile.MaximumAge)
-                    {
-                        score.RejectionReasons.Add($"Too old ({(int)ageDays} days > profile maximum age {profile.MaximumAge} days)");
-                        score.TotalScore = -1;
-                        return score;
-                    }
-                }
-                else
-                {
-                    if (indexerRetention > 0)
-                    {
-                        if (ageDays > indexerRetention)
-                        {
-                            score.RejectionReasons.Add($"Too old ({(int)ageDays} days > indexer retention {indexerRetention} days)");
-                            score.TotalScore = -1;
-                            return score;
-                        }
-                    }
-                    else if (profile.MaximumAge > 0 && ageDays > profile.MaximumAge)
-                    {
-                        score.RejectionReasons.Add($"Too old ({(int)ageDays} days > profile maximum age {profile.MaximumAge} days)");
-                        score.TotalScore = -1;
-                        return score;
-                    }
-                }
-            }
+            var isNzb = gates.IsNzb;
+            var ageDays = gates.AgeDays;
 
             // Title lower for detection
             var titleLower = (searchResult.Title ?? string.Empty).ToLower();
