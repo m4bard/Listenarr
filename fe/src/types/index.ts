@@ -564,6 +564,13 @@ export interface ApplicationSettings {
   authorIdentityRepairIntervalHours?: number
   authorIdentityRepairMaxRowsPerRun?: number
   authorIdentityRepairRecheckAfterDays?: number
+
+  // Recycle bin: where a deleted library file goes instead of being removed outright.
+  // Empty means no recycle bin and deletes are permanent.
+  recycleBinPath?: string
+  // Days a recycled file is kept before the retention sweep removes it. Zero means keep
+  // until the bin is emptied by hand.
+  recycleBinCleanupDays?: number
 }
 
 export interface ProwlarrImportConnectionSettings {
