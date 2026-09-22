@@ -39,6 +39,22 @@ public sealed class BackupEndpointTests : BaseTests, IClassFixture<ListenarrWebA
         _factory = factory;
     }
 
+    public override async Task InitializeAsync()
+    {
+        await base.InitializeAsync();
+
+        // The test host shares one content root across the run, so manual archives written by
+        // earlier tests accumulate there and would eventually meet the limit that makes
+        // CreateAsync refuse. Cleared here so each of these tests starts from a known count.
+        using var scope = _factory.Services.CreateScope();
+        var paths = scope.ServiceProvider.GetRequiredService<IApplicationPathService>();
+        var manual = paths.ResolveFromConfig("backups", "manual");
+        if (Directory.Exists(manual))
+        {
+            Directory.Delete(manual, true);
+        }
+    }
+
     [Fact]
     [Trait("Scenario", "ListingShape")]
     public async Task GetBackups_ReturnsNameTriggerSizeAndTime_AndNothingPathShaped()
