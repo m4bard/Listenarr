@@ -35,6 +35,12 @@ namespace Listenarr.Tests.Features.Api.Features.Library
     /// files this finding would otherwise touch. This test pins the gap so it fails, on purpose,
     /// the day someone wires a delete notification into this path, forcing them to see and
     /// update it rather than the gap silently reappearing after being fixed once.
+    ///
+    /// Scope note: this covers only DeleteAudiobook's deleteFiles=false, deleteFolder=false
+    /// branch, the plain "remove the library record" path. It does not cover the
+    /// filesystem-deleting branches of LibraryDeleteWorkflow, BulkDeleteAudiobooks
+    /// (LibraryBulkEditWorkflow), or a rename/retag notification, which are the rest of G2 and
+    /// remain unpinned.
     /// </summary>
     [Trait("Area", "LibraryApi")]
     [Trait("Name", "LibraryDeleteNotificationGapRegressionTests")]
@@ -46,20 +52,10 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         [Trait("Scenario", "ExistingAudiobook_NeverCallsNotificationService")]
         public async Task DeleteAudiobook_ExistingAudiobook_NeverCallsNotificationService()
         {
-            // Given
+            // Given: an unconfigured (loose) mock. Moq returns a completed Task by default for any
+            // Task-returning member with no explicit Setup, so no stubbing is needed here, and
+            // Invocations still records a call if one happens.
             var mockNotificationService = new Mock<INotificationService>();
-            mockNotificationService
-                .Setup(s => s.OnDownloadImportedAsync(It.IsAny<Download>()))
-                .Returns(Task.CompletedTask);
-            mockNotificationService
-                .Setup(s => s.OnDownloadFailedAsync(It.IsAny<Download>()))
-                .Returns(Task.CompletedTask);
-            mockNotificationService
-                .Setup(s => s.SendSystemNotificationAsync(It.IsAny<string>(), It.IsAny<string>()))
-                .Returns(Task.CompletedTask);
-            mockNotificationService
-                .Setup(s => s.SendNotificationAsync(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<string>(), It.IsAny<List<string>>()))
-                .Returns(Task.CompletedTask);
 
             Init(services => services.WithSingleton(mockNotificationService.Object));
             var controller = _provider.GetRequiredService<LibraryController>();
@@ -81,7 +77,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             Assert.Null(stillPresent);
 
             // The actual finding: a real, successful delete never touches INotificationService,
-            // through any of its four methods, at all.
+            // through any of its methods, at all.
             Assert.Empty(mockNotificationService.Invocations);
         }
     }
