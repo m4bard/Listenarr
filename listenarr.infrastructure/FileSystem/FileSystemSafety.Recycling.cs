@@ -92,9 +92,11 @@ internal static partial class FileSystemSafety
         string? relativeSubfolder,
         TimeProvider timeProvider,
         out string recycledPath,
+        out bool stampedRecycleTime,
         out string reason)
     {
         recycledPath = string.Empty;
+        stampedRecycleTime = true;
         reason = string.Empty;
 
         if (string.IsNullOrWhiteSpace(recycleBinDirectory))
@@ -207,7 +209,16 @@ internal static partial class FileSystemSafety
                 // remove it immediately. The cost of stamping first is that a rename which
                 // then fails leaves a modified timestamp on a file we were about to delete
                 // anyway, which is the cheaper of the two.
-                entry.SetLastWriteTimeUtc(timeProvider.GetUtcNow().UtcDateTime);
+                // Best effort, and deliberately not fatal. Stamping an mtime needs
+                // ownership of the file (or CAP_FOWNER), while unlinking it only needs
+                // write and execute on the parent directory, so a library whose media is
+                // owned by another uid can be deletable but not stampable. On Windows the
+                // stable-delete handle is opened without FILE_WRITE_ATTRIBUTES, which has
+                // the same effect. Letting the stamp fail the whole operation would mean
+                // configuring a bin silently stops deletes working on those installs.
+                var recycleTimeUtc = timeProvider.GetUtcNow().UtcDateTime;
+                var stamped = TryStampRecycleTime(entry, recycleTimeUtc);
+                stampedRecycleTime = stamped;
 
                 var moved = TryPublishIntoRecycleBin(
                     entry,
@@ -224,6 +235,17 @@ internal static partial class FileSystemSafety
                 }
 
                 recycledPath = Path.Join(binAnchor.FullPath, publishedName);
+
+                // If the pre-move stamp was refused, try once more now the file is in the
+                // bin, where the directory permissions may differ. An unstamped file is
+                // still recycled; it just ages from its original mtime, so the next sweep
+                // may take it early. That is worse than a stamped file and much better
+                // than a delete that does not happen.
+                if (!stamped)
+                {
+                    stampedRecycleTime = TryStampRecycleTimeByPath(recycledPath, recycleTimeUtc);
+                }
+
                 return RecycleFileOutcome.Recycled;
             }
         }
@@ -232,6 +254,40 @@ internal static partial class FileSystemSafety
         {
             reason = $"Recycling failed safely: {exception.GetType().Name}.";
             return RecycleFileOutcome.Blocked;
+        }
+    }
+
+
+    private static bool TryStampRecycleTime(
+        PinnedDirectoryCreation.PinnedFileEntry entry,
+        DateTime recycleTimeUtc)
+    {
+        try
+        {
+            entry.SetLastWriteTimeUtc(recycleTimeUtc);
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException or System.ComponentModel.Win32Exception
+            or NotSupportedException or PlatformNotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryStampRecycleTimeByPath(string path, DateTime recycleTimeUtc)
+    {
+        try
+        {
+            File.SetLastWriteTimeUtc(path, recycleTimeUtc);
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException or System.ComponentModel.Win32Exception
+            or NotSupportedException or PlatformNotSupportedException
+            or FileNotFoundException or DirectoryNotFoundException)
+        {
+            return false;
         }
     }
 
@@ -273,14 +329,27 @@ internal static partial class FileSystemSafety
     }
 
     /// <summary>
-    /// Ordinal containment test over two already-canonicalized absolute paths. Ordinal
-    /// rather than case-insensitive on purpose: the rest of this file fails closed on
-    /// lexical aliases for the same reason TryValidateMutationTarget does, because two
-    /// differently cased spellings are not proof of the same boundary.
+    /// Containment test over two already-canonicalized absolute paths, checked both
+    /// ordinally and case-insensitively.
+    ///
+    /// This guards "the file already sits inside the bin", so its failure direction is
+    /// REFUSING, which makes ordinal the loose comparison rather than the strict one.
+    /// An earlier version defended ordinal here by analogy with
+    /// TryValidateMutationTarget, but that is a permission check where an ordinal miss
+    /// refuses the operation; here an ordinal miss permits it. Same comparison, opposite
+    /// safety direction. RecycleBinService.IsWithin makes the same choice for the same
+    /// reason.
     /// </summary>
-    private static bool PathIsWithin(string candidate, string basePath)
+    private static bool PathIsWithin(string candidate, string basePath) =>
+        PathIsWithinUsing(candidate, basePath, StringComparison.Ordinal)
+        || PathIsWithinUsing(candidate, basePath, StringComparison.OrdinalIgnoreCase);
+
+    private static bool PathIsWithinUsing(
+        string candidate,
+        string basePath,
+        StringComparison comparison)
     {
-        if (StringComparer.Ordinal.Equals(candidate, basePath))
+        if (string.Equals(candidate, basePath, comparison))
         {
             return true;
         }
@@ -288,7 +357,7 @@ internal static partial class FileSystemSafety
         var boundary = basePath.EndsWith(Path.DirectorySeparatorChar)
             ? basePath
             : basePath + Path.DirectorySeparatorChar;
-        return candidate.StartsWith(boundary, StringComparison.Ordinal);
+        return candidate.StartsWith(boundary, comparison);
     }
 
     /// <summary>
