@@ -129,3 +129,21 @@ internal sealed partial class PinnedDirectoryCreation
         }
     }
 }
+
+internal sealed partial class PinnedDirectoryCreation
+{
+    internal sealed partial class PinnedFileEntry
+    {
+        /// <summary>
+        /// Stamp the open handle's last write time. Used when a file is recycled rather than
+        /// deleted, so retention ages it from the moment it was thrown away instead of from
+        /// whenever its content was last written. Renaming a file keeps its old timestamps,
+        /// and a file last written long ago would otherwise be swept on the next cycle.
+        /// </summary>
+        internal void SetLastWriteTimeUtc(DateTime valueUtc)
+        {
+            ThrowIfDisposed();
+            File.SetLastWriteTimeUtc(_fileHandle, valueUtc);
+        }
+    }
+}
