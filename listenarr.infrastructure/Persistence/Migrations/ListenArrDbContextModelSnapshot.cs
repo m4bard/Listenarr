@@ -2820,6 +2820,12 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("Retention")
                         .HasColumnType("INTEGER");
 
+                    b.Property<double?>("SeedRatio")
+                        .HasColumnType("REAL");
+
+                    b.Property<int?>("SeedTime")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasColumnType("TEXT");
