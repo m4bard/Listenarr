@@ -193,19 +193,47 @@ public class SqliteMigrationSchemaTests : BaseTests
     {
         await using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        await using var context = new ListenArrDbContext(CreateOptions(connection));
 
-        await context.Database.MigrateAsync();
+        // A real upgrade, not a fresh database: migrate to the state before this column
+        // existed, put a client in, then migrate forward and read the row back. Asserting on
+        // the schema default alone would not say what happened to rows that were already
+        // there, which is the thing that matters on upgrade.
+        await using (var before = new ListenArrDbContext(CreateOptions(connection)))
+        {
+            await before.GetService<IMigrator>().MigrateAsync(WeakStorageVerifiedCleanupMigrationId);
+        }
+
+        Assert.False(await ColumnExistsAsync(connection, "DownloadClientConfigurations", "Priority"));
+
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.CommandText =
+                "INSERT INTO DownloadClientConfigurations "
+                + "(Id, Name, Type, Host, Port, Username, Password, DownloadPath, UseSSL, IsEnabled, RemoveCompletedDownloads, SettingsJson, CreatedAt) "
+                + "VALUES ('pre-upgrade', 'Existing', 'qbittorrent', 'host', 8080, '', '', '', 0, 1, 'none', '{}', '2026-01-01 00:00:00')";
+            await insert.ExecuteNonQueryAsync();
+        }
+
+        await using (var after = new ListenArrDbContext(CreateOptions(connection)))
+        {
+            await after.Database.MigrateAsync();
+        }
 
         Assert.True(await ColumnExistsAsync(connection, "DownloadClientConfigurations", "Priority"));
 
-        // The scaffolded default is what an upgrade writes into every existing row. EF cannot
-        // see the CLR initializer, so without HasDefaultValue(1) on the entity configuration
-        // this comes out as 0 and every pre-upgrade client silently outranks every client
-        // added afterwards. Readarr sets the same column default in 001_initial_setup.cs.
-        Assert.Equal(
-            "1",
-            await ColumnDefaultAsync(connection, "DownloadClientConfigurations", "Priority"));
+        await using var read = connection.CreateCommand();
+        read.CommandText = "SELECT Priority FROM DownloadClientConfigurations WHERE Id='pre-upgrade'";
+        var stored = await read.ExecuteScalarAsync();
+
+        // Control: if the insert above had silently done nothing, this would be null rather
+        // than a number, so a broken apparatus does not look like a pass.
+        Assert.NotNull(stored);
+
+        // EF cannot see the CLR initializer, so without HasDefaultValue(1) on the entity
+        // configuration this backfills as 0 and every pre-upgrade client silently outranks
+        // every client added afterwards. Readarr sets the same column default in
+        // 001_initial_setup.cs.
+        Assert.Equal(1L, Convert.ToInt64(stored));
     }
 
     [Fact]
