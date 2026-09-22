@@ -149,6 +149,63 @@ public class SqliteMigrationSchemaTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "DownloadClientPriorityUpgradesToOne")]
+    public async Task DownloadClientPriorityMigration_BackfillsExistingRowsWithOneNotZero()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.True(await ColumnExistsAsync(connection, "DownloadClientConfigurations", "Priority"));
+
+        // The scaffolded default is what an upgrade writes into every existing row. EF cannot
+        // see the CLR initializer, so without HasDefaultValue(1) on the entity configuration
+        // this comes out as 0 and every pre-upgrade client silently outranks every client
+        // added afterwards. Readarr sets the same column default in 001_initial_setup.cs.
+        Assert.Equal(
+            "1",
+            await ColumnDefaultAsync(connection, "DownloadClientConfigurations", "Priority"));
+    }
+
+    [Fact]
+    [Trait("Scenario", "DownloadClientPriorityRoundTrips")]
+    public async Task DownloadClientPriority_RoundTripsThroughTheDatabase()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        context.DownloadClientConfigurations.Add(new DownloadClientConfiguration
+        {
+            Id = "explicit-priority",
+            Name = "Seedbox",
+            Type = "qbittorrent",
+            Priority = 7
+        });
+        context.DownloadClientConfigurations.Add(new DownloadClientConfiguration
+        {
+            Id = "default-priority",
+            Name = "Local",
+            Type = "qbittorrent"
+        });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var stored = await context.DownloadClientConfigurations
+            .OrderBy(c => c.Id)
+            .ToListAsync();
+
+        // Control: the explicit value must survive, so a column that silently forced the
+        // default on every write would fail here rather than quietly passing the test above.
+        Assert.Equal(1, stored.Single(c => c.Id == "default-priority").Priority);
+        Assert.Equal(7, stored.Single(c => c.Id == "explicit-priority").Priority);
+    }
+
+    [Fact]
     [Trait("Scenario", "MoveSourceCleanupPolicySnapshot")]
     public async Task WeakStorageMigration_AddsFailClosedMovePolicySnapshot()
     {
