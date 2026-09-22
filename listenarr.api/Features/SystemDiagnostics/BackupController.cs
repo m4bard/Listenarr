@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Data.Common;
 using Listenarr.Api.Attributes;
 using Listenarr.Domain.SystemDiagnostics.Backups;
 using Microsoft.AspNetCore.Mvc;
@@ -26,8 +27,9 @@ namespace Listenarr.Api.Features.SystemDiagnostics
     /// Lists backup archives and takes new ones on request.
     /// </summary>
     /// <remarks>
-    /// There is deliberately no endpoint that serves an archive's bytes and none that reveals where
-    /// one is stored. An archive contains the database and config.json, so it holds indexer keys,
+    /// There is deliberately no endpoint here that serves an archive's bytes, and nothing this
+    /// controller returns says where one is stored. An archive contains the database and
+    /// config.json, so it holds indexer keys,
     /// download client credentials, the admin password hash and the API key. Readarr can afford a
     /// download route because its equivalent sits behind [Authorize(Policy="UI")]
     /// (src/Readarr.Http/Frontend/StaticResourceController.cs:12, reached through BackupFileMapper),
@@ -70,13 +72,11 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<BackupArchive>> CreateBackup(CancellationToken cancellationToken)
         {
+            BackupArchive archive;
+
             try
             {
-                var archive = await _backupService.CreateAsync(BackupTrigger.Manual, cancellationToken);
-                await _backupService.ApplyRetentionAsync(cancellationToken);
-
-                // No Location header: there is no endpoint that serves the archive, by design.
-                return StatusCode(StatusCodes.Status201Created, archive);
+                archive = await _backupService.CreateAsync(BackupTrigger.Manual, cancellationToken);
             }
             catch (IOException ex)
             {
@@ -91,6 +91,44 @@ namespace Listenarr.Api.Features.SystemDiagnostics
                 return StatusCode(
                     StatusCodes.Status500InternalServerError,
                     new { error = "Backup failed. The config directory is not writable." });
+            }
+            catch (DbException ex)
+            {
+                // SqliteException derives from this. The online copy can report SQLITE_BUSY under a
+                // concurrent writer, among others, and none of those are IOException.
+                _logger.LogError(ex, "Backup failed while copying the database");
+                return StatusCode(
+                    StatusCodes.Status500InternalServerError,
+                    new { error = "Backup failed while copying the database. Check the logs for the SQLite error." });
+            }
+
+            await SweepQuietlyAsync(cancellationToken);
+
+            // No Location header: there is no endpoint that serves the archive, by design.
+            return StatusCode(StatusCodes.Status201Created, archive);
+        }
+
+        /// <summary>
+        /// Applies retention after a successful backup, without letting housekeeping turn a written
+        /// archive into a reported failure. The startup path treats its own sweep the same way.
+        /// </summary>
+        private async Task SweepQuietlyAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                await _backupService.ApplyRetentionAsync(cancellationToken);
+            }
+            catch (IOException ex)
+            {
+                _logger.LogWarning(ex, "Backup succeeded but the retention sweep failed");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Backup succeeded but the retention sweep failed");
+            }
+            catch (DbException ex)
+            {
+                _logger.LogWarning(ex, "Backup succeeded but the retention sweep could not read settings");
             }
         }
     }
