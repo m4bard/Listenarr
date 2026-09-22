@@ -366,6 +366,268 @@
           </ModalFooter>
         </template>
       </Modal>
+
+      <div class="section-header custom-scripts-header">
+        <h3>Custom Scripts</h3>
+      </div>
+
+      <div v-if="customScripts.length === 0" class="empty-state">
+        <PhTerminalWindow class="empty-icon" />
+        <h3>No custom scripts configured</h3>
+        <p>
+          A custom script runs your own executable when a notification event fires, for anything
+          Listenarr does not integrate with directly (a media server rescan, an OPDS feed refresh,
+          a backup trigger).
+        </p>
+      </div>
+
+      <div v-else class="scripts-grid">
+        <div
+          v-for="script in customScripts"
+          :key="script.id"
+          class="script-card"
+          :class="{ disabled: !script.isEnabled }"
+        >
+          <div class="webhook-header">
+            <div class="webhook-title-row">
+              <div class="webhook-info">
+                <h4 class="webhook-title">
+                  <PhTerminalWindow class="webhook-type-icon" />
+                  <span class="webhook-name">{{ script.name }}</span>
+                </h4>
+                <div class="webhook-meta">
+                  <span class="script-channel-count">
+                    {{ script.channels.length }} event{{ script.channels.length === 1 ? '' : 's' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="webhook-header-actions">
+              <button
+                class="icon-button action-secondary action-toggle"
+                :class="{ active: script.isEnabled }"
+                :title="script.isEnabled ? 'Disable script' : 'Enable script'"
+                @click.stop="toggleScript(script)"
+              >
+                <component :is="script.isEnabled ? PhToggleRight : PhToggleLeft" />
+              </button>
+
+              <button
+                class="icon-button action-secondary"
+                :class="{
+                  'test-success': lastScriptTestResults[script.id] === 'success',
+                  'test-fail': lastScriptTestResults[script.id] === 'fail',
+                }"
+                title="Run this script now with a test event"
+                @click.stop="testScript(script)"
+                :disabled="testingScript === script.id"
+              >
+                <PhSpinner v-if="testingScript === script.id" class="ph-spin" />
+                <template v-else-if="lastScriptTestResults[script.id] === 'success'">
+                  <PhCheckCircle />
+                </template>
+                <template v-else-if="lastScriptTestResults[script.id] === 'fail'">
+                  <PhXCircle />
+                </template>
+                <template v-else>
+                  <PhPaperPlaneTilt />
+                </template>
+              </button>
+
+              <button
+                class="icon-button action-edit"
+                title="Edit script"
+                @click.stop="editScript(script)"
+              >
+                <PhPencil />
+              </button>
+
+              <button
+                class="icon-button danger action-delete"
+                title="Delete script"
+                @click.stop="confirmDeleteScript(script)"
+              >
+                <PhTrash />
+              </button>
+            </div>
+          </div>
+
+          <div class="webhook-body">
+            <div class="webhook-url-container">
+              <PhTerminalWindow class="url-icon" />
+              <span class="webhook-url">{{ script.path }}</span>
+            </div>
+            <p
+              v-if="lastScriptTestMessages[script.id]"
+              class="script-test-message"
+              :class="lastScriptTestResults[script.id]"
+            >
+              {{ lastScriptTestMessages[script.id] }}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Custom Script Configuration Modal (shared Modal component) -->
+      <Modal
+        class="script-modal"
+        :visible="showScriptForm"
+        size="md"
+        :title="editingScript ? 'Edit Custom Script' : 'Add Custom Script'"
+        @close="closeScriptForm"
+      >
+        <template #header>
+          <ModalHeader
+            :title="(editingScript ? 'Edit' : 'Add') + ' Custom Script'"
+            :icon="PhTerminalWindow"
+            @close="closeScriptForm"
+          />
+        </template>
+
+        <form @submit.prevent="saveScript">
+          <DeleteConfirmationModal
+            :visible="!!scriptToDelete"
+            title="Delete Custom Script"
+            @close="scriptToDelete = null"
+            @confirm="executeDeleteScript"
+          >
+            <template v-slot>
+              <p>
+                Are you sure you want to delete the custom script
+                <strong>{{ scriptToDelete?.name }}</strong
+                >?
+              </p>
+              <p>This action cannot be undone.</p>
+            </template>
+          </DeleteConfirmationModal>
+
+          <div class="script-warning">
+            <PhWarning />
+            <p>
+              Listenarr runs this path as a local process, with the same permissions Listenarr
+              itself has: on every event checked below, and whenever you press Test (with
+              <code>Listenarr_EventType=Test</code>). Point it only at a script you trust. A run
+              that has not finished after 60 seconds is stopped.
+            </p>
+          </div>
+
+          <FormSection title="Activation" :icon="PhToggleRight">
+            <CheckboxCard
+              v-model="scriptForm.isEnabled"
+              title="Enable"
+              description="Enable this script to run on its selected events"
+            />
+          </FormSection>
+
+          <FormSection title="Basic" :icon="PhInfo">
+            <FormRow label="Name *" labelFor="script-name">
+              <input
+                id="script-name"
+                v-model="scriptForm.name"
+                type="text"
+                placeholder="e.g., Audiobookshelf rescan"
+                required
+                @blur="validateScriptField('name')"
+              />
+              <small v-if="scriptFormErrors.name" class="error-text">{{
+                scriptFormErrors.name
+              }}</small>
+            </FormRow>
+
+            <FormRow label="Path *" labelFor="script-path">
+              <input
+                id="script-path"
+                v-model="scriptForm.path"
+                type="text"
+                placeholder="/opt/scripts/on-event.sh"
+                required
+                @blur="validateScriptField('path')"
+              />
+              <small v-if="scriptFormErrors.path" class="error-text">{{
+                scriptFormErrors.path
+              }}</small>
+              <small v-else class="help-text"
+                >Absolute path to an executable file. Listenarr runs it directly, with no shell in
+                between, and checks it exists when the script runs or is tested.</small
+              >
+            </FormRow>
+          </FormSection>
+
+          <FormSection title="Events" :icon="PhBell">
+            <div class="webhook-triggers script-channels triggers-grid">
+              <CheckboxCard
+                v-for="c in scriptChannelOptions"
+                :key="c.value"
+                :modelValue="scriptForm.channels.includes(c.value)"
+                @update:modelValue="onToggleScriptChannel(c.value, $event)"
+                :title="c.label"
+                :description="c.description"
+              />
+            </div>
+            <small v-if="scriptFormErrors.channels" class="error-text">{{
+              scriptFormErrors.channels
+            }}</small>
+          </FormSection>
+
+          <FormSection title="Environment Variables" :icon="PhCode">
+            <button
+              type="button"
+              class="env-vars-toggle"
+              @click="showEnvVars = !showEnvVars"
+              :aria-expanded="showEnvVars"
+            >
+              <component :is="showEnvVars ? PhCaretUp : PhCaretDown" />
+              {{ showEnvVars ? 'Hide' : 'Show' }} the {{ environmentVariables.length }} variables
+              your script receives
+            </button>
+            <div v-if="showEnvVars" class="env-vars-list">
+              <div v-for="v in environmentVariables" :key="v.name" class="env-var-row">
+                <code>{{ v.name }}</code>
+                <span>{{ v.description }}</span>
+              </div>
+            </div>
+          </FormSection>
+
+          <p
+            v-if="scriptFormTestMessage"
+            class="script-test-message"
+            :class="scriptFormTestSuccess ? 'success' : 'fail'"
+          >
+            {{ scriptFormTestMessage }}
+          </p>
+        </form>
+        <template #footer>
+          <ModalFooter :showCancel="false">
+            <template #left>
+              <button @click="closeScriptForm" class="cancel-button btn" type="button">
+                <PhX /> Cancel
+              </button>
+            </template>
+            <template #default>
+              <button
+                v-if="editingScript"
+                @click="testExistingScript"
+                class="btn btn-info"
+                type="button"
+                :disabled="testingScriptForm"
+                title="Runs the last saved version of this script, not your unsaved edits"
+              >
+                <PhSpinner v-if="testingScriptForm" class="ph-spin" />
+                {{ testingScriptForm ? 'Testing...' : 'Test' }}
+              </button>
+              <button
+                @click="saveScript"
+                class="btn btn-primary"
+                type="button"
+                :disabled="!isScriptFormValid || savingScript"
+              >
+                <PhSpinner v-if="savingScript" class="ph-spin" />
+                {{ savingScript ? 'Saving...' : editingScript ? 'Update' : 'Save' }}
+              </button>
+            </template>
+          </ModalFooter>
+        </template>
+      </Modal>
     </div>
   </div>
 </template>
@@ -393,6 +655,11 @@ import {
   PhTelegramLogo,
   PhPushPinSimple,
   PhInfo,
+  PhTerminalWindow,
+  PhWarning,
+  PhCode,
+  PhCaretDown,
+  PhCaretUp,
 } from '@phosphor-icons/vue'
 import { Modal, ModalHeader, ModalFooter } from '@/components/feedback'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
@@ -404,7 +671,7 @@ import { LoadingState } from '@/components/base'
 import { errorTracking } from '@/services/errorTracking'
 import { useToast } from '@/services/toastService'
 import { useConfigurationStore } from '@/stores/configuration'
-import type { ApplicationSettings } from '@/types'
+import type { ApplicationSettings, CustomScriptConfiguration, NotificationChannel } from '@/types'
 import { apiService } from '@/services/api'
 
 // Props
@@ -1019,10 +1286,367 @@ onMounted(() => {
   if (props.settings?.webhooks) {
     webhooks.value = props.settings.webhooks
   }
+  if (props.settings?.customScripts) {
+    customScripts.value = props.settings.customScripts
+  }
 })
 
-// Expose openWebhookForm for parent component
-defineExpose({ openWebhookForm })
+// ---------------------------------------------------------------------------
+// Custom Scripts
+// ---------------------------------------------------------------------------
+
+// The channels a script can be enabled for. Matches NotificationChannel.cs; "Test" is excluded
+// because it is reached through the Test button, not a checkable event.
+const scriptChannelOptions: Array<{
+  value: NotificationChannel
+  label: string
+  description: string
+}> = [
+  { value: 'Grab', label: 'Grab', description: 'A release was sent to a download client' },
+  {
+    value: 'Download',
+    label: 'Import Complete',
+    description: 'A download finished and was imported into the library',
+  },
+  {
+    value: 'DownloadFailed',
+    label: 'Download Failed',
+    description: 'A download failed and will not be imported',
+  },
+  {
+    value: 'BookAdded',
+    label: 'Book Added',
+    description: 'An audiobook was added to the library',
+  },
+  {
+    value: 'BookAvailable',
+    label: 'Book Available',
+    description: 'A scan found files for a monitored book that were not imported',
+  },
+  {
+    value: 'Rename',
+    label: 'Rename',
+    description: 'Files belonging to a book were relocated on disk',
+  },
+]
+
+// The full Listenarr_* contract a script can read, from CustomScriptEnvironment.cs:52-115.
+// There is no backend endpoint that serves this list, so it is kept in step with that file by
+// hand; CustomScriptEnvironmentTests.cs is what would catch the two drifting.
+const environmentVariables: Array<{ name: string; description: string }> = [
+  {
+    name: 'Listenarr_EventType',
+    description: 'The event name: Grab, Download, DownloadFailed, BookAdded, BookAvailable, Rename, or Test',
+  },
+  { name: 'Listenarr_InstanceName', description: "This Listenarr instance's configured name" },
+  {
+    name: 'Listenarr_ApplicationUrl',
+    description: "This instance's absolute base URL, or empty when not configured",
+  },
+  { name: 'Listenarr_Book_Id', description: 'The book id' },
+  { name: 'Listenarr_Book_Title', description: 'The book title' },
+  { name: 'Listenarr_Book_Asin', description: 'The book ASIN' },
+  { name: 'Listenarr_Book_Authors', description: 'Author names, pipe-separated' },
+  { name: 'Listenarr_Book_Narrators', description: 'Narrator names, pipe-separated' },
+  { name: 'Listenarr_Book_Publisher', description: 'The publisher' },
+  { name: 'Listenarr_Book_Year', description: 'The publication year' },
+  { name: 'Listenarr_Release_Title', description: 'The release title' },
+  { name: 'Listenarr_Release_Indexer', description: 'The indexer the release came from' },
+  { name: 'Listenarr_Release_Size', description: 'The release size in bytes' },
+  { name: 'Listenarr_Release_Quality', description: 'The release quality' },
+  {
+    name: 'Listenarr_Release_Protocol',
+    description: 'The release protocol, e.g. torrent or usenet',
+  },
+  { name: 'Listenarr_Download_Id', description: "The download client's id for this download" },
+  { name: 'Listenarr_Download_Client', description: 'The download client name' },
+  { name: 'Listenarr_Download_Client_Type', description: 'The download client type' },
+  {
+    name: 'Listenarr_Download_ErrorMessage',
+    description: 'The failure reason, set on DownloadFailed',
+  },
+  { name: 'Listenarr_AddedBookPaths', description: 'Paths added to the library, pipe-separated' },
+  { name: 'Listenarr_SourcePath', description: 'The source path for the event, when applicable' },
+  {
+    name: 'Listenarr_DestinationPath',
+    description: 'The destination path for the event, when applicable',
+  },
+  { name: 'Listenarr_Message', description: 'A human-readable summary of the event' },
+  { name: 'Listenarr_Timestamp', description: 'When the event occurred, in ISO 8601' },
+]
+
+const showScriptForm = ref(false)
+const editingScript = ref<CustomScriptConfiguration | null>(null)
+const testingScript = ref<string | null>(null)
+const testingScriptForm = ref(false)
+const lastScriptTestResults = reactive<Record<string, 'success' | 'fail' | undefined>>({})
+const lastScriptTestMessages = reactive<Record<string, string | undefined>>({})
+const scriptFormTestMessage = ref('')
+const scriptFormTestSuccess = ref(false)
+const customScripts = ref<CustomScriptConfiguration[]>([])
+const showEnvVars = ref(false)
+
+const scriptForm = reactive({
+  id: '',
+  name: '',
+  path: '',
+  channels: [] as NotificationChannel[],
+  isEnabled: true,
+})
+
+const scriptFormErrors = reactive({
+  name: '',
+  path: '',
+  channels: '',
+})
+
+const savingScript = ref(false)
+const scriptToDelete = ref<CustomScriptConfiguration | null>(null)
+
+// Every field below is a UX guardrail only: the backend has no save-time validator for
+// CustomScriptConfiguration (read: listenarr.domain/Configuration/CustomScriptConfiguration.cs
+// and grep for its uses turns up no FluentValidation). Path existence and rootedness are checked
+// only at run/test time, in CustomScriptNotification.ValidatePath, so nothing here duplicates or
+// contradicts that check; it is left to report through the Test button.
+const isScriptFormValid = computed(() => {
+  if (!scriptForm.name.trim() || !scriptForm.path.trim()) return false
+  if (scriptForm.channels.length === 0) return false
+  if (scriptFormErrors.name || scriptFormErrors.path || scriptFormErrors.channels) return false
+  return true
+})
+
+const validateScriptField = (field: 'name' | 'path' | 'channels') => {
+  switch (field) {
+    case 'name':
+      scriptFormErrors.name =
+        !scriptForm.name || scriptForm.name.trim().length === 0 ? 'Script name is required' : ''
+      break
+    case 'path':
+      scriptFormErrors.path =
+        !scriptForm.path || scriptForm.path.trim().length === 0
+          ? 'Script path is required'
+          : ''
+      break
+    case 'channels':
+      scriptFormErrors.channels =
+        scriptForm.channels.length === 0 ? 'Select at least one event' : ''
+      break
+  }
+}
+
+const resetScriptFormErrors = () => {
+  scriptFormErrors.name = ''
+  scriptFormErrors.path = ''
+  scriptFormErrors.channels = ''
+}
+
+const onToggleScriptChannel = (channel: NotificationChannel, enabled: boolean) => {
+  const idx = scriptForm.channels.indexOf(channel)
+  if (enabled && idx === -1) scriptForm.channels.push(channel)
+  if (!enabled && idx !== -1) scriptForm.channels.splice(idx, 1)
+}
+
+const openScriptForm = () => {
+  editingScript.value = null
+  scriptForm.id = ''
+  scriptForm.name = ''
+  scriptForm.path = ''
+  scriptForm.channels = []
+  scriptForm.isEnabled = true
+  scriptFormTestMessage.value = ''
+  showEnvVars.value = false
+  resetScriptFormErrors()
+  showScriptForm.value = true
+}
+
+const closeScriptForm = () => {
+  showScriptForm.value = false
+  editingScript.value = null
+  scriptForm.id = ''
+  scriptForm.name = ''
+  scriptForm.path = ''
+  scriptForm.channels = []
+  scriptForm.isEnabled = true
+  scriptFormTestMessage.value = ''
+  showEnvVars.value = false
+  resetScriptFormErrors()
+}
+
+const editScript = (script: CustomScriptConfiguration) => {
+  editingScript.value = script
+  scriptForm.id = script.id
+  scriptForm.name = script.name
+  scriptForm.path = script.path
+  scriptForm.channels = [...script.channels]
+  scriptForm.isEnabled = script.isEnabled
+  scriptFormTestMessage.value = ''
+  showEnvVars.value = false
+  resetScriptFormErrors()
+  showScriptForm.value = true
+}
+
+// Persist custom scripts to backend settings (do not mutate incoming props)
+const persistScripts = async () => {
+  const current = configStore.applicationSettings ?? props.settings
+  if (!current) {
+    throw new Error('Application settings are unavailable')
+  }
+  try {
+    const payload: ApplicationSettings = {
+      ...current,
+      customScripts: customScripts.value,
+    }
+    const savedSettings = await configStore.saveApplicationSettings(payload)
+    emit('update:settings', savedSettings)
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'NotificationsTab',
+      operation: 'persistScripts',
+    })
+    toast.error('Save failed', 'Failed to save custom scripts to settings')
+    throw error
+  }
+}
+
+const saveScript = async () => {
+  validateScriptField('name')
+  validateScriptField('path')
+  validateScriptField('channels')
+
+  if (!isScriptFormValid.value) {
+    toast.error('Validation error', 'Please fix the errors before saving')
+    return
+  }
+
+  savingScript.value = true
+  try {
+    const script: CustomScriptConfiguration = {
+      id: scriptForm.id || generateUUID(),
+      name: scriptForm.name.trim(),
+      path: scriptForm.path.trim(),
+      channels: [...scriptForm.channels],
+      isEnabled: scriptForm.isEnabled,
+    }
+
+    if (editingScript.value) {
+      const index = customScripts.value.findIndex((s) => s.id === script.id)
+      if (index !== -1) {
+        customScripts.value[index] = script
+      }
+      toast.success('Custom script', 'Custom script updated successfully')
+    } else {
+      customScripts.value.push(script)
+      toast.success('Custom script', 'Custom script added successfully')
+    }
+
+    await persistScripts()
+    closeScriptForm()
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'NotificationsTab',
+      operation: 'saveScript',
+    })
+    toast.error('Save failed', 'Failed to save custom script')
+  } finally {
+    savingScript.value = false
+  }
+}
+
+const confirmDeleteScript = (script: CustomScriptConfiguration) => {
+  scriptToDelete.value = script
+}
+
+const executeDeleteScript = async () => {
+  if (!scriptToDelete.value) return
+  try {
+    customScripts.value = customScripts.value.filter((s) => s.id !== scriptToDelete.value!.id)
+    toast.success('Custom script', 'Custom script deleted successfully')
+    await persistScripts()
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'NotificationsTab',
+      operation: 'executeDeleteScript',
+    })
+    toast.error('Delete failed', 'Failed to delete custom script')
+    throw error
+  } finally {
+    scriptToDelete.value = null
+  }
+}
+
+const toggleScript = async (script: CustomScriptConfiguration) => {
+  const index = customScripts.value.findIndex((s) => s.id === script.id)
+  if (index !== -1) {
+    const target = customScripts.value[index]
+    if (target) {
+      target.isEnabled = !target.isEnabled
+      toast.success('Custom script', `${script.name} ${target.isEnabled ? 'enabled' : 'disabled'}`)
+      await persistScripts()
+    }
+  }
+}
+
+// Runs the subscriber's TestAsync against a saved configuration id. There is no way to test an
+// unsaved form: CustomScriptNotification.TestAsync(configurationId) looks the script up by id in
+// stored configuration (CustomScriptNotification.cs:87-88), so a script that has never been saved
+// has nothing for the backend to find. The Test button is withheld for a new, unsaved script for
+// that reason rather than silently testing something other than what the operator typed.
+const runSubscriberTest = async (id: string): Promise<{ success: boolean; message: string }> => {
+  const response = await apiService.testNotificationSubscriber('Custom Script', id)
+  lastScriptTestResults[id] = response.success ? 'success' : 'fail'
+  lastScriptTestMessages[id] = response.message
+  return response
+}
+
+const testScript = async (script: CustomScriptConfiguration) => {
+  testingScript.value = script.id
+  try {
+    const response = await runSubscriberTest(script.id)
+    if (response.success) {
+      toast.success('Test successful', response.message || `${script.name} ran successfully`)
+    } else {
+      toast.error('Test failed', response.message || `${script.name} did not run successfully`)
+    }
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'NotificationsTab',
+      operation: 'testScript',
+    })
+    lastScriptTestResults[script.id] = 'fail'
+    toast.error('Test failed', formatApiError(error))
+  } finally {
+    testingScript.value = null
+  }
+}
+
+const testExistingScript = async () => {
+  if (!editingScript.value) return
+  testingScriptForm.value = true
+  scriptFormTestMessage.value = ''
+  try {
+    const response = await runSubscriberTest(editingScript.value.id)
+    scriptFormTestSuccess.value = response.success
+    scriptFormTestMessage.value = response.message
+    if (response.success) {
+      toast.success('Test successful', response.message || 'Custom script test succeeded')
+    } else {
+      toast.error('Test failed', response.message || 'Custom script test failed')
+    }
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'NotificationsTab',
+      operation: 'testExistingScript',
+    })
+    scriptFormTestSuccess.value = false
+    scriptFormTestMessage.value = formatApiError(error)
+    toast.error('Test failed', scriptFormTestMessage.value)
+  } finally {
+    testingScriptForm.value = false
+  }
+}
+
+// Expose openWebhookForm/openScriptForm for parent component
+defineExpose({ openWebhookForm, openScriptForm })
 </script>
 
 <style scoped>
@@ -1525,4 +2149,142 @@ defineExpose({ openWebhookForm })
 }
 
 /* @keyframes spin is centralized in src/assets/animations.css */
+
+/* Custom Scripts section (mirrors the webhook grid/card layout above) */
+.custom-scripts-header {
+  margin-top: 3rem;
+}
+
+.scripts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
+  gap: 1.5rem;
+}
+
+.script-card {
+  background-color: #2a2a2a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.script-card:hover {
+  border-color: rgba(var(--brand-rgb), 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.15);
+}
+
+.script-card.disabled {
+  opacity: 0.5;
+  filter: grayscale(50%);
+}
+
+.script-channel-count {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.script-test-message {
+  margin: 0;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.script-test-message.success {
+  color: #51cf66;
+}
+
+.script-test-message.fail {
+  color: #ff6b6b;
+}
+
+/* Warning banner explaining what the script path does, shown in the Add/Edit modal */
+.script-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.5rem;
+  background: rgba(255, 193, 7, 0.08);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 6px;
+  color: #ffc107;
+}
+
+.script-warning svg {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+
+.script-warning p {
+  margin: 0;
+  color: #e0c15c;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.script-warning code {
+  font-family: 'Consolas', 'Monaco', monospace;
+  color: #ffc107;
+}
+
+/* Discoverable environment variables list */
+.env-vars-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: none;
+  border: none;
+  color: var(--brand-500, #4dabf7);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0.25rem 0;
+}
+
+.env-vars-toggle:hover {
+  text-decoration: underline;
+}
+
+.env-vars-list {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+}
+
+.env-var-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) 1fr;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.env-var-row code {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.8rem;
+  color: #4dabf7;
+}
+
+.env-var-row span {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 768px) {
+  .scripts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .env-var-row {
+    grid-template-columns: 1fr;
+  }
+}
 </style>
