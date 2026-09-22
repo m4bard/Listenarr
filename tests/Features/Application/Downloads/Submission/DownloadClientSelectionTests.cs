@@ -49,6 +49,23 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
                 CreatedAt = FirstAdded.AddMinutes(addedOrder)
             };
 
+        [Fact]
+        [Trait("Scenario", "RotationOrderSurvivesAnEdit")]
+        public async Task RotationOrder_DoesNotDependOnCreatedAt()
+        {
+            // The save path copies the posted object over the stored one and the form sends no
+            // CreatedAt, so an ordinary rename rewrites it. Ordering on it would move the
+            // renamed client to the back of the rotation. Here the CreatedAt order is the
+            // reverse of the Id order, so a selector keyed on CreatedAt picks the other one.
+            var selector = CreateSelector(
+                Client("qb-alpha", "qbittorrent", addedOrder: 10),
+                Client("qb-beta", "qbittorrent", addedOrder: 0));
+
+            var first = await selector.GetAppropriateDownloadClientAsync(DownloadProtocol.Torrent);
+
+            Assert.Equal("qb-alpha", first);
+        }
+
         private static DownloadClientSelector CreateSelector(
             params DownloadClientConfiguration[] clients)
         {
