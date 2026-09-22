@@ -16,7 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Net;
 using System.Text.Json;
+using Listenarr.Application.Metadata.Faults;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Metadata.Audible
@@ -82,8 +84,45 @@ namespace Listenarr.Application.Metadata.Audible
                 var response = await _httpClient.SendAsync(request, cts.Token);
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogWarning("Audible API returned status code {StatusCode} for URL {Url}", response.StatusCode, url);
-                    return null;
+                    // One non-success is a positive answer about the record: the provider was
+                    // asked and says there is nothing under that identifier. That one becomes
+                    // null, which is what every caller above reads as "no such book".
+                    //
+                    // Nothing else does. A 500, a 502 and a 403 say only that the request did
+                    // not get an answer, and flattening them into the same null makes the
+                    // client state, on the provider's behalf, something the provider never
+                    // said.
+                    if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
+                    {
+                        _logger.LogWarning("Audible API has no record ({StatusCode}) for URL {Url}", response.StatusCode, url);
+                        return null;
+                    }
+
+                    // 429 is the documented shape of pushback. 403 is the one Audible reaches
+                    // for more often: the catalog endpoints take no credentials, so there is
+                    // no authorization here to fail, and a forbidden catalog read in practice
+                    // means the caller has been shut out for asking too much. Both get the
+                    // same answer, which is to stop asking for a while.
+                    if (response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.Forbidden)
+                    {
+                        var retryAfter = ReadRetryAfter(response);
+                        _logger.LogWarning(
+                            "Audible API asked for less traffic ({StatusCode}) for URL {Url}; retry after {RetryAfter}",
+                            response.StatusCode,
+                            url,
+                            retryAfter?.ToString() ?? "unspecified");
+                        // The URL is logged, not carried. This message reaches API clients
+                        // through catches that report what the exception said, and the query
+                        // string holds the ASIN or the search terms the request was built from.
+                        throw new MetadataProviderThrottledException(
+                            "The Audible API asked for less traffic",
+                            retryAfter);
+                    }
+
+                    throw new HttpRequestException(
+                        $"The Audible API did not answer (status {(int)response.StatusCode})",
+                        null,
+                        response.StatusCode);
                 }
 
                 await using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
@@ -91,14 +130,57 @@ namespace Listenarr.Application.Metadata.Audible
             }
             catch (TaskCanceledException ex)
             {
+                // Rewrapped, not rethrown. TaskCanceledException is an OperationCanceledException,
+                // and every caller between here and the refresh run treats one of those as "the
+                // run was asked to stop" rather than "this request did not arrive".
                 _logger.LogWarning(ex, "Audible API request timed out for URL: {Url}", url);
-                return null;
+                throw new HttpRequestException("The Audible API request timed out", ex);
+            }
+            catch (HttpRequestException ex)
+            {
+                // A refused connection, a name that will not resolve, a status that was not an
+                // answer: none of them is evidence about the book, and all of them propagate.
+                // One log line covers the transport faults and the statuses raised above.
+                _logger.LogWarning(ex, "Audible API request failed for URL: {Url}", url);
+                throw;
+            }
+            catch (MetadataProviderThrottledException)
+            {
+                // Raised a few lines up, inside this try. Without this the catch-all below would
+                // swallow the pushback the throw exists to report.
+                throw;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Error performing Audible API request for URL: {Url}", url);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// The wait the provider named, in either of the two shapes RFC 9110 allows. Null when it
+        /// named none, or named one already in the past.
+        /// </summary>
+        private static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
+        {
+            var header = response.Headers.RetryAfter;
+            if (header == null)
+            {
+                return null;
+            }
+
+            if (header.Delta.HasValue)
+            {
+                return header.Delta.Value > TimeSpan.Zero ? header.Delta.Value : null;
+            }
+
+            if (header.Date.HasValue)
+            {
+                var wait = header.Date.Value - DateTimeOffset.UtcNow;
+                return wait > TimeSpan.Zero ? wait : null;
+            }
+
+            return null;
         }
 
         public async Task<HttpResponseMessage?> GetWithTimeoutAsync(string url, int timeoutSeconds = 5)
