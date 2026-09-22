@@ -53,6 +53,22 @@ internal static partial class FileSystemSafety
     // ...and a no-replace rename onto an occupied name as EEXIST.
     private const int FileExistsErrno = 17;
 
+    // Windows reports the same two conditions with its own codes:
+    // ERROR_NOT_SAME_DEVICE, and ERROR_ALREADY_EXISTS or ERROR_FILE_EXISTS.
+    private const int CrossDeviceLinkWindows = 17;
+    private const int FileExistsWindows = 183;
+    private const int FileExistsWindowsAlternate = 80;
+
+    private static bool IsCrossDevice(int nativeError) =>
+        OperatingSystem.IsWindows()
+            ? nativeError == CrossDeviceLinkWindows
+            : nativeError == CrossDeviceLinkErrno;
+
+    private static bool IsNameTaken(int nativeError) =>
+        OperatingSystem.IsWindows()
+            ? nativeError is FileExistsWindows or FileExistsWindowsAlternate
+            : nativeError == FileExistsErrno;
+
     private const int RecycleNameCollisionAttempts = 64;
 
     /// <summary>
@@ -202,7 +218,7 @@ internal static partial class FileSystemSafety
                     out reason);
                 if (!moved)
                 {
-                    return nativeError == CrossDeviceLinkErrno
+                    return IsCrossDevice(nativeError)
                         ? RecycleFileOutcome.CrossVolume
                         : RecycleFileOutcome.Blocked;
                 }
@@ -330,7 +346,24 @@ internal static partial class FileSystemSafety
                 ? fileName
                 : $"{stem}_{attempt}{extension}";
 
-            var result = entry.TryMoveToNoReplace(binAnchor, candidate);
+            PinnedDirectoryCreation.PinnedRenameAttempt result;
+            try
+            {
+                result = entry.TryMoveToNoReplace(binAnchor, candidate);
+            }
+            catch (System.ComponentModel.Win32Exception exception)
+            {
+                // Only the Linux path returns the native error. The macOS and Windows
+                // paths throw instead (PinnedDirectoryCreation.FilePublication.cs:76-81),
+                // so without this a name already taken in the bin escapes the loop on the
+                // first attempt and the operator can never delete a second file of that
+                // name, and a bin on another volume reports a generic failure rather than
+                // the cross-filesystem message.
+                result = new PinnedDirectoryCreation.PinnedRenameAttempt(
+                    false,
+                    exception.NativeErrorCode);
+            }
+
             if (result.Published)
             {
                 publishedName = candidate;
@@ -338,14 +371,14 @@ internal static partial class FileSystemSafety
             }
 
             nativeError = result.NativeErrorCode;
-            if (nativeError == CrossDeviceLinkErrno)
+            if (IsCrossDevice(nativeError))
             {
                 reason =
                     "Recycling was blocked because the recycle bin is on a different filesystem from the library file.";
                 return false;
             }
 
-            if (nativeError != FileExistsErrno)
+            if (!IsNameTaken(nativeError))
             {
                 reason = $"Recycling was blocked because the move failed with error {nativeError}.";
                 return false;
