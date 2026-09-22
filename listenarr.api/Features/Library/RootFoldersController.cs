@@ -47,7 +47,9 @@ namespace Listenarr.Api.Features.Library
         string? ConfirmationToken,
         DateTime CreatedAt,
         DateTime? UpdatedAt,
-        RootFolderPathChangeResult? ActiveRelocation);
+        RootFolderPathChangeResult? ActiveRelocation,
+        long? FreeSpaceBytes = null,
+        long? TotalSpaceBytes = null);
 
     public sealed record RootFolderMetadataUpdateRequest(
         string Name,
@@ -88,6 +90,7 @@ namespace Listenarr.Api.Features.Library
         private readonly ILibraryFilesystemReadiness _filesystemReadiness;
         private readonly ILibraryFilesystemMutationGate _filesystemMutationGate;
         private readonly IRootFolderWeakStoragePolicyService _weakStoragePolicyService;
+        private readonly IDiskSpaceProbe _diskSpaceProbe;
 
         public RootFoldersController(
             IRootFolderService service,
@@ -101,7 +104,8 @@ namespace Listenarr.Api.Features.Library
             IRootFolderStorageConfirmationService storageConfirmationService,
             ILibraryFilesystemReadiness filesystemReadiness,
             ILibraryFilesystemMutationGate filesystemMutationGate,
-            IRootFolderWeakStoragePolicyService weakStoragePolicyService)
+            IRootFolderWeakStoragePolicyService weakStoragePolicyService,
+            IDiskSpaceProbe diskSpaceProbe)
         {
             _service = service;
             _unmatchedQueue = unmatchedQueue;
@@ -118,6 +122,7 @@ namespace Listenarr.Api.Features.Library
                 ?? throw new ArgumentNullException(nameof(filesystemMutationGate));
             _weakStoragePolicyService = weakStoragePolicyService
                 ?? throw new ArgumentNullException(nameof(weakStoragePolicyService));
+            _diskSpaceProbe = diskSpaceProbe ?? throw new ArgumentNullException(nameof(diskSpaceProbe));
         }
 
         /// <summary>
