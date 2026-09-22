@@ -158,6 +158,8 @@ vi.mock('@/services/api', () => {
     getBootstrapConfig: vi.fn(async () => ({})),
     getStartupConfig: vi.fn(async () => ({})),
     getApplicationSettings: vi.fn(async () => ({})),
+    // Custom Script notification test button (NotificationsController.TestSubscriber).
+    testNotificationSubscriber: vi.fn(async () => ({ success: true, message: '' })),
     getLibrary: vi.fn(async () => []),
     previewLibraryPath: vi.fn(async () => ({ path: '' })),
     previewRename: vi.fn(async () => []),
