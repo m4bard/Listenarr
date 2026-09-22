@@ -127,6 +127,20 @@ namespace Listenarr.Domain.Search
         public string? AdditionalSettings { get; set; }
 
         /// <summary>
+        /// Minimum share ratio a torrent grabbed from this indexer must reach before the
+        /// download client may stop seeding it. Torrent indexers only. Null leaves the
+        /// download client's own ratio configuration alone.
+        /// </summary>
+        public double? SeedRatio { get; set; }
+
+        /// <summary>
+        /// Minimum time, in minutes, a torrent grabbed from this indexer must seed before the
+        /// download client may stop seeding it. Torrent indexers only. Null leaves the
+        /// download client's own seeding-time configuration alone.
+        /// </summary>
+        public int? SeedTime { get; set; }
+
+        /// <summary>
         /// When the indexer was created
         /// </summary>
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

@@ -50,7 +50,8 @@ public sealed class TorrentMetadataService : ITorrentMetadataService
             torrentBytes,
             string.IsNullOrWhiteSpace(normalizedMagnet) ? null : normalizedMagnet,
             fileName ?? candidate.SourceDescriptor.FileName,
-            trackers);
+            trackers,
+            candidate.SourceDescriptor.IndexerId);
     }
 
     private static string GetHashFromTorrent(byte[] torrentBytes)
