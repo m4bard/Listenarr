@@ -63,6 +63,13 @@ namespace Listenarr.Infrastructure.Maintenance.Housekeeping;
 /// RegistrationCommitted closes that without depending on the sweep and an import never overlapping.
 /// </para>
 /// <para>
+/// <b>What the query costs.</b> Unlike the file mutation journal, this table is indexed on State,
+/// AudiobookId and BatchId but not on UpdatedAt, so the State index carries the scan and the age
+/// comparison is a filter over what it returns. That is the right way round: Completed is the
+/// selective term once an install has any history at all, and adding an index for a daily sweep
+/// would put a write cost on every publication to save a read cost once a day.
+/// </para>
+/// <para>
 /// <b>The floor.</b> Ninety days, matching the file mutation journal for the same reason: the
 /// questions these rows answer arrive with unrelated later requests rather than on a schedule. A
 /// longer configured window still wins.
