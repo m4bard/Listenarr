@@ -6136,6 +6136,113 @@ public sealed class RootFolderRelocationServiceTests : BaseTests
     }
 
     [Fact]
+    public async Task MetadataRepair_FailedMoveJobWithUnpublishedEntryEvidence_BlocksCollisionRepair()
+    {
+        var source = Path.Join(
+            Path.GetTempPath(),
+            $"metadata-failed-move-entry-source-{Guid.NewGuid():N}");
+        var target = Path.Join(
+            Path.GetTempPath(),
+            $"metadata-failed-move-entry-target-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(source);
+        var audiobookBasePath = Path.Join(source, "Collision");
+        int rootId;
+        int audiobookId;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var root = new RootFolder
+            {
+                Name = "Library",
+                Path = source,
+                CaseSensitivityMode = FileSystemCaseSensitivityMode.Sensitive
+            };
+            var audiobook = new Audiobook
+            {
+                Title = "Collision",
+                BasePath = audiobookBasePath
+            };
+            db.RootFolders.Add(root);
+            db.Audiobooks.Add(audiobook);
+            await db.SaveChangesAsync();
+            var sensitiveSemantics = new FileSystemPathSemantics(
+                FileSystemPathSemantics.CurrentHostDefault.Syntax,
+                FileSystemCaseSensitivity.Sensitive);
+            await AddTrackedFileAsync(
+                db,
+                audiobook,
+                Path.Join(audiobookBasePath, "book.mp3"),
+                source,
+                sensitiveSemantics,
+                FileSystemCaseSensitivityMode.Sensitive);
+            await AddTrackedFileAsync(
+                db,
+                audiobook,
+                Path.Join(audiobookBasePath, "book.MP3"),
+                source,
+                sensitiveSemantics,
+                FileSystemCaseSensitivityMode.Sensitive);
+            rootId = root.Id;
+            audiobookId = audiobook.Id;
+        }
+
+        var service = CreateService();
+        var result = await service.StartAsync(
+            rootId,
+            new RootFolderPathChangeCommand(
+                target,
+                RootFolderRelocationMode.MetadataOnly,
+                false,
+                "Moved Library",
+                false,
+                FileSystemCaseSensitivityMode.Insensitive));
+        var repair = Assert.IsType<RootFolderMetadataRepairDetails>(
+            await service.GetSkippedMetadataRepairDetailsAsync(
+                result.RelocationId!.Value,
+                audiobookId));
+        var duplicate = Assert.Single(repair.CollisionGroups)
+            .Files
+            .OrderBy(file => file.AudiobookFileId)
+            .Last();
+
+        // A move job that failed before its Phase ever reached Copying, but whose entry
+        // already recorded copy progress, still carries filesystem execution evidence per
+        // MoveRecoveryPolicy.HasFilesystemExecutionEvidence. That evidence lives on the
+        // Entries navigation, which MoveJobConfiguration marks AutoInclude(false), so the
+        // guard only sees it if its own query includes Entries the way its siblings
+        // (EfMoveQueuePersistence and RootFolderRelocationService.BoundaryConflicts) do.
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var moveJob = new MoveJob
+            {
+                AudiobookId = audiobookId,
+                SourcePath = audiobookBasePath,
+                RequestedPath = Path.Join(target, "Collision"),
+                Status = MoveJobStatus.Failed,
+                Phase = MoveJobPhase.None,
+                UpdatedAt = DateTime.UtcNow
+            };
+            db.MoveJobs.Add(moveJob);
+            await db.SaveChangesAsync();
+            db.MoveJobEntries.Add(new MoveJobEntry
+            {
+                MoveJobId = moveJob.Id,
+                RelativePath = "book.mp3",
+                EntryType = MoveJobEntryType.File,
+                CopyState = MoveJobEntryCopyState.Staged,
+                CleanupState = MoveJobEntryCleanupState.Pending
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var blocked = await Assert.ThrowsAsync<ApplicationConflictException>(() =>
+            service.RemoveSkippedMetadataRepairFileAsync(
+                result.RelocationId.Value,
+                audiobookId,
+                duplicate.AudiobookFileId));
+        Assert.Equal("move_recovery_required", blocked.Code);
+    }
+
+    [Fact]
     public async Task MetadataOnly_TargetIdentityOwnedByUnrelatedFile_SkipsCandidateAudiobook()
     {
         var source = Path.Join(Path.GetTempPath(), $"metadata-owned-target-source-{Guid.NewGuid():N}");
