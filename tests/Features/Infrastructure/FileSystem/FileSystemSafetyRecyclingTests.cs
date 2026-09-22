@@ -172,6 +172,49 @@ public sealed class FileSystemSafetyRecyclingTests : BaseTests
     }
 
     [Fact]
+    public async Task TryRecycleFile_EveryCollisionNameTaken_RefusesAndStampedBeforeTrying()
+    {
+        var root = FileService.GetTempDirectory("recycle-exhaust-root");
+        var bin = FileService.GetTempDirectory("recycle-exhaust-bin");
+        await FileService.GetFileAsync(bin, "book.m4b", "occupant");
+        for (var attempt = 1; attempt < 64; attempt++)
+        {
+            await FileService.GetFileAsync(bin, $"book_{attempt}.m4b", "occupant");
+        }
+
+        var file = await FileService.GetFileAsync(root, "book.m4b", "audio");
+        var longAgo = DateTime.UtcNow.AddYears(-5);
+        File.SetLastWriteTimeUtc(file, longAgo);
+
+        var outcome = global::Listenarr.Infrastructure.FileSystem.FileSystemSafety.TryRecycleFile(
+            file,
+            [root],
+            expectedPhysicalObjectIdentity: null,
+            bin,
+            relativeSubfolder: null,
+            TimeProvider.System,
+            out _,
+            out var reason);
+
+        // Every candidate name is taken, so the suffix loop runs out rather than
+        // overwriting anything, and the source stays put.
+        Assert.Equal(
+            global::Listenarr.Infrastructure.FileSystem.RecycleFileOutcome.Blocked,
+            outcome);
+        Assert.False(string.IsNullOrEmpty(reason));
+        Assert.True(File.Exists(file));
+
+        // And this is the ordering assertion. The stamp has to happen BEFORE the rename,
+        // or a file sits in the bin carrying an ancient timestamp until the stamp lands,
+        // and a sweep running in that window removes it. A failed rename is the only
+        // deterministic way to observe which side of the move the stamp is on: if it
+        // were stamped afterwards, this file would still read five years old.
+        Assert.True(
+            File.GetLastWriteTimeUtc(file) > longAgo.AddYears(1),
+            "The recycle time was stamped after the rename rather than before it.");
+    }
+
+    [Fact]
     public async Task TryRecycleFile_NoBinConfigured_RefusesRatherThanDeleting()
     {
         var root = FileService.GetTempDirectory("recycle-unconfigured-root");
