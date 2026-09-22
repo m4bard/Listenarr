@@ -108,3 +108,5 @@ global using Listenarr.Infrastructure.Search.Providers.InternetArchive;
 global using Listenarr.Infrastructure.Search.Providers.MyAnonamouse;
 global using Listenarr.Infrastructure.Search.Providers.Torznab;
 global using Listenarr.Infrastructure.Persistence;
+global using Listenarr.Application.Common.Housekeeping;
+global using Listenarr.Infrastructure.Maintenance.Housekeeping;

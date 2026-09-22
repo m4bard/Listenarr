@@ -101,6 +101,25 @@ namespace Listenarr.Domain.Configuration
         // Number of days to retain action history. Zero keeps history indefinitely.
         public int HistoryRetentionDays { get; set; } = 0;
 
+        /// <summary>
+        /// Number of days the daily housekeeping sweep keeps a terminal row in the append-only
+        /// journal and cache tables. Zero disables the sweep and keeps every row indefinitely.
+        /// </summary>
+        /// <remarks>
+        /// Thirty, and zero to disable, is Prowlarr's HistoryCleanupDays exactly
+        /// (src/NzbDrone.Core/Configuration/ConfigService.cs:80), which is the only
+        /// operator-configurable window over a database table anywhere in the family. Zero
+        /// already means unlimited in this codebase as well, so the two agree.
+        /// </remarks>
+        public int HousekeepingRetentionDays { get; set; } = 30;
+
+        /// <summary>
+        /// When true the housekeeping sweep evaluates every predicate and logs how many rows it
+        /// would remove, and removes none. Shipped on, so an upgraded install lands in a state
+        /// that writes nothing until an operator has read a cycle's counts.
+        /// </summary>
+        public bool HousekeepingDryRun { get; set; } = true;
+
         // Failed download handling settings
         public bool FailedDownloadHandlingEnabled { get; set; } = true;
         public bool FailedDownloadAutoSearch { get; set; } = false;
