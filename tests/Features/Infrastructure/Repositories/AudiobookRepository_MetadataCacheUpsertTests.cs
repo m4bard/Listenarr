@@ -309,7 +309,12 @@ namespace Listenarr.Tests.Features.Infrastructure.Repositories
             await new AudiobookRepository(db.NewContext())
                 .UpsertCachedAuthorAsync(Author("Mary Shelley", asin: "B000AP9A2E"));
 
+            var saves = 0;
             var interleaved = false;
+            losing.SavingChanges += (_, _) =>
+            {
+                saves++;
+            };
             losing.SavingChanges += (_, _) =>
             {
                 if (interleaved)
@@ -329,6 +334,82 @@ namespace Listenarr.Tests.Features.Infrastructure.Repositories
             await repository.UpsertCachedAuthorAsync(Author("Bram Stoker", asin: "B000AP9A2E"));
 
             Assert.True(interleaved, "the interleaving never happened, so this test proved nothing");
+            // The handler running is not the same as the write colliding. Without this the test
+            // degrades silently into a no-retry test the day the interleaving stops colliding,
+            // and Times.Once would still pass over a single attempt.
+            Assert.Equal(2, saves);
+            logger.Verify(
+                log => log.Log(
+                    LogLevel.Warning,
+                    It.IsAny<EventId>(),
+                    It.Is<It.IsAnyType>((state, _) =>
+                        state.ToString()!.Contains("Refusing to rebind", StringComparison.Ordinal)),
+                    It.IsAny<Exception?>(),
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+                Times.Once);
+        }
+
+        // The case that rules out keying the log on the attempt number. Here attempt one refuses
+        // nothing: the ASIN lookup misses because no row carries that ASIN yet, so the write
+        // inserts and loses the race. Only on the retry does a row bearing that ASIN under
+        // another name exist, so the refusal fires for the first time on attempt two. A guard of
+        // `attempt == 1` swallows the only copy of the warning and the operator hears nothing
+        // about a binding that was refused.
+        //
+        // The control that the refusal really fired is the row shape rather than the log: Mary
+        // Shelley's row is not renamed and the write lands on the Bram Stoker row, which is the
+        // refusal's outcome. Without it, the ASIN lookup's row would have been re-keyed to
+        // "bram stoker" and collided.
+        [Fact]
+        public async Task UpsertCachedAuthor_RefusingOnlyAfterARetry_StillWarns()
+        {
+            using var db = new SharedDb();
+            var losing = db.NewContext();
+            var logger = new Mock<ILogger<AudiobookRepository>>();
+            var repository = new AudiobookRepository(losing, logger.Object);
+
+            var saves = 0;
+            var interleaved = false;
+            losing.SavingChanges += (_, _) =>
+            {
+                saves++;
+            };
+            losing.SavingChanges += (_, _) =>
+            {
+                if (interleaved)
+                {
+                    return;
+                }
+
+                interleaved = true;
+                Task.Run(() =>
+                    {
+                        // One writer takes the name this caller is inserting, which is what makes
+                        // the first attempt lose. The other brings the ASIN in under a different
+                        // name, which is what the retry then has to refuse.
+                        new AudiobookRepository(db.NewContext())
+                            .UpsertCachedAuthorAsync(Author("Bram Stoker")).GetAwaiter().GetResult();
+                        new AudiobookRepository(db.NewContext())
+                            .UpsertCachedAuthorAsync(Author("Mary Shelley", asin: "B000AP9A2E"))
+                            .GetAwaiter().GetResult();
+                    })
+                    .GetAwaiter()
+                    .GetResult();
+            };
+
+            await repository.UpsertCachedAuthorAsync(Author("Bram Stoker", asin: "B000AP9A2E"));
+
+            Assert.True(interleaved, "the interleaving never happened, so this test proved nothing");
+            Assert.Equal(2, saves);
+
+            var rows = await db.NewContext().AuthorCacheEntries
+                .AsNoTracking()
+                .OrderBy(entry => entry.Id)
+                .ToListAsync();
+            Assert.Equal(2, rows.Count);
+            Assert.Contains(rows, row => row.AuthorName == "Mary Shelley" && row.AuthorAsin == "B000AP9A2E");
+            Assert.Contains(rows, row => row.AuthorName == "Bram Stoker" && row.AuthorAsin == "B000AP9A2E");
+
             logger.Verify(
                 log => log.Log(
                     LogLevel.Warning,
