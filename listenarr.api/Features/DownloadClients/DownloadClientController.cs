@@ -113,6 +113,13 @@ namespace Listenarr.Api.Features.DownloadClients
                     return BadRequest("Missing download client configuration");
                 }
 
+                if (config.Priority < DownloadClientSelector.MinimumPriority ||
+                    config.Priority > DownloadClientSelector.MaximumPriority)
+                {
+                    return BadRequest(
+                        $"Priority must be between {DownloadClientSelector.MinimumPriority} and {DownloadClientSelector.MaximumPriority}");
+                }
+
                 if (!string.IsNullOrWhiteSpace(config.Id))
                 {
                     var existing = await _configurationService.GetDownloadClientConfigurationAsync(config.Id);
