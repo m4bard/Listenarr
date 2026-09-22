@@ -103,6 +103,19 @@ namespace Listenarr.Domain.Audiobooks
             MoveJobStatus.Queued or
             MoveJobStatus.Running or
             MoveJobStatus.RetryScheduled;
+
+        /// <summary>
+        /// The statuses that stamp <see cref="MoveJob.CompletedAt" />.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately not the negation of <see cref="IsActive" />. That is also false for
+        /// Failed and NeedsAttention, and neither of those is a completion: Failed is retryable
+        /// and NeedsAttention is an operator work item, so stamping either would drift the
+        /// column away from the one thing it is documented to mean.
+        /// </remarks>
+        public static bool IsTerminalCompletion(this MoveJobStatus status) => status is
+            MoveJobStatus.Completed or
+            MoveJobStatus.Superseded;
     }
 
     public class MoveJob
@@ -133,10 +146,24 @@ namespace Listenarr.Domain.Audiobooks
         /// <remarks>
         /// Separate from <see cref="UpdatedAt" /> rather than reusing it, matching
         /// DownloadProcessingJob.CompletedAt, which the existing retention sweep for that table
-        /// already keys on. UpdatedAt is nullable and two reconciliation paths reach a terminal
+        /// already keys on. UpdatedAt is nullable and a reconciliation path reaches a terminal
         /// status without stamping it, so a retention predicate over UpdatedAt would never match
-        /// those rows and they would be immortal. This column is written by every transition into
-        /// Completed or Superseded and nowhere else, so it means one thing.
+        /// those rows and they would be immortal.
+        /// <para>
+        /// Every writer that can put a job into Completed or Superseded stamps this, and nothing
+        /// else writes it, so the column means one thing. Those writers are the completion commit
+        /// in MoveJobProcessor, the scan handoff store's completion, the supersede block in
+        /// identity-key reconciliation, and the lease-based UpdateStatusAsync, which is the one
+        /// that carries a supersede raised from the move processor's own source-state checks.
+        /// Use <see cref="MoveJobStatusExtensions.IsTerminalCompletion" /> when adding another,
+        /// rather than the negation of IsActive.
+        /// </para>
+        /// <para>
+        /// A null here on a job that is already terminal means the row predates the column. The
+        /// startup repair in ListenarrDatabaseMigrationPreflight stamps those, and until it has,
+        /// retention leaves the row alone rather than reading a missing timestamp as infinitely
+        /// old.
+        /// </para>
         /// </remarks>
         public DateTime? CompletedAt { get; set; }
 
