@@ -259,6 +259,16 @@ public sealed partial class EfMoveQueuePersistence(
                 trackedJob.Error = error;
                 trackedJob.FailureKind = failureKind;
                 trackedJob.UpdatedAt = updatedAt.UtcDateTime;
+                // The lease-based writer carries a supersede raised by the move processor's own
+                // source-state checks, which is a real route into a terminal status and the one
+                // that used to leave CompletedAt null. Gated on IsTerminalCompletion rather than
+                // on the negation of IsActive, because that would also stamp Failed and
+                // NeedsAttention, neither of which is a completion.
+                if (status.IsTerminalCompletion())
+                {
+                    trackedJob.CompletedAt = updatedAt.UtcDateTime;
+                }
+
                 if (!status.IsActive())
                 {
                     trackedJob.ActiveDeduplicationKey = null;
@@ -270,6 +280,9 @@ public sealed partial class EfMoveQueuePersistence(
             }
 
             var active = status.IsActive();
+            var completedAt = status.IsTerminalCompletion()
+                ? (DateTime?)updatedAt.UtcDateTime
+                : null;
             var affected = await db.MoveJobs
                 .Where(job => job.Id == id
                     && job.Status == MoveJobStatus.Running
@@ -284,6 +297,9 @@ public sealed partial class EfMoveQueuePersistence(
                         .SetProperty(job => job.Error, error)
                         .SetProperty(job => job.FailureKind, failureKind)
                         .SetProperty(job => job.UpdatedAt, updatedAt.UtcDateTime)
+                        // Keeps whatever is already there for a non-completion, so this writer
+                        // can never clear a timestamp another writer stamped.
+                        .SetProperty(job => job.CompletedAt, job => completedAt ?? job.CompletedAt)
                         .SetProperty(job => job.ActiveDeduplicationKey, job => active ? job.ActiveDeduplicationKey : null)
                         .SetProperty(job => job.LeaseOwner, job => active ? job.LeaseOwner : null)
                         .SetProperty(job => job.LeaseExpiresAt, job => active ? job.LeaseExpiresAt : null),
