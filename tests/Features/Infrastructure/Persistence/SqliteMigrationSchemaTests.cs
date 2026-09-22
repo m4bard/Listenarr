@@ -62,7 +62,7 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string HistoryReleaseMetadataMigrationId =
         "20260914171829_AddHistoryReleaseMetadata";
     private const string HousekeepingRetentionMigrationId =
-        "20260922214755_AddHousekeepingRetention";
+        "20260922220833_AddHousekeepingRetention";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -705,6 +705,87 @@ public class SqliteMigrationSchemaTests : BaseTests
         }
 
         await insert.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// The startup backfill that stops the move job sweep being a no-op on every existing
+    /// install. A row that was already terminal when the upgrade ran has no CompletedAt, and
+    /// without a value it can never match a retention predicate.
+    /// </summary>
+    /// <remarks>
+    /// Three arms, and the second and third are the controls. A Completed row with no timestamp
+    /// is stamped from UpdatedAt. A Superseded row whose UpdatedAt is null, which is the case the
+    /// column exists for, falls back to EnqueuedAt rather than staying null. And an active row is
+    /// left alone, so the repair is bounded by status rather than stamping the whole table.
+    /// </remarks>
+    [Fact]
+    [Trait("Scenario", "TerminalMoveJobsGetATerminalTimestampAtStartup")]
+    public async Task StartupRepair_StampsTerminalMoveJobsThatPredateTheColumn()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+        await context.Database.MigrateAsync();
+
+        var completed = Guid.NewGuid();
+        var superseded = Guid.NewGuid();
+        var running = Guid.NewGuid();
+        var enqueuedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var updatedAt = new DateTime(2026, 2, 2, 0, 0, 0, DateTimeKind.Utc);
+        await InsertTerminalMoveJobAsync(connection, completed, "Completed", enqueuedAt, updatedAt);
+        await InsertTerminalMoveJobAsync(connection, superseded, "Superseded", enqueuedAt, null);
+        await InsertTerminalMoveJobAsync(connection, running, "Running", enqueuedAt, updatedAt);
+
+        var repaired = ListenarrDatabaseMigrationPreflight.RepairPostMigrationData(context);
+
+        Assert.Equal(2, repaired.MoveJobTerminalTimestampsBackfilled);
+        Assert.Equal(updatedAt, await ReadCompletedAtAsync(connection, completed));
+        Assert.Equal(enqueuedAt, await ReadCompletedAtAsync(connection, superseded));
+        Assert.Null(await ReadCompletedAtAsync(connection, running));
+
+        // Idempotent: it runs on every start, and a second pass must find nothing left to do.
+        Assert.Equal(0, ListenarrDatabaseMigrationPreflight.RepairPostMigrationData(context)
+            .MoveJobTerminalTimestampsBackfilled);
+    }
+
+    private static async Task InsertTerminalMoveJobAsync(
+        SqliteConnection connection,
+        Guid id,
+        string status,
+        DateTime enqueuedAt,
+        DateTime? updatedAt)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO "MoveJobs"
+                ("Id", "AudiobookId", "RequestedPath", "EnqueuedAt", "Status", "Phase",
+                 "ExecutionProtocolVersion", "SourceDirectoryCleanupState", "FailureKind",
+                 "AttemptCount", "UpdatedAt", "CompletedAt", "IdentityKeyVersion",
+                 "LeaseGeneration", "DeleteEmptySource", "SourceCleanupMode",
+                 "ForceCopyAndRetainSource")
+            VALUES
+                ($id, 1, 'requested', $enqueuedAt, $status, 'None', 1, 'Pending', 'None',
+                 0, $updatedAt, NULL, 1, 0, 1, 'RetainSource', 0);
+            """;
+        command.Parameters.AddWithValue("$id", id.ToString());
+        command.Parameters.AddWithValue("$enqueuedAt", enqueuedAt);
+        command.Parameters.AddWithValue("$status", status);
+        command.Parameters.AddWithValue(
+            "$updatedAt",
+            updatedAt is null ? DBNull.Value : updatedAt.Value);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<DateTime?> ReadCompletedAtAsync(
+        SqliteConnection connection,
+        Guid id)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """SELECT "CompletedAt" FROM "MoveJobs" WHERE "Id" = $id;""";
+        command.Parameters.AddWithValue("$id", id.ToString());
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return reader.IsDBNull(0) ? null : reader.GetDateTime(0);
     }
 
     private static async Task ExecuteNonQueryAsync(

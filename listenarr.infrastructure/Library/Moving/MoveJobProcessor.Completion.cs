@@ -55,6 +55,7 @@ internal partial class MoveJobProcessor
             cancellationToken);
 
         job.Status = MoveJobStatus.Completed;
+        job.CompletedAt = now.UtcDateTime;
         job.LeaseOwner = null;
         job.LeaseExpiresAt = null;
         job.ActiveDeduplicationKey = null;
