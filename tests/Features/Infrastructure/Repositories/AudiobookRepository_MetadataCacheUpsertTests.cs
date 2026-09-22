@@ -289,12 +289,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Repositories
         // The refusal to rebind an ASIN sits inside the retry loop, so a call that refuses and
         // then loses the insert race runs it more than once. The warning is the entire
         // operator-facing surface for a refused binding, and one logical write printing it three
-        // times reads as three separate refusals, so it is emitted on the first attempt only.
+        // times reads as three separate refusals, so it is emitted once per call, on whichever
+        // attempt first refuses.
         //
-        // Control with teeth: without the attempt guard this call logs twice, because the
+        // Control with teeth: without the once-per-call flag this call logs twice, because the
         // interleaving below forces exactly one retry and the refusal fires on both passes. The
         // uncontended test in AudiobookRepositoryAuthorAsinIdentityTests cannot see that, since
-        // it never retries.
+        // it never retries. UpsertCachedAuthor_RefusingOnlyAfterARetry_StillWarns below is the
+        // other half: it is why the flag cannot be a test of the attempt number.
         [Fact]
         public async Task UpsertCachedAuthor_RefusingARebindAndThenLosingTheRace_WarnsOncePerCall()
         {
