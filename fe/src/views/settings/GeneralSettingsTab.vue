@@ -54,6 +54,11 @@
           @update:settings="(val) => Object.assign(localSettings, val)"
         ></MetadataRefreshSection>
 
+        <HousekeepingSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></HousekeepingSection>
+
         <SearchSettingsSection
           :settings="localSettings"
           @update:settings="(val) => Object.assign(localSettings, val)"
@@ -89,6 +94,7 @@ import FileManagementSection from '@/components/settings/FileManagementSection.v
 import DownloadSettingsSection from '@/components/settings/DownloadSettingsSection.vue'
 import FeaturesSection from '@/components/settings/FeaturesSection.vue'
 import MetadataRefreshSection from '@/components/settings/MetadataRefreshSection.vue'
+import HousekeepingSection from '@/components/settings/HousekeepingSection.vue'
 import SearchSettingsSection from '@/components/settings/SearchSettingsSection.vue'
 import HistorySettingsSection from '@/components/settings/HistorySettingsSection.vue'
 import AuthenticationSection from '@/components/settings/AuthenticationSection.vue'

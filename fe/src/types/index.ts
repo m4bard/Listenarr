@@ -498,6 +498,12 @@ export interface ApplicationSettings {
   metadataRefreshStaleAfterDays?: number
   metadataRefreshRequestsPerHour?: number
   metadataRefreshMinimumSpacingMs?: number
+
+  // Housekeeping: the daily sweep that removes finished job records and stale cache rows.
+  // 0 keeps every record and disables the sweep. Ships with dry run on, so an upgraded
+  // install reports what it would remove before it deletes anything.
+  housekeepingRetentionDays?: number
+  housekeepingDryRun?: boolean
 }
 
 export interface ProwlarrImportConnectionSettings {
