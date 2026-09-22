@@ -123,6 +123,15 @@ namespace Listenarr.Tests.Mocks.Api
                     }
                     """);
                 }
+                else if (string.Equals("torrent-set", method, StringComparison.OrdinalIgnoreCase))
+                {
+                    return MockUtils.GetCannedResponse("""
+                    {
+                        "result": "success",
+                        "arguments": {}
+                    }
+                    """);
+                }
             }
 
             return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);

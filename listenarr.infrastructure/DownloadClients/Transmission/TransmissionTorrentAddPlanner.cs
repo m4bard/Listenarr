@@ -47,6 +47,40 @@ internal static class TransmissionTorrentAddPlanner
         return arguments;
     }
 
+    /// <summary>
+    /// Builds the argument dictionary for a follow-up "torrent-set" RPC call applying the
+    /// grabbing indexer's seed criteria. Returns null when the indexer has no seed criteria at
+    /// all, which is what keeps that call from ever being issued for an indexer with none
+    /// configured. Transmission's torrent-set RPC allows setting ratio and idle limits
+    /// independently, unlike qBittorrent's combined setShareLimits call, so each field is only
+    /// included when the indexer actually set it: a seed ratio alone never sends seedIdleLimit.
+    /// </summary>
+    public static Dictionary<string, object>? BuildSeedLimitArguments(
+        string hash,
+        TorrentSeedConfiguration? seedConfiguration)
+    {
+        if (seedConfiguration is not { HasAnyValue: true })
+        {
+            return null;
+        }
+
+        var arguments = new Dictionary<string, object> { ["ids"] = new[] { hash } };
+
+        if (seedConfiguration.Ratio.HasValue)
+        {
+            arguments["seedRatioLimit"] = seedConfiguration.Ratio.Value;
+            arguments["seedRatioMode"] = 1;
+        }
+
+        if (seedConfiguration.SeedTime.HasValue)
+        {
+            arguments["seedIdleLimit"] = (int)seedConfiguration.SeedTime.Value.TotalMinutes;
+            arguments["seedIdleMode"] = 1;
+        }
+
+        return arguments;
+    }
+
     private static string NormalizeMagnetUri(string magnetUri)
     {
         var queryStart = magnetUri.IndexOf('?');
