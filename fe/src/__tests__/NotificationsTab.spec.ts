@@ -337,4 +337,296 @@ describe('NotificationsTab', () => {
       // typed name without telling the operator) would fail one of the two assertions above.
     })
   })
+
+  describe('Email', () => {
+    const anEmail = (overrides: Record<string, unknown> = {}) => ({
+      id: 'e1',
+      name: 'Household inbox',
+      server: 'smtp.example.invalid',
+      port: 587,
+      requireEncryption: true,
+      username: 'listenarr@example.invalid',
+      password: 'REDACTED',
+      from: 'listenarr@example.invalid',
+      to: ['household@example.invalid'],
+      cc: [],
+      bcc: [],
+      channels: ['Download'],
+      isEnabled: true,
+      ...overrides,
+    })
+
+    it('renders stored email configurations', async () => {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+
+      const cfg = useConfigurationStore()
+      cfg.isLoading = false
+      const settings = { version: 1, webhookUrl: '', webhooks: [], emails: [anEmail()] }
+      cfg.applicationSettings = settings as never
+
+      const NotificationsTab = (await import('@/views/settings/NotificationsTab.vue')).default
+      const wrapper = mount(NotificationsTab, {
+        props: { settings: settings as never },
+        global: { plugins: [pinia] },
+      })
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('.emails-grid .email-card').exists()).toBe(true)
+      expect(wrapper.text()).toContain('Household inbox')
+      expect(wrapper.text()).toContain('smtp.example.invalid:587')
+      // Control: a component that ignored the stored list would render the empty-state copy
+      // instead of a card, which this catches directly.
+      expect(wrapper.text()).not.toContain('No email notifications configured')
+    })
+
+    it('creating an email posts what the operator entered, with recipients split on commas', async () => {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+
+      const cfg = useConfigurationStore()
+      cfg.isLoading = false
+      const initialSettings = { version: 5, webhookUrl: '', webhooks: [], emails: [] }
+      cfg.applicationSettings = initialSettings as never
+      let posted: { emails?: Array<Record<string, unknown>> } | null = null
+      cfg.saveApplicationSettings = vi.fn(async (payload) => {
+        posted = payload as never
+        const saved = { ...payload, version: payload.version + 1 }
+        cfg.applicationSettings = saved
+        return saved
+      })
+
+      const NotificationsTab = (await import('@/views/settings/NotificationsTab.vue')).default
+      const wrapper = mount(NotificationsTab, {
+        props: { settings: initialSettings as never },
+        global: { plugins: [pinia] },
+      })
+      const vm = wrapper.vm as unknown as { openEmailForm: () => void }
+      vm.openEmailForm()
+      await wrapper.vm.$nextTick()
+
+      await wrapper.find('#email-name').setValue('Household inbox')
+      await wrapper.find('#email-server').setValue('smtp.example.invalid')
+      await wrapper.find('#email-port').setValue(465)
+      await wrapper.find('#email-username').setValue('listenarr@example.invalid')
+      await wrapper.find('#email-password').setValue('hunter2')
+      await wrapper.find('#email-from').setValue('listenarr@example.invalid')
+      await wrapper
+        .find('#email-to')
+        .setValue('one@example.invalid, two@example.invalid ,three@example.invalid')
+      const channelCheckbox = wrapper.find('.email-channels input[type="checkbox"]')
+      expect(channelCheckbox.exists()).toBe(true)
+      await channelCheckbox.setValue(true)
+      await wrapper.find('.email-modal form').trigger('submit')
+
+      await vi.waitFor(() => {
+        expect(posted).not.toBeNull()
+      })
+
+      const savedEmails = posted!.emails
+      expect(savedEmails).toHaveLength(1)
+      expect(savedEmails![0]).toMatchObject({
+        name: 'Household inbox',
+        server: 'smtp.example.invalid',
+        port: 465,
+        username: 'listenarr@example.invalid',
+        password: 'hunter2',
+        from: 'listenarr@example.invalid',
+        to: ['one@example.invalid', 'two@example.invalid', 'three@example.invalid'],
+        cc: [],
+        bcc: [],
+        channels: ['Grab'],
+        isEnabled: true,
+      })
+      // Control: a component that dropped, hardcoded, reordered or failed to trim the operator's
+      // input would fail one of the matchObject fields above instead of quietly passing.
+    })
+
+    it('an edit that does not touch the password sends the sentinel back rather than a blank', async () => {
+      // This is the frontend half of the password contract. The backend keeps the stored password
+      // when a save carries REDACTED, and stores blank when a save carries blank. A form that
+      // helpfully cleared the field would therefore delete the operator's password on every
+      // unrelated edit.
+      const pinia = createPinia()
+      setActivePinia(pinia)
+
+      const cfg = useConfigurationStore()
+      cfg.isLoading = false
+      const settings = { version: 2, webhookUrl: '', webhooks: [], emails: [anEmail()] }
+      cfg.applicationSettings = settings as never
+      let posted: { emails?: Array<Record<string, unknown>> } | null = null
+      cfg.saveApplicationSettings = vi.fn(async (payload) => {
+        posted = payload as never
+        const saved = { ...payload, version: payload.version + 1 }
+        cfg.applicationSettings = saved
+        return saved
+      })
+
+      const NotificationsTab = (await import('@/views/settings/NotificationsTab.vue')).default
+      const wrapper = mount(NotificationsTab, {
+        props: { settings: settings as never },
+        global: { plugins: [pinia] },
+      })
+      await wrapper.vm.$nextTick()
+
+      await wrapper.find('[title="Edit email"]').trigger('click')
+      await wrapper.vm.$nextTick()
+
+      expect((wrapper.find('#email-password').element as HTMLInputElement).value).toBe('REDACTED')
+      await wrapper.find('#email-name').setValue('Renamed inbox')
+      await wrapper.find('.email-modal form').trigger('submit')
+
+      await vi.waitFor(() => {
+        expect(posted).not.toBeNull()
+      })
+      expect(posted!.emails![0]).toMatchObject({
+        name: 'Renamed inbox',
+        password: 'REDACTED',
+      })
+    })
+
+    it('an edit that replaces the password sends the new one', async () => {
+      // The control for the test above: same flow, same target, and the only difference is that
+      // the operator typed in the password field. Without this, "always send REDACTED" would pass.
+      const pinia = createPinia()
+      setActivePinia(pinia)
+
+      const cfg = useConfigurationStore()
+      cfg.isLoading = false
+      const settings = { version: 2, webhookUrl: '', webhooks: [], emails: [anEmail()] }
+      cfg.applicationSettings = settings as never
+      let posted: { emails?: Array<Record<string, unknown>> } | null = null
+      cfg.saveApplicationSettings = vi.fn(async (payload) => {
+        posted = payload as never
+        const saved = { ...payload, version: payload.version + 1 }
+        cfg.applicationSettings = saved
+        return saved
+      })
+
+      const NotificationsTab = (await import('@/views/settings/NotificationsTab.vue')).default
+      const wrapper = mount(NotificationsTab, {
+        props: { settings: settings as never },
+        global: { plugins: [pinia] },
+      })
+      await wrapper.vm.$nextTick()
+
+      await wrapper.find('[title="Edit email"]').trigger('click')
+      await wrapper.vm.$nextTick()
+      await wrapper.find('#email-password').setValue('a-new-password')
+      await wrapper.find('.email-modal form').trigger('submit')
+
+      await vi.waitFor(() => {
+        expect(posted).not.toBeNull()
+      })
+      expect(posted!.emails![0]).toMatchObject({ password: 'a-new-password' })
+    })
+
+    it('the test button really sends, and reports success and failure distinguishably', async () => {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+
+      const cfg = useConfigurationStore()
+      cfg.isLoading = false
+      const settings = { version: 1, webhookUrl: '', webhooks: [], emails: [anEmail()] }
+      cfg.applicationSettings = settings as never
+
+      const testSpy = vi.spyOn(apiService, 'testNotificationSubscriber')
+      testSpy.mockResolvedValueOnce({ success: true, message: 'Email test succeeded' })
+
+      const NotificationsTab = (await import('@/views/settings/NotificationsTab.vue')).default
+      const wrapper = mount(NotificationsTab, {
+        props: { settings: settings as never },
+        global: { plugins: [pinia] },
+      })
+      await wrapper.vm.$nextTick()
+
+      const testButton = wrapper.find('[title="Send a test message through this server now"]')
+      expect(testButton.exists()).toBe(true)
+
+      await testButton.trigger('click')
+      await vi.waitFor(() => {
+        expect(wrapper.find('.email-test-message').exists()).toBe(true)
+      })
+      expect(testButton.classes()).toContain('test-success')
+      expect(wrapper.find('.email-test-message').classes()).toContain('success')
+
+      testSpy.mockResolvedValueOnce({
+        success: false,
+        message: '535: 5.7.8 Username and Password not accepted',
+      })
+      await testButton.trigger('click')
+      await vi.waitFor(() => {
+        expect(testButton.classes()).toContain('test-fail')
+      })
+      expect(wrapper.find('.email-test-message').classes()).toContain('fail')
+      expect(wrapper.find('.email-test-message').text()).toContain('535')
+
+      // The button reaches the subscriber endpoint, which sends a real message, rather than any
+      // client-side validation shortcut.
+      expect(testSpy).toHaveBeenCalledWith('Email', 'e1')
+    })
+
+    it('refuses to save a target with no recipient at all', async () => {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+
+      const cfg = useConfigurationStore()
+      cfg.isLoading = false
+      const initialSettings = { version: 3, webhookUrl: '', webhooks: [], emails: [] }
+      cfg.applicationSettings = initialSettings as never
+      cfg.saveApplicationSettings = vi.fn(async (payload) => payload as never)
+
+      const NotificationsTab = (await import('@/views/settings/NotificationsTab.vue')).default
+      const wrapper = mount(NotificationsTab, {
+        props: { settings: initialSettings as never },
+        global: { plugins: [pinia] },
+      })
+      const vm = wrapper.vm as unknown as { openEmailForm: () => void }
+      vm.openEmailForm()
+      await wrapper.vm.$nextTick()
+
+      await wrapper.find('#email-name').setValue('No recipients')
+      await wrapper.find('#email-server').setValue('smtp.example.invalid')
+      await wrapper.find('#email-from').setValue('listenarr@example.invalid')
+      await wrapper.find('.email-channels input[type="checkbox"]').setValue(true)
+      await wrapper.find('.email-modal form').trigger('submit')
+
+      await wrapper.vm.$nextTick()
+      expect(cfg.saveApplicationSettings).not.toHaveBeenCalled()
+      expect(wrapper.text()).toContain('At least one recipient, CC or BCC address is required')
+    })
+
+    it('refuses to save a malformed recipient address', async () => {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+
+      const cfg = useConfigurationStore()
+      cfg.isLoading = false
+      const initialSettings = { version: 3, webhookUrl: '', webhooks: [], emails: [] }
+      cfg.applicationSettings = initialSettings as never
+      cfg.saveApplicationSettings = vi.fn(async (payload) => payload as never)
+
+      const NotificationsTab = (await import('@/views/settings/NotificationsTab.vue')).default
+      const wrapper = mount(NotificationsTab, {
+        props: { settings: initialSettings as never },
+        global: { plugins: [pinia] },
+      })
+      const vm = wrapper.vm as unknown as { openEmailForm: () => void }
+      vm.openEmailForm()
+      await wrapper.vm.$nextTick()
+
+      await wrapper.find('#email-name').setValue('Bad address')
+      await wrapper.find('#email-server').setValue('smtp.example.invalid')
+      await wrapper.find('#email-from').setValue('listenarr@example.invalid')
+      await wrapper.find('#email-to').setValue('not-an-address')
+      await wrapper.find('.email-channels input[type="checkbox"]').setValue(true)
+      await wrapper.find('.email-modal form').trigger('submit')
+
+      await wrapper.vm.$nextTick()
+      expect(cfg.saveApplicationSettings).not.toHaveBeenCalled()
+      // The control is the passing create test above, which uses the same flow with well-formed
+      // addresses and does reach saveApplicationSettings.
+      expect(wrapper.text()).toContain('is not a valid email address')
+    })
+  })
 })
