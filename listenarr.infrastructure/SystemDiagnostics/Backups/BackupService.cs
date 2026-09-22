@@ -59,12 +59,15 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
         private const int MaxRetentionDays = 3650;
 
         /// <summary>
-        /// How many manual archives are kept. Manual backups never expire by age, so without a
-        /// count they grow without limit, and on an install running with authentication off
-        /// anyone who can reach the port can ask for one. A full config volume would then fail
+        /// How many manual archives may exist at once. Manual backups never expire by age, so
+        /// without a bound they grow without limit, and on an install running with authentication
+        /// off anyone who can reach the port can ask for one. A full config volume would then fail
         /// the next pre-migration backup, which refuses the start.
+        ///
+        /// Reaching the limit refuses the request rather than deleting the oldest to make room.
+        /// See BackupLimitReachedException for why.
         /// </summary>
-        private const int MaxManualArchives = 20;
+        public const int MaxManualArchives = 20;
 
         private readonly ListenArrDbContext _db;
         private readonly IApplicationSettingsRepository _settingsRepository;
@@ -94,18 +97,29 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
             // Deliberately reads no settings. The migration backup runs before pending schema
             // changes are applied, so a settings query could fail on a column this build expects
             // and the previous one never created. Retention is a separate call for that reason.
+            if (trigger == BackupTrigger.Manual)
+            {
+                var existing = EnumerateArchives(BackupTrigger.Manual).Count();
+                if (existing >= MaxManualArchives)
+                {
+                    throw new BackupLimitReachedException(MaxManualArchives);
+                }
+            }
+
             var timestamp = DateTime.UtcNow;
             var version = ResolveVersion();
             var triggerDirectory = GetTriggerDirectory(trigger);
 
-            CreateProtectedDirectory(triggerDirectory);
+            BackupFilePermissions.CreateProtectedDirectory(triggerDirectory, _paths.ConfigRootPath);
 
             // Staged inside the backups directory rather than the system temp directory so the
             // database copy lands on the same filesystem it will be zipped on. A database-sized
             // file in /tmp is a surprise on hosts where /tmp is a small tmpfs.
-            var stagingPath = Path.Combine(GetBackupsRoot(), StagingDirectoryName, Guid.NewGuid().ToString("N"));
+            var stagingRoot = Path.Combine(GetBackupsRoot(), StagingDirectoryName);
+            var stagingPath = Path.Combine(stagingRoot, Guid.NewGuid().ToString("N"));
             var payloadPath = Path.Combine(stagingPath, "payload");
-            CreateProtectedDirectory(payloadPath);
+            BackupFilePermissions.CreateProtectedDirectory(payloadPath, _paths.ConfigRootPath);
+            RemoveAbandonedStaging(stagingRoot, stagingPath);
 
             string fileName;
 
@@ -126,7 +140,13 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
                 // file there under a name the listing accepts and the sweep is willing to delete,
                 // and a container killed mid-zip would leave it there for good.
                 var pendingArchive = Path.Combine(stagingPath, "pending" + BackupArchiveNaming.Extension);
-                ZipFile.CreateFromDirectory(stagingPath + Path.DirectorySeparatorChar + "payload", pendingArchive, CompressionLevel.Optimal, false);
+                ZipFile.CreateFromDirectory(payloadPath, pendingArchive, CompressionLevel.Optimal, false);
+
+                // Tightened here rather than after the move, so a complete archive never sits at
+                // the process umask for even an instant. CreateFromDirectory writes it 0644 or
+                // 0664 depending on the umask, and by this point it holds every credential.
+                BackupFilePermissions.MakeFilePrivate(pendingArchive);
+
                 fileName = PublishArchive(pendingArchive, triggerDirectory, version, timestamp);
             }
             finally
@@ -180,7 +200,7 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
             // would turn a sweep into an exception on a backup that had already been written.
             var retentionDays = Math.Min(configuredDays, MaxRetentionDays);
 
-            var removed = TrimManualArchives(cancellationToken);
+            var removed = 0;
 
             if (retentionDays <= 0)
             {
@@ -224,51 +244,10 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
             return removed;
         }
 
-        /// <summary>
-        /// Keeps the newest <see cref="MaxManualArchives"/> manual archives and removes the rest.
-        /// </summary>
-        private int TrimManualArchives(CancellationToken cancellationToken)
-        {
-            var manual = EnumerateArchives(BackupTrigger.Manual)
-                .OrderByDescending(archive => archive.CreatedAtUtc)
-                .Skip(MaxManualArchives)
-                .ToList();
-
-            foreach (var archive in manual)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                Delete(BackupTrigger.Manual, archive, "beyond the manual backup limit");
-            }
-
-            return manual.Count;
-        }
-
         private void Delete(BackupTrigger trigger, BackupArchive archive, string reason)
         {
             File.Delete(Path.Combine(GetTriggerDirectory(trigger), archive.Name));
             _logger.LogDebug("Deleted backup {Name} ({Reason})", archive.Name, reason);
-        }
-
-        /// <summary>
-        /// Creates a directory that only the owner can enter, where the platform supports it.
-        /// </summary>
-        /// <remarks>
-        /// Archives concentrate the API key, the SSL certificate password, indexer keys, download
-        /// client credentials and the admin password hash into one portable file, so the default
-        /// group and other bits are worth dropping even though the live database does not drop
-        /// them. Same approach as FileSystem/CompatibilitySourceCleanupCoordinator.Quarantine.cs.
-        /// </remarks>
-        private static void CreateProtectedDirectory(string path)
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                Directory.CreateDirectory(path);
-                return;
-            }
-
-            Directory.CreateDirectory(
-                path,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
 
         /// <summary>
@@ -281,11 +260,6 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
             string version,
             DateTime timestampUtc)
         {
-            if (!OperatingSystem.IsWindows())
-            {
-                File.SetUnixFileMode(pendingArchive, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            }
-
             for (var ordinal = 1; ordinal <= MaxArchivesPerSecond; ordinal++)
             {
                 var candidate = BackupArchiveNaming.BuildFileName(version, timestampUtc, ordinal);
@@ -298,11 +272,17 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
                     File.Move(pendingArchive, target);
                     return candidate;
                 }
-                catch (IOException) when (ordinal < MaxArchivesPerSecond)
+                catch (IOException) when (File.Exists(target))
                 {
-                    // Taken by another backup in this same second. Try the next ordinal.
+                    // Taken by another backup in this same second. Try the next ordinal. The filter
+                    // is on the destination on purpose: a missing source is also an IOException,
+                    // and retrying that 64 times would report a name collision that never happened.
                 }
             }
+
+            // Staging and the trigger directory are both under config/backups, so the move above is
+            // a rename on any ordinary install. An operator who mounts the trigger directory from
+            // somewhere else gets a copy-then-delete instead, and loses the atomicity with it.
 
             throw new IOException(
                 $"Could not find a free backup file name after {MaxArchivesPerSecond} attempts.");
@@ -358,8 +338,8 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
                 : version;
         }
 
-        private async Task WriteInfoFileAsync(
-            string stagingPath,
+        private static async Task WriteInfoFileAsync(
+            string payloadPath,
             BackupTrigger trigger,
             string version,
             DateTime timestampUtc,
@@ -373,12 +353,12 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
             builder.AppendLine(trigger.ToString());
 
             await File.WriteAllTextAsync(
-                Path.Combine(stagingPath, InfoEntryName),
+                Path.Combine(payloadPath, InfoEntryName),
                 builder.ToString(),
                 cancellationToken);
         }
 
-        private void CopyStartupConfigIfPresent(string stagingPath)
+        private void CopyStartupConfigIfPresent(string payloadPath)
         {
             // config.json carries the API key and the SSL certificate password, and the database
             // carries indexer keys and download client credentials. Both are in the archive because
@@ -392,7 +372,36 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
                 return;
             }
 
-            File.Copy(configPath, Path.Combine(stagingPath, ArchivedConfigName), true);
+            File.Copy(configPath, Path.Combine(payloadPath, ArchivedConfigName), true);
+        }
+
+        /// <summary>
+        /// Removes staging directories left behind by an earlier run that did not finish.
+        /// </summary>
+        /// <remarks>
+        /// The finally block covers a backup that throws; it cannot cover a process that is killed,
+        /// and a container stopped during a slow pre-migration copy is exactly that. What is left
+        /// is an uncompressed copy of the whole database, and nothing else ever looks in here, so
+        /// a restart loop would accumulate one per attempt. Housekeeping, so a failure to clean up
+        /// must not fail the backup that is about to run.
+        /// </remarks>
+        private void RemoveAbandonedStaging(string stagingRoot, string currentStagingPath)
+        {
+            var abandonedBefore = DateTime.UtcNow.AddHours(-1);
+
+            foreach (var directory in Directory.EnumerateDirectories(stagingRoot))
+            {
+                if (string.Equals(directory, currentStagingPath, StringComparison.Ordinal)
+                    || Directory.GetCreationTimeUtc(directory) >= abandonedBefore)
+                {
+                    continue;
+                }
+
+                _logger.LogWarning(
+                    "Removing a backup staging directory left by a run that did not finish: {Name}",
+                    Path.GetFileName(directory));
+                TryDeleteStaging(directory);
+            }
         }
 
         private void TryDeleteStaging(string stagingPath)
