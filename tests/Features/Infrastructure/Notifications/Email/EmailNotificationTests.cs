@@ -2,6 +2,7 @@
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  */
+using System.Globalization;
 using System.Security.Authentication;
 using Listenarr.Domain.Notifications;
 using Listenarr.Infrastructure.Notifications.Email;
@@ -120,6 +121,43 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
             Assert.Equal(["household@example.invalid"], message.To);
             Assert.Equal("Listenarr - Book Downloaded", message.Subject);
             Assert.Contains("Frankenstein", message.Body, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task NotifyAsync_PutsEachRecipientListInItsOwnField()
+        {
+            // Not cosmetic. A BCC recipient who arrives in the CC header has been disclosed to
+            // every other recipient, and nothing about the delivery looks wrong.
+            var email = AnEmail(channels: NotificationChannel.Download);
+            email.To = ["to@example.invalid"];
+            email.Cc = ["cc@example.invalid"];
+            email.Bcc = ["bcc-one@example.invalid", "bcc-two@example.invalid"];
+            var subject = BuildSubject(email);
+
+            await subject.NotifyAsync(AnEvent(NotificationChannel.Download));
+
+            var (_, message) = Assert.Single(_sent);
+            Assert.Equal(["to@example.invalid"], message.To);
+            Assert.Equal(["cc@example.invalid"], message.Cc);
+            Assert.Equal(["bcc-one@example.invalid", "bcc-two@example.invalid"], message.Bcc);
+        }
+
+        [Fact]
+        public async Task TestAsync_RefusesABlankAddressRatherThanQuietlyDroppingIt()
+        {
+            // Deliberately stricter than Readarr here, and worth saying why. FluentValidation's
+            // EmailAddress() passes an empty string, so Readarr accepts a blank entry and then
+            // MimeKit throws on it at send time, which an operator reads as an unexplained
+            // failure. Refusing it names the field instead.
+            var email = AnEmail(channels: NotificationChannel.Download);
+            email.To = ["to@example.invalid", "   "];
+            var subject = BuildSubject(email);
+
+            var result = await subject.TestAsync("Household");
+
+            Assert.False(result.IsValid);
+            Assert.Contains(result.Failures, failure => failure.Contains("not a valid email address", StringComparison.Ordinal));
+            Assert.Empty(_sent);
         }
 
         [Fact]
@@ -312,6 +350,110 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
             Assert.Equal(reason, Assert.Single(result.Failures));
         }
 
+        [Theory]
+        [InlineData("en-US", "istanbul", "535 auth failed for ISTANBUL")]
+        [InlineData("tr-TR", "istanbul", "535 auth failed for ISTANBUL")]
+        [InlineData("tr-TR", "ISTANBUL", "535 auth failed for istanbul")]
+        [InlineData("tr-TR", "hunter2", "535 auth failed for HUNTER2")]
+        public async Task PasswordRedaction_HoldsUnderALocaleThatCaseFoldsTheLetterIDifferently(
+            string culture,
+            string password,
+            string serverReply)
+        {
+            // Turkish and Azeri fold I to a dotless i and i to a dotted I, so a case-insensitive
+            // match that follows the current culture misses a password containing either, which
+            // is most passwords. The last row is the control: plain ASCII still redacts under
+            // tr-TR, so a failure in the other rows is the letter and not the apparatus.
+            var original = CultureInfo.CurrentCulture;
+            try
+            {
+                CultureInfo.CurrentCulture = new CultureInfo(culture);
+
+                var email = AnEmail(channels: NotificationChannel.Download);
+                email.Password = password;
+                var subject = BuildSubject(email);
+                _transport
+                    .Setup(transport => transport.SendAsync(It.IsAny<SmtpServer>(), It.IsAny<SmtpMessage>(), It.IsAny<CancellationToken>()))
+                    .ThrowsAsync(new AuthenticationException(serverReply));
+
+                var result = await subject.TestAsync("Household");
+
+                Assert.DoesNotContain(
+                    result.Failures,
+                    failure => failure.Contains(password, StringComparison.OrdinalIgnoreCase));
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = original;
+            }
+        }
+
+        [Fact]
+        public async Task PasswordRedaction_DoesNotLeaveTheTailOfALongerPasswordBehind()
+        {
+            // The environment secret is a prefix of the password. Replacing it first would take
+            // out the prefix and leave the rest of the password sitting in the message.
+            var previous = Environment.GetEnvironmentVariable("PASSWORD");
+            try
+            {
+                Environment.SetEnvironmentVariable("PASSWORD", "hunter");
+                var email = AnEmail(channels: NotificationChannel.Download);
+                email.Password = "hunter2swordfish";
+                var subject = BuildSubject(email);
+                _transport
+                    .Setup(transport => transport.SendAsync(It.IsAny<SmtpServer>(), It.IsAny<SmtpMessage>(), It.IsAny<CancellationToken>()))
+                    .ThrowsAsync(new AuthenticationException("535 rejected hunter2swordfish"));
+
+                var result = await subject.TestAsync("Household");
+
+                Assert.DoesNotContain(result.Failures, failure => failure.Contains("swordfish", StringComparison.Ordinal));
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("PASSWORD", previous);
+            }
+        }
+
+        [Fact]
+        public async Task PasswordRedaction_LeavesTheMessageAloneWhenThePasswordIsOnlyWhitespace()
+        {
+            // A whitespace password cannot authenticate anything, and using it as a pattern would
+            // replace every run of spaces in the text the operator reads.
+            var email = AnEmail(channels: NotificationChannel.Download);
+            email.Password = "   ";
+            var subject = BuildSubject(email);
+            // The run of spaces is the point: it is what a three-space password would match.
+            const string reason = "The remote   certificate is invalid.";
+            _transport
+                .Setup(transport => transport.SendAsync(It.IsAny<SmtpServer>(), It.IsAny<SmtpMessage>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException(reason));
+
+            var result = await subject.TestAsync("Household");
+
+            Assert.Equal(reason, Assert.Single(result.Failures));
+        }
+
+        [Fact]
+        public void TheMessageRecordDoesNotPrintTheBodyOrTheRecipientsWhenItIsFormatted()
+        {
+            var message = new SmtpMessage
+            {
+                From = "listenarr@example.invalid",
+                To = ["household@example.invalid"],
+                Bcc = ["secret@example.invalid"],
+                Subject = "Listenarr - Book Downloaded",
+                Body = "Frankenstein finished downloading.",
+            };
+
+            var formatted = message.ToString();
+
+            Assert.DoesNotContain("household@example.invalid", formatted, StringComparison.Ordinal);
+            Assert.DoesNotContain("secret@example.invalid", formatted, StringComparison.Ordinal);
+            Assert.DoesNotContain("Frankenstein", formatted, StringComparison.Ordinal);
+            // The control: it still formats as something useful rather than as nothing.
+            Assert.Contains("Listenarr - Book Downloaded", formatted, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void TheServerRecordDoesNotPrintThePasswordWhenItIsFormatted()
         {
@@ -329,8 +471,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
             var formatted = server.ToString();
 
             Assert.DoesNotContain(Password, formatted, StringComparison.OrdinalIgnoreCase);
+            // The control: host and port still format, so a type that printed nothing at all
+            // could not pass. Username is omitted too, deliberately, so it is not asserted here.
             Assert.Contains("smtp.example.invalid", formatted, StringComparison.Ordinal);
             Assert.Contains("587", formatted, StringComparison.Ordinal);
+            Assert.DoesNotContain("listenarr@example.invalid", formatted, StringComparison.Ordinal);
         }
 
         [Fact]
