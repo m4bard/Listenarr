@@ -73,6 +73,18 @@ public static class InfrastructureStartupCompositionExtensions
                     repairedLegacyData.DefaultRootsNormalized);
             }
 
+            // Taken before Migrate() and only when something is actually pending. A failure here
+            // is deliberately not caught: it falls into the handler below and refuses the start,
+            // because migrating without the copy is exactly the outcome this exists to prevent.
+            var pendingMigrations = ctx.Database.GetPendingMigrations().ToList();
+            PreMigrationBackup
+                .ProtectAsync(
+                    pendingMigrations,
+                    PreMigrationBackup.IsEnabled(migrateScope.ServiceProvider.GetService<IConfiguration>()),
+                    migrateScope.ServiceProvider.GetRequiredService<IBackupService>())
+                .GetAwaiter()
+                .GetResult();
+
             ctx.Database.Migrate();
             var repairedPostMigrationData =
                 ListenarrDatabaseMigrationPreflight.RepairPostMigrationData(ctx);
@@ -108,11 +120,32 @@ public static class InfrastructureStartupCompositionExtensions
             }
 
             Log.Logger.Information("[Startup] EF Core migrations applied successfully");
+
+            // Swept only now the schema is current, because retention reads application settings
+            // and that read is not safe until the columns this build expects exist. Housekeeping,
+            // so a failure is logged rather than allowed to stop a start that is otherwise fine.
+            SweepExpiredBackups(migrateScope.ServiceProvider);
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             Log.Logger.Error(ex, "[Startup] Failed to apply EF Core migrations at startup. Listenarr cannot start safely with an unknown database schema.");
             throw;
+        }
+    }
+
+    private static void SweepExpiredBackups(IServiceProvider scopedServiceProvider)
+    {
+        try
+        {
+            scopedServiceProvider
+                .GetRequiredService<IBackupService>()
+                .ApplyRetentionAsync()
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
+            Log.Logger.Warning(ex, "[Startup] Backup retention sweep failed; existing backups are untouched");
         }
     }
 
