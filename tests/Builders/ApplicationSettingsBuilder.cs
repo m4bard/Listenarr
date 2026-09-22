@@ -90,6 +90,18 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public ApplicationSettingsBuilder WithRecycleBinPath(string value)
+        {
+            _applicationSettings.RecycleBinPath = value;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithRecycleBinCleanupDays(int value)
+        {
+            _applicationSettings.RecycleBinCleanupDays = value;
+            return this;
+        }
+
         public ApplicationSettingsBuilder WithFolderNamingPattern(string value)
         {
             _applicationSettings.FolderNamingPattern = value;
