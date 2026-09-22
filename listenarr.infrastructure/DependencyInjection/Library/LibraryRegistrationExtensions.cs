@@ -7,6 +7,8 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Application.Library.RecycleBin;
+using Listenarr.Infrastructure.Library.RecycleBin;
 using Listenarr.Application.Audiobooks.Deletion;
 using Listenarr.Application.Audiobooks.RootFolders;
 using Listenarr.Infrastructure.Library.Realtime;
@@ -66,6 +68,7 @@ internal static class LibraryRegistrationExtensions
         services.AddScoped<ILibraryDestinationMutationGuard, LibraryDestinationMutationGuard>();
         services.AddScoped<ILibraryAddService, LibraryAddService>();
         services.AddScoped<IAudiobookFilesystemDeleteService, AudiobookFilesystemDeleteService>();
+        services.AddScoped<IRecycleBinService, RecycleBinService>();
         services.AddScoped<ILibraryListService, LibraryListService>();
         services.AddScoped<IAuthorMonitoringService, AuthorMonitoringService>();
         services.AddScoped<ISeriesMonitoringService, SeriesMonitoringService>();
