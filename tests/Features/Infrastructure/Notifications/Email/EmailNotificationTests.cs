@@ -188,13 +188,20 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
         [Fact]
         public async Task NotifyAsync_DoesNotThrowWhenConfigurationCannotBeRead()
         {
+            // Asserting on _sent here would prove nothing: it is only ever filled by the callback
+            // BuildSubject registers, and this test does not call BuildSubject, so it would be
+            // empty against an implementation that sent a thousand messages. The transport is
+            // asked directly instead.
             _configuration.Setup(service => service.GetEmailConfigurationsAsync())
                 .ThrowsAsync(new IOException("settings unreadable"));
             var subject = new EmailNotification(_configuration.Object, _transport.Object, CapturingLogger());
 
             await subject.NotifyAsync(AnEvent(NotificationChannel.Download));
 
-            Assert.Empty(_sent);
+            _transport.Verify(
+                transport => transport.SendAsync(It.IsAny<SmtpServer>(), It.IsAny<SmtpMessage>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+            Assert.Contains(_logged, line => line.Contains("Could not read email configuration", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -285,6 +292,45 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
             Assert.False(result.IsValid);
             Assert.Contains(result.Failures, failure => failure.Contains("535 rejected login", StringComparison.Ordinal));
             Assert.DoesNotContain(result.Failures, failure => failure.Contains(Password, StringComparison.OrdinalIgnoreCase));
+        }
+
+        [Fact]
+        public async Task FailureText_IsLeftAloneWhenItNeverContainedThePassword()
+        {
+            // Redaction must not announce itself when it did nothing. The operator reads this
+            // string, and a trailing marker on "the remote certificate is invalid" tells them
+            // something was withheld when nothing was.
+            var subject = BuildSubject(AnEmail(channels: NotificationChannel.Download));
+            const string reason = "The remote certificate is invalid according to the validation procedure.";
+            _transport
+                .Setup(transport => transport.SendAsync(It.IsAny<SmtpServer>(), It.IsAny<SmtpMessage>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException(reason));
+
+            var result = await subject.TestAsync("Household");
+
+            Assert.False(result.IsValid);
+            Assert.Equal(reason, Assert.Single(result.Failures));
+        }
+
+        [Fact]
+        public void TheServerRecordDoesNotPrintThePasswordWhenItIsFormatted()
+        {
+            // A record prints every property by default, so one structured log argument or one
+            // string interpolation would be enough to leak it. The control is that the rest of
+            // the record still formats, so a type that printed nothing could not pass this.
+            var server = new SmtpServer
+            {
+                Host = "smtp.example.invalid",
+                Port = 587,
+                Username = "listenarr@example.invalid",
+                Password = Password,
+            };
+
+            var formatted = server.ToString();
+
+            Assert.DoesNotContain(Password, formatted, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("smtp.example.invalid", formatted, StringComparison.Ordinal);
+            Assert.Contains("587", formatted, StringComparison.Ordinal);
         }
 
         [Fact]
