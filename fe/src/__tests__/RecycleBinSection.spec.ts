@@ -26,7 +26,7 @@ import type { ApplicationSettings } from '@/types'
 // if it is missing rather than assuming it is there.
 if (!(apiService as unknown as Record<string, unknown>).emptyRecycleBin) {
   ;(apiService as unknown as { emptyRecycleBin: () => Promise<unknown> }).emptyRecycleBin =
-    vi.fn(async () => ({ message: 'Recycle bin emptied', deletedCount: 0 }))
+    vi.fn(async () => ({ filesRemoved: 0, directoriesRemoved: 0 }))
 }
 
 // Deliberately different from the shipped defaults, so a control bound to the wrong key
@@ -135,7 +135,7 @@ describe('RecycleBinSection', () => {
   })
 
   it('does not call the API when the button is clicked while disabled', async () => {
-    const emptyRecycleBin = vi.fn(async () => ({ message: 'ok', deletedCount: 0 }))
+    const emptyRecycleBin = vi.fn(async () => ({ filesRemoved: 0, directoriesRemoved: 0 }))
     ;(apiService as unknown as { emptyRecycleBin: typeof emptyRecycleBin }).emptyRecycleBin =
       emptyRecycleBin
     const confirmSpy = vi.spyOn(window, 'confirm')
@@ -148,7 +148,7 @@ describe('RecycleBinSection', () => {
   })
 
   it('asks for confirmation before emptying the bin, and does nothing if declined', async () => {
-    const emptyRecycleBin = vi.fn(async () => ({ message: 'ok', deletedCount: 3 }))
+    const emptyRecycleBin = vi.fn(async () => ({ filesRemoved: 3, directoriesRemoved: 1 }))
     ;(apiService as unknown as { emptyRecycleBin: typeof emptyRecycleBin }).emptyRecycleBin =
       emptyRecycleBin
     vi.spyOn(window, 'confirm').mockReturnValue(false)
@@ -162,7 +162,7 @@ describe('RecycleBinSection', () => {
   })
 
   it('calls DELETE via emptyRecycleBin and shows the removed count on confirmation', async () => {
-    const emptyRecycleBin = vi.fn(async () => ({ message: 'ok', deletedCount: 4 }))
+    const emptyRecycleBin = vi.fn(async () => ({ filesRemoved: 4, directoriesRemoved: 2 }))
     ;(apiService as unknown as { emptyRecycleBin: typeof emptyRecycleBin }).emptyRecycleBin =
       emptyRecycleBin
     vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -175,9 +175,14 @@ describe('RecycleBinSection', () => {
     expect(wrapper.text()).toContain('Removed 4 files from the recycle bin.')
   })
 
-  it('shows the error message inline when emptying the bin fails', async () => {
+  it('shows the server-provided error message inline when emptying the bin fails', async () => {
+    // Mirrors the real API error shape: request() throws an Error whose .message is the raw
+    // "API error: <status> <body>" text, with the JSON body attached separately as .body.
+    // SettingsController.EmptyRecycleBin returns { error: "..." } on failure, so the component
+    // must read that field rather than showing the raw status line.
     const emptyRecycleBin = vi.fn(async () => {
-      throw new Error('recycle bin path is not writable')
+      const body = JSON.stringify({ error: 'Failed to empty the recycle bin' })
+      throw Object.assign(new Error(`API error: 500 ${body}`), { status: 500, body })
     })
     ;(apiService as unknown as { emptyRecycleBin: typeof emptyRecycleBin }).emptyRecycleBin =
       emptyRecycleBin
@@ -187,6 +192,22 @@ describe('RecycleBinSection', () => {
     await wrapper.find('button').trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('recycle bin path is not writable')
+    expect(wrapper.text()).toContain('Failed to empty the recycle bin')
+    expect(wrapper.text()).not.toContain('API error: 500')
+  })
+
+  it('falls back to the raw error message when the failure body is not the expected shape', async () => {
+    const emptyRecycleBin = vi.fn(async () => {
+      throw new Error('Network error')
+    })
+    ;(apiService as unknown as { emptyRecycleBin: typeof emptyRecycleBin }).emptyRecycleBin =
+      emptyRecycleBin
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const wrapper = mountSection()
+    await wrapper.find('button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Network error')
   })
 })
