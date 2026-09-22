@@ -147,10 +147,9 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
             }
 
             var filesRemoved = 0;
-            foreach (var file in Directory.EnumerateFiles(
+            foreach (var file in EnumerateBinFilesWithoutFollowingLinks(
                          normalizedBin,
-                         "*",
-                         SearchOption.AllDirectories))
+                         cancellationToken))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 try
@@ -186,6 +185,82 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
             return new RecycleBinSweepResult(filesRemoved, directoriesRemoved);
         }
 
+
+        /// <summary>
+        /// Walk the bin without ever descending through a link.
+        ///
+        /// Directory.EnumerateFiles with SearchOption.AllDirectories follows directory
+        /// symlinks, so a link inside the bin pointing at a root folder would have the
+        /// sweep delete library content. That was measured, not assumed: before this
+        /// walk existed, EmptyAsync_BinContainsALinkToTheLibrary_DoesNotFollowIt removed
+        /// two files instead of one and took the library file with it.
+        ///
+        /// A link that is itself a file is still yielded, because deleting it unlinks the
+        /// link and leaves its target alone. It is only the recursion that is dangerous.
+        /// This mirrors what the library scanner does at
+        /// ScanFileDiscovery.Enumeration.cs:142.
+        /// </summary>
+        private IEnumerable<string> EnumerateBinFilesWithoutFollowingLinks(
+            string binRoot,
+            CancellationToken cancellationToken)
+        {
+            var pending = new Stack<string>();
+            pending.Push(binRoot);
+
+            while (pending.Count > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var directory = pending.Pop();
+
+                string[] entries;
+                try
+                {
+                    entries = Directory.GetFileSystemEntries(directory);
+                }
+                catch (Exception exception) when (exception is IOException
+                    or UnauthorizedAccessException or DirectoryNotFoundException)
+                {
+                    logger.LogWarning(
+                        exception,
+                        "Could not read a recycle bin directory during the sweep: {Path}",
+                        LogRedaction.SanitizeFilePath(directory));
+                    continue;
+                }
+
+                foreach (var entry in entries)
+                {
+                    FileSystemInfo info;
+                    try
+                    {
+                        info = Directory.Exists(entry)
+                            ? new DirectoryInfo(entry)
+                            : new FileInfo(entry);
+                    }
+                    catch (Exception exception) when (exception is IOException
+                        or UnauthorizedAccessException)
+                    {
+                        continue;
+                    }
+
+                    if (info is DirectoryInfo)
+                    {
+                        if (info.LinkTarget != null)
+                        {
+                            logger.LogWarning(
+                                "Skipped a linked directory inside the recycle bin rather than sweeping through it: {Path}",
+                                LogRedaction.SanitizeFilePath(entry));
+                            continue;
+                        }
+
+                        pending.Push(entry);
+                        continue;
+                    }
+
+                    yield return entry;
+                }
+            }
+        }
+
         /// <summary>
         /// Prune directories the sweep emptied, deepest first, without ever removing the
         /// bin root itself. Leaving the root in place keeps the configured path valid for
@@ -196,8 +271,12 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
             CancellationToken cancellationToken)
         {
             var removed = 0;
-            var directories = Directory
-                .EnumerateDirectories(binRoot, "*", SearchOption.AllDirectories)
+            // Same reason as the file walk: EnumerateDirectories with AllDirectories
+            // follows links, and pruning "empty" directories on the far side of one would
+            // be reaching into the library.
+            var directories = EnumerateBinDirectoriesWithoutFollowingLinks(
+                    binRoot,
+                    cancellationToken)
                 .OrderByDescending(path => path.Length)
                 .ToList();
 
@@ -225,6 +304,57 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
             }
 
             return removed;
+        }
+
+
+        private IEnumerable<string> EnumerateBinDirectoriesWithoutFollowingLinks(
+            string binRoot,
+            CancellationToken cancellationToken)
+        {
+            var pending = new Stack<string>();
+            pending.Push(binRoot);
+
+            while (pending.Count > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var directory = pending.Pop();
+
+                string[] children;
+                try
+                {
+                    children = Directory.GetDirectories(directory);
+                }
+                catch (Exception exception) when (exception is IOException
+                    or UnauthorizedAccessException or DirectoryNotFoundException)
+                {
+                    continue;
+                }
+
+                foreach (var child in children)
+                {
+                    DirectoryInfo info;
+                    try
+                    {
+                        info = new DirectoryInfo(child);
+                    }
+                    catch (Exception exception) when (exception is IOException
+                        or UnauthorizedAccessException)
+                    {
+                        continue;
+                    }
+
+                    // A linked directory is not descended into. It is also not returned,
+                    // so the prune never removes a link the operator put there; only
+                    // real empty directories the sweep itself created are cleaned up.
+                    if (info.LinkTarget != null)
+                    {
+                        continue;
+                    }
+
+                    pending.Push(child);
+                    yield return child;
+                }
+            }
         }
 
         private static bool IsWithin(string candidate, string basePath)
