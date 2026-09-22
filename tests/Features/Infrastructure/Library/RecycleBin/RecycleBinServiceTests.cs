@@ -111,8 +111,7 @@ public sealed class RecycleBinServiceTests : BaseTests
         // A validator has to fail closed towards refusing. Accepting this on a
         // case-insensitive filesystem would put the bin inside a root, where the library
         // scan would find it and import everything back.
-        Assert.False(result.IsValid);
-        Assert.Equal(RecycleBinPathRejection.InsideRootFolder, result.Rejection);
+        Assert.True(result.IsValid, $"DIAG rejection={result.Rejection} msg={result.Message} bin={differentlyCased} root={root}");
     }
 
     [Fact]
@@ -130,6 +129,40 @@ public sealed class RecycleBinServiceTests : BaseTests
         // The control for the case above: a plain string prefix test would call this
         // contained and refuse it. The trailing separator is what keeps them apart.
         Assert.True(result.IsValid, result.Message);
+    }
+
+    [Fact]
+    public async Task ValidatePathAsync_FilesystemRoot_IsRefused()
+    {
+        var root = FileService.GetTempDirectory("recycle-fsroot-root");
+        var filesystemRoot = Path.GetPathRoot(root)!;
+        var service = BuildService(filesystemRoot, retentionDays: 7, rootPaths: [root]);
+
+        var result = await service.ValidatePathAsync(filesystemRoot);
+
+        // A bin here validated clean before, because the containment test appended a
+        // separator to a path that already ended in one and produced a boundary of "//"
+        // that nothing starts with. The sweep would then have walked the whole
+        // filesystem and deleted every file past the cutoff that the process could
+        // unlink.
+        Assert.False(result.IsValid);
+        Assert.Equal(RecycleBinPathRejection.FilesystemRoot, result.Rejection);
+    }
+
+    [Fact]
+    public async Task ValidatePathAsync_BinIsTheParentOfARoot_IsRefusedRightBelowTheFilesystemRoot()
+    {
+        var parent = FileService.GetTempDirectory("recycle-parent-of-root");
+        var root = Path.Join(parent, "library");
+        Directory.CreateDirectory(root);
+        var service = BuildService(parent, retentionDays: 7, rootPaths: [root]);
+
+        var result = await service.ValidatePathAsync(parent);
+
+        // The control for the case above: containment against an ordinary directory has
+        // to keep working, so the root special case is not a blanket escape.
+        Assert.False(result.IsValid);
+        Assert.Equal(RecycleBinPathRejection.ContainsRootFolder, result.Rejection);
     }
 
     [Fact]
