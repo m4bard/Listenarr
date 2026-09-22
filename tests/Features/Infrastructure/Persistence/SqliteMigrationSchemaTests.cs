@@ -75,6 +75,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260916112317_AddCustomScriptNotifications";
     private const string QualityProfileUpgradeAllowedMigrationId =
         "20260920025621_AddQualityProfileUpgradeAllowed";
+    private const string EmailNotificationsMigrationId =
+        "20260922220105_AddEmailNotifications";
     private const string HousekeepingRetentionMigrationId =
         "20260922220833_AddHousekeepingRetention";
 
@@ -336,6 +338,19 @@ public class SqliteMigrationSchemaTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "EmailNotificationStorage")]
+    public async Task EmailMigration_AddsTheEmailsColumn()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.True(await ColumnExistsAsync(connection, "ApplicationSettings", "Emails"));
+    }
+
+    [Fact]
     [Trait("Scenario", "FinalMigrationHistoryIsConsolidated")]
     public async Task MigrationHistory_ContainsOnlyRetainedRepairsAndConsolidatedPrMigrationAfterCanary()
     {
@@ -394,6 +409,7 @@ public class SqliteMigrationSchemaTests : BaseTests
                 HistoryReleaseMetadataMigrationId,
                 CustomScriptNotificationsMigrationId,
                 QualityProfileUpgradeAllowedMigrationId,
+                EmailNotificationsMigrationId,
                 HousekeepingRetentionMigrationId
             ],
             postCanary);
