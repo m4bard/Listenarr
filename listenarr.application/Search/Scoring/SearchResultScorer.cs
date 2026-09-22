@@ -482,11 +482,21 @@ namespace Listenarr.Application.Search.Scoring
                 return score;
             }
 
-            if (!score.IsRejected)
-            {
-                score.TotalScore = Math.Clamp(score.TotalScore, 0, 100);
-            }
-
+            // No ceiling on an accepted release. BaseScore is 100 and every preference above is
+            // added to it, so a ceiling of 100 discarded the operator's preferred words, the
+            // seeder bonus and the format bonus for any release whose accumulated score reached
+            // it, and two releases the profile ranks differently came back identical.
+            //
+            // The floor was already unreachable: the <= 0 check above returns first. MinimumScore
+            // is compared before that, so it has always been read against the accumulated score
+            // and its meaning does not change here.
+            //
+            // Readarr does not cap a preference score either. CalculateCustomFormatScore
+            // (src/NzbDrone.Core/Profiles/Qualities/QualityProfile.cs:90-93) is a plain Sum with
+            // no bound, DownloadDecisionComparer compares that sum directly
+            // (src/NzbDrone.Core/DecisionEngine/DownloadDecisionComparer.cs:79-82), and
+            // MinFormatScore and CutoffFormatScore (QualityProfile.cs:19-20) are thresholds over
+            // the unbounded sum.
             return score;
         }
 
