@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using Listenarr.Application.Search.Scoring;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Listenarr.Application.Search.Scoring;
@@ -275,8 +275,16 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             // Ranked once, so the debug log and the grab agree and neither inherits indexer
             // order. TotalScore first, then indexer priority as an exact-tie break
             // (QualityScoreComparer), then ScoredReleaseTiebreaker for anything still level.
+            //
+            // InPreferenceOrder puts the operator's own quality ordering above the score, which
+            // is the key this used to be missing: the score ranks by the hardcoded ladder in
+            // SearchResultScorer, and that ladder disagrees with the shipped default profile.
+            // Everything after it is unchanged, so the score still separates releases the profile
+            // ranks equally, indexer priority still separates equal scores, and the tiebreaker
+            // still separates whatever is left.
             var ranked = scoredResults
-                .OrderByDescending(s => s, QualityScoreComparer.Instance)
+                .InPreferenceOrder(audiobook.QualityProfile)
+                .ThenByDescending(s => s, QualityScoreComparer.Instance)
                 .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow())
                 .ToList();
             _logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", ranked.Count, audiobook.Title);
