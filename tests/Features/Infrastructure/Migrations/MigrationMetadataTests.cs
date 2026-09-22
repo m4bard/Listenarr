@@ -256,6 +256,28 @@ public class MigrationMetadataTests
             "20260910121000_AddAudiobookLastMetadataRefreshAtIndex");
     }
 
+    [Fact]
+    public void DropProcessExecutionLogsMigration_IsDiscoverableAndDropsOnlyThatTable()
+    {
+        AssertMigrationId<DropProcessExecutionLogs>(
+            "20260922225847_DropProcessExecutionLogs");
+
+        var migration = new DropProcessExecutionLogs();
+        var upBuilder = BuildOperations(migration, "Up");
+        var downBuilder = BuildOperations(migration, "Down");
+
+        var drop = Assert.Single(upBuilder.Operations.OfType<DropTableOperation>());
+        Assert.Equal("ProcessExecutionLogs", drop.Name);
+        Assert.Single(upBuilder.Operations);
+
+        var create = Assert.Single(downBuilder.Operations.OfType<CreateTableOperation>());
+        Assert.Equal("ProcessExecutionLogs", create.Name);
+        Assert.Single(downBuilder.Operations);
+
+        Assert.Null(migration.TargetModel.FindEntityType(
+            "Listenarr.Domain.ActivityHistory.ProcessExecutionLog"));
+    }
+
     private static MigrationBuilder BuildOperations(Migration migration, string methodName)
     {
         var builder = new MigrationBuilder("Microsoft.EntityFrameworkCore.Sqlite");
