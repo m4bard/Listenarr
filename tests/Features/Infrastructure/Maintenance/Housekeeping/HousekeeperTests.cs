@@ -355,6 +355,188 @@ public sealed class HousekeeperTests : BaseTests, IDisposable
     }
 
     /// <summary>
+    /// The slice of the old population 4 that is provably unreachable: a registration publication
+    /// made by Copy. Its controls are the two actions that keep the population alive, both seeded
+    /// against the same live audiobook so that nothing but the action distinguishes them.
+    /// </summary>
+    [Fact]
+    public async Task Journal_DeletesACompletedCopyRegistration_AndKeepsTheMoveAndHardlinkRowsBesideIt()
+    {
+        var liveAudiobookId = 0;
+        await SeedAsync(context =>
+        {
+            var audiobook = new Audiobook { Title = "Still here" };
+            context.Audiobooks.Add(audiobook);
+            context.SaveChanges();
+            liveAudiobookId = audiobook.Id;
+
+            context.FileMutationJournals.Add(Journal(
+                "copy registration", FileMutationJournalState.Completed, Now.AddDays(-900),
+                audiobookFileId: null, audiobookId: liveAudiobookId, action: FileAction.Copy));
+            context.FileMutationJournals.Add(Journal(
+                "move registration receipt", FileMutationJournalState.Completed, Now.AddDays(-900),
+                audiobookFileId: null, audiobookId: liveAudiobookId, action: FileAction.Move));
+            context.FileMutationJournals.Add(Journal(
+                "hardlink resume signal", FileMutationJournalState.Completed, Now.AddDays(-900),
+                audiobookFileId: null, audiobookId: liveAudiobookId,
+                action: FileAction.HardlinkCopy));
+        });
+
+        var outcome = await new FileMutationJournalHousekeeper(_factory).RunAsync(Cycle(retentionDays: 90), default);
+
+        Assert.Equal(1, outcome.Deleted);
+        Assert.Equal(
+            ["hardlink resume signal", "move registration receipt"],
+            await SurvivingJournalPathsAsync());
+    }
+
+    /// <summary>
+    /// The Copy clause is bound to the registration owner class and not to the action alone.
+    /// Completed on an owner bound row means the filesystem mutation is done and the owner metadata
+    /// is not, and FileRenameCommitStore loads exactly those by operation ID with no state filter.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(42)]
+    [InlineData(FileMutationOwner.CompanionFile)]
+    public async Task Journal_KeepsACompletedCopyRowThatIsOwnerBound(int audiobookFileId)
+    {
+        await SeedAsync(context => context.FileMutationJournals.Add(Journal(
+            "owner bound copy", FileMutationJournalState.Completed, Now.AddDays(-900),
+            audiobookFileId: audiobookFileId, action: FileAction.Copy)));
+
+        var outcome = await new FileMutationJournalHousekeeper(_factory).RunAsync(Cycle(retentionDays: 90), default);
+
+        Assert.Equal(audiobookFileId == FileMutationOwner.CompanionFile ? 1 : 0, outcome.Deleted);
+        Assert.Equal(
+            audiobookFileId == FileMutationOwner.CompanionFile ? 0 : 1,
+            await CountJournalsAsync());
+    }
+
+    /// <summary>
+    /// The compatibility table, on the one predicate that spends its operation ID rather than
+    /// merely ageing it. The control is the identical row whose audiobook is still there.
+    /// </summary>
+    [Fact]
+    public async Task CompatibilityJournal_DeletesACompletedRowWhoseAudiobookIsGone_AndKeepsTheLiveOne()
+    {
+        var liveAudiobookId = 0;
+        await SeedAsync(context =>
+        {
+            var audiobook = new Audiobook { Title = "Still here" };
+            context.Audiobooks.Add(audiobook);
+            context.SaveChanges();
+            liveAudiobookId = audiobook.Id;
+
+            context.CompatibilityFilePublicationJournals.Add(CompatibilityJournal(
+                "orphaned", CompatibilityFilePublicationState.Completed, Now.AddDays(-900),
+                audiobookId: liveAudiobookId + 1000));
+            context.CompatibilityFilePublicationJournals.Add(CompatibilityJournal(
+                "live", CompatibilityFilePublicationState.Completed, Now.AddDays(-900),
+                audiobookId: liveAudiobookId));
+            context.CompatibilityFilePublicationJournals.Add(CompatibilityJournal(
+                "never registered", CompatibilityFilePublicationState.Completed, Now.AddDays(-900),
+                audiobookId: null));
+        });
+
+        var outcome = await new CompatibilityFilePublicationJournalHousekeeper(_factory)
+            .RunAsync(Cycle(retentionDays: 90), default);
+
+        Assert.Equal(1, outcome.Matched);
+        Assert.Equal(1, outcome.Deleted);
+        Assert.Equal(["live", "never registered"], await SurvivingCompatibilityPathsAsync());
+    }
+
+    /// <summary>
+    /// Every state but Completed stays at any age, including NeedsAttention, which carries the only
+    /// diagnosis there is for a publication nothing else will ever report.
+    /// </summary>
+    [Theory]
+    [InlineData(CompatibilityFilePublicationState.Planned)]
+    [InlineData(CompatibilityFilePublicationState.TargetVerified)]
+    [InlineData(CompatibilityFilePublicationState.RegistrationCommitted)]
+    [InlineData(CompatibilityFilePublicationState.NeedsAttention)]
+    [InlineData(CompatibilityFilePublicationState.SourceDeleteAuthorized)]
+    [InlineData(CompatibilityFilePublicationState.SourceQuarantinePlanned)]
+    [InlineData(CompatibilityFilePublicationState.SourceQuarantined)]
+    [InlineData(CompatibilityFilePublicationState.SourceDeleted)]
+    public async Task CompatibilityJournal_KeepsEveryStateButCompleted_HoweverOldItIs(
+        CompatibilityFilePublicationState state)
+    {
+        await SeedAsync(context => context.CompatibilityFilePublicationJournals.Add(
+            CompatibilityJournal("unreachable audiobook", state, Now.AddDays(-3650), audiobookId: 999)));
+
+        var outcome = await new CompatibilityFilePublicationJournalHousekeeper(_factory)
+            .RunAsync(Cycle(retentionDays: 90), default);
+
+        Assert.Equal(0, outcome.Matched);
+        Assert.Equal(1, await CountCompatibilityJournalsAsync());
+    }
+
+    /// <summary>
+    /// The cleanup coordinator retains a batch's sources unless every row it loads is at
+    /// RegistrationCommitted. Deleting the one Completed row out of such a batch would flip it from
+    /// retaining sources to deleting them, so the batch clause holds the row back.
+    /// </summary>
+    [Fact]
+    public async Task CompatibilityJournal_KeepsACompletedRowWhoseBatchStillHasARegistrationCommittedSibling()
+    {
+        var batchId = Guid.NewGuid();
+        await SeedAsync(context =>
+        {
+            context.CompatibilityFilePublicationJournals.Add(CompatibilityJournal(
+                "completed member", CompatibilityFilePublicationState.Completed, Now.AddDays(-900),
+                audiobookId: 999, batchId: batchId));
+            context.CompatibilityFilePublicationJournals.Add(CompatibilityJournal(
+                "committed sibling", CompatibilityFilePublicationState.RegistrationCommitted,
+                Now.AddDays(-900), audiobookId: 999, batchId: batchId));
+            context.CompatibilityFilePublicationJournals.Add(CompatibilityJournal(
+                "completed member of a settled batch", CompatibilityFilePublicationState.Completed,
+                Now.AddDays(-900), audiobookId: 999, batchId: Guid.NewGuid()));
+        });
+
+        var outcome = await new CompatibilityFilePublicationJournalHousekeeper(_factory)
+            .RunAsync(Cycle(retentionDays: 90), default);
+
+        Assert.Equal(1, outcome.Deleted);
+        Assert.Equal(
+            ["committed sibling", "completed member"],
+            await SurvivingCompatibilityPathsAsync());
+    }
+
+    [Fact]
+    public async Task CompatibilityJournal_KeepsACompletedOrphanInsideTheWindow()
+    {
+        await SeedAsync(context => context.CompatibilityFilePublicationJournals.Add(
+            CompatibilityJournal(
+                "recent orphan", CompatibilityFilePublicationState.Completed, Now.AddDays(-10),
+                audiobookId: 999)));
+
+        var outcome = await new CompatibilityFilePublicationJournalHousekeeper(_factory)
+            .RunAsync(Cycle(retentionDays: 90), default);
+
+        Assert.Equal(0, outcome.Matched);
+        Assert.Equal(1, await CountCompatibilityJournalsAsync());
+    }
+
+    /// <summary>
+    /// The compatibility predicate rests on a deleted audiobook's ID never coming back, because the
+    /// ID is one of the inputs hashed into the operation ID a repeat would have to present. That is
+    /// a schema fact rather than a code fact, so it is asserted against the migrated schema.
+    /// </summary>
+    [Fact]
+    public async Task AudiobookIdsAreNotReusedAfterDeletion()
+    {
+        await using var context = new ListenArrDbContext(_options);
+        var definition = await context.Database
+            .SqlQuery<string>(
+                $"SELECT sql AS Value FROM sqlite_master WHERE type = 'table' AND name = 'Audiobooks'")
+            .SingleAsync();
+
+        Assert.Contains("AUTOINCREMENT", definition, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The floors, as one table. Each is argued where it is declared; what this pins is that they
     /// are not all the same number, which is what a floor mechanism quietly reverting to a single
     /// global window would look like.
@@ -363,6 +545,9 @@ public sealed class HousekeeperTests : BaseTests, IDisposable
     public void EachHousekeeperDeclaresItsOwnFloor()
     {
         Assert.Equal(90, new FileMutationJournalHousekeeper(_factory).MinimumRetentionDays);
+        Assert.Equal(
+            90,
+            new CompatibilityFilePublicationJournalHousekeeper(_factory).MinimumRetentionDays);
         Assert.Equal(180, new AuthorCacheHousekeeper(_factory).MinimumRetentionDays);
         Assert.Equal(180, new SeriesCacheHousekeeper(_factory).MinimumRetentionDays);
         Assert.Equal(0, new MoveJobHousekeeper(_factory).MinimumRetentionDays);
@@ -400,11 +585,12 @@ public sealed class HousekeeperTests : BaseTests, IDisposable
         FileMutationJournalState state,
         DateTime updatedAt,
         int? audiobookFileId,
-        int? audiobookId = null) =>
+        int? audiobookId = null,
+        FileAction action = FileAction.Move) =>
         new()
         {
             OperationId = Guid.NewGuid(),
-            Action = FileAction.Move,
+            Action = action,
             SourcePath = sourcePath,
             DestinationPath = $"{sourcePath} (destination)",
             SourceParentDirectoryObjectIdentity = "source-parent",
@@ -416,6 +602,43 @@ public sealed class HousekeeperTests : BaseTests, IDisposable
             CreatedAt = updatedAt,
             UpdatedAt = updatedAt
         };
+
+    private static CompatibilityFilePublicationJournal CompatibilityJournal(
+        string sourcePath,
+        CompatibilityFilePublicationState state,
+        DateTime updatedAt,
+        int? audiobookId,
+        Guid? batchId = null) =>
+        new()
+        {
+            OperationId = Guid.NewGuid(),
+            BatchId = batchId,
+            RequestedAction = FileAction.Move,
+            EffectiveAction = FileAction.Copy,
+            SourcePath = sourcePath,
+            DestinationPath = $"{sourcePath} (destination)",
+            SourceLength = 1,
+            SourceSha256 = new string('a', 64),
+            State = state,
+            AudiobookId = audiobookId,
+            CreatedAt = updatedAt,
+            UpdatedAt = updatedAt
+        };
+
+    private async Task<List<string>> SurvivingCompatibilityPathsAsync()
+    {
+        await using var context = new ListenArrDbContext(_options);
+        return await context.CompatibilityFilePublicationJournals
+            .OrderBy(journal => journal.SourcePath)
+            .Select(journal => journal.SourcePath)
+            .ToListAsync();
+    }
+
+    private async Task<int> CountCompatibilityJournalsAsync()
+    {
+        await using var context = new ListenArrDbContext(_options);
+        return await context.CompatibilityFilePublicationJournals.CountAsync();
+    }
 
     private async Task SeedAsync(Action<ListenArrDbContext> seed)
     {
