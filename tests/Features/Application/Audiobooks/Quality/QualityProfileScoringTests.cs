@@ -299,7 +299,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
         }
 
         [Fact]
-        public async Task NZB_TitleParsing_DetectsFormatAndLanguageAndIgnoresSize()
+        public async Task NZB_TitleParsing_DetectsFormatAndLanguage()
         {
             var service = CreateService();
             var profile = new QualityProfile
@@ -317,7 +317,20 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
             var result = new SearchResult
             {
                 Title = "Author - Great Book [English] [M4B]",
-                Size = 120 * 1024 * 1024, // 120 MB - would be too small for profile.MinimumSize
+                Size = 200 * 1024 * 1024, // 200 MB - above profile.MinimumSize
+                Format = null,
+                Quality = null,
+                Language = null,
+                DownloadType = "nzb",
+                NzbUrl = "http://example.com/test.nzb",
+                Seeders = 0,
+                PublishedDate = DateTime.UtcNow.AddDays(-60).ToString("o")
+            };
+
+            var tooSmall = new SearchResult
+            {
+                Title = "Author - Great Book [English] [M4B]",
+                Size = 120 * 1024 * 1024, // 120 MB - below profile.MinimumSize
                 Format = null,
                 Quality = null,
                 Language = null,
@@ -328,8 +341,13 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
             };
 
             var score = await service.ScoreSearchResult(result, profile);
+            var smallScore = await service.ScoreSearchResult(tooSmall, profile);
 
-            // Size should be ignored for NZB results: no size rejection and no Size penalty
+            // The operator's size floor is a profile setting and now applies to an NZB as well as
+            // to a torrent. This test used to assert the opposite, which is the behaviour the
+            // floor was silently doing nothing over Usenet. What it still asserts is the part that
+            // did not change: the title parsing below.
+            Assert.Contains(smallScore.RejectionReasons, r => r.Contains("File too small"));
             Assert.DoesNotContain(score.RejectionReasons, r => r.Contains("File too small"));
             Assert.False(score.ScoreBreakdown.TryGetValue("Size", out _), "NZB scoring should not add size penalties");
 
