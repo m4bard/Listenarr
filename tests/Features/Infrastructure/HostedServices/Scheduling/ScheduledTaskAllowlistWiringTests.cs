@@ -59,6 +59,45 @@ public sealed class ScheduledTaskAllowlistWiringTests : BaseTests
     }
 
     [Fact]
+    public async Task Housekeeping_IsListedAndRefused_AndItsProcessorIsNeverReached()
+    {
+        // The housekeeping sweep deletes rows from the append-only journal and cache tables, so
+        // it must reach the task surface as a schedule an operator can see and not as a button
+        // they can press. MetadataRescan below is this test's control: same registry, same
+        // runner, a service that did opt in, and a cycle body provably reached.
+        var registry = CreateRegistry();
+        var processor = new Mock<IHousekeepingProcessor>(MockBehavior.Strict);
+        var service = new HousekeepingService(
+            processor.Object,
+            CreateRunner(registry),
+            Mock.Of<ILogger<HousekeepingService>>());
+
+        using var cancellation = new CancellationTokenSource();
+        await service.StartAsync(cancellation.Token);
+        try
+        {
+            var status = await WaitForRegistrationAsync(registry, nameof(HousekeepingService));
+            Assert.Equal(ScheduledTaskManualTrigger.Denied, status.ManualTrigger);
+
+            var refused = registry.Trigger(nameof(HousekeepingService));
+
+            Assert.Equal(ScheduledTaskTriggerResult.NotAllowed, refused.Result);
+
+            // A strict mock with no setup throws on any call, so an accepted run would surface
+            // as a failure rather than as a table quietly emptied. Give the pool dispatch room
+            // first, or the assertion races the thing it is testing.
+            await Task.Delay(200);
+            processor.Verify(
+                candidate => candidate.RunCycleAsync(It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task MetadataRescan_IsAllowed_AndAManualTriggerReachesItsProcessor()
     {
         // The control. Same harness, a service that did opt in, and the cycle body is

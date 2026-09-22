@@ -11,6 +11,7 @@ using Listenarr.Infrastructure.HostedServices;
 using Listenarr.Infrastructure.HostedServices.Scheduling;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Workers;
 
@@ -72,7 +73,34 @@ internal static class WorkerRegistrationExtensions
             HistoryRetentionCleanupProcessor,
             IHistoryRetentionCleanupProcessor,
             HistoryRetentionCleanupService>(services);
+
+        AddHousekeeping(services);
         return services;
+    }
+
+    /// <summary>
+    /// The daily retention sweep, and the list of tables it sweeps.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The housekeepers are listed here by name rather than found by an assembly scan. That is a
+    /// deliberate divergence from the family, whose scan
+    /// (src/NzbDrone.Common/Composition/Extensions.cs:27-29) leaves the execution order of its
+    /// thirty-odd housekeepers undeclared, and it matches how every other worker in this
+    /// container is registered. A table joins the sweep by being added to this list, where a
+    /// reviewer can see the whole set at once.
+    /// </para>
+    /// <para>
+    /// The sweep is deliberately absent from the manual-run allowlist. It deletes stored rows,
+    /// and ScheduledTaskManualTrigger says on Allowed that such a cycle is not one to put there,
+    /// so it takes the RunPeriodicAsync default of Denied and there is nothing to add here.
+    /// </para>
+    /// </remarks>
+    private static void AddHousekeeping(IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<HousekeepingOptionsHolder>();
+        AddHostedProcessor<HousekeepingProcessor, IHousekeepingProcessor, HousekeepingService>(services);
     }
 
     private static void AddProcessor<TProcessor, TContract>(IServiceCollection services)
