@@ -139,6 +139,74 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Transmission
         }
 
         [Fact]
+        [Trait("Method", "AddAsync")]
+        [Trait("Area", "SeedCriteria")]
+        public async Task AddAsync_WhenIndexerHasSeedTime_SendsSeedIdleLimitInMinutes()
+        {
+            var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()
+                .WithName("Hit and Run Tracker")
+                .WithType("Torrent")
+                .WithSeedTime(4320)
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                IndexerId = indexer.Id
+            };
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            await adapter.AddAsync(_client, PreparedSubmissionTestFactory.Torrent(searchResult));
+
+            var transmissionApiMock = _provider.GetRequiredService<TransmissionApiMock>();
+            using var document = transmissionApiMock.GetLastJsonContent();
+            Assert.NotNull(document);
+            Assert.Equal("torrent-set", document.RootElement.GetProperty("method").GetString());
+            var arguments = document.RootElement.GetProperty("arguments");
+            // Sent as minutes, matching the Indexer.SeedTime unit the operator entered. A
+            // TotalMinutes/TotalSeconds mix-up anywhere in the resolve-to-request path would
+            // surface here as 259200 (seconds) rather than 4320.
+            Assert.Equal(4320, arguments.GetProperty("seedIdleLimit").GetInt32());
+            Assert.Equal(1, arguments.GetProperty("seedIdleMode").GetInt32());
+            Assert.False(arguments.TryGetProperty("seedRatioLimit", out _));
+            Assert.False(arguments.TryGetProperty("seedRatioMode", out _));
+        }
+
+        [Fact]
+        [Trait("Method", "AddAsync")]
+        [Trait("Area", "SeedCriteria")]
+        public async Task AddAsync_WhenTransmissionReportsADuplicate_DoesNotIssueTorrentSetCall()
+        {
+            var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()
+                .WithName("Hit and Run Tracker")
+                .WithType("Torrent")
+                .WithSeedRatio(1.5)
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                IndexerId = indexer.Id
+            };
+
+            var transmissionApiMock = _provider.GetRequiredService<TransmissionApiMock>();
+            transmissionApiMock.SimulateDuplicateAdd = true;
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            var added = await adapter.AddAsync(_client, PreparedSubmissionTestFactory.Torrent(searchResult));
+
+            Assert.True(added.WasDuplicate);
+
+            // A torrent-set call here would mean Listenarr silently rewrote share limits on a
+            // torrent it did not just add, which may belong to someone else's manual add.
+            using var document = transmissionApiMock.GetLastJsonContent();
+            Assert.NotNull(document);
+            Assert.Equal("torrent-add", document.RootElement.GetProperty("method").GetString());
+        }
+
+        [Fact]
         [Trait("Method", "TestConnectionAsync")]
         public async Task TestConnectionAsync_NormalizesHostAndRespectsConfiguredRpcPath()
         {
