@@ -81,6 +81,11 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
 
             public Task DeleteAsync(int id, CancellationToken ct = default)
                 => throw new NotSupportedException();
+
+            // Added by the stack, not by the branch this fake arrived on. Nothing here exercises
+            // the indexer backoff state, so the stub only has to satisfy the interface.
+            public Task UpdateBackoffStateAsync(int indexerId, IndexerBackoffState state, CancellationToken ct = default)
+                => Task.CompletedTask;
         }
 
         private static SearchResultScorer CreateScorer(IIndexerRepository? indexers = null)
