@@ -86,12 +86,35 @@ async function createNow() {
     await createBackup()
     error.value = ''
     await load()
-  } catch {
-    // The backend already distinguishes a full disk from an unwritable directory; repeating its
-    // wording here would drift, so this stays generic and points at where the detail lives.
-    error.value = 'Backup failed. Check the logs and that the config directory is writable.'
+  } catch (caught) {
+    // A refusal is not a failure and the operator can act on it, so the server's wording is worth
+    // showing. Everything else stays generic: the backend already distinguishes a full disk from
+    // an unwritable directory and repeating that wording here would only drift.
+    error.value =
+      refusalMessage(caught) ??
+      'Backup failed. Check the logs and that the config directory is writable.'
   } finally {
     creating.value = false
+  }
+}
+
+/**
+ * Returns the server's explanation when a backup was refused because the limit is reached, and
+ * null for anything else.
+ */
+function refusalMessage(caught: unknown): string | null {
+  const candidate = caught as { status?: number; body?: string } | null
+  if (!candidate || candidate.status !== 409 || !candidate.body) {
+    return null
+  }
+
+  try {
+    const payload = JSON.parse(candidate.body) as { error?: unknown }
+    return typeof payload.error === 'string' && payload.error.trim().length > 0
+      ? payload.error
+      : null
+  } catch {
+    return null
   }
 }
 
