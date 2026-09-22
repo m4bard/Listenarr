@@ -26,11 +26,14 @@ namespace Listenarr.Application.SystemDiagnostics.Contracts
     public interface IBackupService
     {
         /// <summary>
-        /// Writes a new backup archive and applies the retention sweep for the given trigger.
+        /// Writes a new backup archive. Retention is a separate call, deliberately.
         /// </summary>
         /// <param name="trigger">Why the backup is being taken. Determines the subdirectory used.</param>
         /// <param name="cancellationToken">Cancels the operation.</param>
         /// <returns>Metadata describing the archive that was written.</returns>
+        /// <exception cref="Listenarr.Domain.SystemDiagnostics.Exceptions.BackupLimitReachedException">
+        /// A manual backup was requested and the limit on how many are kept is already met.
+        /// </exception>
         Task<BackupArchive> CreateAsync(BackupTrigger trigger, CancellationToken cancellationToken = default);
 
         /// <summary>
@@ -41,7 +44,7 @@ namespace Listenarr.Application.SystemDiagnostics.Contracts
 
         /// <summary>
         /// Deletes automatic backups older than the configured retention window and returns how
-        /// many were removed. Manual backups are never swept.
+        /// many were removed. Manual backups are never removed by this, or by anything else.
         /// </summary>
         /// <remarks>
         /// Separate from <see cref="CreateAsync"/> on purpose. Retention reads application

@@ -59,25 +59,38 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
         /// </remarks>
         public static bool IsEnabled(IConfiguration? configuration)
         {
-            var environmentOverride = Environment.GetEnvironmentVariable(EnabledEnvironmentVariable);
-            if (!string.IsNullOrWhiteSpace(environmentOverride))
+            return Read(Environment.GetEnvironmentVariable(EnabledEnvironmentVariable), EnabledEnvironmentVariable)
+                ?? Read(configuration?[EnabledConfigurationKey], EnabledConfigurationKey)
+                ?? true;
+        }
+
+        /// <summary>
+        /// Reads one spelling of the flag, or <see langword="null"/> when it is unset or unusable.
+        /// </summary>
+        /// <remarks>
+        /// Read as a string rather than through GetValue&lt;bool?&gt;, which uses bool.Parse and
+        /// throws on anything but true or false. That throw would land in the catch around the
+        /// startup migration path, which rethrows and stops the process, so the switch documented
+        /// as the way out of a container that will not start would itself be a way in.
+        /// </remarks>
+        private static bool? Read(string? value, string source)
+        {
+            if (string.IsNullOrWhiteSpace(value))
             {
-                var parsed = ParseFlag(environmentOverride);
-                if (parsed is null)
-                {
-                    // An operator reaching for this is looking at a container that will not start.
-                    // Ignoring an unrecognised spelling in silence is the worst thing to do to them.
-                    Log.Logger.Warning(
-                        "[Startup] {Variable} is set to a value that is not a yes or a no, so it is being ignored",
-                        EnabledEnvironmentVariable);
-                }
-                else
-                {
-                    return parsed.Value;
-                }
+                return null;
             }
 
-            return configuration?.GetValue<bool?>(EnabledConfigurationKey) ?? true;
+            var parsed = ParseFlag(value);
+            if (parsed is null)
+            {
+                // An operator reaching for this is looking at a container that will not start.
+                // Ignoring an unrecognised spelling in silence is the worst thing to do to them.
+                Log.Logger.Warning(
+                    "[Startup] {Source} is set to a value that is not a yes or a no, so it is being ignored",
+                    source);
+            }
+
+            return parsed;
         }
 
         /// <summary>
@@ -85,7 +98,8 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
         /// operator who writes 0, no or off gets what they meant.
         /// </summary>
         /// <remarks>
-        /// The same set as Startup/ListenarrStartupTasks.cs uses for AuthenticationRequired.
+        /// A superset of what Startup/ListenarrStartupTasks.cs accepts for AuthenticationRequired,
+        /// which has no negative spellings at all because absence is its false.
         /// </remarks>
         private static bool? ParseFlag(string value)
         {
@@ -126,12 +140,20 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
             CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(context);
+            ArgumentNullException.ThrowIfNull(pendingMigrations);
 
-            var creator = context.GetService<IRelationalDatabaseCreator>();
+            // Asked before touching the database at all, because the overwhelming majority of
+            // starts have nothing pending and should cost nothing.
+            if (pendingMigrations.Count == 0)
+            {
+                return Task.FromResult<BackupArchive?>(null);
+            }
 
             // Asked of the database rather than inferred from an empty __EFMigrationsHistory,
             // because a populated database whose history table was lost also has no applied
             // migrations, and that is the case where a backup matters most.
+            var creator = context.GetService<IRelationalDatabaseCreator>();
+
             return ProtectAsync(
                 pendingMigrations,
                 databaseIsBeingCreated: !creator.Exists() || !creator.HasTables(),
