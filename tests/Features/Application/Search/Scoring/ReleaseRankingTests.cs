@@ -25,11 +25,11 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
     /// score only between releases the profile ranks equally.
     /// </summary>
     /// <remarks>
-    /// The control is <see cref="AProfileThatPrefersMp3FlipsThePick"/>. It is the same two
-    /// releases under a profile whose ordering is reversed, and the pick has to come out the other
-    /// way round. If it did not, these tests would be satisfied by anything that happened to
-    /// prefer AAC, including a rewritten hardcoded ladder, and they would say nothing about the
-    /// profile being read.
+    /// The control is <see cref="AProfileThatPrefersTheLowerLadderRungStillDecides"/>. It is the
+    /// same two releases under a profile whose ordering is reversed, and the pick has to come out
+    /// the other way round. If it did not, these tests would be satisfied by anything that
+    /// happened to prefer AAC, including a rewritten hardcoded ladder, and they would say nothing
+    /// about the profile being read.
     ///
     /// <see cref="TheScoreStillSeparatesTwoReleasesOnTheSameRung"/> is the second control: the
     /// score has to keep deciding where the profile does not, which is what shows the ordering was
