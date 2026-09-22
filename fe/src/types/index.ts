@@ -1059,6 +1059,41 @@ export interface ApiStatus {
   enabled: boolean
 }
 
+// One periodic worker as GET /system/tasks reports it.
+export interface ScheduledTask {
+  name: string
+  displayName: string
+  /**
+   * The gap between cycles in whole seconds, or null when the worker's interval cannot be
+   * stated in that unit. Nullable and not optional: the server always sends the key, and
+   * null is a value rather than an absence. Test for null on purpose, because null and 0
+   * are indistinguishable here under `> 0`, `??` and arithmetic, and a real 0 means a
+   * worker that declared a zero interval.
+   */
+  intervalSeconds: number | null
+  /** Why intervalSeconds is null, on the rows where it is, and absent on the rest. */
+  intervalError?: string
+  registeredAt: string // ISO date string
+  /** False once the worker's loop has ended. The row stays so the failure stays visible. */
+  isRegistered: boolean
+  isRunning: boolean
+  /** Whether POST to this task's run route will be accepted, so a button can say so first. */
+  isManualRunAllowed: boolean
+  lastStartedAt?: string // ISO date string
+  lastEndedAt?: string // ISO date string
+  lastDurationSeconds?: number
+  lastOutcome: string // "Unknown", "Succeeded", "Failed", "Canceled"
+  lastTrigger?: string // "Scheduled", "Manual"
+  nextExecution?: string // ISO date string
+}
+
+// The answer to POST /system/tasks/{name}/run. Both outcomes are 202 with an otherwise
+// identical row, so `triggered` is the only thing that tells them apart.
+export interface ScheduledTaskRun {
+  triggered: 'started' | 'already-running'
+  task: ScheduledTask
+}
+
 export interface LogEntry {
   id: string
   timestamp: string // ISO date string
