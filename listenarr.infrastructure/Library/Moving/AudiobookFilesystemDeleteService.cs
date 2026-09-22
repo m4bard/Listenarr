@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Library.RecycleBin;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
@@ -31,6 +32,7 @@ namespace Listenarr.Infrastructure.Library.Moving
         private readonly ILibraryDirectoryOwnershipStore _directoryOwnershipStore;
         private readonly ILogger<AudiobookFilesystemDeleteService> _logger;
         private readonly LibraryDirectoryOwnershipBoundaryAuthorizer? _ownershipAuthorizer;
+        private readonly IRecycleBinService? _recycleBinService;
 
         public AudiobookFilesystemDeleteService(
             IAudiobookRepository audiobookRepository,
@@ -40,7 +42,8 @@ namespace Listenarr.Infrastructure.Library.Moving
             IFileSystemSemanticsResolver semanticsResolver,
             ILibraryDirectoryOwnershipStore directoryOwnershipStore,
             ILogger<AudiobookFilesystemDeleteService> logger,
-            LibraryDirectoryOwnershipBoundaryAuthorizer? ownershipAuthorizer = null)
+            LibraryDirectoryOwnershipBoundaryAuthorizer? ownershipAuthorizer = null,
+            IRecycleBinService? recycleBinService = null)
         {
             _audiobookRepository = audiobookRepository;
             _audioFileRepository = audioFileRepository;
@@ -50,6 +53,7 @@ namespace Listenarr.Infrastructure.Library.Moving
             _directoryOwnershipStore = directoryOwnershipStore;
             _logger = logger;
             _ownershipAuthorizer = ownershipAuthorizer;
+            _recycleBinService = recycleBinService;
         }
 
         public async Task<AudiobookFilesystemDeleteResult> DeleteAsync(
