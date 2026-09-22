@@ -34,9 +34,11 @@ namespace Listenarr.Infrastructure.Maintenance.Housekeeping;
 /// rather than trusting a returned row count. It keeps each write transaction to one batch, which
 /// matters because there is no retry policy and no busy_timeout anywhere in this codebase, so a
 /// long write transaction against the SQLite file is felt as SQLITE_BUSY by whatever else is
-/// serving the application. It respects the cascade EF is configured with rather than a database
-/// level one, and on SQLite the database level one is only enforced when a connection sets
-/// PRAGMA foreign_keys, which nothing here does. And it behaves identically on the EF in-memory
+/// serving the application. It respects the cascade EF is configured with rather than the
+/// database level one, which is worth not depending on: nothing in this repository sets PRAGMA
+/// foreign_keys, so whether a bare DELETE cascades is whatever the driver defaults to, and
+/// MoveJobHousekeeperTests measures that it currently defaults to on. And it behaves identically
+/// on the EF in-memory
 /// provider that most of the suite runs on, where ExecuteDeleteAsync simply throws, so a test and
 /// the shipped code are not two different mechanisms wearing the same name.
 /// </para>
