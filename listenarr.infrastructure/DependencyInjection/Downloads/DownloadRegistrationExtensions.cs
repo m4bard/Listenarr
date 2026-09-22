@@ -59,6 +59,7 @@ internal static class DownloadRegistrationExtensions
         services.AddSingleton<IDownloadPushService, DownloadPushService>();
         services.AddScoped<IDownloadService, DownloadService>();
         services.AddScoped<DownloadTypeResolver>();
+        services.AddSingleton<DownloadClientRoundRobinState>();
         services.AddScoped<DownloadClientSelector>();
         services.AddScoped<DownloadCachedTorrentStore>();
         services.AddSingleton<IDownloadReferenceService, DownloadReferenceService>();

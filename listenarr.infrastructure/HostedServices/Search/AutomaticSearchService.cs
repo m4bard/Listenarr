@@ -49,7 +49,6 @@ namespace Listenarr.Infrastructure.HostedServices.Search
         private readonly IServiceScopeFactory _serviceScopeFactory;
         private readonly AutomaticSearchResultClassifier _resultClassifier;
         private readonly AutomaticSearchQualityEvaluator _qualityEvaluator;
-        private readonly AutomaticSearchDownloadClientSelector _downloadClientSelector;
 
         public AutomaticSearchProcessor(
             ILogger<AutomaticSearchProcessor> logger,
@@ -59,7 +58,6 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             _serviceScopeFactory = serviceScopeFactory;
             _resultClassifier = new AutomaticSearchResultClassifier(_logger);
             _qualityEvaluator = new AutomaticSearchQualityEvaluator(_logger);
-            _downloadClientSelector = new AutomaticSearchDownloadClientSelector(_serviceScopeFactory, _logger);
         }
 
         public Task RunCycleAsync(CancellationToken cancellationToken) => PerformAutomaticSearchesAsync(cancellationToken);
@@ -75,6 +73,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             var searchService = scope.ServiceProvider.GetRequiredService<ISearchService>();
             var qualityProfileService = scope.ServiceProvider.GetRequiredService<IQualityProfileService>();
             var downloadService = scope.ServiceProvider.GetRequiredService<IDownloadService>();
+            var downloadClientSelector = scope.ServiceProvider.GetRequiredService<DownloadClientSelector>();
 
             // Get all monitored audiobooks that haven't been searched in the last 6 hours
             var cutoffTime = DateTime.UtcNow.AddHours(-6);
@@ -99,7 +98,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 try
                 {
                     var downloadsQueuedForBook = await ProcessAudiobookAsync(
-                        audiobook, searchService, qualityProfileService, downloadService, audiobookRepository, downloadRepository, fileRepository, stoppingToken);
+                        audiobook, searchService, qualityProfileService, downloadService, downloadClientSelector, audiobookRepository, downloadRepository, fileRepository, stoppingToken);
 
                     downloadsQueued += downloadsQueuedForBook;
                     processedCount++;
@@ -134,6 +133,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             ISearchService searchService,
             IQualityProfileService qualityProfileService,
             IDownloadService downloadService,
+            DownloadClientSelector downloadClientSelector,
             IAudiobookRepository audiobookRepository,
             IDownloadRepository downloadRepository,
             IAudiobookFileRepository fileRepository,
@@ -296,12 +296,12 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             try
             {
                 // Determine appropriate download client for this result
-                var isTorrent = _resultClassifier.IsTorrentResult(topResult.SearchResult);
-                var downloadClientId = await _downloadClientSelector.GetAppropriateDownloadClientAsync(topResult.SearchResult, isTorrent);
+                var protocol = _resultClassifier.ResolveProtocol(topResult.SearchResult);
+                var downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(protocol);
 
                 if (string.IsNullOrEmpty(downloadClientId))
                 {
-                    _logger.LogWarning("No suitable download client found for result type: {Type}", isTorrent ? "torrent" : "NZB");
+                    _logger.LogWarning("No suitable download client found for protocol: {Protocol}", protocol);
                     return 0;
                 }
 

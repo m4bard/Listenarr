@@ -191,6 +191,7 @@ public static class ApiResponseRedactor
             config.Username,
             config.UseSSL,
             config.IsEnabled,
+            config.Priority,
             config.RemoveCompletedDownloads,
             Settings = config.Settings,
             config.CreatedAt
@@ -209,6 +210,7 @@ public static class ApiResponseRedactor
             config.Username,
             config.UseSSL,
             config.IsEnabled,
+            config.Priority,
             config.RemoveCompletedDownloads,
             Settings = config.Settings,
             config.CreatedAt

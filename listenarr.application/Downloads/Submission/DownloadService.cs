@@ -195,16 +195,16 @@ namespace Listenarr.Application.Downloads.Submission
             topResult.SearchResult.Score = topResult.TotalScore;
 
             var candidate = TrustedDownloadCandidateFactory.Create(topResult.SearchResult);
-            var isTorrent = candidate.SourceDescriptor.Protocol == DownloadProtocol.Torrent;
-            var downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(isTorrent);
+            var protocol = candidate.SourceDescriptor.Protocol;
+            var downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(protocol);
 
             if (downloadClientId == null)
             {
-                logger.LogWarning("No suitable download client found for type: {Type}", isTorrent ? "Torrent" : "NZB");
+                logger.LogWarning("No suitable download client found for protocol: {Protocol}", protocol);
                 return new SearchAndDownloadResult
                 {
                     Success = false,
-                    Message = $"No suitable download client found for {(isTorrent ? "torrent" : "NZB")} results"
+                    Message = $"No suitable download client found for {DownloadClientSelector.DescribeProtocol(protocol)} results"
                 };
             }
 
@@ -277,8 +277,6 @@ namespace Listenarr.Application.Downloads.Submission
                 return await directDownloadWorkflow.CreateTrackedDownloadAsync(directDownload, audiobookId);
             }
 
-            var isTorrent = prepared.Protocol == DownloadProtocol.Torrent;
-
             logger.LogInformation(
                 "Processing as {DownloadType} after server-side validation for '{Title}'",
                 prepared.Protocol,
@@ -286,16 +284,18 @@ namespace Listenarr.Application.Downloads.Submission
 
             if (downloadClientId == null)
             {
-                downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(isTorrent);
+                downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(prepared.Protocol);
 
                 if (downloadClientId == null)
                 {
-                    var clientType = isTorrent ? "torrent" : "NZB";
-                    var neededClients = isTorrent ? "qBittorrent or Transmission" : "SABnzbd or NZBGet";
+                    var clientType = DownloadClientSelector.DescribeProtocol(prepared.Protocol);
+                    var neededClients = prepared.Protocol == DownloadProtocol.Torrent
+                        ? "qBittorrent or Transmission"
+                        : "SABnzbd or NZBGet";
                     throw new Exception($"No suitable download client found for {clientType}. Please configure and enable a {clientType} client ({neededClients}) in Settings.");
                 }
 
-                logger.LogInformation("Auto-selected download client {ClientId} for {ClientType}", downloadClientId, isTorrent ? "torrent" : "NZB");
+                logger.LogInformation("Auto-selected download client {ClientId} for {Protocol}", downloadClientId, prepared.Protocol);
             }
 
             var downloadClient = await configurationService.GetDownloadClientConfigurationAsync(downloadClientId);
@@ -370,12 +370,11 @@ namespace Listenarr.Application.Downloads.Submission
             {
                 try
                 {
-                    var protocol = isTorrent ? DownloadProtocol.Torrent : DownloadProtocol.Usenet;
                     await downloadHistoryService.RecordGrabbedAsync(
                         downloadId,
                         downloadClientIdForModel,
                         candidate.Title,
-                        protocol);
+                        prepared.Protocol);
                     logger.LogInformation("Recorded grabbed event in history for download {DownloadId}", downloadId);
                 }
                 catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException)

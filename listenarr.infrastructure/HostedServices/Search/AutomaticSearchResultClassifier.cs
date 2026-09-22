@@ -37,6 +37,21 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             return string.Join(" ", parts);
         }
 
+        /// <summary>
+        /// Maps a search result onto the protocol that decides which download client carries it.
+        /// Direct downloads have their own internal pipeline; everything else that is not a
+        /// torrent is treated as usenet, which is what IsTorrentResult already assumed.
+        /// </summary>
+        public DownloadProtocol ResolveProtocol(SearchResult result)
+        {
+            if (string.Equals(result.DownloadType, DirectDownloadMetadataKeys.ClientId, StringComparison.OrdinalIgnoreCase))
+            {
+                return DownloadProtocol.DirectDownload;
+            }
+
+            return IsTorrentResult(result) ? DownloadProtocol.Torrent : DownloadProtocol.Usenet;
+        }
+
         public bool IsTorrentResult(SearchResult result)
         {
             if (!string.IsNullOrEmpty(result.DownloadType))
