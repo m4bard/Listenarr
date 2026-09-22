@@ -127,5 +127,76 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
             configurationService.Verify(x => x.GetApplicationSettingsAsync(), Times.Once);
             configurationService.VerifyNoOtherCalls();
         }
+
+        [Fact]
+        public async Task GetApplicationSettings_DoesNotReturnASmtpPasswordInTheClear()
+        {
+            // Deliberately built the same way as the Prowlarr test above: no HttpContext, so the
+            // caller-gated redaction does not fire. That is the point. The password has to be
+            // withheld from a trusted caller too, because the settings screen round-trips this
+            // document back on save and never needs the value legible.
+            var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
+            configurationService
+                .Setup(x => x.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings
+                {
+                    Id = 1,
+                    Emails =
+                    [
+                        new()
+                        {
+                            Id = "email-1",
+                            Name = "Household",
+                            Server = "smtp.example.invalid",
+                            Username = "listenarr@example.invalid",
+                            Password = "hunter2-smtp-password",
+                        }
+                    ]
+                });
+
+            var controller = new SettingsController(
+                configurationService.Object,
+                NullLogger<SettingsController>.Instance,
+                Mock.Of<IHubBroadcaster>());
+
+            var result = await controller.GetApplicationSettings();
+            var ok = Assert.IsType<OkObjectResult>(result.Result);
+            var settings = Assert.IsType<ApplicationSettings>(ok.Value);
+
+            var email = Assert.Single(settings.Emails!);
+            Assert.Equal(ApiResponseRedactor.RedactedValue, email.Password);
+
+            // The control. Everything else about the target comes back, so a response that simply
+            // dropped the list, or the whole object, could not pass this.
+            Assert.Equal("Household", email.Name);
+            Assert.Equal("smtp.example.invalid", email.Server);
+            Assert.Equal("listenarr@example.invalid", email.Username);
+        }
+
+        [Fact]
+        public async Task GetApplicationSettings_LeavesAnUnsetSmtpPasswordAlone()
+        {
+            // A target with no password must not come back claiming to have one, or the operator
+            // sees REDACTED in a field they never filled in and the save writes it back as a value.
+            var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
+            configurationService
+                .Setup(x => x.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings
+                {
+                    Id = 1,
+                    Emails = [new() { Id = "email-1", Name = "Relay", Password = string.Empty }]
+                });
+
+            var controller = new SettingsController(
+                configurationService.Object,
+                NullLogger<SettingsController>.Instance,
+                Mock.Of<IHubBroadcaster>());
+
+            var result = await controller.GetApplicationSettings();
+            var ok = Assert.IsType<OkObjectResult>(result.Result);
+            var settings = Assert.IsType<ApplicationSettings>(ok.Value);
+
+            Assert.Equal(string.Empty, Assert.Single(settings.Emails!).Password);
+        }
     }
 }
