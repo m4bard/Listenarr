@@ -26,6 +26,15 @@ namespace Listenarr.Tests.Features.Infrastructure.Persistence;
 [Trait("Category", "Infrastructure")]
 public class SqliteMigrationSchemaTests : BaseTests
 {
+    // Migrations this branch adds, declared apart from the consolidated list below and
+    // asserted apart from it. Two branches that each add a migration would otherwise rewrite
+    // the same two lines of this file and conflict on merge in either order.
+    private const string EmbedCoverArtSettingMigrationId =
+        "20260828190320_AddEmbedCoverArtInAudioFilesSetting";
+
+    private static readonly string[] BranchMigrationIds =
+        [EmbedCoverArtSettingMigrationId];
+
     private const string CanaryMigrationFrontierId =
         "20260621002226_AddApplicationSettingsConcurrency";
     private const string MoveJobSourcePathRepairId =
@@ -42,6 +51,10 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260821141235_AddCompatibilityFilePublication";
     private const string WeakStorageVerifiedCleanupMigrationId =
         "20260825021432_AddWeakStorageVerifiedCleanup";
+    private const string ReleaseBlocklistMigrationId =
+        "20260828191810_AddReleaseBlocklist";
+    private const string HistoryProtocolMigrationId =
+        "20260911172407_AddHistoryProtocol";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -178,6 +191,22 @@ public class SqliteMigrationSchemaTests : BaseTests
             await ColumnDefaultAsync(connection, "MoveJobs", "SourceCleanupMode"));
     }
 
+    // The protocol column is what makes a recorded protocol survive the write. Without it the
+    // value is built in DownloadHistoryService and then dropped by the mapping, so a test of the
+    // construction alone would pass while nothing reached the database.
+    [Fact]
+    [Trait("Scenario", "HistoryProtocolColumn")]
+    public async Task HistoryProtocolMigration_AddsTheNullableProtocolColumn()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.True(await ColumnExistsAsync(connection, "History", "Protocol"));
+    }
+
     [Fact]
     [Trait("Scenario", "FinalMigrationHistoryIsConsolidated")]
     public async Task MigrationHistory_ContainsOnlyRetainedRepairsAndConsolidatedPrMigrationAfterCanary()
@@ -188,9 +217,34 @@ public class SqliteMigrationSchemaTests : BaseTests
 
         await context.Database.MigrateAsync();
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToList();
-        var postCanary = applied
+        var allPostCanary = applied
             .Where(id => string.CompareOrdinal(id, CanaryMigrationFrontierId) > 0)
             .ToArray();
+        Assert.Equal(
+            BranchMigrationIds,
+            allPostCanary.Where(id => BranchMigrationIds.Contains(id, StringComparer.Ordinal)));
+        Assert.All(
+            BranchMigrationIds,
+            id => Assert.True(
+                string.CompareOrdinal(id, WeakStorageVerifiedCleanupMigrationId) > 0,
+                "A migration this branch adds has to sort after the consolidated history."));
+        var postCanary = allPostCanary
+            .Where(id => !BranchMigrationIds.Contains(id, StringComparer.Ordinal))
+            .ToArray();
+
+        // Pinned on their own rather than appended to the list below. That list is
+        // ordered and every branch that adds a migration has to extend its last line, so
+        // two of them in flight at once is a conflict in a file neither branch is about.
+        // Taking this branch's own out first leaves the check below exactly as strict:
+        // anything else unpinned still fails it.
+        string[] metadataRefreshMigrationIds =
+        [
+            "20260910120000_AddAudiobookLastMetadataRefreshAt",
+            "20260910120500_AddMetadataRefreshSettings",
+            "20260910121000_AddAudiobookLastMetadataRefreshAtIndex"
+        ];
+        Assert.All(metadataRefreshMigrationIds, id => Assert.Contains(id, postCanary));
+        postCanary = [.. postCanary.Except(metadataRefreshMigrationIds)];
 
         Assert.Equal(
             [
@@ -199,7 +253,9 @@ public class SqliteMigrationSchemaTests : BaseTests
                 MoveJobRelocationForeignKeyMigrationId,
                 FileMutationParentGenerationProofsMigrationId,
                 CompatibilityFilePublicationMigrationId,
-                WeakStorageVerifiedCleanupMigrationId
+                WeakStorageVerifiedCleanupMigrationId,
+                ReleaseBlocklistMigrationId,
+                HistoryProtocolMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
@@ -385,6 +441,22 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.True(await IndexExistsAsync(connection, "IX_RootFolders_SingleDefault"));
         Assert.True(await IndexExistsAsync(connection, "IX_AudiobookFiles_PathOwnershipKey"));
         Assert.True(await IndexExistsAsync(connection, "IX_LibraryDirectoryOwnerships_PathOwnershipKey"));
+
+        // The refresh queue orders by this column and takes the head of it on every cycle and
+        // every API trigger. Unindexed that is a full scan and a sort, which is exactly the
+        // shape LastSearchTime next to it has always been indexed for.
+        Assert.True(await IndexExistsAsync(connection, "IX_Audiobooks_LastMetadataRefreshAt"));
+        Assert.True(await IndexExistsAsync(connection, "IX_Audiobooks_LastSearchTime"));
+
+        // On, for new installs and upgrades alike. What makes that safe on an upgrade is the
+        // startup backfill of LastMetadataRefreshAt, not a default of off: an untouched null
+        // reads as never refreshed, and a library of those is due all at once with nothing to
+        // order it by. AudiobookRepository_MetadataRefreshQueryTests pins the backfill.
+        Assert.Equal("1", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshEnabled"));
+        Assert.Equal("24", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshIntervalHours"));
+        Assert.Equal("30", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshStaleAfterDays"));
+        Assert.Equal("60", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshRequestsPerHour"));
+        Assert.Equal("1000", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshMinimumSpacingMs"));
         Assert.True(await ForeignKeyHasDeleteActionAsync(
             connection,
             "LibraryDirectoryOwnerships",
