@@ -100,6 +100,13 @@ internal static class WorkerRegistrationExtensions
     {
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<HousekeepingOptionsHolder>();
+
+        // The list. Order is execution order, cheapest and least consequential first, so a cycle
+        // that is going to fail has already done the harmless work.
+        services.AddSingleton<IHousekeepingTask, AuthorCacheHousekeeper>();
+        services.AddSingleton<IHousekeepingTask, SeriesCacheHousekeeper>();
+        services.AddSingleton<IHousekeepingTask, FileMutationJournalHousekeeper>();
+
         AddHostedProcessor<HousekeepingProcessor, IHousekeepingProcessor, HousekeepingService>(services);
     }
 
