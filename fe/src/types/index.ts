@@ -494,6 +494,10 @@ export interface ApplicationSettings {
   missingSourceRetryInitialDelaySeconds?: number
   missingSourceMaxRetries?: number
   enableNotifications: boolean
+
+  // How long an automatic backup is kept, in days. Manual backups are never swept.
+  // 28 matches Readarr, Sonarr and Prowlarr. Zero or less keeps everything.
+  backupRetentionDays?: number
   allowedFileExtensions: string[]
   importBlacklistExtensions?: string[]
   // Automatically extract archive files found during library import and completed-download import
@@ -1523,4 +1527,18 @@ export interface RenameResult {
   conflict: boolean
   error?: string
   renamedFiles: FileRenameResultItem[]
+}
+
+/** Why a backup archive was produced. Mirrors the backend BackupTrigger enum. */
+export type BackupTrigger = 'Manual' | 'Migration'
+
+/**
+ * One backup archive on disk. Carries no path: an archive holds the database and config.json,
+ * so the API never says where it is or hands out its bytes.
+ */
+export interface BackupArchive {
+  name: string
+  trigger: BackupTrigger
+  sizeBytes: number
+  createdAtUtc: string
 }
