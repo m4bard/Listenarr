@@ -126,6 +126,20 @@ namespace Listenarr.Domain.Audiobooks
         public MoveFailureKind FailureKind { get; set; } = MoveFailureKind.None;
         public int AttemptCount { get; set; } = 0;
         public DateTime? UpdatedAt { get; set; }
+
+        /// <summary>
+        /// When this job reached a terminal status, or null while it has not.
+        /// </summary>
+        /// <remarks>
+        /// Separate from <see cref="UpdatedAt" /> rather than reusing it, matching
+        /// DownloadProcessingJob.CompletedAt, which the existing retention sweep for that table
+        /// already keys on. UpdatedAt is nullable and two reconciliation paths reach a terminal
+        /// status without stamping it, so a retention predicate over UpdatedAt would never match
+        /// those rows and they would be immortal. This column is written by every transition into
+        /// Completed or Superseded and nowhere else, so it means one thing.
+        /// </remarks>
+        public DateTime? CompletedAt { get; set; }
+
         public string? ActiveDeduplicationKey { get; set; }
         public int IdentityKeyVersion { get; set; } = MoveIdentityProtocol.Current;
         public string? LeaseOwner { get; set; }
