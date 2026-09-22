@@ -43,7 +43,20 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 throw new DownloadClientSubmissionException("qBittorrent authentication failed.", exception);
             }
 
-            var seedConfiguration = await seedCriteriaResolver.ResolveAsync(torrent.IndexerId, ct);
+            // Non-fatal by design: a failure resolving the indexer's seed criteria (for
+            // example a transient database error) must never block the grab itself. Falling
+            // back to no seed configuration is the same "leave the client's own configuration
+            // alone" behavior as an indexer that genuinely has none configured.
+            TorrentSeedConfiguration? seedConfiguration = null;
+            try
+            {
+                seedConfiguration = await seedCriteriaResolver.ResolveAsync(torrent.IndexerId, ct);
+            }
+            catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+            {
+                logger.LogDebug(exception, "Non-fatal failure resolving indexer seed criteria; proceeding without them");
+            }
+
             var addPlan = QbittorrentTorrentAddPlanner.Create(client, torrent, seedConfiguration);
 
             using var addContent = QbittorrentAddRequestContentBuilder.Build(addPlan);
