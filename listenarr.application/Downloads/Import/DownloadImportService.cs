@@ -37,6 +37,7 @@ namespace Listenarr.Application.Downloads.Import
         IFileRegistrationRecoveryService fileRegistrationRecoveryService,
         IMoveQueueService moveQueueService,
         ILibraryDirectoryOwnershipStore directoryOwnershipStore,
+        IFreeSpaceImportGuard freeSpaceImportGuard,
         ILogger<DownloadImportService> logger,
         IFilePublicationCapabilityResolver? filePublicationCapabilityResolver = null,
         ICompatibilitySourceCleanupCoordinator? compatibilitySourceCleanupCoordinator = null)
@@ -129,6 +130,14 @@ namespace Listenarr.Application.Downloads.Import
                 }
                 var sourceFiles = candidateFiles.Distinct(sourcePathComparer).ToList();
                 var companionSourceRoots = ImportCompanionDestinationResolver.ResolveRoots(sourceFiles, archiveImportExtractor.ExtractionRoots, sourceSemantics);
+                var freeSpaceFailures = EvaluateFreeSpaceOrNull(
+                    audiobook.Id, normalizedBasePath, sourceFiles, completedFileAction, settings);
+                if (freeSpaceFailures != null)
+                {
+                    results.AddRange(freeSpaceFailures);
+                    return results;
+                }
+
                 var plannedAudioFiles = MultiFileImportPlanner.BuildPlans(
                     sourceFiles.Where(f => FileUtils.IsAudioFile(f, settings.AllowedFileExtensions)).Select(f => (f, (string?)null)),
                     sourcePathComparer);
@@ -143,27 +152,8 @@ namespace Listenarr.Application.Downloads.Import
 
                 try
                 {
-                    string? bestExisting = null;
                     QualityProfile? abProfile = audiobook.QualityProfile;
-                    if (audiobook.Files != null && audiobook.Files.Count != 0)
-                    {
-                        foreach (var f in audiobook.Files)
-                        {
-                            string q = string.Empty;
-                            if (!string.IsNullOrEmpty(f.Format)) q = f.Format;
-                            if (f.Bitrate.HasValue)
-                            {
-                                var kb = f.Bitrate.Value / 1000;
-                                if (kb >= 320) q = "MP3 320kbps";
-                                else if (kb >= 256) q = "MP3 256kbps";
-                                else if (kb >= 192) q = "MP3 192kbps";
-                                else if (kb >= 128) q = "MP3 128kbps";
-                            }
-                            if (string.IsNullOrEmpty(q) && !string.IsNullOrEmpty(f.Path)) q = ImportQualityEvaluator.Determine(null, f.Path);
-                            if (string.IsNullOrEmpty(bestExisting)) bestExisting = q;
-                            else if (!string.IsNullOrEmpty(q) && !string.IsNullOrEmpty(bestExisting) && abProfile != null && ImportQualityEvaluator.IsAcceptable(q, bestExisting, abProfile)) bestExisting = q;
-                        }
-                    }
+                    string? bestExisting = DetermineBestExistingQuality(audiobook);
 
                     foreach (var file in orderedFiles)
                     {

@@ -81,6 +81,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260922212752_AddBackupRetentionDaysToApplicationSettings";
     private const string DownloadClientPriorityMigrationId =
         "20260922212937_AddDownloadClientPriority";
+    private const string FreeSpaceImportSettingsMigrationId =
+        "20260922212944_AddFreeSpaceImportSettings";
     private const string IndexerSeedCriteriaMigrationId =
         "20260922213454_AddIndexerSeedCriteria";
     private const string EmailNotificationsMigrationId =
@@ -529,6 +531,7 @@ public class SqliteMigrationSchemaTests : BaseTests
                 RecycleBinMigrationId,
                 BackupRetentionDaysMigrationId,
                 DownloadClientPriorityMigrationId,
+                FreeSpaceImportSettingsMigrationId,
                 IndexerSeedCriteriaMigrationId,
                 EmailNotificationsMigrationId,
                 HousekeepingRetentionMigrationId
