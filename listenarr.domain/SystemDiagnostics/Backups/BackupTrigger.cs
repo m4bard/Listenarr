@@ -24,7 +24,10 @@ namespace Listenarr.Domain.SystemDiagnostics.Backups
     /// </summary>
     public enum BackupTrigger
     {
-        /// <summary>Requested explicitly by an operator. Never removed by the retention sweep.</summary>
+        /// <summary>
+        /// Requested explicitly by an operator. Never removed, by the retention sweep or by
+        /// anything else; a request made once the limit is reached is refused instead.
+        /// </summary>
         Manual = 0,
 
         /// <summary>Taken automatically at startup because pending schema migrations were detected.</summary>
