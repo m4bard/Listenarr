@@ -847,6 +847,8 @@ export interface Indexer {
   retention: number
   maximumSize: number
   additionalSettings?: string
+  seedRatio?: number | null // Torrent only. Unset leaves the download client's own ratio alone.
+  seedTime?: number | null // Minutes. Torrent only. Unset leaves the client's own seeding time alone.
   createdAt: string
   updatedAt: string
   lastTestedAt?: string

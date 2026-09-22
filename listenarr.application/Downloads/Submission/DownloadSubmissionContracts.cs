@@ -71,7 +71,8 @@ public sealed record PreparedTorrentSubmission(
     byte[]? TorrentBytes,
     string? MagnetUri,
     string? FileName,
-    IReadOnlyList<string> TrackerUrls)
+    IReadOnlyList<string> TrackerUrls,
+    int? IndexerId = null)
     : PreparedDownloadSubmission(
         DownloadProtocol.Torrent,
         Title,

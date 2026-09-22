@@ -15,7 +15,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
         IHttpClientFactory httpClientFactory,
         QbittorrentAuthSession authSession,
         ILogger<QbittorrentAdapter> logger,
-        string clientType)
+        string clientType,
+        ISeedCriteriaResolver seedCriteriaResolver)
     {
         public async Task<DownloadClientSubmissionResult> AddAsync(
             DownloadClientConfiguration client,
@@ -41,7 +42,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 throw new DownloadClientSubmissionException("qBittorrent authentication failed.", exception);
             }
 
-            var addPlan = QbittorrentTorrentAddPlanner.Create(client, torrent);
+            var seedConfiguration = await seedCriteriaResolver.ResolveAsync(torrent.IndexerId, ct);
+            var addPlan = QbittorrentTorrentAddPlanner.Create(client, torrent, seedConfiguration);
 
             using var addContent = QbittorrentAddRequestContentBuilder.Build(addPlan);
             using var addResponse = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/add", addContent, ct);
@@ -87,6 +89,31 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
                 {
                     logger.LogDebug(exception, "Non-fatal failure injecting trackers via addTrackers API");
+                }
+            }
+
+            // Only issued when the grabbing indexer actually has a seed ratio or seed time
+            // configured (addPlan.SeedConfiguration is null otherwise), so an indexer with no
+            // seed criteria never causes a setShareLimits call, let alone one with a default
+            // or zero value that would silently override the operator's own qBittorrent
+            // configuration.
+            if (addPlan.SeedConfiguration != null)
+            {
+                try
+                {
+                    using var shareLimitsContent = QbittorrentAddRequestContentBuilder.BuildShareLimitsContent(
+                        addPlan.Hash,
+                        addPlan.SeedConfiguration);
+                    using var shareLimitsResponse = await httpClient.PostAsync(
+                        $"{baseUrl}/api/v2/torrents/setShareLimits", shareLimitsContent, ct);
+                    if (shareLimitsResponse.IsSuccessStatusCode)
+                        logger.LogInformation("Applied indexer seed criteria for torrent {Hash} via setShareLimits API", addPlan.Hash);
+                    else
+                        logger.LogDebug("setShareLimits API returned {StatusCode} for torrent {Hash} (non-fatal)", shareLimitsResponse.StatusCode, addPlan.Hash);
+                }
+                catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+                {
+                    logger.LogDebug(exception, "Non-fatal failure applying indexer seed criteria via setShareLimits API");
                 }
             }
 

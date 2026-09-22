@@ -109,7 +109,8 @@ internal static class DownloadClientRegistrationExtensions
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<QbittorrentAuthSession>(),
                 sp.GetRequiredService<ILogger<QbittorrentAdapter>>(),
-                DownloadClientTypes.Qbittorrent));
+                DownloadClientTypes.Qbittorrent,
+                sp.GetRequiredService<ISeedCriteriaResolver>()));
         services.AddScoped<QbittorrentImportMarkerWorkflow>(sp =>
             new QbittorrentImportMarkerWorkflow(
                 sp.GetRequiredService<IHttpClientFactory>(),
@@ -151,7 +152,8 @@ internal static class DownloadClientRegistrationExtensions
         services.AddScoped<TransmissionAddWorkflow>(sp =>
             new TransmissionAddWorkflow(
                 sp.GetRequiredService<TransmissionRpcClient>(),
-                sp.GetRequiredService<ILogger<TransmissionAdapter>>()));
+                sp.GetRequiredService<ILogger<TransmissionAdapter>>(),
+                sp.GetRequiredService<ISeedCriteriaResolver>()));
         services.AddScoped<TransmissionRemovalWorkflow>(sp =>
             new TransmissionRemovalWorkflow(
                 sp.GetRequiredService<TransmissionRpcClient>(),

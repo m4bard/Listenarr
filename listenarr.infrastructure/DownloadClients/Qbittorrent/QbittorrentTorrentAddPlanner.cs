@@ -15,7 +15,8 @@ internal static class QbittorrentTorrentAddPlanner
 {
     public static QbittorrentTorrentAddPlan Create(
         DownloadClientConfiguration client,
-        PreparedTorrentSubmission submission)
+        PreparedTorrentSubmission submission,
+        TorrentSeedConfiguration? seedConfiguration = null)
     {
         var category = client.Settings?.TryGetValue("category", out var categoryValue) is true
             ? categoryValue?.ToString()
@@ -31,7 +32,8 @@ internal static class QbittorrentTorrentAddPlanner
             tags,
             submission.TorrentBytes,
             submission.MagnetUri,
-            submission.FileName);
+            submission.FileName,
+            seedConfiguration is { HasAnyValue: true } ? seedConfiguration : null);
     }
 }
 
@@ -42,4 +44,5 @@ internal sealed record QbittorrentTorrentAddPlan(
     string? Tags,
     byte[]? TorrentFileData,
     string? MagnetLink,
-    string? FileName);
+    string? FileName,
+    TorrentSeedConfiguration? SeedConfiguration = null);

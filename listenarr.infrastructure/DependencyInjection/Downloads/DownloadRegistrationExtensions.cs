@@ -84,6 +84,7 @@ internal static class DownloadRegistrationExtensions
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<FileMoverOptions>, FileMoverOptionsValidator>();
         services.AddScoped<IDownloadClientGateway, DownloadClientGateway>();
+        services.AddScoped<ISeedCriteriaResolver, SeedCriteriaResolver>();
         services.AddScoped<IRemotePathMappingService, RemotePathMappingService>();
         services.AddScoped<IDownloadProcessingJobService, DownloadProcessingJobService>();
         services.AddScoped<IDirectDownloadImportSourceResolver, DirectDownloadImportSourceResolver>();
