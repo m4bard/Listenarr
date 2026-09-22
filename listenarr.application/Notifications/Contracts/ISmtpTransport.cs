@@ -3,6 +3,7 @@
  * Copyright (C) 2024-2026 Listenarr Contributors
  */
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace Listenarr.Application.Notifications.Contracts
 {
@@ -26,6 +27,7 @@ namespace Listenarr.Application.Notifications.Contracts
 
         public string? Username { get; init; }
 
+        [JsonIgnore]
         public string? Password { get; init; }
 
         /// <summary>
@@ -36,6 +38,12 @@ namespace Listenarr.Application.Notifications.Contracts
         /// argument or a failing assertion's message would all render the password verbatim.
         /// Nothing does that today. The point of this type is that it cannot, and that has to be
         /// structural rather than a convention nobody can see.
+        /// <para>
+        /// This and the <c>JsonIgnore</c> above cover formatting and serialization. One route is
+        /// left: Serilog's destructuring operator, <c>{@server}</c>, reflects over public
+        /// properties and sees neither. Closing that as well means not exposing the credential as
+        /// a public property at all, which is a larger change than this one.
+        /// </para>
         /// </remarks>
         private bool PrintMembers(StringBuilder builder)
         {
@@ -61,6 +69,20 @@ namespace Listenarr.Application.Notifications.Contracts
         public required string Subject { get; init; }
 
         public required string Body { get; init; }
+
+        /// <summary>
+        /// Keeps the recipients and the body out of the compiler-generated ToString, for the same
+        /// reason the server keeps the credential out of its own: the provider's logging promises
+        /// not to record them, and that promise should not rest on nobody ever formatting one.
+        /// </summary>
+        private bool PrintMembers(StringBuilder builder)
+        {
+            ArgumentNullException.ThrowIfNull(builder);
+
+            builder.Append(System.Globalization.CultureInfo.InvariantCulture,
+                $"Subject = {Subject}, Recipients = {To.Count + Cc.Count + Bcc.Count}");
+            return true;
+        }
     }
 
     /// <summary>
