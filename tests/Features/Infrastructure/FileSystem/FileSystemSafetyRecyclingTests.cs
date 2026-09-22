@@ -38,6 +38,7 @@ public sealed class FileSystemSafetyRecyclingTests : BaseTests
             relativeSubfolder: null,
             TimeProvider.System,
             out var recycledPath,
+            out _,
             out var reason);
 
         Assert.Equal(
@@ -70,6 +71,7 @@ public sealed class FileSystemSafetyRecyclingTests : BaseTests
             relativeSubfolder: null,
             TimeProvider.System,
             out var recycledPath,
+            out _,
             out var reason);
 
         Assert.Equal(
@@ -98,6 +100,7 @@ public sealed class FileSystemSafetyRecyclingTests : BaseTests
             bin,
             relativeSubfolder: null,
             TimeProvider.System,
+            out _,
             out _,
             out var reason);
 
@@ -129,6 +132,7 @@ public sealed class FileSystemSafetyRecyclingTests : BaseTests
             Path.Join("Author", "Title"),
             TimeProvider.System,
             out var recycledPath,
+            out _,
             out var reason);
 
         Assert.Equal(
@@ -154,6 +158,7 @@ public sealed class FileSystemSafetyRecyclingTests : BaseTests
             Path.Join("..", "..", "escaped"),
             TimeProvider.System,
             out var recycledPath,
+            out _,
             out var reason);
 
         Assert.Equal(
@@ -194,6 +199,7 @@ public sealed class FileSystemSafetyRecyclingTests : BaseTests
             relativeSubfolder: null,
             TimeProvider.System,
             out _,
+            out _,
             out var reason);
 
         // Every candidate name is taken, so the suffix loop runs out rather than
@@ -228,6 +234,7 @@ public sealed class FileSystemSafetyRecyclingTests : BaseTests
             relativeSubfolder: null,
             TimeProvider.System,
             out _,
+            out _,
             out var reason);
 
         Assert.Equal(
@@ -261,6 +268,7 @@ public sealed class FileSystemSafetyRecyclingTests : BaseTests
             relativeSubfolder: null,
             TimeProvider.System,
             out var recycledPath,
+            out _,
             out var reason);
 
         Assert.Equal(

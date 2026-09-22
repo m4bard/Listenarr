@@ -51,9 +51,36 @@ namespace Listenarr.Infrastructure.Library.Moving
             {
                 var settings = await _configurationService.GetApplicationSettingsAsync();
                 cancellationToken.ThrowIfCancellationRequested();
-                return new RecycleBinPolicy(
-                    settings?.RecycleBinPath ?? string.Empty,
-                    protectedRoots);
+                var binPath = settings?.RecycleBinPath ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(binPath))
+                {
+                    return new RecycleBinPolicy(string.Empty, protectedRoots);
+                }
+
+                // Revalidated here, not only at save time and in the sweep. The bin path
+                // and the root folders are edited independently, so a bin that was
+                // outside every root when it was saved can end up inside one later. The
+                // sweep already refuses to run in that state; without this the delete
+                // path would carry on writing deleted files into a root folder, where
+                // the scanner re-imports them and undoes the deletion.
+                if (_recycleBinService != null)
+                {
+                    var validation = await _recycleBinService.ValidatePathAsync(
+                        binPath,
+                        cancellationToken);
+                    if (!validation.IsValid)
+                    {
+                        _logger.LogWarning(
+                            "The configured recycle bin is no longer valid, so audiobook file deletion will be refused rather than made permanent: {Reason}",
+                            LogRedaction.SanitizeText(validation.Message));
+                        return new RecycleBinPolicy(
+                            string.Empty,
+                            protectedRoots,
+                            ConfigurationUnavailable: true);
+                    }
+                }
+
+                return new RecycleBinPolicy(binPath, protectedRoots);
             }
             catch (Exception exception) when (exception is not (
                 OperationCanceledException or OutOfMemoryException or StackOverflowException))
@@ -105,6 +132,7 @@ namespace Listenarr.Infrastructure.Library.Moving
                 ResolveRecycleSubfolder(path, policy.Roots, semantics),
                 TimeProvider.System,
                 out var recycledPath,
+                out var stampedRecycleTime,
                 out var reason);
 
             switch (outcome)
@@ -115,6 +143,20 @@ namespace Listenarr.Infrastructure.Library.Moving
                         "Recycled audiobook file {Path} to {RecycledPath}",
                         LogRedaction.SanitizeFilePath(path),
                         LogRedaction.SanitizeFilePath(recycledPath));
+                    if (!stampedRecycleTime)
+                    {
+                        // The file is in the bin but keeps its original timestamp, so
+                        // retention will age it from when its content was last written
+                        // rather than from now. Usually a permissions problem: stamping
+                        // needs ownership of the file, deleting it only needs write and
+                        // execute on the parent directory.
+                        result.Warnings.Add(
+                            $"'{Path.GetFileName(path)}' was moved to the recycle bin, but its recycle time could not be recorded, so it may be removed by the next retention sweep.");
+                        _logger.LogWarning(
+                            "Could not stamp the recycle time for {RecycledPath}; retention will age it from its original last-write time",
+                            LogRedaction.SanitizeFilePath(recycledPath));
+                    }
+
                     return true;
 
                 case RecycleFileOutcome.AlreadyGone:

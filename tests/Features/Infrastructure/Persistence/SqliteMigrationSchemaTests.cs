@@ -353,6 +353,35 @@ public class SqliteMigrationSchemaTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "RecycleBinRetentionUpgradeDefault")]
+    public async Task RecycleBinMigration_BackfillsRetentionToTheFreshInstallDefault()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.True(await ColumnExistsAsync(connection, "ApplicationSettings", "RecycleBinPath"));
+        Assert.True(await ColumnExistsAsync(connection, "ApplicationSettings", "RecycleBinCleanupDays"));
+
+        // A migration default is exactly the thing that silently differs between a fresh
+        // install and an upgraded one. 7 matches the C# property default and the family
+        // (Readarr ConfigService.cs:99, Sonarr ConfigService.cs:106); the generated
+        // migration wanted 0, which reads as "keep recycled files forever" and would have
+        // been invisible until someone noticed the bin never draining.
+        Assert.Equal(
+            "7",
+            await ColumnDefaultAsync(connection, "ApplicationSettings", "RecycleBinCleanupDays"));
+
+        // The path column is the control: an empty bin path means the feature is off, so
+        // an upgraded database must NOT come up with a bin already configured.
+        Assert.Equal(
+            "''",
+            await ColumnDefaultAsync(connection, "ApplicationSettings", "RecycleBinPath"));
+    }
+
+    [Fact]
     [Trait("Scenario", "FinalMigrationHistoryIsConsolidated")]
     public async Task MigrationHistory_ContainsOnlyRetainedRepairsAndConsolidatedPrMigrationAfterCanary()
     {

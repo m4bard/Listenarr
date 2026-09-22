@@ -2989,6 +2989,33 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
+        public async Task DeleteAudiobook_BinHasDriftedInsideARootFolder_RefusesRatherThanRecyclingIntoIt()
+        {
+            var root = FileService.GetTempDirectory("listenarr-delete-driftedbin");
+            var binInsideRoot = Path.Join(root, "recyclebin");
+            Directory.CreateDirectory(binInsideRoot);
+            await _applicationSettingsRepository.SaveAsync(
+                new ApplicationSettingsBuilder()
+                    .WithRecycleBinPath(binInsideRoot)
+                    .Build());
+            var (audiobook, filePath) = await ArrangeRootLevelBookAsync(613, root);
+
+            var result = await _provider.GetRequiredService<LibraryController>()
+                .DeleteAudiobook(audiobook.Id, deleteFiles: true, deleteFolder: false);
+
+            // The bin sits inside a root folder, so recycling into it would have the
+            // library scan find the file and import it straight back. The sweep already
+            // refuses to run against a bin in this state; the delete has to refuse too,
+            // rather than being the half of the feature without the guard.
+            Assert.True(
+                File.Exists(filePath),
+                "The file was recycled into a bin that sits inside a root folder.");
+            Assert.Empty(Directory.EnumerateFileSystemEntries(binInsideRoot));
+            var objectResult = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(500, objectResult.StatusCode);
+        }
+
+        [Fact]
         public async Task DeleteAudiobook_RecycleBinUnusable_RefusesRatherThanDeletingPermanently()
         {
             var root = FileService.GetTempDirectory("listenarr-delete-badbin");
