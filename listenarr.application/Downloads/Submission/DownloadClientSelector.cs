@@ -86,10 +86,16 @@ namespace Listenarr.Application.Downloads.Submission
             }
 
             var lowestPriority = candidates.Min(c => c.Priority);
+
+            // Ordered by Id and nothing else. Id is the only field on this entity that an
+            // edit cannot move: the save path copies the whole posted object over the stored
+            // one, and the form does not send CreatedAt, so renaming a client rewrites its
+            // CreatedAt and would otherwise shuffle it to the back of the rotation. Readarr
+            // orders on its immutable integer id for the same reason
+            // (src/NzbDrone.Core/Download/DownloadClientProvider.cs:104-106).
             var group = candidates
                 .Where(c => c.Priority == lowestPriority)
-                .OrderBy(c => c.CreatedAt)
-                .ThenBy(c => c.Id, StringComparer.Ordinal)
+                .OrderBy(c => c.Id, StringComparer.Ordinal)
                 .ToList();
 
             var selected = SelectNext(protocol, group);
