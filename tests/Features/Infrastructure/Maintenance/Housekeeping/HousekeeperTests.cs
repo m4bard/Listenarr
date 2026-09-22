@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 using Listenarr.Tests.Common;
+using Listenarr.Tests.Features.Infrastructure.HostedServices.Scheduling;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -175,6 +176,48 @@ public sealed class HousekeeperTests : BaseTests, IDisposable
         Assert.Equal(["middle", "newest eligible"], await SurvivingAuthorNamesAsync());
     }
 
+    /// <summary>
+    /// The floor through the real processor rather than through a stand-in, because a floor that
+    /// exists on the housekeeper and is not applied by the sweep looks exactly like a floor that
+    /// works.
+    /// </summary>
+    /// <remarks>
+    /// The operator has asked for thirty days. The cache floor is a hundred and eighty, so the
+    /// hundred-day-old row stays. The control on the same run is the two-hundred-day-old row,
+    /// which is past the floor and goes: without it, "the row survived" would also be what a
+    /// sweep that never reached this table looks like.
+    /// </remarks>
+    [Fact]
+    public async Task TheCacheFloor_KeepsARowTheConfiguredWindowWouldHaveDeleted()
+    {
+        await SeedAsync(context =>
+        {
+            context.AuthorCacheEntries.Add(Author("inside the floor", Now.AddDays(-100)));
+            context.AuthorCacheEntries.Add(Author("past the floor", Now.AddDays(-200)));
+        });
+
+        var configuration = new Mock<IConfigurationService>();
+        configuration.Setup(service => service.GetApplicationSettingsAsync())
+            .ReturnsAsync(new ApplicationSettings
+            {
+                HousekeepingRetentionDays = 30,
+                HousekeepingDryRun = false
+            });
+        var services = new ServiceCollection();
+        services.AddSingleton(configuration.Object);
+        await using var provider = services.BuildServiceProvider();
+
+        await new HousekeepingProcessor(
+            [new AuthorCacheHousekeeper(_factory)],
+            new HousekeepingOptionsHolder(),
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            new FixedClock(Now),
+            Mock.Of<ILogger<HousekeepingProcessor>>())
+            .RunCycleAsync(CancellationToken.None);
+
+        Assert.Equal(["inside the floor"], await SurvivingAuthorNamesAsync());
+    }
+
     [Fact]
     public async Task Journal_DeletesReconciledRowsOutsideTheWindowAndKeepsOneInsideIt()
     {
@@ -311,11 +354,18 @@ public sealed class HousekeeperTests : BaseTests, IDisposable
             await SurvivingJournalPathsAsync());
     }
 
+    /// <summary>
+    /// The floors, as one table. Each is argued where it is declared; what this pins is that they
+    /// are not all the same number, which is what a floor mechanism quietly reverting to a single
+    /// global window would look like.
+    /// </summary>
     [Fact]
-    public async Task Journal_DeclaresANinetyDayFloor()
+    public void EachHousekeeperDeclaresItsOwnFloor()
     {
         Assert.Equal(90, new FileMutationJournalHousekeeper(_factory).MinimumRetentionDays);
-        Assert.Equal(0, new AuthorCacheHousekeeper(_factory).MinimumRetentionDays);
+        Assert.Equal(180, new AuthorCacheHousekeeper(_factory).MinimumRetentionDays);
+        Assert.Equal(180, new SeriesCacheHousekeeper(_factory).MinimumRetentionDays);
+        Assert.Equal(0, new MoveJobHousekeeper(_factory).MinimumRetentionDays);
     }
 
     private static HousekeepingCycle Cycle(
@@ -404,12 +454,14 @@ public sealed class HousekeeperTests : BaseTests, IDisposable
         return await context.FileMutationJournals.CountAsync();
     }
 
+    /// <summary>
+    /// Only CreateDbContext is implemented. The interface's CreateDbContextAsync overloads
+    /// default to it, and declaring a parameterless one here would not override the one the
+    /// housekeepers call, which takes a cancellation token.
+    /// </summary>
     private sealed class TestDbContextFactory(DbContextOptions<ListenArrDbContext> options)
         : IDbContextFactory<ListenArrDbContext>
     {
         public ListenArrDbContext CreateDbContext() => new(options);
-
-        public Task<ListenArrDbContext> CreateDbContextAsync() =>
-            Task.FromResult(new ListenArrDbContext(options));
     }
 }
