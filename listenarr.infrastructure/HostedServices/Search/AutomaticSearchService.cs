@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -243,7 +244,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             {
                 _logger.LogDebug(ex, "Failed to broadcast scored search results for audiobook {Id}", audiobook.Id);
             }
-            foreach (var scoredResult in scoredResults.OrderByDescending(s => s.TotalScore))
+            foreach (var scoredResult in scoredResults.InPreferenceOrder(audiobook.QualityProfile))
             {
                 var status = scoredResult.IsRejected ? "REJECTED" : (scoredResult.TotalScore > 0 ? "ACCEPTABLE" : "LOW SCORE");
                 _logger.LogInformation("  [{Status}] Score: {Score} | Title: {Title} | Source: {Source} | Size: {Size}MB | Seeders: {Seeders} | Quality: {Quality}",
@@ -256,10 +257,14 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 }
             }
 
+            // The profile decides, and the score decides between releases it ranks equally. Eleven
+            // lines below, IsQualityBetter asks the same profile whether this pick beat what is
+            // already on disk, so picking by a different ordering here could reject a release the
+            // profile would have accepted and cancel the grab outright.
             var topResult = scoredResults
                 .Where(s => !s.IsRejected) // Only non-rejected results
-                .OrderByDescending(s => s.TotalScore)
-                .FirstOrDefault(); // Pick only the top scoring result
+                .InPreferenceOrder(audiobook.QualityProfile)
+                .FirstOrDefault();
 
             if (topResult == null)
             {

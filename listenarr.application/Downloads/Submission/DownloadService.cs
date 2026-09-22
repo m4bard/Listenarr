@@ -17,6 +17,7 @@
  */
 
 using Listenarr.Application.Common;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Downloads.Submission
@@ -163,7 +164,7 @@ namespace Listenarr.Application.Downloads.Submission
 
             // Log all scored results for debugging
             logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", scoredResults.Count, LogRedaction.SanitizeText(audiobook.Title));
-            foreach (var scoredResult in scoredResults.OrderByDescending(s => s.TotalScore))
+            foreach (var scoredResult in scoredResults.InPreferenceOrder(audiobook.QualityProfile))
             {
                 var status = scoredResult.IsRejected ? "REJECTED" : (scoredResult.TotalScore > 0 ? "ACCEPTABLE" : "LOW SCORE");
                 logger.LogInformation("  [{Status}] Score: {Score} | Title: {Title} | Source: {Source} | Size: {Size}MB | Seeders: {Seeders} | Quality: {Quality}",
@@ -175,10 +176,10 @@ namespace Listenarr.Application.Downloads.Submission
                 }
             }
 
-            // Only consider non-rejected, score > 0 results
+            // Non-rejected and scoring, in the profile's quality order, the score breaking ties.
             var topResult = scoredResults
                 .Where(s => !s.IsRejected && s.TotalScore > 0)
-                .OrderByDescending(s => s.TotalScore)
+                .InPreferenceOrder(audiobook.QualityProfile)
                 .FirstOrDefault();
 
             if (topResult == null)
