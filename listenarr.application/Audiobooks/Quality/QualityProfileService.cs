@@ -18,6 +18,8 @@
 
 using Microsoft.Extensions.Logging;
 
+using Listenarr.Domain.Common;
+
 namespace Listenarr.Application.Audiobooks.Quality
 {
     public class QualityProfileService : IQualityProfileService
@@ -310,12 +312,13 @@ namespace Listenarr.Application.Audiobooks.Quality
             var scores = await Task.WhenAll(
                 searchResults.Select(result => ScoreSearchResult(result, profile, resolvedIndexers, targetIsBundle)));
 
-            // Ensure rejected results are ordered last regardless of numeric TotalScore.
-            // Equal scores are separated by ScoredReleaseTiebreaker so the ranking does not
-            // depend on the order the indexer returned results in.
+            // Rejected results last, then the operator's own quality ordering, then the score,
+            // then ScoredReleaseTiebreaker so the ranking does not depend on the order the
+            // indexer returned results in. Sorting on the score alone ranked by the hardcoded
+            // ladder in SearchResultScorer, which ties every AAC rung and puts MP3 320kbps above
+            // all of them, inverting the ordering the shipped default profile itself sets.
             return scores
-                .OrderBy(s => s.IsRejected) // false (not rejected) first
-                .ThenByDescending(s => s.TotalScore)
+                .InPreferenceOrder(profile)
                 .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow())
                 .ToList();
         }
