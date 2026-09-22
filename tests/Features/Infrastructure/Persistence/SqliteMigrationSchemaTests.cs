@@ -77,6 +77,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260920025621_AddQualityProfileUpgradeAllowed";
     private const string RecycleBinMigrationId =
         "20260922212616_AddRecycleBinToApplicationSettings";
+    private const string DownloadClientPriorityMigrationId =
+        "20260922212937_AddDownloadClientPriority";
     private const string EmailNotificationsMigrationId =
         "20260922220105_AddEmailNotifications";
     private const string HousekeepingRetentionMigrationId =
@@ -436,6 +438,7 @@ public class SqliteMigrationSchemaTests : BaseTests
                 CustomScriptNotificationsMigrationId,
                 QualityProfileUpgradeAllowedMigrationId,
                 RecycleBinMigrationId,
+                DownloadClientPriorityMigrationId,
                 EmailNotificationsMigrationId,
                 HousekeepingRetentionMigrationId
             ],

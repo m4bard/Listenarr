@@ -2321,6 +2321,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("Port")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("Priority")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("RemoveCompletedDownloads")
                         .IsRequired()
                         .HasColumnType("TEXT");
