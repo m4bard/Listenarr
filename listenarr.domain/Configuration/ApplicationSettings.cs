@@ -134,6 +134,12 @@ namespace Listenarr.Domain.Configuration
         /// </summary>
         public List<CustomScriptConfiguration>? CustomScripts { get; set; }
 
+        /// <summary>
+        /// Configured email notification targets. Each entry is one SMTP server Listenarr sends
+        /// through on the channels it is enabled for.
+        /// </summary>
+        public List<EmailConfiguration>? Emails { get; set; }
+
         // Optional admin credentials submitted from the UI when saving settings.
         // These are NOT mapped to the ApplicationSettings table; they are used to create/update
         // a User record in the Users table via the ConfigurationService.

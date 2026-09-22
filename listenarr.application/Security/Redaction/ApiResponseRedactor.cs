@@ -83,7 +83,35 @@ public static class ApiResponseRedactor
             }
         }
 
+        RedactEmailPasswords(clone);
+
         return clone;
+    }
+
+    /// <summary>
+    /// Replaces every configured SMTP password with <see cref="RedactedValue"/>, in place.
+    /// </summary>
+    /// <remarks>
+    /// This is called on the caller-gated path, through <see cref="RedactApplicationSettings"/>,
+    /// and again unconditionally by the settings controller before any response is built, so that
+    /// an SMTP password is not returned in the clear even to a loopback or admin caller. Admin
+    /// credentials and the Prowlarr key are already handled that way; nothing in the settings
+    /// screen needs the password legible, because a save that carries the sentinel back keeps the
+    /// stored value.
+    /// </remarks>
+    public static void RedactEmailPasswords(ApplicationSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        if (settings.Emails == null)
+        {
+            return;
+        }
+
+        foreach (var email in settings.Emails.Where(e => !string.IsNullOrWhiteSpace(e.Password)))
+        {
+            email.Password = RedactedValue;
+        }
     }
 
     public static StartupConfig RedactStartupConfig(StartupConfig config, bool redactApiKey = true)
