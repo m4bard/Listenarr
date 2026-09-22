@@ -951,6 +951,12 @@ class ApiService {
     })
   }
 
+  async emptyRecycleBin(): Promise<{ message: string; deletedCount: number }> {
+    return this.request<{ message: string; deletedCount: number }>('/configuration/recyclebin', {
+      method: 'DELETE',
+    })
+  }
+
   async getProwlarrImportSettings(): Promise<ProwlarrImportConnectionSettings> {
     return this.request<ProwlarrImportConnectionSettings>('/configuration/prowlarr-import')
   }
