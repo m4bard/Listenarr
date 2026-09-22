@@ -103,6 +103,27 @@ describe('BackupsPanel', () => {
     expect(wrapper.text()).toContain('Backup failed')
   })
 
+  it('shows the reason when a backup is refused rather than a generic failure', async () => {
+    // A refusal at the manual limit is something the operator can act on, unlike a full disk, so
+    // the wording has to reach them. The control is the case above, where a plain failure falls
+    // back to the generic message.
+    getBackups.mockResolvedValue([])
+    const refused = Object.assign(new Error('Conflict'), {
+      status: 409,
+      body: JSON.stringify({
+        error: 'There are already 20 manual backups, which is the most that are kept.',
+      }),
+    })
+    createBackup.mockRejectedValue(refused)
+
+    const wrapper = await mountPanel()
+    await wrapper.find('[data-testid="create-backup"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('There are already 20 manual backups')
+    expect(wrapper.text()).not.toContain('config directory is writable')
+  })
+
   it('surfaces a failed listing', async () => {
     getBackups.mockRejectedValue(new Error('500'))
 
