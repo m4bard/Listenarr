@@ -119,7 +119,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DependencyInjection
             AssertProcessorRegistered<IQueueMonitorProcessor>(services);
             AssertProcessorRegistered<IHousekeepingProcessor>(services);
             Assert.Equal(
-                [typeof(AuthorCacheHousekeeper), typeof(SeriesCacheHousekeeper), typeof(FileMutationJournalHousekeeper)],
+                [typeof(AuthorCacheHousekeeper), typeof(SeriesCacheHousekeeper), typeof(FileMutationJournalHousekeeper), typeof(MoveJobHousekeeper)],
                 services
                     .Where(d => d.ServiceType == typeof(IHousekeepingTask))
                     .Select(d => d.ImplementationType)
