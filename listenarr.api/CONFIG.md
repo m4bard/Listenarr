@@ -12,6 +12,9 @@ Listenarr stores runtime configuration and user data beneath the active content 
 config/
 |-- appsettings/
 |   `-- appsettings.json
+|-- backups/
+|   |-- manual/
+|   `-- migration/
 |-- cache/
 |   `-- images/
 |       |-- authors/
@@ -37,6 +40,25 @@ Contains external application configuration:
 - `appsettings.json` - Runtime overrides such as logging levels.
 
 On first startup, the API creates `config/appsettings/appsettings.json` under the active content root if it does not exist. In local development that file is `.env/development/config/appsettings/appsettings.json`.
+
+### backups/
+
+Contains zip archives of the database and `config.json`, one subdirectory per reason:
+
+- `migration/` - Taken automatically at startup when a release has schema changes to apply, and
+  only then. Removed by the retention sweep once they pass the configured age.
+- `manual/` - Taken on request from the System screen. Never removed automatically.
+
+Each archive holds `listenarr.db`, `config.json` if one exists, and an `INFO` file naming the
+version and the moment it was taken. The database copy is made with SQLite's online backup API, so
+nothing has to stop while it runs.
+
+Archives carry the API key, indexer keys, download client credentials and the admin password hash.
+Nothing serves them over HTTP: the API lists their names, sizes and ages and no more. Treat the
+files themselves the way you would treat the database.
+
+Retention is set on the General settings screen and defaults to 28 days, matching the rest of the
+*arr family. Zero keeps everything.
 
 ### cache/images/
 
@@ -78,6 +100,11 @@ Temporary storage for DDL (Direct Download Link) files:
 ## Important Notes
 
 - The `config/` folder contains user-specific data and should be backed up.
+- Before applying schema changes, Listenarr backs the database up into `config/backups/migration/`,
+  and refuses to start if that backup cannot be written, since the schema change cannot be undone.
+  Set `LISTENARR_BACKUP_BEFORE_MIGRATIONS=false` (or `Listenarr:BackupBeforeMigrations` in
+  configuration) to skip it. It is an environment variable rather than a setting because an
+  instance that will not start cannot show you a settings screen.
 - Database files are SQLite-based and contain application data.
 - Temp and cache directories are automatically managed by background services.
 - Log files can contain sensitive diagnostic data; restrict access accordingly.
