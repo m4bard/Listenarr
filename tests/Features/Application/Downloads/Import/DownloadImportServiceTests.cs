@@ -232,6 +232,82 @@ namespace Listenarr.Tests.Features.Application.Downloads.Import
             Assert.Equal(expectedSuffix, imported.Path);
         }
 
+        /// <summary>
+        /// Listenarr has no quality-upgrade replacement path: importing a better release for
+        /// a book that already has a tracked file adds a second file, it does not displace
+        /// the first. This pins that down, because the moment a replacement path is added
+        /// it must route the displaced file through the recycle bin rather than unlink it.
+        ///
+        /// The existing replay test nearby looks similar but proves something weaker: its
+        /// pre-existing file is untracked, so audiobook.Files is empty and the import-side
+        /// quality gate never runs. Here the file is registered first, so the gate is live.
+        /// </summary>
+        [Fact]
+        public async Task ImportDownloadFilesAsync_BookAlreadyHasATrackedFile_KeepsItAndAddsTheNewOne()
+        {
+            var basePath = FileService.GetTempDirectory("download-import-upgrade-keeps-existing");
+            var sourceDirectory = FileService.GetTempDirectory("download-import-upgrade-source");
+            var sourceFile = await FileService.GetFileAsync(
+                sourceDirectory,
+                "incoming.mp3",
+                "the-better-release");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Upgrade Book")
+                .WithBasePath(basePath)
+                .Build());
+
+            var existingPath = await FileService.GetFileAsync(
+                basePath,
+                "Upgrade Book.mp3",
+                "the-original-hand-tagged-copy");
+            await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
+                .WithAudiobook(audiobook)
+                .WithPath(existingPath)
+                .WithBitrate(64)
+                .Build());
+
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithCopyFileOnCompleted()
+                .WithoutMetadataProcessing()
+                .WithFolderNamingPattern("")
+                .WithFileNamingPattern("{Title}")
+                .WithMultiFileNamingPattern("{Title}")
+                .Build());
+            var service = _provider.GetRequiredService<IDownloadImportService>();
+
+            // Reloaded so audiobook.Files is populated. The gate at
+            // DownloadImportService.cs:283 is guarded by Files being non-empty, so
+            // importing the instance returned by AddAsync would skip the gate entirely
+            // and this test would prove no more than the untracked replay test does.
+            var reloaded = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(reloaded);
+            Assert.NotEmpty(reloaded!.Files!);
+
+            var result = Assert.Single(await service.ImportDownloadFilesAsync(
+                reloaded,
+                [sourceFile]));
+
+            Assert.True(result.Success);
+
+            // The control: the original file has to still be on disk AND still hold its
+            // original bytes. A replacement path that unlinked it would fail the first
+            // assertion; one that overwrote it in place would pass the first and fail the
+            // second. Asserting only that the import succeeded would pass in both cases.
+            Assert.True(
+                File.Exists(existingPath),
+                "The pre-existing tracked file was removed by the import.");
+            Assert.Equal(
+                "the-original-hand-tagged-copy",
+                await File.ReadAllTextAsync(existingPath));
+
+            Assert.NotEqual(existingPath, result.FinalPath);
+            Assert.True(File.Exists(result.FinalPath));
+            Assert.Equal("the-better-release", await File.ReadAllTextAsync(result.FinalPath!));
+
+            var tracked = await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id);
+            Assert.Equal(2, tracked.Count);
+        }
+
         [Fact]
         public async Task ImportDownloadFilesAsync_MatchingSuffixOwnedByOtherAudiobook_UsesNextFreeSuffix()
         {
