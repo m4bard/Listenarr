@@ -44,6 +44,12 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
         private const string StagingDirectoryName = ".staging";
         private const string BackupsDirectoryName = "backups";
 
+        /// <summary>
+        /// How many archives may share one second before naming gives up. Generous: the real number
+        /// is one, and more than a handful means something is restarting in a loop.
+        /// </summary>
+        private const int MaxArchivesPerSecond = 64;
+
         private readonly ListenArrDbContext _db;
         private readonly IApplicationSettingsRepository _settingsRepository;
         private readonly IApplicationPathService _paths;
@@ -74,9 +80,7 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
             // and the previous one never created. Retention is a separate call for that reason.
             var timestamp = DateTime.UtcNow;
             var version = ResolveVersion();
-            var fileName = BackupArchiveNaming.BuildFileName(version, timestamp);
             var triggerDirectory = GetTriggerDirectory(trigger);
-            var archivePath = Path.Combine(triggerDirectory, fileName);
 
             Directory.CreateDirectory(triggerDirectory);
 
@@ -85,6 +89,8 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
             // file in /tmp is a surprise on hosts where /tmp is a small tmpfs.
             var stagingPath = Path.Combine(GetBackupsRoot(), StagingDirectoryName, Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(stagingPath);
+
+            string fileName;
 
             try
             {
@@ -98,14 +104,15 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                ZipFile.CreateFromDirectory(stagingPath, archivePath, CompressionLevel.Optimal, false);
+                using var destination = CreateArchiveFile(triggerDirectory, version, timestamp, out fileName);
+                ZipFile.CreateFromDirectory(stagingPath, destination, CompressionLevel.Optimal, false);
             }
             finally
             {
                 TryDeleteStaging(stagingPath);
             }
 
-            var info = new FileInfo(archivePath);
+            var info = new FileInfo(Path.Combine(triggerDirectory, fileName));
             _logger.LogInformation(
                 "Wrote {Trigger} backup {Name} ({SizeBytes} bytes)",
                 trigger,
@@ -221,6 +228,43 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
                     CreatedAtUtc = info.LastWriteTimeUtc
                 };
             }
+        }
+
+        /// <summary>
+        /// Opens the archive file for writing, choosing the first name in the second that is free.
+        /// </summary>
+        /// <remarks>
+        /// FileMode.CreateNew rather than a File.Exists check, so two processes racing for the same
+        /// name cannot both believe they won. Losing the race costs one more attempt, not a failed
+        /// backup, which matters because a failed pre-migration backup refuses the start.
+        /// </remarks>
+        private static FileStream CreateArchiveFile(
+            string triggerDirectory,
+            string version,
+            DateTime timestampUtc,
+            out string fileName)
+        {
+            for (var ordinal = 1; ordinal <= MaxArchivesPerSecond; ordinal++)
+            {
+                var candidate = BackupArchiveNaming.BuildFileName(version, timestampUtc, ordinal);
+                try
+                {
+                    var stream = new FileStream(
+                        Path.Combine(triggerDirectory, candidate),
+                        FileMode.CreateNew,
+                        FileAccess.Write,
+                        FileShare.None);
+                    fileName = candidate;
+                    return stream;
+                }
+                catch (IOException) when (File.Exists(Path.Combine(triggerDirectory, candidate)))
+                {
+                    // Taken by an earlier backup in this same second. Try the next ordinal.
+                }
+            }
+
+            throw new IOException(
+                $"Could not find a free backup file name in {triggerDirectory} after {MaxArchivesPerSecond} attempts.");
         }
 
         private string GetBackupsRoot() => _paths.ResolveFromConfig(BackupsDirectoryName);
