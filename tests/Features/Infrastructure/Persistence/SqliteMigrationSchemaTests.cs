@@ -42,6 +42,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260821141235_AddCompatibilityFilePublication";
     private const string WeakStorageVerifiedCleanupMigrationId =
         "20260825021432_AddWeakStorageVerifiedCleanup";
+    private const string DropProcessExecutionLogsMigrationId =
+        "20260922225847_DropProcessExecutionLogs";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -212,7 +214,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 MoveJobRelocationForeignKeyMigrationId,
                 FileMutationParentGenerationProofsMigrationId,
                 CompatibilityFilePublicationMigrationId,
-                WeakStorageVerifiedCleanupMigrationId
+                WeakStorageVerifiedCleanupMigrationId,
+                DropProcessExecutionLogsMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
@@ -261,7 +264,7 @@ public class SqliteMigrationSchemaTests : BaseTests
         await using var upgraded = await factory.CreateDbContextAsync();
 
         Assert.True(await ColumnExistsAsync(connection, "MoveJobs", "SourcePath"));
-        Assert.True(await TableExistsAsync(connection, "ProcessExecutionLogs"));
+        Assert.False(await TableExistsAsync(connection, "ProcessExecutionLogs"));
         Assert.True(await TableExistsAsync(connection, "AudiobookDeletionIntents"));
         Assert.True(await ColumnExistsAsync(connection, "FileMutationJournals", "AudiobookFileId"));
         Assert.Equal(
@@ -323,6 +326,7 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.True(await ColumnExistsAsync(connection, "MoveJobs", "ExecutionProtocolVersion"));
         Assert.True(await TableExistsAsync(connection, "AudiobookDeletionIntents"));
         Assert.True(await ColumnExistsAsync(connection, "FileMutationJournals", "AudiobookFileId"));
+        Assert.False(await TableExistsAsync(connection, "ProcessExecutionLogs"));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
