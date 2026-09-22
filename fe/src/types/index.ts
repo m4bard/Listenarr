@@ -600,6 +600,13 @@ export interface ProwlarrImportConnectionSettings {
   hasSavedApiKey: boolean
 }
 
+export interface NamingPatternPreview {
+  folderExample: string
+  singleFileExample: string
+  multiFileExamples: string[]
+  multiFileAmbiguous: boolean
+}
+
 export interface StartupConfig {
   logLevel?: string
   enableSsl?: boolean
