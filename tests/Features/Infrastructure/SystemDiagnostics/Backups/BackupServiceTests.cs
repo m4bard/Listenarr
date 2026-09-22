@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.IO.Compression;
+using System.Runtime.Versioning;
 using Listenarr.Tests.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -138,6 +139,7 @@ public sealed class BackupServiceTests : BaseTests
     }
 
     [LinuxFact]
+    [SupportedOSPlatform("linux")]
     [Trait("Scenario", "ArchivesAreNotWorldReadable")]
     public async Task CreateAsync_WritesAnArchiveOnlyItsOwnerCanRead()
     {
@@ -184,32 +186,58 @@ public sealed class BackupServiceTests : BaseTests
     }
 
     [Fact]
-    [Trait("Scenario", "ManualBackupsAreBoundedByCount")]
-    public async Task ApplyRetentionAsync_KeepsOnlyTheNewestManualArchives()
+    [Trait("Scenario", "ManualBackupsAreBoundedByRefusal")]
+    public async Task CreateAsync_RefusesAManualBackup_WhenTheLimitIsAlreadyMet_AndKeepsEveryExistingOne()
     {
-        // Given more manual archives than the limit, none of them old enough to expire by age
-        var (service, paths) = CreateService(retentionDays: 28);
+        // Given as many manual archives as are kept
+        var (service, paths) = CreateService();
         var directory = TriggerDirectory(paths, BackupTrigger.Manual);
-        var created = new List<string>();
-        for (var index = 0; index < 25; index++)
+        for (var index = 0; index < BackupService.MaxManualArchives; index++)
         {
-            var archive = await service.CreateAsync(BackupTrigger.Manual);
-            var path = Path.Combine(directory, archive.Name);
-            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-index));
-            created.Add(archive.Name);
+            await service.CreateAsync(BackupTrigger.Manual);
         }
+
+        var before = Directory.GetFiles(directory).Select(Path.GetFileName).Order().ToList();
+
+        // When another is asked for
+        var refusal = await Assert.ThrowsAsync<BackupLimitReachedException>(
+            () => service.CreateAsync(BackupTrigger.Manual));
+
+        // Then it is refused, and every existing archive survives. Making room by deleting the
+        // oldest would hand anyone who can reach the endpoint the power to destroy an operator's
+        // backups, and on a default install that is anyone on the network.
+        Assert.Equal(BackupService.MaxManualArchives, refusal.Limit);
+        Assert.Equal(before, Directory.GetFiles(directory).Select(Path.GetFileName).Order());
+
+        // Control: the limit is on manual archives only, so the pre-migration backup, which is the
+        // one that protects an irreversible schema change, is never refused because of it.
+        var migration = await service.CreateAsync(BackupTrigger.Migration);
+        Assert.True(File.Exists(
+            Path.Combine(TriggerDirectory(paths, BackupTrigger.Migration), migration.Name)));
+    }
+
+    [Fact]
+    [Trait("Scenario", "NothingEverRemovesAManualBackup")]
+    public async Task ApplyRetentionAsync_NeverRemovesAManualBackup_HoweverOldItIs()
+    {
+        // Given a manual archive from years ago
+        var (service, paths) = CreateService(retentionDays: 1);
+        var manual = await service.CreateAsync(BackupTrigger.Manual);
+        var path = Path.Combine(TriggerDirectory(paths, BackupTrigger.Manual), manual.Name);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddYears(-5));
+
+        // And an automatic one of the same age, as the control
+        var migration = await service.CreateAsync(BackupTrigger.Migration);
+        var migrationPath = Path.Combine(TriggerDirectory(paths, BackupTrigger.Migration), migration.Name);
+        File.SetLastWriteTimeUtc(migrationPath, DateTime.UtcNow.AddYears(-5));
 
         // When the sweep runs
         var removed = await service.ApplyRetentionAsync();
 
-        // Then the oldest are gone and the newest survive. Manual archives never expire by age, so
-        // without a count an unauthenticated caller could fill the config volume, and a full config
-        // volume is what makes the next pre-migration backup refuse the start.
-        Assert.Equal(5, removed);
-        var remaining = (await service.ListAsync()).Select(entry => entry.Name).ToList();
-        Assert.Equal(20, remaining.Count);
-        Assert.Contains(created[0], remaining);
-        Assert.DoesNotContain(created[24], remaining);
+        // Then only the automatic one goes, whatever the retention window says
+        Assert.Equal(1, removed);
+        Assert.True(File.Exists(path));
+        Assert.False(File.Exists(migrationPath));
     }
 
     [Fact]
@@ -220,15 +248,103 @@ public sealed class BackupServiceTests : BaseTests
         var (service, paths) = CreateService();
         var directory = TriggerDirectory(paths, BackupTrigger.Manual);
 
-        // When a backup is taken
-        var archive = await service.CreateAsync(BackupTrigger.Manual);
+        // And one backup already taken, so the directory exists to be watched
+        await service.CreateAsync(BackupTrigger.Manual);
+        var alreadyThere = Directory.GetFiles(directory).Length;
 
-        // Then the trigger directory holds exactly the finished archive and nothing part-written.
-        // The zip is built in staging and moved in, so a process killed mid-zip cannot leave a
-        // truncated file under a name the listing accepts and the sweep is willing to delete.
-        Assert.Equal([archive.Name], Directory.GetFiles(directory).Select(Path.GetFileName));
-        using var opened = ZipFile.OpenRead(Path.Combine(directory, archive.Name));
+        // And a watcher on the trigger directory, recording every event while the next one runs
+        var events = new List<WatcherChangeTypes>();
+        using (var watcher = new FileSystemWatcher(directory, "*" + BackupArchiveNaming.Extension))
+        {
+            watcher.Created += (_, _) => { lock (events) { events.Add(WatcherChangeTypes.Created); } };
+            watcher.Changed += (_, _) => { lock (events) { events.Add(WatcherChangeTypes.Changed); } };
+            watcher.Renamed += (_, _) => { lock (events) { events.Add(WatcherChangeTypes.Renamed); } };
+            watcher.EnableRaisingEvents = true;
+
+            // When a backup is taken
+            await service.CreateAsync(BackupTrigger.Manual);
+
+            // FileSystemWatcher delivers on a background thread, so give it a moment to drain
+            // before reading. A miss here would make this test weaker, never falsely strict.
+            await Task.Delay(500);
+        }
+
+        Assert.Equal(alreadyThere + 1, Directory.GetFiles(directory).Length);
+        var archive = Path.GetFileName(
+            Directory.GetFiles(directory).OrderByDescending(File.GetLastWriteTimeUtc).First());
+
+        // Then the archive appeared in one step and was never written to in place. A zip streamed
+        // straight into this directory raises Created followed by a run of Changed as it grows,
+        // which is the window in which a listing sees a partial file and a killed process leaves
+        // one behind for good.
+        lock (events)
+        {
+            Assert.DoesNotContain(WatcherChangeTypes.Changed, events);
+            Assert.NotEmpty(events);
+        }
+
+        using var opened = ZipFile.OpenRead(Path.Combine(directory, archive!));
         Assert.Contains("listenarr.db", opened.Entries.Select(entry => entry.FullName));
+    }
+
+    [LinuxFact]
+    [SupportedOSPlatform("linux")]
+    [Trait("Scenario", "EveryDirectoryLevelIsPrivate")]
+    public async Task CreateAsync_MakesEveryDirectoryItCreatesPrivate_NotJustTheLeaf()
+    {
+        // Given a live database
+        var (service, paths) = CreateService();
+
+        // When a backup is taken
+        await service.CreateAsync(BackupTrigger.Manual);
+
+        // Then backups, .staging and the trigger directory are all private. Passing a mode to
+        // Directory.CreateDirectory applies it to the leaf only, so creating backups/manual in one
+        // call leaves backups itself at the umask, with a world-traversable path to the archive.
+        var groupAndOther =
+            UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
+            | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
+
+        foreach (var directory in new[]
+        {
+            paths.ResolveFromConfig("backups"),
+            paths.ResolveFromConfig("backups", ".staging"),
+            TriggerDirectory(paths, BackupTrigger.Manual)
+        })
+        {
+            Assert.True(Directory.Exists(directory), $"{directory} was not created.");
+            Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(directory) & groupAndOther);
+        }
+    }
+
+    [Fact]
+    [Trait("Scenario", "AbandonedStagingIsSweptUp")]
+    public async Task CreateAsync_RemovesStagingLeftBehindByARunThatDidNotFinish()
+    {
+        // Given the wreckage of an earlier backup killed mid-copy: an uncompressed copy of the
+        // whole database in staging, which the finally block never got to run over
+        var (service, paths) = CreateService();
+        var stagingRoot = paths.ResolveFromConfig("backups", ".staging");
+        Directory.CreateDirectory(stagingRoot);
+
+        var abandoned = Path.Combine(stagingRoot, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        Directory.CreateDirectory(Path.Combine(abandoned, "payload"));
+        await File.WriteAllTextAsync(Path.Combine(abandoned, "payload", "listenarr.db"), "a whole database");
+        Directory.SetCreationTimeUtc(abandoned, DateTime.UtcNow.AddHours(-3));
+
+        var recent = Path.Combine(stagingRoot, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        Directory.CreateDirectory(recent);
+
+        // When the next backup runs
+        await service.CreateAsync(BackupTrigger.Manual);
+
+        // Then the abandoned one is gone. Nothing else ever looks in here, so a restart loop during
+        // a migration would otherwise leave one database-sized copy per attempt.
+        Assert.False(Directory.Exists(abandoned));
+
+        // And a directory young enough to belong to a backup still running is left alone, which is
+        // the case that must come out differently
+        Assert.True(Directory.Exists(recent));
     }
 
     [Fact]
