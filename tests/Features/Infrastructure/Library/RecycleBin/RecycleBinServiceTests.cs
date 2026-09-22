@@ -111,7 +111,8 @@ public sealed class RecycleBinServiceTests : BaseTests
         // A validator has to fail closed towards refusing. Accepting this on a
         // case-insensitive filesystem would put the bin inside a root, where the library
         // scan would find it and import everything back.
-        Assert.True(result.IsValid, $"DIAG rejection={result.Rejection} msg={result.Message} bin={differentlyCased} root={root}");
+        Assert.False(result.IsValid);
+        Assert.Equal(RecycleBinPathRejection.InsideRootFolder, result.Rejection);
     }
 
     [Fact]
@@ -163,6 +164,42 @@ public sealed class RecycleBinServiceTests : BaseTests
         // to keep working, so the root special case is not a blanket escape.
         Assert.False(result.IsValid);
         Assert.Equal(RecycleBinPathRejection.ContainsRootFolder, result.Rejection);
+    }
+
+    [DirectoryLinkFact]
+    public async Task ValidatePathAsync_BinReachedThroughASymbolicLink_IsRefusedAtSaveTime()
+    {
+        var root = FileService.GetTempDirectory("recycle-symlinkpath-root");
+        var real = FileService.GetTempDirectory("recycle-symlinkpath-real");
+        var holder = FileService.GetTempDirectory("recycle-symlinkpath-holder");
+        var linked = Path.Join(holder, "recyclebin");
+        Directory.CreateSymbolicLink(linked, real);
+        var service = BuildService(linked, retentionDays: 7, rootPaths: [root]);
+
+        var result = await service.ValidatePathAsync(linked);
+
+        // Caught here rather than at delete time. The recycle opens the bin with a
+        // no-follow pinned walk, so a link anywhere along the path makes every delete
+        // fail with a message naming an exception type, which the operator cannot act on.
+        Assert.False(result.IsValid);
+        Assert.Equal(RecycleBinPathRejection.ContainsSymbolicLink, result.Rejection);
+    }
+
+    [DirectoryLinkFact]
+    public async Task ValidatePathAsync_RealDirectoryBesideALink_IsAccepted()
+    {
+        var root = FileService.GetTempDirectory("recycle-symlinkpath-control-root");
+        var real = FileService.GetTempDirectory("recycle-symlinkpath-control-real");
+        Directory.CreateSymbolicLink(
+            Path.Join(real, "unrelated-link"),
+            FileService.GetTempDirectory("recycle-symlinkpath-control-target"));
+        var service = BuildService(real, retentionDays: 7, rootPaths: [root]);
+
+        var result = await service.ValidatePathAsync(real);
+
+        // The control: a link INSIDE the bin is not a link ON the path to it, and must
+        // not be refused, or an operator could never use a bin that already holds one.
+        Assert.True(result.IsValid, result.Message);
     }
 
     [Fact]
