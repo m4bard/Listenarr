@@ -76,12 +76,12 @@ public static class InfrastructureStartupCompositionExtensions
             // Taken before Migrate() and only when something is actually pending. A failure here
             // is deliberately not caught: it falls into the handler below and refuses the start,
             // because migrating without the copy is exactly the outcome this exists to prevent.
-            var pendingMigrations = ctx.Database.GetPendingMigrations().ToList();
             PreMigrationBackup
                 .ProtectAsync(
-                    pendingMigrations,
+                    ctx.Database.GetPendingMigrations().ToList(),
+                    ctx.Database.GetAppliedMigrations().ToList(),
                     PreMigrationBackup.IsEnabled(migrateScope.ServiceProvider.GetService<IConfiguration>()),
-                    migrateScope.ServiceProvider.GetRequiredService<IBackupService>())
+                    new Lazy<IBackupService>(migrateScope.ServiceProvider.GetRequiredService<IBackupService>))
                 .GetAwaiter()
                 .GetResult();
 
@@ -137,9 +137,11 @@ public static class InfrastructureStartupCompositionExtensions
     {
         try
         {
+            // Optional, unlike the pre-migration backup. A provider that has no backup service has
+            // no backups to sweep, and housekeeping is not worth failing a start over.
             scopedServiceProvider
-                .GetRequiredService<IBackupService>()
-                .ApplyRetentionAsync()
+                .GetService<IBackupService>()
+                ?.ApplyRetentionAsync()
                 .GetAwaiter()
                 .GetResult();
         }
