@@ -16,6 +16,14 @@ namespace Listenarr.Domain.Downloads
         public bool IsEnabled { get; set; } = true;
 
         /// <summary>
+        /// Selection order between clients of the same protocol. Lower wins.
+        /// Clients sharing the lowest value are used round-robin. Defaults to 1,
+        /// matching Readarr's DownloadClientDefinition.Priority, so an upgrade does
+        /// not silently reorder an existing install.
+        /// </summary>
+        public int Priority { get; set; } = 1;
+
+        /// <summary>
         /// Cleanup behavior after successful import: "none", "remove", "remove_and_delete"
         /// </summary>
         public string RemoveCompletedDownloads { get; set; } = "none";
