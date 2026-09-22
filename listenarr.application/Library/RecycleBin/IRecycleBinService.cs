@@ -26,6 +26,7 @@ namespace Listenarr.Application.Library.RecycleBin
     {
         None,
         NotAbsolute,
+        FilesystemRoot,
         InsideRootFolder,
         ContainsRootFolder,
         Unusable

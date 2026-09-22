@@ -58,6 +58,17 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
                     "The recycle bin path could not be read as a filesystem path.");
             }
 
+            // A bin that is a filesystem root is never what anyone meant, and the sweep
+            // would walk the whole filesystem. The delete path already refuses the
+            // equivalent for its own target at
+            // AudiobookFilesystemDeleteService.Folders.cs:40.
+            if (IsFilesystemRoot(normalizedBin))
+            {
+                return new RecycleBinPathValidation(
+                    RecycleBinPathRejection.FilesystemRoot,
+                    "The recycle bin path must not be a filesystem root.");
+            }
+
             var roots = await rootFolderService.GetAllAsync();
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -373,6 +384,17 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
         /// which is ordinal on purpose. There, failing closed means refusing to mutate, so
         /// the strict comparison is the safe one. Here it is the loose one.
         /// </summary>
+
+        private static bool IsFilesystemRoot(string normalizedPath)
+        {
+            var root = Path.GetPathRoot(normalizedPath);
+            return !string.IsNullOrEmpty(root)
+                && string.Equals(
+                    Path.TrimEndingDirectorySeparator(root),
+                    Path.TrimEndingDirectorySeparator(normalizedPath),
+                    StringComparison.OrdinalIgnoreCase);
+        }
+
         private static bool IsWithin(string candidate, string basePath) =>
             IsWithinUsing(candidate, basePath, StringComparison.Ordinal)
             || IsWithinUsing(candidate, basePath, StringComparison.OrdinalIgnoreCase);
@@ -388,7 +410,12 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
             }
 
             // The trailing separator is what stops "/a/bc" reading as inside "/a/b".
-            var boundary = basePath + Path.DirectorySeparatorChar;
+            // A filesystem root already ends in one, and appending a second would make
+            // the boundary "//", which nothing starts with, so every containment test
+            // against a root would answer false.
+            var boundary = Path.EndsInDirectorySeparator(basePath)
+                ? basePath
+                : basePath + Path.DirectorySeparatorChar;
             return candidate.StartsWith(boundary, comparison);
         }
     }
