@@ -32,17 +32,20 @@ namespace Listenarr.Api.Features.Configuration
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<SettingsController> _logger;
         private readonly IHubBroadcaster _hubBroadcaster;
+        private readonly IFileNamingService _fileNamingService;
         private readonly IMemoryCache? _cache;
 
         public SettingsController(
             IConfigurationService configurationService,
             ILogger<SettingsController> logger,
             IHubBroadcaster hubBroadcaster,
+            IFileNamingService fileNamingService,
             IMemoryCache? cache = null)
         {
             _configurationService = configurationService;
             _logger = logger;
             _hubBroadcaster = hubBroadcaster;
+            _fileNamingService = fileNamingService;
             _cache = cache;
         }
 
@@ -123,6 +126,26 @@ namespace Listenarr.Api.Features.Configuration
             clone.AdminPassword = null;
             clone.ProwlarrApiKeyEncrypted = null;
             return clone;
+        }
+
+        /// <summary>
+        /// Render the folder, single-file and multi-file naming patterns against a fixed
+        /// sample audiobook, through the same renderer import and rename use, so the settings
+        /// screen shows what will actually be written instead of an independent approximation.
+        /// Patterns are taken from the query string rather than saved settings so the preview
+        /// updates for a pattern the operator has typed but not yet saved.
+        /// </summary>
+        /// <param name="folderPattern">In-progress folder naming pattern.</param>
+        /// <param name="filePattern">In-progress single-file naming pattern.</param>
+        /// <param name="multiFilePattern">In-progress multi-file naming pattern.</param>
+        [Tags("Settings")]
+        [HttpGet("naming/examples")]
+        public ActionResult<NamingPatternPreview> GetNamingPatternExamples(
+            [FromQuery] string? folderPattern,
+            [FromQuery] string? filePattern,
+            [FromQuery] string? multiFilePattern)
+        {
+            return Ok(_fileNamingService.PreviewNamingPatterns(folderPattern, filePattern, multiFilePattern));
         }
 
         /// <summary>

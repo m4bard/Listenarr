@@ -139,10 +139,7 @@ namespace Listenarr.Application.Common
                                                    .Replace('\\', Path.DirectorySeparatorChar);
                 }
 
-                var patternAllowsSubfolders = effectiveFilePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0
-                    || effectiveFilePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0
-                    || effectiveFilePattern.IndexOf('/') >= 0
-                    || effectiveFilePattern.IndexOf('\\') >= 0;
+                var patternAllowsSubfolders = PatternImpliesSubfolders(effectiveFilePattern);
 
                 var fileRelative = ApplyNamingPattern(effectiveFilePattern, variables, treatAsFilename: !patternAllowsSubfolders);
 
@@ -317,6 +314,22 @@ namespace Listenarr.Application.Common
         {
             var variables = BuildVariables(metadata);
             return ApplyNamingPattern(pattern, variables, treatAsFilename);
+        }
+
+        /// <summary>
+        /// Whether a file naming pattern implies its own subfolder structure, either because
+        /// it references DiskNumber/ChapterNumber or because it contains a literal path
+        /// separator. When it does, GenerateFilePathAsync renders the file pattern with
+        /// treatAsFilename=false so the intended subfolders are kept instead of flattened to
+        /// their last segment. Shared with PreviewNamingPatterns so the settings preview
+        /// applies the same rule instead of guessing at it independently.
+        /// </summary>
+        internal static bool PatternImpliesSubfolders(string pattern)
+        {
+            return pattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0
+                || pattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0
+                || pattern.IndexOf('/') >= 0
+                || pattern.IndexOf('\\') >= 0;
         }
     }
 }
