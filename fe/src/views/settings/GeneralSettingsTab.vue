@@ -78,6 +78,11 @@
           @update:settings="(val) => Object.assign(localSettings, val)"
         ></HistorySettingsSection>
 
+        <BackupSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></BackupSection>
+
         <AuthenticationSection
           :settings="localSettings"
           :apiKey="props.apiKey"
@@ -108,6 +113,7 @@ import HousekeepingSection from '@/components/settings/HousekeepingSection.vue'
 import AuthorIdentityRepairSection from '@/components/settings/AuthorIdentityRepairSection.vue'
 import SearchSettingsSection from '@/components/settings/SearchSettingsSection.vue'
 import HistorySettingsSection from '@/components/settings/HistorySettingsSection.vue'
+import BackupSection from '@/components/settings/BackupSection.vue'
 import AuthenticationSection from '@/components/settings/AuthenticationSection.vue'
 
 interface Props {
