@@ -10,6 +10,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using Listenarr.Infrastructure.Notifications.CustomScript;
+using Listenarr.Infrastructure.Notifications.Email;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Notifications;
 
@@ -24,6 +25,8 @@ internal static class NotificationRegistrationExtensions
             provider.GetRequiredService<NotificationService>());
         services.AddSingleton<INotificationPayloadBuilder, NotificationPayloadBuilderAdapter>();
         services.AddScoped<INotificationSubscriber, CustomScriptNotification>();
+        services.AddSingleton<ISmtpTransport, MailKitSmtpTransport>();
+        services.AddScoped<INotificationSubscriber, EmailNotification>();
         services.AddSingleton<IDiscordBotService, DiscordBotService>();
         services.AddSingleton<IToastService, ToastService>();
         services.AddSingleton<IHubBroadcaster, SignalRHubBroadcaster>();
