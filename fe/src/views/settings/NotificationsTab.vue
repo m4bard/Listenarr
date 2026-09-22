@@ -376,8 +376,8 @@
         <h3>No custom scripts configured</h3>
         <p>
           A custom script runs your own executable when a notification event fires, for anything
-          Listenarr does not integrate with directly (a media server rescan, an OPDS feed refresh,
-          a backup trigger).
+          Listenarr does not integrate with directly (a media server rescan, an OPDS feed refresh, a
+          backup trigger).
         </p>
       </div>
 
@@ -628,6 +628,337 @@
           </ModalFooter>
         </template>
       </Modal>
+
+      <div class="section-header email-header">
+        <h3>Email</h3>
+      </div>
+
+      <div v-if="emails.length === 0" class="empty-state">
+        <PhEnvelopeSimple class="empty-icon" />
+        <h3>No email notifications configured</h3>
+        <p>
+          Listenarr sends through your own SMTP server, so notifications reach an inbox rather than
+          a chat app. The settings are the ones the other *arr applications ask for.
+        </p>
+      </div>
+
+      <div v-else class="emails-grid">
+        <div
+          v-for="email in emails"
+          :key="email.id"
+          class="email-card"
+          :class="{ disabled: !email.isEnabled }"
+        >
+          <div class="webhook-header">
+            <div class="webhook-title-row">
+              <div class="webhook-info">
+                <h4 class="webhook-title">
+                  <PhEnvelopeSimple class="webhook-type-icon" />
+                  <span class="webhook-name">{{ email.name }}</span>
+                </h4>
+                <div class="webhook-meta">
+                  <span class="email-channel-count">
+                    {{ email.channels.length }} event{{ email.channels.length === 1 ? '' : 's' }}
+                  </span>
+                  <span class="email-recipient-count">
+                    {{ recipientCount(email) }} recipient{{
+                      recipientCount(email) === 1 ? '' : 's'
+                    }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="webhook-header-actions">
+              <button
+                class="icon-button action-secondary action-toggle"
+                :class="{ active: email.isEnabled }"
+                :title="email.isEnabled ? 'Disable email' : 'Enable email'"
+                @click.stop="toggleEmail(email)"
+              >
+                <component :is="email.isEnabled ? PhToggleRight : PhToggleLeft" />
+              </button>
+
+              <button
+                class="icon-button action-secondary"
+                :class="{
+                  'test-success': lastEmailTestResults[email.id] === 'success',
+                  'test-fail': lastEmailTestResults[email.id] === 'fail',
+                }"
+                title="Send a test message through this server now"
+                @click.stop="testEmail(email)"
+                :disabled="testingEmail === email.id"
+              >
+                <PhSpinner v-if="testingEmail === email.id" class="ph-spin" />
+                <template v-else-if="lastEmailTestResults[email.id] === 'success'">
+                  <PhCheckCircle />
+                </template>
+                <template v-else-if="lastEmailTestResults[email.id] === 'fail'">
+                  <PhXCircle />
+                </template>
+                <template v-else>
+                  <PhPaperPlaneTilt />
+                </template>
+              </button>
+
+              <button
+                class="icon-button action-edit"
+                title="Edit email"
+                @click.stop="editEmail(email)"
+              >
+                <PhPencil />
+              </button>
+
+              <button
+                class="icon-button danger action-delete"
+                title="Delete email"
+                @click.stop="confirmDeleteEmail(email)"
+              >
+                <PhTrash />
+              </button>
+            </div>
+          </div>
+
+          <div class="webhook-body">
+            <div class="webhook-url-container">
+              <PhEnvelopeSimple class="url-icon" />
+              <span class="webhook-url">{{ email.server }}:{{ email.port }}</span>
+            </div>
+            <p
+              v-if="lastEmailTestMessages[email.id]"
+              class="email-test-message"
+              :class="lastEmailTestResults[email.id]"
+            >
+              {{ lastEmailTestMessages[email.id] }}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Email Configuration Modal (shared Modal component) -->
+      <Modal
+        class="email-modal"
+        :visible="showEmailForm"
+        size="md"
+        :title="editingEmail ? 'Edit Email' : 'Add Email'"
+        @close="closeEmailForm"
+      >
+        <template #header>
+          <ModalHeader
+            :title="(editingEmail ? 'Edit' : 'Add') + ' Email'"
+            :icon="PhEnvelopeSimple"
+            @close="closeEmailForm"
+          />
+        </template>
+
+        <form @submit.prevent="saveEmail">
+          <DeleteConfirmationModal
+            :visible="!!emailToDelete"
+            title="Delete Email"
+            @close="emailToDelete = null"
+            @confirm="executeDeleteEmail"
+          >
+            <template v-slot>
+              <p>
+                Are you sure you want to delete the email notification
+                <strong>{{ emailToDelete?.name }}</strong
+                >?
+              </p>
+              <p>This action cannot be undone.</p>
+            </template>
+          </DeleteConfirmationModal>
+
+          <FormSection title="Activation" :icon="PhToggleRight">
+            <CheckboxCard
+              v-model="emailForm.isEnabled"
+              title="Enable"
+              description="Enable this email notification for its selected events"
+            />
+          </FormSection>
+
+          <FormSection title="Basic" :icon="PhInfo">
+            <FormRow label="Name *" labelFor="email-name">
+              <input
+                id="email-name"
+                v-model="emailForm.name"
+                type="text"
+                placeholder="e.g., Household inbox"
+                required
+                @blur="validateEmailField('name')"
+              />
+              <small v-if="emailFormErrors.name" class="error-text">{{
+                emailFormErrors.name
+              }}</small>
+            </FormRow>
+          </FormSection>
+
+          <FormSection title="Server" :icon="PhEnvelopeSimple">
+            <FormRow label="Server *" labelFor="email-server">
+              <input
+                id="email-server"
+                v-model="emailForm.server"
+                type="text"
+                placeholder="smtp.example.com"
+                required
+                @blur="validateEmailField('server')"
+              />
+              <small v-if="emailFormErrors.server" class="error-text">{{
+                emailFormErrors.server
+              }}</small>
+              <small v-else class="help-text">Hostname or IP of your mail server.</small>
+            </FormRow>
+
+            <FormRow label="Port *" labelFor="email-port">
+              <input
+                id="email-port"
+                v-model.number="emailForm.port"
+                type="number"
+                min="1"
+                max="65535"
+                required
+                @blur="validateEmailField('port')"
+              />
+              <small v-if="emailFormErrors.port" class="error-text">{{
+                emailFormErrors.port
+              }}</small>
+            </FormRow>
+
+            <CheckboxCard
+              v-model="emailForm.requireEncryption"
+              title="Require Encryption"
+              description="Require SSL (port 465 only) or StartTLS (any other port)"
+            />
+
+            <FormRow label="Username" labelFor="email-username">
+              <input
+                id="email-username"
+                v-model="emailForm.username"
+                type="text"
+                autocomplete="off"
+              />
+              <small class="help-text"
+                >Leave blank if your server does not require authentication.</small
+              >
+            </FormRow>
+
+            <FormRow label="Password" labelFor="email-password">
+              <input
+                id="email-password"
+                v-model="emailForm.password"
+                type="password"
+                autocomplete="new-password"
+              />
+              <small class="help-text">
+                A saved password is never sent back to this page. Leave the placeholder as it is to
+                keep it, type over it to set a new one, or clear the field to remove authentication.
+              </small>
+            </FormRow>
+          </FormSection>
+
+          <FormSection title="Addresses" :icon="PhPaperPlaneTilt">
+            <FormRow label="From Address *" labelFor="email-from">
+              <input
+                id="email-from"
+                v-model="emailForm.from"
+                type="text"
+                placeholder="listenarr@example.com"
+                required
+                @blur="validateEmailField('from')"
+              />
+              <small v-if="emailFormErrors.from" class="error-text">{{
+                emailFormErrors.from
+              }}</small>
+            </FormRow>
+
+            <FormRow label="Recipient Address(es)" labelFor="email-to">
+              <input
+                id="email-to"
+                v-model="emailForm.to"
+                type="text"
+                placeholder="you@example.com, household@example.com"
+                @blur="validateEmailField('recipients')"
+              />
+              <small class="help-text">Comma separated list of email recipients.</small>
+            </FormRow>
+
+            <FormRow label="CC Address(es)" labelFor="email-cc">
+              <input
+                id="email-cc"
+                v-model="emailForm.cc"
+                type="text"
+                @blur="validateEmailField('recipients')"
+              />
+            </FormRow>
+
+            <FormRow label="BCC Address(es)" labelFor="email-bcc">
+              <input
+                id="email-bcc"
+                v-model="emailForm.bcc"
+                type="text"
+                @blur="validateEmailField('recipients')"
+              />
+            </FormRow>
+
+            <small v-if="emailFormErrors.recipients" class="error-text">{{
+              emailFormErrors.recipients
+            }}</small>
+          </FormSection>
+
+          <FormSection title="Events" :icon="PhBell">
+            <div class="webhook-triggers email-channels triggers-grid">
+              <CheckboxCard
+                v-for="c in scriptChannelOptions"
+                :key="c.value"
+                :modelValue="emailForm.channels.includes(c.value)"
+                @update:modelValue="onToggleEmailChannel(c.value, $event)"
+                :title="c.label"
+                :description="c.description"
+              />
+            </div>
+            <small v-if="emailFormErrors.channels" class="error-text">{{
+              emailFormErrors.channels
+            }}</small>
+          </FormSection>
+
+          <p
+            v-if="emailFormTestMessage"
+            class="email-test-message"
+            :class="emailFormTestSuccess ? 'success' : 'fail'"
+          >
+            {{ emailFormTestMessage }}
+          </p>
+        </form>
+        <template #footer>
+          <ModalFooter :showCancel="false">
+            <template #left>
+              <button @click="closeEmailForm" class="cancel-button btn" type="button">
+                <PhX /> Cancel
+              </button>
+            </template>
+            <template #default>
+              <button
+                v-if="editingEmail"
+                @click="testExistingEmail"
+                class="btn btn-info"
+                type="button"
+                :disabled="testingEmailForm"
+                title="Sends through the last saved version of this target, not your unsaved edits"
+              >
+                <PhSpinner v-if="testingEmailForm" class="ph-spin" />
+                {{ testingEmailForm ? 'Testing...' : 'Test' }}
+              </button>
+              <button
+                @click="saveEmail"
+                class="btn btn-primary"
+                type="button"
+                :disabled="!isEmailFormValid || savingEmail"
+              >
+                <PhSpinner v-if="savingEmail" class="ph-spin" />
+                {{ savingEmail ? 'Saving...' : editingEmail ? 'Update' : 'Save' }}
+              </button>
+            </template>
+          </ModalFooter>
+        </template>
+      </Modal>
     </div>
   </div>
 </template>
@@ -660,6 +991,7 @@ import {
   PhCode,
   PhCaretDown,
   PhCaretUp,
+  PhEnvelopeSimple,
 } from '@phosphor-icons/vue'
 import { Modal, ModalHeader, ModalFooter } from '@/components/feedback'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
@@ -671,7 +1003,12 @@ import { LoadingState } from '@/components/base'
 import { errorTracking } from '@/services/errorTracking'
 import { useToast } from '@/services/toastService'
 import { useConfigurationStore } from '@/stores/configuration'
-import type { ApplicationSettings, CustomScriptConfiguration, NotificationChannel } from '@/types'
+import type {
+  ApplicationSettings,
+  CustomScriptConfiguration,
+  EmailConfiguration,
+  NotificationChannel,
+} from '@/types'
 import { apiService } from '@/services/api'
 
 // Props
@@ -1289,6 +1626,9 @@ onMounted(() => {
   if (props.settings?.customScripts) {
     customScripts.value = props.settings.customScripts
   }
+  if (props.settings?.emails) {
+    emails.value = props.settings.emails
+  }
 })
 
 // ---------------------------------------------------------------------------
@@ -1336,7 +1676,8 @@ const scriptChannelOptions: Array<{
 const environmentVariables: Array<{ name: string; description: string }> = [
   {
     name: 'Listenarr_EventType',
-    description: 'The event name: Grab, Download, DownloadFailed, BookAdded, BookAvailable, Rename, or Test',
+    description:
+      'The event name: Grab, Download, DownloadFailed, BookAdded, BookAvailable, Rename, or Test',
   },
   { name: 'Listenarr_InstanceName', description: "This Listenarr instance's configured name" },
   {
@@ -1423,9 +1764,7 @@ const validateScriptField = (field: 'name' | 'path' | 'channels') => {
       break
     case 'path':
       scriptFormErrors.path =
-        !scriptForm.path || scriptForm.path.trim().length === 0
-          ? 'Script path is required'
-          : ''
+        !scriptForm.path || scriptForm.path.trim().length === 0 ? 'Script path is required' : ''
       break
     case 'channels':
       scriptFormErrors.channels =
@@ -1645,8 +1984,358 @@ const testExistingScript = async () => {
   }
 }
 
-// Expose openWebhookForm/openScriptForm for parent component
-defineExpose({ openWebhookForm, openScriptForm })
+// ---------------------------------------------------------------------------
+// Email
+// ---------------------------------------------------------------------------
+
+// The event checkboxes are the same set the Custom Script form offers, and deliberately the same
+// array: both providers declare Supports(channel) => channel != Test on the backend, so a second
+// list here would only be somewhere for the two to drift apart.
+
+const showEmailForm = ref(false)
+const editingEmail = ref<EmailConfiguration | null>(null)
+const testingEmail = ref<string | null>(null)
+const testingEmailForm = ref(false)
+const lastEmailTestResults = reactive<Record<string, 'success' | 'fail' | undefined>>({})
+const lastEmailTestMessages = reactive<Record<string, string | undefined>>({})
+const emailFormTestMessage = ref('')
+const emailFormTestSuccess = ref(false)
+const emails = ref<EmailConfiguration[]>([])
+const emailToDelete = ref<EmailConfiguration | null>(null)
+const savingEmail = ref(false)
+
+// Recipient lists are edited as comma separated text, which is how Readarr presents the same three
+// fields, and split back into arrays on save.
+const emailForm = reactive({
+  id: '',
+  name: '',
+  server: '',
+  port: 587,
+  requireEncryption: false,
+  username: '',
+  password: '',
+  from: '',
+  to: '',
+  cc: '',
+  bcc: '',
+  channels: [] as NotificationChannel[],
+  isEnabled: true,
+})
+
+const emailFormErrors = reactive({
+  name: '',
+  server: '',
+  port: '',
+  from: '',
+  recipients: '',
+  channels: '',
+})
+
+const splitAddresses = (value: string): string[] =>
+  value
+    .split(',')
+    .map((address) => address.trim())
+    .filter((address) => address.length > 0)
+
+const recipientCount = (email: EmailConfiguration): number =>
+  email.to.length + email.cc.length + email.bcc.length
+
+// Mirrors EmailConfigurationValidator.IsWellFormedAddress, which is itself the one-at-sign rule
+// FluentValidation's EmailAddress() applies in the *arr applications. Kept deliberately no
+// stricter than the backend so the form cannot refuse an address the server would accept.
+const isWellFormedAddress = (address: string): boolean => {
+  const at = address.indexOf('@')
+  return at > 0 && at === address.lastIndexOf('@') && at < address.length - 1 && !/\s/.test(address)
+}
+
+const allFormRecipients = (): string[] => [
+  ...splitAddresses(emailForm.to),
+  ...splitAddresses(emailForm.cc),
+  ...splitAddresses(emailForm.bcc),
+]
+
+const isEmailFormValid = computed(() => {
+  if (!emailForm.name.trim() || !emailForm.server.trim() || !emailForm.from.trim()) return false
+  if (!Number.isInteger(emailForm.port) || emailForm.port < 1 || emailForm.port > 65535)
+    return false
+  if (emailForm.channels.length === 0) return false
+  const recipients = allFormRecipients()
+  if (recipients.length === 0) return false
+  if (!recipients.every(isWellFormedAddress)) return false
+  return true
+})
+
+const validateEmailField = (
+  field: 'name' | 'server' | 'port' | 'from' | 'recipients' | 'channels',
+) => {
+  switch (field) {
+    case 'name':
+      emailFormErrors.name = emailForm.name.trim().length === 0 ? 'Name is required' : ''
+      break
+    case 'server':
+      emailFormErrors.server = emailForm.server.trim().length === 0 ? 'Server is required' : ''
+      break
+    case 'port':
+      emailFormErrors.port =
+        !Number.isInteger(emailForm.port) || emailForm.port < 1 || emailForm.port > 65535
+          ? 'Port must be between 1 and 65535'
+          : ''
+      break
+    case 'from':
+      emailFormErrors.from = emailForm.from.trim().length === 0 ? 'From address is required' : ''
+      break
+    case 'recipients': {
+      const recipients = allFormRecipients()
+      if (recipients.length === 0) {
+        emailFormErrors.recipients = 'At least one recipient, CC or BCC address is required'
+      } else {
+        const bad = recipients.find((address) => !isWellFormedAddress(address))
+        emailFormErrors.recipients = bad ? `'${bad}' is not a valid email address` : ''
+      }
+      break
+    }
+    case 'channels':
+      emailFormErrors.channels = emailForm.channels.length === 0 ? 'Select at least one event' : ''
+      break
+  }
+}
+
+const resetEmailFormErrors = () => {
+  emailFormErrors.name = ''
+  emailFormErrors.server = ''
+  emailFormErrors.port = ''
+  emailFormErrors.from = ''
+  emailFormErrors.recipients = ''
+  emailFormErrors.channels = ''
+}
+
+const onToggleEmailChannel = (channel: NotificationChannel, enabled: boolean) => {
+  const idx = emailForm.channels.indexOf(channel)
+  if (enabled && idx === -1) emailForm.channels.push(channel)
+  if (!enabled && idx !== -1) emailForm.channels.splice(idx, 1)
+}
+
+const clearEmailForm = () => {
+  emailForm.id = ''
+  emailForm.name = ''
+  emailForm.server = ''
+  emailForm.port = 587
+  emailForm.requireEncryption = false
+  emailForm.username = ''
+  emailForm.password = ''
+  emailForm.from = ''
+  emailForm.to = ''
+  emailForm.cc = ''
+  emailForm.bcc = ''
+  emailForm.channels = []
+  emailForm.isEnabled = true
+  emailFormTestMessage.value = ''
+  resetEmailFormErrors()
+}
+
+const openEmailForm = () => {
+  editingEmail.value = null
+  clearEmailForm()
+  showEmailForm.value = true
+}
+
+const closeEmailForm = () => {
+  showEmailForm.value = false
+  editingEmail.value = null
+  clearEmailForm()
+}
+
+const editEmail = (email: EmailConfiguration) => {
+  editingEmail.value = email
+  clearEmailForm()
+  emailForm.id = email.id
+  emailForm.name = email.name
+  emailForm.server = email.server
+  emailForm.port = email.port
+  emailForm.requireEncryption = email.requireEncryption
+  emailForm.username = email.username
+  // Whatever the API handed us, which for a stored password is the redaction sentinel. Sending it
+  // back unchanged is what tells the backend to keep the password it already has.
+  emailForm.password = email.password
+  emailForm.from = email.from
+  emailForm.to = email.to.join(', ')
+  emailForm.cc = email.cc.join(', ')
+  emailForm.bcc = email.bcc.join(', ')
+  emailForm.channels = [...email.channels]
+  showEmailForm.value = true
+}
+
+// Persist email targets to backend settings (do not mutate incoming props)
+const persistEmails = async () => {
+  const current = configStore.applicationSettings ?? props.settings
+  if (!current) {
+    throw new Error('Application settings are unavailable')
+  }
+  try {
+    const payload: ApplicationSettings = {
+      ...current,
+      emails: emails.value,
+    }
+    const savedSettings = await configStore.saveApplicationSettings(payload)
+    emit('update:settings', savedSettings)
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'NotificationsTab',
+      operation: 'persistEmails',
+    })
+    toast.error('Save failed', 'Failed to save email notifications to settings')
+    throw error
+  }
+}
+
+const saveEmail = async () => {
+  validateEmailField('name')
+  validateEmailField('server')
+  validateEmailField('port')
+  validateEmailField('from')
+  validateEmailField('recipients')
+  validateEmailField('channels')
+
+  if (!isEmailFormValid.value) {
+    toast.error('Validation error', 'Please fix the errors before saving')
+    return
+  }
+
+  savingEmail.value = true
+  try {
+    const email: EmailConfiguration = {
+      id: emailForm.id || generateUUID(),
+      name: emailForm.name.trim(),
+      server: emailForm.server.trim(),
+      port: emailForm.port,
+      requireEncryption: emailForm.requireEncryption,
+      username: emailForm.username.trim(),
+      password: emailForm.password,
+      from: emailForm.from.trim(),
+      to: splitAddresses(emailForm.to),
+      cc: splitAddresses(emailForm.cc),
+      bcc: splitAddresses(emailForm.bcc),
+      channels: [...emailForm.channels],
+      isEnabled: emailForm.isEnabled,
+    }
+
+    if (editingEmail.value) {
+      const index = emails.value.findIndex((e) => e.id === email.id)
+      if (index !== -1) {
+        emails.value[index] = email
+      }
+      toast.success('Email', 'Email notification updated successfully')
+    } else {
+      emails.value.push(email)
+      toast.success('Email', 'Email notification added successfully')
+    }
+
+    await persistEmails()
+    closeEmailForm()
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'NotificationsTab',
+      operation: 'saveEmail',
+    })
+    toast.error('Save failed', 'Failed to save email notification')
+  } finally {
+    savingEmail.value = false
+  }
+}
+
+const confirmDeleteEmail = (email: EmailConfiguration) => {
+  emailToDelete.value = email
+}
+
+const executeDeleteEmail = async () => {
+  if (!emailToDelete.value) return
+  try {
+    emails.value = emails.value.filter((e) => e.id !== emailToDelete.value!.id)
+    toast.success('Email', 'Email notification deleted successfully')
+    await persistEmails()
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'NotificationsTab',
+      operation: 'executeDeleteEmail',
+    })
+    toast.error('Delete failed', 'Failed to delete email notification')
+    throw error
+  } finally {
+    emailToDelete.value = null
+  }
+}
+
+const toggleEmail = async (email: EmailConfiguration) => {
+  const index = emails.value.findIndex((e) => e.id === email.id)
+  if (index !== -1) {
+    const target = emails.value[index]
+    if (target) {
+      target.isEnabled = !target.isEnabled
+      toast.success('Email', `${email.name} ${target.isEnabled ? 'enabled' : 'disabled'}`)
+      await persistEmails()
+    }
+  }
+}
+
+// Sends a real message through the saved configuration. As with Custom Script, there is no way to
+// test an unsaved form: EmailNotification.TestAsync(configurationId) looks the target up by id in
+// stored configuration, so a target that has never been saved has nothing for the backend to find.
+const runEmailTest = async (id: string): Promise<{ success: boolean; message: string }> => {
+  const response = await apiService.testNotificationSubscriber('Email', id)
+  lastEmailTestResults[id] = response.success ? 'success' : 'fail'
+  lastEmailTestMessages[id] = response.message
+  return response
+}
+
+const testEmail = async (email: EmailConfiguration) => {
+  testingEmail.value = email.id
+  try {
+    const response = await runEmailTest(email.id)
+    if (response.success) {
+      toast.success('Test successful', response.message || `${email.name} sent successfully`)
+    } else {
+      toast.error('Test failed', response.message || `${email.name} did not send`)
+    }
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'NotificationsTab',
+      operation: 'testEmail',
+    })
+    lastEmailTestResults[email.id] = 'fail'
+    toast.error('Test failed', formatApiError(error))
+  } finally {
+    testingEmail.value = null
+  }
+}
+
+const testExistingEmail = async () => {
+  if (!editingEmail.value) return
+  testingEmailForm.value = true
+  emailFormTestMessage.value = ''
+  try {
+    const response = await runEmailTest(editingEmail.value.id)
+    emailFormTestSuccess.value = response.success
+    emailFormTestMessage.value = response.message
+    if (response.success) {
+      toast.success('Test successful', response.message || 'Email test succeeded')
+    } else {
+      toast.error('Test failed', response.message || 'Email test failed')
+    }
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'NotificationsTab',
+      operation: 'testExistingEmail',
+    })
+    emailFormTestSuccess.value = false
+    emailFormTestMessage.value = formatApiError(error)
+    toast.error('Test failed', emailFormTestMessage.value)
+  } finally {
+    testingEmailForm.value = false
+  }
+}
+
+// Expose the three add-form openers for the parent component
+defineExpose({ openWebhookForm, openScriptForm, openEmailForm })
 </script>
 
 <style scoped>
@@ -2149,6 +2838,58 @@ defineExpose({ openWebhookForm, openScriptForm })
 }
 
 /* @keyframes spin is centralized in src/assets/animations.css */
+
+/* Email section (mirrors the script grid/card layout above) */
+.email-header {
+  margin-top: 3rem;
+}
+
+.emails-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
+  gap: 1.5rem;
+}
+
+.email-card {
+  background-color: #2a2a2a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.email-card:hover {
+  border-color: rgba(var(--brand-rgb), 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.15);
+}
+
+.email-card.disabled {
+  opacity: 0.5;
+  filter: grayscale(50%);
+}
+
+.email-channel-count,
+.email-recipient-count {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.email-test-message {
+  margin: 0;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.email-test-message.success {
+  color: #51cf66;
+}
+
+.email-test-message.fail {
+  color: #ff6b6b;
+}
 
 /* Custom Scripts section (mirrors the webhook grid/card layout above) */
 .custom-scripts-header {
