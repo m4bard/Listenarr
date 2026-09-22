@@ -24,9 +24,9 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
         // the series one in AudiobookRepository.cs -- and the reasoning below holds for both, so
         // it is written down once here rather than twice.
         //
-        // One thing differs and it is called out at each catch. The author upsert refuses to
-        // rebind an ASIN onto a row named for somebody else, which closes off one route to an
-        // update-path collision that is still open on the series side.
+        // One thing differs, and the author catch spells it out where it matters. The author
+        // upsert refuses to rebind an ASIN onto a row named for somebody else, which closes off
+        // one route to an update-path collision that is still open on the series side.
         //
         // Both cache tables carry a unique index on (NameNormalized, Region), and both upserts
         // resolve an existing row with a read and then write in a separate statement. Two
