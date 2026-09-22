@@ -113,6 +113,13 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(authorCacheEntry.Region) ?? "us";
             var normalizedAsin = NormalizeAsin(authorCacheEntry.AuthorAsin);
 
+            // Once per call, not once per pass, and not keyed on the attempt number. A refusal can
+            // fire for the first time on a retry: attempt one can miss the ASIN lookup entirely,
+            // insert, lose the race, and only then find a row bearing that ASIN under another name
+            // that a second writer committed in between. Keying the log on attempt == 1 drops that
+            // warning altogether, which is the one outcome this must never produce.
+            var refusalLogged = false;
+
             for (var attempt = 1; ; attempt++)
             {
                 AuthorCacheEntry? existing = null;
@@ -134,13 +141,14 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                         // allowed -- two spellings of one author legitimately produce two rows with
                         // one ASIN, which is why (AuthorAsin, Region) is not a unique index.
                         //
-                        // Logged on the first attempt only. A retry re-reads and refuses again on
-                        // the same facts, and one logical write that printed this three times would
-                        // read as three separate refusals. This line is the whole operator-facing
+                        // Logged once per call. A retry that refuses again is the same refusal
+                        // read twice, and one logical write printing this three times would read
+                        // as three separate refusals. This line is the whole operator-facing
                         // surface for a refused binding, so how many times it appears is part of
                         // what it says.
-                        if (attempt == 1)
+                        if (!refusalLogged)
                         {
+                            refusalLogged = true;
                             _logger?.LogWarning(
                                 "Refusing to rebind cached author ASIN {AuthorAsin} in region {Region}: it is already "
                                 + "associated with {ExistingAuthor}, and this write names {IncomingAuthor}. "
@@ -214,10 +222,12 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 // Note which route gets there. On this build it is NOT the ASIN naming somebody
                 // else: the refusal above turns that into a miss before any write happens, so the
                 // case the canary-era version of this comment described cannot occur here. What
-                // remains is a row whose stored key an earlier normalizer wrote, matched on its
-                // re-derived display name by StringUtils.MatchesAuthorKey and then re-keyed to
-                // what the current normalizer produces. If a second row already holds that key,
-                // the update collides.
+                // remains is a row whose stored key differs from what the current normalizer
+                // derives from its display name, which is then re-keyed by the field merge below.
+                // If a second row already holds that key, the update collides. Two gates reach it:
+                // StringUtils.MatchesAuthorKey's second chance on the re-derived display name, and
+                // a blank normalized name, which skips both the refusal and the name lookup while
+                // the merge still re-keys the row the ASIN resolved.
                 catch (UniqueConstraintViolationException) when (
                     inserting
                     && !string.IsNullOrWhiteSpace(normalizedName)
