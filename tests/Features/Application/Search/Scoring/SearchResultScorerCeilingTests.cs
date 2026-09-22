@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Tests.Common;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Listenarr.Tests.Features.Application.Search.Scoring
@@ -35,7 +36,10 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
     /// it ever fails, preferred words are not reaching the scorer at all and every other
     /// assertion in this file is void rather than informative.
     /// </remarks>
-    public class SearchResultScorerCeilingTests
+    [Trait("Area", "Scoring")]
+    [Trait("Name", "SearchResultScorerCeilingTests")]
+    [Trait("Category", "Application")]
+    public sealed class SearchResultScorerCeilingTests : BaseTests
     {
         private const int BaseScore = 100;
 
