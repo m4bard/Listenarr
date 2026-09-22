@@ -10,6 +10,8 @@ namespace Listenarr.Tests.Mocks.Api
         public bool Authenticated { get; set; } = false;
         public NameValueCollection? LastDeleteForm { get; private set; }
         public NameValueCollection? LastCategoryForm { get; private set; }
+        public NameValueCollection? LastShareLimitsForm { get; private set; }
+        public int SetShareLimitsCallCount { get; private set; }
         public HttpStatusCode InfoStatusCode { get; set; } = HttpStatusCode.OK;
         public HttpStatusCode AddStatusCode { get; set; } = HttpStatusCode.OK;
         public string? AddResponseBody { get; set; }
@@ -46,6 +48,7 @@ namespace Listenarr.Tests.Mocks.Api
             AddRoute("api/v2/torrents/delete", DoDelete, HttpMethod.Post);
             AddRoute("api/v2/torrents/setCategory", SetCategory, HttpMethod.Post);
             AddRoute("api/v2/torrents/setForceStart", SetForceStart, HttpMethod.Post);
+            AddRoute("api/v2/torrents/setShareLimits", SetShareLimits, HttpMethod.Post);
         }
 
         private async Task<HttpResponseMessage> DoLogin(HttpRequestMessage request, CancellationToken ct)
@@ -167,6 +170,14 @@ namespace Listenarr.Tests.Mocks.Api
         {
             if (!Authenticated) return new HttpResponseMessage(HttpStatusCode.Forbidden);
             LastCategoryForm = HttpUtility.ParseQueryString(await request.Content!.ReadAsStringAsync(ct));
+            return MockUtils.GetCannedResponse("Ok");
+        }
+
+        private async Task<HttpResponseMessage> SetShareLimits(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (!Authenticated) return new HttpResponseMessage(HttpStatusCode.Forbidden);
+            SetShareLimitsCallCount++;
+            LastShareLimitsForm = HttpUtility.ParseQueryString(await request.Content!.ReadAsStringAsync(ct));
             return MockUtils.GetCannedResponse("Ok");
         }
     }

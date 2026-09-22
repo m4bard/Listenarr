@@ -327,6 +327,8 @@ namespace Listenarr.Api.Features.Indexers
             existing.MinimumAge = indexer.MinimumAge;
             existing.Retention = indexer.Retention;
             existing.MaximumSize = indexer.MaximumSize;
+            existing.SeedRatio = indexer.SeedRatio;
+            existing.SeedTime = indexer.SeedTime;
             existing.AdditionalSettings = ApiResponseRedactor.MergeAdditionalSettings(existing.AdditionalSettings, indexer.AdditionalSettings);
             existing.UpdatedAt = DateTime.UtcNow;
 

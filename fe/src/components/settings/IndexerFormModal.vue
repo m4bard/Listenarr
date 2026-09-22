@@ -291,6 +291,45 @@
               <input id="maximumSize" v-model.number="formData.maximumSize" type="number" min="0" />
             </FormRow>
           </FormSection>
+
+          <!-- Seeding (torrent indexers only) -->
+          <FormSection v-if="formData.type === 'Torrent'" title="Seeding" :icon="PhGear">
+            <div class="form-row">
+              <FormRow
+                label="Seed Ratio"
+                labelFor="seedRatio"
+                help="Minimum ratio to reach before the client may stop seeding. Empty leaves the download client's own ratio alone."
+              >
+                <input
+                  id="seedRatio"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  :value="formData.seedRatio ?? ''"
+                  @input="onSeedRatioInput"
+                />
+              </FormRow>
+
+              <FormRow
+                label="Seed Time (minutes)"
+                labelFor="seedTime"
+                help="Minimum time to seed before the client may stop seeding. Empty leaves the download client's own seed time alone."
+              >
+                <input
+                  id="seedTime"
+                  type="number"
+                  min="0"
+                  :value="formData.seedTime ?? ''"
+                  @input="onSeedTimeInput"
+                />
+              </FormRow>
+            </div>
+
+            <small v-if="seedCriteriaWarning" class="info-text seed-criteria-warning">
+              <PhInfo />
+              {{ seedCriteriaWarning }}
+            </small>
+          </FormSection>
         </ModalBody>
       </ModalForm>
     </template>
@@ -400,6 +439,8 @@ const defaultFormData = {
   retention: 0,
   maximumSize: 0,
   additionalSettings: '',
+  seedRatio: null as number | null,
+  seedTime: null as number | null,
 }
 
 const formData = ref({ ...defaultFormData })
@@ -437,6 +478,33 @@ watch(
   },
   { immediate: true },
 )
+
+const onSeedRatioInput = (event: Event) => {
+  const value = (event.target as HTMLInputElement).value
+  formData.value.seedRatio = value === '' ? null : Number(value)
+}
+
+const onSeedTimeInput = (event: Event) => {
+  const value = (event.target as HTMLInputElement).value
+  formData.value.seedTime = value === '' ? null : Number(value)
+}
+
+// Mirrors the generic (tracker-independent) half of Readarr's seed criteria warning
+// (SeedCriteriaSettingsValidator: SeedRatio/SeedTime "Should be greater than zero"). Listenarr
+// has no per-tracker hit-and-run minimum data to check against, so this only catches a value
+// of exactly zero, which would never satisfy any tracker's seeding requirement.
+const seedCriteriaWarning = computed(() => {
+  if (formData.value.seedRatio === 0 && formData.value.seedTime === 0) {
+    return 'Seed ratio and seed time should be greater than zero, or left empty.'
+  }
+  if (formData.value.seedRatio === 0) {
+    return 'Seed ratio should be greater than zero, or left empty.'
+  }
+  if (formData.value.seedTime === 0) {
+    return 'Seed time should be greater than zero, or left empty.'
+  }
+  return ''
+})
 
 type IndexerPayload = Omit<Indexer, 'id' | 'createdAt' | 'updatedAt'>
 
@@ -499,6 +567,8 @@ watch(
         retention: newIndexer.retention,
         maximumSize: newIndexer.maximumSize,
         additionalSettings: newIndexer.additionalSettings || '',
+        seedRatio: newIndexer.seedRatio ?? null,
+        seedTime: newIndexer.seedTime ?? null,
       }
 
       // Parse MyAnonamouse credentials from additionalSettings
