@@ -30,7 +30,7 @@ namespace Listenarr.Tests.Features.Api.Features.SystemDiagnostics;
 /// </summary>
 [Trait("Name", "BackupEndpointTests")]
 [Trait("Category", "Backup")]
-public sealed class BackupEndpointTests : IClassFixture<ListenarrWebApplicationFactory>
+public sealed class BackupEndpointTests : BaseTests, IClassFixture<ListenarrWebApplicationFactory>
 {
     private readonly ListenarrWebApplicationFactory _factory;
 
