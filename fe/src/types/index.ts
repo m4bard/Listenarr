@@ -249,6 +249,9 @@ export interface DownloadClientConfiguration {
   downloadPath: string
   useSSL: boolean
   isEnabled: boolean
+  // Selection order between clients of the same protocol. Lower wins; clients sharing
+  // the lowest value are used in turn. 1 to 50, defaulting to 1.
+  priority?: number
   removeCompletedDownloads?: string // "none", "remove", "remove_and_delete"
   // Client-specific settings. Use `DownloadClientSettings` for typed access
   settings: DownloadClientSettings

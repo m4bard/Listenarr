@@ -172,4 +172,71 @@ describe('DownloadClientFormModal', () => {
     expect(calledWith.password).toBe('')
     expect(calledWith.id).toBe('4')
   })
+
+  it('defaults Client Priority to 1 for a new client and sends it', async () => {
+    const api = await import('@/services/api')
+    ;(api.testDownloadClient as unknown) = vi.fn(async (config: unknown) => ({
+      success: true,
+      message: 'ok',
+      client: config,
+    }))
+
+    const wrapper = mount(DownloadClientFormModal, {
+      global: { plugins: [createPinia()] },
+      props: { visible: true, editingClient: null },
+    })
+    await wrapper.vm.$nextTick()
+
+    const priorityInput = wrapper.find('input[id="clientPriority"]')
+    expect(priorityInput.exists()).toBe(true)
+    expect((priorityInput.element as HTMLInputElement).value).toBe('1')
+
+    await wrapper.find('button.btn-info').trigger('click')
+
+    const calledWith = (api.testDownloadClient as unknown).mock.calls[0][0]
+    expect(calledWith.priority).toBe(1)
+  })
+
+  it('round-trips an edited Client Priority into the payload', async () => {
+    const api = await import('@/services/api')
+    ;(api.testDownloadClient as unknown) = vi.fn(async (config: unknown) => ({
+      success: true,
+      message: 'ok',
+      client: config,
+    }))
+
+    const wrapper = mount(DownloadClientFormModal, {
+      global: { plugins: [createPinia()] },
+      props: { visible: true, editingClient: null },
+    })
+
+    await wrapper.setProps({
+      editingClient: {
+        id: '5',
+        name: 'seedbox',
+        type: 'qbittorrent',
+        host: 'host.local',
+        port: 8080,
+        isEnabled: true,
+        useSSL: false,
+        downloadPath: '',
+        username: '',
+        password: '',
+        priority: 3,
+        settings: {},
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    const priorityInput = wrapper.find('input[id="clientPriority"]')
+    // A saved priority has to reach the form, otherwise editing any other field
+    // silently resets it to the default on save.
+    expect((priorityInput.element as HTMLInputElement).value).toBe('3')
+
+    await priorityInput.setValue('9')
+    await wrapper.find('button.btn-info').trigger('click')
+
+    const calledWith = (api.testDownloadClient as unknown).mock.calls[0][0]
+    expect(calledWith.priority).toBe(9)
+  })
 })

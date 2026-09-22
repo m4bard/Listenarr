@@ -209,6 +209,21 @@
           <!-- Priority -->
           <FormSection title="Priority" :icon="PhSortAscending">
             <div class="form-group">
+              <label for="clientPriority">Client Priority</label>
+              <input
+                id="clientPriority"
+                v-model.number="formData.priority"
+                type="number"
+                min="1"
+                max="50"
+              />
+              <small
+                >Which client is used when more than one can take this download. Lower wins.
+                Clients sharing the lowest number are used in turn (1-50)</small
+              >
+            </div>
+
+            <div class="form-group">
               <label for="recentPriority">Recent Priority</label>
               <select id="recentPriority" v-model="formData.recentPriority">
                 <option value="default">Default</option>
@@ -413,6 +428,7 @@ const defaultFormData = {
   downloadPath: '',
   useSSL: false,
   isEnabled: true,
+  priority: 1,
   category: '',
   tags: '',
   recentPriority: 'default',
@@ -538,6 +554,7 @@ watch(
         downloadPath: newClient.downloadPath,
         useSSL: newClient.useSSL,
         isEnabled: newClient.isEnabled,
+        priority: newClient.priority ?? 1,
         category: (settings?.category as string) || '',
         tags: (settings?.tags as string) || '',
         recentPriority: (settings?.recentPriority as string) || 'default',
@@ -588,6 +605,7 @@ const testConnection = async () => {
       downloadPath: formData.value.downloadPath || '',
       useSSL: formData.value.useSSL,
       isEnabled: formData.value.isEnabled,
+      priority: formData.value.priority,
       removeCompletedDownloads: formData.value.removeCompletedDownloads,
       settings: {
         ...(formData.value.type === 'sabnzbd' && formData.value.apiKey
@@ -648,6 +666,7 @@ const handleSubmit = async () => {
       downloadPath: formData.value.downloadPath || '',
       useSSL: formData.value.useSSL,
       isEnabled: formData.value.isEnabled,
+      priority: formData.value.priority,
       removeCompletedDownloads: formData.value.removeCompletedDownloads,
       settings: {
         ...(formData.value.type === 'sabnzbd' && formData.value.apiKey
