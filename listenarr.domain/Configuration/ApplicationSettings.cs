@@ -65,6 +65,11 @@ namespace Listenarr.Domain.Configuration
         public int MaxConcurrentDownloads { get; set; } = 3;
         public int PollingIntervalSeconds { get; set; } = 30;
         public bool EnableNotifications { get; set; } = false;
+
+        // Days an automatic backup is kept before it is swept. Manual backups are never swept.
+        // 28 matches the *arr family: Readarr ConfigService.cs:398, Sonarr :422, Prowlarr :179.
+        // Zero or less disables the sweep.
+        public int BackupRetentionDays { get; set; } = 28;
         public List<string> AllowedFileExtensions
         {
             get
