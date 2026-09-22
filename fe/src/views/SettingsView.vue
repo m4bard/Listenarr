@@ -176,6 +176,15 @@
             Add Webhook
           </button>
 
+          <button
+            v-if="activeTab === 'notifications'"
+            @click="notificationsRef?.openScriptForm()"
+            class="add-button btn btn-primary"
+          >
+            <PhPlus />
+            Add Custom Script
+          </button>
+
           <!-- Save button for sections that need it -->
           <button
             v-if="activeTab === 'general' || activeTab === 'bot'"
