@@ -70,6 +70,7 @@ internal static class DownloadRegistrationExtensions
         services.AddScoped<IDownloadQueueService, DownloadQueueService>();
         services.AddScoped<ImportDestinationPlanner>();
         services.AddScoped<ArchiveImportExtractor>();
+        services.AddScoped<IFreeSpaceImportGuard, FreeSpaceImportGuard>();
         services.AddScoped<IDownloadImportService, DownloadImportService>();
         services.AddScoped<FileMover>();
         services.AddScoped<IFileMover>(provider =>

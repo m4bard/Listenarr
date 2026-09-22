@@ -91,6 +91,17 @@ namespace Listenarr.Domain.Configuration
         // Whether to extract archive files (zip/rar/7z) when discovered in a completed download
         public bool ExtractArchives { get; set; } = true;
 
+        // Minimum free space required at the import destination, in megabytes, on top of the
+        // size of the files being imported. Family default: Readarr ConfigService.cs:195
+        // (MinimumFreeSpaceWhenImporting, default 100).
+        public int MinimumFreeSpaceWhenImporting { get; set; } = 100;
+
+        // Skip the free-space check before import entirely. Escape hatch for storage (a
+        // network filesystem, for instance) that reports free space Listenarr cannot trust.
+        // Family default: Readarr ConfigService.cs:188 (SkipFreeSpaceCheckWhenImporting,
+        // default false).
+        public bool SkipFreeSpaceCheckWhenImporting { get; set; } = false;
+
         // Maximum number of concurrent ffprobe processes during an unmatched scan.
         // Lower values reduce NAS/disk I/O pressure; higher values speed up large libraries.
         public int UnmatchedScanConcurrency { get; set; } = 2;
