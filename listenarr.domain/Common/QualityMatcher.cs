@@ -219,6 +219,42 @@ namespace Listenarr.Domain.Common
         }
 
         /// <summary>
+        /// The profile rung a release's reported quality label ranks on, or null when the profile
+        /// cannot rank that label at all.
+        /// </summary>
+        /// <remarks>
+        /// This is the ranking counterpart to <see cref="Match"/>, for a carrier that reports a
+        /// quality as a string rather than as codec and bitrate. An exact rung name is taken as
+        /// written; anything else is mapped through the same codec-group and bitrate logic a file
+        /// goes through, so that a release labelled "M4B" lands on the profile's AAC rungs instead
+        /// of matching nothing. A plain name comparison would return null for most of what an
+        /// indexer actually reports.
+        /// </remarks>
+        public static QualityDefinition? RankingRung(string? qualityLabel, QualityProfile? profile)
+        {
+            if (string.IsNullOrWhiteSpace(qualityLabel) || profile?.Qualities == null || profile.Qualities.Count == 0)
+            {
+                return null;
+            }
+
+            var named = FindAllowedRung(profile, qualityLabel.Trim());
+            if (named != null)
+            {
+                return named;
+            }
+
+            var (codec, bitrateKbps, _) = ParseQualityLabel(qualityLabel);
+            return Match(
+                new AudioQualityInput
+                {
+                    Codec = codec,
+                    Format = qualityLabel,
+                    BitrateBitsPerSecond = bitrateKbps,
+                },
+                profile).Rung;
+        }
+
+        /// <summary>
         /// Whether <paramref name="candidate"/> is strictly higher quality than <paramref name="existing"/>
         /// (lower priority number). An unknown candidate is never better; an unknown existing is always beaten.
         /// </summary>
