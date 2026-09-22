@@ -17,6 +17,9 @@
  */
 
 using Listenarr.Domain.SystemDiagnostics.Backups;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Serilog;
 
@@ -57,20 +60,48 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
         public static bool IsEnabled(IConfiguration? configuration)
         {
             var environmentOverride = Environment.GetEnvironmentVariable(EnabledEnvironmentVariable);
-            if (!string.IsNullOrWhiteSpace(environmentOverride)
-                && bool.TryParse(environmentOverride.Trim(), out var parsedEnvironment))
+            if (!string.IsNullOrWhiteSpace(environmentOverride))
             {
-                return parsedEnvironment;
+                var parsed = ParseFlag(environmentOverride);
+                if (parsed is null)
+                {
+                    // An operator reaching for this is looking at a container that will not start.
+                    // Ignoring an unrecognised spelling in silence is the worst thing to do to them.
+                    Log.Logger.Warning(
+                        "[Startup] {Variable} is set to a value that is not a yes or a no, so it is being ignored",
+                        EnabledEnvironmentVariable);
+                }
+                else
+                {
+                    return parsed.Value;
+                }
             }
 
             return configuration?.GetValue<bool?>(EnabledConfigurationKey) ?? true;
         }
 
         /// <summary>
+        /// Reads the spellings of yes and no that this project already accepts elsewhere, so an
+        /// operator who writes 0, no or off gets what they meant.
+        /// </summary>
+        /// <remarks>
+        /// The same set as Startup/ListenarrStartupTasks.cs uses for AuthenticationRequired.
+        /// </remarks>
+        private static bool? ParseFlag(string value)
+        {
+            return value.Trim().ToLowerInvariant() switch
+            {
+                "true" or "yes" or "1" or "on" or "enabled" => true,
+                "false" or "no" or "0" or "off" or "disabled" => false,
+                _ => null
+            };
+        }
+
+        /// <summary>
         /// Takes a backup when there is a schema change about to be applied.
         /// </summary>
         /// <param name="pendingMigrations">Migrations EF Core is about to apply.</param>
-        /// <param name="appliedMigrations">Migrations already recorded in the database.</param>
+        /// <param name="context">The context whose database is about to be migrated.</param>
         /// <param name="enabled">Result of <see cref="IsEnabled"/>.</param>
         /// <param name="backupService">
         /// Writes the archive. Evaluated only when a backup is actually going to be taken.
@@ -87,15 +118,48 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
         /// it was protecting does not proceed. Refusing is also what this startup path already does
         /// for any other migration failure.
         /// </exception>
+        public static Task<BackupArchive?> ProtectAsync(
+            IReadOnlyCollection<string> pendingMigrations,
+            DbContext context,
+            bool enabled,
+            Lazy<IBackupService> backupService,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+
+            var creator = context.GetService<IRelationalDatabaseCreator>();
+
+            // Asked of the database rather than inferred from an empty __EFMigrationsHistory,
+            // because a populated database whose history table was lost also has no applied
+            // migrations, and that is the case where a backup matters most.
+            return ProtectAsync(
+                pendingMigrations,
+                databaseIsBeingCreated: !creator.Exists() || !creator.HasTables(),
+                enabled,
+                backupService,
+                cancellationToken);
+        }
+
+        /// <summary>
+        /// The decision itself, separated from the database so it can be exercised directly.
+        /// </summary>
+        /// <param name="pendingMigrations">Migrations EF Core is about to apply.</param>
+        /// <param name="databaseIsBeingCreated">
+        /// Whether this start is creating the database rather than upgrading one.
+        /// </param>
+        /// <param name="enabled">Result of <see cref="IsEnabled"/>.</param>
+        /// <param name="backupService">
+        /// Writes the archive. Evaluated only when a backup is actually going to be taken.
+        /// </param>
+        /// <param name="cancellationToken">Cancels the operation.</param>
         public static async Task<BackupArchive?> ProtectAsync(
             IReadOnlyCollection<string> pendingMigrations,
-            IReadOnlyCollection<string> appliedMigrations,
+            bool databaseIsBeingCreated,
             bool enabled,
             Lazy<IBackupService> backupService,
             CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(pendingMigrations);
-            ArgumentNullException.ThrowIfNull(appliedMigrations);
             ArgumentNullException.ThrowIfNull(backupService);
 
             if (pendingMigrations.Count == 0)
@@ -106,10 +170,9 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
                 return null;
             }
 
-            if (appliedMigrations.Count == 0)
+            if (databaseIsBeingCreated)
             {
-                // A database with no history is one this start is about to create. There is no
-                // prior state to lose, so a copy of an empty file helps nobody. Readarr reaches the
+                // Nothing to lose yet, so a copy of an empty file helps nobody. Readarr reaches the
                 // same place from the other direction: a first install has no update to back up
                 // before.
                 Log.Logger.Debug(

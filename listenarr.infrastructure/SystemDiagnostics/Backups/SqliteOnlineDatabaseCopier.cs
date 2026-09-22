@@ -73,11 +73,17 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
 
                 sqliteSource.BackupDatabase(destinationConnection);
 
-                // The live database runs in WAL (Persistence/SqlitePragmaInitializer.cs:36) and the
-                // backup copies the header with it, so without this the archived file would expect
-                // a -wal sidecar that is not in the archive. DELETE leaves a single self-contained
-                // file. Readarr forces truncate at MakeDatabaseBackup.cs:51 and then deletes the
-                // journal by hand (BackupService.cs:97); one pragma does both jobs here.
+                // Normalises the journal mode of the copy rather than inheriting whatever the live
+                // file carries. Closing the destination cleanly already removes any -wal sidecar,
+                // so the archive is self-contained either way; what this buys is that the archived
+                // file opens the same way whatever the source was, which matters because the source
+                // mode here is not fixed. SqlitePragmaInitializer sets WAL but has no callers, so a
+                // database created by this build is in the rollback-journal default and an older
+                // one may still be in WAL, since the mode lives in the file header.
+                //
+                // Readarr normalises for the same reason at MakeDatabaseBackup.cs:35 and :51,
+                // choosing truncate and then deleting the journal by hand (BackupService.cs:97);
+                // DELETE does both jobs in one pragma.
                 using var pragma = destinationConnection.CreateCommand();
                 pragma.CommandText = "PRAGMA journal_mode=DELETE;";
                 pragma.ExecuteNonQuery();
