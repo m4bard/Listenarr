@@ -295,7 +295,10 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                     await _db.SaveChangesAsync();
                     return existing;
                 }
-                catch (UniqueConstraintViolationException) when (inserting && attempt < CacheUpsertAttempts)
+                catch (UniqueConstraintViolationException) when (
+                    inserting
+                    && !string.IsNullOrWhiteSpace(normalizedName)
+                    && attempt < CacheUpsertAttempts)
                 {
                     _db.Entry(existing).State = EntityState.Detached;
                 }
