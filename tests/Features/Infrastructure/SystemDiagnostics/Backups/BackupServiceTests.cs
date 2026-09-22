@@ -432,12 +432,16 @@ public sealed class BackupServiceTests : BaseTests
         Assert.True(File.Exists(path));
     }
 
-    [Fact]
+    [Theory]
     [Trait("Scenario", "RetentionCanBeDisabled")]
-    public async Task ApplyRetentionAsync_KeepsEverything_WhenRetentionIsZero()
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task ApplyRetentionAsync_KeepsEverything_WhenRetentionIsZeroOrLess(int retentionDays)
     {
-        // Given retention switched off and an archive far past any plausible window
-        var (service, paths) = CreateService(retentionDays: 0);
+        // Given retention switched off and an archive far past any plausible window. Negative as
+        // well as zero, because nothing stops the settings endpoint persisting a negative and the
+        // entity comment promises that zero or less disables the sweep.
+        var (service, paths) = CreateService(retentionDays);
         var migration = await service.CreateAsync(BackupTrigger.Migration);
         var path = Path.Combine(TriggerDirectory(paths, BackupTrigger.Migration), migration.Name);
         File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddYears(-5));
