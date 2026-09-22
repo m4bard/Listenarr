@@ -105,7 +105,8 @@ namespace Listenarr.Tests.Features.Application.Search.Indexers.Common
                 Indexer indexer,
                 string query,
                 string? category = null,
-                SearchRequest? request = null)
+                SearchRequest? request = null,
+                CancellationToken ct = default)
             {
                 return Task.FromResult(IndexerQueryObservation.FromResults(_behavior(), query));
             }
