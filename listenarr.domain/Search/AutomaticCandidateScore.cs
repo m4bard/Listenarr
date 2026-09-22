@@ -35,4 +35,7 @@ public sealed record AutomaticSearchAssessment(
     string TargetFingerprint, IReadOnlyList<AutomaticCandidateScore> Candidates)
 {
     public const string PolicyVersion = "CorroboratedAutomaticV6";
+
+    /// <summary>The profile the candidates were scored against; its rung order decides first.</summary>
+    public QualityProfile? Profile { get; init; }
 }

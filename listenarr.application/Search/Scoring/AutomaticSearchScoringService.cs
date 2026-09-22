@@ -17,6 +17,7 @@
  */
 using Listenarr.Application.Search.Matching;
 using Listenarr.Application.Search.Parsing;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Search.Scoring;
@@ -70,20 +71,33 @@ public sealed class AutomaticSearchScoringService(
         foreach (var score in scores)
             logger.LogInformation("Automatic candidate {Id}: identity={Identity}, reason={Reason}, compatibility={Compatibility}, quality={Quality}, eligible={Eligible}",
                 score.SearchResult.Id, score.Identity.Status, score.Identity.Reason, string.Join(",", score.Compatibility.Reasons), score.TotalScore, !score.IsRejected);
-        return new(context.Fingerprint, scores);
+        return new(context.Fingerprint, scores) { Profile = profile };
     }
 
     public AutomaticCandidateScore? SelectBest(AutomaticSearchAssessment assessment) =>
-        assessment.Candidates.Where(s => !s.IsRejected)
-            // Rank by TotalScore; indexer priority only breaks an exact tie, so it can never make a
-            // worse release win. See QualityScoreComparer. Candidates still tied after priority go to
-            // ScoredReleaseTiebreaker, so the winner never comes down to indexer response order.
-            .OrderByDescending(s => s.Quality, QualityScoreComparer.Instance)
+        InSelectionOrder(assessment.Candidates.Where(s => !s.IsRejected), assessment.Profile).FirstOrDefault();
+
+    /// <summary>
+    /// The order <see cref="SelectBest"/> considers candidates in, for callers that log them.
+    /// </summary>
+    /// <remarks>
+    /// The profile's own rung order decides first (see ReleaseRanking): the score ranks by the
+    /// hardcoded ladder in SearchResultScorer, and that ladder disagrees with the shipped default
+    /// profile. TotalScore separates releases the profile ranks equally; indexer priority only
+    /// breaks an exact score tie, so it can never make a worse release win (see
+    /// QualityScoreComparer). Candidates still tied go to ScoredReleaseTiebreaker and then to
+    /// source keys, so the winner never comes down to indexer response order.
+    /// </remarks>
+    public static IOrderedEnumerable<AutomaticCandidateScore> InSelectionOrder(
+        IEnumerable<AutomaticCandidateScore> candidates, QualityProfile? profile) =>
+        candidates
+            .OrderBy(s => ReleaseRanking.RungPriority(s.SearchResult.Quality, profile))
+            .ThenByDescending(s => s.Quality, QualityScoreComparer.Instance)
             .ThenBy(s => s.Quality, ScoredReleaseTiebreaker.ForNow())
             .ThenBy(s => s.SearchResult.IndexerId)
             .ThenBy(s => s.SearchResult.Id, StringComparer.Ordinal)
             .ThenBy(s => s.SearchResult.TorrentUrl, StringComparer.Ordinal)
-            .ThenBy(s => s.SearchResult.NzbUrl, StringComparer.Ordinal).FirstOrDefault();
+            .ThenBy(s => s.SearchResult.NzbUrl, StringComparer.Ordinal);
 
     public async Task<bool> IsCurrentAsync(AutomaticSearchAssessment assessment, int bookId,
         CancellationToken cancellationToken = default)

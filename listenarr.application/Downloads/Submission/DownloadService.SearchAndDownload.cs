@@ -82,9 +82,7 @@ namespace Listenarr.Application.Downloads.Submission
             logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", scoredResults.Count, LogRedaction.SanitizeText(audiobook.Title));
             // Same ordering as the selection below, so the log an operator reads to work out
             // why a release was grabbed lists them in the order they were actually considered.
-            foreach (var scoredResult in scoredResults
-                .OrderByDescending(s => s.Quality, QualityScoreComparer.Instance)
-                .ThenBy(s => s.Quality, ScoredReleaseTiebreaker.ForNow()))
+            foreach (var scoredResult in AutomaticSearchScoringService.InSelectionOrder(scoredResults, audiobook.QualityProfile))
             {
                 var status = scoredResult.IsRejected ? "REJECTED" : (scoredResult.TotalScore > 0 ? "ACCEPTABLE" : "LOW SCORE");
                 logger.LogInformation("  [{Status}] Score: {Score} | Title: {Title} | Source: {Source} | Size: {Size}MB | Seeders: {Seeders} | Quality: {Quality}",
