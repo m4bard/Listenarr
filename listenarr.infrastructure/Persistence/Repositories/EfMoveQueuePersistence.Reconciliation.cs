@@ -255,6 +255,12 @@ public sealed partial class EfMoveQueuePersistence
                     }
 
                     duplicate.Job.Status = MoveJobStatus.Superseded;
+                    // This block reaches a terminal status without stamping UpdatedAt, and that
+                    // is the reason CompletedAt exists as its own column rather than a retention
+                    // predicate keying on UpdatedAt. Left as it was found, since changing what
+                    // UpdatedAt means here would alter behaviour this change has no business
+                    // altering.
+                    duplicate.Job.CompletedAt = DateTime.UtcNow;
                     duplicate.Job.Error = $"Superseded by move job {canonical.Job.Id} during identity-key reconciliation.";
                     duplicate.Job.IdentityKeyVersion = MoveManifestIdentity.Version;
                     duplicate.Job.ActiveDeduplicationKey = null;
