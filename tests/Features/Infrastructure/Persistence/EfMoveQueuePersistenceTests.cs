@@ -1935,6 +1935,119 @@ public sealed class EfMoveQueuePersistenceTests : IAsyncLifetime
         Assert.Equal(requestedMode, result.Job?.TargetCaseSensitivityMode);
     }
 
+    /// <summary>
+    /// The lease-based writer has to stamp CompletedAt, because it is a real route into a
+    /// terminal status: the move processor's source-state checks raise a supersede through it,
+    /// and a job that reaches Superseded here with no timestamp is invisible to the housekeeping
+    /// retention sweep until a process restart backfills it.
+    /// </summary>
+    [Theory]
+    [InlineData(MoveJobStatus.Completed)]
+    [InlineData(MoveJobStatus.Superseded)]
+    public async Task UpdateStatus_StampsCompletedAt_ForATerminalCompletion(MoveJobStatus status)
+    {
+        var persistence = CreatePersistence();
+        var job = CreateJob($"v1:move:42:completedat:{status}");
+        await persistence.AddAsync(job);
+        var now = DateTimeOffset.UtcNow;
+        var generation = await persistence.TryClaimAsync(job.Id, "worker-a", now, now.AddMinutes(2));
+        var terminalAt = now.AddSeconds(5);
+
+        Assert.True(await persistence.UpdateStatusAsync(
+            job.Id,
+            "worker-a",
+            generation.GetValueOrDefault(),
+            status,
+            MoveJobPhase.Finalizing,
+            null,
+            MoveFailureKind.None,
+            terminalAt));
+
+        var stored = await persistence.GetByIdAsync(job.Id);
+        Assert.Equal(status, stored!.Status);
+        Assert.Equal(terminalAt.UtcDateTime, stored.CompletedAt);
+    }
+
+    /// <summary>
+    /// The control. The same writer, the same lease, a status that is not a completion, and the
+    /// column stays null. Without this pair, a writer that stamped every transition would pass
+    /// the test above, and the column would stop meaning what it is documented to mean.
+    /// </summary>
+    [Theory]
+    [InlineData(MoveJobStatus.Failed)]
+    [InlineData(MoveJobStatus.NeedsAttention)]
+    [InlineData(MoveJobStatus.RetryScheduled)]
+    public async Task UpdateStatus_LeavesCompletedAtNull_ForAStatusThatIsNotACompletion(
+        MoveJobStatus status)
+    {
+        var persistence = CreatePersistence();
+        var job = CreateJob($"v1:move:42:nocompletedat:{status}");
+        await persistence.AddAsync(job);
+        var now = DateTimeOffset.UtcNow;
+        var generation = await persistence.TryClaimAsync(job.Id, "worker-a", now, now.AddMinutes(2));
+
+        Assert.True(await persistence.UpdateStatusAsync(
+            job.Id,
+            "worker-a",
+            generation.GetValueOrDefault(),
+            status,
+            MoveJobPhase.Finalizing,
+            "not a completion",
+            MoveFailureKind.Transient,
+            now.AddSeconds(5)));
+
+        var stored = await persistence.GetByIdAsync(job.Id);
+        Assert.Equal(status, stored!.Status);
+        Assert.NotNull(stored.UpdatedAt);
+        Assert.Null(stored.CompletedAt);
+    }
+
+    /// <summary>
+    /// The same writer on the in-memory provider, which takes an entirely separate branch of
+    /// UpdateStatusAsync. Most of the suite runs on that provider, so a stamp present in only
+    /// one of the two arms would look correct from almost everywhere.
+    /// </summary>
+    [Theory]
+    [InlineData(MoveJobStatus.Superseded, true)]
+    [InlineData(MoveJobStatus.NeedsAttention, false)]
+    public async Task UpdateStatus_StampsCompletedAtOnTheInMemoryArmToo(
+        MoveJobStatus status,
+        bool expectStamped)
+    {
+        var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+            .UseInMemoryDatabase($"move-completedat-{Guid.NewGuid():N}")
+            .Options;
+        var factory = new TestDbContextFactory(options);
+        var now = DateTimeOffset.UtcNow;
+        var job = CreateJob("v1:move:42:inmemory");
+        job.Status = MoveJobStatus.Running;
+        job.LeaseOwner = "worker-a";
+        job.LeaseGeneration = 1;
+        job.LeaseExpiresAt = now.AddMinutes(2).UtcDateTime;
+        await using (var seed = await factory.CreateDbContextAsync())
+        {
+            seed.MoveJobs.Add(job);
+            await seed.SaveChangesAsync();
+        }
+
+        var persistence = new EfMoveQueuePersistence(factory, BuildSemanticsResolver());
+        var terminalAt = now.AddSeconds(5);
+        Assert.True(await persistence.UpdateStatusAsync(
+            job.Id,
+            "worker-a",
+            1,
+            status,
+            MoveJobPhase.Finalizing,
+            null,
+            MoveFailureKind.None,
+            terminalAt));
+
+        await using var reader = await factory.CreateDbContextAsync();
+        var stored = await reader.MoveJobs.SingleAsync(candidate => candidate.Id == job.Id);
+        Assert.Equal(status, stored.Status);
+        Assert.Equal(expectStamped ? terminalAt.UtcDateTime : null, stored.CompletedAt);
+    }
+
     private EfMoveQueuePersistence CreatePersistence(IFileSystemSemanticsResolver? resolver = null) =>
         new(_factory, resolver ?? BuildSemanticsResolver());
 
