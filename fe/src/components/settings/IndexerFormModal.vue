@@ -433,17 +433,21 @@ const onSeedTimeInput = (event: Event) => {
 }
 
 // Mirrors the generic (tracker-independent) half of Readarr's seed criteria warning
-// (SeedCriteriaSettingsValidator: SeedRatio/SeedTime "Should be greater than zero"). Listenarr
-// has no per-tracker hit-and-run minimum data to check against, so this only catches a value
-// of exactly zero, which would never satisfy any tracker's seeding requirement.
+// (SeedCriteriaSettingsValidator: SeedRatio/SeedTime "Should be greater than zero", a plain
+// GreaterThan(0) rule that also catches a negative value). Listenarr has no per-tracker
+// hit-and-run minimum data to check against, so this only catches zero and negative values,
+// neither of which would ever satisfy a tracker's seeding requirement.
 const seedCriteriaWarning = computed(() => {
-  if (formData.value.seedRatio === 0 && formData.value.seedTime === 0) {
+  const ratioIsInvalid = formData.value.seedRatio !== null && formData.value.seedRatio <= 0
+  const seedTimeIsInvalid = formData.value.seedTime !== null && formData.value.seedTime <= 0
+
+  if (ratioIsInvalid && seedTimeIsInvalid) {
     return 'Seed ratio and seed time should be greater than zero, or left empty.'
   }
-  if (formData.value.seedRatio === 0) {
+  if (ratioIsInvalid) {
     return 'Seed ratio should be greater than zero, or left empty.'
   }
-  if (formData.value.seedTime === 0) {
+  if (seedTimeIsInvalid) {
     return 'Seed time should be greater than zero, or left empty.'
   }
   return ''
