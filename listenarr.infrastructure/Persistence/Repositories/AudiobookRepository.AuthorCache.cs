@@ -166,11 +166,19 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                         // allowed -- two spellings of one author legitimately produce two rows with
                         // one ASIN, which is why (AuthorAsin, Region) is not a unique index.
                         //
-                        // Logged once per call. A retry that refuses again is the same refusal
-                        // read twice, and one logical write printing this three times would read
-                        // as three separate refusals. This line is the whole operator-facing
-                        // surface for a refused binding, so how many times it appears is part of
-                        // what it says.
+                        // Logged once per call. A retry that refuses again is refusing the same
+                        // write for the same reason, and one logical write printing this three
+                        // times would read as three separate refusals. This line is the whole
+                        // operator-facing surface for a refused binding, so how many times it
+                        // appears is part of what it says.
+                        //
+                        // Not necessarily the same row, which is why this says "the same write"
+                        // and not "the same refusal". The lookup above is an unordered
+                        // FirstOrDefaultAsync over an index that is deliberately not unique, so
+                        // two passes can resolve two different co-holders of the ASIN and name
+                        // different authors in {ExistingAuthor}. The decision and the outcome are
+                        // identical either way, and naming one arbitrary co-holder is already
+                        // what this does on a single pass.
                         if (!refusalLogged)
                         {
                             refusalLogged = true;
