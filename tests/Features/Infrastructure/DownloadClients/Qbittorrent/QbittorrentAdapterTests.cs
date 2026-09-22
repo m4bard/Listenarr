@@ -223,6 +223,43 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         }
 
         [Fact]
+        public async Task AddAsync_WhenIndexerHasSeedTime_SendsSeedingTimeLimitInMinutes()
+        {
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost")
+                .WithPort(8080)
+                .WithUsername("admin")
+                .WithPassword("admin")
+                .WithType("qbittorrent")
+                .Build());
+
+            var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()
+                .WithName("Hit and Run Tracker")
+                .WithType("Torrent")
+                .WithSeedTime(4320)
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                IndexerId = indexer.Id
+            };
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            await adapter.AddAsync(client, PreparedSubmissionTestFactory.Torrent(searchResult));
+
+            var mock = _provider.GetRequiredService<QbittorrentApiMock>();
+            var form = mock.LastShareLimitsForm;
+            Assert.NotNull(form);
+            // Sent as minutes, matching the Indexer.SeedTime unit the operator entered. A
+            // TotalMinutes/TotalSeconds mix-up anywhere in the resolve-to-request path would
+            // surface here as 259200 (seconds) rather than 4320.
+            Assert.Equal("4320", form!["seedingTimeLimit"]);
+            Assert.Equal("-2", form["ratioLimit"]);
+        }
+
+        [Fact]
         public async Task AddAsync_WhenTorrentDownloadFails_DoesNotCallQbittorrentAdd()
         {
             var downloader = new Mock<ITorrentFileDownloader>(MockBehavior.Strict);
