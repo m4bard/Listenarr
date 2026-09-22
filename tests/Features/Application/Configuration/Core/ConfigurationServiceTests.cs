@@ -425,6 +425,37 @@ namespace Listenarr.Tests.Features.Application.Configuration.Core
         }
 
         [Fact]
+        public async Task SaveApplicationSettings_SentinelOnADatabaseWithNoSettingsRowYet_StillStoresNothing()
+        {
+            // "The sentinel is never stored as a password" has to hold when there is no stored row
+            // to recover from, not only when there is one. A running instance creates the row at
+            // startup, so this is latent rather than live, but the invariant is the point and the
+            // guard is cheap to make unconditional.
+            var repository = new Mock<IApplicationSettingsRepository>();
+            ApplicationSettings? saved = null;
+            repository.Setup(candidate => candidate.GetAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ApplicationSettings?)null);
+            repository.Setup(candidate => candidate.SaveAsync(It.IsAny<ApplicationSettings>(), It.IsAny<CancellationToken>()))
+                .Callback<ApplicationSettings, CancellationToken>((settings, _) => saved = settings)
+                .ReturnsAsync((ApplicationSettings settings, CancellationToken _) => settings);
+            Init(builder => builder.WithScoped<IApplicationSettingsRepository>(_ => repository.Object));
+            var svc = _provider.GetRequiredService<IConfigurationService>();
+
+            await svc.SaveApplicationSettingsAsync(new ApplicationSettings
+            {
+                Id = 1,
+                Version = 1,
+                Emails = [AnEmail(password: ApiResponseRedactor.RedactedValue)]
+            });
+
+            Assert.NotNull(saved);
+            // The control: the entry itself survives, so a save that dropped the list could not
+            // pass this by accident.
+            Assert.Equal("Household", Assert.Single(saved!.Emails!).Name);
+            Assert.Equal(string.Empty, saved!.Emails![0].Password);
+        }
+
+        [Fact]
         public async Task GetEmailConfigurations_ReturnsAnEmptyListWhenNoneAreConfigured()
         {
             var svc = _provider.GetRequiredService<IConfigurationService>();
