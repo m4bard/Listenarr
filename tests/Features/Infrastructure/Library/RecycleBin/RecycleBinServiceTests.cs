@@ -99,6 +99,40 @@ public sealed class RecycleBinServiceTests : BaseTests
     }
 
     [Fact]
+    public async Task ValidatePathAsync_BinInsideARootUnderCaseFolding_IsStillRefused()
+    {
+        var root = FileService.GetTempDirectory("recycle-case-root");
+        var binInsideRoot = Path.Join(root, "Recycled");
+        var differentlyCased = Path.Join(root.ToUpperInvariant(), "recycled");
+        var service = BuildService(binInsideRoot, retentionDays: 7, rootPaths: [root]);
+
+        var result = await service.ValidatePathAsync(differentlyCased);
+
+        // A validator has to fail closed towards refusing. Accepting this on a
+        // case-insensitive filesystem would put the bin inside a root, where the library
+        // scan would find it and import everything back.
+        Assert.False(result.IsValid);
+        Assert.Equal(RecycleBinPathRejection.InsideRootFolder, result.Rejection);
+    }
+
+    [Fact]
+    public async Task ValidatePathAsync_SiblingSharingANamePrefixWithARoot_IsAccepted()
+    {
+        var parent = FileService.GetTempDirectory("recycle-prefix-parent");
+        var root = Path.Join(parent, "lib");
+        var bin = Path.Join(parent, "library-bin");
+        Directory.CreateDirectory(root);
+        Directory.CreateDirectory(bin);
+        var service = BuildService(bin, retentionDays: 7, rootPaths: [root]);
+
+        var result = await service.ValidatePathAsync(bin);
+
+        // The control for the case above: a plain string prefix test would call this
+        // contained and refuse it. The trailing separator is what keeps them apart.
+        Assert.True(result.IsValid, result.Message);
+    }
+
+    [Fact]
     public async Task ValidatePathAsync_RelativePath_IsRefused()
     {
         var service = BuildService(binPath: null, retentionDays: 7, rootPaths: []);
