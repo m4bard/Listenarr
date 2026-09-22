@@ -169,6 +169,14 @@ namespace Listenarr.Domain.Audiobooks
     public class QualityScore
     {
         public SearchResult SearchResult { get; set; } = new();
+
+        /// <summary>
+        /// The release's score. An accepted release starts at 100 and every preference on the
+        /// profile is added to or subtracted from that, so the value is unbounded above: a release
+        /// matching several preferred words with good seeders scores well over 100. It is not a
+        /// percentage. A rejected release carries the sentinel -1, or a value at or below 0 with a
+        /// reason in <see cref="RejectionReasons"/>.
+        /// </summary>
         public int TotalScore { get; set; }
         public Dictionary<string, int> ScoreBreakdown { get; set; } = new();
         public List<string> RejectionReasons { get; set; } = new();

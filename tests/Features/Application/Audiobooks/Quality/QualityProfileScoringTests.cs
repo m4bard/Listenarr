@@ -524,7 +524,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
             var service = CreateService();
             var profile = new QualityProfile
             {
-                MinimumScore = 101, // Set above possible max to ensure any real score will be rejected
+                MinimumScore = 101, // Comfortably above what this release can reach, so it is rejected
                 PreferredFormats = new System.Collections.Generic.List<string> { "mp3" },
                 PreferredWords = new System.Collections.Generic.List<string>(),
                 MustNotContain = new System.Collections.Generic.List<string>(),
