@@ -349,7 +349,6 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
             // did not change: the title parsing below.
             Assert.Contains(smallScore.RejectionReasons, r => r.Contains("File too small"));
             Assert.DoesNotContain(score.RejectionReasons, r => r.Contains("File too small"));
-            Assert.False(score.ScoreBreakdown.TryGetValue("Size", out _), "NZB scoring should not add size penalties");
 
             // Format should be detected from title and awarded a positive match
             Assert.True(score.ScoreBreakdown.TryGetValue("FormatMatchedInTitle", out _), "Expected format token to be detected in title for NZB");

@@ -203,7 +203,7 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         }
 
         [Fact]
-        public async Task TheWorstNzbNoLongerOutranksTheBestTorrent()
+        public async Task AnNzbThatReportsALowQualityNoLongerOutranksAHigherQualityTorrent()
         {
             var scorer = CreateScorer();
             var profile = CreateProfile();
@@ -215,6 +215,74 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
                 bestTorrent.TotalScore > worstNzb.TotalScore,
                 $"MP3 64kbps over Usenet scored {worstNzb.TotalScore} against {bestTorrent.TotalScore} "
                 + "for MP3 320kbps over torrent, so the protocol is still deciding before the content");
+        }
+
+        [Fact]
+        public async Task AnNzbThatReportsNoQualityStillOutranksATorrentThatReportsOne()
+        {
+            // The gap this change does NOT close, asserted so that it is visible in the suite and
+            // not only in a commit message. A release that reports no quality takes no deduction,
+            // so it stays on the base score and outranks a release that honestly reported a low
+            // one. That is the ladder's shape, not a protocol carve-out: the same inversion holds
+            // between two torrents on canary today, where a torrent with no quality takes only the
+            // flat missing-quality penalty. Hoisting the deduction makes Usenet behave like
+            // torrent here rather than introducing an asymmetry.
+            //
+            // The real answer is a bottom rung for unparsed releases instead of an exemption,
+            // which is what Readarr did with UnknownAudio, keyed on the indexer category
+            // (src/NzbDrone.Core/Parser/QualityParser.cs:116-123, Qualities/Quality.cs:81,
+            // Profiles/Qualities/QualityProfileService.cs:107-112). That is a separate change.
+            var scorer = CreateScorer();
+            var profile = CreateProfile();
+
+            var unlabelledNzb = await scorer.Score(Release(string.Empty, "usenet"), profile);
+            var labelledTorrent = await scorer.Score(Release("MP3 64kbps", "torrent"), profile);
+            var unlabelledTorrent = await scorer.Score(Release(string.Empty, "torrent"), profile);
+
+            Assert.True(unlabelledNzb.TotalScore > labelledTorrent.TotalScore);
+            Assert.True(unlabelledTorrent.TotalScore > labelledTorrent.TotalScore);
+        }
+
+        [Fact]
+        public async Task ASizeCeilingAboveTwoGigabytesStillRejectsOnlyWhatIsOverIt()
+        {
+            // The bounds are int megabytes multiplied out against a long byte count. Above
+            // 2047 MB that multiplication wrapped negative, so a ceiling rejected everything and
+            // a floor rejected nothing. Reachable for torrents before this change and for every
+            // Usenet result after it, and a multi-gigabyte audiobook is ordinary.
+            var scorer = CreateScorer();
+
+            // CONTROL, a bound below the wrap where the arithmetic was always right. These two
+            // have to come out opposite ways, or the apparatus is not testing the bound at all.
+            var belowTheWrap = CreateProfile(maximumSizeMb: 2000);
+            var smallUnderLowCeiling = await scorer.Score(Release("MP3 320kbps", "usenet", sizeMb: 300), belowTheWrap);
+            var largeOverLowCeiling = await scorer.Score(Release("MP3 320kbps", "usenet", sizeMb: 3000), belowTheWrap);
+            Assert.False(smallUnderLowCeiling.IsRejected);
+            Assert.True(largeOverLowCeiling.IsRejected);
+
+            var aboveTheWrap = CreateProfile(maximumSizeMb: 3000);
+            var small = await scorer.Score(Release("MP3 320kbps", "usenet", sizeMb: 300), aboveTheWrap);
+            var large = await scorer.Score(Release("MP3 320kbps", "usenet", sizeMb: 4000), aboveTheWrap);
+
+            Assert.False(small.IsRejected, "a 300 MB release was rejected against a 3000 MB ceiling");
+            Assert.True(large.IsRejected);
+        }
+
+        [Fact]
+        public async Task ASizeFloorAboveTwoGigabytesStillRejectsWhatIsUnderIt()
+        {
+            var scorer = CreateScorer();
+
+            var belowTheWrap = CreateProfile(minimumSizeMb: 2000);
+            Assert.True((await scorer.Score(Release("MP3 320kbps", "usenet", sizeMb: 300), belowTheWrap)).IsRejected);
+            Assert.False((await scorer.Score(Release("MP3 320kbps", "usenet", sizeMb: 3000), belowTheWrap)).IsRejected);
+
+            var aboveTheWrap = CreateProfile(minimumSizeMb: 3000);
+            var under = await scorer.Score(Release("MP3 320kbps", "usenet", sizeMb: 300), aboveTheWrap);
+            var over = await scorer.Score(Release("MP3 320kbps", "usenet", sizeMb: 4000), aboveTheWrap);
+
+            Assert.True(under.IsRejected, "a 300 MB release passed a 3000 MB floor");
+            Assert.False(over.IsRejected);
         }
 
         [Fact]
