@@ -69,6 +69,18 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
                     "The recycle bin path must not be a filesystem root.");
             }
 
+            // The bin is opened with a no-follow pinned hierarchy walk at recycle time,
+            // so any link along the path makes every single delete fail with a message
+            // naming an exception type. A layout like /config/recyclebin pointing at
+            // /mnt/disk/recyclebin is an ordinary NAS and container arrangement, so this
+            // is caught at save time where the operator can act on it.
+            if (TryFindSymbolicLinkComponent(normalizedBin, out var linkedComponent))
+            {
+                return new RecycleBinPathValidation(
+                    RecycleBinPathRejection.ContainsSymbolicLink,
+                    $"The recycle bin path must not contain a symbolic link, and '{Path.GetFileName(linkedComponent)}' is one. Use the path it points at instead.");
+            }
+
             var roots = await rootFolderService.GetAllAsync();
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -384,6 +396,55 @@ namespace Listenarr.Infrastructure.Library.RecycleBin
         /// which is ordinal on purpose. There, failing closed means refusing to mutate, so
         /// the strict comparison is the safe one. Here it is the loose one.
         /// </summary>
+
+
+        /// <summary>
+        /// Find the first component of the path that exists and is a link. Components
+        /// that do not exist yet are fine: the recycle creates them, and it creates real
+        /// directories.
+        /// </summary>
+        private static bool TryFindSymbolicLinkComponent(
+            string normalizedPath,
+            out string linkedComponent)
+        {
+            linkedComponent = string.Empty;
+            var current = normalizedPath;
+            while (!string.IsNullOrEmpty(current))
+            {
+                try
+                {
+                    if (Directory.Exists(current)
+                        && new DirectoryInfo(current).LinkTarget != null)
+                    {
+                        linkedComponent = current;
+                        return true;
+                    }
+
+                    if (File.Exists(current)
+                        && new FileInfo(current).LinkTarget != null)
+                    {
+                        linkedComponent = current;
+                        return true;
+                    }
+                }
+                catch (Exception exception) when (exception is IOException
+                    or UnauthorizedAccessException)
+                {
+                    return false;
+                }
+
+                var parent = Path.GetDirectoryName(current);
+                if (string.IsNullOrEmpty(parent)
+                    || string.Equals(parent, current, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                current = parent;
+            }
+
+            return false;
+        }
 
         private static bool IsFilesystemRoot(string normalizedPath)
         {
