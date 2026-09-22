@@ -13,6 +13,7 @@ config/
 |-- appsettings/
 |   `-- appsettings.json
 |-- backups/
+|   |-- .staging/
 |   |-- manual/
 |   `-- migration/
 |-- cache/
@@ -52,6 +53,10 @@ Contains zip archives of the database and `config.json`, one subdirectory per re
 Each archive holds `listenarr.db`, `config.json` if one exists, and an `INFO` file naming the
 version and the moment it was taken. The database copy is made with SQLite's online backup API, so
 nothing has to stop while it runs.
+
+`.staging/` is where an archive is assembled. It is emptied as each backup finishes, and an archive
+only appears under `manual/` or `migration/` once it is complete, so a backup interrupted halfway
+leaves nothing that looks like a usable one.
 
 Archives carry the API key, indexer keys, download client credentials and the admin password hash.
 Nothing serves them over HTTP: the API lists their names, sizes and ages and no more. Treat the
