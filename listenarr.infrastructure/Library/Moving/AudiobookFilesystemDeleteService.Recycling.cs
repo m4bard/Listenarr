@@ -29,9 +29,18 @@ namespace Listenarr.Infrastructure.Library.Moving
         /// change part-way through a multi-file delete cannot send half an audiobook to the
         /// bin and unlink the other half.
         /// </summary>
-        private sealed record RecycleBinPolicy(string BinPath, IReadOnlyCollection<string> Roots)
+        private sealed record RecycleBinPolicy(
+            string BinPath,
+            IReadOnlyCollection<string> Roots,
+            bool ConfigurationUnavailable = false)
         {
-            public bool Enabled => !string.IsNullOrWhiteSpace(BinPath);
+            /// <summary>
+            /// True when this delete must not unlink. That covers a configured bin and
+            /// also an unreadable configuration, because guessing "no bin" from a failed
+            /// settings read would make the delete permanent on exactly the installs
+            /// where we know least.
+            /// </summary>
+            public bool Enabled => ConfigurationUnavailable || !string.IsNullOrWhiteSpace(BinPath);
         }
 
         private async Task<RecycleBinPolicy> ResolveRecycleBinPolicyAsync(
@@ -55,16 +64,12 @@ namespace Listenarr.Infrastructure.Library.Moving
                 _logger.LogWarning(
                     exception,
                     "Could not read the recycle bin configuration; audiobook file deletion will be refused rather than made permanent");
-                return new RecycleBinPolicy(RecycleBinUnavailableSentinel, protectedRoots);
+                return new RecycleBinPolicy(
+                    string.Empty,
+                    protectedRoots,
+                    ConfigurationUnavailable: true);
             }
         }
-
-        /// <summary>
-        /// A bin path that can never be a real directory, used to mark "the configuration
-        /// could not be read". It keeps <see cref="RecycleBinPolicy.Enabled"/> true so the
-        /// delete is refused instead of falling through to an unlink.
-        /// </summary>
-        private const string RecycleBinUnavailableSentinel = "\u0000recycle-bin-unavailable";
 
         /// <summary>
         /// Move one tracked file to the recycle bin. Returns false when the caller should
@@ -84,7 +89,7 @@ namespace Listenarr.Infrastructure.Library.Moving
             IEnumerable<string> allowedRoots,
             FileSystemPathSemantics semantics)
         {
-            if (ReferenceEquals(policy.BinPath, RecycleBinUnavailableSentinel))
+            if (policy.ConfigurationUnavailable)
             {
                 result.Warnings.Add(
                     $"Could not recycle '{Path.GetFileName(path)}' because the recycle bin configuration could not be read. The file was left in place.");
