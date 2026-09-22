@@ -40,7 +40,8 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
                 configurationService.Object,
                 NullLogger<SettingsController>.Instance,
                 broadcaster.Object,
-                PermissiveRecycleBinService());
+                PermissiveRecycleBinService(),
+                Mock.Of<IFileNamingService>());
 
             var result = await controller.SaveApplicationSettings(
                 new ApplicationSettings { Version = 0 });
@@ -78,7 +79,8 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
                 configurationService.Object,
                 NullLogger<SettingsController>.Instance,
                 broadcaster.Object,
-                PermissiveRecycleBinService());
+                PermissiveRecycleBinService(),
+                Mock.Of<IFileNamingService>());
 
             var result = await controller.SaveApplicationSettings(
                 new ApplicationSettings { Version = 7, OutputPath = "library" });
@@ -117,7 +119,8 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
                 configurationService.Object,
                 NullLogger<SettingsController>.Instance,
                 Mock.Of<IHubBroadcaster>(),
-                PermissiveRecycleBinService());
+                PermissiveRecycleBinService(),
+                Mock.Of<IFileNamingService>());
 
             var result = await controller.GetApplicationSettings();
             var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -162,7 +165,8 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
                 configurationService.Object,
                 NullLogger<SettingsController>.Instance,
                 Mock.Of<IHubBroadcaster>(),
-                PermissiveRecycleBinService());
+                PermissiveRecycleBinService(),
+                Mock.Of<IFileNamingService>());
 
             var result = await controller.GetApplicationSettings();
             var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -196,7 +200,8 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
                 configurationService.Object,
                 NullLogger<SettingsController>.Instance,
                 Mock.Of<IHubBroadcaster>(),
-                PermissiveRecycleBinService());
+                PermissiveRecycleBinService(),
+                Mock.Of<IFileNamingService>());
 
             var result = await controller.GetApplicationSettings();
             var ok = Assert.IsType<OkObjectResult>(result.Result);
