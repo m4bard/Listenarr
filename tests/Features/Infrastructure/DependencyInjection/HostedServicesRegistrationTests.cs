@@ -41,7 +41,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DependencyInjection
             nameof(MetadataRescanService),
             nameof(DownloadProcessingJobProcessor),
             nameof(DownloadProcessingJobCleanupService),
-            nameof(UnmatchedScanBackgroundService)
+            nameof(UnmatchedScanBackgroundService),
+            nameof(HousekeepingService)
         ];
 
         private static readonly Type[] ExpectedProcessorTypes =
@@ -60,7 +61,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DependencyInjection
             typeof(MetadataRescanProcessor),
             typeof(ImageCacheCleanupProcessor),
             typeof(FfmpegInstallProcessor),
-            typeof(UnmatchedScanProcessor)
+            typeof(UnmatchedScanProcessor),
+            typeof(HousekeepingProcessor)
         ];
 
         [Fact]
@@ -88,6 +90,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DependencyInjection
             AssertHostedServiceRegistered<DownloadProcessingJobProcessor>(services);
             AssertHostedServiceRegistered<DownloadProcessingJobCleanupService>(services);
             AssertHostedServiceRegistered<UnmatchedScanBackgroundService>(services);
+            AssertHostedServiceRegistered<HousekeepingService>(services);
 
             // Assert - singletons / supporting services registered
             Assert.Contains(services, d => d.ServiceType == typeof(IScanQueueService) && d.Lifetime == ServiceLifetime.Singleton);
@@ -114,6 +117,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DependencyInjection
             AssertProcessorRegistered<IFfmpegInstallProcessor>(services);
             AssertProcessorRegistered<IUnmatchedScanProcessor>(services);
             AssertProcessorRegistered<IQueueMonitorProcessor>(services);
+            AssertProcessorRegistered<IHousekeepingProcessor>(services);
+            Assert.Contains(services, d => d.ServiceType == typeof(HousekeepingOptionsHolder) && d.Lifetime == ServiceLifetime.Singleton);
         }
 
         [Fact]
