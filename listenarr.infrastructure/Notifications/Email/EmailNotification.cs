@@ -2,6 +2,7 @@
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  */
+using System.Text.RegularExpressions;
 using Listenarr.Domain.Notifications;
 using Microsoft.Extensions.Logging;
 
@@ -203,9 +204,42 @@ namespace Listenarr.Infrastructure.Notifications.Email
                 Scrub(ex.Message, configuration.Password));
         }
 
-        private static string Scrub(string? text, string? password) =>
-            LogRedaction.RedactText(
-                text,
-                LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { password ?? string.Empty }));
+        /// <summary>
+        /// Removes the configured password, and anything sensitive in the environment, from text
+        /// that is about to be logged or shown to the operator.
+        /// </summary>
+        /// <remarks>
+        /// The matching rule is the one LogRedaction.RedactText applies, an escaped
+        /// case-insensitive replacement, but the replacement is done here rather than by calling
+        /// it. RedactText appends a trailing marker whenever it was given a secret and did not
+        /// find it in the text. That is defensible for a log line and wrong for a string an
+        /// operator reads: a bad certificate would come back as "The remote certificate is
+        /// invalid. &lt;redacted&gt;", which says something was withheld when nothing was.
+        /// <para>
+        /// A short password over-redacts, so a password of "smtp" would take the word out of a
+        /// hostname in the message. That is the safe direction to be wrong in and it is left
+        /// alone; a length threshold would be a guess at where a real password starts.
+        /// </para>
+        /// </remarks>
+        private static string Scrub(string? text, string? password)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            var secrets = LogRedaction.GetSensitiveValuesFromEnvironment()
+                .Concat(new[] { password })
+                .Where(secret => !string.IsNullOrEmpty(secret))
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+
+            var scrubbed = text;
+            foreach (var secret in secrets)
+            {
+                scrubbed = Regex.Replace(scrubbed, Regex.Escape(secret!), "<redacted>", RegexOptions.IgnoreCase);
+            }
+
+            return scrubbed;
+        }
     }
 }
