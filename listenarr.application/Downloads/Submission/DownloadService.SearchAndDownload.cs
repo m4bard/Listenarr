@@ -109,13 +109,17 @@ namespace Listenarr.Application.Downloads.Submission
             topResult.SearchResult.Score = topResult.TotalScore;
 
             var candidate = TrustedDownloadCandidateFactory.Create(topResult.SearchResult);
-            var isTorrent = candidate.SourceDescriptor.Protocol == DownloadProtocol.Torrent;
-            var downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(isTorrent);
+            var protocol = candidate.SourceDescriptor.Protocol;
+            var downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(protocol);
 
             if (downloadClientId == null)
             {
-                logger.LogWarning("No suitable download client found for type: {Type}", isTorrent ? "Torrent" : "NZB");
-                return new SearchAndDownloadResult { Success = false, Message = $"No suitable download client found for {(isTorrent ? "torrent" : "NZB")} results" };
+                logger.LogWarning("No suitable download client found for protocol: {Protocol}", protocol);
+                return new SearchAndDownloadResult
+                {
+                    Success = false,
+                    Message = $"No suitable download client found for {DownloadClientSelector.DescribeProtocol(protocol)} results"
+                };
             }
 
             // Send to download client with audiobookId for proper metadata linking

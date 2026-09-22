@@ -20,50 +20,121 @@ using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Downloads.Submission
 {
+    /// <summary>
+    /// Chooses which configured download client receives a grab.
+    /// </summary>
+    /// <remarks>
+    /// This is the only selection policy in the backend. The automatic-search sweep used to
+    /// carry a second copy of the same vendor-preference chain, which meant a policy added to
+    /// one was silently absent from the other, and the two disagreed on both the direct-download
+    /// case and on what they returned when nothing matched.
+    ///
+    /// The policy is: keep the enabled clients that speak the requested protocol, take the group
+    /// with the lowest Priority value, and rotate within that group. Lower Priority wins, which
+    /// matches Readarr, Sonarr and Prowlarr. There is deliberately no vendor preference any more:
+    /// with qBittorrent and Transmission both enabled and both at the default priority, they now
+    /// take turns instead of every grab going to qBittorrent. An operator who wants one of them
+    /// preferred says so by giving it a lower Priority.
+    /// </remarks>
     public class DownloadClientSelector(
         IConfigurationService configurationService,
+        DownloadClientRoundRobinState roundRobinState,
         ILogger<DownloadClientSelector> logger)
     {
-        public async Task<string?> GetAppropriateDownloadClientAsync(bool isTorrent)
+        /// <summary>
+        /// Lowest priority value an operator may set. Matches Readarr's validator.
+        /// </summary>
+        public const int MinimumPriority = 1;
+
+        /// <summary>
+        /// Highest priority value an operator may set. Matches Readarr's validator.
+        /// </summary>
+        public const int MaximumPriority = 50;
+
+        private static readonly string[] TorrentClientTypes = ["qbittorrent", "transmission"];
+        private static readonly string[] UsenetClientTypes = ["sabnzbd", "nzbget"];
+
+        /// <summary>
+        /// Returns the id of the client that should receive a grab for <paramref name="protocol"/>,
+        /// or null when no enabled client can carry it. Null is the single not-found answer; the
+        /// automatic-search copy used to return an empty string here instead.
+        /// </summary>
+        public async Task<string?> GetAppropriateDownloadClientAsync(DownloadProtocol protocol)
         {
-            var downloadClients = await configurationService.GetDownloadClientConfigurationsAsync();
-            var enabledClients = downloadClients.Where(c => c.IsEnabled).ToList();
-
-            logger.LogInformation("Looking for {ClientType} client. Found {Count} enabled download clients: {Clients}",
-                isTorrent ? "torrent" : "NZB",
-                enabledClients.Count,
-                string.Join(", ", enabledClients.Select(c => $"{c.Name} ({c.Type})")));
-
-            if (isTorrent)
+            if (protocol == DownloadProtocol.DirectDownload)
             {
-                var client = enabledClients.FirstOrDefault(c => c.Type.Equals("qbittorrent", StringComparison.OrdinalIgnoreCase))
-                          ?? enabledClients.FirstOrDefault(c => c.Type.Equals("transmission", StringComparison.OrdinalIgnoreCase));
-
-                if (client != null)
-                {
-                    logger.LogInformation("Selected torrent client: {ClientName} ({ClientType})", client.Name, client.Type);
-                }
-                else
-                {
-                    logger.LogWarning("No torrent client (qBittorrent or Transmission) found among enabled clients");
-                }
-
-                return client?.Id;
+                // Direct downloads are carried by the internal DDL pipeline, not by a
+                // configured client. Only the automatic-search copy used to know this.
+                logger.LogInformation("Direct download detected, using the internal DDL client");
+                return DirectDownloadMetadataKeys.ClientId;
             }
 
-            var nzbClient = enabledClients.FirstOrDefault(c => c.Type.Equals("sabnzbd", StringComparison.OrdinalIgnoreCase))
-                         ?? enabledClients.FirstOrDefault(c => c.Type.Equals("nzbget", StringComparison.OrdinalIgnoreCase));
+            var wantedTypes = protocol == DownloadProtocol.Torrent ? TorrentClientTypes : UsenetClientTypes;
 
-            if (nzbClient != null)
+            var candidates = (await configurationService.GetDownloadClientConfigurationsAsync())
+                .Where(c => c.IsEnabled)
+                .Where(c => wantedTypes.Contains(c.Type, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+
+            if (candidates.Count == 0)
             {
-                logger.LogInformation("Selected NZB client: {ClientName} ({ClientType})", nzbClient.Name, nzbClient.Type);
-            }
-            else
-            {
-                logger.LogWarning("No NZB client (SABnzbd or NZBGet) found among enabled clients");
+                logger.LogWarning(
+                    "No enabled {Protocol} download client found. Expected one of: {Expected}",
+                    protocol,
+                    string.Join(", ", wantedTypes));
+                return null;
             }
 
-            return nzbClient?.Id;
+            var lowestPriority = candidates.Min(c => c.Priority);
+            var group = candidates
+                .Where(c => c.Priority == lowestPriority)
+                .OrderBy(c => c.CreatedAt)
+                .ThenBy(c => c.Id, StringComparer.Ordinal)
+                .ToList();
+
+            var selected = SelectNext(protocol, group);
+
+            logger.LogInformation(
+                "Selected {Protocol} client {ClientName} ({ClientType}) from {GroupCount} client(s) at priority {Priority}, out of {CandidateCount} enabled",
+                protocol,
+                selected.Name,
+                selected.Type,
+                group.Count,
+                lowestPriority,
+                candidates.Count);
+
+            return selected.Id;
+        }
+
+        /// <summary>
+        /// Operator-facing name for a protocol, used in the messages the API returns.
+        /// </summary>
+        public static string DescribeProtocol(DownloadProtocol protocol) => protocol switch
+        {
+            DownloadProtocol.Torrent => "torrent",
+            DownloadProtocol.Usenet => "NZB",
+            DownloadProtocol.DirectDownload => "direct download",
+            _ => "NZB"
+        };
+
+        private DownloadClientConfiguration SelectNext(DownloadProtocol protocol, List<DownloadClientConfiguration> group)
+        {
+            if (group.Count == 1)
+            {
+                roundRobinState.SetLastUsed(protocol, group[0].Id);
+                return group[0];
+            }
+
+            var lastUsedId = roundRobinState.GetLastUsed(protocol);
+            var lastIndex = lastUsedId == null
+                ? -1
+                : group.FindIndex(c => string.Equals(c.Id, lastUsedId, StringComparison.Ordinal));
+
+            // A last-used client that is gone or no longer in this group leaves lastIndex at -1,
+            // which starts the rotation again at the head of the group.
+            var next = group[(lastIndex + 1) % group.Count];
+            roundRobinState.SetLastUsed(protocol, next.Id);
+            return next;
         }
     }
 }

@@ -138,8 +138,6 @@ namespace Listenarr.Application.Downloads.Submission
                 return await directDownloadWorkflow.CreateTrackedDownloadAsync(directDownload, audiobookId, candidate.ReleaseIdentifier);
             }
 
-            var isTorrent = prepared.Protocol == DownloadProtocol.Torrent;
-
             logger.LogInformation(
                 "Processing as {DownloadType} after server-side validation for '{Title}'",
                 prepared.Protocol,
@@ -147,16 +145,18 @@ namespace Listenarr.Application.Downloads.Submission
 
             if (downloadClientId == null)
             {
-                downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(isTorrent);
+                downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(prepared.Protocol);
 
                 if (downloadClientId == null)
                 {
-                    var clientType = isTorrent ? "torrent" : "NZB";
-                    var neededClients = isTorrent ? "qBittorrent or Transmission" : "SABnzbd or NZBGet";
+                    var clientType = DownloadClientSelector.DescribeProtocol(prepared.Protocol);
+                    var neededClients = prepared.Protocol == DownloadProtocol.Torrent
+                        ? "qBittorrent or Transmission"
+                        : "SABnzbd or NZBGet";
                     throw new Exception($"No suitable download client found for {clientType}. Please configure and enable a {clientType} client ({neededClients}) in Settings.");
                 }
 
-                logger.LogInformation("Auto-selected download client {ClientId} for {ClientType}", downloadClientId, isTorrent ? "torrent" : "NZB");
+                logger.LogInformation("Auto-selected download client {ClientId} for {Protocol}", downloadClientId, prepared.Protocol);
             }
 
             var downloadClient = await configurationService.GetDownloadClientConfigurationAsync(downloadClientId);
@@ -234,9 +234,8 @@ namespace Listenarr.Application.Downloads.Submission
             {
                 try
                 {
-                    var protocol = isTorrent ? DownloadProtocol.Torrent : DownloadProtocol.Usenet;
                     await downloadHistoryService.RecordGrabbedAsync(
-                        downloadId, downloadClientIdForModel, candidate.Title, protocol,
+                        downloadId, downloadClientIdForModel, candidate.Title, prepared.Protocol,
                         audiobookId > 0 ? audiobookId : null,
                         candidate.Source, candidate.Quality, candidate.Size);
                     logger.LogInformation("Recorded grabbed event in history for download {DownloadId}", downloadId);
