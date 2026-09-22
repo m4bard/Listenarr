@@ -89,6 +89,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260922220105_AddEmailNotifications";
     private const string HousekeepingRetentionMigrationId =
         "20260922220833_AddHousekeepingRetention";
+    private const string DropProcessExecutionLogsMigrationId =
+        "20260922225847_DropProcessExecutionLogs";
     private const string IndexerDownloadClientBindingMigrationId =
         "20260923051638_AddIndexerDownloadClientBinding";
     private const string DownloadClientStatusMigrationId =
@@ -554,6 +556,7 @@ public class SqliteMigrationSchemaTests : BaseTests
                 IndexerSeedCriteriaMigrationId
                 EmailNotificationsMigrationId,
                 HousekeepingRetentionMigrationId,
+                DropProcessExecutionLogsMigrationId,
                 IndexerDownloadClientBindingMigrationId,
                 DownloadClientStatusMigrationId,
                 OperationEvidencePublicationsMigrationId
@@ -618,7 +621,7 @@ public class SqliteMigrationSchemaTests : BaseTests
         await using var upgraded = await factory.CreateDbContextAsync();
 
         Assert.True(await ColumnExistsAsync(connection, "MoveJobs", "SourcePath"));
-        Assert.True(await TableExistsAsync(connection, "ProcessExecutionLogs"));
+        Assert.False(await TableExistsAsync(connection, "ProcessExecutionLogs"));
         Assert.True(await TableExistsAsync(connection, "AudiobookDeletionIntents"));
         Assert.True(await ColumnExistsAsync(connection, "FileMutationJournals", "AudiobookFileId"));
         Assert.Equal(
@@ -680,6 +683,7 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.True(await ColumnExistsAsync(connection, "MoveJobs", "ExecutionProtocolVersion"));
         Assert.True(await TableExistsAsync(connection, "AudiobookDeletionIntents"));
         Assert.True(await ColumnExistsAsync(connection, "FileMutationJournals", "AudiobookFileId"));
+        Assert.False(await TableExistsAsync(connection, "ProcessExecutionLogs"));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
