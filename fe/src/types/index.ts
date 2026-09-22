@@ -438,6 +438,28 @@ export interface CustomScriptConfiguration {
   isEnabled: boolean
 }
 
+// One configured email notification target. Matches
+// listenarr.domain/Configuration/EmailConfiguration.cs, whose field set follows Readarr's
+// EmailSettings.
+export interface EmailConfiguration {
+  id: string
+  name: string
+  server: string
+  port: number
+  requireEncryption: boolean
+  username: string
+  // The stored password is never sent to this page in the clear: a settings read replaces it with
+  // the redaction sentinel, and sending the sentinel back on save keeps the stored value. See
+  // ApiResponseRedactor.RedactedValue and ConfigurationService.PreserveRedactedEmailPasswords.
+  password: string
+  from: string
+  to: string[]
+  cc: string[]
+  bcc: string[]
+  channels: NotificationChannel[]
+  isEnabled: boolean
+}
+
 export interface ApplicationSettings {
   version: number
   outputPath: string
@@ -490,6 +512,10 @@ export interface ApplicationSettings {
   // Configured custom scripts. Each entry is one executable Listenarr runs on the
   // channels it is enabled for. See CustomScriptConfiguration.cs.
   customScripts?: CustomScriptConfiguration[]
+
+  // Configured email notification targets. Each entry is one SMTP server Listenarr sends through
+  // on the channels it is enabled for. See EmailConfiguration.cs.
+  emails?: EmailConfiguration[]
 
   // Discord bot integration settings (optional)
   discordBotEnabled?: boolean
