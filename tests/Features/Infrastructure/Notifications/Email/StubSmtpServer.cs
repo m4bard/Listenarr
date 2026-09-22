@@ -24,10 +24,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
         private readonly CancellationTokenSource _stopping = new();
         private readonly Task _loop;
 
-        public StubSmtpServer(bool acceptAuthentication = true, int responseDelayMilliseconds = 0)
+        public StubSmtpServer(
+            bool acceptAuthentication = true,
+            int responseDelayMilliseconds = 0,
+            bool answerQuit = true)
         {
             AcceptAuthentication = acceptAuthentication;
             ResponseDelayMilliseconds = responseDelayMilliseconds;
+            AnswerQuit = answerQuit;
             _listener = new TcpListener(IPAddress.Loopback, 0);
             _listener.Start();
             Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
@@ -39,6 +43,15 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
         public bool AcceptAuthentication { get; }
 
         public int ResponseDelayMilliseconds { get; }
+
+        /// <summary>
+        /// When false the server accepts the message and then never answers QUIT, holding the
+        /// socket open. Real servers that hang up on "250 queued" produce the same shape.
+        /// </summary>
+        public bool AnswerQuit { get; }
+
+        /// <summary>The credential the client offered, decoded from AUTH PLAIN.</summary>
+        public string? AuthenticatedUsername { get; private set; }
 
         /// <summary>Every command verb the server was sent, in order.</summary>
         public List<string> Commands { get; } = new();
@@ -89,6 +102,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
                         await RespondAsync(writer, "250 8BITMIME");
                         break;
                     case "AUTH":
+                        AuthenticatedUsername = DecodePlainUsername(line);
                         await RespondAsync(writer, AcceptAuthentication
                             ? "235 2.7.0 Authentication successful"
                             : "535 5.7.8 Username and Password not accepted");
@@ -103,6 +117,13 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
                         await RespondAsync(writer, "250 2.0.0 Ok: queued");
                         break;
                     case "QUIT":
+                        if (!AnswerQuit)
+                        {
+                            // Hold the connection open and say nothing, which is what the client
+                            // has to survive without reporting the accepted message as a failure.
+                            await Task.Delay(Timeout.Infinite, _stopping.Token);
+                        }
+
                         await RespondAsync(writer, "221 2.0.0 Bye");
                         return;
                     default:
@@ -120,6 +141,29 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
             }
 
             await writer.WriteLineAsync(response);
+        }
+
+        /// <summary>
+        /// Pulls the username out of an "AUTH PLAIN &lt;base64&gt;" line, whose payload is
+        /// authzid NUL authcid NUL password.
+        /// </summary>
+        private static string? DecodePlainUsername(string line)
+        {
+            var parts = line.Split(' ');
+            if (parts.Length < 3 || !parts[1].Equals("PLAIN", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            try
+            {
+                var fields = Encoding.UTF8.GetString(Convert.FromBase64String(parts[2])).Split('\0');
+                return fields.Length >= 2 ? fields[1] : null;
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
         }
 
         private async Task<string> ReadDataAsync(StreamReader reader)
