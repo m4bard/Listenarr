@@ -105,7 +105,7 @@ namespace Listenarr.Application.Search.Scoring
                         if (!isNzb && !string.IsNullOrWhiteSpace(idx.Type) && string.Equals(idx.Type, "Usenet", StringComparison.OrdinalIgnoreCase))
                         {
                             isNzb = true;
-                            _logger.LogDebug("Indexer {IndexerId} type '{Type}' detected as Usenet; applying NZB/Usenet exemptions", searchResult.IndexerId.Value, idx.Type);
+                            _logger.LogDebug("Indexer {IndexerId} type '{Type}' detected as Usenet", searchResult.IndexerId.Value, idx.Type);
                         }
                     }
                 }
@@ -119,13 +119,21 @@ namespace Listenarr.Application.Search.Scoring
             // properties of a protocol, so they apply to every result that reports a size.
             if (searchResult.Size > 0)
             {
-                if (profile.MinimumSize > 0 && searchResult.Size < profile.MinimumSize * 1024 * 1024)
+                // The bounds are stored in MB as int and compared against a long byte count, so
+                // the multiplication has to widen first. At 2048 MB and above, int arithmetic
+                // wrapped negative: a ceiling rejected every release including tiny ones, and a
+                // floor stopped rejecting anything. Multi-gigabyte audiobooks are ordinary, and
+                // the settings field has no upper bound.
+                var minimumBytes = (long)profile.MinimumSize * 1024L * 1024L;
+                var maximumBytes = (long)profile.MaximumSize * 1024L * 1024L;
+
+                if (profile.MinimumSize > 0 && searchResult.Size < minimumBytes)
                 {
                     score.RejectionReasons.Add($"File too small (< {profile.MinimumSize} MB)");
                     score.TotalScore = -1;
                     return score;
                 }
-                if (profile.MaximumSize > 0 && searchResult.Size > profile.MaximumSize * 1024 * 1024)
+                if (profile.MaximumSize > 0 && searchResult.Size > maximumBytes)
                 {
                     score.RejectionReasons.Add($"File too large (> {profile.MaximumSize} MB)");
                     score.TotalScore = -1;
