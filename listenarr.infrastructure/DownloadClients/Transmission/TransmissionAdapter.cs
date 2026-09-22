@@ -54,7 +54,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
 
             var rpcClient = new TransmissionRpcClient(httpClientFactory, ClientType, logger);
             _connectionTester = new TransmissionConnectionTester(rpcClient, logger);
-            _addWorkflow = new TransmissionAddWorkflow(rpcClient, logger);
+            _addWorkflow = new TransmissionAddWorkflow(rpcClient, logger, new NullSeedCriteriaResolver());
             _removalWorkflow = new TransmissionRemovalWorkflow(rpcClient, logger);
             _queueFetchWorkflow = new TransmissionQueueFetchWorkflow(rpcClient, logger);
             _itemFetchWorkflow = new TransmissionItemFetchWorkflow(rpcClient, logger);
