@@ -18,6 +18,7 @@
 
 using Listenarr.Api.Attributes;
 using Listenarr.Application.Common.Exceptions;
+using Listenarr.Application.Library.RecycleBin;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using System.Text.Json;
@@ -32,17 +33,20 @@ namespace Listenarr.Api.Features.Configuration
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<SettingsController> _logger;
         private readonly IHubBroadcaster _hubBroadcaster;
+        private readonly IRecycleBinService _recycleBinService;
         private readonly IMemoryCache? _cache;
 
         public SettingsController(
             IConfigurationService configurationService,
             ILogger<SettingsController> logger,
             IHubBroadcaster hubBroadcaster,
+            IRecycleBinService recycleBinService,
             IMemoryCache? cache = null)
         {
             _configurationService = configurationService;
             _logger = logger;
             _hubBroadcaster = hubBroadcaster;
+            _recycleBinService = recycleBinService;
             _cache = cache;
         }
 
@@ -81,6 +85,21 @@ namespace Listenarr.Api.Features.Configuration
             try
             {
                 _logger.LogDebug("Saving application settings");
+
+                // Validated before the save, not after. A bin saved inside a root folder
+                // would be walked by the next library scan and its contents re-imported,
+                // which would undo every delete the bin was holding.
+                var recycleBinValidation = await _recycleBinService.ValidatePathAsync(
+                    settings.RecycleBinPath);
+                if (!recycleBinValidation.IsValid)
+                {
+                    return BadRequest(new
+                    {
+                        code = "invalid_recycle_bin_path",
+                        message = recycleBinValidation.Message
+                    });
+                }
+
                 await _configurationService.SaveApplicationSettingsAsync(settings);
                 _cache?.Remove("default-search-region");
 
@@ -143,6 +162,32 @@ namespace Listenarr.Api.Features.Configuration
             {
                 _logger.LogError(ex, "Error retrieving saved Prowlarr import settings");
                 return StatusCode(500, "Internal server error");
+            }
+        }
+
+        /// <summary>
+        /// Permanently remove everything in the recycle bin, regardless of age.
+        /// </summary>
+        [Tags("Settings")]
+        [HttpDelete("recyclebin")]
+        public async Task<IActionResult> EmptyRecycleBin(CancellationToken cancellationToken)
+        {
+            try
+            {
+                var result = await _recycleBinService.EmptyAsync(cancellationToken);
+                _logger.LogInformation(
+                    "Recycle bin emptied on request: {FileCount} files removed",
+                    result.FilesRemoved);
+                return Ok(new
+                {
+                    filesRemoved = result.FilesRemoved,
+                    directoriesRemoved = result.DirectoriesRemoved
+                });
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error emptying the recycle bin");
+                return StatusCode(500, new { error = "Failed to empty the recycle bin" });
             }
         }
     }
