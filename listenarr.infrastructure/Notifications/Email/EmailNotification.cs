@@ -159,6 +159,10 @@ namespace Listenarr.Infrastructure.Notifications.Email
                 Password = configuration.Password,
             };
 
+            // The blank filter is belt and braces rather than the real guard: the validator has
+            // already refused a blank address by the time anything reaches here. It stays because
+            // MailboxAddress.Parse throws on one, and a loosened validator should not become a
+            // send-time crash.
             var message = new SmtpMessage
             {
                 From = configuration.From,
@@ -230,13 +234,37 @@ namespace Listenarr.Infrastructure.Notifications.Email
 
             var secrets = LogRedaction.GetSensitiveValuesFromEnvironment()
                 .Concat(new[] { password })
-                .Where(secret => !string.IsNullOrEmpty(secret))
-                .Distinct(StringComparer.OrdinalIgnoreCase);
+                // Whitespace-only: cannot authenticate anything, and using it as a pattern only
+                // shreds the message the operator is meant to read.
+                .Where(secret => !string.IsNullOrWhiteSpace(secret))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                // Longest first. An environment secret that is a prefix of the password would
+                // otherwise match first and leave the remainder of the password in the text.
+                .OrderByDescending(secret => secret!.Length);
 
             var scrubbed = text;
             foreach (var secret in secrets)
             {
-                scrubbed = Regex.Replace(scrubbed, Regex.Escape(secret!), "<redacted>", RegexOptions.IgnoreCase);
+                try
+                {
+                    // CultureInvariant is load-bearing, not decoration. Under a Turkish or Azeri
+                    // process locale, IgnoreCase folds I to a dotless i and i to a dotted I, so a
+                    // password containing either, which is most of them, is not matched and
+                    // reaches the log and the operator's failure message in the clear.
+                    scrubbed = Regex.Replace(
+                        scrubbed,
+                        Regex.Escape(secret!),
+                        "<redacted>",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                }
+#pragma warning disable CA1031
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    // This runs inside the catch that guarantees a failing notification target
+                    // cannot break the operation that produced the event, so it may not throw.
+                    // Regex.Escape should make that unreachable; this is the insurance.
+                }
+#pragma warning restore CA1031
             }
 
             return scrubbed;

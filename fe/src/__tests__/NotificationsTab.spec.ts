@@ -200,7 +200,11 @@ describe('NotificationsTab', () => {
       cfg.applicationSettings = initialSettings as never
       let posted: { version: number; customScripts?: Array<Record<string, unknown>> } | null = null
       cfg.saveApplicationSettings = vi.fn(async (payload) => {
-        posted = payload as never
+        // Snapshot, not a reference. persistEmails spreads shallowly, so payload.emails is
+        // the component's own live array; capturing it by reference would assert on
+        // component state at assertion time rather than on what crossed the boundary.
+        // A JSON round trip rather than structuredClone, which cannot clone a reactive proxy.
+        posted = JSON.parse(JSON.stringify(payload)) as never
         const saved = { ...payload, version: payload.version + 1 }
         cfg.applicationSettings = saved
         return saved
@@ -390,7 +394,11 @@ describe('NotificationsTab', () => {
       cfg.applicationSettings = initialSettings as never
       let posted: { emails?: Array<Record<string, unknown>> } | null = null
       cfg.saveApplicationSettings = vi.fn(async (payload) => {
-        posted = payload as never
+        // Snapshot, not a reference. persistEmails spreads shallowly, so payload.emails is
+        // the component's own live array; capturing it by reference would assert on
+        // component state at assertion time rather than on what crossed the boundary.
+        // A JSON round trip rather than structuredClone, which cannot clone a reactive proxy.
+        posted = JSON.parse(JSON.stringify(payload)) as never
         const saved = { ...payload, version: payload.version + 1 }
         cfg.applicationSettings = saved
         return saved
@@ -456,7 +464,11 @@ describe('NotificationsTab', () => {
       cfg.applicationSettings = settings as never
       let posted: { emails?: Array<Record<string, unknown>> } | null = null
       cfg.saveApplicationSettings = vi.fn(async (payload) => {
-        posted = payload as never
+        // Snapshot, not a reference. persistEmails spreads shallowly, so payload.emails is
+        // the component's own live array; capturing it by reference would assert on
+        // component state at assertion time rather than on what crossed the boundary.
+        // A JSON round trip rather than structuredClone, which cannot clone a reactive proxy.
+        posted = JSON.parse(JSON.stringify(payload)) as never
         const saved = { ...payload, version: payload.version + 1 }
         cfg.applicationSettings = saved
         return saved
@@ -497,7 +509,11 @@ describe('NotificationsTab', () => {
       cfg.applicationSettings = settings as never
       let posted: { emails?: Array<Record<string, unknown>> } | null = null
       cfg.saveApplicationSettings = vi.fn(async (payload) => {
-        posted = payload as never
+        // Snapshot, not a reference. persistEmails spreads shallowly, so payload.emails is
+        // the component's own live array; capturing it by reference would assert on
+        // component state at assertion time rather than on what crossed the boundary.
+        // A JSON round trip rather than structuredClone, which cannot clone a reactive proxy.
+        posted = JSON.parse(JSON.stringify(payload)) as never
         const saved = { ...payload, version: payload.version + 1 }
         cfg.applicationSettings = saved
         return saved
@@ -519,6 +535,180 @@ describe('NotificationsTab', () => {
         expect(posted).not.toBeNull()
       })
       expect(posted!.emails![0]).toMatchObject({ password: 'a-new-password' })
+    })
+
+    it('editing a disabled target leaves it disabled', async () => {
+      // An operator who disabled a target and later edits anything about it must not find it
+      // sending again. The form resets isEnabled to true before it loads the target, so this is
+      // only correct if the load puts it back.
+      const pinia = createPinia()
+      setActivePinia(pinia)
+
+      const cfg = useConfigurationStore()
+      cfg.isLoading = false
+      const settings = {
+        version: 2,
+        webhookUrl: '',
+        webhooks: [],
+        emails: [anEmail({ isEnabled: false })],
+      }
+      cfg.applicationSettings = settings as never
+      let posted: { emails?: Array<Record<string, unknown>> } | null = null
+      cfg.saveApplicationSettings = vi.fn(async (payload) => {
+        // Snapshot, not a reference. persistEmails spreads shallowly, so payload.emails is
+        // the component's own live array; capturing it by reference would assert on
+        // component state at assertion time rather than on what crossed the boundary.
+        // A JSON round trip rather than structuredClone, which cannot clone a reactive proxy.
+        posted = JSON.parse(JSON.stringify(payload)) as never
+        const saved = { ...payload, version: payload.version + 1 }
+        cfg.applicationSettings = saved
+        return saved
+      })
+
+      const NotificationsTab = (await import('@/views/settings/NotificationsTab.vue')).default
+      const wrapper = mount(NotificationsTab, {
+        props: { settings: settings as never },
+        global: { plugins: [pinia] },
+      })
+      await wrapper.vm.$nextTick()
+
+      await wrapper.find('[title="Edit email"]').trigger('click')
+      await wrapper.vm.$nextTick()
+
+      // The checkbox must show it as disabled before the operator saves, not only end up right.
+      expect((wrapper.find('#email-name').element as HTMLInputElement).value).toBe(
+        'Household inbox',
+      )
+      await wrapper.find('#email-name').setValue('Renamed while disabled')
+      await wrapper.find('.email-modal form').trigger('submit')
+
+      await vi.waitFor(() => {
+        expect(posted).not.toBeNull()
+      })
+      expect(posted!.emails![0]).toMatchObject({
+        name: 'Renamed while disabled',
+        isEnabled: false,
+      })
+    })
+
+    it('the delete button on a card actually offers the confirmation', async () => {
+      // The trash button only sets the pending target; something has to render the confirmation
+      // for the operator to reach the delete at all.
+      const pinia = createPinia()
+      setActivePinia(pinia)
+
+      const cfg = useConfigurationStore()
+      cfg.isLoading = false
+      const settings = { version: 4, webhookUrl: '', webhooks: [], emails: [anEmail()] }
+      cfg.applicationSettings = settings as never
+      let posted: { emails?: Array<Record<string, unknown>> } | null = null
+      cfg.saveApplicationSettings = vi.fn(async (payload) => {
+        // Snapshot, not a reference. persistEmails spreads shallowly, so payload.emails is
+        // the component's own live array; capturing it by reference would assert on
+        // component state at assertion time rather than on what crossed the boundary.
+        // A JSON round trip rather than structuredClone, which cannot clone a reactive proxy.
+        posted = JSON.parse(JSON.stringify(payload)) as never
+        const saved = { ...payload, version: payload.version + 1 }
+        cfg.applicationSettings = saved
+        return saved
+      })
+
+      const NotificationsTab = (await import('@/views/settings/NotificationsTab.vue')).default
+      const wrapper = mount(NotificationsTab, {
+        props: { settings: settings as never },
+        global: { plugins: [pinia] },
+      })
+      await wrapper.vm.$nextTick()
+
+      await wrapper.find('[title="Delete email"]').trigger('click')
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.text()).toContain('delete the email notification')
+
+      const confirm = wrapper
+        .findAll('button')
+        .find((button) => /delete/i.test(button.text()) && !button.attributes('title'))
+      expect(confirm).toBeDefined()
+      await confirm!.trigger('click')
+
+      await vi.waitFor(() => {
+        expect(posted).not.toBeNull()
+      })
+      expect(posted!.emails).toHaveLength(0)
+    })
+
+    it('toggling a target off persists it without disturbing the stored password', async () => {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+
+      const cfg = useConfigurationStore()
+      cfg.isLoading = false
+      const settings = { version: 6, webhookUrl: '', webhooks: [], emails: [anEmail()] }
+      cfg.applicationSettings = settings as never
+      let posted: { emails?: Array<Record<string, unknown>> } | null = null
+      cfg.saveApplicationSettings = vi.fn(async (payload) => {
+        // Snapshot, not a reference. persistEmails spreads shallowly, so payload.emails is
+        // the component's own live array; capturing it by reference would assert on
+        // component state at assertion time rather than on what crossed the boundary.
+        // A JSON round trip rather than structuredClone, which cannot clone a reactive proxy.
+        posted = JSON.parse(JSON.stringify(payload)) as never
+        const saved = { ...payload, version: payload.version + 1 }
+        cfg.applicationSettings = saved
+        return saved
+      })
+
+      const NotificationsTab = (await import('@/views/settings/NotificationsTab.vue')).default
+      const wrapper = mount(NotificationsTab, {
+        props: { settings: settings as never },
+        global: { plugins: [pinia] },
+      })
+      await wrapper.vm.$nextTick()
+
+      await wrapper.find('[title="Disable email"]').trigger('click')
+
+      await vi.waitFor(() => {
+        expect(posted).not.toBeNull()
+      })
+      expect(posted!.emails![0]).toMatchObject({ isEnabled: false, password: 'REDACTED' })
+      // The component must not have reached into the object it was handed as a prop.
+      expect(settings.emails[0].isEnabled).toBe(true)
+    })
+
+    it('clearing the password field sends a blank, which is how authentication is removed', async () => {
+      // The third branch of the contract, and the one a helpful implementation breaks: falling
+      // back to the sentinel when the field is empty would leave the operator with no way to
+      // remove SMTP authentication and a green toast telling them it worked.
+      const pinia = createPinia()
+      setActivePinia(pinia)
+
+      const cfg = useConfigurationStore()
+      cfg.isLoading = false
+      const settings = { version: 2, webhookUrl: '', webhooks: [], emails: [anEmail()] }
+      cfg.applicationSettings = settings as never
+      let posted: { emails?: Array<Record<string, unknown>> } | null = null
+      cfg.saveApplicationSettings = vi.fn(async (payload) => {
+        posted = JSON.parse(JSON.stringify(payload)) as never
+        const saved = { ...payload, version: payload.version + 1 }
+        cfg.applicationSettings = saved
+        return saved
+      })
+
+      const NotificationsTab = (await import('@/views/settings/NotificationsTab.vue')).default
+      const wrapper = mount(NotificationsTab, {
+        props: { settings: settings as never },
+        global: { plugins: [pinia] },
+      })
+      await wrapper.vm.$nextTick()
+
+      await wrapper.find('[title="Edit email"]').trigger('click')
+      await wrapper.vm.$nextTick()
+      await wrapper.find('#email-password').setValue('')
+      await wrapper.find('.email-modal form').trigger('submit')
+
+      await vi.waitFor(() => {
+        expect(posted).not.toBeNull()
+      })
+      expect(posted!.emails![0]!.password).toBe('')
     })
 
     it('the test button really sends, and reports success and failure distinguishably', async () => {
