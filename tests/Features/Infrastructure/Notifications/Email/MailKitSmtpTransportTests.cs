@@ -39,5 +39,78 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Email
         {
             Assert.Equal(SecureSocketOptions.StartTls, MailKitSmtpTransport.ResolveSocketOptions(AServer(port, true)));
         }
+
+        // The tests below run against a stub SMTP server on the loopback interface rather than a
+        // mock, because the only thing this class does is talk to a socket, and a mock of its own
+        // dependency would assert nothing about that. No mail leaves the machine.
+
+        private static SmtpMessage AMessage() =>
+            new()
+            {
+                From = "listenarr@example.invalid",
+                To = ["household@example.invalid"],
+                Subject = "Listenarr - Test Notification",
+                Body = "A body.",
+            };
+
+        private static SmtpServer AStubServer(StubSmtpServer stub, string? username) =>
+            new()
+            {
+                Host = "127.0.0.1",
+                Port = stub.Port,
+                RequireEncryption = false,
+                Username = username,
+                Password = username == null ? null : "hunter2-smtp-password",
+            };
+
+        [Fact]
+        public async Task SendAsync_DeliversTheMessageToTheServer()
+        {
+            using var stub = new StubSmtpServer();
+
+            await new MailKitSmtpTransport().SendAsync(AStubServer(stub, "listenarr"), AMessage());
+
+            Assert.Contains("DATA", stub.Commands);
+            Assert.Contains("QUIT", stub.Commands);
+            Assert.Contains("Subject: Listenarr - Test Notification", stub.DeliveredMessage, StringComparison.Ordinal);
+            Assert.Contains("A body.", stub.DeliveredMessage, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task SendAsync_AuthenticatesWhenAUsernameIsConfigured()
+        {
+            using var stub = new StubSmtpServer();
+
+            await new MailKitSmtpTransport().SendAsync(AStubServer(stub, "listenarr"), AMessage());
+
+            Assert.Contains("AUTH", stub.Commands);
+        }
+
+        [Fact]
+        public async Task SendAsync_DoesNotAuthenticateWhenNoUsernameIsConfigured()
+        {
+            // The control for the test above, and the reason it is worth having: an inverted
+            // condition would still deliver, so only the pair catches it. A server that wants no
+            // credential must not be offered one.
+            using var stub = new StubSmtpServer();
+
+            await new MailKitSmtpTransport().SendAsync(AStubServer(stub, username: null), AMessage());
+
+            Assert.DoesNotContain("AUTH", stub.Commands);
+            Assert.Contains("DATA", stub.Commands);
+        }
+
+        [Fact]
+        public async Task SendAsync_ThrowsWhenTheServerRejectsTheLogin()
+        {
+            // This is what makes the Test button mean something. If a refused login came back as
+            // success, the button would pass on a configuration that cannot deliver.
+            using var stub = new StubSmtpServer(acceptAuthentication: false);
+
+            await Assert.ThrowsAnyAsync<Exception>(() =>
+                new MailKitSmtpTransport().SendAsync(AStubServer(stub, "listenarr"), AMessage()));
+
+            Assert.DoesNotContain("DATA", stub.Commands);
+        }
     }
 }
