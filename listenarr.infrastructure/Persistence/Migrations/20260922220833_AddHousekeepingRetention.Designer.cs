@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20260922214755_AddHousekeepingRetention")]
+    [Migration("20260922220833_AddHousekeepingRetention")]
     partial class AddHousekeepingRetention
     {
         /// <inheritdoc />
@@ -972,6 +972,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("AudiobookId")
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TEXT");
 
                     b.Property<bool>("DeleteEmptySource")
                         .HasColumnType("INTEGER");
