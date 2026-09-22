@@ -1984,6 +1984,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("MetadataRefreshStaleAfterDays")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("MinimumFreeSpaceWhenImporting")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("MissingSourceMaxRetries")
                         .HasColumnType("INTEGER");
 
@@ -2014,6 +2017,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("ShowCompletedExternalDownloads")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("SkipFreeSpaceCheckWhenImporting")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("UnmatchedScanConcurrency")
