@@ -171,6 +171,10 @@
       </div>
 
       <div class="section">
+        <BackupsPanel />
+      </div>
+
+      <div class="section">
         <div class="section-header">
           <div class="section-title-with-status">
             <h2>
@@ -245,6 +249,7 @@ import { useRouter } from 'vue-router'
 import { LoadingState, StatusCard, InfoCard } from '@/components/base'
 import StorageDisksList from '@/components/system/StorageDisksList.vue'
 import ScheduledTasksSection from '@/components/system/ScheduledTasksSection.vue'
+import BackupsPanel from '@/components/system/BackupsPanel.vue'
 import {
   getSystemInfo,
   getStorageInfo,
