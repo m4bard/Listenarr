@@ -69,6 +69,7 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         /// </summary>
         [HttpPost]
         [ProducesResponseType(typeof(BackupArchive), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<BackupArchive>> CreateBackup(CancellationToken cancellationToken)
         {
@@ -77,6 +78,14 @@ namespace Listenarr.Api.Features.SystemDiagnostics
             try
             {
                 archive = await _backupService.CreateAsync(BackupTrigger.Manual, cancellationToken);
+            }
+            catch (BackupLimitReachedException ex)
+            {
+                // Refused rather than making room, because deleting to make room would let anyone
+                // who can reach this endpoint destroy an operator's archives, and on a default
+                // install that is anyone on the network.
+                _logger.LogInformation("Manual backup refused: {Reason}", ex.Message);
+                return StatusCode(StatusCodes.Status409Conflict, new { error = ex.Message });
             }
             catch (IOException ex)
             {

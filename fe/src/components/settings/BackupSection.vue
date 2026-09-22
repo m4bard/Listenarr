@@ -26,7 +26,7 @@
 
       <FormRow
         label="Retention (days)"
-        help="How long an automatic backup is kept. Backups you take yourself are never removed. Set to 0 to keep everything."
+        help="How long an automatic backup is kept. Backups you take yourself are never removed, and at most 20 are held at once. Set to 0 to keep everything."
       >
         <input
           :value="settings.backupRetentionDays ?? DEFAULT_RETENTION_DAYS"
