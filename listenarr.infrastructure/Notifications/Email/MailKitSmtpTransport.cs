@@ -44,6 +44,14 @@ namespace Listenarr.Infrastructure.Notifications.Email
         /// </remarks>
         public const int SendTimeoutMilliseconds = 30_000;
 
+        /// <summary>
+        /// How long the closing QUIT may take. Its own budget rather than the send deadline, so
+        /// that the worst case for a whole call stays near
+        /// <see cref="SendTimeoutMilliseconds"/> rather than doubling it, which is what a second
+        /// full-length budget after an already-exhausted one would do.
+        /// </summary>
+        public const int QuitTimeoutMilliseconds = 5_000;
+
         public async Task SendAsync(SmtpServer server, SmtpMessage message, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(server);
@@ -65,19 +73,33 @@ namespace Listenarr.Infrastructure.Notifications.Email
 
                 await client.SendAsync(email, deadline.Token);
             }
-            catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
                 // Our own deadline, not the caller's cancel. Reported as what it is, so the Test
                 // button says the server was too slow rather than that something was cancelled.
                 throw new TimeoutException(
-                    $"The mail server did not complete the exchange within {SendTimeoutMilliseconds / 1000} seconds.");
+                    $"The mail server did not complete the exchange within {SendTimeoutMilliseconds / 1000} seconds.",
+                    ex);
             }
 
-            // The QUIT is deliberately outside the deadline and not cancellable. The server has
-            // already accepted the message by this point, so a cancel arriving here would turn a
-            // delivered mail into an OperationCanceledException, which the provider rethrows and
-            // which would abort delivery to every remaining target.
-            await client.DisconnectAsync(true, CancellationToken.None);
+            // The QUIT is outside the deadline, on its own short budget, and anything it throws
+            // is dropped. The server accepted the message before this line, so nothing that
+            // happens here can change whether the mail was delivered. Servers that close the
+            // connection on "250 queued" rather than waiting for QUIT are common, and without
+            // this a delivered mail is logged and reported to the operator as a failed send. A
+            // cancellation escaping here is worse still: the provider rethrows it and abandons
+            // delivery to every remaining target.
+            try
+            {
+                using var quit = new CancellationTokenSource(QuitTimeoutMilliseconds);
+                await client.DisconnectAsync(true, quit.Token);
+            }
+#pragma warning disable CA1031
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                // Deliberately swallowed. See above: the message is already accepted.
+            }
+#pragma warning restore CA1031
         }
 
         /// <summary>
