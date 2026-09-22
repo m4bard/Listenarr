@@ -221,6 +221,72 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         }
 
         [Fact]
+        public async Task AddAsync_WhenIndexerHasNoSeedCriteria_DoesNotCallSetShareLimits()
+        {
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost")
+                .WithPort(8080)
+                .WithUsername("admin")
+                .WithPassword("admin")
+                .WithType("qbittorrent")
+                .Build());
+
+            var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()
+                .WithName("No Seed Criteria Indexer")
+                .WithType("Torrent")
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                IndexerId = indexer.Id
+            };
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            await adapter.AddAsync(client, PreparedSubmissionTestFactory.Torrent(searchResult));
+
+            var mock = _provider.GetRequiredService<QbittorrentApiMock>();
+            Assert.Equal(0, mock.SetShareLimitsCallCount);
+            Assert.Null(mock.LastShareLimitsForm);
+        }
+
+        [Fact]
+        public async Task AddAsync_WhenIndexerHasSeedRatio_CallsSetShareLimitsWithRatioAndGlobalSeedTime()
+        {
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost")
+                .WithPort(8080)
+                .WithUsername("admin")
+                .WithPassword("admin")
+                .WithType("qbittorrent")
+                .Build());
+
+            var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()
+                .WithName("Hit and Run Tracker")
+                .WithType("Torrent")
+                .WithSeedRatio(2.0)
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                IndexerId = indexer.Id
+            };
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            await adapter.AddAsync(client, PreparedSubmissionTestFactory.Torrent(searchResult));
+
+            var mock = _provider.GetRequiredService<QbittorrentApiMock>();
+            Assert.Equal(1, mock.SetShareLimitsCallCount);
+            var form = mock.LastShareLimitsForm;
+            Assert.NotNull(form);
+            Assert.Equal("2", form!["ratioLimit"]);
+            Assert.Equal("-2", form["seedingTimeLimit"]);
+        }
+
+        [Fact]
         public async Task AddAsync_WhenTorrentDownloadFails_DoesNotCallQbittorrentAdd()
         {
             var downloader = new Mock<ITorrentFileDownloader>(MockBehavior.Strict);
