@@ -24,7 +24,9 @@ namespace Listenarr.Tests.Features.Infrastructure.SystemDiagnostics.Backups;
 [Trait("Category", "Backup")]
 public sealed class PreMigrationBackupTests : BaseTests
 {
-    private static readonly string[] OneApplied = ["20260101000000_Something"];
+    private const bool ExistingDatabase = false;
+    private const bool NewDatabase = true;
+
     private static readonly string[] OnePending = ["20260825021432_AddWeakStorageVerifiedCleanup"];
     private static readonly string[] None = [];
 
@@ -52,7 +54,7 @@ public sealed class PreMigrationBackupTests : BaseTests
         // When the startup path asks for protection
         var archive = await PreMigrationBackup.ProtectAsync(
             OnePending,
-            OneApplied,
+            ExistingDatabase,
             enabled: true,
             new Lazy<IBackupService>(() => backupService.Object));
 
@@ -73,7 +75,7 @@ public sealed class PreMigrationBackupTests : BaseTests
         var lazy = new Lazy<IBackupService>(() => backupService.Object);
 
         // When the startup path asks for protection
-        var archive = await PreMigrationBackup.ProtectAsync(None, OneApplied, enabled: true, lazy);
+        var archive = await PreMigrationBackup.ProtectAsync(None, ExistingDatabase, enabled: true, lazy);
 
         // Then nothing is written, and the service was never even resolved
         Assert.Null(archive);
@@ -92,7 +94,7 @@ public sealed class PreMigrationBackupTests : BaseTests
         var lazy = new Lazy<IBackupService>(() => backupService.Object);
 
         // When the startup path asks for protection
-        var archive = await PreMigrationBackup.ProtectAsync(OnePending, None, enabled: true, lazy);
+        var archive = await PreMigrationBackup.ProtectAsync(OnePending, NewDatabase, enabled: true, lazy);
 
         // Then nothing is written: there is no prior state to lose
         Assert.Null(archive);
@@ -109,7 +111,7 @@ public sealed class PreMigrationBackupTests : BaseTests
         // When the startup path asks for protection
         var archive = await PreMigrationBackup.ProtectAsync(
             OnePending,
-            OneApplied,
+            ExistingDatabase,
             enabled: false,
             new Lazy<IBackupService>(() => backupService.Object));
 
@@ -136,7 +138,7 @@ public sealed class PreMigrationBackupTests : BaseTests
         // call in a try/catch: the irreversible migration must not run without the copy.
         await Assert.ThrowsAsync<IOException>(() => PreMigrationBackup.ProtectAsync(
             OnePending,
-            OneApplied,
+            ExistingDatabase,
             enabled: true,
             new Lazy<IBackupService>(() => backupService.Object)));
     }
