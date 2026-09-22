@@ -157,6 +157,38 @@ public sealed class PreMigrationBackupOrderingTests : BaseTests
             Times.Once);
     }
 
+    [Fact]
+    [Trait("Scenario", "FirstInstallTakesNoBackup")]
+    public async Task ProtectAsync_TakesNothing_WhenTheDatabaseFileDoesNotExistYet()
+    {
+        // Given a first install: a database path that does not exist, with everything pending
+        var databasePath = Path.Combine(FileService.GetTempPath(), "first-install", "listenarr.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
+
+        await using var context = new ListenArrDbContext(
+            new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseSqlite($"Data Source={databasePath}")
+                .Options);
+
+        var backupService = new Mock<IBackupService>();
+        var lazy = new Lazy<IBackupService>(() => backupService.Object);
+
+        // When the startup path asks for protection, through the overload that reads the real
+        // database rather than being handed the answer
+        var archive = await PreMigrationBackup.ProtectAsync(
+            context.Database.GetPendingMigrations().ToList(),
+            context,
+            enabled: true,
+            lazy);
+
+        // Then nothing is written: a database this start is creating has no prior state to lose.
+        // The control is the test above, where a populated file with no migration history does get
+        // a backup, so this is not simply "never backs up".
+        Assert.Null(archive);
+        Assert.False(lazy.IsValueCreated);
+        Assert.False(File.Exists(databasePath));
+    }
+
     private static int CountDefaultRootFolders(SqliteConnection connection)
     {
         using var command = connection.CreateCommand();

@@ -154,6 +154,54 @@ public sealed class PreMigrationBackupTests : BaseTests
         Assert.True(PreMigrationBackup.IsEnabled(new ConfigurationBuilder().Build()));
     }
 
+    [Theory]
+    [Trait("Scenario", "SpellingsOfYesAndNo")]
+    [InlineData("false", false)]
+    [InlineData("no", false)]
+    [InlineData("0", false)]
+    [InlineData("off", false)]
+    [InlineData("disabled", false)]
+    [InlineData("true", true)]
+    [InlineData("yes", true)]
+    [InlineData("1", true)]
+    [InlineData("on", true)]
+    [InlineData("enabled", true)]
+    [InlineData("  FALSE  ", false)]
+    public void IsEnabled_AcceptsTheSpellingsAnOperatorWouldActuallyType(string value, bool expected)
+    {
+        // Given the configuration key set to one of the spellings a compose file might carry
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [PreMigrationBackup.EnabledConfigurationKey] = value
+            })
+            .Build();
+
+        // When the flag is read
+        // Then it is understood rather than refused. Reading this through GetValue<bool?> throws on
+        // anything but true or false, and that throw lands in the catch around the startup
+        // migration path, which stops the process. The documented way out of a container that will
+        // not start must not itself be a way in.
+        Assert.Equal(expected, PreMigrationBackup.IsEnabled(configuration));
+    }
+
+    [Fact]
+    [Trait("Scenario", "UnrecognisedSpelling")]
+    public void IsEnabled_IgnoresAnUnrecognisedValue_RatherThanThrowing()
+    {
+        // Given a value that is neither a yes nor a no
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [PreMigrationBackup.EnabledConfigurationKey] = "banana"
+            })
+            .Build();
+
+        // When the flag is read
+        // Then the backup stays on, which is the safe direction, and startup is not refused
+        Assert.True(PreMigrationBackup.IsEnabled(configuration));
+    }
+
     [Fact]
     [Trait("Scenario", "ConfigurationOptOut")]
     public void IsEnabled_IsOff_WhenConfigurationSaysFalse()
