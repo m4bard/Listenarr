@@ -47,7 +47,7 @@
 
     <LoadingState v-if="loading && tasks.length === 0" message="Loading tasks..." />
 
-    <div v-else-if="tasks.length === 0" class="empty-message">
+    <div v-else-if="tasks.length === 0 && !loadError" class="empty-message">
       <PhInfo />
       <span>No periodic workers are registered</span>
     </div>
@@ -80,12 +80,12 @@
             </span>
           </td>
 
-          <td :title="describeLastRun(task)">{{ relativeOrBlank(task.lastStartedAt) }}</td>
+          <td :title="describeLastRun(task)">{{ relativeOrDash(task.lastStartedAt) }}</td>
 
           <td>
             {{
               task.lastDurationSeconds === undefined
-                ? ''
+                ? MISSING
                 : formatDurationSeconds(task.lastDurationSeconds)
             }}
           </td>
@@ -102,12 +102,14 @@
             <span v-else-if="task.nextExecution" :title="absoluteTime(task.nextExecution)">
               {{ relativeTime(task.nextExecution) }}
             </span>
+            <span v-else>{{ MISSING }}</span>
           </td>
 
           <td class="run-column">
             <button
               class="run-button"
-              :disabled="!canRun(task) || pendingRuns.includes(task.name)"
+              :class="{ 'is-disabled': !canRun(task) || pendingRuns.includes(task.name) }"
+              :aria-disabled="!canRun(task) || pendingRuns.includes(task.name)"
               :title="describeRunControl(task)"
               :aria-label="describeRunControl(task)"
               :data-testid="`task-run-${task.name}`"
@@ -143,6 +145,17 @@ import { logger } from '@/utils/logger'
 // fast enough that a cycle which takes a few seconds is seen starting and finishing.
 const POLL_INTERVAL_MS = 12000
 
+// How long a run's outcome stays on the page. It describes one request at one moment, and
+// left alone it sits there for the rest of the session, still announcing a run that
+// finished several polls ago. A timeout rather than clearing on the next successful read,
+// because a run forces a read of its own the instant it answers and would erase its own
+// message.
+const RUN_MESSAGE_TIMEOUT_MS = 15000
+
+// One mark for every cell the server had nothing to put in, so that a blank cell is
+// never mistaken for a value or for a rendering fault.
+const MISSING = '-'
+
 const SECONDS_PER_MINUTE = 60
 const SECONDS_PER_HOUR = 3600
 const SECONDS_PER_DAY = 86400
@@ -167,7 +180,28 @@ const pendingRuns = ref<string[]>([])
 const renderedAt = ref(Date.now())
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let runMessageTimer: ReturnType<typeof setTimeout> | null = null
 let requestInFlight = false
+
+function clearRunMessageTimer(): void {
+  if (runMessageTimer !== null) {
+    clearTimeout(runMessageTimer)
+    runMessageTimer = null
+  }
+}
+
+// One timer for both, since a run produces exactly one of them and the newer message
+// replaces the older rather than queuing behind it.
+function showRunMessage(notice: string | null, error: string | null): void {
+  clearRunMessageTimer()
+  runNotice.value = notice
+  runError.value = error
+  runMessageTimer = setTimeout(() => {
+    runNotice.value = null
+    runError.value = null
+    runMessageTimer = null
+  }, RUN_MESSAGE_TIMEOUT_MS)
+}
 
 function pluralize(value: number, unit: string): string {
   return `${value} ${unit}${value === 1 ? '' : 's'}`
@@ -220,8 +254,13 @@ function formatDurationSeconds(seconds: number): string {
 // Null is a value here and not an absence: it means the worker's interval could not be
 // stated in whole non-negative seconds, and intervalError carries the reason. Tested for
 // explicitly, because `??` and `> 0` cannot tell it apart from a declared zero.
+//
+// Loose equality, so that an absent key lands on the dash as well. The contract promises
+// the key is always sent, and an older server or a proxy that breaks that promise should
+// not make this column print "undefined seconds". `0 == null` is false, so a declared
+// zero still renders as a zero.
 function describeInterval(task: ScheduledTask): string {
-  return task.intervalSeconds === null ? '-' : formatSeconds(task.intervalSeconds)
+  return task.intervalSeconds == null ? MISSING : formatSeconds(task.intervalSeconds)
 }
 
 function absoluteTime(isoDate: string): string {
@@ -247,8 +286,8 @@ function relativeTime(isoDate: string): string {
     : `in ${formatRoughSeconds(magnitude)}`
 }
 
-function relativeOrBlank(isoDate: string | undefined): string {
-  return isoDate === undefined ? '' : relativeTime(isoDate)
+function relativeOrDash(isoDate: string | undefined): string {
+  return isoDate === undefined ? MISSING : relativeTime(isoDate)
 }
 
 function describeLastRun(task: ScheduledTask): string {
@@ -279,17 +318,19 @@ function canRun(task: ScheduledTask): boolean {
   return task.isRegistered && task.isManualRunAllowed && !task.isRunning
 }
 
+// Every branch starts with the button's visible text, so that the accessible name
+// contains the visible label and a voice-control user can say what they can see.
 function describeRunControl(task: ScheduledTask): string {
   if (!task.isRegistered) {
-    return `${task.displayName} is listed but its worker has stopped, so a cycle cannot be started`
+    return `Run ${task.displayName}. Unavailable: it is listed but its worker has stopped, so a cycle cannot be started`
   }
 
   if (!task.isManualRunAllowed) {
-    return `${task.displayName} runs on its schedule only and cannot be started on demand`
+    return `Run ${task.displayName}. Unavailable: it runs on its schedule only and cannot be started on demand`
   }
 
   if (task.isRunning) {
-    return `${task.displayName} is already running`
+    return `Run ${task.displayName}. Unavailable: it is already running`
   }
 
   return `Run ${task.displayName} now`
@@ -317,10 +358,13 @@ function describeApiError(error: unknown, fallback: string): string {
     : fallback
 }
 
-async function loadTasks(silent = false): Promise<void> {
+// `force` is for the read that follows a manual run. That read is the only one whose
+// result the caller depends on, and dropping it because a poll happened to be open
+// re-enables the button over a row that still says the task is not running.
+async function loadTasks(silent = false, force = false): Promise<void> {
   // The poll and the refresh button share this, so a slow response cannot stack a second
   // request on top of the first.
-  if (requestInFlight) {
+  if (requestInFlight && !force) {
     return
   }
 
@@ -346,29 +390,42 @@ async function refresh(): Promise<void> {
   await loadTasks()
 }
 
+function describeRunOutcome(task: ScheduledTask, triggered: string | undefined): string {
+  if (triggered === 'already-running') {
+    return `${task.displayName} was already running, so nothing further was queued.`
+  }
+
+  if (triggered === 'started') {
+    return `${task.displayName} started.`
+  }
+
+  return `The request to run ${task.displayName} was accepted.`
+}
+
 async function runTask(task: ScheduledTask): Promise<void> {
   if (!canRun(task) || pendingRuns.value.includes(task.name)) {
     return
   }
 
   pendingRuns.value = [...pendingRuns.value, task.name]
-  runError.value = null
+  clearRunMessageTimer()
   runNotice.value = null
+  runError.value = null
 
   try {
     const result = await runScheduledTask(task.name)
 
     // The two accepted outcomes come back with identical rows, so the wording has to come
-    // from the trigger result rather than from anything on the task.
-    runNotice.value =
-      result.triggered === 'already-running'
-        ? `${task.displayName} was already running, so nothing further was queued.`
-        : `${task.displayName} started.`
+    // from the trigger result rather than from anything on the task. Each of the two
+    // claims is made only when the server made it: the controller has a branch that
+    // answers 202 with no body at all, and a bodyless accept should not be reported as a
+    // start that may not have happened.
+    showRunMessage(describeRunOutcome(task, result.triggered), null)
 
-    await loadTasks(true)
+    await loadTasks(true, true)
   } catch (error) {
     logger.error('Error running scheduled task:', error)
-    runError.value = describeApiError(error, `Could not start ${task.displayName}.`)
+    showRunMessage(null, describeApiError(error, `Could not start ${task.displayName}.`))
   } finally {
     pendingRuns.value = pendingRuns.value.filter((name) => name !== task.name)
   }
@@ -386,6 +443,8 @@ onUnmounted(() => {
     clearInterval(pollTimer)
     pollTimer = null
   }
+
+  clearRunMessageTimer()
 })
 </script>
 
@@ -595,12 +654,15 @@ onUnmounted(() => {
   transition: all 0.2s;
 }
 
-.run-button:hover:not(:disabled) {
+.run-button:hover:not(.is-disabled) {
   background: #2a2a2a;
   border-color: var(--brand-500);
 }
 
-.run-button:disabled {
+/* aria-disabled rather than disabled, so the refusal this button carries in its
+   accessible name can still be reached by keyboard and still shows a tooltip. No
+   pointer-events: none here for the same reason. runTask refuses the click itself. */
+.run-button.is-disabled {
   opacity: 0.45;
   cursor: not-allowed;
   color: #999;
