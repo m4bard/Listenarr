@@ -28,7 +28,7 @@
       <select class="form-select" :value="selectValue" @change="onChange">
         <option :value="NULL_VALUE">Use default</option>
         <option v-for="folder in store.folders" :key="folder.id" :value="String(folder.id)">
-          {{ folder.name }} — {{ folder.path }}{{ freeSpaceSuffix(folder) }}
+          {{ folder.name }} - {{ folder.path }}{{ freeSpaceSuffix(folder) }}
         </option>
       </select>
     </div>
