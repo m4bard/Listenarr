@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Infrastructure.Library.RecycleBin;
 using Listenarr.Infrastructure.HostedServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,6 +32,7 @@ internal static class WorkerRegistrationExtensions
         services.AddHostedService<MoveBackgroundService>();
 
         AddHostedProcessor<ImageCacheCleanupProcessor, IImageCacheCleanupProcessor, ImageCacheCleanupService>(services);
+        AddHostedProcessor<RecycleBinCleanupProcessor, IRecycleBinCleanupProcessor, RecycleBinCleanupService>(services);
         AddHostedProcessor<DownloadMonitorProcessor, IDownloadMonitorProcessor, DownloadMonitorService>(services);
         AddHostedProcessor<DirectDownloadProcessor, IDirectDownloadProcessor, DirectDownloadService>(services);
         AddHostedProcessor<MovedDownloadCleanupProcessor, IMovedDownloadCleanupProcessor, MovedDownloadCleanupService>(services);

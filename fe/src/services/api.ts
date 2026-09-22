@@ -876,10 +876,11 @@ class ApiService {
     })
   }
 
-  async emptyRecycleBin(): Promise<{ message: string; deletedCount: number }> {
-    return this.request<{ message: string; deletedCount: number }>('/configuration/recyclebin', {
-      method: 'DELETE',
-    })
+  async emptyRecycleBin(): Promise<{ filesRemoved: number; directoriesRemoved: number }> {
+    return this.request<{ filesRemoved: number; directoriesRemoved: number }>(
+      '/configuration/recyclebin',
+      { method: 'DELETE' },
+    )
   }
 
   async getProwlarrImportSettings(): Promise<ProwlarrImportConnectionSettings> {
