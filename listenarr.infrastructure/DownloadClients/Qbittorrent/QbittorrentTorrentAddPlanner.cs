@@ -15,7 +15,8 @@ internal static class QbittorrentTorrentAddPlanner
 {
     public static QbittorrentTorrentAddPlan Create(
         DownloadClientConfiguration client,
-        PreparedTorrentSubmission submission)
+        PreparedTorrentSubmission submission,
+        TorrentSeedConfiguration? seedConfiguration = null)
     {
         var category = client.Settings?.TryGetValue("category", out var categoryValue) is true
             ? categoryValue?.ToString()
@@ -38,7 +39,8 @@ internal static class QbittorrentTorrentAddPlanner
             ForceStart: string.Equals(initialState, "forceStart", StringComparison.OrdinalIgnoreCase),
             SequentialDownload: Flag(client, "sequentialOrder"),
             FirstLastPiecePriority: Flag(client, "firstAndLastFirst"),
-            ContentLayout: ResolveContentLayout(Setting(client, "contentLayout")));
+            ContentLayout: ResolveContentLayout(Setting(client, "contentLayout")),
+            SeedConfiguration: seedConfiguration is { HasAnyValue: true } ? seedConfiguration : null);
     }
 
     private static string? Setting(DownloadClientConfiguration client, string key)
@@ -80,4 +82,5 @@ internal sealed record QbittorrentTorrentAddPlan(
     bool ForceStart = false,
     bool SequentialDownload = false,
     bool FirstLastPiecePriority = false,
-    string? ContentLayout = null);
+    string? ContentLayout = null,
+    TorrentSeedConfiguration? SeedConfiguration = null);
