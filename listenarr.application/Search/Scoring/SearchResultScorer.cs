@@ -86,11 +86,38 @@ namespace Listenarr.Application.Search.Scoring
                 return score;
             }
 
-            // Detect NZB/Usenet more broadly
+            // Detect NZB/Usenet more broadly, and settle it once before any gate reads it.
+            // The indexer's own type is one of the detection signals, so the repository lookup
+            // that supplies it has to run here rather than further down: with it below the size
+            // gate, the same release was gated on size but exempted from the quality gates
+            // depending only on which signal happened to carry it.
             var isNzb = IsNzbResult(searchResult);
 
-            // Size checks (skip for NZB)
-            if (!isNzb && searchResult.Size > 0)
+            int indexerRetention = 0;
+            if (searchResult.IndexerId.HasValue && _indexerRepository != null)
+            {
+                try
+                {
+                    var idx = await _indexerRepository.GetByIdAsync(searchResult.IndexerId.Value);
+                    if (idx != null)
+                    {
+                        indexerRetention = idx.Retention;
+                        if (!isNzb && !string.IsNullOrWhiteSpace(idx.Type) && string.Equals(idx.Type, "Usenet", StringComparison.OrdinalIgnoreCase))
+                        {
+                            isNzb = true;
+                            _logger.LogDebug("Indexer {IndexerId} type '{Type}' detected as Usenet; applying NZB/Usenet exemptions", searchResult.IndexerId.Value, idx.Type);
+                        }
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogDebug(ex, "Failed to fetch indexer retention for IndexerId {Id}", searchResult.IndexerId.Value);
+                }
+            }
+
+            // Size checks. MinimumSize and MaximumSize are operator settings on the profile, not
+            // properties of a protocol, so they apply to every result that reports a size.
+            if (searchResult.Size > 0)
             {
                 if (profile.MinimumSize > 0 && searchResult.Size < profile.MinimumSize * 1024 * 1024)
                 {
@@ -115,30 +142,8 @@ namespace Listenarr.Application.Search.Scoring
                 return score;
             }
 
-            // Age checks and indexer retention
+            // Age checks
             double ageDays = 0;
-            int indexerRetention = 0;
-            if (searchResult.IndexerId.HasValue && _indexerRepository != null)
-            {
-                try
-                {
-                    var idx = await _indexerRepository.GetByIdAsync(searchResult.IndexerId.Value);
-                    if (idx != null)
-                    {
-                        indexerRetention = idx.Retention;
-                        if (!isNzb && !string.IsNullOrWhiteSpace(idx.Type) && string.Equals(idx.Type, "Usenet", StringComparison.OrdinalIgnoreCase))
-                        {
-                            isNzb = true;
-                            _logger.LogDebug("Indexer {IndexerId} type '{Type}' detected as Usenet; applying NZB/Usenet exemptions", searchResult.IndexerId.Value, idx.Type);
-                        }
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                {
-                    _logger.LogDebug(ex, "Failed to fetch indexer retention for IndexerId {Id}", searchResult.IndexerId.Value);
-                }
-            }
-
             if (!string.IsNullOrEmpty(searchResult.PublishedDate) && DateTime.TryParse(searchResult.PublishedDate, out var publishDate))
             {
                 ageDays = (DateTime.UtcNow - publishDate).TotalDays;
@@ -260,7 +265,15 @@ namespace Listenarr.Application.Search.Scoring
                 }
             }
 
-            // Quality: missing -> penalty only when no format inferred and not NZB
+            // Quality: missing -> penalty only when no format inferred and not NZB.
+            //
+            // This exemption stays, alongside the missing-language and missing-format ones above.
+            // All three are the same thing: a fixed penalty for metadata a Usenet indexer often
+            // does not report, charged against a release for an absence rather than for its
+            // contents. None of them is an operator setting. The gates hoisted out of this
+            // condition are: MinimumSize, MaximumSize, and the profile's own quality ordering and
+            // Allowed flags, all of which the operator sets and all of which describe the release
+            // rather than the protocol.
             if (string.IsNullOrEmpty(normalizedQuality))
             {
                 if (!isNzb)
@@ -275,34 +288,36 @@ namespace Listenarr.Application.Search.Scoring
             }
             else
             {
-                if (!isNzb)
+                // The result told us its quality, so the profile decides what that is worth and
+                // whether it is wanted at all, whatever protocol carried it. Exempting NZB here
+                // left every NZB on the base score, so an NZB outranked any torrent regardless of
+                // what it contained, and a quality the operator had switched off was grabbed over
+                // Usenet with no rejection reason.
+                int qualityScore = GetQualityScore(normalizedQuality);
+                var qualityDeduction = 100 - qualityScore;
+                score.TotalScore -= qualityDeduction;
+                score.ScoreBreakdown["Quality"] = qualityScore;
+
+                if (profile.Qualities != null && profile.Qualities.Count > 0)
                 {
-                    int qualityScore = GetQualityScore(normalizedQuality);
-                    var qualityDeduction = 100 - qualityScore;
-                    score.TotalScore -= qualityDeduction;
-                    score.ScoreBreakdown["Quality"] = qualityScore;
-
-                    if (profile.Qualities != null && profile.Qualities.Count > 0)
+                    var allowed = profile.Qualities.Where(q => q.Allowed).Select(q => (q.Quality ?? string.Empty).ToLower()).ToList();
+                    if (profile.PreferredFormats != null && profile.PreferredFormats.Count > 0)
                     {
-                        var allowed = profile.Qualities.Where(q => q.Allowed).Select(q => (q.Quality ?? string.Empty).ToLower()).ToList();
-                        if (profile.PreferredFormats != null && profile.PreferredFormats.Count > 0)
+                        foreach (var f in profile.PreferredFormats
+                            .Where(format => !string.IsNullOrWhiteSpace(format))
+                            .Select(format => format.Trim().ToLower())
+                            .Where(format => !allowed.Contains(format)))
                         {
-                            foreach (var f in profile.PreferredFormats
-                                .Where(format => !string.IsNullOrWhiteSpace(format))
-                                .Select(format => format.Trim().ToLower())
-                                .Where(format => !allowed.Contains(format)))
-                            {
-                                allowed.Add(f);
-                            }
+                            allowed.Add(f);
                         }
+                    }
 
-                        var detectedQualityLower = normalizedQuality.ToLower();
-                        if (!allowed.Any(q => detectedQualityLower.Contains(q) || q.Contains(detectedQualityLower)))
-                        {
-                            score.TotalScore += QualityNotAllowedPenalty;
-                            score.ScoreBreakdown["QualityNotAllowed"] = QualityNotAllowedPenalty;
-                            score.RejectionReasons.Add($"Quality '{normalizedQuality}' not allowed by profile");
-                        }
+                    var detectedQualityLower = normalizedQuality.ToLower();
+                    if (!allowed.Any(q => detectedQualityLower.Contains(q) || q.Contains(detectedQualityLower)))
+                    {
+                        score.TotalScore += QualityNotAllowedPenalty;
+                        score.ScoreBreakdown["QualityNotAllowed"] = QualityNotAllowedPenalty;
+                        score.RejectionReasons.Add($"Quality '{normalizedQuality}' not allowed by profile");
                     }
                 }
             }
