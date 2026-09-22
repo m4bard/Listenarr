@@ -125,14 +125,35 @@ async function handleEmptyBin() {
   try {
     const result = await apiService.emptyRecycleBin()
     emptyResult.value =
-      result.deletedCount === 1
+      result.filesRemoved === 1
         ? 'Removed 1 file from the recycle bin.'
-        : `Removed ${result.deletedCount} files from the recycle bin.`
+        : `Removed ${result.filesRemoved} files from the recycle bin.`
   } catch (err) {
-    emptyError.value = err instanceof Error ? err.message : 'Failed to empty the recycle bin.'
+    emptyError.value = extractErrorMessage(err)
   } finally {
     emptying.value = false
   }
+}
+
+// The request layer throws an Error whose .message is the raw "API error: <status> <body>"
+// text, not something fit to show an operator. The server's error body carries the useful
+// text under `error`, so pull that out first and fall back to the raw message only if the
+// body is not the shape expected.
+function extractErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    const body = (err as Error & { body?: string }).body
+    if (body) {
+      try {
+        const parsed = JSON.parse(body) as { error?: string; message?: string }
+        if (typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error
+        if (typeof parsed.message === 'string' && parsed.message.trim()) return parsed.message
+      } catch {
+        // Body was not JSON; fall through to the raw error message below.
+      }
+    }
+    return err.message
+  }
+  return 'Failed to empty the recycle bin.'
 }
 </script>
 
