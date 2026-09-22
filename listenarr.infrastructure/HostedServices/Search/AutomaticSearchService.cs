@@ -338,35 +338,49 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             var selectableResults = await BlockedReleaseFilter.ExcludeAsync(
                 blocklistService, audiobook.Id, ranked, _logger);
 
-            // ExcludeAsync keeps the order it is given, so this is the top of the ranked list.
-            var topResult = selectableResults.FirstOrDefault(s => !s.IsRejected);
+            // ExcludeAsync keeps the order it is given, so these stay in the ranked order: the
+            // profile's own quality ordering, then the score, then the deterministic tiebreak.
+            // The pick below walks the list rather than taking its head, so the order has to
+            // survive the blocklist filter and not just decide a single winner.
+            var candidates = selectableResults.Where(s => !s.IsRejected).ToList();
 
-            if (topResult == null)
+            if (candidates.Count == 0)
             {
                 _logger.LogInformation("No acceptable search results found for audiobook '{Title}' after quality filtering", audiobook.Title);
                 return new AudiobookSearchOutcome(0, indexersSkipped);
             }
 
-            _logger.LogInformation("Found top result for audiobook '{Title}': {ResultTitle} (Score: {Score}, Quality: {Quality})",
-                audiobook.Title, topResult.SearchResult.Title, topResult.TotalScore, topResult.SearchResult.Quality);
+            QualityScore? topResult;
 
-            // Check if the found result is better quality than what we already have
+            // Take the best candidate that is actually an upgrade, rather than testing only the
+            // first and abandoning the search when it fails. The gate below resolves a quality
+            // label by exact profile name while the ranking above resolves it by codec and
+            // bitrate, so the two disagree on a label such as a bare "AAC": the ranking places it
+            // and the gate cannot, and one unresolvable release at the top used to discard every
+            // release behind it, including ones that would have passed.
             if (!string.IsNullOrEmpty(bestExistingQuality))
             {
-                var resultIsBetter = _qualityEvaluator.IsQualityBetter(topResult.SearchResult.Quality, bestExistingQuality, audiobook.QualityProfile);
-                if (!resultIsBetter)
+                topResult = candidates.FirstOrDefault(candidate =>
+                    _qualityEvaluator.IsQualityBetter(candidate.SearchResult.Quality, bestExistingQuality, audiobook.QualityProfile));
+
+                if (topResult == null)
                 {
-                    _logger.LogInformation("Top result quality '{ResultQuality}' is not better than existing quality '{ExistingQuality}' for audiobook '{Title}', skipping download",
-                        topResult.SearchResult.Quality, bestExistingQuality, audiobook.Title);
+                    _logger.LogInformation("No result for audiobook '{Title}' is better than the existing quality '{ExistingQuality}', skipping download",
+                        audiobook.Title, bestExistingQuality);
                     return new AudiobookSearchOutcome(0, indexersSkipped);
                 }
-                _logger.LogInformation("Top result quality '{ResultQuality}' is better than existing quality '{ExistingQuality}', proceeding with download",
+
+                _logger.LogInformation("Chose quality '{ResultQuality}' over existing quality '{ExistingQuality}', proceeding with download",
                     topResult.SearchResult.Quality, bestExistingQuality);
             }
             else
             {
+                topResult = candidates[0];
                 _logger.LogInformation("No existing files for audiobook '{Title}', proceeding with download", audiobook.Title);
             }
+
+            _logger.LogInformation("Chose result for audiobook '{Title}': {ResultTitle} (Score: {Score}, Quality: {Quality})",
+                audiobook.Title, topResult.SearchResult.Title, topResult.TotalScore, topResult.SearchResult.Quality);
 
             // Add score to the search result for tracking
             topResult.SearchResult.Score = topResult.TotalScore;
