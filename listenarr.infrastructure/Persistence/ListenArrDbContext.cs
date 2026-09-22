@@ -49,7 +49,6 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<DownloadHistory> DownloadHistories { get; set; } = null!;
         public DbSet<QualityProfile> QualityProfiles { get; set; } = null!;
         public DbSet<RemotePathMapping> RemotePathMappings { get; set; } = null!;
-        public DbSet<ProcessExecutionLog> ProcessExecutionLogs { get; set; } = null!;
         public DbSet<RootFolder> RootFolders { get; set; } = null!;
         public DbSet<RootFolderRelocation> RootFolderRelocations { get; set; } = null!;
         public DbSet<RootFolderRelocationSkippedItem> RootFolderRelocationSkippedItems { get; set; } = null!;
