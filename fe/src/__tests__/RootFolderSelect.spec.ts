@@ -39,8 +39,8 @@ describe('RootFolderSelect', () => {
 
     expect(wrapper.findAll('option').map((option) => option.text())).toEqual([
       'Use default',
-      'Primary — /library',
-      'Archive — /archive',
+      'Primary - /library',
+      'Archive - /archive',
     ])
     expect(wrapper.text()).not.toContain('Custom path')
   })
@@ -78,10 +78,10 @@ describe('RootFolderSelect', () => {
     const options = wrapper.findAll('option').map((option) => option.text())
     expect(options).toEqual([
       'Use default',
-      'Primary — /library (4.7 GB free)',
+      'Primary - /library (4.7 GB free)',
       // No free-space figure is shown when the probe could not measure the path, per
       // RootFoldersController.Mapping.cs leaving FreeSpaceBytes null in that case.
-      'Archive — /archive',
+      'Archive - /archive',
     ])
   })
 })
