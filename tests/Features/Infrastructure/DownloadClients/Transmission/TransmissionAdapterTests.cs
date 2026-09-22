@@ -81,6 +81,64 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Transmission
         }
 
         [Fact]
+        [Trait("Method", "AddAsync")]
+        [Trait("Area", "SeedCriteria")]
+        public async Task AddAsync_WhenIndexerHasNoSeedCriteria_DoesNotIssueTorrentSetCall()
+        {
+            var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()
+                .WithName("No Seed Criteria Indexer")
+                .WithType("Torrent")
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                IndexerId = indexer.Id
+            };
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            await adapter.AddAsync(_client, PreparedSubmissionTestFactory.Torrent(searchResult));
+
+            var transmissionApiMock = _provider.GetRequiredService<TransmissionApiMock>();
+            using var document = transmissionApiMock.GetLastJsonContent();
+            Assert.NotNull(document);
+            Assert.Equal("torrent-add", document.RootElement.GetProperty("method").GetString());
+        }
+
+        [Fact]
+        [Trait("Method", "AddAsync")]
+        [Trait("Area", "SeedCriteria")]
+        public async Task AddAsync_WhenIndexerHasSeedRatioOnly_IssuesTorrentSetWithRatioButNotSeedTime()
+        {
+            var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()
+                .WithName("Hit and Run Tracker")
+                .WithType("Torrent")
+                .WithSeedRatio(1.5)
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                IndexerId = indexer.Id
+            };
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            await adapter.AddAsync(_client, PreparedSubmissionTestFactory.Torrent(searchResult));
+
+            var transmissionApiMock = _provider.GetRequiredService<TransmissionApiMock>();
+            using var document = transmissionApiMock.GetLastJsonContent();
+            Assert.NotNull(document);
+            Assert.Equal("torrent-set", document.RootElement.GetProperty("method").GetString());
+            var arguments = document.RootElement.GetProperty("arguments");
+            Assert.Equal(1.5, arguments.GetProperty("seedRatioLimit").GetDouble());
+            Assert.Equal(1, arguments.GetProperty("seedRatioMode").GetInt32());
+            Assert.False(arguments.TryGetProperty("seedIdleLimit", out _));
+            Assert.False(arguments.TryGetProperty("seedIdleMode", out _));
+        }
+
+        [Fact]
         [Trait("Method", "TestConnectionAsync")]
         public async Task TestConnectionAsync_NormalizesHostAndRespectsConfiguredRpcPath()
         {
