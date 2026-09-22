@@ -211,7 +211,7 @@
 
     <!-- Grouped View -->
     <div v-else-if="groupBy !== 'books'" class="grouped-view">
-      <div class="grouped-grid">
+      <div v-if="viewMode === 'grid'" class="grouped-grid">
         <div
           v-for="collection in groupedCollections || []"
           :key="collection.name"
@@ -384,6 +384,9 @@
               <div class="detail-line title">{{ collection.name }}</div>
               <div class="detail-line small">
                 {{ collection.count }} book{{ collection.count !== 1 ? 's' : '' }}
+                <template v-if="collection.seriesCount">
+                  {{ ' \u00b7 ' }}{{ collection.seriesCount }} series
+                </template>
               </div>
             </div>
           </div>
@@ -395,6 +398,49 @@
                 {{ collection.count }} book{{ collection.count !== 1 ? 's' : '' }}
               </p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="audiobooks-list grouped-list">
+        <div v-if="(groupedCollections || []).length > 0" class="list-header">
+          <div class="col-cover">Cover</div>
+          <div class="col-title">{{ groupBy === 'authors' ? 'Author' : 'Series' }}</div>
+          <div class="col-count">Books</div>
+        </div>
+        <div
+          v-for="collection in groupedCollections || []"
+          :key="`collection-list-${collection.name}`"
+          tabindex="0"
+          class="audiobook-list-item collection-list-item"
+          @keydown.enter="navigateToCollection(collection)"
+          @click="navigateToCollection(collection)"
+        >
+          <div
+            class="list-thumb-container"
+            :data-author-name="groupBy === 'authors' ? collection.name : undefined"
+            :data-author-has-cover="authorHasSpecificCoverMap[collection.name] ? '1' : ''"
+          >
+            <img
+              class="list-thumb"
+              :src="
+                getProtectedImageSrc(
+                  groupBy === 'authors'
+                    ? getAuthorImageUrl(collection)
+                    : collection.coverUrls?.[0] || '',
+                  getPlaceholderUrl(),
+                )
+              "
+              :alt="collection.name"
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+          <div class="list-details">
+            <div class="audiobook-title">{{ safeText(collection.name) }}</div>
+          </div>
+          <div class="collection-list-count">
+            {{ collection.count }} book{{ collection.count !== 1 ? 's' : '' }}
           </div>
         </div>
       </div>
@@ -1403,7 +1449,14 @@ const groupedCollections = computed(() => {
   const books = filteredAndSortedAudiobooks.value
   const groups = new Map<
     string,
-    { name: string; count: number; coverUrl?: string; coverUrls?: string[] }
+    {
+      name: string
+      count: number
+      coverUrl?: string
+      coverUrls?: string[]
+      seriesNames?: Set<string>
+      seriesCount?: number
+    }
   >()
 
   books.forEach((book) => {
@@ -1440,13 +1493,21 @@ const groupedCollections = computed(() => {
             } catch {}
           }
 
-          groups.set(key, { name: key, count: 0, coverUrl: cover })
+          groups.set(key, { name: key, count: 0, coverUrl: cover, seriesNames: new Set<string>() })
         } else {
-          groups.set(key, { name: key, count: 0, coverUrls: [] })
+          groups.set(key, { name: key, count: 0, coverUrls: [], seriesNames: new Set<string>() })
         }
       }
       const group = groups.get(key)!
       group.count++
+      // Distinct series this author appears in. getBookSeriesNames is membership-aware and already
+      // used by the series grouping below, so a book in several series counts once per series
+      // rather than once overall.
+      if (group.seriesNames) {
+        for (const seriesName of getBookSeriesNames(book)) {
+          group.seriesNames.add(seriesName.toLowerCase())
+        }
+      }
       const bookCover = getBookImageUrl(book)
       if (groupBy.value === 'authors') {
         try {
@@ -1463,12 +1524,24 @@ const groupedCollections = computed(() => {
   })
 
   const vals = Array.from(groups.values())
+  for (const group of vals) {
+    // Authors only. The series grouping is already one series per card, and leaving the field off
+    // keeps the shape of a series collection unchanged. The accumulating Set is deleted rather
+    // than returned: it is an implementation detail, not part of the view model.
+    if (groupBy.value === 'authors') {
+      group.seriesCount = group.seriesNames ? group.seriesNames.size : 0
+    }
+    delete group.seriesNames
+  }
 
   // For grouped views (authors/series), respect toolbar sortKey for collection sorting
   const order = sortOrder.value === 'asc' ? 1 : -1
   switch (sortKey.value) {
     case 'count':
       vals.sort((a, b) => (a.count - b.count) * order)
+      break
+    case 'series-count':
+      vals.sort((a, b) => ((a.seriesCount ?? 0) - (b.seriesCount ?? 0)) * order)
       break
     case 'author-last':
       vals.sort((a, b) => {
@@ -1510,10 +1583,9 @@ let authorCardObserver: IntersectionObserver | null = null
 
 function observeAuthorCards() {
   if (groupBy.value !== 'authors') return
+  // Both grouped layouts carry the hook, so a cover is fetched whichever one is showing.
   const cards = Array.from(
-    document.querySelectorAll<HTMLElement>(
-      '.author-collection .audiobook-poster-container[data-author-name]',
-    ),
+    document.querySelectorAll<HTMLElement>('.grouped-view [data-author-name]'),
   )
   if (cards.length === 0) return
 
@@ -1582,6 +1654,7 @@ const sortOptions = computed(() => {
       { value: 'author-last', label: 'Author Last Name' },
       { value: 'author-first', label: 'Author First Name' },
       { value: 'count', label: 'Books' }, // number of books in the collection
+      { value: 'series-count', label: 'Series' }, // distinct series the author appears in
     ]
   }
 
@@ -1904,6 +1977,13 @@ async function initializeVirtualScroller() {
     )
   }
 
+  registerViewModeWatchers()
+}
+
+// Registered independently of the virtual scroller. The scroller bails out when there is no
+// scroll container, and there is none while the library is grouped, so leaving these in it
+// meant a view-mode switch made under a grouping was neither reacted to nor remembered.
+function registerViewModeWatchers() {
   if (!stopViewModeWatch) {
     stopViewModeWatch = watch(viewMode, async () => {
       measuredRowHeight.value = null
@@ -1911,6 +1991,10 @@ async function initializeVirtualScroller() {
       await nextTick()
       syncMeasuredRowHeight()
       updateVisibleRange()
+      // The grouped branches are v-if siblings, so a layout switch destroys the observed
+      // nodes and mounts fresh ones. Nothing else re-observes them: groupedCollections has
+      // not changed, so its watcher stays quiet.
+      observeAuthorCards()
     })
   }
 
@@ -1942,6 +2026,8 @@ onMounted(async () => {
   } catch {
     // ignore localStorage errors (e.g., privacy mode)
   }
+
+  registerViewModeWatchers()
 
   await initializeVirtualScroller()
 
@@ -2118,7 +2204,7 @@ async function waitForImagesToLoad(timeoutMs = 5000) {
       )
     }
   } else {
-    const grouped = document.querySelector('.grouped-grid')
+    const grouped = document.querySelector('.grouped-view')
     if (grouped) imgs.push(...Array.from(grouped.querySelectorAll<HTMLImageElement>('img')))
   }
 
@@ -2804,6 +2890,24 @@ defineExpose({
 
 .menu-item:last-child {
   border-radius: 6px;
+}
+
+/* A collection row carries a cover, a name and a count. The book row's five-column
+   template leaves two of its columns empty here, so the grouped list sets its own.
+
+   Both selectors have to out-rank the book row's own rules, which appear later in this
+   stylesheet. A bare `.collection-list-item` ties with `.audiobook-list-item` on
+   specificity and loses on source order, which left the header at three columns and the
+   rows it labels at five. */
+.grouped-list .list-header,
+.audiobook-list-item.collection-list-item {
+  grid-template-columns: 64px 1fr auto;
+}
+
+.collection-list-count {
+  color: #aaa;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .grouped-view {
