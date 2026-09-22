@@ -64,6 +64,25 @@ public static class InfrastructureStartupCompositionExtensions
             using var migrateScope = serviceProvider.CreateScope();
             var factory = migrateScope.ServiceProvider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
             using var ctx = factory.CreateDbContext();
+            // First, before anything on this path writes. RepairLegacyData below is not a read:
+            // it clears the IsDefault flag on every root folder but the lowest-numbered one, on
+            // exactly the old populated databases this backup exists for. Taken after it, the
+            // archive would hold the repaired state and could not restore what the repair chose.
+            //
+            // A failure here is deliberately not caught: it falls into the handler at the bottom
+            // and refuses the start, because migrating without the copy is the outcome this
+            // prevents. Readarr does the same, in that a throw out of Backup(BackupType.Update) is
+            // not among the exceptions InstallUpdateService.Execute handles, so the update it was
+            // protecting does not proceed.
+            PreMigrationBackup
+                .ProtectAsync(
+                    ctx.Database.GetPendingMigrations().ToList(),
+                    ctx,
+                    PreMigrationBackup.IsEnabled(migrateScope.ServiceProvider.GetService<IConfiguration>()),
+                    new Lazy<IBackupService>(migrateScope.ServiceProvider.GetRequiredService<IBackupService>))
+                .GetAwaiter()
+                .GetResult();
+
             var repairedLegacyData =
                 ListenarrDatabaseMigrationPreflight.RepairLegacyData(ctx);
             if (repairedLegacyData.DefaultRootsNormalized > 0)
@@ -72,18 +91,6 @@ public static class InfrastructureStartupCompositionExtensions
                     "[Startup] Normalized {Count} duplicate default root folder row(s) before applying the single-default constraint",
                     repairedLegacyData.DefaultRootsNormalized);
             }
-
-            // Taken before Migrate() and only when something is actually pending. A failure here
-            // is deliberately not caught: it falls into the handler below and refuses the start,
-            // because migrating without the copy is exactly the outcome this exists to prevent.
-            PreMigrationBackup
-                .ProtectAsync(
-                    ctx.Database.GetPendingMigrations().ToList(),
-                    ctx.Database.GetAppliedMigrations().ToList(),
-                    PreMigrationBackup.IsEnabled(migrateScope.ServiceProvider.GetService<IConfiguration>()),
-                    new Lazy<IBackupService>(migrateScope.ServiceProvider.GetRequiredService<IBackupService>))
-                .GetAwaiter()
-                .GetResult();
 
             ctx.Database.Migrate();
             var repairedPostMigrationData =
