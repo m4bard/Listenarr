@@ -45,7 +45,7 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         /// The score both the usenet shape and <see cref="TorrentMatchingUsenetScore"/> land on,
         /// also below the clamp.
         /// </summary>
-        private const int ExpectedCrossProtocolScore = 86;
+        private const int ExpectedCrossProtocolScore = 76;
 
         private static QualityProfile BuildProfile()
         {
@@ -98,14 +98,20 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         }
 
         /// <summary>
-        /// A torrent built to land on the same score as the usenet shape above, so the two can
-        /// be compared without the score deciding. Both take the language mismatch penalty; the
-        /// torrent's quality deduction and its seeders bonus cancel out, and usenet takes
-        /// neither. Both come out at <see cref="ExpectedCrossProtocolScore"/>.
+        /// A torrent built to land on the same score as the usenet shape below, so the two can
+        /// be compared without the score deciding. Both take the language mismatch penalty and
+        /// both now take a quality deduction, so the torrent's seeders bonus is cancelled by
+        /// giving it a quality exactly one ladder step below the usenet shape's: MP3 320kbps
+        /// deducts 20 against M4B's 10. Both come out at
+        /// <see cref="ExpectedCrossProtocolScore"/>.
+        ///
+        /// The qualities were the other way round until the profile's quality deduction stopped
+        /// being skipped for Usenet. Before that a usenet release took no deduction at all, and
+        /// the tie was arranged by giving the torrent alone a ten point one.
         /// </summary>
         private static SearchResult TorrentMatchingUsenetScore(string id, string title, int seeders = 20)
         {
-            return Torrent(id, title, seeders: seeders, leechers: 0, quality: "M4B", format: "m4b", language: "German");
+            return Torrent(id, title, seeders: seeders, leechers: 0, quality: "MP3 320kbps", format: "m4b", language: "German");
         }
 
         private static SearchResult Usenet(
@@ -122,7 +128,7 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
                 DownloadType = "Usenet",
                 NzbUrl = $"https://usenet.invalid/{id}.nzb",
                 Format = "m4b",
-                Quality = "MP3 320kbps",
+                Quality = "M4B",
                 // The profile prefers English, so a German release takes the mismatch penalty.
                 // Both candidates take it equally, which keeps the tie below the 100 clamp.
                 Language = "German",
