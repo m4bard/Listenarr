@@ -98,28 +98,62 @@ namespace Listenarr.Tests.Features.Api.Services
                 filePattern: null,
                 multiFilePattern: null);
 
-            Assert.DoesNotContain("//", preview.FolderExample);
-            var segments = preview.FolderExample.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var separator = Path.DirectorySeparatorChar;
+            Assert.DoesNotContain($"{separator}{separator}", preview.FolderExample);
+            var segments = preview.FolderExample.Split(separator, StringSplitOptions.RemoveEmptyEntries);
             Assert.Equal(2, segments.Length); // Author/Title, with the empty Series segment gone
         }
 
         [Fact]
-        public void PreviewNamingPatterns_FilePatternWithDiskNumberToken_KeepsIntendedSubfolders()
+        public void PreviewNamingPatterns_FilePatternWithLiteralSeparator_KeepsBothSegmentsInsteadOfFlatteningToTheLast()
         {
-            // Rule 4 (fidelity check): GenerateFilePathAsync only flattens a file pattern to its
-            // last path segment (treatAsFilename=true) when the pattern does not itself imply
-            // subfolders. A pattern referencing DiskNumber is judged to imply subfolders
-            // (PatternImpliesSubfolders), so the literal '/' in the pattern must survive here
-            // exactly as it would through GenerateFilePathAsync. The sample's DiscNumber is 3
-            // for a single-file preview, so a naive preview that always treats the file pattern
-            // as a flat filename would collapse this to "Clockmaker's Apprentice - A Novel.m4b"
-            // and lose the "03" segment.
+            // Rule 4 (fidelity check, measured): GenerateFilePathAsync only flattens a file
+            // pattern to its last path segment (treatAsFilename=true) when the pattern does not
+            // itself imply subfolders (PatternImpliesSubfolders). A literal '/' between two
+            // tokens is judged to imply subfolders, so both segments must survive here. A prior
+            // version of this test used {DiskNumber:00}/{Title} and asserted a leading separator,
+            // which was wrong: for a genuinely single-file sample DiscNumber is empty, and an
+            // empty leading segment is dropped by ordinary path-component joining regardless of
+            // treatAsFilename, so that pattern does not actually discriminate the two code paths.
+            // {Author}/{Title} does: both tokens render non-empty values, so treatAsFilename=true
+            // would silently drop "M. R. Castellane" and keep only the title.
             var preview = _service.PreviewNamingPatterns(
                 folderPattern: null,
-                filePattern: "{DiskNumber:00}/{Title}",
+                filePattern: "{Author}/{Title}",
                 multiFilePattern: null);
 
-            Assert.StartsWith("03/", preview.SingleFileExample);
+            Assert.Equal(
+                "M. R. Castellane" + Path.DirectorySeparatorChar + "The Clockmaker's Apprentice - A Novel.m4b",
+                preview.SingleFileExample);
+        }
+
+        [Fact]
+        public async Task PreviewNamingPatterns_SingleFileRow_MatchesGenerateFilePathAsyncForATrueSingleFileBook()
+        {
+            // Differential check against the real render path, not a hand-derived expected
+            // string: a prior version of this file asserted a value worked out by reasoning
+            // about ApplyNamingPattern by hand, and that reasoning was wrong (it assumed a
+            // single-file sample would carry a DiscNumber, which GenerateFilePathAsync never
+            // gives a genuinely single-file book). This test instead calls GenerateFilePathAsync
+            // itself and checks the preview's single-file row is exactly its tail.
+            const string folderPattern = "{Author}";
+            const string filePattern = "{DiskNumber:00}/{Title}";
+            var settings = new ApplicationSettings
+            {
+                FolderNamingPattern = folderPattern,
+                FileNamingPattern = filePattern,
+                OutputPath = string.Empty
+            };
+            var mockConfig = new Mock<IConfigurationService>();
+            mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
+            var service = new FileNamingService(mockConfig.Object, new Mock<ILogger<FileNamingService>>().Object);
+            var singleFileSample = FileNamingService.BuildPreviewMetadata(discNumber: null, trackNumber: null);
+
+            var actual = await service.GenerateFilePathAsync(singleFileSample, outputPath: string.Empty, ".m4b");
+            var preview = service.PreviewNamingPatterns(folderPattern, filePattern, multiFilePattern: null);
+
+            Assert.EndsWith(preview.SingleFileExample, actual, StringComparison.Ordinal);
+            Assert.StartsWith(preview.FolderExample, actual, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -131,30 +165,74 @@ namespace Listenarr.Tests.Features.Api.Services
                 multiFilePattern: "{Title}");
 
             Assert.True(preview.MultiFileAmbiguous);
-            Assert.Equal(2, preview.MultiFileExamples.Count);
-            Assert.Equal(preview.MultiFileExamples[0], preview.MultiFileExamples[1]);
+            Assert.Equal(3, preview.MultiFileExamples.Count);
+            Assert.Single(preview.MultiFileExamples.Distinct());
         }
 
         [Fact]
-        public void PreviewNamingPatterns_MultiFilePatternWithDiskNumber_IsNotAmbiguous()
+        public void PreviewNamingPatterns_MultiFilePatternWithOnlyDiskNumber_IsAmbiguousForFilesSharingADisc()
         {
+            // A pattern that varies only by DiskNumber cannot tell apart two files that share a
+            // disc (a book with 10 chapters all under "Disc 1", for example), so this must be
+            // flagged ambiguous even though the pattern does differentiate SOME files. An
+            // earlier version of this check probed (disc 1, track 1) against (disc 2, track 2),
+            // which varies both fields at once and never surfaces this collision.
             var preview = _service.PreviewNamingPatterns(
                 folderPattern: null,
                 filePattern: null,
                 multiFilePattern: "{Title}-{DiskNumber:00}");
 
-            Assert.False(preview.MultiFileAmbiguous);
-            Assert.NotEqual(preview.MultiFileExamples[0], preview.MultiFileExamples[1]);
+            Assert.True(preview.MultiFileAmbiguous);
         }
 
         [Fact]
-        public void PreviewNamingPatterns_EmptyPatterns_ReturnEmptyExamples()
+        public void PreviewNamingPatterns_MultiFilePatternWithDiskAndChapterNumber_IsNotAmbiguous()
         {
-            var preview = _service.PreviewNamingPatterns(folderPattern: "", filePattern: "", multiFilePattern: "");
+            // The shipped MultiFileNamingPattern default (ApplicationSettings.cs). Every probed
+            // combination of disc and track must render a distinct name.
+            var preview = _service.PreviewNamingPatterns(
+                folderPattern: null,
+                filePattern: null,
+                multiFilePattern: "{Title}-{DiskNumber:00}-{ChapterNumber:00}");
+
+            Assert.False(preview.MultiFileAmbiguous);
+            Assert.Equal(3, preview.MultiFileExamples.Distinct().Count());
+        }
+
+        [Fact]
+        public void PreviewNamingPatterns_BlankFolderPattern_ReturnsEmptyFolderExample()
+        {
+            // Not reproduced: GenerateFilePathAsync's legacy full-path mode for a blank folder
+            // pattern (see the comment in FileNamingService.Preview.cs). The row is also never
+            // shown in the UI while its own input is blank, so an empty example here is honest
+            // about what this preview does and does not know, rather than guessing.
+            var preview = _service.PreviewNamingPatterns(folderPattern: "", filePattern: null, multiFilePattern: null);
 
             Assert.Equal(string.Empty, preview.FolderExample);
-            Assert.Equal(string.Empty, preview.SingleFileExample);
-            Assert.Empty(preview.MultiFileExamples);
+        }
+
+        [Fact]
+        public void PreviewNamingPatterns_BlankFileAndMultiFilePatterns_DefaultToTitleLikeGenerateFilePathAsyncDoes()
+        {
+            // GenerateFilePathAsync defaults a blank file pattern to "{Title}" whenever a folder
+            // pattern is set (FileNamingService.cs: `effectiveFilePattern = ... ? "{Title}" :
+            // filePattern`), which is the common case since the shipped FolderNamingPattern
+            // default is never blank. The preview matches that rather than returning an empty
+            // string for a blank single-file/multi-file pattern.
+            var preview = _service.PreviewNamingPatterns(folderPattern: null, filePattern: "", multiFilePattern: "");
+
+            Assert.Equal("The Clockmaker's Apprentice - A Novel.m4b", preview.SingleFileExample);
+            Assert.Equal(3, preview.MultiFileExamples.Count);
+            Assert.All(preview.MultiFileExamples, example => Assert.Contains("Clockmaker's Apprentice", example));
+        }
+
+        [Fact]
+        public void PreviewNamingPatterns_NeverDoublesTheExtension()
+        {
+            var preview = _service.PreviewNamingPatterns(folderPattern: null, filePattern: "{Title}.m4b", multiFilePattern: null);
+
+            Assert.EndsWith(".m4b", preview.SingleFileExample);
+            Assert.DoesNotContain(".m4b.m4b", preview.SingleFileExample);
         }
     }
 }
