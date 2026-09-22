@@ -115,7 +115,6 @@ namespace Listenarr.Infrastructure.Notifications.Email
                 NotificationChannel.BookAdded => $"{subject} was added to the library.",
                 NotificationChannel.BookAvailable => $"Files for {subject} were found but not imported.",
                 NotificationChannel.Rename => $"Files for {subject} were moved on disk.",
-                NotificationChannel.Test => TestBody(),
                 _ => $"{subject}: {notification.Channel}.",
             };
         }

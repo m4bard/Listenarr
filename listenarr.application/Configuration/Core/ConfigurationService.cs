@@ -168,8 +168,14 @@ namespace Listenarr.Application.Configuration.Core
                         settings.CustomScripts = existing.CustomScripts;
                     if (settings.Emails == null)
                         settings.Emails = existing.Emails;
-                    else
-                        PreserveRedactedEmailPasswords(settings.Emails, existing.Emails);
+                }
+
+                // Deliberately outside the block above. "Never store the sentinel as a password"
+                // has to hold on a first save against a database with no settings row yet, where
+                // there is nothing to recover and the right answer is blank.
+                if (settings.Emails != null)
+                {
+                    PreserveRedactedEmailPasswords(settings.Emails, existing?.Emails);
                 }
 
                 if (!string.IsNullOrWhiteSpace(settings.OutputPath)
