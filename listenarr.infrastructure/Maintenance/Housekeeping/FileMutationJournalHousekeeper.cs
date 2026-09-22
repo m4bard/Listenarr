@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Audiobooks.Enumerations;
 using Listenarr.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -48,13 +49,23 @@ namespace Listenarr.Infrastructure.Maintenance.Housekeeping;
 /// <b>What is left, in descending confidence.</b> OwnerMetadataReconciled at any owner class, the
 /// genuinely terminal state that no reader selects. Completed for the two companion classes, which
 /// are terminal and invisible to the receipts reader because that reader requires a null
-/// AudiobookFileId. And Completed registration rows whose audiobook no longer exists, which are
-/// unreachable by anything. The population this leaves alone on purpose is Completed with a null
-/// AudiobookFileId and a live audiobook: that row is both the idempotency receipt that makes a
-/// repeated import a no-op and the hardlink resume signal where bare presence at any state is the
-/// permission to proceed, and the manual-import repeat window is unbounded, so no cutoff bounds
-/// the risk. It is left for a follow-up rather than swept on a predicate that cannot be made
-/// provably safe.
+/// AudiobookFileId. Completed registration rows whose audiobook no longer exists, which are
+/// unreachable by anything. And Completed registration rows published by Copy, which is the slice
+/// of the old population 4 that the two readers keyed on a live audiobook cannot select: the
+/// receipts reader is bound to Move by RegistrationMoveOwnerPredicate, and the alias resume in
+/// FileMover.Actions is bound to HardlinkCopy.
+/// </para>
+/// <para>
+/// <b>What is still left alone, and why it is not a cutoff problem.</b> Completed with a null
+/// AudiobookFileId at Move, and the same at HardlinkCopy. The Move row is the idempotency receipt
+/// that turns a repeat import of an already-retired source into a success rather than a missing
+/// file, and the HardlinkCopy row is the resume signal whose bare presence is the permission to
+/// republish over an existing alias. Neither can be bounded by age, because the key every reader
+/// of them uses is content addressed rather than time addressed: the operation ID is a SHA-256 of
+/// the audiobook ID, the two path keys and the source proof, and when a source cannot expose a
+/// durable object identity that proof degrades to the literal string content-only plus the file's
+/// own hash. The same bytes at the same path reproduce the same key, whenever they arrive, so no
+/// window closes the read.
 /// </para>
 /// <para>
 /// <b>The floor.</b> Ninety days, against the operator's setting, for the same unbounded-window
@@ -103,7 +114,22 @@ public sealed class FileMutationJournalHousekeeper(
                     || (journal.State == FileMutationJournalState.Completed
                         && journal.AudiobookFileId == null
                         && journal.AudiobookId != null
-                        && !context.Audiobooks.Any(audiobook => audiobook.Id == journal.AudiobookId))))
+                        && !context.Audiobooks.Any(audiobook => audiobook.Id == journal.AudiobookId))
+                    // 4. Registration publications made by Copy. Of the three readers that can
+                    //    still select a Completed registration row, two are bound to an action
+                    //    this one is not: the receipts reader through RegistrationMoveOwnerPredicate
+                    //    to Move, and the alias resume in FileMover.Actions to HardlinkCopy. The
+                    //    third exempts an operation with a journal from the managed-root capability
+                    //    gate, and losing that exemption for a completed operation is the safe
+                    //    direction, because a repeat of it is a new mutation and belongs behind the
+                    //    gate a new mutation faces. A missing row is also re-derivable here in a way
+                    //    it is not on the compatibility table: markerless registration reopens both
+                    //    endpoints, and an existing destination whose content matches the source
+                    //    rejoins the journal at TargetIdentityPersisted rather than being treated
+                    //    as an anomaly.
+                    || (journal.State == FileMutationJournalState.Completed
+                        && journal.AudiobookFileId == null
+                        && journal.Action == FileAction.Copy)))
             .OrderBy(journal => journal.UpdatedAt)
             .ThenBy(journal => journal.OperationId);
 }
