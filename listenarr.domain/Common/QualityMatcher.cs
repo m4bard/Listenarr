@@ -15,8 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using System.Text.RegularExpressions;
-
 namespace Listenarr.Domain.Common
 {
     /// <summary>
@@ -74,7 +72,7 @@ namespace Listenarr.Domain.Common
     /// "M4B" (which never equalled a codec/bitrate rung like "AAC 256kbps", so the cutoff was
     /// never met and the audiobook was re-downloaded forever).
     /// </summary>
-    public static class QualityMatcher
+    public static partial class QualityMatcher
     {
         /// <summary>
         /// Match a file to the highest profile rung it meets or exceeds (round-down).
@@ -135,7 +133,7 @@ namespace Listenarr.Domain.Common
 
             if (fileKbps is int kbps)
             {
-                var eligible = withBitrate.Where(r => r.BitrateKbps <= kbps).ToList();
+                var eligible = withBitrate.Where(r => MeetsRung(kbps, r.BitrateKbps!.Value)).ToList();
                 if (eligible.Count > 0)
                 {
                     return ToAllowedMatch(Best(eligible).Source);
@@ -258,166 +256,40 @@ namespace Listenarr.Domain.Common
             return cand.Priority < exist.Priority;
         }
 
-        // ---- internals --------------------------------------------------------------------
-
-        private readonly record struct EffectiveRungInfo(QualityDefinition Source, string? Codec, int? BitrateKbps, bool IsLossless)
-        {
-            public int Priority => Source.Priority;
-        }
-
-        private static EffectiveRungInfo Best(IEnumerable<EffectiveRungInfo> rungs)
-            => rungs.OrderBy(r => r.Priority).First();
-
-        private static EffectiveRungInfo Worst(IEnumerable<EffectiveRungInfo> rungs)
-            => rungs.OrderByDescending(r => r.Priority).First();
-
-        private static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
-        {
-            cutoffBlank = false;
-            if (profile?.Qualities == null || profile.Qualities.Count == 0
-                || string.IsNullOrWhiteSpace(profile.CutoffQuality))
-            {
-                cutoffBlank = true;
-                return null;
-            }
-
-            return FindAllowedRung(profile, profile.CutoffQuality);
-        }
-
-        private static IEnumerable<QualityDefinition> AllowedQualities(QualityProfile profile)
-            => profile.Qualities
-                .Where(q => q.Allowed && !string.IsNullOrWhiteSpace(q.Quality));
-
-        private static IEnumerable<QualityDefinition> MatchableQualities(QualityProfile profile)
-            => profile.Qualities
-                .Where(q => !string.IsNullOrWhiteSpace(q.Quality));
-
-        private static QualityDefinition? FindAllowedRung(QualityProfile profile, string label)
-            => AllowedQualities(profile)
-                .FirstOrDefault(q => string.Equals(q.Quality, label, StringComparison.OrdinalIgnoreCase));
+        /// <summary>
+        /// The codec group a free-text quality label belongs to ("FLAC", "AAC", "MP3", "OPUS", ...),
+        /// or null when the label names no codec at all. A bare bitrate such as "320kbps" comes
+        /// back null because it says nothing about the codec, and so does any label this method
+        /// does not recognise.
+        ///
+        /// Recognition is <see cref="ParseQualityLabel"/>'s, and it is kept in step with
+        /// <see cref="MapCodec"/> on containers: "M4B", "M4A", "MP4", "AAX" and "AAXC" all resolve
+        /// to AAC in both. They used to disagree, so an Audible AAX rip came back null here and a
+        /// caller asking whether the profile had an opinion was told it had none.
+        ///
+        /// Null still means what it has always meant: this method cannot name a codec for the
+        /// label. It is not a verdict, and callers should not read it as permission. What one
+        /// caller does with it: <see cref="QualityGate"/> treats null as a refusal. Another caller
+        /// is free to differ, so do not rely on that here.
+        /// </summary>
+        public static string? CodecGroupOfLabel(string? qualityLabel)
+            => string.IsNullOrWhiteSpace(qualityLabel) ? null : ParseQualityLabel(qualityLabel).Codec;
 
         /// <summary>
-        /// Resolve a rung's effective (codec group, bitrate-kbps, lossless) using the structured
-        /// fields when present and parsing the <see cref="QualityDefinition.Quality"/> label otherwise
-        /// (seed/legacy rungs only set Quality + Priority).
+        /// The codec group a profile rung belongs to, preferring its structured
+        /// <see cref="QualityDefinition.Codec"/> and parsing its label otherwise, since seed and
+        /// legacy rungs carry only Quality and Priority.
         /// </summary>
-        private static EffectiveRungInfo EffectiveRung(QualityDefinition rung)
+        public static string? CodecGroupOfRung(QualityDefinition? rung)
         {
-            if (!string.IsNullOrWhiteSpace(rung.Codec))
-            {
-                return new EffectiveRungInfo(rung, CanonicalCodec(rung.Codec), rung.Bitrate, rung.IsLossless);
-            }
-
-            var (codec, bitrate, lossless) = ParseQualityLabel(rung.Quality);
-            return new EffectiveRungInfo(rung, codec, rung.Bitrate ?? bitrate, rung.IsLossless || lossless);
-        }
-
-        private static (string? Codec, int? BitrateKbps, bool IsLossless) ParseQualityLabel(string quality)
-        {
-            var lower = (quality ?? string.Empty).Trim().ToLowerInvariant();
-
-            int? bitrate = null;
-            var match = Regex.Match(lower, @"\d{2,}");
-            if (match.Success && int.TryParse(match.Value, out var kb))
-            {
-                bitrate = kb;
-            }
-
-            if (Contains(lower, "flac")) return ("FLAC", bitrate, true);
-            if (Contains(lower, "alac")) return ("ALAC", bitrate, true);
-            if (Contains(lower, "aac") || Contains(lower, "m4b") || Contains(lower, "m4a")) return ("AAC", bitrate, false);
-            if (Contains(lower, "mp3")) return ("MP3", bitrate, false);
-            if (Contains(lower, "opus")) return ("OPUS", bitrate, false);
-            if (Contains(lower, "vorbis") || Contains(lower, "ogg")) return ("OGG Vorbis", bitrate, false);
-            if (Contains(lower, "aiff")) return ("AIFF", bitrate, true);
-            if (Contains(lower, "ape")) return ("APE", bitrate, true);
-            if (Contains(lower, "dsd")) return ("DSD", bitrate, true);
-            if (Contains(lower, "wav") || Contains(lower, "wv")) return ("WavPack", bitrate, true);
-            if (Contains(lower, "lossless")) return (null, bitrate, true);
-
-            // Bare bitrate (e.g. "320kbps") acts as a codec-agnostic wildcard rung.
-            return (null, bitrate, false);
-        }
-
-        /// <summary>Map a file's codec/container/format/extension onto the set of profile codec groups it satisfies.</summary>
-        private static HashSet<string> MapCodec(AudioQualityInput file)
-        {
-            var tokens = new List<string>();
-            AddToken(tokens, file.Codec);
-            AddToken(tokens, file.Container);
-            AddToken(tokens, file.Format);
-            if (!string.IsNullOrWhiteSpace(file.Path))
-            {
-                AddToken(tokens, System.IO.Path.GetExtension(file.Path)?.TrimStart('.'));
-            }
-
-            var groups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            bool Any(string needle) => tokens.Any(t => Contains(t, needle));
-
-            if (Any("flac")) groups.Add("FLAC");
-            if (Any("alac")) groups.Add("ALAC");
-            if (Any("aiff")) groups.Add("AIFF");
-            if (Any("ape")) groups.Add("APE");
-            if (Any("dsd")) groups.Add("DSD");
-            if (Any("wav") || Any("wv")) groups.Add("WavPack");
-            if (Any("mp3")) groups.Add("MP3");
-            if (Any("opus")) groups.Add("OPUS");
-            if (Any("vorbis") || Any("ogg")) groups.Add("OGG Vorbis");
-            // AAC commonly lives in M4B/M4A/MP4 containers; cover the legacy "M4B" codec group too.
-            if (Any("aac") || Any("m4b") || Any("m4a") || Any("mp4"))
-            {
-                groups.Add("AAC");
-                groups.Add("M4B");
-            }
-
-            return groups;
-        }
-
-        /// <summary>Codec groups that represent lossless audio (see <see cref="MapCodec"/>).</summary>
-        private static readonly HashSet<string> LosslessGroups =
-            new(StringComparer.OrdinalIgnoreCase) { "FLAC", "ALAC", "AIFF", "APE", "DSD", "WavPack" };
-
-        private static bool IsLosslessFile(AudioQualityInput file)
-        {
-            // Derive lossless-ness from the same mapped codec groups used for matching, so the
-            // path extension fallback (e.g. "book.flac" with no codec/container/format metadata)
-            // is honoured consistently — otherwise such a file maps to the FLAC group yet is
-            // treated as lossy and filtered off the FLAC rung.
-            return MapCodec(file).Overlaps(LosslessGroups);
-        }
-
-        /// <summary>Convert a bitrate to kbps, guarding values already expressed in kbps.</summary>
-        private static int? NormalizeKbps(int? bitsPerSecond)
-        {
-            if (bitsPerSecond is not int bps || bps <= 0)
+            if (rung is null)
             {
                 return null;
             }
 
-            return bps >= 1000 ? (int)Math.Round(bps / 1000d) : bps;
+            return string.IsNullOrWhiteSpace(rung.Codec)
+                ? CodecGroupOfLabel(rung.Quality)
+                : CanonicalCodec(rung.Codec!);
         }
-
-        private static string CanonicalCodec(string codec)
-        {
-            var lower = codec.Trim().ToLowerInvariant();
-            if (Contains(lower, "flac")) return "FLAC";
-            if (Contains(lower, "alac")) return "ALAC";
-            if (Contains(lower, "aac") || Contains(lower, "m4b") || Contains(lower, "m4a")) return "AAC";
-            if (Contains(lower, "mp3")) return "MP3";
-            if (Contains(lower, "opus")) return "OPUS";
-            if (Contains(lower, "vorbis") || Contains(lower, "ogg")) return "OGG Vorbis";
-            return codec.Trim();
-        }
-
-        private static void AddToken(List<string> tokens, string? value)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                tokens.Add(value.Trim().ToLowerInvariant());
-            }
-        }
-
-        private static bool Contains(string haystack, string needle)
-            => haystack.Contains(needle, StringComparison.Ordinal);
     }
 }
