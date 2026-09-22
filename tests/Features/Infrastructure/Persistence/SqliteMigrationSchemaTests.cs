@@ -61,6 +61,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260914153043_AddPreferredReleaseShapeToQualityProfile";
     private const string HistoryReleaseMetadataMigrationId =
         "20260914171829_AddHistoryReleaseMetadata";
+    private const string HousekeepingRetentionMigrationId =
+        "20260922214755_AddHousekeepingRetention";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -357,7 +359,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 HistoryProtocolMigrationId,
                 IndexerFailureBackoffMigrationId,
                 PreferredReleaseShapeMigrationId,
-                HistoryReleaseMetadataMigrationId
+                HistoryReleaseMetadataMigrationId,
+                HousekeepingRetentionMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
@@ -584,6 +587,119 @@ public class SqliteMigrationSchemaTests : BaseTests
         await context.Database.MigrateAsync();
 
         Assert.True(await ColumnExistsAsync(connection, "MoveJobs", "SourcePath"));
+    }
+
+    /// <summary>
+    /// The one test in this branch that catches the scaffolder.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// EF writes a bool column default from the CLR default rather than from the property
+    /// initializer, so <c>HousekeepingDryRun</c> scaffolded as <c>false</c> even though the
+    /// entity declares it <c>true</c>. Every upgraded database would then have arrived at its
+    /// first sweep in the deleting state, and no test that reads the entity could have seen it,
+    /// because the entity was never wrong. So this reads the migrated SQLite schema.
+    /// </para>
+    /// <para>
+    /// The second assertion is the control that makes the first one evidence. A helper that had
+    /// quietly stopped reading SQLite, or one that returned a single constant, would still pass
+    /// an isolated "the default is true". The two columns are read by the same helper on the
+    /// same migrated connection and must come back with different values, so a reader that is
+    /// not reading the schema cannot satisfy both.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("Scenario", "HousekeepingDryRunDefaultsOnInAMigratedDatabase")]
+    public async Task HousekeepingMigration_DefaultsTheDryRunColumnOn()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.Equal("1", await ColumnDefaultAsync(connection, "ApplicationSettings", "HousekeepingDryRun"));
+        Assert.Equal("30", await ColumnDefaultAsync(connection, "ApplicationSettings", "HousekeepingRetentionDays"));
+    }
+
+    /// <summary>
+    /// A row already in the table when the migration runs takes the column defaults, which is
+    /// the case the default exists for. An install upgrading into this migration has exactly one
+    /// ApplicationSettings row and it was written before either column existed.
+    /// </summary>
+    [Fact]
+    [Trait("Scenario", "HousekeepingDefaultsReachAnExistingSettingsRow")]
+    public async Task HousekeepingMigration_LeavesAnExistingSettingsRowPreviewingAtThirtyDays()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        await using (var beforeHousekeeping = new ListenArrDbContext(CreateOptions(connection)))
+        {
+            await beforeHousekeeping.GetService<IMigrator>().MigrateAsync(WeakStorageVerifiedCleanupMigrationId);
+        }
+
+        Assert.False(await ColumnExistsAsync(connection, "ApplicationSettings", "HousekeepingDryRun"));
+        await InsertRowWithColumnDefaultsAsync(connection, "ApplicationSettings", 1);
+
+        await using (var upgraded = new ListenArrDbContext(CreateOptions(connection)))
+        {
+            await upgraded.Database.MigrateAsync();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT "HousekeepingDryRun", "HousekeepingRetentionDays"
+            FROM "ApplicationSettings" WHERE "Id" = 1;
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.True(reader.GetBoolean(0));
+        Assert.Equal(30, reader.GetInt32(1));
+    }
+
+    /// <summary>
+    /// Inserts one row into <paramref name="table" /> using each column's own default, supplying
+    /// a placeholder only where the schema demands a value and offers none. It exists so a test
+    /// can write a row at an older migration without listing whatever the not-null columns
+    /// happened to be at that point in history.
+    /// </summary>
+    private static async Task InsertRowWithColumnDefaultsAsync(
+        SqliteConnection connection,
+        string table,
+        int id)
+    {
+        var columns = new List<(string Name, string Type)>();
+        await using (var inspect = connection.CreateCommand())
+        {
+            inspect.CommandText =
+                $"SELECT name, type, \"notnull\", dflt_value FROM pragma_table_info('{table}')";
+            await using var reader = await inspect.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var name = reader.GetString(0);
+                var required = reader.GetInt32(2) == 1;
+                var hasDefault = !reader.IsDBNull(3);
+                if (name != "Id" && required && !hasDefault)
+                {
+                    columns.Add((name, reader.GetString(1)));
+                }
+            }
+        }
+
+        var names = string.Join(", ", columns.Select(column => $"\"{column.Name}\"").Prepend("\"Id\""));
+        var placeholders = string.Join(", ", columns.Select((_, index) => $"$p{index}").Prepend("$id"));
+        await using var insert = connection.CreateCommand();
+        insert.CommandText = $"INSERT INTO \"{table}\" ({names}) VALUES ({placeholders});";
+        insert.Parameters.AddWithValue("$id", id);
+        for (var index = 0; index < columns.Count; index++)
+        {
+            var type = columns[index].Type.ToUpperInvariant();
+            object value = type is "INTEGER" or "REAL" or "NUMERIC" ? 0 : string.Empty;
+            insert.Parameters.AddWithValue($"$p{index}", value);
+        }
+
+        await insert.ExecuteNonQueryAsync();
     }
 
     private static async Task ExecuteNonQueryAsync(

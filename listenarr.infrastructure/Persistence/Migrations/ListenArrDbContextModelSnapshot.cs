@@ -1915,6 +1915,12 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("HistoryRetentionDays")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("HousekeepingDryRun")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("HousekeepingRetentionDays")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ImportBlacklistExtensions")
                         .IsRequired()
                         .HasColumnType("TEXT");
