@@ -286,6 +286,60 @@ namespace Listenarr.Tests.Features.Infrastructure.Repositories
             Assert.All(rows, row => Assert.Equal("B000AP9A2E", row.AuthorAsin));
         }
 
+        // The refusal to rebind an ASIN sits inside the retry loop, so a call that refuses and
+        // then loses the insert race runs it more than once. The warning is the entire
+        // operator-facing surface for a refused binding, and one logical write printing it three
+        // times reads as three separate refusals, so it is emitted on the first attempt only.
+        //
+        // Control with teeth: without the attempt guard this call logs twice, because the
+        // interleaving below forces exactly one retry and the refusal fires on both passes. The
+        // uncontended test in AudiobookRepositoryAuthorAsinIdentityTests cannot see that, since
+        // it never retries.
+        [Fact]
+        public async Task UpsertCachedAuthor_RefusingARebindAndThenLosingTheRace_WarnsOncePerCall()
+        {
+            using var db = new SharedDb();
+            var losing = db.NewContext();
+            var winning = db.NewContext();
+            var logger = new Mock<ILogger<AudiobookRepository>>();
+            var repository = new AudiobookRepository(losing, logger.Object);
+
+            // Mary Shelley owns the ASIN. The incoming write names somebody else, so the
+            // ASIN-first match is refused and the write has to make its own row.
+            await new AudiobookRepository(db.NewContext())
+                .UpsertCachedAuthorAsync(Author("Mary Shelley", asin: "B000AP9A2E"));
+
+            var interleaved = false;
+            losing.SavingChanges += (_, _) =>
+            {
+                if (interleaved)
+                {
+                    return;
+                }
+
+                interleaved = true;
+                // Same mechanism as the lost-race tests above: commit the competing row from
+                // another context after this caller has read and decided to insert.
+                Task.Run(() => new AudiobookRepository(winning)
+                        .UpsertCachedAuthorAsync(Author("Bram Stoker")))
+                    .GetAwaiter()
+                    .GetResult();
+            };
+
+            await repository.UpsertCachedAuthorAsync(Author("Bram Stoker", asin: "B000AP9A2E"));
+
+            Assert.True(interleaved, "the interleaving never happened, so this test proved nothing");
+            logger.Verify(
+                log => log.Log(
+                    LogLevel.Warning,
+                    It.IsAny<EventId>(),
+                    It.Is<It.IsAnyType>((state, _) =>
+                        state.ToString()!.Contains("Refusing to rebind", StringComparison.Ordinal)),
+                    It.IsAny<Exception?>(),
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+                Times.Once);
+        }
+
         [Fact]
         public async Task UpsertCachedSeries_WhenTheResolvedRowCannotTakeTheIncomingName_ThrowsWithoutRetrying()
         {

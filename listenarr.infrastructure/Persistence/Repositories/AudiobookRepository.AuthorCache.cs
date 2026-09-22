@@ -158,14 +158,24 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                         // rows survive and neither is renamed. Sharing an ASIN across rows stays
                         // allowed -- two spellings of one author legitimately produce two rows with
                         // one ASIN, which is why (AuthorAsin, Region) is not a unique index.
-                        _logger?.LogWarning(
-                            "Refusing to rebind cached author ASIN {AuthorAsin} in region {Region}: it is already "
-                            + "associated with {ExistingAuthor}, and this write names {IncomingAuthor}. "
-                            + "Both rows are kept.",
-                            normalizedAsin,
-                            normalizedRegion,
-                            existing.AuthorName,
-                            authorCacheEntry.AuthorName);
+                        //
+                        // Logged on the first attempt only. A retry re-reads and refuses again on
+                        // the same facts, and one logical write that printed this three times would
+                        // read as three separate refusals. This line is the whole operator-facing
+                        // surface for a refused binding, so how many times it appears is part of
+                        // what it says.
+                        if (attempt == 1)
+                        {
+                            _logger?.LogWarning(
+                                "Refusing to rebind cached author ASIN {AuthorAsin} in region {Region}: it is already "
+                                + "associated with {ExistingAuthor}, and this write names {IncomingAuthor}. "
+                                + "Both rows are kept.",
+                                normalizedAsin,
+                                normalizedRegion,
+                                existing.AuthorName,
+                                authorCacheEntry.AuthorName);
+                        }
+
                         existing = null;
                     }
                 }
@@ -221,9 +231,18 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                     return existing;
                 }
                 // Only an insert that lost a race is retried, and only when the key it wrote can
-                // be looked up again. A violation on the update path is the by-ASIN lookup having
-                // resolved a row that cannot take the incoming name; the deterministic form of
-                // that would resolve the same row every pass and spin, so it surfaces instead.
+                // be looked up again. A violation on the update path means the row resolved by
+                // ASIN is being re-keyed onto a name some other row already owns. Re-reading
+                // resolves the same row every pass, so retrying would spin and it surfaces
+                // instead.
+                //
+                // Note which route gets there. On this build it is NOT the ASIN naming somebody
+                // else: the refusal above turns that into a miss before any write happens, so the
+                // case the canary-era version of this comment described cannot occur here. What
+                // remains is a row whose stored key an earlier normalizer wrote, matched on its
+                // re-derived display name by StringUtils.MatchesAuthorKey and then re-keyed to
+                // what the current normalizer produces. If a second row already holds that key,
+                // the update collides.
                 catch (UniqueConstraintViolationException) when (
                     inserting
                     && !string.IsNullOrWhiteSpace(normalizedName)
