@@ -70,12 +70,15 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
         /// Takes a backup when there is a schema change about to be applied.
         /// </summary>
         /// <param name="pendingMigrations">Migrations EF Core is about to apply.</param>
+        /// <param name="appliedMigrations">Migrations already recorded in the database.</param>
         /// <param name="enabled">Result of <see cref="IsEnabled"/>.</param>
-        /// <param name="backupService">Writes the archive.</param>
+        /// <param name="backupService">
+        /// Writes the archive. Evaluated only when a backup is actually going to be taken.
+        /// </param>
         /// <param name="cancellationToken">Cancels the operation.</param>
         /// <returns>
-        /// The archive that was written, or <see langword="null"/> when nothing was pending or the
-        /// backup is disabled.
+        /// The archive that was written, or <see langword="null"/> when nothing was pending, the
+        /// database is being created by this start, or the backup is disabled.
         /// </returns>
         /// <exception cref="Exception">
         /// Whatever the backup failed with. It is not swallowed: the caller must not migrate.
@@ -86,11 +89,13 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
         /// </exception>
         public static async Task<BackupArchive?> ProtectAsync(
             IReadOnlyCollection<string> pendingMigrations,
+            IReadOnlyCollection<string> appliedMigrations,
             bool enabled,
-            IBackupService backupService,
+            Lazy<IBackupService> backupService,
             CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(pendingMigrations);
+            ArgumentNullException.ThrowIfNull(appliedMigrations);
             ArgumentNullException.ThrowIfNull(backupService);
 
             if (pendingMigrations.Count == 0)
@@ -98,6 +103,17 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
                 // Every start would otherwise write an archive, and the overwhelming majority of
                 // starts change nothing. Readarr is equally selective, backing up on update rather
                 // than on boot.
+                return null;
+            }
+
+            if (appliedMigrations.Count == 0)
+            {
+                // A database with no history is one this start is about to create. There is no
+                // prior state to lose, so a copy of an empty file helps nobody. Readarr reaches the
+                // same place from the other direction: a first install has no update to back up
+                // before.
+                Log.Logger.Debug(
+                    "[Startup] Creating a new database, so no pre-migration backup is needed");
                 return null;
             }
 
@@ -114,7 +130,9 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
                 "[Startup] Backing up the database before applying {Count} pending migration(s)",
                 pendingMigrations.Count);
 
-            var archive = await backupService.CreateAsync(BackupTrigger.Migration, cancellationToken);
+            // Resolved only now. A caller that never needs a backup is never asked for the service,
+            // which keeps this helper usable from a provider that has only persistence in it.
+            var archive = await backupService.Value.CreateAsync(BackupTrigger.Migration, cancellationToken);
 
             Log.Logger.Information("[Startup] Pre-migration backup written as {Name}", archive.Name);
             return archive;
