@@ -734,6 +734,25 @@
         </div>
       </div>
 
+      <!-- Outside the Add/Edit modal on purpose. Modal renders its slot only while it is
+           visible, so a confirmation nested inside it can never appear for the Delete button on
+           a card, which is the only place an operator reaches it from. -->
+      <DeleteConfirmationModal
+        :visible="!!emailToDelete"
+        title="Delete Email"
+        @close="emailToDelete = null"
+        @confirm="executeDeleteEmail"
+      >
+        <template v-slot>
+          <p>
+            Are you sure you want to delete the email notification
+            <strong>{{ emailToDelete?.name }}</strong
+            >?
+          </p>
+          <p>This action cannot be undone.</p>
+        </template>
+      </DeleteConfirmationModal>
+
       <!-- Email Configuration Modal (shared Modal component) -->
       <Modal
         class="email-modal"
@@ -751,22 +770,6 @@
         </template>
 
         <form @submit.prevent="saveEmail">
-          <DeleteConfirmationModal
-            :visible="!!emailToDelete"
-            title="Delete Email"
-            @close="emailToDelete = null"
-            @confirm="executeDeleteEmail"
-          >
-            <template v-slot>
-              <p>
-                Are you sure you want to delete the email notification
-                <strong>{{ emailToDelete?.name }}</strong
-                >?
-              </p>
-              <p>This action cannot be undone.</p>
-            </template>
-          </DeleteConfirmationModal>
-
           <FormSection title="Activation" :icon="PhToggleRight">
             <CheckboxCard
               v-model="emailForm.isEnabled"
@@ -1627,7 +1630,16 @@ onMounted(() => {
     customScripts.value = props.settings.customScripts
   }
   if (props.settings?.emails) {
-    emails.value = props.settings.emails
+    // Copied, not aliased. toggleEmail flips isEnabled in place, and the array this prop carries
+    // is the same object the configuration store holds, so assigning it directly would let a
+    // toggle edit the store behind persistEmails' back and leave a typed password sitting in it.
+    emails.value = props.settings.emails.map((email) => ({
+      ...email,
+      to: [...email.to],
+      cc: [...email.cc],
+      bcc: [...email.bcc],
+      channels: [...email.channels],
+    }))
   }
 })
 
@@ -2162,6 +2174,7 @@ const editEmail = (email: EmailConfiguration) => {
   emailForm.cc = email.cc.join(', ')
   emailForm.bcc = email.bcc.join(', ')
   emailForm.channels = [...email.channels]
+  emailForm.isEnabled = email.isEnabled
   showEmailForm.value = true
 }
 
