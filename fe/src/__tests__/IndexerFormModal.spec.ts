@@ -91,4 +91,16 @@ describe('IndexerFormModal', () => {
 
     expect(wrapper.text()).not.toContain('Seed ratio should be greater than zero')
   })
+
+  it('warns when seed time is set to a negative value', async () => {
+    const wrapper = mount(IndexerFormModal, {
+      global: { plugins: [createPinia()] },
+      props: { visible: true, editingIndexer: null },
+    })
+
+    const seedTimeInput = wrapper.find('#seedTime')
+    await seedTimeInput.setValue('-1')
+
+    expect(wrapper.text()).toContain('Seed time should be greater than zero')
+  })
 })
