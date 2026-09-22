@@ -220,10 +220,14 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                     await _db.SaveChangesAsync();
                     return existing;
                 }
-                // Only an insert that lost a race is retried. A violation on the update path means
-                // the row this resolved to cannot hold the incoming key, which re-reading will not
-                // change, so that one still surfaces to the caller.
-                catch (UniqueConstraintViolationException) when (inserting && attempt < CacheUpsertAttempts)
+                // Only an insert that lost a race is retried, and only when the key it wrote can
+                // be looked up again. A violation on the update path is the by-ASIN lookup having
+                // resolved a row that cannot take the incoming name; the deterministic form of
+                // that would resolve the same row every pass and spin, so it surfaces instead.
+                catch (UniqueConstraintViolationException) when (
+                    inserting
+                    && !string.IsNullOrWhiteSpace(normalizedName)
+                    && attempt < CacheUpsertAttempts)
                 {
                     _db.Entry(existing).State = EntityState.Detached;
                 }
