@@ -989,6 +989,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("AudiobookId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("DeleteEmptySource")
                         .HasColumnType("INTEGER");
 
