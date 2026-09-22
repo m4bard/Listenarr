@@ -98,18 +98,22 @@ public sealed class CalendarFeedAuthenticationTests : BaseTests, IClassFixture<L
     }
 
     [Fact]
-    public async Task Feed_WithACaseVariantPathAndNoKey_IsRefusedByTheAttributeInstead()
+    public async Task Feed_WithACaseVariantPathAndNoKey_IsRefusedByTheEnforcer()
     {
-        // The enforcer's prefix checks pass no StringComparison, so they are case sensitive and
-        // /FEED/... slips past the /feed clause. MVC routing is case insensitive, so the request
-        // still reaches the controller, where [RequireApiKey] refuses it. This case is the one
-        // place the two layers come apart, so it is the one worth asserting.
+        // This test asserted the opposite until item 95's auth-enforcer work composed with this
+        // branch. It was written against canary, where the enforcer's three prefix checks passed
+        // no StringComparison and so were case sensitive: /FEED/... slipped past the /feed clause,
+        // reached the controller, and [RequireApiKey] refused it there. Item 95 made all three
+        // prefixes OrdinalIgnoreCase, so the enforcer now catches this path itself.
         //
-        // The discriminator is the body, but not in the way it looks from the source.
-        // UnauthorizedResult does not produce a bodyless 401 here: the MVC problem-details
-        // handler renders it as an RFC 9457 document. Measured, not read. So the two layers are
-        // still told apart by the body, and this assertion fails the moment the enforcer starts
-        // catching this path too.
+        // The request is refused either way and the status is 401 either way. What moved is which
+        // layer refuses it, and the body is how they are told apart: the enforcer writes its own
+        // sentence, while the attribute's UnauthorizedResult is rendered by the MVC
+        // problem-details handler as an RFC 9457 document. Measured, not read.
+        //
+        // Catching it in the enforcer is the better outcome, because the enforcer is the layer
+        // that is supposed to decide anonymous passthrough, and a case variant reaching the
+        // controller at all was the two layers coming apart.
         using var factory = WithAuthenticationEnabled();
         using var client = NewClient(factory);
 
@@ -117,8 +121,7 @@ public sealed class CalendarFeedAuthenticationTests : BaseTests, IClassFixture<L
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.DoesNotContain("Authentication required", body, StringComparison.Ordinal);
-        Assert.Contains("\"status\":401", body, StringComparison.Ordinal);
+        Assert.Equal("{\"message\":\"Authentication required\"}", body);
     }
 
     [Fact]
