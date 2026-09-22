@@ -77,6 +77,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260920025621_AddQualityProfileUpgradeAllowed";
     private const string RecycleBinMigrationId =
         "20260922212616_AddRecycleBinToApplicationSettings";
+    private const string BackupRetentionDaysMigrationId =
+        "20260922212752_AddBackupRetentionDaysToApplicationSettings";
     private const string DownloadClientPriorityMigrationId =
         "20260922212937_AddDownloadClientPriority";
     private const string EmailNotificationsMigrationId =
@@ -532,6 +534,7 @@ public class SqliteMigrationSchemaTests : BaseTests
                 CustomScriptNotificationsMigrationId,
                 QualityProfileUpgradeAllowedMigrationId,
                 RecycleBinMigrationId,
+                BackupRetentionDaysMigrationId,
                 DownloadClientPriorityMigrationId,
                 EmailNotificationsMigrationId,
                 HousekeepingRetentionMigrationId,
@@ -579,6 +582,19 @@ public class SqliteMigrationSchemaTests : BaseTests
         services.AddDbContextFactory<ListenArrDbContext>(options =>
             options.UseSqlite(connection, sqlite =>
                 sqlite.MigrationsAssembly(typeof(ListenArrDbContext).Assembly.GetName().Name)));
+        // This upgrades a populated database, so the startup path takes a pre-migration backup.
+        // Stubbed because this test is about the schema upgrade, not about what is archived.
+        var backupService = new Mock<IBackupService>();
+        backupService
+            .Setup(service => service.CreateAsync(It.IsAny<BackupTrigger>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BackupArchive
+            {
+                Name = "stub.zip",
+                Trigger = BackupTrigger.Migration,
+                SizeBytes = 0,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+        services.AddSingleton(backupService.Object);
         await using var provider = services.BuildServiceProvider();
         provider.ApplyListenarrDatabaseMigrations();
         var factory = provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
