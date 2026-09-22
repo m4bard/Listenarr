@@ -39,6 +39,8 @@ import type {
   SystemInfo,
   StorageInfo,
   ServiceHealth,
+  ScheduledTask,
+  ScheduledTaskRun,
   LogEntry,
   QualityProfile,
   SearchSortBy,
@@ -1998,6 +2000,19 @@ class ApiService {
     return this.request<ServiceHealth>('/system/health')
   }
 
+  async getScheduledTasks(): Promise<ScheduledTask[]> {
+    return this.request<ScheduledTask[]>('/system/tasks')
+  }
+
+  // The name is a path segment and worker names carry dots, so it is encoded rather than
+  // interpolated raw.
+  async runScheduledTask(taskName: string): Promise<ScheduledTaskRun> {
+    return this.request<ScheduledTaskRun>(
+      `/system/tasks/${encodeURIComponent(taskName)}/run`,
+      { method: 'POST' },
+    )
+  }
+
   async getLogs(limit: number = 100): Promise<LogEntry[]> {
     return this.request<LogEntry[]>(`/system/logs?limit=${limit}`)
   }
@@ -2339,6 +2354,8 @@ export const translatePath = (request: TranslatePathRequest) => apiService.trans
 export const getSystemInfo = () => apiService.getSystemInfo()
 export const getStorageInfo = () => apiService.getStorageInfo()
 export const getServiceHealth = () => apiService.getServiceHealth()
+export const getScheduledTasks = () => apiService.getScheduledTasks()
+export const runScheduledTask = (taskName: string) => apiService.runScheduledTask(taskName)
 export const getLogs = (limit?: number) => apiService.getLogs(limit)
 export const getHistory = (params?: HistoryQueryParams) => apiService.getHistory(params)
 export const getHistoryDetails = (id: number) => apiService.getHistoryDetails(id)
