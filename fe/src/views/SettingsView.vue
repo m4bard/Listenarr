@@ -185,6 +185,15 @@
             Add Custom Script
           </button>
 
+          <button
+            v-if="activeTab === 'notifications'"
+            @click="notificationsRef?.openEmailForm()"
+            class="add-button btn btn-primary"
+          >
+            <PhPlus />
+            Add Email
+          </button>
+
           <!-- Save button for sections that need it -->
           <button
             v-if="activeTab === 'general' || activeTab === 'bot'"
