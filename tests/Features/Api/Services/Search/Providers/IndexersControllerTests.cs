@@ -91,5 +91,87 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
             // also ensure HTTP method is GET
             Assert.Equal(HttpMethod.Get, handler.LastRequest.Method);
         }
+
+        [Fact]
+        public async Task Update_PersistsSeedRatioAndSeedTime()
+        {
+            var resp = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+            var handler = new CaptureHandler(resp);
+            var controller = MockUtils.CreateIndexersController(_provider, handler);
+
+            var created = await _indexerRepository.AddAsync(new Indexer
+            {
+                Name = "PrivateTracker",
+                Type = "Torrent",
+                Implementation = "Torznab",
+                Url = "https://tracker.example.com",
+                ApiKey = "key",
+                IsEnabled = true,
+                Priority = 25,
+                AdditionalSettings = string.Empty
+            });
+
+            var update = new Indexer
+            {
+                Name = created.Name,
+                Type = created.Type,
+                Implementation = created.Implementation,
+                Url = created.Url,
+                ApiKey = created.ApiKey,
+                IsEnabled = created.IsEnabled,
+                Priority = created.Priority,
+                AdditionalSettings = string.Empty,
+                SeedRatio = 1.5,
+                SeedTime = 4320
+            };
+
+            await controller.Update(created.Id, update);
+
+            var persisted = await _indexerRepository.GetByIdAsync(created.Id);
+            Assert.NotNull(persisted);
+            Assert.Equal(1.5, persisted!.SeedRatio);
+            Assert.Equal(4320, persisted.SeedTime);
+        }
+
+        [Fact]
+        public async Task Update_WhenSeedFieldsAreUnsetInRequest_ClearsAnyPreviouslyStoredValues()
+        {
+            var resp = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+            var handler = new CaptureHandler(resp);
+            var controller = MockUtils.CreateIndexersController(_provider, handler);
+
+            var created = await _indexerRepository.AddAsync(new Indexer
+            {
+                Name = "PrivateTracker",
+                Type = "Torrent",
+                Implementation = "Torznab",
+                Url = "https://tracker.example.com",
+                ApiKey = "key",
+                IsEnabled = true,
+                Priority = 25,
+                AdditionalSettings = string.Empty,
+                SeedRatio = 1.5,
+                SeedTime = 4320
+            });
+
+            var update = new Indexer
+            {
+                Name = created.Name,
+                Type = created.Type,
+                Implementation = created.Implementation,
+                Url = created.Url,
+                ApiKey = created.ApiKey,
+                IsEnabled = created.IsEnabled,
+                Priority = created.Priority,
+                AdditionalSettings = string.Empty
+            };
+
+            await controller.Update(created.Id, update);
+
+            var persisted = await _indexerRepository.GetByIdAsync(created.Id);
+            Assert.NotNull(persisted);
+            Assert.Null(persisted!.SeedRatio);
+            Assert.Null(persisted.SeedTime);
+        }
     }
 }
