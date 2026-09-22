@@ -61,4 +61,27 @@ describe('RootFolderSelect', () => {
     expect(wrapper.emitted('update:rootId')?.at(-1)).toEqual([null])
     expect(wrapper.emitted('update:customPath')).toBeUndefined()
   })
+
+  it('shows free space next to a root when the API reports it', async () => {
+    vi.mocked(apiService.getRootFolders).mockResolvedValue([
+      { id: 1, name: 'Primary', path: '/library', isDefault: true, freeSpaceBytes: 5_000_000_000 },
+      { id: 2, name: 'Archive', path: '/archive', isDefault: false, freeSpaceBytes: null },
+    ])
+
+    const wrapper = mount(RootFolderSelect, {
+      props: { rootId: null },
+      global: { plugins: [createPinia()] },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    const options = wrapper.findAll('option').map((option) => option.text())
+    expect(options).toEqual([
+      'Use default',
+      'Primary — /library (4.7 GB free)',
+      // No free-space figure is shown when the probe could not measure the path, per
+      // RootFoldersController.Mapping.cs leaving FreeSpaceBytes null in that case.
+      'Archive — /archive',
+    ])
+  })
 })
