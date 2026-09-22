@@ -46,14 +46,22 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
         /// Builds the file name for an archive taken at <paramref name="timestampUtc"/> by a build
         /// reporting <paramref name="version"/>.
         /// </summary>
-        public static string BuildFileName(string? version, DateTime timestampUtc)
+        public static string BuildFileName(string? version, DateTime timestampUtc, int ordinal = 1)
         {
+            ArgumentOutOfRangeException.ThrowIfLessThan(ordinal, 1);
+
             var sanitized = SanitizeVersion(version);
             var stamp = timestampUtc.ToString("yyyy.MM.dd_HH.mm.ss", CultureInfo.InvariantCulture);
 
+            // The stamp has one-second resolution, following the family's format, so two backups
+            // taken in the same second would otherwise want the same name. That is not theoretical:
+            // several hosts sharing a config volume can start together, and a failure here refuses
+            // the start it was protecting. The ordinal disambiguates and stays recognisable.
+            var suffix = ordinal == 1 ? string.Empty : $"-{ordinal.ToString(CultureInfo.InvariantCulture)}";
+
             return sanitized is null
-                ? $"{Prefix}_{stamp}{Extension}"
-                : $"{Prefix}_v{sanitized}_{stamp}{Extension}";
+                ? $"{Prefix}_{stamp}{suffix}{Extension}"
+                : $"{Prefix}_v{sanitized}_{stamp}{suffix}{Extension}";
         }
 
         /// <summary>
@@ -88,7 +96,7 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Backups
         }
 
         [GeneratedRegex(
-            @"^listenarr_backup_(?:v[0-9A-Za-z.\-]+_)?[0-9]{4}\.[0-9]{2}\.[0-9]{2}_[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.zip$",
+            @"^listenarr_backup_(?:v[0-9A-Za-z.\-]+_)?[0-9]{4}\.[0-9]{2}\.[0-9]{2}_[0-9]{2}\.[0-9]{2}\.[0-9]{2}(?:-[0-9]+)?\.zip$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
         private static partial Regex ArchivePattern();
     }

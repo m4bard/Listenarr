@@ -1867,6 +1867,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("AutomaticSearchIntervalHours")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("BackupRetentionDays")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("CompletedFileAction")
                         .HasColumnType("INTEGER");
 
