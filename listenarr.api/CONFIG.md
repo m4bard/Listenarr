@@ -48,7 +48,11 @@ Contains zip archives of the database and `config.json`, one subdirectory per re
 
 - `migration/` - Taken automatically at startup when a release has schema changes to apply, and
   only then. Removed by the retention sweep once they pass the configured age.
-- `manual/` - Taken on request from the System screen. Never removed automatically.
+- `manual/` - Taken on request from the System screen. Never removed, by retention or by anything
+  else. At most 20 are kept: once there are that many, the System screen refuses to take another
+  until you remove some yourself. Refusing rather than deleting the oldest is deliberate, because
+  deleting to make room would let anyone who can reach the API destroy your archives, and Listenarr
+  ships with authentication off.
 
 Each archive holds `listenarr.db`, `config.json` if one exists, and an `INFO` file naming the
 version and the moment it was taken. The database copy is made with SQLite's online backup API, so
@@ -63,7 +67,7 @@ Nothing serves them over HTTP: the API lists their names, sizes and ages and no 
 files themselves the way you would treat the database.
 
 Retention is set on the General settings screen and defaults to 28 days, matching the rest of the
-*arr family. Zero keeps everything.
+*arr family. It applies to `migration/` only. Zero keeps every automatic backup as well.
 
 ### cache/images/
 
