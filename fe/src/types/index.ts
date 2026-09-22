@@ -419,6 +419,27 @@ export interface TranslatePathResponse {
   translated: boolean
 }
 
+// The channels a notification subscriber can be enabled for. Matches
+// listenarr.domain/Notifications/NotificationChannel.cs; "Test" is not selectable here because it
+// is reached through the Test button, not delivered on a real event.
+export type NotificationChannel =
+  | 'Grab'
+  | 'Download'
+  | 'DownloadFailed'
+  | 'BookAdded'
+  | 'BookAvailable'
+  | 'Rename'
+
+// One configured custom script: an executable Listenarr runs when an event on one of its enabled
+// channels is published. Matches listenarr.domain/Configuration/CustomScriptConfiguration.cs.
+export interface CustomScriptConfiguration {
+  id: string
+  name: string
+  path: string
+  channels: NotificationChannel[]
+  isEnabled: boolean
+}
+
 export interface ApplicationSettings {
   version: number
   outputPath: string
@@ -462,6 +483,10 @@ export interface ApplicationSettings {
     triggers: string[]
     isEnabled: boolean
   }>
+
+  // Configured custom scripts. Each entry is one executable Listenarr runs on the
+  // channels it is enabled for. See CustomScriptConfiguration.cs.
+  customScripts?: CustomScriptConfiguration[]
 
   // Discord bot integration settings (optional)
   discordBotEnabled?: boolean
