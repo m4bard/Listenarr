@@ -90,17 +90,52 @@ public sealed class BackupEndpointTests : IClassFixture<ListenarrWebApplicationF
 
     [Fact]
     [Trait("Scenario", "GuardedWhenAuthIsOn")]
-    public async Task BackupEndpoints_RequireCredentials_WhenAuthenticationIsEnabled()
+    public async Task BackupEndpoints_RefuseANonAdminSession_WhenAuthenticationIsEnabled()
     {
-        // Given an instance configured to require authentication
-        using var factory = _factory.WithWebHostBuilder(builder =>
-            builder.ConfigureServices(services =>
-                services.AddSingleton<IStartupConfigService>(_ =>
-                    new StartupConfigServiceMock(new StartupConfig
-                    {
-                        AuthenticationRequired = "true"
-                    }))));
+        // Given an instance requiring authentication, and a caller who is logged in but is not an
+        // administrator. That combination is the one [RequireAdminOrApiKey] decides on its own:
+        // the authentication middleware only distinguishes a signed-in caller from an anonymous
+        // one, so an anonymous request would be refused with or without the attribute and proves
+        // nothing about it.
+        using var factory = CreateAuthEnabledFactory();
+        var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
 
+        string adminToken;
+        string userToken;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var sessions = scope.ServiceProvider.GetRequiredService<ISessionService>();
+            adminToken = await sessions.CreateSessionAsync("admin", true, false);
+            userToken = await sessions.CreateSessionAsync("someone", false, false);
+        }
+
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = false
+        });
+
+        // When the non-admin asks to list and to create
+        using var listed = await Send(client, HttpMethod.Get, $"{apiBase}/system/backup", userToken);
+        using var created = await Send(client, HttpMethod.Post, $"{apiBase}/system/backup", userToken);
+
+        // Then both are refused
+        Assert.Equal(HttpStatusCode.Forbidden, listed.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, created.StatusCode);
+
+        // Control, on the same instance with the same middleware: an administrator gets through.
+        // Without that, a test asserting 403 would pass just as happily against an endpoint that
+        // was broken for everybody.
+        using var adminListed = await Send(client, HttpMethod.Get, $"{apiBase}/system/backup", adminToken);
+        Assert.Equal(HttpStatusCode.OK, adminListed.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Scenario", "AnonymousIsRefusedWhenAuthIsOn")]
+    public async Task BackupEndpoints_RefuseAnAnonymousCaller_WhenAuthenticationIsEnabled()
+    {
+        // Given an instance requiring authentication
+        using var factory = CreateAuthEnabledFactory();
         var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -108,20 +143,35 @@ public sealed class BackupEndpointTests : IClassFixture<ListenarrWebApplicationF
             HandleCookies = false
         });
 
-        // When an anonymous caller asks to list or to create
+        // When an anonymous caller asks to list and to create
         using var listed = await client.GetAsync($"{apiBase}/system/backup");
         using var created = await client.PostAsync($"{apiBase}/system/backup", null);
 
-        // Then both are refused. This is the assertion that fails if [RequireAdminOrApiKey] is
-        // removed from the controller, on endpoints that describe and produce a file holding the
-        // API key, the admin password hash and every download client credential.
-        Assert.NotEqual(HttpStatusCode.OK, listed.StatusCode);
-        Assert.NotEqual(HttpStatusCode.Created, created.StatusCode);
-        Assert.True(
-            listed.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
-            $"Listing returned {(int)listed.StatusCode} rather than 401 or 403.");
-        Assert.True(
-            created.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
-            $"Create returned {(int)created.StatusCode} rather than 401 or 403.");
+        // Then both are refused. The middleware is what does this rather than the attribute, so
+        // this pins the route into the authenticated area, not the attribute itself.
+        Assert.Equal(HttpStatusCode.Unauthorized, listed.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, created.StatusCode);
+    }
+
+    private static Task<HttpResponseMessage> Send(
+        HttpClient client,
+        HttpMethod method,
+        string url,
+        string sessionToken)
+    {
+        var request = new HttpRequestMessage(method, url);
+        request.Headers.Add("Cookie", $"listenarr_session={sessionToken}");
+        return client.SendAsync(request);
+    }
+
+    private WebApplicationFactory<Program> CreateAuthEnabledFactory()
+    {
+        return _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+                services.AddSingleton<IStartupConfigService>(_ =>
+                    new StartupConfigServiceMock(new StartupConfig
+                    {
+                        AuthenticationRequired = "true"
+                    }))));
     }
 }
