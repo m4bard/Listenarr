@@ -2011,8 +2011,10 @@ class ApiService {
     return this.request<ScheduledTask[]>('/system/tasks')
   }
 
-  // The name is a path segment and worker names carry dots, so it is encoded rather than
-  // interpolated raw.
+  // The name is a path segment, so it is encoded rather than interpolated raw. Not for
+  // the dots in a name like move.scan.handoff.recovery: those are unreserved and come
+  // back unchanged. It guards the characters that would change which route is addressed,
+  // a slash above all, and then ?, # and a space.
   async runScheduledTask(taskName: string): Promise<ScheduledTaskRun> {
     return this.request<ScheduledTaskRun>(`/system/tasks/${encodeURIComponent(taskName)}/run`, {
       method: 'POST',
