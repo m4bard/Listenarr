@@ -162,8 +162,11 @@ namespace Listenarr.Application.Search.Scoring
                 return score;
             }
 
-            // Size checks (skip for NZB)
-            if (!isNzb && searchResult.Size > 0)
+            // Size checks. MinimumSize and MaximumSize are operator settings on the profile,
+            // not properties of a protocol, so they apply to every result that reports a size.
+            // They used to sit behind !isNzb, which meant a size ceiling and a size floor did
+            // nothing at all over Usenet.
+            if (searchResult.Size > 0)
             {
                 // (long) before the multiply, not after. MinimumSize and MaximumSize are int MB
                 // and the settings form puts no ceiling on either, so 2048 or more overflows int
@@ -339,7 +342,14 @@ namespace Listenarr.Application.Search.Scoring
                 }
             }
 
-            // Quality: missing -> penalty only when no format inferred and not NZB
+            // Quality: missing -> penalty only when no format inferred and not NZB.
+            //
+            // This exemption stays, alongside the missing-language and missing-format ones above.
+            // All three charge a release a fixed penalty for metadata a Usenet indexer often does
+            // not report, rather than for what the release contains, and none of them is an
+            // operator setting. The gates hoisted out of this condition are MinimumSize,
+            // MaximumSize and the profile's quality ordering and Allowed flags, all of which the
+            // operator sets and all of which describe the release rather than the protocol.
             if (string.IsNullOrEmpty(normalizedQuality))
             {
                 if (!isNzb)
@@ -377,23 +387,25 @@ namespace Listenarr.Application.Search.Scoring
             }
             else
             {
-                if (!isNzb)
-                {
-                    int qualityScore = GetQualityScore(normalizedQuality);
-                    var qualityDeduction = 100 - qualityScore;
-                    score.TotalScore -= qualityDeduction;
-                    score.ScoreBreakdown["Quality"] = qualityScore;
+                // The result told us its quality, so the profile decides what that is worth and
+                // whether it is wanted at all, whatever protocol carried it. Exempting NZB here
+                // left every NZB on the base score, so an NZB outranked any torrent regardless of
+                // what it contained, and a quality the operator had switched off was grabbed over
+                // Usenet with no rejection reason.
+                int qualityScore = GetQualityScore(normalizedQuality);
+                var qualityDeduction = 100 - qualityScore;
+                score.TotalScore -= qualityDeduction;
+                score.ScoreBreakdown["Quality"] = qualityScore;
 
-                    // The profile's Allowed flags are the gate. PreferredFormats is a preference
-                    // and was already applied above as a score adjustment; letting it also widen
-                    // the allowed set made the flag inert, because every rung name in the ladder
-                    // contains one of the default preferred tokens.
-                    if (QualityGate.Refuses(normalizedQuality, profile))
-                    {
-                        score.TotalScore += QualityNotAllowedPenalty;
-                        score.ScoreBreakdown["QualityNotAllowed"] = QualityNotAllowedPenalty;
-                        score.RejectionReasons.Add($"Quality '{normalizedQuality}' not allowed by profile");
-                    }
+                // The profile's Allowed flags are the gate. PreferredFormats is a preference
+                // and was already applied above as a score adjustment; letting it also widen
+                // the allowed set made the flag inert, because every rung name in the ladder
+                // contains one of the default preferred tokens.
+                if (QualityGate.Refuses(normalizedQuality, profile))
+                {
+                    score.TotalScore += QualityNotAllowedPenalty;
+                    score.ScoreBreakdown["QualityNotAllowed"] = QualityNotAllowedPenalty;
+                    score.RejectionReasons.Add($"Quality '{normalizedQuality}' not allowed by profile");
                 }
             }
 
