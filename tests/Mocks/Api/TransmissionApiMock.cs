@@ -10,12 +10,18 @@ namespace Listenarr.Tests.Mocks.Api
         public static readonly int MULTI_FILE_TORRENT = 2;
         public static readonly int WHITESPACE_FOLDER_TORRENT = 528;
 
+        /// <summary>
+        /// When true, a "torrent-add" call responds with "torrent-duplicate" instead of
+        /// "torrent-added", so tests can exercise the duplicate branch of the add workflow.
+        /// </summary>
+        public bool SimulateDuplicateAdd { get; set; }
+
         public TransmissionApiMock()
         {
             AddRoute("rpc", GetTorrent, HttpMethod.Post);
         }
 
-        public static async Task<HttpResponseMessage> GetTorrent(HttpRequestMessage request, CancellationToken ct)
+        public async Task<HttpResponseMessage> GetTorrent(HttpRequestMessage request, CancellationToken ct)
         {
             var body = await request.Content!.ReadAsStringAsync(ct);
             using var document = JsonDocument.Parse(body);
@@ -90,11 +96,28 @@ namespace Listenarr.Tests.Mocks.Api
                 }
                 else if (string.Equals("torrent-add", method, StringComparison.OrdinalIgnoreCase))
                 {
+                    if (SimulateDuplicateAdd)
+                    {
+                        return MockUtils.GetCannedResponse("""
+                        {
+                            "result": "success",
+                            "arguments": {
+                                "torrent-duplicate":
+                                {
+                                    "id": 1,
+                                    "hashString": "HASH1",
+                                    "name": "Book"
+                                }
+                            }
+                        }
+                        """);
+                    }
+
                     return MockUtils.GetCannedResponse("""
                     {
                         "result": "success",
                         "arguments": {
-                            "torrent-added": 
+                            "torrent-added":
                             {
                                 "id": 1,
                                 "hashString": "HASH1",
