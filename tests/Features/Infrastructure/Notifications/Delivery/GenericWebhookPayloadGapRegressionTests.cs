@@ -28,15 +28,24 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
     /// webhook URL that matches none of the provider-specific substrings the method checks in
     /// order (discord.com/api/webhooks, ntfy, api.pushover.net/1/messages.json,
     /// api.telegram.org/bot, api.pushbullet.com/v2/pushes or pushbullet://, hooks.slack.com/services),
-    /// so execution reaches the generic fallback at
-    /// NotificationService.Webhooks.cs lines 409-441, which is the code path behind the settings
-    /// screen's own "Zapier / Generic" connection type.
+    /// so execution reaches the generic fallback near the end of that method, which is the code
+    /// path behind the settings screen's own "Zapier / Generic" connection type.
     ///
     /// Both tests are regression-only, with no matching production change: item 184 is downstream
     /// of upstream PR #943, which is open and rewrites NotificationService.Webhooks.cs (among
     /// other files in this partial-class family). They pin what the fallback does today so a
     /// future fix has to touch, and consciously update, an explicit assertion rather than have
     /// the gap close silently.
+    ///
+    /// Scope note: these pins target the per-URL overload directly, because that is the only
+    /// dispatch entry point that exists at the base commit this branch is built on. #943 adds a
+    /// new NotificationService.Dispatch.cs that loops over settings.Webhooks and calls this same
+    /// per-URL overload once per configured webhook, where each webhook's Type (already a field
+    /// on WebhookConfiguration, defaulting to "Zapier", currently unread) is available. A real
+    /// fix for G3 or G4 is more likely to route on webhook.Type inside that loop than inside this
+    /// per-URL fallback, so once #943 merges these pins should be re-pointed at
+    /// SendNotificationAsync(trigger, data) with a WebhookConfiguration whose Type is "Zapier",
+    /// not left here unmodified.
     /// </summary>
     [Trait("Area", "Notifications")]
     [Trait("Name", "GenericWebhookPayloadGapRegressionTests")]
@@ -111,23 +120,24 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
             Assert.NotNull(postedNode);
             var postedObj = postedNode!.AsObject();
 
-            // The gap: a receiver built against a generic/typed contract (an {eventType, ...}
+            // Pinned gap: a receiver built against a generic/typed contract (an {eventType, ...}
             // shape, per Readarr's WebhookPayload/WebhookEventType) instead gets Discord's own
-            // fields. These three keys have no business existing in a "Zapier / Generic" payload.
+            // fields. If any of these three assertions starts failing, G3 may have been fixed;
+            // update this test rather than deleting it silently.
             Assert.Equal("Listenarr", postedObj["username"]?.ToString());
-            Assert.True(postedObj.ContainsKey("avatar_url"), "Generic webhook body should not carry a Discord avatar_url field.");
-            Assert.True(postedObj.ContainsKey("embeds"), "Generic webhook body should not carry a Discord embeds array.");
+            Assert.True(postedObj.ContainsKey("avatar_url"), "Pinned gap: expected the Discord-shaped avatar_url field to still be present.");
+            Assert.True(postedObj.ContainsKey("embeds"), "Pinned gap: expected the Discord-shaped embeds array to still be present.");
 
-            // Pin the coupling itself: the fallback's output is byte-for-byte what the
-            // Discord-specific path produces for the same trigger and data. This is the control:
-            // if a real generic/typed contract is ever built, this path and the Discord path will
-            // diverge and this equality assertion is what breaks, on purpose, forcing the test to
-            // be looked at rather than the gap closing unnoticed.
+            // Pin the coupling itself: the fallback's output is, today, structurally identical to
+            // what the Discord-specific path produces for the same trigger and data (both are
+            // built from the same NotificationPayloadBuilder.CreateDiscordPayload call). This is
+            // the control: if a real generic/typed contract is ever built, this path and the
+            // Discord path will diverge and this equality assertion is what breaks, on purpose,
+            // forcing the test to be looked at rather than the gap closing unnoticed.
             var expectedDiscordShapeNode = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, "https://listenarr.example.com");
-            var expectedObj = expectedDiscordShapeNode.AsObject();
-            Assert.Equal(expectedObj["content"]?.ToString(), postedObj["content"]?.ToString());
-            Assert.Equal(expectedObj["username"]?.ToString(), postedObj["username"]?.ToString());
-            Assert.Equal(expectedObj["avatar_url"]?.ToString(), postedObj["avatar_url"]?.ToString());
+            Assert.True(
+                JsonNode.DeepEquals(expectedDiscordShapeNode, postedNode),
+                $"Expected the generic fallback body to still equal the Discord payload.{Environment.NewLine}Expected: {expectedDiscordShapeNode.ToJsonString()}{Environment.NewLine}Actual:   {postedNode.ToJsonString()}");
         }
 
         [Fact]
@@ -135,6 +145,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         public async Task SendNotificationAsync_RepeatedlyFailingGenericWebhook_AttemptsEveryDeliveryWithNoBackoff()
         {
             // Given: a target that fails every time it is called.
+            const int attemptCount = 5;
             var trigger = "book-added";
             var data = new { id = 1, title = "Backoff Gap Book", authors = new[] { "Jane Doe" } };
             var enabledTriggers = new List<string> { trigger };
@@ -146,28 +157,36 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
                     "SendAsync",
                     ItExpr.IsAny<HttpRequestMessage>(),
                     ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.InternalServerError));
+                .ReturnsAsync(() => new HttpResponseMessage(HttpStatusCode.InternalServerError));
 
             var service = BuildServiceWithHandler(mockHttpMessageHandler);
 
-            // When: the same still-down target is notified twice in a row, as two library events
-            // firing back to back would do.
-            await service.SendNotificationAsync(trigger, data, GenericWebhookUrl, enabledTriggers);
-            await service.SendNotificationAsync(trigger, data, GenericWebhookUrl, enabledTriggers);
+            // When: the same still-down target is notified several times in a row, as repeated
+            // library events firing at it would do. Five attempts, not two, so a backoff that only
+            // engages after an initial grace period (Readarr's ProviderStatusServiceBase gives a
+            // provider MinimumTimeSinceInitialFailure before it starts suppressing) still shows up
+            // as a call count below attemptCount rather than passing by coincidence.
+            for (var i = 0; i < attemptCount; i++)
+            {
+                await service.SendNotificationAsync(trigger, data, GenericWebhookUrl, enabledTriggers);
+            }
 
-            // Then: both attempts reach the network. Exactly 2 is the control that separates this
-            // from a broken apparatus (0 would mean the request never left the process at all,
-            // for example because URL validation rejected it) and from the behaviour a real
-            // backoff/escalation mechanism (Readarr's ProviderStatusServiceBase /
-            // NotificationStatusService) would produce (the second attempt suppressed, giving 1).
-            // There is no NotificationStatus-equivalent class anywhere in this backend today, so
-            // every failing attempt is retried at full speed forever, silently.
+            // Then: every attempt reaches the network, to the same URL, by POST. Exactly
+            // attemptCount is the control that separates this from a broken apparatus (fewer than
+            // attemptCount, including 0, would mean at least one request never left the process,
+            // for example because URL validation rejected it, or a real backoff/escalation
+            // mechanism started suppressing attempts) and from the request being satisfied some
+            // other way (matching method and URI rules out a redirect or probe call being counted
+            // toward the total). There is no NotificationStatus-equivalent class anywhere in this
+            // backend today, so every failing attempt is retried at full speed forever, silently.
             mockHttpMessageHandler
                 .Protected()
                 .Verify(
                     "SendAsync",
-                    Times.Exactly(2),
-                    ItExpr.IsAny<HttpRequestMessage>(),
+                    Times.Exactly(attemptCount),
+                    ItExpr.Is<HttpRequestMessage>(request =>
+                        request.Method == HttpMethod.Post
+                        && request.RequestUri == new Uri(GenericWebhookUrl)),
                     ItExpr.IsAny<CancellationToken>());
         }
     }
