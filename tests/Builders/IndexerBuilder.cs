@@ -86,6 +86,18 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public IndexerBuilder WithSeedRatio(double? value)
+        {
+            _indexer.SeedRatio = value;
+            return this;
+        }
+
+        public IndexerBuilder WithSeedTime(int? value)
+        {
+            _indexer.SeedTime = value;
+            return this;
+        }
+
         public Indexer Build()
         {
             _indexer.AdditionalSettings = JsonSerializer.Serialize(_additionalSettings);
