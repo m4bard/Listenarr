@@ -58,6 +58,19 @@ public partial class RootFoldersController
 
         var storage = await _storageHealthResolver.ResolveAsync(root);
 
+        // Populated on read, same as Readarr's RootFolderService.GetDetails
+        // (src/NzbDrone.Core/RootFolders/RootFolderService.cs:178-188): measured directly on
+        // the root's own path, not its parent, because the root folder itself is expected to
+        // already exist (unlike an audiobook's own not-yet-created folder, which is why the
+        // import-time free-space guard measures one level up instead).
+        long? freeSpaceBytes = null;
+        long? totalSpaceBytes = null;
+        if (_diskSpaceProbe.TryGetDiskSpace(root.Path, out var totalBytes, out var freeBytes))
+        {
+            freeSpaceBytes = freeBytes;
+            totalSpaceBytes = totalBytes;
+        }
+
         return new RootFolderDto(
             root.Id,
             root.Name,
@@ -88,6 +101,8 @@ public partial class RootFoldersController
             storage.ConfirmationToken,
             root.CreatedAt,
             root.UpdatedAt,
-            active);
+            active,
+            freeSpaceBytes,
+            totalSpaceBytes);
     }
 }

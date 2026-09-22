@@ -143,6 +143,9 @@
             <div class="folder-path">
               <PhFolder />
               <code>{{ folder.path }}</code>
+              <span v-if="folder.freeSpaceBytes != null" class="folder-free-space">
+                {{ formatBytes(folder.freeSpaceBytes) }} free
+              </span>
             </div>
             <div
               v-if="needsMutationSemanticsConfirmation(folder)"
@@ -486,6 +489,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRootFoldersStore } from '@/stores/rootFolders'
+import { formatBytes } from '@/utils/formatBytes'
 import { useFilesystemReadinessStore } from '@/stores/filesystemReadiness'
 import RootFolderFormModal from '@/components/settings/RootFolderFormModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
@@ -1125,6 +1129,13 @@ defineExpose({
   font-family: monospace;
   word-break: break-all;
   color: #4dabf7;
+}
+
+.folder-free-space {
+  margin-left: auto;
+  color: var(--text-secondary, #adb5bd);
+  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
 .folder-confirmation-target-path {
