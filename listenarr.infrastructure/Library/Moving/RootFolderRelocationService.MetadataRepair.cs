@@ -139,6 +139,9 @@ public sealed partial class RootFolderRelocationService
     {
         var moveJobs = await db.MoveJobs
             .AsNoTracking()
+            .AsSplitQuery()
+            .Include(job => job.Entries)
+            .Include(job => job.CreatedDirectories)
             .Where(job => job.AudiobookId == audiobookId)
             .ToListAsync(cancellationToken);
         if (moveJobs.Any(MoveRecoveryPolicy.BlocksFilesystemMutation))
