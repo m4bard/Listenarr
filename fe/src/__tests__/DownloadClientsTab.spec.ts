@@ -80,4 +80,37 @@ describe('DownloadClientsTab', () => {
 
     expect(wrapper.find('.loading-state').exists()).toBe(true)
   })
+
+  it('shows a Priority row on the card only when it differs from the default', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConfigurationStore()
+
+    const base = {
+      type: 'qbittorrent',
+      host: 'dbhost.local',
+      port: 8080,
+      isEnabled: true,
+      useSSL: false,
+      downloadPath: '',
+      username: '',
+      password: '',
+      settings: {},
+    }
+    store.downloadClientConfigurations = [
+      { ...base, id: 'default-priority', name: 'local', priority: 1 },
+      { ...base, id: 'raised-priority', name: 'seedbox', priority: 4 },
+    ] as unknown
+
+    const wrapper = mount(DownloadClientsTab, { global: { plugins: [pinia] } })
+
+    const cards = wrapper.findAll('.indexer-card')
+    expect(cards).toHaveLength(2)
+
+    // The control is the first card: a client left at the default must not gain a row,
+    // otherwise every card carries noise and the row says nothing.
+    expect(cards[0].text()).not.toContain('Priority:')
+    expect(cards[1].text()).toContain('Priority:')
+    expect(cards[1].text()).toContain('4')
+  })
 })
