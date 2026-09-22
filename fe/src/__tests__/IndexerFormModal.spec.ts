@@ -43,4 +43,52 @@ describe('IndexerFormModal', () => {
     expect(pwdComp.exists()).toBe(true)
     expect(pwdComp.props('modelValue')).toBe('secret')
   })
+
+  it('shows seed criteria fields for a new (torrent) indexer', () => {
+    const wrapper = mount(IndexerFormModal, {
+      global: { plugins: [createPinia()] },
+      props: { visible: true, editingIndexer: null },
+    })
+
+    expect(wrapper.find('#seedRatio').exists()).toBe(true)
+    expect(wrapper.find('#seedTime').exists()).toBe(true)
+  })
+
+  it('hides seed criteria fields for a Usenet (Newznab) indexer', async () => {
+    const wrapper = mount(IndexerFormModal, {
+      global: { plugins: [createPinia()] },
+      props: { visible: true, editingIndexer: null },
+    })
+
+    await wrapper.setProps({
+      editingIndexer: {
+        id: 1,
+        name: 'Test Indexer',
+        type: 'Usenet',
+        implementation: 'Newznab',
+        url: 'https://example.test',
+        apiKey: 'secret',
+      } as unknown,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('#seedRatio').exists()).toBe(false)
+    expect(wrapper.find('#seedTime').exists()).toBe(false)
+  })
+
+  it('warns when seed ratio is set to exactly zero, and clears the warning once left empty', async () => {
+    const wrapper = mount(IndexerFormModal, {
+      global: { plugins: [createPinia()] },
+      props: { visible: true, editingIndexer: null },
+    })
+
+    const seedRatioInput = wrapper.find('#seedRatio')
+    await seedRatioInput.setValue('0')
+
+    expect(wrapper.text()).toContain('Seed ratio should be greater than zero')
+
+    await seedRatioInput.setValue('')
+
+    expect(wrapper.text()).not.toContain('Seed ratio should be greater than zero')
+  })
 })

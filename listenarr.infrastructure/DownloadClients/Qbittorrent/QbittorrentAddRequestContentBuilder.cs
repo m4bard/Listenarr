@@ -16,12 +16,40 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Globalization;
 using System.Net.Http.Headers;
 
 namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
 {
     internal static class QbittorrentAddRequestContentBuilder
     {
+        /// <summary>
+        /// Builds the form body for a follow-up call to /api/v2/torrents/setShareLimits.
+        /// Both keys are always sent once this is called at all, matching the qBittorrent Web
+        /// API contract that setShareLimits sets the whole share-limit state for a torrent in
+        /// one call. A field the indexer left unset is sent as -2 ("use the global limit"),
+        /// which is the request-level equivalent of not overriding it, not a value of zero.
+        /// Callers must not invoke this at all when both fields are unset
+        /// (see <see cref="TorrentSeedConfiguration.HasAnyValue"/>): that is what keeps an
+        /// indexer with no seed criteria from producing a setShareLimits call at all.
+        /// </summary>
+        public static HttpContent BuildShareLimitsContent(string hash, TorrentSeedConfiguration seedConfiguration)
+        {
+            var ratioLimit = seedConfiguration.Ratio.HasValue
+                ? seedConfiguration.Ratio.Value.ToString(CultureInfo.InvariantCulture)
+                : "-2";
+            var seedingTimeLimit = seedConfiguration.SeedTime.HasValue
+                ? ((long)seedConfiguration.SeedTime.Value.TotalMinutes).ToString(CultureInfo.InvariantCulture)
+                : "-2";
+
+            return new FormUrlEncodedContent(new List<KeyValuePair<string, string>>
+            {
+                new("hashes", hash),
+                new("ratioLimit", ratioLimit),
+                new("seedingTimeLimit", seedingTimeLimit)
+            });
+        }
+
         public static HttpContent Build(QbittorrentTorrentAddPlan addPlan)
         {
             if (addPlan.TorrentFileData != null)

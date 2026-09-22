@@ -66,7 +66,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
 
             var authSession = new QbittorrentAuthSession(logger);
             _connectionTester = new QbittorrentConnectionTester(httpFactory, logger, ClientType);
-            _addWorkflow = new QbittorrentAddWorkflow(httpFactory, authSession, logger, ClientType);
+            _addWorkflow = new QbittorrentAddWorkflow(httpFactory, authSession, logger, ClientType, new NullSeedCriteriaResolver());
             _importMarkerWorkflow = new QbittorrentImportMarkerWorkflow(httpFactory, logger, ClientType);
             _removalWorkflow = new QbittorrentRemovalWorkflow(httpFactory, logger, ClientType);
             _queueFetchWorkflow = new QbittorrentQueueFetchWorkflow(httpFactory, authSession, logger, ClientType);
