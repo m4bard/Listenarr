@@ -188,6 +188,73 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
+        public async Task GetAll_ProbeMeasuresPath_ReturnsFreeAndTotalSpace()
+        {
+            // Readarr populates FreeSpace/TotalSpace on the root's own path, not its parent
+            // (RootFolderService.cs:178-188); this asserts the same wiring here.
+            var svc = new FakeService();
+            svc.Store.Add(new RootFolder
+            {
+                Id = 1,
+                Name = "Root1",
+                Path = FileUtils.GetAbsolutePath("root1")
+            });
+            long total = 500_000_000_000L;
+            long free = 120_000_000_000L;
+            var probe = new Mock<IDiskSpaceProbe>();
+            probe.Setup(p => p.TryGetDiskSpace(It.IsAny<string>(), out total, out free)).Returns(true);
+            var _db = CreateDb();
+            var controller = new RootFoldersController(
+                svc,
+                _fakeQueue,
+                new EfAudiobookFileRepository(_db),
+                new AudiobookRepository(_db),
+                new LocalFileSystem(),
+                diskSpaceProbe: probe.Object);
+
+            var res = await controller.GetAll();
+
+            var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(res);
+            var root = Assert.Single(Assert.IsAssignableFrom<List<RootFolderDto>>(ok.Value));
+            Assert.Equal(free, root.FreeSpaceBytes);
+            Assert.Equal(total, root.TotalSpaceBytes);
+        }
+
+        [Fact]
+        public async Task GetAll_ProbeCannotMeasurePath_LeavesFreeAndTotalSpaceNull()
+        {
+            // Control for the case above: same setup, only the probe's answer differs. If the
+            // mapping were hard-coded to always report a value (or never report one), the two
+            // cases would not disagree.
+            var svc = new FakeService();
+            svc.Store.Add(new RootFolder
+            {
+                Id = 1,
+                Name = "Root1",
+                Path = FileUtils.GetAbsolutePath("root1")
+            });
+            long total = 0;
+            long free = 0;
+            var probe = new Mock<IDiskSpaceProbe>();
+            probe.Setup(p => p.TryGetDiskSpace(It.IsAny<string>(), out total, out free)).Returns(false);
+            var _db = CreateDb();
+            var controller = new RootFoldersController(
+                svc,
+                _fakeQueue,
+                new EfAudiobookFileRepository(_db),
+                new AudiobookRepository(_db),
+                new LocalFileSystem(),
+                diskSpaceProbe: probe.Object);
+
+            var res = await controller.GetAll();
+
+            var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(res);
+            var root = Assert.Single(Assert.IsAssignableFrom<List<RootFolderDto>>(ok.Value));
+            Assert.Null(root.FreeSpaceBytes);
+            Assert.Null(root.TotalSpaceBytes);
+        }
+
+        [Fact]
         public async Task GetAll_FilesystemInitializing_DoesNotResolveStorageHealthOrShowFalseFailure()
         {
             var svc = new FakeService();
@@ -2163,7 +2230,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             IRootFolderStorageConfirmationService? storageConfirmationService = null,
             ILibraryFilesystemReadiness? filesystemReadiness = null,
             ILibraryFilesystemMutationGate? filesystemMutationGate = null,
-            IRootFolderWeakStoragePolicyService? weakStoragePolicyService = null)
+            IRootFolderWeakStoragePolicyService? weakStoragePolicyService = null,
+            IDiskSpaceProbe? diskSpaceProbe = null)
             : base(
                 service,
                 unmatchedQueue,
@@ -2176,7 +2244,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 storageConfirmationService ?? Mock.Of<IRootFolderStorageConfirmationService>(),
                 filesystemReadiness ?? TestLibraryFilesystemReadiness.Ready(),
                 filesystemMutationGate ?? TestLibraryFilesystemReadiness.Ready(),
-                weakStoragePolicyService ?? Mock.Of<IRootFolderWeakStoragePolicyService>())
+                weakStoragePolicyService ?? Mock.Of<IRootFolderWeakStoragePolicyService>(),
+                diskSpaceProbe ?? Mock.Of<IDiskSpaceProbe>())
         {
         }
 
