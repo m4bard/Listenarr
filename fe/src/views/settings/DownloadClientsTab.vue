@@ -186,6 +186,11 @@
                 {{ client.isEnabled ? 'Enabled' : 'Disabled' }}
               </span>
             </div>
+            <div class="detail-row" v-if="client.priority && client.priority !== 1">
+              <PhSortAscending />
+              <span class="detail-label">Priority:</span>
+              <span class="detail-value">{{ client.priority }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -305,6 +310,7 @@ import {
   PhToggleLeft,
   PhSpinner,
   PhCheckCircle,
+  PhSortAscending,
   PhXCircle,
   PhPencil,
   PhTrash,
