@@ -29,6 +29,14 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
         {
             builder.HasKey(d => d.Id);
 
+            // The CLR initializer on DownloadClientConfiguration.Priority is invisible to the
+            // relational model, so without this the generated migration backfills existing rows
+            // with 0 while new rows get 1. Existing clients would then silently outrank every
+            // client added afterwards. Readarr sets the same column default: see
+            // src/NzbDrone.Core/Datastore/Migration/001_initial_setup.cs, the DownloadClients table.
+            builder.Property(d => d.Priority)
+                .HasDefaultValue(1);
+
             // Do not map the raw SettingsJson backing property separately. The converted
             // Settings property will be mapped to the same column name below. Mapping
             // both separately can result in duplicate column names (SettingsJson1).
