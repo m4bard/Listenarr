@@ -2014,10 +2014,9 @@ class ApiService {
   // The name is a path segment and worker names carry dots, so it is encoded rather than
   // interpolated raw.
   async runScheduledTask(taskName: string): Promise<ScheduledTaskRun> {
-    return this.request<ScheduledTaskRun>(
-      `/system/tasks/${encodeURIComponent(taskName)}/run`,
-      { method: 'POST' },
-    )
+    return this.request<ScheduledTaskRun>(`/system/tasks/${encodeURIComponent(taskName)}/run`, {
+      method: 'POST',
+    })
   }
 
   async getLogs(limit: number = 100): Promise<LogEntry[]> {
