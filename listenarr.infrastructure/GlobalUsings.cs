@@ -61,6 +61,7 @@ global using Listenarr.Infrastructure.Library.Files;
 global using Listenarr.Infrastructure.Metadata.Parsing;
 global using Listenarr.Infrastructure.Security.Identity;
 global using Listenarr.Infrastructure.Security.Protection;
+global using Listenarr.Infrastructure.SystemDiagnostics.Backups;
 global using Listenarr.Infrastructure.SystemDiagnostics.Diagnostics;
 global using Listenarr.Infrastructure.SystemDiagnostics.Processes;
 global using Listenarr.Infrastructure.SystemDiagnostics.Storage;
