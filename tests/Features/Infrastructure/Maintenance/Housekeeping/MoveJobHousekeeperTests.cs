@@ -135,6 +135,31 @@ public sealed class MoveJobHousekeeperTests : BaseTests, IDisposable
         Assert.Equal(1, await context.MoveScanHandoffs.CountAsync(h => h.MoveJobId == kept));
     }
 
+    /// <summary>
+    /// The plainest job there is: no relocation and no scan handoff at all, which is what an
+    /// ordinary single-audiobook move leaves behind once its rescan row has been cleared. Both
+    /// subquery clauses have to pass on absence rather than only on a satisfied row, and every
+    /// other test in this file seeds a handoff, so without this the absent-handoff half of that
+    /// clause is never exercised.
+    /// </summary>
+    [Fact]
+    public async Task DeletesAJobWithNoRelocationAndNoHandoffAtAll()
+    {
+        var doomed = await SeedJobAsync(
+            MoveJobStatus.Completed, Now.AddDays(-100), children: 2, handoffStatus: null);
+        var kept = await SeedJobAsync(
+            MoveJobStatus.Completed, Now.AddDays(-10), children: 2, handoffStatus: null);
+
+        var outcome = await new MoveJobHousekeeper(_factory).RunAsync(Cycle(retentionDays: 30), default);
+
+        Assert.Equal(1, outcome.Matched);
+        Assert.Equal(1, outcome.Deleted);
+        await using var context = new ListenArrDbContext(_options);
+        Assert.Equal([kept], await context.MoveJobs.Select(job => job.Id).ToListAsync());
+        Assert.Equal(0, await context.MoveJobEntries.CountAsync(entry => entry.MoveJobId == doomed));
+        Assert.Equal(2, await context.MoveJobEntries.CountAsync(entry => entry.MoveJobId == kept));
+    }
+
     [Fact]
     public async Task DeletesASupersededJob()
     {
@@ -311,7 +336,7 @@ public sealed class MoveJobHousekeeperTests : BaseTests, IDisposable
         DateTime? completedAt,
         int children,
         Guid? relocationId = null,
-        MoveScanHandoffStatus handoffStatus = MoveScanHandoffStatus.Succeeded)
+        MoveScanHandoffStatus? handoffStatus = MoveScanHandoffStatus.Succeeded)
     {
         await using var context = new ListenArrDbContext(_options);
         var job = new MoveJob
@@ -341,25 +366,30 @@ public sealed class MoveJobHousekeeperTests : BaseTests, IDisposable
             });
         }
 
-        context.MoveScanHandoffs.Add(new MoveScanHandoff
+        if (handoffStatus is { } status_)
         {
-            Id = Guid.NewGuid(),
-            MoveJobId = job.Id,
-            AudiobookId = 1,
-            TargetPath = "target",
-            Status = handoffStatus
-        });
+            context.MoveScanHandoffs.Add(new MoveScanHandoff
+            {
+                Id = Guid.NewGuid(),
+                MoveJobId = job.Id,
+                AudiobookId = 1,
+                TargetPath = "target",
+                Status = status_
+            });
+        }
 
         await context.SaveChangesAsync();
         return job.Id;
     }
 
+    /// <summary>
+    /// Only CreateDbContext is implemented. The interface's CreateDbContextAsync overloads
+    /// default to it, and declaring a parameterless one here would not override the one the
+    /// housekeepers call, which takes a cancellation token.
+    /// </summary>
     private sealed class TestDbContextFactory(DbContextOptions<ListenArrDbContext> options)
         : IDbContextFactory<ListenArrDbContext>
     {
         public ListenArrDbContext CreateDbContext() => new(options);
-
-        public Task<ListenArrDbContext> CreateDbContextAsync() =>
-            Task.FromResult(new ListenArrDbContext(options));
     }
 }
