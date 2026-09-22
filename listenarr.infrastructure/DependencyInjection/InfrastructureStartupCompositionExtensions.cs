@@ -80,6 +80,12 @@ public static class InfrastructureStartupCompositionExtensions
                     "[Startup] Normalized {Count} legacy move job row(s) after applying durable move migrations",
                     repairedPostMigrationData.MoveJobsRepaired);
             }
+            if (repairedPostMigrationData.MoveJobTerminalTimestampsBackfilled > 0)
+            {
+                Log.Logger.Information(
+                    "[Startup] Stamped a terminal timestamp onto {Count} finished move job row(s) that predate the column, so housekeeping retention can see them",
+                    repairedPostMigrationData.MoveJobTerminalTimestampsBackfilled);
+            }
             Log.Logger.Information("[Startup] EF Core migrations applied successfully");
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
