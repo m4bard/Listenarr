@@ -29,6 +29,7 @@ namespace Listenarr.Application.Library.RecycleBin
         FilesystemRoot,
         InsideRootFolder,
         ContainsRootFolder,
+        ContainsSymbolicLink,
         Unusable
     }
 
