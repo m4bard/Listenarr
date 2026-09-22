@@ -107,6 +107,75 @@ public sealed class DownloadImportServiceFreeSpaceTests : BaseTests
     }
 
     [Fact]
+    public async Task ImportDownloadFilesAsync_RequiredBytesReflectExactSourceSize_RejectsOneByteBelow()
+    {
+        // Proves the guard's required-bytes figure is the real size of the file about to be
+        // imported, not a stand-in constant such as the value upstream #821 wrote into every
+        // AudiobookFiles.Size row (64 bytes, from stat'ing a /proc fd symlink instead of the
+        // real file). MinimumFreeSpaceWhenImporting is zero here so the comparison reduces to
+        // free < required with no margin term to mask the source of the number. A source file
+        // of an exact known size (1000 bytes) with free space one byte short of it must
+        // reject; if the guard instead used a constant like 64, 999 bytes free would clear
+        // that constant easily and the import would wrongly succeed.
+        const int exactSourceBytes = 1000;
+        var basePath = FileService.GetTempDirectory("download-import-freespace-exact-reject");
+        var sourceDirectory = FileService.GetTempDirectory("download-import-freespace-exact-reject-src");
+        var sourceFile = await FileService.GetFileAsync(
+            sourceDirectory,
+            "book.mp3",
+            new string('a', exactSourceBytes));
+        Assert.Equal(exactSourceBytes, new FileInfo(sourceFile).Length);
+        SetFreeBytes(exactSourceBytes - 1);
+        var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+            .WithTitle("Exactly One Byte Short")
+            .WithBasePath(basePath)
+            .Build());
+        await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+            .WithCopyFileOnCompleted()
+            .WithoutMetadataProcessing()
+            .WithMinimumFreeSpaceWhenImporting(0)
+            .Build());
+        var service = _provider.GetRequiredService<IDownloadImportService>();
+
+        var result = Assert.Single(await service.ImportDownloadFilesAsync(audiobook, [sourceFile]));
+
+        Assert.False(result.Success);
+        Assert.Equal("Not enough free space", result.Message);
+    }
+
+    [Fact]
+    public async Task ImportDownloadFilesAsync_RequiredBytesReflectExactSourceSize_AllowsAtExactSize()
+    {
+        // Control for the case above: identical source file and settings, free space equal
+        // to (not below) the exact source size. The two cases bracket the real file size, one
+        // byte apart, and must disagree; a wrong required-bytes figure of any other magnitude
+        // would not reproduce this exact boundary.
+        const int exactSourceBytes = 1000;
+        var basePath = FileService.GetTempDirectory("download-import-freespace-exact-allow");
+        var sourceDirectory = FileService.GetTempDirectory("download-import-freespace-exact-allow-src");
+        var sourceFile = await FileService.GetFileAsync(
+            sourceDirectory,
+            "book.mp3",
+            new string('a', exactSourceBytes));
+        Assert.Equal(exactSourceBytes, new FileInfo(sourceFile).Length);
+        SetFreeBytes(exactSourceBytes);
+        var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+            .WithTitle("Exactly Enough Room")
+            .WithBasePath(basePath)
+            .Build());
+        await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+            .WithCopyFileOnCompleted()
+            .WithoutMetadataProcessing()
+            .WithMinimumFreeSpaceWhenImporting(0)
+            .Build());
+        var service = _provider.GetRequiredService<IDownloadImportService>();
+
+        var result = Assert.Single(await service.ImportDownloadFilesAsync(audiobook, [sourceFile]));
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
     public async Task ImportDownloadFilesAsync_SkipFreeSpaceCheckWhenImporting_ImportsDespiteNoFreeSpace()
     {
         // The escape hatch is part of the feature, not an optional extra: a network filesystem
