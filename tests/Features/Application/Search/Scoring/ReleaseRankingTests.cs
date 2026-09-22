@@ -122,16 +122,28 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         }
 
         [Fact]
-        public async Task AProfileThatPrefersMp3FlipsThePick()
+        public async Task AProfileThatPrefersTheLowerLadderRungStillDecides()
         {
-            // CONTROL. The same two releases, the same scores, one reordered profile. The pick has
-            // to come out the other way round, which is what shows the profile is being read
-            // rather than AAC being preferred by some other means.
-            var profile = Profile(ShippedOrder.OrderBy(quality => quality.StartsWith("AAC", StringComparison.Ordinal)));
+            // CONTROL. It has to discriminate against BOTH wrong implementations, so the pair is
+            // chosen so that neither can produce the asserted answer.
+            //
+            // MP3 64kbps scores 40 on the ladder and AAC 64kbps scores 78, so ordering by the
+            // score alone returns the AAC. A rule that merely prefers AAC returns the AAC too.
+            // Only reading this profile, which puts MP3 64kbps first, returns the MP3.
+            //
+            // An earlier version of this control used AAC 320kbps against MP3 320kbps under a
+            // reversed profile, and it passed under score-only ordering as well, because the
+            // ladder already scores MP3 320kbps above AAC 320kbps. It agreed with the code it was
+            // supposed to rule out, so a broken apparatus looked exactly like a pass.
+            var profile = Profile(new[] { "MP3 64kbps", "AAC 64kbps", "AAC 320kbps", "MP3 320kbps" });
 
-            var ranked = await Rank(profile, Release("MP3 320kbps"), Release("AAC 320kbps"));
+            var ranked = await Rank(profile, Release("AAC 64kbps"), Release("MP3 64kbps"));
 
-            Assert.Equal("MP3 320kbps", ranked[0].SearchResult.Quality);
+            Assert.Equal("MP3 64kbps", ranked[0].SearchResult.Quality);
+            Assert.True(
+                ranked[1].TotalScore > ranked[0].TotalScore,
+                "the ladder no longer disagrees with this profile, so the control has stopped "
+                + "ruling out score-only ordering");
         }
 
         [Fact]
@@ -165,27 +177,80 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         }
 
         [Fact]
-        public async Task AnM4bLabelRanksOnTheProfilesAacRungs()
+        public void AContainerLabelRanksOnTheProfilesAacRungs()
         {
-            // The torznab parser emits container labels such as "M4B" that appear in no profile by
-            // that name. Ranking by an exact name comparison would leave every one of them
-            // unrankable, so the label goes through the same codec-group mapping a file does.
+            // Parsers emit container labels that appear in no profile by that name.
+            // SearchResultAttributeParser.DetectQualityFromFormat returns a bare "M4B", and an
+            // exact name comparison would leave it unrankable, so the label goes through the same
+            // codec-group mapping a file does. A bare container carries no bitrate, so it takes
+            // the worst rung of its group rather than over-claiming.
             var profile = Profile(ShippedOrder);
 
+            Assert.Equal("AAC 64kbps", QualityMatcher.RankingRung("M4B", profile)?.Quality);
             Assert.Equal("AAC 320kbps", QualityMatcher.RankingRung("M4B 320kbps", profile)?.Quality);
-            Assert.Equal("AAC 64kbps", QualityMatcher.RankingRung("M4B 64kbps", profile)?.Quality);
+        }
+
+        [Fact]
+        public void ABitrateOfAThousandOrMoreRanksOnTheRungItNames()
+        {
+            // The label's bitrate is kbps and AudioQualityInput takes bits per second. Passing it
+            // through unscaled survived by accident below 1000 and was divided by 1000 at or above
+            // it, so "MP3 1411kbps" ranked on the worst rung in the profile.
+            var profile = Profile(ShippedOrder);
+
+            Assert.Equal("MP3 320kbps", QualityMatcher.RankingRung("MP3 1411kbps", profile)?.Quality);
+            Assert.Equal("AAC 320kbps", QualityMatcher.RankingRung("AAC 1000kbps", profile)?.Quality);
+            Assert.Equal("MP3 128kbps", QualityMatcher.RankingRung("MP3 128kbps", profile)?.Quality);
+        }
+
+        [Fact]
+        public async Task TheBestCandidateThatIsAnUpgradeIsChosenRatherThanOnlyTheFirst()
+        {
+            // AutomaticSearchService ranks with InPreferenceOrder and then asks IsQualityBetter
+            // whether the pick beats what is on disk. The two resolve a label differently: the
+            // ranking maps by codec and bitrate, the gate matches an exact profile name. So a
+            // bare "AAC" is rankable and not resolvable, and testing only the first candidate
+            // discarded every release behind it.
+            //
+            // This models the picker's rule with the real collaborators rather than running the
+            // service, which needs a full service scope. The service itself is not covered here.
+            var profile = Profile(ShippedOrder);
+            const string onDisk = "MP3 128kbps";
+
+            var ranked = await Rank(profile, Release("MP3 320kbps"), Release("AAC"));
+
+            // The premise: the bare label outranks the MP3 and the gate cannot resolve it.
+            Assert.Equal("AAC", ranked[0].SearchResult.Quality);
+            Assert.False(QualityMatcher.IsLabelBetter("AAC", onDisk, profile));
+            Assert.True(QualityMatcher.IsLabelBetter("MP3 320kbps", onDisk, profile));
+
+            var chosen = ranked.FirstOrDefault(candidate =>
+                QualityMatcher.IsLabelBetter(candidate.SearchResult.Quality, onDisk, profile));
+
+            Assert.NotNull(chosen);
+            Assert.Equal("MP3 320kbps", chosen!.SearchResult.Quality);
         }
 
         [Fact]
         public async Task AReleaseTheProfileCannotRankSortsAfterOneItCan()
         {
+            // The label has to be ACCEPTED but unrankable, or the ordering assertion is vacuous:
+            // a rejected release already sorts last on the rejected key, which predates this
+            // change. A bare "320" passes the allowed-quality veto, because that veto is a
+            // substring match in both directions and "mp3 320kbps" contains "320", while the
+            // shipped profile has no codec-less rung for it to rank on.
             var profile = Profile(ShippedOrder);
 
-            var ranked = await Rank(profile, Release("Vorbis 500kbps"), Release("MP3 64kbps"));
+            var ranked = await Rank(profile, Release("320"), Release("MP3 64kbps"));
 
+            Assert.False(ranked[0].IsRejected);
+            Assert.False(ranked[1].IsRejected);
             Assert.Equal("MP3 64kbps", ranked[0].SearchResult.Quality);
-            Assert.Equal(ReleaseRanking.Unrankable, ReleaseRanking.RungPriority("Vorbis 500kbps", profile));
-            await Task.CompletedTask;
+            Assert.Equal(ReleaseRanking.Unrankable, ReleaseRanking.RungPriority("320", profile));
+            Assert.True(
+                ranked[1].TotalScore > ranked[0].TotalScore,
+                "the unrankable release no longer scores above the ranked one, so this test no "
+                + "longer shows the rung key rather than the score deciding");
         }
 
         [Fact]
