@@ -162,6 +162,12 @@ vi.mock('@/services/api', () => {
     testNotificationSubscriber: vi.fn(async () => ({ success: true, message: '' })),
     getLibrary: vi.fn(async () => []),
     previewLibraryPath: vi.fn(async () => ({ path: '' })),
+    previewNamingPatterns: vi.fn(async () => ({
+      folderExample: '',
+      singleFileExample: '',
+      multiFileExamples: [],
+      multiFileAmbiguous: false,
+    })),
     previewRename: vi.fn(async () => []),
     executeRename: vi.fn(async () => []),
     getQualityProfiles: vi.fn(async () => []),
