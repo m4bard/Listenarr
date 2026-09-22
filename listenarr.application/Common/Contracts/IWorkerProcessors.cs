@@ -99,6 +99,11 @@ namespace Listenarr.Application.Common.Contracts
         Task RunCycleAsync(CancellationToken cancellationToken);
     }
 
+    public interface IRecycleBinCleanupProcessor
+    {
+        Task RunCycleAsync(CancellationToken cancellationToken);
+    }
+
     public interface IFfmpegInstallProcessor
     {
         Task EnsureInstalledAsync(CancellationToken cancellationToken);
