@@ -270,6 +270,168 @@ namespace Listenarr.Tests.Features.Application.Configuration.Core
             Assert.Empty(afterClear.CustomScripts!);
         }
 
+        private const string SmtpPassword = "hunter2-smtp-password";
+
+        private static EmailConfiguration AnEmail(string id = "email-1", string password = SmtpPassword) =>
+            new()
+            {
+                Id = id,
+                Name = "Household",
+                Server = "smtp.example.invalid",
+                Port = 587,
+                From = "listenarr@example.invalid",
+                To = ["household@example.invalid"],
+                Password = password,
+                Channels = [NotificationChannel.Download],
+            };
+
+        private async Task<ApplicationSettings> SaveOneEmailAsync(IConfigurationService svc)
+        {
+            var settings = await svc.GetApplicationSettingsAsync();
+            settings.Emails = [AnEmail()];
+            await svc.SaveApplicationSettingsAsync(settings);
+            return await svc.GetApplicationSettingsAsync();
+        }
+
+        [Fact]
+        public async Task SaveApplicationSettings_SmtpPasswordCarryingTheSentinel_KeepsTheStoredValue()
+        {
+            // The settings screen is handed REDACTED for every stored password and posts the same
+            // document back. Without this the literal sentinel is written over the password and the
+            // real one is gone, which is what happened here before to other secrets.
+            var svc = _provider.GetRequiredService<IConfigurationService>();
+            var saved = await SaveOneEmailAsync(svc);
+
+            await svc.SaveApplicationSettingsAsync(new ApplicationSettings
+            {
+                Id = 1,
+                Version = saved.Version,
+                Emails = [AnEmail(password: ApiResponseRedactor.RedactedValue)]
+            });
+
+            var after = await svc.GetApplicationSettingsAsync();
+            Assert.Equal(SmtpPassword, Assert.Single(after.Emails!).Password);
+        }
+
+        [Fact]
+        public async Task SaveApplicationSettings_SmtpPasswordCarryingANewValue_ReplacesTheStoredOne()
+        {
+            // The control for the guard above. Without it the guard could degenerate into "the
+            // password is never updated" and the preservation test would still pass.
+            var svc = _provider.GetRequiredService<IConfigurationService>();
+            var saved = await SaveOneEmailAsync(svc);
+
+            await svc.SaveApplicationSettingsAsync(new ApplicationSettings
+            {
+                Id = 1,
+                Version = saved.Version,
+                Emails = [AnEmail(password: "a-new-password")]
+            });
+
+            var after = await svc.GetApplicationSettingsAsync();
+            Assert.Equal("a-new-password", Assert.Single(after.Emails!).Password);
+        }
+
+        [Fact]
+        public async Task SaveApplicationSettings_SmtpPasswordClearedByTheOperator_IsWrittenThroughAsBlank()
+        {
+            // Blank cannot mean "the client did not have the value", because a read always returns
+            // the sentinel for a password that is set. So it means the operator removed
+            // authentication, and they have to be able to.
+            var svc = _provider.GetRequiredService<IConfigurationService>();
+            var saved = await SaveOneEmailAsync(svc);
+
+            await svc.SaveApplicationSettingsAsync(new ApplicationSettings
+            {
+                Id = 1,
+                Version = saved.Version,
+                Emails = [AnEmail(password: string.Empty)]
+            });
+
+            var after = await svc.GetApplicationSettingsAsync();
+            Assert.Equal(string.Empty, Assert.Single(after.Emails!).Password);
+        }
+
+        [Fact]
+        public async Task SaveApplicationSettings_SentinelOnATargetWithNoStoredCounterpart_StoresNothingRatherThanTheSentinel()
+        {
+            // A newly added target that somehow arrives carrying the sentinel has nothing to
+            // recover. Storing the word REDACTED as the password is the defect itself, so it is
+            // left blank and the Test button reports the real problem.
+            var svc = _provider.GetRequiredService<IConfigurationService>();
+            var saved = await SaveOneEmailAsync(svc);
+
+            await svc.SaveApplicationSettingsAsync(new ApplicationSettings
+            {
+                Id = 1,
+                Version = saved.Version,
+                Emails =
+                [
+                    AnEmail(),
+                    AnEmail(id: "email-2", password: ApiResponseRedactor.RedactedValue)
+                ]
+            });
+
+            var after = await svc.GetApplicationSettingsAsync();
+            Assert.Equal(2, after.Emails!.Count);
+            Assert.Equal(string.Empty, after.Emails!.Single(email => email.Id == "email-2").Password);
+            Assert.DoesNotContain(after.Emails!, email => email.Password == ApiResponseRedactor.RedactedValue);
+        }
+
+        [Fact]
+        public async Task SaveApplicationSettings_SentinelAfterTheListIsReordered_StillFindsTheRightStoredPassword()
+        {
+            // Entries are matched by Id, not by position: a list can be reordered, added to and
+            // deleted from between the read and the save.
+            var svc = _provider.GetRequiredService<IConfigurationService>();
+
+            var settings = await svc.GetApplicationSettingsAsync();
+            var second = AnEmail(id: "email-2", password: "second-password");
+            settings.Emails = [AnEmail(), second];
+            await svc.SaveApplicationSettingsAsync(settings);
+
+            var saved = await svc.GetApplicationSettingsAsync();
+            await svc.SaveApplicationSettingsAsync(new ApplicationSettings
+            {
+                Id = 1,
+                Version = saved.Version,
+                Emails =
+                [
+                    AnEmail(id: "email-2", password: ApiResponseRedactor.RedactedValue),
+                    AnEmail(password: ApiResponseRedactor.RedactedValue)
+                ]
+            });
+
+            var after = await svc.GetApplicationSettingsAsync();
+            Assert.Equal("second-password", after.Emails!.Single(email => email.Id == "email-2").Password);
+            Assert.Equal(SmtpPassword, after.Emails!.Single(email => email.Id == "email-1").Password);
+        }
+
+        [Fact]
+        public async Task SaveApplicationSettings_PreservesSavedEmails_WhenPayloadOmitsThem()
+        {
+            var svc = _provider.GetRequiredService<IConfigurationService>();
+            var saved = await SaveOneEmailAsync(svc);
+
+            await svc.SaveApplicationSettingsAsync(new ApplicationSettings
+            {
+                Id = 1,
+                Version = saved.Version,
+                OutputPath = FileUtils.GetAbsolutePath("updated-output")
+            });
+
+            var after = await svc.GetApplicationSettingsAsync();
+            Assert.Equal("Household", Assert.Single(after.Emails!).Name);
+        }
+
+        [Fact]
+        public async Task GetEmailConfigurations_ReturnsAnEmptyListWhenNoneAreConfigured()
+        {
+            var svc = _provider.GetRequiredService<IConfigurationService>();
+
+            Assert.Empty(await svc.GetEmailConfigurationsAsync());
+        }
+
         [Fact]
         public async Task ProwlarrImportSettings_ApiKey_IsEncryptedAtRest_AndRecoveredForServerUse()
         {

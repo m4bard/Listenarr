@@ -1902,6 +1902,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("DownloadCompletionStabilitySeconds")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Emails")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("EmbedCoverArtInAudioFiles")
                         .HasColumnType("INTEGER");
 
