@@ -1017,6 +1017,7 @@ import {
   normalizeSource,
   getOptionalString,
   canAddOpenLibraryResult as canAddOpenLibraryResultHelper,
+  isAbridgedFormat,
 } from '@/utils/searchResultHelpers'
 import { useProtectedImages, isLikelyBackendImageUrl } from '@/composables/useProtectedImages'
 import {
@@ -2866,7 +2867,7 @@ const selectTitleResult = async (book: TitleSearchResult) => {
             : undefined, // Extract position from primary series
         abridged:
           typeof audibleData.bookFormat === 'string'
-            ? audibleData.bookFormat.toLowerCase().includes('abridged')
+            ? isAbridgedFormat(audibleData.bookFormat)
             : false,
         isbn: audibleData.isbn,
         source: metadataSource,
