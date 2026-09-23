@@ -9,10 +9,12 @@
  */
 using System.Net;
 using Listenarr.Infrastructure.Configuration;
+using Listenarr.Infrastructure.Downloads.Status;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Extensions.Http;
@@ -91,12 +93,24 @@ internal static class DownloadRegistrationExtensions
         services.AddScoped<IRemotePathMappingService, RemotePathMappingService>();
         services.AddScoped<IDownloadProcessingJobService, DownloadProcessingJobService>();
         services.AddScoped<IDirectDownloadImportSourceResolver, DirectDownloadImportSourceResolver>();
+
+        // Every client call goes through the status-recording decorator, so the failure status
+        // is written where a call actually fails rather than at each caller. Replace rather than
+        // a second Add, so there is one registration and no reliance on last-wins.
+        services.AddScoped<DownloadClientGateway>();
+        services.Replace(ServiceDescriptor.Scoped<IDownloadClientGateway>(sp => new StatusRecordingDownloadClientGateway(
+            sp.GetRequiredService<DownloadClientGateway>(),
+            sp.GetRequiredService<IDownloadClientStatusService>(),
+            sp.GetRequiredService<ILogger<StatusRecordingDownloadClientGateway>>())));
+        services.TryAddSingleton<DownloadClientBackoffStartupWindow>();
+        services.AddScoped<IDownloadClientStatusService, DownloadClientStatusService>();
         return services;
     }
 
     public static IServiceCollection AddDownloadInfrastructure(this IServiceCollection services)
     {
         services.AddScoped<IDownloadClientConfigurationRepository, EfDownloadClientConfigurationRepository>();
+        services.AddScoped<IDownloadClientStatusRepository, EfDownloadClientStatusRepository>();
         services.AddScoped<IRemotePathMappingRepository, EfRemotePathMappingRepository>();
         services.AddScoped<IDownloadRepository, EfDownloadRepository>();
         services.AddScoped<IDownloadProcessingJobRepository, EfDownloadProcessingJobRepository>();
