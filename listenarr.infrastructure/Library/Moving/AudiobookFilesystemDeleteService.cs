@@ -123,6 +123,12 @@ namespace Listenarr.Infrastructure.Library.Moving
                     return result;
                 }
 
+                // Resolved before authorization and the non-cancelable phase, once per
+                // delete, for the same reason as the per-file branch below: a settings
+                // change mid-delete must not bin half a book and unlink the rest.
+                var folderRecycleBinPolicy = await ResolveRecycleBinPolicyAsync(
+                    deleteTarget.ProtectedRoots,
+                    cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 var targetAuthorization = await AuthorizeDeleteTargetAsync(
                     deleteTarget,
@@ -147,7 +153,8 @@ namespace Listenarr.Infrastructure.Library.Moving
                         deleteTarget,
                         targetAuthorization,
                         trackedPhysicalObjectIdentities,
-                        result);
+                        result,
+                        folderRecycleBinPolicy);
                 }
 
                 if (deleteFolder && contentsDeleted)
