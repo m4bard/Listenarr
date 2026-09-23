@@ -51,19 +51,21 @@ namespace Listenarr.Domain.Search
         public string? ApiKey { get; set; }
 
         /// <summary>
-        /// Categories to search (comma-separated or JSON array)
+        /// Newznab categories to search, comma-separated (e.g. "3030,3040")
         /// </summary>
+        /// <remarks>
+        /// Null means no list is stored, which is how indexers saved before categories were
+        /// required still load. The property carries no default of its own, so it mirrors the row
+        /// faithfully and an omitted field stays distinguishable from a cleared one. A new indexer
+        /// picks up <see cref="IndexerCategorySelection.AudiobookDefault"/> on the create path.
+        /// </remarks>
+        [IndexerCategoriesRequired]
         public string? Categories { get; set; }
 
         /// <summary>
         /// Anime categories (comma-separated or JSON array)
         /// </summary>
         public string? AnimeCategories { get; set; }
-
-        /// <summary>
-        /// Tags for filtering (comma-separated)
-        /// </summary>
-        public string? Tags { get; set; }
 
         /// <summary>
         /// Whether to enable RSS sync
@@ -139,6 +141,38 @@ namespace Listenarr.Domain.Search
         /// Error message from last test
         /// </summary>
         public string? LastTestError { get; set; }
+
+        /// <summary>
+        /// When the current run of failures began. Set once, when the indexer leaves rung 0, and
+        /// deliberately NOT rewritten on each subsequent failure: "has been failing for more than
+        /// six hours" is uncomputable if this tracks the most recent failure instead of the first.
+        /// Cleared when the indexer walks all the way back down to rung 0.
+        /// </summary>
+        public DateTime? InitialFailure { get; set; }
+
+        /// <summary>
+        /// When the indexer most recently failed to answer. Rewritten on every failure.
+        /// </summary>
+        public DateTime? MostRecentFailure { get; set; }
+
+        /// <summary>
+        /// Position on the failure-backoff ladder. 0 means healthy; higher rungs mean longer
+        /// cooldowns between attempts, up to the ceiling.
+        /// </summary>
+        public int EscalationLevel { get; set; }
+
+        /// <summary>
+        /// When the current cooldown expires. While this is in the future the indexer is skipped at
+        /// search-provider selection rather than being asked and failing again.
+        /// </summary>
+        public DateTime? DisabledTill { get; set; }
+
+        /// <summary>
+        /// Why the indexer was last blocked, as the name of the query reason. A string rather than
+        /// the enum itself because the enum lives in the application layer, which this project does
+        /// not reference, and because it renders directly beside the existing last-test fields.
+        /// </summary>
+        public string? LastFailureReason { get; set; }
     }
 }
 
