@@ -817,7 +817,18 @@ const saveSettings = async () => {
     toast.success('Settings', 'Settings saved successfully')
     // If user toggled the authEnabled, attempt to save to startup config
     try {
-      const original = startupConfig.value || {}
+      // Refuse to post a startup config that was never loaded. The body posted here is
+      // whatever this ref holds, so building one from {} sends a body with nothing in it
+      // but the login-screen flag, and the operator never learns the GET failed.
+      if (!startupConfig.value) {
+        toast.error(
+          'Startup config',
+          'Startup configuration could not be read, so the login screen setting was not saved. Reload the settings page and try again.',
+        )
+        return
+      }
+
+      const original = startupConfig.value
       const originalObj = original as Record<string, unknown>
       const previousRawAuth =
         originalObj['authenticationRequired'] ?? originalObj['AuthenticationRequired']
@@ -1259,6 +1270,8 @@ async function loadTabContents(tab: string) {
             }
 
             const openlib = pickBool('enableOpenLibrarySearch', 'EnableOpenLibrarySearch', true)
+            const amazonSearch = pickBool('enableAmazonSearch', 'EnableAmazonSearch', true)
+            const audibleSearch = pickBool('enableAudibleSearch', 'EnableAudibleSearch', true)
             const defaultSearchRegion = pickString(
               'defaultSearchRegion',
               'DefaultSearchRegion',
@@ -1272,6 +1285,8 @@ async function loadTabContents(tab: string) {
 
             // Assign normalized camelCase properties for the UI binding
             normalized.enableOpenLibrarySearch = openlib
+            normalized.enableAmazonSearch = amazonSearch
+            normalized.enableAudibleSearch = audibleSearch
             normalized.defaultSearchRegion = defaultSearchRegion
             normalized.defaultSearchLanguage = defaultSearchLanguage
 
@@ -1326,6 +1341,16 @@ async function loadTabContents(tab: string) {
             normalizedReq.enableOpenLibrarySearch = pickBoolReq(
               'enableOpenLibrarySearch',
               'EnableOpenLibrarySearch',
+              true,
+            )
+            normalizedReq.enableAmazonSearch = pickBoolReq(
+              'enableAmazonSearch',
+              'EnableAmazonSearch',
+              true,
+            )
+            normalizedReq.enableAudibleSearch = pickBoolReq(
+              'enableAudibleSearch',
+              'EnableAudibleSearch',
               true,
             )
             normalizedReq.defaultSearchRegion = pickStringReq(
