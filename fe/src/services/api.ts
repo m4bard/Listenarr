@@ -20,6 +20,7 @@ import type {
   Download,
   ApiConfiguration,
   DownloadClientConfiguration,
+  DownloadClientStatus,
   ApplicationSettings,
   ProwlarrImportConnectionSettings,
   Audiobook,
@@ -888,6 +889,10 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(config),
     })
+  }
+
+  async getDownloadClientStatuses(): Promise<DownloadClientStatus[]> {
+    return this.request<DownloadClientStatus[]>('/download-clients/status')
   }
 
   async testNotification(
@@ -2415,6 +2420,7 @@ export const scoreSearchResults = (profileId: number, searchResults: SearchResul
 // Download client helpers
 export const testDownloadClient = (config: Partial<DownloadClientConfiguration>) =>
   apiService.testDownloadClient(config)
+export const getDownloadClientStatuses = () => apiService.getDownloadClientStatuses()
 
 // Audible helpers
 // ...existing code...
