@@ -48,15 +48,35 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
 
         private static readonly DownloadClientSubmissionResult Accepted = new("HASH", "HASH");
 
-        private readonly Mock<IDownloadClientGateway> _inner = new();
+        private static readonly PreparedTorrentSubmission Torrent =
+            PreparedSubmissionTestFactory.Torrent("Book", "ABCDEF1234567890ABCDEF1234567890ABCDEF12");
+
+        private readonly Mock<IDownloadClientAdapter> _adapter = new();
         private readonly Mock<IDownloadClientStatusService> _status = new();
 
-        private StatusRecordingDownloadClientGateway CreateGateway() =>
-            new(_inner.Object, _status.Object, NullLogger<StatusRecordingDownloadClientGateway>.Instance);
+        /// <summary>
+        /// The real gateway with a mocked adapter behind it, so what is asserted is the exception
+        /// the gateway actually lets through, not one handed straight to the recorder.
+        /// </summary>
+        private StatusRecordingDownloadClientGateway CreateGateway()
+        {
+            _adapter.Setup(a => a.Protocols).Returns([DownloadProtocol.Torrent]);
+            var factory = new Mock<IDownloadClientAdapterFactory>();
+            factory.Setup(f => f.GetByType(Qbit.Type)).Returns(_adapter.Object);
+
+            return new StatusRecordingDownloadClientGateway(
+                new Mock<IRemotePathMappingService>().Object,
+                factory.Object,
+                new Mock<IFileSystem>().Object,
+                new Mock<IFileSystemSemanticsResolver>().Object,
+                NullLogger<DownloadClientGateway>.Instance,
+                _status.Object,
+                NullLogger<StatusRecordingDownloadClientGateway>.Instance);
+        }
 
         private void AddThrows(Exception ex) =>
-            _inner
-                .Setup(g => g.AddAsync(Qbit, It.IsAny<PreparedDownloadSubmission>(), It.IsAny<CancellationToken>()))
+            _adapter
+                .Setup(a => a.AddAsync(Qbit, It.IsAny<PreparedDownloadSubmission>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(ex);
 
         private void VerifyFailureRecorded(Times times) =>
@@ -72,12 +92,12 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
         [Trait("Scenario", "Unreachable")]
         public async Task AddAsync_ClientUnreachable_EscalatesTheClientAndRethrows()
         {
-            // The shape DownloadService produces: the transport failure wrapped once.
+            // A transport failure wrapped once, as the adapters wrap them.
             var thrown = new DownloadClientSubmissionException("Failed to send the torrent to the download client.", ConnectionRefused());
             AddThrows(thrown);
 
             var caught = await Assert.ThrowsAsync<DownloadClientSubmissionException>(
-                () => CreateGateway().AddAsync(Qbit, null!));
+                () => CreateGateway().AddAsync(Qbit, Torrent));
 
             Assert.Same(thrown, caught);
             VerifyFailureRecorded(Times.Once());
@@ -91,7 +111,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
             // The Polly breaker refusing the call is as unreachable as the client gets.
             AddThrows(new BrokenCircuitException("The circuit is now open"));
 
-            await Assert.ThrowsAsync<BrokenCircuitException>(() => CreateGateway().AddAsync(Qbit, null!));
+            await Assert.ThrowsAsync<BrokenCircuitException>(() => CreateGateway().AddAsync(Qbit, Torrent));
 
             VerifyFailureRecorded(Times.Once());
         }
@@ -103,7 +123,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
             // HttpClient reports its own timeout as a cancellation the caller did not ask for.
             AddThrows(new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout", new TimeoutException()));
 
-            await Assert.ThrowsAsync<TaskCanceledException>(() => CreateGateway().AddAsync(Qbit, null!));
+            await Assert.ThrowsAsync<TaskCanceledException>(() => CreateGateway().AddAsync(Qbit, Torrent));
 
             VerifyFailureRecorded(Times.Once());
         }
@@ -117,7 +137,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
             // transport failure because there was none: the client answered.
             AddThrows(new DownloadClientSubmissionException("qBittorrent rejected the torrent with HTTP 409."));
 
-            await Assert.ThrowsAsync<DownloadClientSubmissionException>(() => CreateGateway().AddAsync(Qbit, null!));
+            await Assert.ThrowsAsync<DownloadClientSubmissionException>(() => CreateGateway().AddAsync(Qbit, Torrent));
 
             VerifyFailureRecorded(Times.Never());
             VerifySuccessRecorded(Times.Never());
@@ -130,15 +150,15 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
             // A status code means the client answered. 409 is about the release; 503 and 401 are
             // about the client, and every later grab would hit them too.
             AddThrows(new HttpRequestException("Conflict", null, HttpStatusCode.Conflict));
-            await Assert.ThrowsAsync<HttpRequestException>(() => CreateGateway().AddAsync(Qbit, null!));
+            await Assert.ThrowsAsync<HttpRequestException>(() => CreateGateway().AddAsync(Qbit, Torrent));
             VerifyFailureRecorded(Times.Never());
 
             AddThrows(new HttpRequestException("Service Unavailable", null, HttpStatusCode.ServiceUnavailable));
-            await Assert.ThrowsAsync<HttpRequestException>(() => CreateGateway().AddAsync(Qbit, null!));
+            await Assert.ThrowsAsync<HttpRequestException>(() => CreateGateway().AddAsync(Qbit, Torrent));
             VerifyFailureRecorded(Times.Once());
 
             AddThrows(new HttpRequestException("Unauthorized", null, HttpStatusCode.Unauthorized));
-            await Assert.ThrowsAsync<HttpRequestException>(() => CreateGateway().AddAsync(Qbit, null!));
+            await Assert.ThrowsAsync<HttpRequestException>(() => CreateGateway().AddAsync(Qbit, Torrent));
             VerifyFailureRecorded(Times.Exactly(2));
         }
 
@@ -149,11 +169,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
             // Shutdown or a caller's own deadline says nothing about the client.
             using var cts = new CancellationTokenSource();
             await cts.CancelAsync();
-            _inner
-                .Setup(g => g.AddAsync(Qbit, It.IsAny<PreparedDownloadSubmission>(), It.IsAny<CancellationToken>()))
+            _adapter
+                .Setup(a => a.AddAsync(Qbit, It.IsAny<PreparedDownloadSubmission>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new OperationCanceledException(cts.Token));
 
-            await Assert.ThrowsAsync<OperationCanceledException>(() => CreateGateway().AddAsync(Qbit, null!, cts.Token));
+            await Assert.ThrowsAsync<OperationCanceledException>(() => CreateGateway().AddAsync(Qbit, Torrent, cts.Token));
 
             VerifyFailureRecorded(Times.Never());
             VerifySuccessRecorded(Times.Never());
@@ -163,11 +183,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
         [Trait("Scenario", "Success")]
         public async Task AddAsync_Accepted_RecordsASuccess()
         {
-            _inner
-                .Setup(g => g.AddAsync(Qbit, It.IsAny<PreparedDownloadSubmission>(), It.IsAny<CancellationToken>()))
+            _adapter
+                .Setup(a => a.AddAsync(Qbit, It.IsAny<PreparedDownloadSubmission>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(Accepted);
 
-            var result = await CreateGateway().AddAsync(Qbit, null!);
+            var result = await CreateGateway().AddAsync(Qbit, Torrent);
 
             Assert.Same(Accepted, result);
             VerifySuccessRecorded(Times.Once());
@@ -180,14 +200,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
         {
             // The client took the release. A status write that fails must not turn that into a
             // failed grab, or the release is sent again and duplicated.
-            _inner
-                .Setup(g => g.AddAsync(Qbit, It.IsAny<PreparedDownloadSubmission>(), It.IsAny<CancellationToken>()))
+            _adapter
+                .Setup(a => a.AddAsync(Qbit, It.IsAny<PreparedDownloadSubmission>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(Accepted);
             _status
                 .Setup(s => s.RecordSuccessAsync(Qbit.Id, It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("database is locked"));
 
-            var result = await CreateGateway().AddAsync(Qbit, null!);
+            var result = await CreateGateway().AddAsync(Qbit, Torrent);
 
             Assert.Same(Accepted, result);
         }
@@ -198,8 +218,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
         {
             // Polling is not about any one release, so a failure there counts against the client,
             // as in Readarr's DownloadMonitoringService (RecordFailure on any exception).
-            _inner
-                .Setup(g => g.GetQueueAsync(Qbit, It.IsAny<CancellationToken>()))
+            _adapter
+                .Setup(a => a.GetQueueAsync(Qbit, It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("Download client reported a save path that is not valid on this host."));
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => CreateGateway().GetQueueAsync(Qbit));
@@ -208,8 +228,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
             // The display snapshot is not evidence of health: the qBittorrent adapter answers an
             // unreachable client there with an empty list rather than an exception, so recording a
             // success would walk a dead client down on every page load.
-            _inner
-                .Setup(g => g.GetQueueAsync(Qbit, It.IsAny<CancellationToken>()))
+            _adapter
+                .Setup(a => a.GetQueueAsync(Qbit, It.IsAny<CancellationToken>()))
                 .ReturnsAsync([]);
 
             await CreateGateway().GetQueueAsync(Qbit);
@@ -220,9 +240,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
         [Trait("Scenario", "Polling")]
         public async Task FetchDownloadsAsync_PollingFailure_Escalates()
         {
-            _inner
-                .Setup(g => g.FetchDownloadsAsync(Qbit, It.IsAny<List<Download>>(), It.IsAny<CancellationToken>()))
-                .ThrowsAsync(new DownloadClientAdapterPollingException("Error polling download client qb-main.", ConnectionRefused()));
+            _adapter
+                .Setup(a => a.GetQueueAsync(Qbit, It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(ConnectionRefused());
 
             await Assert.ThrowsAsync<DownloadClientAdapterPollingException>(
                 () => CreateGateway().FetchDownloadsAsync(Qbit, [Tracked("HASH")]));
@@ -234,13 +254,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
         [Trait("Scenario", "Polling")]
         public async Task FetchDownloadsAsync_RecordsASuccessOnlyWhenTheClientWasActuallyAsked()
         {
-            _inner
-                .Setup(g => g.FetchDownloadsAsync(Qbit, It.IsAny<List<Download>>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((DownloadClientConfiguration _, List<Download> downloads, CancellationToken _) => downloads);
+            _adapter
+                .Setup(a => a.GetQueueAsync(Qbit, It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync([]);
 
             // No download carries a client id, so the gateway returns without calling the client.
             await CreateGateway().FetchDownloadsAsync(Qbit, [new Download()]);
             VerifySuccessRecorded(Times.Never());
+            _adapter.Verify(a => a.GetQueueAsync(Qbit, It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never());
 
             // The monitor poll proper: the adapter throws when it cannot ask, so an answer is health.
             await CreateGateway().FetchDownloadsAsync(Qbit, [Tracked("HASH")]);
@@ -260,14 +281,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
         {
             // Readarr's DownloadClientFactory.Test records both outcomes for a saved client, so a
             // user who fixes a client and presses Test walks it back down straight away.
-            _inner
-                .Setup(g => g.TestConnectionAsync(Qbit, It.IsAny<CancellationToken>()))
+            _adapter
+                .Setup(a => a.TestConnectionAsync(Qbit, It.IsAny<CancellationToken>()))
                 .ReturnsAsync((false, "Connection refused"));
             await CreateGateway().TestConnectionAsync(Qbit);
             VerifyFailureRecorded(Times.Once());
 
-            _inner
-                .Setup(g => g.TestConnectionAsync(Qbit, It.IsAny<CancellationToken>()))
+            _adapter
+                .Setup(a => a.TestConnectionAsync(Qbit, It.IsAny<CancellationToken>()))
                 .ReturnsAsync((true, "Connected"));
             await CreateGateway().TestConnectionAsync(Qbit);
             VerifySuccessRecorded(Times.Once());
@@ -277,8 +298,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Status
         [Trait("Scenario", "PassThrough")]
         public async Task RemoveAsync_IsPassedThroughWithoutRecording()
         {
-            _inner
-                .Setup(g => g.RemoveAsync(Qbit, "HASH", true, It.IsAny<CancellationToken>()))
+            _adapter
+                .Setup(a => a.RemoveAsync(Qbit, "HASH", true, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(true);
 
             Assert.True(await CreateGateway().RemoveAsync(Qbit, "HASH", true));

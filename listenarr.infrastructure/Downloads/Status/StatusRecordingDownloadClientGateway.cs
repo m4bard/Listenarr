@@ -21,11 +21,15 @@ using Microsoft.Extensions.Logging;
 namespace Listenarr.Infrastructure.Downloads.Status
 {
     /// <summary>
-    /// Records each download client call's outcome against the client's persisted failure status,
-    /// at the one boundary every client call crosses. The gateway it wraps stays free of
+    /// The download client gateway, recording each call's outcome against the client's persisted
+    /// failure status at the one boundary every client call crosses. The base gateway stays free of
     /// persistence, as its own contract says it must.
     /// </summary>
     /// <remarks>
+    /// A subclass rather than a wrapper around the interface because existing code and tests cast
+    /// the registered gateway to <see cref="DownloadClientGateway"/> to reach its adapter lookup, and
+    /// a wrapper would break every one of those casts.
+    ///
     /// Which calls count follows Readarr, which records a download client's status in three places:
     /// the queue poll (DownloadMonitoringService.cs:90-100, success and any failure), the connection
     /// test (DownloadClientFactory.cs:82-89) and a successful grab (DownloadService.cs:99). Here:
@@ -43,21 +47,26 @@ namespace Listenarr.Infrastructure.Downloads.Status
     /// <item>The connection test, both outcomes, for a saved client only (the repository writes
     /// nothing for an id with no client behind it).</item>
     /// </list>
-    /// Removal, import marking and per-item lookups are passed through unrecorded, as in Readarr.
-    /// Recording never changes the outcome of the call it observes: a status write that fails is
-    /// logged and dropped, because turning an accepted grab into an error would send it again.
+    /// Removal, import marking and per-item lookups are not recorded, as in Readarr. Recording never
+    /// changes the outcome of the call it observes: a status write that fails is logged and dropped,
+    /// because turning an accepted grab into an error would send it again.
     /// </remarks>
     public sealed class StatusRecordingDownloadClientGateway(
-        IDownloadClientGateway inner,
+        IRemotePathMappingService remotePathMappingService,
+        IDownloadClientAdapterFactory factory,
+        IFileSystem fileSystem,
+        IFileSystemSemanticsResolver semanticsResolver,
+        ILogger<DownloadClientGateway> gatewayLogger,
         IDownloadClientStatusService statusService,
-        ILogger<StatusRecordingDownloadClientGateway> logger) : IDownloadClientGateway
+        ILogger<StatusRecordingDownloadClientGateway> logger)
+        : DownloadClientGateway(remotePathMappingService, factory, fileSystem, semanticsResolver, gatewayLogger)
     {
-        public async Task<(bool Success, string Message)> TestConnectionAsync(DownloadClientConfiguration client, CancellationToken ct = default)
+        public override async Task<(bool Success, string Message)> TestConnectionAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
             (bool Success, string Message) result;
             try
             {
-                result = await inner.TestConnectionAsync(client, ct);
+                result = await base.TestConnectionAsync(client, ct);
             }
             catch (Exception ex) when (IsRecordable(ex, ct))
             {
@@ -69,7 +78,7 @@ namespace Listenarr.Infrastructure.Downloads.Status
             return result;
         }
 
-        public async Task<DownloadClientSubmissionResult> AddAsync(
+        public override async Task<DownloadClientSubmissionResult> AddAsync(
             DownloadClientConfiguration client,
             PreparedDownloadSubmission submission,
             CancellationToken ct = default)
@@ -77,7 +86,7 @@ namespace Listenarr.Infrastructure.Downloads.Status
             DownloadClientSubmissionResult result;
             try
             {
-                result = await inner.AddAsync(client, submission, ct);
+                result = await base.AddAsync(client, submission, ct);
             }
             catch (Exception ex) when (DownloadClientFailureClassifier.IsClientUnavailable(ex, ct))
             {
@@ -89,14 +98,11 @@ namespace Listenarr.Infrastructure.Downloads.Status
             return result;
         }
 
-        public Task<bool> RemoveAsync(DownloadClientConfiguration client, string id, bool deleteFiles = false, CancellationToken ct = default) =>
-            inner.RemoveAsync(client, id, deleteFiles, ct);
-
-        public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
+        public override async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
             try
             {
-                return await inner.GetQueueAsync(client, ct);
+                return await base.GetQueueAsync(client, ct);
             }
             catch (Exception ex) when (IsRecordable(ex, ct))
             {
@@ -105,22 +111,12 @@ namespace Listenarr.Infrastructure.Downloads.Status
             }
         }
 
-        public Task<QueueItem> GetQueueItemAsync(
-            DownloadClientConfiguration client,
-            Download download,
-            QueueItem queueItem,
-            CancellationToken ct = default) =>
-            inner.GetQueueItemAsync(client, download, queueItem, ct);
-
-        public Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, Download download, CancellationToken ct = default) =>
-            inner.MarkItemAsImportedAsync(client, download, ct);
-
-        public async Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken ct = default)
+        public override async Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken ct = default)
         {
             List<Download> result;
             try
             {
-                result = await inner.FetchDownloadsAsync(client, downloads, ct);
+                result = await base.FetchDownloadsAsync(client, downloads, ct);
             }
             catch (Exception ex) when (IsRecordable(ex, ct))
             {
