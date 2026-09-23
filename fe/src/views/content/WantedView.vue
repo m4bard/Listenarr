@@ -478,6 +478,12 @@ const searchTargets = computed(() =>
   filteredWanted.value.filter((a) => !searching.value[a.id] && !searchResults.value[a.id]),
 )
 
+// What Search All will actually search: the targets minus any book that already has a
+// download in flight (#936). searchTargets keeps driving the button's label and disabled
+// state, which is the scope #936 set for itself; the dialog's count and duration come from
+// this instead, so the confirmation promises only what the run will do.
+const searchAllTargets = computed(() => searchTargets.value.filter((a) => !hasActiveDownload(a)))
+
 const searchButtonLabel = computed(() =>
   filterText.value
     ? `Search ${searchTargets.value.length} (${activeBucketLabel.value})`
@@ -486,7 +492,7 @@ const searchButtonLabel = computed(() =>
 
 // What the dialog is about to act on, for whichever button opened it.
 const searchConfirmCount = computed(() =>
-  pendingSearchScope.value === 'selected' ? selectedCount.value : searchTargets.value.length,
+  pendingSearchScope.value === 'selected' ? selectedCount.value : searchAllTargets.value.length,
 )
 
 const searchConfirmMessage = computed(() => {
@@ -646,7 +652,7 @@ const confirmSearchMissing = async () => {
 
   // Snapshot before the first search, because searchAudiobook mutates the
   // searching/searchResults maps that searchTargets is derived from.
-  const targets = [...searchTargets.value]
+  const targets = [...searchAllTargets.value]
   showSearchConfirm.value = false
   if (targets.length === 0) return
 
@@ -657,6 +663,9 @@ const confirmSearchMissing = async () => {
   try {
     for (const audiobook of targets) {
       if (searchRunAborted) return
+      // Re-checked per pass, like Search Selected does: an earlier search in this same run,
+      // or a push from the downloads hub, can start a download after the snapshot was taken.
+      if (hasActiveDownload(audiobook)) continue
       await searchAudiobook(audiobook)
       await new Promise((resolve) => setTimeout(resolve, SEARCH_SPACING_MS))
     }
