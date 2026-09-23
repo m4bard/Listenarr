@@ -60,13 +60,13 @@ namespace Listenarr.Application.Downloads.Common
             throw new InvalidOperationException(message);
         }
 
-        public Task<(bool Success, string Message)> TestConnectionAsync(DownloadClientConfiguration client, CancellationToken ct = default)
+        public virtual Task<(bool Success, string Message)> TestConnectionAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
             var adapter = ResolveAdapter(client);
             return adapter.TestConnectionAsync(client, ct);
         }
 
-        public async Task<DownloadClientSubmissionResult> AddAsync(
+        public virtual async Task<DownloadClientSubmissionResult> AddAsync(
             DownloadClientConfiguration client,
             PreparedDownloadSubmission submission,
             CancellationToken ct = default)
@@ -89,7 +89,7 @@ namespace Listenarr.Application.Downloads.Common
             return adapter.RemoveAsync(client, id, deleteFiles, ct);
         }
 
-        public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
+        public virtual async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
             var adapter = ResolveAdapter(client);
             var items = await adapter.GetQueueAsync(client, ct);
@@ -152,7 +152,7 @@ namespace Listenarr.Application.Downloads.Common
             return await TranslateQueueItemPathsAsync(mappings, client, item);
         }
 
-        public async Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken ct = default)
+        public virtual async Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken ct = default)
         {
             var ids = GetExternalIds(downloads);
             if (ids.Count == 0)
