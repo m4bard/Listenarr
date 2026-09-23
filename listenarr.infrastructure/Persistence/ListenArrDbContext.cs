@@ -38,6 +38,7 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<Indexer> Indexers { get; set; } = null!;
         public DbSet<ApiConfiguration> ApiConfigurations { get; set; } = null!;
         public DbSet<DownloadClientConfiguration> DownloadClientConfigurations { get; set; } = null!;
+        public DbSet<DownloadClientStatus> DownloadClientStatuses { get; set; } = null!;
         public DbSet<User> Users { get; set; } = null!;
         public DbSet<Download> Downloads { get; set; } = null!;
         public DbSet<DownloadProcessingJob> DownloadProcessingJobs { get; set; } = null!;
