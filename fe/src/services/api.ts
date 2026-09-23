@@ -25,6 +25,9 @@ import type {
   Audiobook,
   AudiobookUpdateRequest,
   History,
+  HistoryDetails,
+  HistoryPage,
+  HistoryQueryParams,
   Indexer,
   QueueItem,
   QueueSnapshot,
@@ -36,6 +39,8 @@ import type {
   SystemInfo,
   StorageInfo,
   ServiceHealth,
+  ScheduledTask,
+  ScheduledTaskRun,
   LogEntry,
   QualityProfile,
   SearchSortBy,
@@ -74,10 +79,14 @@ import {
   API_BASE_PATH,
   API_BASE_URL,
   API_ORIGIN,
+  API_PATH_PREFIX,
   EFFECTIVE_API_BASE,
 } from './apiBase'
 
 const getApiImageOrigin = (): string => (import.meta.env.DEV ? '' : API_ORIGIN)
+// Cached image files are served beside the API rather than under it, so a root-absolute stored
+// path needs the sub-path prefix that API_BASE_PATH already carries.
+const getBackendFileBase = (): string => `${getApiImageOrigin()}${API_PATH_PREFIX}`
 const getApiImagesBaseUrl = (): string => `${getApiImageOrigin()}${API_BASE_PATH}/images`
 const buildApiImageUrl = (identifier: string, sourceUrl?: string): string => {
   let url = `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
@@ -704,6 +713,36 @@ class ApiService {
     return this.request<boolean>(`/downloads/${id}`, { method: 'DELETE' })
   }
 
+  async retryBlockedImport(
+    id: string,
+  ): Promise<{ message: string; id: string; status: string; jobId: string }> {
+    return this.request<{ message: string; id: string; status: string; jobId: string }>(
+      `/downloads/${id}/retry-import`,
+      { method: 'POST' },
+    )
+  }
+
+  // Removes the download record only. The route is shared with cancelDownload because the
+  // server does the same thing either way, but the intent differs: cancelling stops something
+  // in flight, whereas this clears a row for a download that has already stopped for good.
+  async deleteDownload(id: string): Promise<{ message: string; id: string }> {
+    return this.request<{ message: string; id: string }>(`/downloads/${id}`, { method: 'DELETE' })
+  }
+
+  async clearCompletedDownloads(): Promise<{ message: string; count: number }> {
+    return this.request<{ message: string; count: number }>('/downloads/completed', {
+      method: 'DELETE',
+    })
+  }
+
+  // The endpoint sweeps ImportBlocked records as well as Failed ones, which the confirmation copy
+  // in QueueToolbar.vue has to say out loud until that is fixed upstream.
+  async clearFailedDownloads(): Promise<{ message: string; count: number }> {
+    return this.request<{ message: string; count: number }>('/downloads/failed', {
+      method: 'DELETE',
+    })
+  }
+
   async getCachedAnnounces(
     downloadId: string,
   ): Promise<{ downloadId: string; announces: string[] } | null> {
@@ -842,21 +881,14 @@ class ApiService {
   }
 
   async testNotification(
-    trigger?: string,
-    data?: Record<string, unknown>,
+    trigger: string,
+    data: Record<string, unknown>,
     webhookId?: string,
     webhookUrl?: string,
   ): Promise<{ success: boolean; message: string }> {
-    // If trigger and data are provided, use the new diagnostics endpoint
-    if (trigger && data) {
-      return this.request<{ success: boolean; message: string }>('/diagnostics/test-notification', {
-        method: 'POST',
-        body: JSON.stringify({ trigger, data, webhookId, webhookUrl }),
-      })
-    }
-    // Otherwise send a test notification using the saved notification settings.
-    return this.request<{ success: boolean; message: string }>('/notifications/test', {
+    return this.request<{ success: boolean; message: string }>('/diagnostics/test-notification', {
       method: 'POST',
+      body: JSON.stringify({ trigger, data, webhookId, webhookUrl }),
     })
   }
 
@@ -1717,7 +1749,7 @@ class ApiService {
     }
 
     // Convert other relative URLs to absolute (no query-string auth tokens).
-    return `${getApiImageOrigin()}${imageUrl}`
+    return `${getBackendFileBase()}${imageUrl}`
   }
 
   /**
@@ -1759,25 +1791,29 @@ class ApiService {
   }
 
   // History API
-  async getHistory(
-    limit?: number,
-    offset?: number,
-  ): Promise<{
-    history: History[]
-    total: number
-    limit: number
-    offset: number
-  }> {
-    const params = new URLSearchParams()
-    if (limit) params.append('limit', limit.toString())
-    if (offset) params.append('offset', offset.toString())
-    const queryString = params.toString()
-    return this.request<{
-      history: History[]
-      total: number
-      limit: number
-      offset: number
-    }>(`/history${queryString ? '?' + queryString : ''}`)
+  /**
+   * Query history. The endpoint takes twelve parameters and this used to send two of them,
+   * so no page built on it could filter, sort or bound a date range. Undefined values are
+   * left off the query string rather than sent empty, because the server treats an empty
+   * string as a filter rather than as no filter.
+   */
+  async getHistory(params: HistoryQueryParams = {}): Promise<HistoryPage> {
+    const query = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === null || value === '') continue
+      query.append(key, String(value))
+    }
+    const queryString = query.toString()
+    return this.request<HistoryPage>(`/history${queryString ? '?' + queryString : ''}`)
+  }
+
+  /**
+   * One history entry plus every other attempt sharing its correlation id. This is the whole
+   * chain behind a download rather than one row's opaque data blob, which is what makes a
+   * per-row expansion worth opening.
+   */
+  async getHistoryDetails(id: number): Promise<HistoryDetails> {
+    return this.request<HistoryDetails>(`/history/${id}/details`)
   }
 
   async getHistoryByAudiobookId(audiobookId: number): Promise<History[]> {
@@ -1810,13 +1846,14 @@ class ApiService {
     })
   }
 
-  async cleanupOldHistory(days: number = 90): Promise<{ message: string; deletedCount: number }> {
-    return this.request<{ message: string; deletedCount: number }>(
-      `/history/cleanup?days=${days}`,
-      {
-        method: 'DELETE',
-      },
-    )
+  async cleanupOldHistory(days?: number): Promise<{ message: string; deletedCount: number }> {
+    // When `days` is omitted, no query param is sent, and the server falls back to the
+    // configured HistoryRetentionDays setting. Do not default this to a hardcoded value here:
+    // that would silently override the setting on every call that does not explicitly pass one.
+    const query = days === undefined ? '' : `?days=${days}`
+    return this.request<{ message: string; deletedCount: number }>(`/history/cleanup${query}`, {
+      method: 'DELETE',
+    })
   }
 
   // Indexers API
@@ -1961,6 +1998,20 @@ class ApiService {
 
   async getServiceHealth(): Promise<ServiceHealth> {
     return this.request<ServiceHealth>('/system/health')
+  }
+
+  async getScheduledTasks(): Promise<ScheduledTask[]> {
+    return this.request<ScheduledTask[]>('/system/tasks')
+  }
+
+  // The name is a path segment, so it is encoded rather than interpolated raw. Not for
+  // the dots in a name like move.scan.handoff.recovery: those are unreserved and come
+  // back unchanged. It guards the characters that would change which route is addressed,
+  // a slash above all, and then ?, # and a space.
+  async runScheduledTask(taskName: string): Promise<ScheduledTaskRun> {
+    return this.request<ScheduledTaskRun>(`/system/tasks/${encodeURIComponent(taskName)}/run`, {
+      method: 'POST',
+    })
   }
 
   async getLogs(limit: number = 100): Promise<LogEntry[]> {
@@ -2304,7 +2355,13 @@ export const translatePath = (request: TranslatePathRequest) => apiService.trans
 export const getSystemInfo = () => apiService.getSystemInfo()
 export const getStorageInfo = () => apiService.getStorageInfo()
 export const getServiceHealth = () => apiService.getServiceHealth()
+export const getScheduledTasks = () => apiService.getScheduledTasks()
+export const runScheduledTask = (taskName: string) => apiService.runScheduledTask(taskName)
 export const getLogs = (limit?: number) => apiService.getLogs(limit)
+export const getHistory = (params?: HistoryQueryParams) => apiService.getHistory(params)
+export const getHistoryDetails = (id: number) => apiService.getHistoryDetails(id)
+export const deleteHistoryEntry = (id: number) => apiService.deleteHistoryEntry(id)
+export const clearAllHistory = () => apiService.clearAllHistory()
 export const downloadLogs = () => apiService.downloadLogs()
 
 // Export individual quality profile functions for convenience
