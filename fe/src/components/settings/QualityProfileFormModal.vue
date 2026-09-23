@@ -219,7 +219,13 @@
               />
               <FormRow v-if="upgradesEnabled" label="Upgrade Until" labelFor="cutoff-quality">
                 <select id="cutoff-quality" v-model="formData.cutoffQuality">
-                  <option value="">No Cutoff (Always Upgrade)</option>
+                  <!--
+                    Disabled, so a new profile shows a prompt rather than an empty box. It used to
+                    read "No Cutoff (Always Upgrade)" and be selectable, which it should not have
+                    been: saving it has always been refused by the check in handleSubmit, and the
+                    server refuses it too.
+                  -->
+                  <option value="" disabled>Select a cutoff quality</option>
                   <option v-for="quality in enabledQualities" :key="quality.id" :value="quality.id">
                     {{ quality.label }}
                   </option>
@@ -313,7 +319,8 @@
             <div class="filter-group">
               <h4><PhCheck /> Must Contain (Required)</h4>
               <p class="section-description">
-                Releases MUST contain at least one of these words (case-insensitive).
+                Releases MUST contain at least one of these words (case-insensitive, whole words
+                only).
               </p>
               <div class="tag-input-group">
                 <div
@@ -359,7 +366,8 @@
             <div class="filter-group">
               <h4><PhX /> Must Not Contain (Forbidden)</h4>
               <p class="section-description">
-                Releases containing any of these words will be rejected (case-insensitive).
+                Releases containing any of these words will be rejected (case-insensitive, whole
+                words only, so "abridged" does not match "unabridged").
               </p>
               <div class="tag-input-group">
                 <div
@@ -458,13 +466,17 @@
               />
             </FormRow>
 
-            <FormRow label="Minimum Score Threshold" labelFor="minimumScore">
+            <FormRow
+              label="Minimum Score Threshold"
+              labelFor="minimumScore"
+              help="A release starts at 100 and the preferences above add to or subtract from that, so scores run well past 100. 0 allows any score."
+            >
+              <!-- No max: see the help text. The floor is 0 because the backend reads 0 as no minimum. -->
               <input
                 id="minimumScore"
                 v-model.number="formData.minimumScore"
                 type="number"
                 min="0"
-                max="100"
                 placeholder="0 = allow any score"
               />
             </FormRow>
@@ -474,6 +486,28 @@
               title="Prefer newer releases"
               description="Give bonus points to more recent releases (torrent upload date)"
             />
+
+            <!--
+              Maximum Age is not part of the checkbox above. It is a hard reject applied by
+              SearchResultScorer whenever it is greater than zero, and the scorer never reads
+              PreferNewerReleases. Hiding this input therefore hid a filter that stayed on, and
+              the only way back to it was to tick a box that claims to do something else.
+            -->
+            <FormRow
+              label="Bundle and Omnibus Editions"
+              labelFor="preferredReleaseShape"
+              help="Applies to automatic searches. A release on the wrong side of this is scored down, never rejected, so a book whose only available release is a bundle is still grabbed. A book whose own series position is a range (an omnibus entry) always prefers bundles, whatever is chosen here."
+            >
+              <select
+                id="preferredReleaseShape"
+                v-model="formData.preferredReleaseShape"
+                class="form-select"
+              >
+                <option value="none">No preference</option>
+                <option value="individual">Prefer individual books</option>
+                <option value="bundle">Prefer bundle and omnibus editions</option>
+              </select>
+            </FormRow>
 
             <FormRow
               v-if="formData.preferNewerReleases"
@@ -530,7 +564,13 @@ import {
   PhDotsSixVertical,
   PhMusicNotesSimple,
 } from '@phosphor-icons/vue'
-import type { QualityProfile, CodecDefinition, QualityItem, QualityDefinition } from '@/types'
+import type {
+  QualityProfile,
+  CodecDefinition,
+  QualityItem,
+  QualityDefinition,
+  ReleaseShapePreference,
+} from '@/types'
 import { useToast } from '@/services/toastService'
 
 const props = defineProps<{
@@ -567,9 +607,6 @@ const qualityItems = ref<QualityItem[]>([])
 
 // Track which codecs are enabled
 const enabledCodecs = ref<Set<string>>(new Set())
-
-// Track upgrades enabled
-const upgradesEnabled = ref(true)
 
 // Drag state
 const draggedQuality = ref<QualityItem | null>(null)
@@ -789,6 +826,7 @@ const formData = ref<QualityProfile>({
   name: '',
   description: '',
   qualities: [],
+  upgradeAllowed: true,
   cutoffQuality: '',
   minimumSize: undefined,
   maximumSize: undefined,
@@ -802,9 +840,23 @@ const formData = ref<QualityProfile>({
   isDefault: false,
   preferNewerReleases: false,
   maximumAge: 0,
+  preferredReleaseShape: 'none' as ReleaseShapePreference,
 })
 
 const preferM4b = ref(false)
+
+/**
+ * The "Enable Quality Upgrades" checkbox. This used to be local state that the save handler
+ * turned into a blank cutoff, which meant a saved profile could not say "upgrades off" and name
+ * a cutoff at the same time, and the server could not tell the two apart. It now reads and
+ * writes the profile's own upgradeAllowed field.
+ */
+const upgradesEnabled = computed({
+  get: () => formData.value.upgradeAllowed !== false,
+  set: (value: boolean) => {
+    formData.value.upgradeAllowed = value
+  },
+})
 // Tag input refs
 const newPreferredWord = ref('')
 const newMustContain = ref('')
@@ -820,6 +872,9 @@ watch(
       formData.value.id = newProfile.id // CRITICAL: Preserve ID for update operations
       formData.value.name = newProfile.name
       formData.value.description = newProfile.description
+      // A server that predates the flag sends no upgradeAllowed, and there a blank cutoff is
+      // what "upgrades off" looked like.
+      formData.value.upgradeAllowed = newProfile.upgradeAllowed ?? !!newProfile.cutoffQuality
       formData.value.cutoffQuality = newProfile.cutoffQuality || ''
       formData.value.minimumSize = newProfile.minimumSize
       formData.value.maximumSize = newProfile.maximumSize
@@ -841,6 +896,7 @@ watch(
       formData.value.isDefault = newProfile.isDefault
       formData.value.preferNewerReleases = newProfile.preferNewerReleases
       formData.value.maximumAge = newProfile.maximumAge
+      formData.value.preferredReleaseShape = newProfile.preferredReleaseShape || 'none'
 
       preferM4b.value = (formData.value.preferredFormats || []).some(
         (format) => (format || '').toLowerCase().trim() === 'm4b',
@@ -856,15 +912,13 @@ watch(
 
       // Initialize quality items from saved qualities
       initializeQualitiesFromProfile(newProfile)
-
-      // Check if upgrades are disabled
-      upgradesEnabled.value = !!newProfile.cutoffQuality
     } else {
       // Reset to defaults
       formData.value = {
         name: '',
         description: '',
         qualities: [],
+        upgradeAllowed: true,
         cutoffQuality: '',
         minimumSize: undefined,
         maximumSize: undefined,
@@ -878,6 +932,7 @@ watch(
         isDefault: false,
         preferNewerReleases: false,
         maximumAge: 0,
+        preferredReleaseShape: 'none',
       }
 
       preferM4b.value = false
@@ -886,7 +941,6 @@ watch(
       // Reset quality items
       qualityItems.value = []
       enabledCodecs.value = new Set()
-      upgradesEnabled.value = true
     }
   },
   { immediate: true },
@@ -895,7 +949,11 @@ watch(
 /**
  * Initialize quality items from profile
  */
-const initializeQualitiesFromProfile = (profile: QualityProfile) => {
+// A function declaration, not a const arrow. The watch above runs with `immediate: true`,
+// so it calls this during setup, before a const at this point in the file has been
+// initialised. As an arrow it threw ReferenceError on every mount that had a profile,
+// Vue caught it, and the qualities were silently left empty.
+function initializeQualitiesFromProfile(profile: QualityProfile) {
   // Clear existing
   qualityItems.value = []
   enabledCodecs.value = new Set()
@@ -947,7 +1005,7 @@ const initializeQualitiesFromProfile = (profile: QualityProfile) => {
 /**
  * Parse a quality string into structured data
  */
-const parseQualityString = (qualityStr: string): QualityItem | null => {
+function parseQualityString(qualityStr: string): QualityItem | null {
   // FLAC
   if (qualityStr === 'FLAC') {
     return {
@@ -1207,9 +1265,6 @@ const handleSubmit = () => {
       saving.value = false
       return
     }
-  } else {
-    // Clear cutoff if upgrades disabled
-    formData.value.cutoffQuality = ''
   }
 
   emit('save', formData.value)
