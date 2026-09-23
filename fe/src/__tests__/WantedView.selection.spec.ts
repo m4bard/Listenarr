@@ -53,8 +53,9 @@ type WantedVm = {
   selectAll: () => void
   clearSelection: () => void
   searchSelected: () => Promise<void>
-  searchMissing: () => Promise<void>
-  categorizedWanted: { all: Audiobook[]; missing: Audiobook[] }
+  requestSearchMissing: () => void
+  confirmSearchMissing: () => Promise<void>
+  activeWanted: Audiobook[]
 }
 
 const book = (id: number, title: string): Audiobook =>
@@ -154,28 +155,42 @@ describe('WantedView multi-select', () => {
     await flushPromises()
 
     expect(vm.selectedCount).toBe(2)
-    expect(vm.categorizedWanted.missing.length).toBe(4)
+    expect(vm.activeWanted.length).toBe(4)
 
     await runSearch(vm.searchSelected())
 
     expect(searchedIds()).toEqual([1, 3])
   })
 
-  it('Search All still covers every missing book, whatever the filter and selection say', async () => {
+  it('Search All keeps the filter scope, the fix 169 was filed for', async () => {
     const { vm } = await mountWanted()
 
-    // A filter narrow enough to leave one row, and a selection narrower still.
+    // A filter narrow enough to leave one row on screen.
     vm.filterText = 'Alpha'
-    vm.toggleSelection(1)
     await flushPromises()
 
-    expect(vm.selectedCount).toBe(1)
+    vm.requestSearchMissing()
+    await runSearch(vm.confirmSearchMissing())
 
-    await runSearch(vm.searchMissing())
+    // Search All acts on searchTargets, which is derived from filteredWanted.
+    // Before 169 it read the unfiltered bucket instead, so a filtered-down
+    // page still queued every missing book on screen or not.
+    expect(searchedIds()).toEqual([1])
+  })
 
-    // Search All is deliberately not scoped by either control. If this ever
-    // reads the filter or the selection, that is a behaviour change that has to
-    // be argued for rather than arrived at.
+  it('Search All ignores the ticks, unlike Search Selected', async () => {
+    const { vm } = await mountWanted()
+
+    // Tick fewer books than exist. If Search All read the selection instead
+    // of searchTargets, it would only touch these two.
+    vm.toggleSelection(1)
+    vm.toggleSelection(2)
+    await flushPromises()
+    expect(vm.selectedCount).toBe(2)
+
+    vm.requestSearchMissing()
+    await runSearch(vm.confirmSearchMissing())
+
     expect(searchedIds()).toEqual([1, 2, 3, 4])
   })
 
