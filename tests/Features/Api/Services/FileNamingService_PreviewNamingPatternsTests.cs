@@ -40,37 +40,39 @@ namespace Listenarr.Tests.Features.Api.Services
         }
 
         [Fact]
-        public void PreviewNamingPatterns_LowercaseTokenName_MirrorsRendererRatherThanResolvingItLikeTheOldFrontendClaimed()
+        public void PreviewNamingPatterns_LowercaseTokenName_ResolvesTheSameAsTheCanonicalCasing()
         {
             // Correction to the tracker item, measured rather than assumed: the item describes
             // rule 1 as "token matching is RegexOptions.IgnoreCase on the backend, exact-case in
             // the frontend", implying the backend resolves a lowercase {title} the way {Title}
-            // would resolve. It does not. RegexOptions.IgnoreCase on the token-syntax regex
-            // (FileNamingService.cs:206, `\{(\w+)(?::([^}]+))?\}`) is a no-op for this purpose,
-            // because \w already matches both cases and there is no case-sensitive literal
-            // letter in that pattern. The actual variable-NAME lookup is
-            // `variables.TryGetValue(variableName, ...)` against a plain
-            // `Dictionary<string, object>` with no case-insensitive comparer
-            // (FileNamingService.Helpers.cs BuildVariables), so a lowercase {title} is an
-            // unrecognized variable, not a case-insensitive hit.
+            // would resolve. RegexOptions.IgnoreCase on the token-syntax regex
+            // (FileNamingService.cs:206, `\{(\w+)(?::([^}]+))?\}`) is itself a no-op for this
+            // purpose, because \w already matches both cases and there is no case-sensitive
+            // literal letter in that pattern. What used to make the difference was the
+            // variable-NAME lookup, `variables.TryGetValue(variableName, ...)`, against the
+            // table BuildVariables built.
             //
-            // Measured here: {title} in a folder pattern renders as "" (the empty-token
-            // sentinel has nothing adjacent to preserve). In a file/multi-file pattern
-            // (treatAsFilename=true) the same empty result falls through
-            // SanitizePathComponent's "Unknown" fallback, producing "Unknown.m4b". This is
-            // exactly the defect tracked upstream as #976. Per this item's sequencing caveat,
-            // this preview mirrors that behavior rather than opinion its way around it; fixing
-            // #976 is out of scope for this branch, and this test is what would need to change
-            // (deliberately) once #976 lands.
+            // This test originally asserted the bug: a plain, case-sensitive Dictionary meant a
+            // lowercase {title} missed the lookup, took the not-found path, and rendered as the
+            // empty sentinel, so the preview mirrored the defect tracked upstream as #976 on
+            // purpose rather than diverging from what a real import or rename would do.
+            //
+            // BuildVariables now keys its dictionary with StringComparer.OrdinalIgnoreCase
+            // (FileNamingService.Helpers.cs), so {title} resolves the same value as {Title}. The
+            // preview still mirrors the real renderer, and the real renderer no longer has the
+            // bug, so this test follows: it now asserts the resolved value instead of the
+            // sentinel. #976 itself is still open upstream; what changed is that this branch's
+            // own copy of the fix is in the tree this test runs against.
             var preview = _service.PreviewNamingPatterns(
                 folderPattern: "{title}",
                 filePattern: "{title}",
                 multiFilePattern: "{title}");
 
-            Assert.Equal(string.Empty, preview.FolderExample);
-            Assert.Equal("Unknown.m4b", preview.SingleFileExample);
-            Assert.All(preview.MultiFileExamples, example => Assert.Equal("Unknown.m4b", example));
-            Assert.True(preview.MultiFileAmbiguous);
+            const string resolvedTitle = "The Clockmaker's Apprentice - A Novel";
+            Assert.Equal(resolvedTitle, preview.FolderExample);
+            Assert.Equal(resolvedTitle + ".m4b", preview.SingleFileExample);
+            Assert.All(preview.MultiFileExamples, example => Assert.Equal(resolvedTitle + ".m4b", example));
+            Assert.True(preview.MultiFileAmbiguous); // Same title in every probe, no disc/track token used.
         }
 
         [Fact]
