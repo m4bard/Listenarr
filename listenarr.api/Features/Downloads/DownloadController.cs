@@ -121,6 +121,14 @@ namespace Listenarr.Api.Features.Downloads
                     ex.IsExpired ? StatusCodes.Status410Gone : StatusCodes.Status400BadRequest,
                     new { message = "Unable to use download reference", error = ex.Message });
             }
+            catch (DownloadClientUnavailableException ex)
+            {
+                // A configuration fault, not a server fault: the release's indexer names a
+                // client that cannot take this grab. The message says which indexer and what to
+                // change. 409, in this endpoint's idiom for "refused, nothing upstream broken".
+                _logger.LogWarning("Download client unavailable: {Reason}", LogRedaction.SanitizeText(ex.Message));
+                return Conflict(new { message = ex.Message });
+            }
             catch (DownloadClientRejectedReleaseException ex)
             {
                 // Same reasoning as search-and-download above, answered in this endpoint's own
