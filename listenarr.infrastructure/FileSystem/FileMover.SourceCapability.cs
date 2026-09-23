@@ -188,13 +188,14 @@ public partial class FileMover : IFilePublicationSourceCapability
     /// the outermost one on the path, or null if there is none.
     /// </summary>
     /// <remarks>
-    /// Refusing a linked ancestor is deliberate and covered by
-    /// CheckPublicationSource_LinkedAncestor_ReturnsUnsupported, so this does not change the
-    /// answer. It only says which segment may have caused it, because the raw failure is an ENOTDIR
-    /// from openat and gives an operator nothing to act on. The walk opens segments from the top
-    /// down and stops at the first link, so with nested links the outer one is named, not the
-    /// deeper one. The hint is a candidate rather than a diagnosis: a refusal that happens before
-    /// the walk, such as a root that cannot be authorized, can still leave a link on the path.
+    /// This does not change the answer. It only says which segment may have caused a refusal,
+    /// because the raw failure is an ENOTDIR from openat and gives an operator nothing to act on.
+    /// Since ResolveSymlinkedAncestors, a linked source ancestor normally resolves and is published,
+    /// so this names a link only when that resolution could not remove it from the walk. The walk
+    /// opens segments from the top down and stops at the first link, so with nested links the outer
+    /// one is named, not the deeper one. The hint is a candidate rather than a diagnosis: a refusal
+    /// that happens before the walk, such as a root that cannot be authorized, can still leave a
+    /// link on the path.
     ///
     /// Beneath a configured root only the segments below the root are opened without following
     /// links. The root itself is opened by the boundary authorizer, which follows its link, so a
