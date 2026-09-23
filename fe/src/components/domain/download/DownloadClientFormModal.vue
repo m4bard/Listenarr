@@ -206,8 +206,13 @@
             </div>
           </FormSection>
 
-          <!-- Priority -->
-          <FormSection title="Priority" :icon="PhSortAscending">
+          <!--
+            Two different priorities, kept in two sections on purpose. Client Priority orders
+            clients against each other and the selector reads it for every protocol. Queue
+            Priority is forwarded to the client as the job's own priority, and only the SABnzbd
+            and NZBGet planners read it, which is why that section stays usenet-only.
+          -->
+          <FormSection title="Client Selection" :icon="PhSortAscending">
             <div class="form-group">
               <label for="clientPriority">Client Priority</label>
               <input
@@ -218,12 +223,14 @@
                 max="50"
               />
               <small
-                >Which client is used when more than one can take this download. Lower wins.
-                Clients sharing the lowest number are used in turn (1-50)</small
+                >Which client is used when more than one can take this download. Lower wins. Clients
+                sharing the lowest number are used in turn (1-50)</small
               >
             </div>
+          </FormSection>
 
-            <div class="form-group" v-if="isUsenet">
+          <FormSection title="Queue Priority" :icon="PhListNumbers" v-if="isUsenet">
+            <div class="form-group">
               <label for="recentPriority">Priority</label>
               <!--
                 These values are the ones the planners actually accept. The list used to offer
@@ -369,6 +376,7 @@ import {
   PhLock,
   PhTag,
   PhSortAscending,
+  PhListNumbers,
   PhCheckSquare,
   PhWrench,
   PhFolder,
