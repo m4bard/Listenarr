@@ -22,18 +22,6 @@ namespace Listenarr.Application.Search.Indexers.Common;
 
 public class IndexerSearchWorkflow
 {
-    // Every enabled indexer is fanned out to concurrently. A local Jackett/Prowlarr proxy
-    // has its own connection-handling capacity, and firing all of them at once (unbounded,
-    // via Task.WhenAll) can exceed what that proxy can accept in one burst, producing
-    // SocketException(111)/SocketException(104) against ports Listenarr itself configured
-    // -- overload, not a remote outage. Bounded the same way DownloadClientQueuePoller
-    // (SemaphoreSlim) and UnmatchedScanBackgroundService (Parallel.ForEachAsync) already
-    // bound their own fan-outs. 4 sits in the middle of the finding's suggested 3-5 range:
-    // enough that a typical few-indexer interactive search still runs effectively unthrottled,
-    // low enough that a large automatic-search sweep never asks the local proxy to accept
-    // more than 4 simultaneous connections per book.
-    private const int MaxConcurrentIndexerSearches = 4;
-
     private readonly HttpClient _httpClient;
     private readonly IConfigurationService _configurationService;
     private readonly IIndexerRepository _indexerRepository;
@@ -126,12 +114,13 @@ public class IndexerSearchWorkflow
         // than a ConcurrentBag so the per-indexer outcome log lines still come out in configuration
         // order once the bounded fan-out has finished.
         var observations = new (Indexer Indexer, IndexerQueryObservation Observation)[indexers.Count];
+        var maxConcurrency = await IndexerSearchConcurrency.ResolveAsync(_configurationService, _logger, ct);
 
         await Parallel.ForEachAsync(
             indexers.Select((indexer, index) => (Indexer: indexer, Index: index)),
             new ParallelOptions
             {
-                MaxDegreeOfParallelism = MaxConcurrentIndexerSearches,
+                MaxDegreeOfParallelism = maxConcurrency,
                 CancellationToken = ct
             },
             async (entry, _) =>
