@@ -180,7 +180,21 @@ namespace Listenarr.Application.Downloads.Submission
 
             var candidate = TrustedDownloadCandidateFactory.Create(topResult.SearchResult);
             var protocol = candidate.SourceDescriptor.Protocol;
-            var downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(protocol);
+            string? downloadClientId;
+            try
+            {
+                downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(
+                    protocol, candidate.SourceDescriptor.IndexerId);
+            }
+            catch (DownloadClientUnavailableException ex)
+            {
+                logger.LogWarning("Not grabbing '{Title}': {Reason}", LogRedaction.SanitizeText(candidate.Title), ex.Message);
+                return new SearchAndDownloadResult
+                {
+                    Success = false,
+                    Message = ex.Message
+                };
+            }
 
             if (downloadClientId == null)
             {
@@ -267,7 +281,12 @@ namespace Listenarr.Application.Downloads.Submission
 
             if (downloadClientId == null)
             {
-                downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(prepared.Protocol);
+                // The indexer id travels with the candidate, including through the signed
+                // download reference a manual grab arrives with, so a bound indexer is honoured
+                // here too. A client chosen explicitly for the grab skips this branch and wins
+                // over the binding, as in Readarr's DownloadService.DownloadReport.
+                downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(
+                    prepared.Protocol, candidate.SourceDescriptor.IndexerId);
 
                 if (downloadClientId == null)
                 {

@@ -391,7 +391,8 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             {
                 // Determine appropriate download client for this result
                 var protocol = _resultClassifier.ResolveProtocol(topResult.SearchResult);
-                var downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(protocol);
+                var downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(
+                    protocol, topResult.SearchResult.IndexerId);
 
                 if (string.IsNullOrEmpty(downloadClientId))
                 {
