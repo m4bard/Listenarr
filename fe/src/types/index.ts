@@ -483,6 +483,7 @@ export interface ApplicationSettings {
   enableOpenLibrarySearch?: boolean
   defaultSearchRegion?: string
   defaultSearchLanguage?: string
+  maxConcurrentIndexerSearches?: number
 
   // Scheduled provider-metadata refresh
   metadataRefreshEnabled?: boolean
