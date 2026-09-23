@@ -28,17 +28,20 @@ namespace Listenarr.Api.Features.SystemDiagnostics
     {
         private readonly ISystemService _systemService;
         private readonly ISystemReadinessService _readinessService;
+        private readonly IAppMetricsSnapshotProvider _metricsSnapshotProvider;
         private readonly ILogger<SystemController> _logger;
         private readonly IFileSystem _fileSystem;
 
         public SystemController(
             ISystemService systemService,
             ISystemReadinessService readinessService,
+            IAppMetricsSnapshotProvider metricsSnapshotProvider,
             ILogger<SystemController> logger,
             IFileSystem fileSystem)
         {
             _systemService = systemService;
             _readinessService = readinessService;
+            _metricsSnapshotProvider = metricsSnapshotProvider;
             _logger = logger;
             _fileSystem = fileSystem;
         }
@@ -108,6 +111,27 @@ namespace Listenarr.Api.Features.SystemDiagnostics
             {
                 _logger.LogError(ex, "Error retrieving service health");
                 return StatusCode(500, new { error = "Failed to retrieve service health" });
+            }
+        }
+
+        /// <summary>
+        /// Get an in-memory aggregation of everything recorded through the application's metrics
+        /// service: counters summed, gauges at their last observed value, and timings as a
+        /// count/sum/min/max summary. There is no exporter behind this; it is a snapshot of the
+        /// process's own in-memory state.
+        /// </summary>
+        [HttpGet("metrics")]
+        public ActionResult<MetricsSnapshot> GetMetrics()
+        {
+            try
+            {
+                var snapshot = _metricsSnapshotProvider.GetSnapshot();
+                return Ok(snapshot);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error retrieving metrics snapshot");
+                return StatusCode(500, new { error = "Failed to retrieve metrics snapshot" });
             }
         }
 
