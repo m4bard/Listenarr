@@ -2354,6 +2354,28 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.ToTable("DownloadClientConfigurations");
                 });
 
+            modelBuilder.Entity("Listenarr.Domain.Downloads.DownloadClientStatus", b =>
+                {
+                    b.Property<string>("ClientId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DisabledTill")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("EscalationLevel")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("InitialFailure")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("MostRecentFailure")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ClientId");
+
+                    b.ToTable("DownloadClientStatuses", (string)null);
+                });
+
             modelBuilder.Entity("Listenarr.Domain.Downloads.DownloadProcessingJob", b =>
                 {
                     b.Property<string>("Id")
@@ -2942,6 +2964,15 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Relocation");
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Downloads.DownloadClientStatus", b =>
+                {
+                    b.HasOne("Listenarr.Domain.Downloads.DownloadClientConfiguration", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.Audiobook", b =>
