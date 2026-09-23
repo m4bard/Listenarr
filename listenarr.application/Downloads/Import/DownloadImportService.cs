@@ -128,9 +128,9 @@ namespace Listenarr.Application.Downloads.Import
                     sourcePathComparer = sourceSemantics.Value.Comparer;
                 }
                 var sourceFiles = candidateFiles.Distinct(sourcePathComparer).ToList();
-                sourceRootPath = FileUtils.GetCommonDirectory(sourceFiles);
+                var companionSourceRoots = ImportCompanionDestinationResolver.ResolveRoots(sourceFiles, archiveImportExtractor.ExtractionRoots, sourceSemantics);
                 var plannedAudioFiles = MultiFileImportPlanner.BuildPlans(
-                    sourceFiles.Where(FileUtils.IsAudioFile).Select(f => (f, (string?)null)),
+                    sourceFiles.Where(f => FileUtils.IsAudioFile(f, settings.AllowedFileExtensions)).Select(f => (f, (string?)null)),
                     sourcePathComparer);
                 var planByPath = plannedAudioFiles.ToDictionary(p => p.FullPath, sourcePathComparer);
                 var diskNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plannedAudioFiles, p => p.DiskNumberHint, sourcePathComparer);
@@ -172,9 +172,9 @@ namespace Listenarr.Application.Downloads.Import
                                 file,
                                 "Source filesystem identity is unavailable.",
                                 ct);
-                        if (!FileUtils.IsAudioFile(file))
+                        if (!FileUtils.IsAudioFile(file, settings.AllowedFileExtensions))
                         {
-                            var hasSuccessfulAudioImport = results.Any(r => r.Success && !string.IsNullOrWhiteSpace(r.FinalPath) && !string.IsNullOrWhiteSpace(r.SourcePath) && FileUtils.IsAudioFile(r.SourcePath!));
+                            var hasSuccessfulAudioImport = results.Any(r => r.Success && !string.IsNullOrWhiteSpace(r.FinalPath) && !string.IsNullOrWhiteSpace(r.SourcePath) && FileUtils.IsAudioFile(r.SourcePath!, settings.AllowedFileExtensions));
                             if (!hasSuccessfulAudioImport || string.IsNullOrWhiteSpace(audiobook.BasePath))
                             {
                                 results.Add(ImportResult.Skipped("No successful audio import in batch"));
@@ -184,11 +184,11 @@ namespace Listenarr.Application.Downloads.Import
 
                             try
                             {
-                                var relativePath = !string.IsNullOrWhiteSpace(sourceRootPath) ? Path.GetRelativePath(sourceRootPath, file) : Path.GetFileName(file);
-                                if (!destinationPlanner.TryResolve(audiobook.BasePath, relativePath, destinationSemantics, out var destination))
+                                var companionPlaced = ImportCompanionDestinationResolver.TryResolveRelativeDestination(companionSourceRoots, file, audiobook.BasePath, results, fileSourceSemantics, destinationSemantics, out var relativePath);
+                                if (!companionPlaced || !destinationPlanner.TryResolve(audiobook.BasePath, relativePath, destinationSemantics, out var destination))
                                 {
-                                    results.Add(ImportResult.ImportFailure(completedFileAction, file, audiobook.BasePath));
-                                    logger.LogWarning("Blocked companion import outside audiobook base path. Audiobook {AudiobookId}, Source {Source}, Relative {Relative}, BasePath {BasePath}", audiobook.Id, file, relativePath, audiobook.BasePath);
+                                    results.Add(companionPlaced ? ImportResult.ImportFailure(completedFileAction, file, audiobook.BasePath) : ImportResult.Skipped($"Companion file {Path.GetFileName(file)} has no destination inside the audiobook folder: it came from neither the batch's source directory nor an archive, and no audio file was imported from its own directory"));
+                                    logger.LogWarning("Companion import not placed inside the audiobook base path. Audiobook {AudiobookId}, Source {Source}, Placed {Placed}, Relative {Relative}, BasePath {BasePath}", audiobook.Id, file, companionPlaced, relativePath, audiobook.BasePath);
                                     continue;
                                 }
 
@@ -253,7 +253,7 @@ namespace Listenarr.Application.Downloads.Import
                             catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
                             {
                                 results.Add(ImportResult.Exception(exception, file));
-                                logger.LogWarning(exception, $"Failed companion-file import {file}");
+                                logger.LogWarning(exception, "Failed companion-file import {File}", LogRedaction.SanitizeFilePath(file));
                             }
                             continue;
                         }
@@ -302,7 +302,7 @@ namespace Listenarr.Application.Downloads.Import
                                 effectiveChapterNumber ??= effectiveDiskNumber;
                             }
 
-                            var variablesForFile = new Dictionary<string, object>
+                            var variablesForFile = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) // ApplyNamingPattern matches tokens case insensitively, so {series} must resolve here too
                             {
                                 { "Author", namingMetadata.Artist ?? "Unknown Author" },
                                 { "Series", string.IsNullOrWhiteSpace(namingMetadata.Series) ? string.Empty : namingMetadata.Series },
@@ -313,7 +313,7 @@ namespace Listenarr.Application.Downloads.Import
                                 { "Publisher", string.IsNullOrWhiteSpace(namingMetadata.Publisher) ? string.Empty : namingMetadata.Publisher },
                                 { "Language", string.IsNullOrWhiteSpace(namingMetadata.Language) ? string.Empty : namingMetadata.Language },
                                 { "Asin", string.IsNullOrWhiteSpace(namingMetadata.Asin) ? string.Empty : namingMetadata.Asin },
-                                { "SeriesNumber", namingMetadata.SeriesPosition?.ToString() ?? effectiveChapterNumber?.ToString() ?? string.Empty },
+                                { "SeriesNumber", SeriesNumberToken(namingMetadata, effectiveChapterNumber) },
                                 { "Year", namingMetadata.Year?.ToString() ?? string.Empty },
                                 { "Quality", (namingMetadata.BitRate.HasValue ? $"{namingMetadata.BitRate}kbps" : null) ?? namingMetadata.Format ?? string.Empty },
                                 { "DiskNumber", effectiveDiskNumber?.ToString() ?? string.Empty },
@@ -480,7 +480,7 @@ namespace Listenarr.Application.Downloads.Import
                         catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
                         {
                             results.Add(ImportResult.Exception(exception, file));
-                            logger.LogWarning(exception, $"ImportFilesFromDirectory: Failed processing file in directory import: {file}");
+                            logger.LogWarning(exception, "ImportFilesFromDirectory: Failed processing file in directory import: {File}", LogRedaction.SanitizeFilePath(file));
                         }
                     }
                 }

@@ -57,8 +57,10 @@ internal static class DownloadRegistrationExtensions
         services.TryAddSingleton(TimeProvider.System);
 
         services.AddSingleton<IDownloadPushService, DownloadPushService>();
+        services.AddSingleton<IDownloadClientStatusCache, DownloadClientStatusCache>();
         services.AddScoped<IDownloadService, DownloadService>();
         services.AddScoped<DownloadTypeResolver>();
+        services.AddSingleton<DownloadClientRoundRobinState>();
         services.AddScoped<DownloadClientSelector>();
         services.AddScoped<DownloadCachedTorrentStore>();
         services.AddSingleton<IDownloadReferenceService, DownloadReferenceService>();
@@ -84,6 +86,7 @@ internal static class DownloadRegistrationExtensions
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<FileMoverOptions>, FileMoverOptionsValidator>();
         services.AddScoped<IDownloadClientGateway, DownloadClientGateway>();
+        services.AddScoped<ISeedCriteriaResolver, SeedCriteriaResolver>();
         services.AddScoped<IRemotePathMappingService, RemotePathMappingService>();
         services.AddScoped<IDownloadProcessingJobService, DownloadProcessingJobService>();
         services.AddScoped<IDirectDownloadImportSourceResolver, DirectDownloadImportSourceResolver>();
