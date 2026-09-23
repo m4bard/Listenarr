@@ -66,6 +66,15 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             Assert.Equal("qb-alpha", first);
         }
 
+        private static IDownloadClientStatusService NoBlockedClients()
+        {
+            var status = new Mock<IDownloadClientStatusService>();
+            status
+                .Setup(s => s.GetBlockedClientIdsAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new HashSet<string>());
+            return status.Object;
+        }
+
         private static DownloadClientSelector CreateSelector(
             params DownloadClientConfiguration[] clients)
         {
@@ -78,6 +87,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
                 configurationService.Object,
                 new Mock<IIndexerRepository>().Object,
                 new DownloadClientRoundRobinState(),
+                NoBlockedClients(),
                 NullLogger<DownloadClientSelector>.Instance);
         }
 
