@@ -79,6 +79,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
         [Trait("Method", "MonitorDownloadsAsync")]
         public async Task MonitorDownloadsAsync_DownloadingBecomesCompleted()
         {
+            // This test alone polls in a tight loop on the real clock and asserts completion,
+            // so it needs the completion stability window out of the way. Stated here rather
+            // than for the whole class, since every other test in this file leaves the
+            // repository's single settings row for its own save.
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithoutCompletionStabilityWindow()
+                .Build());
+
             var download = await _downloadRepository.AddAsync(new DownloadBuilder()
                 .WithDownloading(0)
                 .WithExternalId("1")
@@ -356,6 +364,75 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
                 client,
                 download,
                 "NZBGet failed while unpacking."));
+        }
+
+        [Fact]
+        [Trait("Method", "OnDownloadFailed")]
+        public async Task OnDownloadFailed_WithFailedDownloadHandlingOff_WritesNoBlocklistEntry()
+        {
+            // A blocklist entry is durable state with no expiry and, before the delete endpoints,
+            // no way out at all. Writing one while the operator has failed-download handling
+            // switched off accumulates permanent bans that nothing in the UI hints at.
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithoutFailedDownloadHandling()
+                .Build());
+
+            var download = await AddFailedDownloadAsync("handling-off");
+            await InvokeOnDownloadFailedAsync(download);
+
+            var blocklist = _provider.GetRequiredService<IBlocklistService>();
+            Assert.Empty(await blocklist.GetForAudiobookAsync(download.AudiobookId!.Value));
+        }
+
+        [Fact]
+        [Trait("Method", "OnDownloadFailed")]
+        public async Task OnDownloadFailed_WithFailedDownloadHandlingOn_WritesTheBlocklistEntry()
+        {
+            // The control for the test above. Without it, a BlockAsync that had stopped being
+            // called at all, or an identity that came back null, would read as a pass there.
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithFailedDownloadHandling()
+                .Build());
+
+            var download = await AddFailedDownloadAsync("handling-on");
+            await InvokeOnDownloadFailedAsync(download);
+
+            var blocklist = _provider.GetRequiredService<IBlocklistService>();
+            var entry = Assert.Single(await blocklist.GetForAudiobookAsync(download.AudiobookId!.Value));
+            Assert.Equal("The Failing Listing", entry.Title);
+        }
+
+        private async Task<Download> AddFailedDownloadAsync(string id)
+        {
+            var audiobook = await CreateAudiobook();
+            var download = new DownloadBuilder()
+                .WithId(id)
+                .WithStatus(DownloadStatus.Failed)
+                .WithTitle("The Failing Listing")
+                .WithAudiobook(audiobook)
+                .WithDownloadClientConfiguration(client)
+                .Build();
+            // The builder sets no external id, so the client-removal branch below the gate stays
+            // out of this.
+            download.Metadata[ReleaseIdentity.MetadataKey] =
+                ReleaseIdentity.For("ABCDEF1234567890ABCDEF1234567890ABCDEF12", null, null, null)!;
+            return await _downloadRepository.AddAsync(download);
+        }
+
+        private async Task InvokeOnDownloadFailedAsync(Download download)
+        {
+            // The failure handling lives on the processor rather than on the hosted service, and
+            // the only public route to it is a whole poll cycle against a mock client that would
+            // have to be persuaded to report a failure. Reflection keeps the test about the one
+            // branch it is asking after, the way MonitorDownloadsAsync is reached above.
+            var processor = _provider.GetRequiredService<IDownloadMonitorProcessor>();
+            var method = processor.GetType().GetMethod(
+                "OnDownloadFailed",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.NotNull(method);
+            await (Task)method.Invoke(
+                processor,
+                [download, client, "simulated client failure", CancellationToken.None])!;
         }
 
         private sealed class MutableTimeProvider(DateTimeOffset currentTime) : TimeProvider
