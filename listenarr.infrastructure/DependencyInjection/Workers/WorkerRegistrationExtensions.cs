@@ -23,6 +23,11 @@ internal static class WorkerRegistrationExtensions
         services.AddSingleton<IScheduledTaskRegistry, ScheduledTaskRegistry>();
         services.AddSingleton<IWorkerCycleRunner, WorkerCycleRunner>();
 
+        // MetadataRefreshOptionsHolder and IMetadataRefreshCoordinator are registered
+        // unconditionally in AddMetadataServices instead of here: this method is skipped
+        // wholesale when background hosted services are disabled, but the coordinator also
+        // gates the foreground API trigger and must remain resolvable either way.
+
         services.AddSingleton<IScanQueueService, ScanQueueService>();
         services.AddSingleton<MoveScanHandoffRecoveryService>();
         AddProcessor<ScanJobProcessor, IScanJobProcessor>(services);
@@ -45,6 +50,7 @@ internal static class WorkerRegistrationExtensions
         AddHostedProcessor<SeriesMonitoringProcessor, ISeriesMonitoringProcessor, SeriesMonitoringBackgroundService>(services);
         AddHostedProcessor<FfmpegInstallProcessor, IFfmpegInstallProcessor, FfmpegInstallBackgroundService>(services);
         AddHostedProcessor<MetadataRescanProcessor, IMetadataRescanProcessor, MetadataRescanService>(services);
+        AddHostedProcessor<MetadataRefreshProcessor, IMetadataRefreshProcessor, MetadataRefreshBackgroundService>(services);
         services.AddSingleton<DownloadProcessingJobProcessor>();
         services.AddSingleton<IDownloadImportProcessor>(provider =>
             provider.GetRequiredService<DownloadProcessingJobProcessor>());
@@ -59,6 +65,13 @@ internal static class WorkerRegistrationExtensions
             DownloadProcessingJobCleanupService>(services);
 
         AddHostedProcessor<UnmatchedScanProcessor, IUnmatchedScanProcessor, UnmatchedScanBackgroundService>(services);
+
+        // Also its own worker: prunes action-history rows on the configured
+        // HistoryRetentionDays setting, unrelated to any other cleanup service's table.
+        AddHostedProcessor<
+            HistoryRetentionCleanupProcessor,
+            IHistoryRetentionCleanupProcessor,
+            HistoryRetentionCleanupService>(services);
         return services;
     }
 
