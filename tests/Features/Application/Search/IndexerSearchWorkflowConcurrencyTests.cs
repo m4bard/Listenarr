@@ -80,7 +80,8 @@ namespace Listenarr.Tests.Features.Application.Search
 
         private static IndexerSearchWorkflow BuildWorkflow(
             List<Indexer> indexers,
-            ConcurrencyTrackingSearchProvider provider)
+            ConcurrencyTrackingSearchProvider provider,
+            Action<Mock<IConfigurationService>>? configure = null)
         {
             var indexerRepository = new Mock<IIndexerRepository>();
             indexerRepository
@@ -88,6 +89,7 @@ namespace Listenarr.Tests.Features.Application.Search
                 .ReturnsAsync(indexers);
 
             var configurationService = new Mock<IConfigurationService>();
+            configure?.Invoke(configurationService);
             var settingsParser = new IndexerAdditionalSettingsParser(NullLogger<IndexerAdditionalSettingsParser>.Instance);
 
             return new IndexerSearchWorkflow(
@@ -98,6 +100,11 @@ namespace Listenarr.Tests.Features.Application.Search
                 settingsParser,
                 NullLogger<IndexerSearchWorkflow>.Instance);
         }
+
+        private static Action<Mock<IConfigurationService>> WithCeiling(int ceiling) =>
+            mock => mock
+                .Setup(c => c.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings { MaxConcurrentIndexerSearches = ceiling });
 
         private static List<Indexer> BuildIndexers(int count)
         {
@@ -145,6 +152,86 @@ namespace Listenarr.Tests.Features.Application.Search
             var sources = results.Select(r => r.Source).OrderBy(s => s).ToList();
             var expectedSources = indexers.Select(i => i.Name).OrderBy(n => n).ToList();
             Assert.Equal(expectedSources, sources);
+        }
+
+        [Fact]
+        [Trait("Method", "SearchIndexersAsync")]
+        [Trait("Scenario", "OperatorLowersConcurrencyCeiling")]
+        public async Task SearchIndexersAsync_CeilingSetToTwo_NeverRunsMoreThanTwoAtOnce()
+        {
+            var indexers = BuildIndexers(10);
+            var provider = new ConcurrencyTrackingSearchProvider();
+            var workflow = BuildWorkflow(indexers, provider, WithCeiling(2));
+
+            var results = await workflow.SearchIndexersAsync("test query");
+
+            Assert.Equal(2, provider.MaxObservedConcurrency);
+            Assert.Equal(10, results.Count);
+        }
+
+        [Fact]
+        [Trait("Method", "SearchIndexersAsync")]
+        [Trait("Scenario", "OperatorRaisesConcurrencyCeiling")]
+        public async Task SearchIndexersAsync_CeilingSetToEight_RunsMoreThanTheShippedFour()
+        {
+            // The mirror of the test above. Without it a hardcoded 4 would satisfy "at most 2"
+            // only by failing it, and a ceiling that could be lowered but never raised would pass.
+            var indexers = BuildIndexers(10);
+            var provider = new ConcurrencyTrackingSearchProvider();
+            var workflow = BuildWorkflow(indexers, provider, WithCeiling(8));
+
+            var results = await workflow.SearchIndexersAsync("test query");
+
+            Assert.True(
+                provider.MaxObservedConcurrency > 4,
+                $"Expected more than 4 concurrent indexer searches with a ceiling of 8, observed {provider.MaxObservedConcurrency}");
+            Assert.True(provider.MaxObservedConcurrency <= 8);
+            Assert.Equal(10, results.Count);
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-3)]
+        [Trait("Method", "SearchIndexersAsync")]
+        [Trait("Scenario", "NonPositiveCeilingRunsOneAtATime")]
+        public async Task SearchIndexersAsync_NonPositiveCeiling_RunsOneAtATimeRatherThanUnbounded(int ceiling)
+        {
+            // Parallel.ForEachAsync reads -1 as "no limit" and throws on 0. Neither may leak
+            // through: a zero typed into the setting is clamped to the gentlest ceiling there is.
+            var indexers = BuildIndexers(5);
+            var provider = new ConcurrencyTrackingSearchProvider();
+            var workflow = BuildWorkflow(indexers, provider, WithCeiling(ceiling));
+
+            var results = await workflow.SearchIndexersAsync("test query");
+
+            Assert.Equal(1, provider.MaxObservedConcurrency);
+            Assert.Equal(5, results.Count);
+        }
+
+        [Fact]
+        [Trait("Method", "SearchIndexersAsync")]
+        [Trait("Scenario", "SettingsReadFailureKeepsShippedCeiling")]
+        public async Task SearchIndexersAsync_SettingsReadThrows_SearchesAtTheShippedCeilingOfFour()
+        {
+            // A settings read that fails must not fail the search, and must not fall back to
+            // anything wider than what shipped.
+            var indexers = BuildIndexers(10);
+            var provider = new ConcurrencyTrackingSearchProvider();
+            var workflow = BuildWorkflow(indexers, provider, mock => mock
+                .Setup(c => c.GetApplicationSettingsAsync())
+                .ThrowsAsync(new InvalidOperationException("settings unavailable")));
+
+            var results = await workflow.SearchIndexersAsync("test query");
+
+            Assert.InRange(provider.MaxObservedConcurrency, 2, 4);
+            Assert.Equal(10, results.Count);
+        }
+
+        [Fact]
+        [Trait("Scenario", "ShippedCeilingIsFour")]
+        public void ApplicationSettings_DefaultCeiling_IsTheFourThatWasHardcoded()
+        {
+            Assert.Equal(4, new ApplicationSettings().MaxConcurrentIndexerSearches);
         }
     }
 }
