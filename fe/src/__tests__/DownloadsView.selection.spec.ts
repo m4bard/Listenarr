@@ -26,9 +26,9 @@ const { mockShowConfirm } = vi.hoisted(() => ({
   mockShowConfirm: vi.fn(async () => true),
 }))
 
-vi.mock('@/composables/useConfirm', () => ({
+vi.mock('@/composables/confirmService', () => ({
   showConfirm: mockShowConfirm,
-  useConfirm: () => ({}),
+  useConfirmService: () => ({}),
 }))
 
 vi.mock('@/services/signalr', () => ({
