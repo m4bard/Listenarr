@@ -184,24 +184,24 @@ public partial class FileMover : IFilePublicationSourceCapability
     }
 
     /// <summary>
-    /// The first directory the pinned walk would meet that is a symbolic link it refuses, which is
-    /// the outermost one on the path, or null if there is none.
+    /// The link that actually blocked resolution, or null if none did or none may be blamed.
     /// </summary>
     /// <remarks>
-    /// This does not change the answer. It only says which segment may have caused a refusal,
-    /// because the raw failure is an ENOTDIR from openat and gives an operator nothing to act on.
-    /// Since ResolveSymlinkedAncestors, a linked source ancestor normally resolves and is published,
-    /// so this names a link only when that resolution could not remove it from the walk. The walk
-    /// opens segments from the top down and stops at the first link, so with nested links the outer
-    /// one is named, not the deeper one. The hint is a candidate rather than a diagnosis: a refusal
-    /// that happens before the walk, such as a root that cannot be authorized, can still leave a
-    /// link on the path.
+    /// This does not change the answer. It only says which link may have caused a refusal, because
+    /// the raw failure is an ENOTDIR from openat and gives an operator nothing to act on. Since
+    /// ResolveSymlinkedAncestors, a linked source ancestor normally resolves and is published, so
+    /// this names a link only when that resolution could not remove it from the walk: a cycle, a
+    /// dangling target, or the hop cap. It walks the same chain ResolveSymlinkedAncestors does,
+    /// because a chain of two or more links is not necessarily an ancestor of the original path at
+    /// all; the second link only appears once the first has been substituted for its target. The
+    /// hint is a candidate rather than a diagnosis: a refusal that happens before the walk, such as
+    /// a root that cannot be authorized, can still leave a link on the path.
     ///
     /// Beneath a configured root only the segments below the root are opened without following
     /// links. The root itself is opened by the boundary authorizer, which follows its link, so a
     /// link at or above the root is supported and blaming it would send the operator after the
-    /// wrong thing. The walk stops at the root for that reason, and covers the whole path only for
-    /// a source outside every configured root.
+    /// wrong thing. A blocking link is therefore named only when it sits strictly below the root,
+    /// or when the source is outside every configured root.
     ///
     /// A source that overlaps a root whose identity is unavailable is refused before any directory
     /// is opened, so no link on its path can be the cause and there is nothing to name.
@@ -222,20 +222,17 @@ public partial class FileMover : IFilePublicationSourceCapability
                 return null;
             }
 
-            string? outermostLink = null;
-            while (!string.IsNullOrEmpty(current)
-                && (managed.Root == null || managed.Semantics == null
-                    || IsStrictlyBelowRoot(current, managed.Root.Path, managed.Semantics.Value)))
+            var blockingLink = WalkSymlinkedAncestors(current, new HashSet<string>(StringComparer.Ordinal), MaxSymlinkChainHops)
+                .BlockingLink;
+            if (blockingLink == null
+                || managed.Root == null
+                || managed.Semantics == null
+                || IsStrictlyBelowRoot(blockingLink, managed.Root.Path, managed.Semantics.Value))
             {
-                if (Directory.Exists(current)
-                    && Directory.ResolveLinkTarget(current, returnFinalTarget: false) != null)
-                {
-                    outermostLink = current;
-                }
-                current = Path.GetDirectoryName(current);
+                return blockingLink;
             }
 
-            return outermostLink;
+            return null;
         }
         catch (Exception exception) when (exception is not (
             OperationCanceledException or OutOfMemoryException
@@ -259,8 +256,8 @@ public partial class FileMover : IFilePublicationSourceCapability
     }
 
     /// <summary>
-    /// The physical path of an existing directory, with any symlinked component replaced by what
-    /// it points at.
+    /// The physical path of an existing directory, with every symlinked component in the whole
+    /// chain replaced by what it ultimately points at.
     /// </summary>
     /// <remarks>
     /// The pinned walk opens every segment with O_NOFOLLOW so a component cannot be substituted
@@ -275,38 +272,100 @@ public partial class FileMover : IFilePublicationSourceCapability
     /// deliberately narrow: only the source capability walk resolves, only for opening, and the
     /// resolved path is never returned or used for a policy decision.
     ///
-    /// Readarr draws the same line, in
-    /// src/NzbDrone.Mono/Disk/SymbolicLinkResolver.cs, resolving the real path where physical
-    /// identity matters and letting the OS follow links elsewhere.
+    /// Readarr draws the same line, in src/NzbDrone.Mono/Disk/SymbolicLinkResolver.cs, resolving
+    /// the real path where physical identity matters and letting the OS follow links elsewhere.
+    /// Its GetCompleteRealPath walks every path component in order, not only the last one, and
+    /// bounds the walk at 32 hops, explicitly in the name of the same ELOOP the kernel enforces
+    /// (SymbolicLinkResolver.cs lines 22-50). This resolver does the same, component by component,
+    /// with a comparable cap.
     /// </remarks>
     private static string ResolveSymlinkedAncestors(string directory)
     {
         try
         {
-            var resolved = Directory.ResolveLinkTarget(directory, returnFinalTarget: true);
-            if (resolved != null)
-            {
-                return resolved.FullName;
-            }
+            var walk = WalkSymlinkedAncestors(
+                directory,
+                new HashSet<string>(StringComparer.Ordinal),
+                MaxSymlinkChainHops);
 
-            var parent = Path.GetDirectoryName(directory);
-            if (string.IsNullOrEmpty(parent) || parent == directory)
-            {
-                return directory;
-            }
-
-            var resolvedParent = ResolveSymlinkedAncestors(parent);
-            return resolvedParent == parent
-                ? directory
-                : Path.Join(resolvedParent, Path.GetFileName(directory));
+            // A blocked walk (a cycle, a dangling target, or the hop cap) hands back the original,
+            // unresolved directory rather than whatever partial progress it made. The pinned walk
+            // then fails naturally on the first link it cannot follow, and FindSymlinkedAncestor,
+            // which performs the same walk, is what names the link actually responsible.
+            return walk.BlockingLink == null ? walk.ResolvedPath : directory;
         }
         catch (Exception exception) when (exception is
             IOException or UnauthorizedAccessException or NotSupportedException
                 or System.Security.SecurityException)
         {
-            // Unreadable or cyclic. Hand back what we were given and let the pinned walk report
-            // it, which now names the exception rather than swallowing it.
+            // Unreadable, or the directory does not exist at all (unrelated to any link). Hand
+            // back what we were given and let the pinned walk report it.
             return directory;
         }
+    }
+
+    /// <summary>
+    /// How many links this resolver will follow in one chain before refusing to go further, in
+    /// the spirit of the OS ELOOP limit (Linux defaults to 40; Readarr's own resolver caps at 32).
+    /// Bounds both a direct cycle the walk's own visited-set already catches sooner and a very long
+    /// non-repeating chain that never revisits a directory.
+    /// </summary>
+    private const int MaxSymlinkChainHops = 40;
+
+    private readonly record struct SymlinkChainWalk(string ResolvedPath, string? BlockingLink);
+
+    /// <summary>
+    /// Walks a directory's own symlink chain, then its ancestors', substituting each link's target
+    /// as it goes. <see cref="SymlinkChainWalk.BlockingLink"/> is null when every link in the chain
+    /// resolved to something real; otherwise it names the specific link where the walk broke: one
+    /// already visited in this same walk (a cycle), one whose target could not be inspected (most
+    /// often because it does not exist), or the one where the hop cap was reached.
+    /// </summary>
+    private static SymlinkChainWalk WalkSymlinkedAncestors(
+        string directory,
+        HashSet<string> visited,
+        int hopsRemaining)
+    {
+        var resolved = Directory.ResolveLinkTarget(directory, returnFinalTarget: false);
+        if (resolved != null)
+        {
+            if (hopsRemaining <= 0 || !visited.Add(directory))
+            {
+                return new SymlinkChainWalk(directory, directory);
+            }
+
+            try
+            {
+                var inner = WalkSymlinkedAncestors(resolved.FullName, visited, hopsRemaining - 1);
+                return inner.BlockingLink == null
+                    ? inner
+                    : new SymlinkChainWalk(directory, inner.BlockingLink);
+            }
+            catch (Exception exception) when (exception is
+                IOException or UnauthorizedAccessException or NotSupportedException
+                    or System.Security.SecurityException)
+            {
+                // What this link points at cannot even be inspected, most often because it does
+                // not exist. This link is where the chain breaks, not whatever it names.
+                return new SymlinkChainWalk(directory, directory);
+            }
+        }
+
+        var parent = Path.GetDirectoryName(directory);
+        if (string.IsNullOrEmpty(parent) || parent == directory)
+        {
+            return new SymlinkChainWalk(directory, null);
+        }
+
+        var parentWalk = WalkSymlinkedAncestors(parent, visited, hopsRemaining);
+        if (parentWalk.BlockingLink != null)
+        {
+            return new SymlinkChainWalk(directory, parentWalk.BlockingLink);
+        }
+
+        var resolvedPath = parentWalk.ResolvedPath == parent
+            ? directory
+            : Path.Join(parentWalk.ResolvedPath, Path.GetFileName(directory));
+        return new SymlinkChainWalk(resolvedPath, null);
     }
 }
