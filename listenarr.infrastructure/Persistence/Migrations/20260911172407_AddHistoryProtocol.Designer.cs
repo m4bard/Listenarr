@@ -273,6 +273,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<string>("Language")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("LastMetadataRefreshAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("LastSearchTime")
                         .HasColumnType("TEXT");
 
@@ -322,6 +325,8 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("LastMetadataRefreshAt");
 
                     b.HasIndex("LastSearchTime");
 
@@ -1854,6 +1859,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("DownloadCompletionStabilitySeconds")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("EmbedCoverArtInAudioFiles")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("EnableAmazonSearch")
                         .HasColumnType("INTEGER");
 
@@ -1901,6 +1909,21 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int>("MaxConcurrentDownloads")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("MetadataRefreshEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MetadataRefreshIntervalHours")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MetadataRefreshMinimumSpacingMs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MetadataRefreshRequestsPerHour")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MetadataRefreshStaleAfterDays")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("MissingSourceMaxRetries")
@@ -1952,6 +1975,41 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("ApplicationSettings");
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Downloads.BlockedRelease", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AudiobookId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("BlockedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReleaseIdentifier")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("Size")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AudiobookId", "ReleaseIdentifier")
+                        .IsUnique();
+
+                    b.ToTable("BlockedReleases");
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Downloads.CompatibilityFilePublicationJournal", b =>

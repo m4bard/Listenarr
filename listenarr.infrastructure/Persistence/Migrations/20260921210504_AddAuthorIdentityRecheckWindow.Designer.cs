@@ -2669,6 +2669,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("Retention")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Tags")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasColumnType("TEXT");
