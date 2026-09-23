@@ -76,6 +76,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
 
             return new DownloadClientSelector(
                 configurationService.Object,
+                new Mock<IIndexerRepository>().Object,
                 new DownloadClientRoundRobinState(),
                 NullLogger<DownloadClientSelector>.Instance);
         }
