@@ -217,6 +217,11 @@ namespace Listenarr.Api.Features.Indexers
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] Indexer indexer)
         {
+            if (await IndexerDownloadClientBinding.NormalizeAsync(indexer, _configurationService) is { } bindingError)
+            {
+                return BadRequest(new { message = bindingError });
+            }
+
             indexer.CreatedAt = DateTime.UtcNow;
             indexer.UpdatedAt = DateTime.UtcNow;
 
@@ -283,6 +288,11 @@ namespace Listenarr.Api.Features.Indexers
                 return NotFound(new { message = "Indexer not found" });
             }
 
+            if (await IndexerDownloadClientBinding.NormalizeAsync(indexer, _configurationService) is { } bindingError)
+            {
+                return BadRequest(new { message = bindingError });
+            }
+
             var previousImplementation = existing.Implementation;
 
             // Update properties
@@ -313,6 +323,7 @@ namespace Listenarr.Api.Features.Indexers
             existing.EnableAnimeStandardSearch = indexer.EnableAnimeStandardSearch;
             existing.IsEnabled = indexer.IsEnabled;
             existing.Priority = indexer.Priority;
+            existing.DownloadClientId = indexer.DownloadClientId;
             existing.MinimumAge = indexer.MinimumAge;
             existing.Retention = indexer.Retention;
             existing.MaximumSize = indexer.MaximumSize;

@@ -145,7 +145,12 @@ namespace Listenarr.Application.Downloads.Submission
 
             if (downloadClientId == null)
             {
-                downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(prepared.Protocol);
+                // The indexer id travels with the candidate, including through the signed
+                // download reference a manual grab arrives with, so a bound indexer is honoured
+                // here too. A client chosen explicitly for the grab skips this branch and wins
+                // over the binding, as in Readarr's DownloadService.DownloadReport.
+                downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(
+                    prepared.Protocol, candidate.SourceDescriptor.IndexerId);
 
                 if (downloadClientId == null)
                 {
