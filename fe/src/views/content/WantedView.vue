@@ -438,10 +438,17 @@ function getStatusText(item: Audiobook): string {
   return 'Missing'
 }
 
+// Missing audiobooks that have no active (non-terminal) download in flight. Scoped to the
+// bulk handler only: categorizedWanted.missing also drives the tab's own count and the
+// Search All button's :disabled binding, and neither of those should change meaning here.
+const searchableMissing = computed(() => {
+  return categorizedWanted.value.missing.filter((audiobook) => !hasActiveDownload(audiobook))
+})
+
 const searchMissing = async () => {
   logger.debug('Automatic search for all missing audiobooks')
 
-  for (const audiobook of categorizedWanted.value.missing) {
+  for (const audiobook of searchableMissing.value) {
     await searchAudiobook(audiobook)
     await new Promise((resolve) => setTimeout(resolve, 1000))
   }
