@@ -21,10 +21,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Downloads.Submission
 {
-    public class DownloadService(
+    public partial class DownloadService(
         IAudiobookRepository audiobookRepository,
         IConfigurationService configurationService,
         IDownloadRepository downloadRepository,
+        IDownloadProcessingJobService downloadProcessingJobService,
         ILogger<DownloadService> logger,
         IQualityProfileService qualityProfileService,
         ISearchService searchService,
@@ -88,34 +89,6 @@ namespace Listenarr.Application.Downloads.Submission
                 logger.LogError(ex, "Error during TestDownloadClientAsync for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
                 return (false, ex.Message, client);
             }
-        }
-
-        public async Task<string?> ReprocessDownloadAsync(string downloadId)
-        {
-            logger.LogInformation("ReprocessDownloadAsync called for {DownloadId}", LogRedaction.SanitizeText(downloadId));
-
-            // Placeholder: return null to indicate no job was created.
-            // Concrete implementation should enqueue a reprocess job and return its ID.
-            return await Task.FromResult<string?>(null);
-        }
-
-        public async Task<List<ReprocessResult>> ReprocessDownloadsAsync(List<string> downloadIds)
-        {
-            logger.LogInformation("ReprocessDownloadsAsync called for {Count} downloads", downloadIds?.Count ?? 0);
-
-            // Placeholder implementation: return empty results list.
-            // A full implementation should iterate downloadIds and invoke reprocessing,
-            // collecting per-download results.
-            return await Task.FromResult(new List<ReprocessResult>());
-        }
-
-        public async Task<List<ReprocessResult>> ReprocessAllCompletedDownloadsAsync(bool includeProcessed = false, TimeSpan? maxAge = null)
-        {
-            logger.LogInformation("ReprocessAllCompletedDownloadsAsync called includeProcessed={IncludeProcessed}, maxAge={MaxAge}", includeProcessed, maxAge);
-
-            // Placeholder implementation: no-op and return empty list.
-            // Full implementation should query completed downloads, apply filters and enqueue reprocess jobs.
-            return await Task.FromResult(new List<ReprocessResult>());
         }
 
         public async Task<SearchAndDownloadResult> SearchAndDownloadAsync(int audiobookId)
@@ -343,12 +316,14 @@ namespace Listenarr.Application.Downloads.Submission
             }
             catch (OperationCanceledException)
             {
-                await RemoveProvisionalDownloadAsync(downloadId);
+                await DownloadSubmissionFailureHandler.RemoveProvisionalDownloadAsync(downloadId, downloadRepository, logger);
                 throw;
             }
             catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
             {
-                await RemoveProvisionalDownloadAsync(downloadId);
+                await DownloadSubmissionFailureHandler.RecordRejectedSubmissionAsync(
+                    downloadId, downloadClientIdForModel, candidate.Title, exception, downloadHistoryService, logger);
+                await DownloadSubmissionFailureHandler.RemoveProvisionalDownloadAsync(downloadId, downloadRepository, logger);
 
                 if (exception is DownloadClientSubmissionException)
                 {
@@ -386,7 +361,6 @@ namespace Listenarr.Application.Downloads.Submission
                 }
             }
 
-            var settings = await configurationService.GetApplicationSettingsAsync();
             var notificationData = await DownloadNotificationPayloadBuilder.BuildBookDownloadingPayloadAsync(
                 audiobookRepository,
                 audiobookId,
@@ -394,7 +368,7 @@ namespace Listenarr.Application.Downloads.Submission
                 ToSearchResult(candidate, prepared),
                 downloadClient);
 
-            await notificationService.SendNotificationAsync("book-downloading", notificationData, settings.WebhookUrl, settings.EnabledNotificationTriggers);
+            await notificationService.SendNotificationAsync(NotificationTriggers.BookDownloading, notificationData);
 
             // Trigger an immediate realtime queue update so the UI shows the new download right away
             // Add a small delay to allow the download client to process and index the new download
@@ -414,19 +388,6 @@ namespace Listenarr.Application.Downloads.Submission
             }
 
             return downloadId;
-        }
-
-        private async Task RemoveProvisionalDownloadAsync(string downloadId)
-        {
-            try
-            {
-                await downloadRepository.RemoveAsync(downloadId);
-                logger.LogInformation("Removed provisional download {DownloadId} after client submission failed", downloadId);
-            }
-            catch (Exception cleanupException) when (cleanupException is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
-            {
-                logger.LogError(cleanupException, "Failed to remove provisional download {DownloadId} after client submission failure", downloadId);
-            }
         }
 
         public async Task<bool> RemoveFromQueueAsync(string downloadId, string? downloadClientId = null, bool force = false)
@@ -465,7 +426,7 @@ namespace Listenarr.Application.Downloads.Submission
             }
             catch (Exception caughtEx_13) when (caughtEx_13 is not OperationCanceledException && caughtEx_13 is not OutOfMemoryException && caughtEx_13 is not StackOverflowException)
             {
-                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                // Nothing is logged here: the call that failed is the logging call itself.
             }
             await Task.CompletedTask;
         }

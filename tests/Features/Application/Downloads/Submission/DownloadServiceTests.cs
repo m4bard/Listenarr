@@ -103,6 +103,10 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
                 .ThrowsAsync(new DownloadClientSubmissionException("Unable to obtain a verified hash from the torrent metadata."));
 
             var historyMock = new Mock<IDownloadHistoryService>(MockBehavior.Strict);
+            historyMock
+                .Setup(h => h.RecordDownloadFailedAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+                .Returns(Task.CompletedTask);
             var notificationMock = new Mock<INotificationService>(MockBehavior.Strict);
             _services.AddSingleton(gatewayMock.Object);
             _services.AddSingleton(historyMock.Object);
@@ -126,8 +130,106 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
 
             Assert.Equal(initialDownloadCount, (await _downloadRepository.GetAllAsync()).Count);
             gatewayMock.VerifyAll();
-            historyMock.VerifyNoOtherCalls();
+            historyMock.Verify(
+                h => h.RecordGrabbedAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                    It.IsAny<DownloadProtocol>(), It.IsAny<int?>()),
+                Times.Never);
             notificationMock.VerifyNoOtherCalls();
+        }
+
+        [Fact]
+        public async Task SendToDownloadClientAsync_WhenClientRejectsSubmission_RecordsFailedAttemptInHistory()
+        {
+            var rejection = new DownloadClientSubmissionException("qBittorrent rejected the torrent with HTTP 409.");
+            var gatewayMock = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
+            gatewayMock
+                .Setup(g => g.AddAsync(
+                    It.Is<DownloadClientConfiguration>(client => client.Id == "qb-1"),
+                    It.IsAny<PreparedDownloadSubmission>(),
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(rejection);
+
+            var historyMock = new Mock<IDownloadHistoryService>(MockBehavior.Strict);
+            historyMock
+                .Setup(h => h.RecordDownloadFailedAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+                .Returns(Task.CompletedTask);
+            _services.AddSingleton(gatewayMock.Object);
+            _services.AddSingleton(historyMock.Object);
+
+            Init();
+            await InitData();
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var searchResult = new SearchResult
+            {
+                Title = "Artemis",
+                Artist = "Andy Weir",
+                DownloadType = "Torrent",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                Size = 123456789
+            };
+
+            await Assert.ThrowsAsync<DownloadClientSubmissionException>(
+                () => downloadService.SendToDownloadClientAsync(searchResult, _client.Id));
+
+            historyMock.Verify(
+                h => h.RecordDownloadFailedAsync(
+                    It.Is<string>(id => !string.IsNullOrWhiteSpace(id)),
+                    "qb-1",
+                    "Artemis",
+                    rejection.Message),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task SendToDownloadClientAsync_SanitizesTheClientMessageItWritesToHistory()
+        {
+            // The client's own error text lands in a durable row the user can read. A download
+            // client that answers with an HTML error page, or a release title carried back into
+            // the message, can put newlines and several kilobytes into it. Passing failure.Message
+            // straight through stores that verbatim, twice, and lets a newline forge log lines.
+            var rawMessage = "SABnzbd error: cannot write to\n/incomplete/downloads " + new string('x', 400);
+            var rejection = new DownloadClientSubmissionException(rawMessage);
+            var gatewayMock = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
+            gatewayMock
+                .Setup(g => g.AddAsync(
+                    It.Is<DownloadClientConfiguration>(client => client.Id == "qb-1"),
+                    It.IsAny<PreparedDownloadSubmission>(),
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(rejection);
+
+            string? recordedMessage = null;
+            var historyMock = new Mock<IDownloadHistoryService>(MockBehavior.Strict);
+            historyMock
+                .Setup(h => h.RecordDownloadFailedAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+                .Callback<string, string, string, string?>((_, _, _, message) => recordedMessage = message)
+                .Returns(Task.CompletedTask);
+            _services.AddSingleton(gatewayMock.Object);
+            _services.AddSingleton(historyMock.Object);
+
+            Init();
+            await InitData();
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var searchResult = new SearchResult
+            {
+                Title = "Artemis",
+                Artist = "Andy Weir",
+                DownloadType = "Torrent",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                Size = 123456789
+            };
+
+            await Assert.ThrowsAsync<DownloadClientSubmissionException>(
+                () => downloadService.SendToDownloadClientAsync(searchResult, _client.Id));
+
+            Assert.NotNull(recordedMessage);
+            Assert.DoesNotContain("\n", recordedMessage!);
+            Assert.DoesNotContain("\r", recordedMessage!);
+            Assert.True(recordedMessage!.Length <= 203, $"recorded message was {recordedMessage.Length} characters");
+            Assert.NotEqual(rawMessage, recordedMessage);
+            Assert.StartsWith("SABnzbd error: cannot write to", recordedMessage!);
         }
 
         [Fact]
@@ -142,6 +244,10 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
                 .ReturnsAsync(new DownloadClientSubmissionResult(string.Empty));
 
             var historyMock = new Mock<IDownloadHistoryService>(MockBehavior.Strict);
+            historyMock
+                .Setup(h => h.RecordDownloadFailedAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+                .Returns(Task.CompletedTask);
             var notificationMock = new Mock<INotificationService>(MockBehavior.Strict);
             _services.AddSingleton(gatewayMock.Object);
             _services.AddSingleton(historyMock.Object);
@@ -165,7 +271,21 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
 
             Assert.Equal(initialDownloadCount, (await _downloadRepository.GetAllAsync()).Count);
             gatewayMock.VerifyAll();
-            historyMock.VerifyNoOtherCalls();
+            historyMock.Verify(
+                h => h.RecordGrabbedAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                    It.IsAny<DownloadProtocol>(), It.IsAny<int?>()),
+                Times.Never);
+            // A blank external id leaves nothing to track, so this path records a failure too.
+            // Stubbing RecordDownloadFailedAsync without asserting it would let that behaviour
+            // change silently, which is what the replaced VerifyNoOtherCalls used to prevent.
+            historyMock.Verify(
+                h => h.RecordDownloadFailedAsync(
+                    It.Is<string>(id => !string.IsNullOrWhiteSpace(id)),
+                    "qb-1",
+                    "Artemis",
+                    "The download client did not return a verified download identifier."),
+                Times.Once);
             notificationMock.VerifyNoOtherCalls();
         }
 
@@ -276,6 +396,122 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             downloadRepository.Verify(r => r.GetByIdAsync(missingDownload.Id), Times.Once);
             downloadRepository.Verify(r => r.UpdateAsync(It.IsAny<Download>()), Times.Never);
             notificationService.VerifyNoOtherCalls();
+        }
+
+        [Fact]
+        [Trait("Scenario", "Reprocessing a completed download enqueues a job")]
+        public async Task ReprocessDownload_EnqueuesAJobAndReturnsItsId()
+        {
+            Init();
+            await InitData();
+
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(_client)
+                .WithCompletedStatus(at: DateTime.UtcNow)
+                .Build());
+
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var jobId = await downloadService.ReprocessDownloadAsync(download.Id);
+
+            Assert.False(string.IsNullOrWhiteSpace(jobId));
+
+            var jobs = await _downloadProcessingJobRepository.GetByDownloadIdAsync(download.Id);
+            Assert.NotEmpty(jobs);
+        }
+
+        [Fact]
+        [Trait("Scenario", "A single ineligible download is refused, not thrown at the caller")]
+        public async Task ReprocessDownload_RefusesAnIneligibleDownloadWithoutThrowing()
+        {
+            Init();
+            await InitData();
+
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(_client)
+                .WithStatus(DownloadStatus.Downloading)
+                .Build());
+
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+
+            // EnqueueAsync throws its own precondition for a download that is not Completed. That
+            // reached the controller as an unhandled 500 and the request was retried four times.
+            var exception = await Record.ExceptionAsync(() => downloadService.ReprocessDownloadAsync(download.Id));
+            Assert.Null(exception);
+
+            var jobId = await downloadService.ReprocessDownloadAsync(download.Id);
+            Assert.Null(jobId);
+        }
+
+        [Fact]
+        [Trait("Scenario", "Reprocessing an unknown download reports it rather than throwing")]
+        public async Task ReprocessDownloads_ReportsAnUnknownDownloadAsAFailure()
+        {
+            Init();
+            await InitData();
+
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var results = await downloadService.ReprocessDownloadsAsync(["no-such-download"]);
+
+            var result = Assert.Single(results);
+            Assert.False(result.Success);
+            Assert.Equal("not-found", result.Reason);
+        }
+
+        [Fact]
+        [Trait("Scenario", "A download still in flight is not reprocessed")]
+        public async Task ReprocessDownloads_RefusesADownloadThatHasNotCompleted()
+        {
+            Init();
+            await InitData();
+
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(_client)
+                .WithStatus(DownloadStatus.Downloading)
+                .Build());
+
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var results = await downloadService.ReprocessDownloadsAsync([download.Id]);
+
+            var result = Assert.Single(results);
+            Assert.False(result.Success);
+            Assert.Equal("not-completed", result.Reason);
+        }
+
+        [Fact]
+        [Trait("Scenario", "Reprocess-all selects by age and by whether an import already ran")]
+        public async Task ReprocessAll_SelectsOnlyEligibleDownloads()
+        {
+            Init();
+            await InitData();
+
+            var recent = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(_client)
+                .WithCompletedStatus(at: DateTime.UtcNow)
+                .Build());
+
+            var tooOld = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(_client)
+                .WithCompletedStatus(at: DateTime.UtcNow.AddDays(-90))
+                .Build());
+
+            var alreadyImported = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithDownloadClientConfiguration(_client)
+                .WithCompletedStatus(at: DateTime.UtcNow)
+                .Build());
+            alreadyImported.LastImportedAt = DateTime.UtcNow;
+            await _downloadRepository.UpdateAsync(alreadyImported);
+
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var results = await downloadService.ReprocessAllCompletedDownloadsAsync();
+
+            var ids = results.Select(result => result.DownloadId).ToList();
+            Assert.Contains(recent.Id, ids);
+            Assert.DoesNotContain(tooOld.Id, ids);
+            Assert.DoesNotContain(alreadyImported.Id, ids);
+
+            // The same call including already-processed downloads picks the imported one up.
+            var withProcessed = await downloadService.ReprocessAllCompletedDownloadsAsync(includeProcessed: true);
+            Assert.Contains(alreadyImported.Id, withProcessed.Select(result => result.DownloadId));
         }
     }
 }
