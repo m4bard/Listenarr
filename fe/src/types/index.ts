@@ -262,9 +262,6 @@ export interface DownloadClientSettings {
   category?: string
   tags?: string
   recentPriority?: string
-  olderPriority?: string
-  removeCompleted?: boolean
-  removeFailed?: boolean
   initialState?: string
   sequentialOrder?: boolean
   firstAndLastFirst?: boolean
@@ -426,7 +423,7 @@ export interface ApplicationSettings {
   fileNamingPattern: string
   multiFileNamingPattern: string
   enableMetadataProcessing: boolean
-  enableCoverArtDownload: boolean
+  embedCoverArtInAudioFiles: boolean
   audnexusApiUrl: string
   maxConcurrentDownloads: number
   unmatchedScanConcurrency?: number
@@ -483,6 +480,13 @@ export interface ApplicationSettings {
   enableOpenLibrarySearch?: boolean
   defaultSearchRegion?: string
   defaultSearchLanguage?: string
+
+  // Scheduled provider-metadata refresh
+  metadataRefreshEnabled?: boolean
+  metadataRefreshIntervalHours?: number
+  metadataRefreshStaleAfterDays?: number
+  metadataRefreshRequestsPerHour?: number
+  metadataRefreshMinimumSpacingMs?: number
 }
 
 export interface ProwlarrImportConnectionSettings {
@@ -498,6 +502,7 @@ export interface StartupConfig {
   port?: number
   sslPort?: number
   urlBase?: string
+  applicationUrl?: string
   bindAddress?: string
   apiKey?: string
   authenticationMethod?: string
@@ -852,6 +857,16 @@ export interface Indexer {
   lastTestedAt?: string
   lastTestSuccessful?: boolean
   lastTestError?: string
+  /** Start of the current run of failures, set once rather than per failure. */
+  initialFailure?: string
+  /** Most recent failure to answer a search. */
+  mostRecentFailure?: string
+  /** Position on the failure-backoff ladder; 0 means healthy. */
+  escalationLevel: number
+  /** When the current failure cooldown expires. While it is in the future the indexer is not queried. */
+  disabledTill?: string
+  /** Name of the query reason behind the current cooldown, eg. Timeout, RateLimited, AuthFailure. */
+  lastFailureReason?: string
 }
 
 export interface SystemReadiness {

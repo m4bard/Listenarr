@@ -318,9 +318,9 @@ public sealed class BackendArchitectureTests : BaseTests
             typeof(LibraryBulkEditWorkflow),
             typeof(LibraryDeleteWorkflow),
             typeof(LibraryManualScanWorkflow),
-            typeof(LibraryMetadataRescanWorkflow),
             typeof(LibraryMoveWorkflow),
             typeof(LibraryUpdateWorkflow),
+            typeof(MetadataRefreshService),
             typeof(MetadataRescanProcessor),
             typeof(MoveJobProcessor),
             typeof(RootFolderService),
@@ -1375,6 +1375,58 @@ public sealed class BackendArchitectureTests : BaseTests
             + string.Join(Environment.NewLine, violations));
     }
 
+    [Fact]
+    public void ReleaseBlocklistKeys_AreDerivedOnlyByReleaseIdentity()
+    {
+        // The release blocklist has had four defects and all four were one defect: a release
+        // identity worked out in one place and worked out differently in another, so the row
+        // written when a release failed was looked up under a key nothing computed again. The
+        // fourth cost a live install an indexer termination warning while a correctly formatted
+        // row for the book sat in the database unmatched.
+        //
+        // BlockedReleaseFilter already carries a comment saying the field-picking belongs to
+        // ReleaseIdentity and nowhere else. A comment is advice. This is the same statement in a
+        // form that fails a build.
+        var owner = Normalize(Path.Join("listenarr.domain", "Downloads", "ReleaseIdentity.cs"));
+        var roots = new[]
+        {
+            "listenarr.domain",
+            "listenarr.application",
+            "listenarr.infrastructure",
+            "listenarr.api"
+        };
+
+        var violations = roots
+            .SelectMany(root => Directory.EnumerateFiles(
+                Path.Join(RepositoryRoot, root),
+                "*.cs",
+                SearchOption.AllDirectories))
+            .Where(file => !IsBuildArtifact(file))
+            .Where(file => !file.Contains(
+                $"{Path.DirectorySeparatorChar}Persistence{Path.DirectorySeparatorChar}Migrations{Path.DirectorySeparatorChar}",
+                StringComparison.OrdinalIgnoreCase))
+            .Select(file => new
+            {
+                Path = file,
+                Relative = Normalize(Path.GetRelativePath(RepositoryRoot, file))
+            })
+            .Where(source => !string.Equals(source.Relative, owner, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(source => ReleaseIdentitySourceAnalyzer
+                .Analyze(File.ReadAllText(source.Path))
+                .Select(violation => $"{source.Relative}:{violation.Line} {violation.Reason}"))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.True(
+            violations.Length == 0,
+            "Only ReleaseIdentity may work out a release blocklist key. Call "
+            + "ReleaseIdentity.For(searchResult) where the search result is still in hand, or read "
+            + "the grab-time value back with ReleaseIdentity.ForGrabbed(download). Deriving a key "
+            + "here gives the feature two authors of one value, which is the shape of every defect "
+            + "it has had:" + Environment.NewLine
+            + string.Join(Environment.NewLine, violations));
+    }
+
     private static void AssertRequiredConstructorParameter<TParameter>(IEnumerable<Type> serviceTypes)
     {
         foreach (var serviceType in serviceTypes)
@@ -1434,6 +1486,101 @@ public sealed class BackendArchitectureTests : BaseTests
                 : $"{rootNamespace}.{ToNamespace(relativeDirectory)}";
             Assert.Equal(expectedNamespace, ReadNamespace(file));
         }
+    }
+
+    // Issue #928: System.Diagnostics.Debug.WriteLine carries [Conditional("DEBUG")], so in the
+    // Release builds the Dockerfile and CI publish, the call and its argument are removed. A catch
+    // block whose entire body is such a call is an empty handler in the shipped image: nothing is
+    // logged and the caught exception is not bound to anything that survives. Keep the pattern out.
+    [Fact]
+    public void ProductionCatchBlocks_DoNotRelyOnDebugWriteLineAlone()
+    {
+        var projectRoots = new[]
+        {
+            "listenarr.domain",
+            "listenarr.application",
+            "listenarr.infrastructure",
+            "listenarr.api"
+        };
+
+        var violations = projectRoots
+            .SelectMany(root => Directory.EnumerateFiles(
+                Path.Join(RepositoryRoot, root),
+                "*.cs",
+                SearchOption.AllDirectories))
+            .Where(file => !IsBuildArtifact(file))
+            .SelectMany(FindDebugWriteLineOnlyCatchBlocks)
+            .ToList();
+
+        Assert.Empty(violations);
+    }
+
+    private static readonly Regex CatchKeywordPattern = new(
+        @"\bcatch\s*[({]",
+        RegexOptions.Compiled);
+
+    private static readonly Regex DebugWriteLineStatementPattern = new(
+        @"(?:global::)?(?:System\.Diagnostics\.)?Debug\.WriteLine\s*\((?:[^()]|\([^()]*\))*\)\s*;",
+        RegexOptions.Compiled);
+
+    private static IEnumerable<string> FindDebugWriteLineOnlyCatchBlocks(string file)
+    {
+        var source = File.ReadAllText(file);
+
+        foreach (System.Text.RegularExpressions.Match match in CatchKeywordPattern.Matches(source))
+        {
+            var open = source.IndexOf('{', match.Index + match.Length - 1);
+            if (open < 0)
+            {
+                continue;
+            }
+
+            var close = FindMatchingBrace(source, open);
+            if (close < 0)
+            {
+                continue;
+            }
+
+            var body = source[(open + 1)..close];
+            body = Regex.Replace(body, @"/\*.*?\*/", string.Empty, RegexOptions.Singleline);
+            body = Regex.Replace(body, @"//[^\n]*", string.Empty);
+
+            if (body.Trim().Length == 0
+                || !body.Contains("Debug.WriteLine", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (DebugWriteLineStatementPattern.Replace(body, string.Empty).Trim().Length != 0)
+            {
+                continue;
+            }
+
+            var line = source.Take(match.Index).Count(c => c == '\n') + 1;
+            yield return $"{Normalize(Path.GetRelativePath(RepositoryRoot, file))}:{line}";
+        }
+    }
+
+    private static int FindMatchingBrace(string source, int open)
+    {
+        var depth = 0;
+        for (var i = open; i < source.Length; i++)
+        {
+            if (source[i] == '{')
+            {
+                depth++;
+            }
+            else if (source[i] == '}')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return i;
+                }
+            }
+        }
+
+        return -1;
     }
 
     private static string ReadNamespace(string file)
