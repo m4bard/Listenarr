@@ -34,13 +34,6 @@
       />
 
       <CheckboxCard
-        :modelValue="settings.enableNotifications"
-        @update:modelValue="updateEnableNotifications"
-        title="Enable Notifications"
-        description="Receive notifications for downloads and events"
-      />
-
-      <CheckboxCard
         :modelValue="settings.showCompletedExternalDownloads"
         @update:modelValue="updateShowCompletedExternalDownloads"
         title="Show completed external downloads in Activity"
@@ -72,10 +65,6 @@ function updateEnableMetadataProcessing(value: boolean) {
 
 function updateEmbedCoverArtInAudioFiles(value: boolean) {
   updateField('embedCoverArtInAudioFiles', value)
-}
-
-function updateEnableNotifications(value: boolean) {
-  updateField('enableNotifications', value)
 }
 
 function updateShowCompletedExternalDownloads(value: boolean) {
