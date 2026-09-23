@@ -174,6 +174,121 @@ describe('DownloadClientFormModal', () => {
     expect(calledWith.id).toBe('4')
   })
 
+  it('renders the post-import category field for qbittorrent only', async () => {
+    const wrapper = mount(DownloadClientFormModal, {
+      global: { plugins: [createPinia()] },
+      props: { visible: true, editingClient: null },
+    })
+
+    for (const type of ['sabnzbd', 'nzbget', 'transmission']) {
+      await wrapper.setProps({
+        editingClient: {
+          id: `other-${type}`,
+          name: type,
+          type,
+          host: 'client.local',
+          port: 8080,
+          isEnabled: true,
+          useSSL: false,
+          downloadPath: '',
+          username: '',
+          password: '',
+          settings: {},
+        },
+      })
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('input[id="postImportCategory"]').exists()).toBe(false)
+    }
+
+    await wrapper.setProps({
+      editingClient: {
+        id: 'qbt-field',
+        name: 'qbt',
+        type: 'qbittorrent',
+        host: 'qbittorrent.local',
+        port: 8080,
+        isEnabled: true,
+        useSSL: false,
+        downloadPath: '',
+        username: '',
+        password: '',
+        settings: {},
+      },
+    })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('input[id="postImportCategory"]').exists()).toBe(true)
+  })
+
+  it('includes a typed post-import category in the save payload settings', async () => {
+    const api = await import('@/services/api')
+    ;(api.testDownloadClient as unknown) = vi.fn(async (config: unknown) => ({
+      success: true,
+      message: 'ok',
+      client: config,
+    }))
+
+    const wrapper = mount(DownloadClientFormModal, {
+      global: { plugins: [createPinia()] },
+      props: { visible: true, editingClient: null },
+    })
+
+    await wrapper.setProps({
+      editingClient: {
+        id: '5',
+        name: 'qbt',
+        type: 'qbittorrent',
+        host: 'qbittorrent.local',
+        port: 8080,
+        isEnabled: true,
+        useSSL: false,
+        downloadPath: '',
+        username: '',
+        password: '',
+        settings: {},
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    const categoryInput = wrapper.find('input[id="postImportCategory"]')
+    expect(categoryInput.exists()).toBe(true)
+    await categoryInput.setValue('imported-audiobooks')
+
+    const testButton = wrapper.find('button.btn-info')
+    await testButton.trigger('click')
+
+    expect(api.testDownloadClient as unknown).toHaveBeenCalled()
+    const calledWith = (api.testDownloadClient as unknown).mock.calls[0][0]
+    expect(calledWith.settings.postImportCategory).toBe('imported-audiobooks')
+  })
+
+  it('loads an existing postImportCategory value into the field', async () => {
+    const wrapper = mount(DownloadClientFormModal, {
+      global: { plugins: [createPinia()] },
+      props: { visible: true, editingClient: null },
+    })
+
+    await wrapper.setProps({
+      editingClient: {
+        id: '6',
+        name: 'qbt',
+        type: 'qbittorrent',
+        host: 'qbittorrent.local',
+        port: 8080,
+        isEnabled: true,
+        useSSL: false,
+        downloadPath: '',
+        username: '',
+        password: '',
+        settings: { postImportCategory: 'seeding-done' },
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    const categoryInput = wrapper.find('input[id="postImportCategory"]')
+    expect(categoryInput.exists()).toBe(true)
+    expect((categoryInput.element as HTMLInputElement).value).toBe('seeding-done')
+  })
+
   it('offers only priority values the usenet planners accept', async () => {
     // The values here have to stay in step with DownloadClientPriorityTests on the backend.
     // They were not: the form offered default, last and first, none of which match an arm of
