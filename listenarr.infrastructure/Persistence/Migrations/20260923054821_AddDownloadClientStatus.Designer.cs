@@ -2695,6 +2695,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int?>("SeedTime")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Tags")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasColumnType("TEXT");
