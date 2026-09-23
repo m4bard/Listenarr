@@ -545,6 +545,7 @@ import {
   validateLibraryDestinationPath,
 } from '@/utils/path'
 import { formatDate } from '@/utils/searchResultFormatting'
+import { isAbridgedFormat } from '@/utils/searchResultHelpers'
 import { stripHtmlAndNormalize } from '@/utils/textUtils'
 import { usePathLengthCheck } from '@/composables/usePathLengthCheck'
 import {
@@ -1081,7 +1082,7 @@ const mapAudibleToAudible = (
     seriesMemberships,
     abridged:
       typeof audible?.bookFormat === 'string'
-        ? audible.bookFormat.toLowerCase().includes('abridged')
+        ? isAbridgedFormat(audible.bookFormat)
         : Boolean(fallbackBook?.abridged),
     isbn: audible?.isbn || fallbackBook?.isbn,
     source: source || fallbackBook?.source,

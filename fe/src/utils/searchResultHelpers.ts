@@ -402,3 +402,24 @@ export const canAddOpenLibraryResult = (book: unknown): boolean => {
   if (typeof isbn === 'string' && isbn.trim()) return true
   return false
 }
+
+// Audible's bookFormat (and the Audnexus formatType it proxies) is a single-token field,
+// e.g. "unabridged", "abridged", "podcast". A plain .includes('abridged') check also
+// matches "unabridged", since it contains "abridged" as a substring, which flags every
+// unabridged book as abridged. Anchor on word boundaries instead, so "unabridged" does
+// not match. Mirrors the fix applied to Listenarr.Application.Search.Metadata.MetadataConverters.
+const ABRIDGED_FORMAT_PATTERN = /\babridged\b/i
+
+/**
+ * Determine whether a book format string (Audible's bookFormat / Audnexus formatType)
+ * indicates an abridged release, without also matching "unabridged".
+ * @param bookFormat - Raw format string from Audible or Audnexus (e.g. "unabridged")
+ * @returns True only when the format is abridged
+ * @example
+ * isAbridgedFormat('unabridged') // false
+ * isAbridgedFormat('abridged') // true
+ */
+export const isAbridgedFormat = (bookFormat: string | null | undefined): boolean => {
+  if (typeof bookFormat !== 'string' || !bookFormat) return false
+  return ABRIDGED_FORMAT_PATTERN.test(bookFormat)
+}
