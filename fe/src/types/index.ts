@@ -1005,6 +1005,9 @@ export interface Indexer {
   enableAnimeStandardSearch: boolean
   isEnabled: boolean
   priority: number
+  // Download client this indexer's grabs go to, or null/absent for any client of the
+  // right protocol. Matches Readarr's per-indexer Download Client setting.
+  downloadClientId?: string | null
   minimumAge: number
   retention: number
   maximumSize: number
