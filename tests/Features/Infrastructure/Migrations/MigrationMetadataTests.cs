@@ -25,6 +25,23 @@ public class MigrationMetadataTests
             "20260825021432_AddWeakStorageVerifiedCleanup");
     }
 
+    /// <summary>
+    /// The startup backfill only runs when it finds this exact id in the applied set, so a rename
+    /// that missed its constant would leave the repair silently never running and every profile
+    /// that recorded upgrades-off as a blank cutoff would come out of the upgrade upgrading again.
+    /// Asserted against the constant itself rather than a fourth copy of the string, which is what
+    /// makes this a guard rather than a restatement.
+    /// </summary>
+    [Fact]
+    public void AddQualityProfileUpgradeAllowedMigration_IsDiscoverableByEf_AtTheIdTheBackfillGatesOn()
+    {
+        AssertMigrationId<AddQualityProfileUpgradeAllowed>(
+            ListenarrDatabaseMigrationPreflight.QualityProfileUpgradeAllowedMigrationId);
+        Assert.Equal(
+            "20260920025621_AddQualityProfileUpgradeAllowed",
+            ListenarrDatabaseMigrationPreflight.QualityProfileUpgradeAllowedMigrationId);
+    }
+
     [Fact]
     public void AddImportBlacklistExtensionsMigration_IsDiscoverableByEf()
     {
@@ -216,6 +233,27 @@ public class MigrationMetadataTests
 
         Assert.Null(model.FindEntityType(
             "Listenarr.Domain.Audiobooks.LibraryDirectoryOwnershipRetiredMarker"));
+    }
+
+    [Fact]
+    public void AddMetadataRefreshSettings_IsDiscoverableByEf()
+    {
+        AssertMigrationId<AddMetadataRefreshSettings>(
+            "20260910120500_AddMetadataRefreshSettings");
+    }
+
+    [Fact]
+    public void AddAudiobookLastMetadataRefreshAt_IsDiscoverableByEf()
+    {
+        AssertMigrationId<AddAudiobookLastMetadataRefreshAt>(
+            "20260910120000_AddAudiobookLastMetadataRefreshAt");
+    }
+
+    [Fact]
+    public void AddAudiobookLastMetadataRefreshAtIndex_IsDiscoverableByEf()
+    {
+        AssertMigrationId<AddAudiobookLastMetadataRefreshAtIndex>(
+            "20260910121000_AddAudiobookLastMetadataRefreshAtIndex");
     }
 
     private static MigrationBuilder BuildOperations(Migration migration, string methodName)
