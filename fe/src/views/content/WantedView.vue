@@ -22,6 +22,28 @@
         <PhHeart />
         Wanted
       </h1>
+      <div class="wanted-tabs" role="tablist">
+        <button
+          class="wanted-tab"
+          :class="{ active: wantedMode === 'missing' }"
+          role="tab"
+          :aria-selected="wantedMode === 'missing'"
+          @click="wantedMode = 'missing'"
+        >
+          Missing
+          <span class="wanted-tab-count">{{ wantedAudiobooks.length }}</span>
+        </button>
+        <button
+          class="wanted-tab"
+          :class="{ active: wantedMode === 'cutoff' }"
+          role="tab"
+          :aria-selected="wantedMode === 'cutoff'"
+          @click="wantedMode = 'cutoff'"
+        >
+          Cutoff Unmet
+          <span class="wanted-tab-count">{{ cutoffUnmetAudiobooks.length }}</span>
+        </button>
+      </div>
       <div class="wanted-actions">
         <div class="filter-input-wrapper">
           <PhMagnifyingGlass class="filter-icon" />
@@ -37,11 +59,11 @@
         </div>
         <button
           class="btn btn-primary"
-          @click="searchMissing"
-          :disabled="categorizedWanted.missing.length === 0"
+          @click="requestSearchMissing"
+          :disabled="searchTargets.length === 0"
         >
           <PhRobot />
-          Search All
+          {{ searchButtonLabel }}
         </button>
         <button class="btn btn-secondary" @click="openManualImport">
           <PhFolderPlus />
@@ -191,6 +213,17 @@
       @close="closeManualImport"
       @imported="handleImported"
     />
+
+    <!-- Bulk search confirmation: this action hits every configured indexer once per book -->
+    <ConfirmModal
+      :visible="showSearchConfirm"
+      title="Start automatic search"
+      :message="searchConfirmMessage"
+      confirmLabel="Start search"
+      :confirming="bulkSearchRunning"
+      @confirm="confirmSearchMissing"
+      @cancel="cancelSearchMissing"
+    />
   </div>
 </template>
 
@@ -203,6 +236,7 @@ import { errorTracking } from '@/services/errorTracking'
 import { handleImageError } from '@/utils/imageFallback'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import ManualImportModal from '@/components/feedback/ManualImportModal.vue'
+import { ConfirmModal } from '@/components/feedback'
 import { EmptyState, LoadingState } from '@/components/base'
 import type { Audiobook, SearchResult, Download } from '@/types'
 import { safeText } from '@/utils/textUtils'
@@ -228,6 +262,7 @@ const configurationStore = useConfigurationStore()
 
 // Filter
 const filterText = ref('')
+const wantedMode = ref<'missing' | 'cutoff'>('missing')
 
 // Virtual scrolling setup
 const scrollContainer = ref<HTMLElement | null>(null)
@@ -291,6 +326,12 @@ const searchResults = ref<Record<number, string>>({})
 const showManualSearchModal = ref(false)
 const selectedAudiobook = ref<Audiobook | null>(null)
 const showManualImportModal = ref(false)
+const showSearchConfirm = ref(false)
+const bulkSearchRunning = ref(false)
+
+// Spacing between per-book searches in the bulk action, so one click does not
+// burst every configured indexer.
+const SEARCH_SPACING_MS = 1000
 
 const syncWantedLayout = async () => {
   await nextTick()
@@ -337,19 +378,25 @@ const wantedAudiobooks = computed(() => {
   })
 })
 
-// Categorize wanted audiobooks by their current search state
-const categorizedWanted = computed(() => {
-  const all = wantedAudiobooks.value
-  const missingItems = all.filter((a) => !searching.value[a.id] && !searchResults.value[a.id])
-
-  return {
-    all,
-    missing: missingItems,
-  }
+// Books below their profile cutoff. These can never appear in wantedAudiobooks: the server's
+// `wanted` flag is false for anything that has a file, and a book below cutoff has one. The status
+// this reads is already on the same payload the list is built from, so no extra request is needed.
+const cutoffUnmetAudiobooks = computed(() => {
+  return libraryStore.audiobooks.filter((audiobook) => {
+    if (!audiobook.monitored) return false
+    return audiobook.status === 'quality-mismatch'
+  })
 })
 
+const activeWanted = computed(() =>
+  wantedMode.value === 'cutoff' ? cutoffUnmetAudiobooks.value : wantedAudiobooks.value,
+)
+
+// How the active tab is named wherever the bulk action describes what it is about to do.
+const activeBucketLabel = computed(() => (wantedMode.value === 'cutoff' ? 'cutoff unmet' : 'missing'))
+
 const filteredWanted = computed(() => {
-  const items = wantedAudiobooks.value
+  const items = activeWanted.value
   if (!filterText.value) return items
 
   const query = filterText.value.toLowerCase()
@@ -359,6 +406,26 @@ const filteredWanted = computed(() => {
     const series = (item.series || '').toLowerCase()
     return title.includes(query) || authors.includes(query) || series.includes(query)
   })
+})
+
+// What the bulk search button will actually act on: the rows the grid is showing,
+// minus any that already have a search in flight. This has to stay derived from
+// filteredWanted, not from wantedAudiobooks, or the action silently disagrees with
+// the list the operator is looking at.
+const searchTargets = computed(() =>
+  filteredWanted.value.filter((a) => !searching.value[a.id] && !searchResults.value[a.id]),
+)
+
+const searchButtonLabel = computed(() =>
+  filterText.value
+    ? `Search ${searchTargets.value.length} (${activeBucketLabel.value})`
+    : `Search All (${activeBucketLabel.value})`,
+)
+
+const searchConfirmMessage = computed(() => {
+  const count = searchTargets.value.length
+  const noun = count === 1 ? 'audiobook' : 'audiobooks'
+  return `Start an automatic search for ${count} ${activeBucketLabel.value} ${noun}? Each one queries every configured indexer, one per second, so this takes about ${formatSearchDuration(count)}.`
 })
 
 const visibleWanted = computed(() => {
@@ -438,12 +505,42 @@ function getStatusText(item: Audiobook): string {
   return 'Missing'
 }
 
-const searchMissing = async () => {
-  logger.debug('Automatic search for all missing audiobooks')
+function formatSearchDuration(count: number): string {
+  const seconds = Math.round((count * SEARCH_SPACING_MS) / 1000)
+  if (seconds < 60) return `${Math.max(seconds, 1)} seconds`
+  const minutes = Math.round(seconds / 60)
+  return minutes === 1 ? 'a minute' : `${minutes} minutes`
+}
 
-  for (const audiobook of categorizedWanted.value.missing) {
-    await searchAudiobook(audiobook)
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+function requestSearchMissing() {
+  if (searchTargets.value.length === 0) return
+  showSearchConfirm.value = true
+}
+
+function cancelSearchMissing() {
+  if (bulkSearchRunning.value) return
+  showSearchConfirm.value = false
+}
+
+const confirmSearchMissing = async () => {
+  if (bulkSearchRunning.value) return
+
+  // Snapshot before the first search, because searchAudiobook mutates the
+  // searching/searchResults maps that searchTargets is derived from.
+  const targets = [...searchTargets.value]
+  showSearchConfirm.value = false
+  if (targets.length === 0) return
+
+  bulkSearchRunning.value = true
+  logger.debug(`Automatic search for ${targets.length} ${activeBucketLabel.value} audiobooks`)
+
+  try {
+    for (const audiobook of targets) {
+      await searchAudiobook(audiobook)
+      await new Promise((resolve) => setTimeout(resolve, SEARCH_SPACING_MS))
+    }
+  } finally {
+    bulkSearchRunning.value = false
   }
 }
 
@@ -565,6 +662,34 @@ const markAsSkipped = async (item: Audiobook) => {
   color: #fa5252;
   width: 32px;
   height: 32px;
+}
+
+.wanted-tabs {
+  display: flex;
+  gap: 4px;
+  margin-right: auto;
+}
+
+.wanted-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 6px 12px;
+}
+
+.wanted-tab.active {
+  background-color: rgba(var(--brand-rgb), 0.12);
+  border-color: rgba(var(--brand-rgb), 0.35);
+  color: var(--brand-500);
+}
+
+.wanted-tab-count {
+  color: inherit;
+  margin-left: 6px;
+  opacity: 0.75;
 }
 
 .wanted-actions {
