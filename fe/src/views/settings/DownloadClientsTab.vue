@@ -191,6 +191,26 @@
               <span class="detail-label">Priority:</span>
               <span class="detail-value">{{ client.priority }}</span>
             </div>
+            <div
+              class="detail-row"
+              v-if="clientStatuses[client.id]"
+              data-testid="client-failure-status"
+            >
+              <PhWarning />
+              <span class="detail-label">Health:</span>
+              <div class="feature-badges">
+                <Pill
+                  v-if="clientStatuses[client.id].isBlocked"
+                  variant="error"
+                  :title="`Failing since ${formatServerDate(clientStatuses[client.id].initialFailure)}`"
+                >
+                  Unavailable until {{ formatServerDate(clientStatuses[client.id].disabledTill) }}
+                </Pill>
+                <Pill v-else variant="warning">
+                  Failing since {{ formatServerDate(clientStatuses[client.id].initialFailure) }}
+                </Pill>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -244,7 +264,7 @@
             editingClient = null
           }
         "
-        @saved="configStore.loadDownloadClientConfigurations()"
+        @saved="onClientSaved"
         @delete="executeDeleteClient"
       />
 
@@ -299,7 +319,11 @@ import { ref, reactive, onMounted, nextTick } from 'vue'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
-import type { DownloadClientConfiguration, RemotePathMapping } from '@/types'
+import type {
+  DownloadClientConfiguration,
+  DownloadClientStatus,
+  RemotePathMapping,
+} from '@/types'
 import DownloadClientFormModal from '@/components/domain/download/DownloadClientFormModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import RemotePathMappingModal from '@/components/feedback/RemotePathMappingModal.vue'
@@ -321,6 +345,7 @@ import {
   PhFolder,
   PhLinkSimple,
   PhBrowser,
+  PhWarning,
 } from '@phosphor-icons/vue'
 import {
   getRemotePathMappings,
@@ -328,6 +353,7 @@ import {
   updateRemotePathMapping,
   deleteRemotePathMapping,
   testDownloadClient as apiTestDownloadClient,
+  getDownloadClientStatuses,
 } from '@/services/api'
 
 // State
@@ -340,6 +366,8 @@ const testingClient = ref<string | null>(null)
 // Per-client ephemeral test results: 'success' | 'fail' | undefined
 const lastClientTestResults = reactive<Record<string, 'success' | 'fail' | undefined>>({})
 const remotePathMappings = ref<RemotePathMapping[]>([])
+// Persisted failure status per client id. A client with no entry is healthy.
+const clientStatuses = ref<Record<string, DownloadClientStatus>>({})
 const showMappingForm = ref(false)
 const mappingToEdit = ref<RemotePathMapping | null>(null)
 const mappingToDelete = ref<RemotePathMapping | null>(null)
@@ -458,6 +486,8 @@ const testClient = async (client: DownloadClientConfiguration) => {
     await nextTick()
   } finally {
     testingClient.value = null
+    // A connection test records its outcome against the client, so the badge may have moved.
+    void loadClientStatuses()
   }
 }
 
@@ -487,6 +517,31 @@ const executeDeleteClient = async (id?: string) => {
   } finally {
     clientToDelete.value = null
   }
+}
+
+// Timestamps are UTC. Ones read back out of SQLite can arrive without a zone designator, and a
+// bare new Date() would read those as local time.
+const formatServerDate = (value: string | null | undefined): string => {
+  if (!value) return 'unknown'
+  const zoned = /([zZ]|[+-]\d{2}:?\d{2})$/.test(value) ? value : `${value}Z`
+  return new Date(zoned).toLocaleString()
+}
+
+const loadClientStatuses = async () => {
+  try {
+    const statuses = await getDownloadClientStatuses()
+    clientStatuses.value = Object.fromEntries(statuses.map((s) => [s.clientId, s]))
+  } catch (error) {
+    // The badge is advisory; the client list stays usable without it.
+    errorTracking.captureException(error as Error, {
+      component: 'DownloadClientsTab',
+      operation: 'loadClientStatuses',
+    })
+  }
+}
+
+const onClientSaved = async () => {
+  await Promise.all([configStore.loadDownloadClientConfigurations(), loadClientStatuses()])
 }
 
 // Remote Path Mappings functions
@@ -593,7 +648,11 @@ const executeDeleteMapping = async (id?: number) => {
 
 // Lifecycle
 onMounted(async () => {
-  await Promise.all([configStore.loadDownloadClientConfigurations(), loadRemotePathMappings()])
+  await Promise.all([
+    configStore.loadDownloadClientConfigurations(),
+    loadRemotePathMappings(),
+    loadClientStatuses(),
+  ])
 })
 
 // Expose methods for parent component to open add client form and add mapping

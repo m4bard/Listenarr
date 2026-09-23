@@ -34,8 +34,9 @@ namespace Listenarr.Application.Downloads.Submission
     /// <list type="number">
     /// <item>An indexer bound to a client gets that client, or an error if the client cannot
     /// take the grab. There is no silent fallback to another client.</item>
-    /// <item>Otherwise keep the enabled clients that speak the requested protocol, take the
-    /// group with the lowest Priority value, and rotate within that group.</item>
+    /// <item>Otherwise keep the enabled clients that speak the requested protocol, drop the ones
+    /// recent failures have blocked unless that would leave none, take the group with the lowest
+    /// Priority value, and rotate within that group.</item>
     /// </list>
     /// Lower Priority wins, which matches Readarr, Sonarr and Prowlarr. There is deliberately no
     /// vendor preference any more: with qBittorrent and Transmission both enabled and both at the
@@ -86,8 +87,10 @@ namespace Listenarr.Application.Downloads.Submission
             var clients = await configurationService.GetDownloadClientConfigurationsAsync();
 
             var boundClient = await ResolveIndexerBindingAsync(protocol, indexerId, wantedTypes, clients);
+            var blocked = await clientStatus.GetBlockedClientIdsAsync();
             if (boundClient != null)
             {
+                WarnIfBoundClientBlocked(boundClient, blocked);
                 return boundClient.Id;
             }
 
@@ -105,7 +108,63 @@ namespace Listenarr.Application.Downloads.Submission
                 return null;
             }
 
-            return SelectByPriority(protocol, candidates).Id;
+            return SelectByPriority(protocol, ExcludeBlocked(protocol, candidates, blocked)).Id;
+        }
+
+        /// <summary>
+        /// Drops clients that recent failures have blocked, and keeps them all when nothing else is
+        /// left, as Readarr does (src/NzbDrone.Core/Download/DownloadClientProvider.cs:85-101 with
+        /// filterBlockedClients false). A block is a guess that the client is down; refusing the grab
+        /// outright on that guess would turn a slow client into a lost release.
+        /// </summary>
+        private List<DownloadClientConfiguration> ExcludeBlocked(
+            DownloadProtocol protocol,
+            List<DownloadClientConfiguration> candidates,
+            IReadOnlySet<string> blocked)
+        {
+            if (blocked.Count == 0)
+            {
+                return candidates;
+            }
+
+            var available = candidates.Where(c => !blocked.Contains(c.Id)).ToList();
+            if (available.Count == candidates.Count)
+            {
+                return candidates;
+            }
+
+            if (available.Count == 0)
+            {
+                logger.LogWarning(
+                    "Every enabled {Protocol} download client is blocked by recent failures; trying one anyway",
+                    protocol);
+                return candidates;
+            }
+
+            logger.LogInformation(
+                "Skipping {Protocol} client(s) {Blocked} after recent failures",
+                protocol,
+                string.Join(", ", candidates.Where(c => blocked.Contains(c.Id)).Select(c => c.Name)));
+            return available;
+        }
+
+        /// <summary>
+        /// A client an indexer is bound to is used even while it is blocked. Readarr refuses here
+        /// only when filterBlockedClients is set (DownloadClientProvider.cs:76-79), which its
+        /// DownloadService sets only when retrying a release that was parked because its client was
+        /// unavailable (DownloadService.cs:55). Listenarr has no store of parked releases, so every
+        /// grab is the first attempt and the bound client is returned. Sending the grab to another
+        /// client instead would defeat the binding, which exists to keep a tracker's torrents on the
+        /// client configured for its seeding rules.
+        /// </summary>
+        private void WarnIfBoundClientBlocked(DownloadClientConfiguration boundClient, IReadOnlySet<string> blocked)
+        {
+            if (blocked.Contains(boundClient.Id))
+            {
+                logger.LogWarning(
+                    "Bound download client {ClientName} is blocked by recent failures; sending to it anyway because the indexer is bound to it",
+                    boundClient.Name);
+            }
         }
 
         /// <summary>
