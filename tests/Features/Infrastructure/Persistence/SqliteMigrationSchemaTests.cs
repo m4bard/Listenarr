@@ -83,6 +83,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260922220105_AddEmailNotifications";
     private const string HousekeepingRetentionMigrationId =
         "20260922220833_AddHousekeepingRetention";
+    private const string IndexerDownloadClientBindingMigrationId =
+        "20260923051638_AddIndexerDownloadClientBinding";
     private const string OperationEvidencePublicationsMigrationId =
         "20261002210137_AddOperationEvidencePublications";
 
@@ -528,6 +530,7 @@ public class SqliteMigrationSchemaTests : BaseTests
                 DownloadClientPriorityMigrationId
                 EmailNotificationsMigrationId,
                 HousekeepingRetentionMigrationId,
+                IndexerDownloadClientBindingMigrationId,
                 OperationEvidencePublicationsMigrationId
             ],
             postCanary);
