@@ -139,6 +139,8 @@ namespace Listenarr.Infrastructure.Library.Moving
             IReadOnlySet<string> ownershipMarkerPaths,
             IReadOnlyDictionary<string, string> preflightIdentities,
             AudiobookFilesystemDeleteResult result,
+            RecycleFolderContainer? recycleContainer,
+            PinnedDirectoryCreation.PinnedDirectoryAnchor? recycleDirectory,
             out string reason)
         {
             reason = string.Empty;
@@ -199,16 +201,25 @@ namespace Listenarr.Infrastructure.Library.Moving
                                 "A directory generation changed after recursive-delete preflight.";
                             return false;
                         }
-                        if (!TryDeletePinnedDirectoryContents(
-                                rootAuthorization,
-                                child,
-                                deleteTarget,
-                                ownershipMarkerPaths,
-                                preflightIdentities,
-                                result,
-                                out reason))
+                        using (var childRecycleDirectory = recycleDirectory == null
+                            ? null
+                            : FileSystemSafety.CreateRecycleSubfolder(
+                                recycleDirectory,
+                                entryName))
                         {
-                            return false;
+                            if (!TryDeletePinnedDirectoryContents(
+                                    rootAuthorization,
+                                    child,
+                                    deleteTarget,
+                                    ownershipMarkerPaths,
+                                    preflightIdentities,
+                                    result,
+                                    recycleContainer,
+                                    childRecycleDirectory,
+                                    out reason))
+                            {
+                                return false;
+                            }
                         }
 
                         var isOwnedDirectory =
@@ -267,6 +278,23 @@ namespace Listenarr.Infrastructure.Library.Moving
                         return false;
                     }
 
+                    if (recycleContainer != null && recycleDirectory != null)
+                    {
+                        // Same checks as the unlink below; only the terminal act differs.
+                        if (!FileSystemSafety.TryMoveIntoRecycleFolder(
+                                file,
+                                recycleDirectory,
+                                entryName,
+                                recycleContainer,
+                                out reason))
+                        {
+                            return false;
+                        }
+
+                        result.DeletedFiles++;
+                        continue;
+                    }
+
                     file.Delete(immediateWindows: true);
                     result.DeletedFiles++;
                     _logger.LogInformation(
@@ -291,7 +319,8 @@ namespace Listenarr.Infrastructure.Library.Moving
             DeleteFolderTarget deleteTarget,
             PinnedDirectoryCreation.PinnedDirectoryAnchor targetAuthorization,
             IReadOnlyDictionary<string, string> trackedPhysicalObjectIdentities,
-            AudiobookFilesystemDeleteResult result)
+            AudiobookFilesystemDeleteResult result,
+            RecycleBinPolicy recycleBinPolicy)
         {
             var folderPath = deleteTarget.FolderPath;
             if (!Directory.Exists(folderPath))
@@ -378,14 +407,44 @@ namespace Listenarr.Infrastructure.Library.Moving
                 }
             }
 
-            if (!TryDeletePinnedDirectoryContents(
+            RecycleFolderContainer? recycleContainer = null;
+            if (recycleBinPolicy.Enabled)
+            {
+                recycleContainer = TryPrepareFolderRecycle(
+                    deleteTarget,
+                    targetAuthorization,
+                    recycleBinPolicy,
+                    result);
+                if (recycleContainer == null)
+                {
+                    return false;
+                }
+            }
+
+            bool contentsHandled;
+            using (recycleContainer)
+            {
+                contentsHandled = TryDeletePinnedDirectoryContents(
                     targetAuthorization,
                     targetAuthorization,
                     deleteTarget,
                     ownershipMarkerPaths,
                     preflightIdentities,
                     result,
-                    out reason))
+                    recycleContainer,
+                    recycleContainer?.Directory,
+                    out reason);
+                if (recycleContainer != null)
+                {
+                    ReportFolderRecycled(
+                        deleteTarget,
+                        recycleContainer,
+                        contentsHandled,
+                        result);
+                }
+            }
+
+            if (!contentsHandled)
             {
                 result.Warnings.Add(
                     "Refused to continue recursively deleting the audiobook folder because its captured filesystem generation changed.");
