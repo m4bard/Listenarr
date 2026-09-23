@@ -135,7 +135,7 @@ namespace Listenarr.Domain.Common
 
             if (fileKbps is int kbps)
             {
-                var eligible = withBitrate.Where(r => r.BitrateKbps <= kbps).ToList();
+                var eligible = withBitrate.Where(r => MeetsRung(kbps, r.BitrateKbps!.Value)).ToList();
                 if (eligible.Count > 0)
                 {
                     return ToAllowedMatch(Best(eligible).Source);
@@ -258,6 +258,22 @@ namespace Listenarr.Domain.Common
             return cand.Priority < exist.Priority;
         }
 
+        /// <summary>The profile's cutoff rung, or null when CutoffQuality names nothing the profile
+        /// allows: absent, present but not Allowed, or differing only in case. A true
+        /// <paramref name="cutoffBlank"/> instead means no cutoff is configured, which is satisfied.</summary>
+        public static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
+        {
+            cutoffBlank = false;
+            if (profile?.Qualities == null || profile.Qualities.Count == 0
+                || string.IsNullOrWhiteSpace(profile.CutoffQuality))
+            {
+                cutoffBlank = true;
+                return null;
+            }
+
+            return FindAllowedRung(profile, profile.CutoffQuality);
+        }
+
         // ---- internals --------------------------------------------------------------------
 
         private readonly record struct EffectiveRungInfo(QualityDefinition Source, string? Codec, int? BitrateKbps, bool IsLossless)
@@ -270,19 +286,6 @@ namespace Listenarr.Domain.Common
 
         private static EffectiveRungInfo Worst(IEnumerable<EffectiveRungInfo> rungs)
             => rungs.OrderByDescending(r => r.Priority).First();
-
-        private static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
-        {
-            cutoffBlank = false;
-            if (profile?.Qualities == null || profile.Qualities.Count == 0
-                || string.IsNullOrWhiteSpace(profile.CutoffQuality))
-            {
-                cutoffBlank = true;
-                return null;
-            }
-
-            return FindAllowedRung(profile, profile.CutoffQuality);
-        }
 
         private static IEnumerable<QualityDefinition> AllowedQualities(QualityProfile profile)
             => profile.Qualities
@@ -384,6 +387,39 @@ namespace Listenarr.Domain.Common
             // is honoured consistently — otherwise such a file maps to the FLAC group yet is
             // treated as lossy and filtered off the FLAC rung.
             return MapCodec(file).Overlaps(LosslessGroups);
+        }
+
+        /// <summary>
+        /// How far below a rung a file may report and still count as that rung, as a fraction.
+        ///
+        /// A file encoded at a nominal bitrate almost never reports exactly that figure. A "128kbps"
+        /// AAC file commonly reports something like 127241 bps, which rounds to 127 kbps, and a
+        /// strict `rung &lt;= file` comparison then excludes the 128 rung and drops the file a whole
+        /// tier. Applied to a real library that misclassifies most lossy files, because the failure
+        /// is systematic rather than occasional.
+        ///
+        /// Five percent is far smaller than the gap between adjacent rungs in any ordinary profile.
+        /// Across 64, 96, 128, 192, 256 and 320 the narrowest gap is 256 to 320, a fifth of the
+        /// higher rung and four times this tolerance, so a constant-bitrate file cannot be promoted
+        /// across a real tier boundary. It only absorbs encoder variance.
+        /// </summary>
+        private const double RungBitrateTolerance = 0.05;
+
+        /// <summary>
+        /// Whether a file's bitrate reaches a rung, allowing for the difference between a nominal
+        /// bitrate and what an encoder actually reports.
+        /// </summary>
+        private static bool MeetsRung(int fileKbps, int rungKbps)
+        {
+            if (fileKbps >= rungKbps)
+            {
+                return true;
+            }
+
+            // At least one whole kbps of slack, so the smallest rungs are not left with a tolerance
+            // that rounds away to nothing.
+            var slack = Math.Max(1d, rungKbps * RungBitrateTolerance);
+            return rungKbps - fileKbps <= slack;
         }
 
         /// <summary>Convert a bitrate to kbps, guarding values already expressed in kbps.</summary>
