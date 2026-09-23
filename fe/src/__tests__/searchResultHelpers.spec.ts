@@ -30,6 +30,7 @@ import {
   extractPublishers,
   extractLanguage,
   normalizeResultMetadata,
+  isAbridgedFormat,
   type NormalizedResult,
 } from '@/utils/searchResultHelpers'
 
@@ -387,6 +388,33 @@ describe('searchResultHelpers', () => {
       expect(normalized.runtime).toBeUndefined()
       expect(normalized.primaryId).toBe('Unknown Title')
       expect(normalized.isAudible).toBe(false)
+    })
+  })
+
+  describe('isAbridgedFormat', () => {
+    // Tracker #172 (G2): "unabridged" contains "abridged" as a substring, so a plain
+    // .includes('abridged') check flags every unabridged book as abridged.
+    it('is false for unabridged, case-insensitively', () => {
+      expect(isAbridgedFormat('unabridged')).toBe(false)
+      expect(isAbridgedFormat('Unabridged')).toBe(false)
+      expect(isAbridgedFormat('UNABRIDGED')).toBe(false)
+    })
+
+    it('is true for abridged, case-insensitively', () => {
+      expect(isAbridgedFormat('abridged')).toBe(true)
+      expect(isAbridgedFormat('Abridged')).toBe(true)
+    })
+
+    it('is false for null, undefined, and empty values', () => {
+      expect(isAbridgedFormat(null)).toBe(false)
+      expect(isAbridgedFormat(undefined)).toBe(false)
+      expect(isAbridgedFormat('')).toBe(false)
+    })
+
+    // Established in AudibleSearchResultFilter.cs, which defends against BookFormat
+    // holding 'podcast': a real, non-abridged value this field can take.
+    it('is false for other known format values', () => {
+      expect(isAbridgedFormat('podcast')).toBe(false)
     })
   })
 })
