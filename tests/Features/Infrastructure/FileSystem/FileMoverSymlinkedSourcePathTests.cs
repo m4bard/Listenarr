@@ -83,4 +83,100 @@ public sealed class FileMoverSymlinkedSourcePathTests : BaseTests
         // weaken an inode plus content digest.
         Assert.False(string.IsNullOrWhiteSpace(result.PhysicalObjectIdentity));
     }
+
+    [DirectoryLinkFact]
+    [Trait("Scenario", "A chain of two links resolves the same as a single one")]
+    public async Task CheckAsync_TwoHopSymlinkChain_IsSupported()
+    {
+        // c/sub is the real directory. b -> c is the single-hop case already covered above.
+        // a -> b/sub adds a second hop: the last path segment ("sub") is not itself a link, but
+        // an ancestor of it ("b") is. The resolver used to only ever look at the last segment, so
+        // this second hop was invisible to it.
+        var root = FileService.GetTempDirectory("symlink-source-two-hop");
+        var real = Path.Join(root, "c", "sub");
+        Directory.CreateDirectory(real);
+        var file = Path.Join(real, "book.m4b");
+        File.WriteAllText(file, "audio");
+
+        var b = Path.Join(root, "b");
+        Directory.CreateSymbolicLink(b, Path.Join(root, "c"));
+        var a = Path.Join(root, "a");
+        Directory.CreateSymbolicLink(a, Path.Join("b", "sub"));
+
+        var viaTwoHops = Path.Join(a, "book.m4b");
+        Assert.True(File.Exists(viaTwoHops), "the file must be reachable through both links");
+
+        var capability = Assert.IsAssignableFrom<IFilePublicationSourceCapability>(
+            _provider.GetRequiredService<IFileMover>());
+
+        var result = await capability.CheckAsync(viaTwoHops);
+
+        Assert.True(
+            result.IsSupported,
+            $"a source reached through a two-hop symlink chain should be publishable: {result.Reason}");
+        Assert.False(string.IsNullOrWhiteSpace(result.PhysicalObjectIdentity));
+    }
+
+    [DirectoryLinkFact]
+    [Trait("Scenario", "A symlink cycle is refused, naming a link in the cycle")]
+    public async Task CheckAsync_SymlinkCycle_ReturnsUnsupported_NamingALinkInTheCycle()
+    {
+        var root = FileService.GetTempDirectory("symlink-source-cycle");
+        var x = Path.Join(root, "x");
+        var y = Path.Join(root, "y");
+        // Neither target need exist for CreateSymbolicLink; the two links only need to name
+        // each other.
+        Directory.CreateSymbolicLink(x, "y");
+        Directory.CreateSymbolicLink(y, "x");
+
+        var capability = Assert.IsAssignableFrom<IFilePublicationSourceCapability>(
+            _provider.GetRequiredService<IFileMover>());
+
+        var result = await capability.CheckAsync(Path.Join(x, "book.m4b"));
+
+        Assert.False(result.IsSupported, "a symlink cycle cannot be resolved to a real path");
+        var namedLink = ExtractNamedSymlink(result.Reason);
+        Assert.True(
+            namedLink == x || namedLink == y,
+            $"the refusal should name one of the two links forming the cycle, got: {result.Reason}");
+    }
+
+    [DirectoryLinkFact]
+    [Trait("Scenario", "A dangling second hop is refused, naming the dangling link and not the first one")]
+    public async Task CheckAsync_DanglingSecondHop_ReturnsUnsupported_NamingTheDanglingLink()
+    {
+        var root = FileService.GetTempDirectory("symlink-source-dangling-second-hop");
+        var a = Path.Join(root, "a");
+        var b = Path.Join(root, "b");
+        // a -> b resolves fine on its own; b -> a target that never exists does not. The first
+        // hop is sound, the second is what breaks, so the refusal must name b, not a.
+        Directory.CreateSymbolicLink(a, "b");
+        Directory.CreateSymbolicLink(b, Path.Join(root, "does-not-exist"));
+
+        var capability = Assert.IsAssignableFrom<IFilePublicationSourceCapability>(
+            _provider.GetRequiredService<IFileMover>());
+
+        var result = await capability.CheckAsync(Path.Join(a, "book.m4b"));
+
+        Assert.False(result.IsSupported, "a dangling second hop cannot be resolved to a real path");
+        Assert.Equal(b, ExtractNamedSymlink(result.Reason));
+    }
+
+    /// <summary>
+    /// Pulls the path FileMover.ComposeUnsupportedReason quotes between "symbolic link at '" and
+    /// the closing quote, so a test can assert on exactly the link the refusal blames rather than
+    /// on the whole sentence, which also carries the raw OS exception text and can legitimately
+    /// mention other paths in the chain.
+    /// </summary>
+    private static string ExtractNamedSymlink(string? reason)
+    {
+        Assert.NotNull(reason);
+        const string marker = "symbolic link at '";
+        var markerIndex = reason.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(markerIndex >= 0, $"expected the reason to name the blocking link: {reason}");
+        var start = markerIndex + marker.Length;
+        var end = reason.IndexOf('\'', start);
+        Assert.True(end > start, $"expected a closing quote around the named link: {reason}");
+        return reason[start..end];
+    }
 }
