@@ -3,6 +3,7 @@ using System;
 using Listenarr.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    partial class ListenArrDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260923054821_AddDownloadClientStatus")]
+    partial class AddDownloadClientStatus
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
@@ -193,44 +196,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.HasIndex("Timestamp");
 
                     b.ToTable("History");
-                });
-
-            modelBuilder.Entity("Listenarr.Domain.ActivityHistory.ProcessExecutionLog", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Arguments")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("DurationMs")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("ExitCode")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("FileName")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Source")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Stderr")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Stdout")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("TimedOut")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("Timestamp")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("ProcessExecutionLogs");
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.Audiobook", b =>
@@ -1858,6 +1823,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("AuthorIdentityRepairRecheckAfterDays")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("BackupRetentionDays")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("CompletedFileAction")
                         .HasColumnType("INTEGER");
 
@@ -1963,9 +1931,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("MaxConcurrentDownloads")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int>("MaxConcurrentIndexerSearches")
-                        .HasColumnType("INTEGER");
-
                     b.Property<bool>("MetadataRefreshEnabled")
                         .HasColumnType("INTEGER");
 
@@ -1979,6 +1944,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("MetadataRefreshStaleAfterDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MinimumFreeSpaceWhenImporting")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("MissingSourceMaxRetries")
@@ -2018,6 +1986,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("ShowCompletedExternalDownloads")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("SkipFreeSpaceCheckWhenImporting")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("UnmatchedScanConcurrency")
@@ -2716,6 +2687,12 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("Retention")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double?>("SeedRatio")
+                        .HasColumnType("REAL");
+
+                    b.Property<int?>("SeedTime")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Type")
