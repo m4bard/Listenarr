@@ -191,6 +191,20 @@
               <small>{{ getCategoryHelp() }}</small>
             </div>
 
+            <div class="form-group" v-if="formData.type === 'qbittorrent'">
+              <label for="postImportCategory">Post-Import Category</label>
+              <input
+                id="postImportCategory"
+                v-model="formData.postImportCategory"
+                type="text"
+                placeholder="e.g., audiobooks-imported"
+              />
+              <small
+                >Category to set after a torrent has been imported. Listenarr will not remove the
+                torrent if seeding has finished. Leave blank to keep the same category.</small
+              >
+            </div>
+
             <div class="form-group" v-if="!isUsenet">
               <label for="tags">Tags</label>
               <input
@@ -435,6 +449,7 @@ const defaultFormData = {
   isEnabled: true,
   priority: 1,
   category: '',
+  postImportCategory: '',
   tags: '',
   recentPriority: 'default',
   removeCompletedDownloads: 'none',
@@ -572,6 +587,7 @@ watch(
         isEnabled: newClient.isEnabled,
         priority: newClient.priority ?? 1,
         category: (settings?.category as string) || '',
+        postImportCategory: (settings?.postImportCategory as string) || '',
         tags: (settings?.tags as string) || '',
         recentPriority: normalizeRecentPriority(settings?.recentPriority),
         removeCompletedDownloads:
@@ -628,6 +644,9 @@ const testConnection = async () => {
           ? { urlBase: formData.value.urlBase }
           : {}),
         ...(formData.value.category && { category: formData.value.category }),
+        ...(formData.value.type === 'qbittorrent' && formData.value.postImportCategory
+          ? { postImportCategory: formData.value.postImportCategory }
+          : {}),
         ...(formData.value.tags && { tags: formData.value.tags }),
         recentPriority: formData.value.recentPriority,
         initialState: formData.value.initialState,
@@ -686,6 +705,9 @@ const handleSubmit = async () => {
           ? { urlBase: formData.value.urlBase }
           : {}),
         ...(formData.value.category && { category: formData.value.category }),
+        ...(formData.value.type === 'qbittorrent' && formData.value.postImportCategory
+          ? { postImportCategory: formData.value.postImportCategory }
+          : {}),
         ...(formData.value.tags && { tags: formData.value.tags }),
         recentPriority: formData.value.recentPriority,
         initialState: formData.value.initialState,
