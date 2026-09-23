@@ -32,8 +32,18 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string EmbedCoverArtSettingMigrationId =
         "20260828190320_AddEmbedCoverArtInAudioFilesSetting";
 
+    private const string AuthorIdentityRepairMigrationId =
+        "20260921202317_AddAuthorIdentityRepair";
+
+    private const string AuthorIdentityRecheckWindowMigrationId =
+        "20260921210504_AddAuthorIdentityRecheckWindow";
+
     private static readonly string[] BranchMigrationIds =
-        [EmbedCoverArtSettingMigrationId];
+    [
+        EmbedCoverArtSettingMigrationId,
+        AuthorIdentityRepairMigrationId,
+        AuthorIdentityRecheckWindowMigrationId
+    ];
 
     private const string CanaryMigrationFrontierId =
         "20260621002226_AddApplicationSettingsConcurrency";
@@ -63,6 +73,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260914171829_AddHistoryReleaseMetadata";
     private const string CustomScriptNotificationsMigrationId =
         "20260916112317_AddCustomScriptNotifications";
+    private const string QualityProfileUpgradeAllowedMigrationId =
+        "20260920025621_AddQualityProfileUpgradeAllowed";
     private const string HousekeepingRetentionMigrationId =
         "20260922220833_AddHousekeepingRetention";
 
@@ -376,6 +388,7 @@ public class SqliteMigrationSchemaTests : BaseTests
                 PreferredReleaseShapeMigrationId,
                 HistoryReleaseMetadataMigrationId,
                 CustomScriptNotificationsMigrationId,
+                QualityProfileUpgradeAllowedMigrationId,
                 HousekeepingRetentionMigrationId
             ],
             postCanary);
@@ -578,6 +591,18 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.Equal("30", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshStaleAfterDays"));
         Assert.Equal("60", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshRequestsPerHour"));
         Assert.Equal("1000", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshMinimumSpacingMs"));
+
+        // Off, and previewing. The scaffolder writes a column default from the CLR default
+        // rather than from the property initializer, so the dry-run switch was generated as 0
+        // and had to be corrected by hand; an upgraded database landing on 0 here would rewrite
+        // author identities on its first enabled cycle with nothing shown first. That is the
+        // whole reason this assertion exists, and it is why it asserts 1 rather than "whatever
+        // the entity says".
+        Assert.Equal("0", await ColumnDefaultAsync(connection, "ApplicationSettings", "AuthorIdentityRepairEnabled"));
+        Assert.Equal("1", await ColumnDefaultAsync(connection, "ApplicationSettings", "AuthorIdentityRepairDryRun"));
+        Assert.Equal("24", await ColumnDefaultAsync(connection, "ApplicationSettings", "AuthorIdentityRepairIntervalHours"));
+        Assert.Equal("25", await ColumnDefaultAsync(connection, "ApplicationSettings", "AuthorIdentityRepairMaxRowsPerRun"));
+        Assert.Equal("30", await ColumnDefaultAsync(connection, "ApplicationSettings", "AuthorIdentityRepairRecheckAfterDays"));
         Assert.True(await ForeignKeyHasDeleteActionAsync(
             connection,
             "LibraryDirectoryOwnerships",
