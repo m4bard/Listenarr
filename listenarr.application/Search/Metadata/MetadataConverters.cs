@@ -9,6 +9,13 @@ namespace Listenarr.Application.Search.Metadata;
 /// </summary>
 public class MetadataConverters
 {
+    // Audible's format_type and Audnexus' formatType are single-token fields (e.g.
+    // "unabridged", "abridged", "podcast"). A plain Contains("abridged") also matches
+    // "unabridged", since it contains "abridged" as a substring. Anchor on word
+    // boundaries so "unabridged" does not match, matching the pattern already used for
+    // title normalization in Listenarr.Domain.Common.TitleUtils.
+    private static readonly Regex AbridgedFormatPattern = new(@"\babridged\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly IImageCacheService? _imageCacheService;
     private readonly ILogger<MetadataConverters> _logger;
     private readonly IRequestContextAccessor? _requestContextAccessor;
@@ -18,6 +25,11 @@ public class MetadataConverters
         _imageCacheService = imageCacheService;
         _logger = logger;
         _requestContextAccessor = requestContextAccessor;
+    }
+
+    private static bool IsAbridgedFormat(string? formatType)
+    {
+        return !string.IsNullOrEmpty(formatType) && AbridgedFormatPattern.IsMatch(formatType);
     }
 
     private static List<AudiobookSeriesMembership>? BuildSeriesMemberships(IEnumerable<AudibleSeries>? series)
@@ -69,7 +81,7 @@ public class MetadataConverters
             Language = audibleData.Language,
             Isbn = !string.IsNullOrWhiteSpace(audibleData.Isbn) ? new List<string> { audibleData.Isbn! } : new List<string>(),
             ImageUrl = audibleData.ImageUrl,
-            Abridged = audibleData.BookFormat?.Contains("abridged", StringComparison.OrdinalIgnoreCase) ?? false,
+            Abridged = IsAbridgedFormat(audibleData.BookFormat),
             Explicit = audibleData.Explicit ?? false
         };
 
@@ -134,7 +146,7 @@ public class MetadataConverters
             Language = audnexusData.Language,
             Isbn = !string.IsNullOrWhiteSpace(audnexusData.Isbn) ? new List<string> { audnexusData.Isbn! } : new List<string>(),
             ImageUrl = audnexusData.Image,
-            Abridged = audnexusData.FormatType?.Contains("abridged", StringComparison.OrdinalIgnoreCase) ?? false,
+            Abridged = IsAbridgedFormat(audnexusData.FormatType),
             Explicit = audnexusData.IsAdult ?? false
         };
 
