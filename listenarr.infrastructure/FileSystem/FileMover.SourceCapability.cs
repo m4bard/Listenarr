@@ -165,10 +165,10 @@ public partial class FileMover : IFilePublicationSourceCapability
     /// The first directory in the path that is a symbolic link, or null if there is none.
     /// </summary>
     /// <remarks>
-    /// Refusing a linked ancestor is deliberate and covered by
-    /// CheckPublicationSource_LinkedAncestor_ReturnsUnsupported, so this does not change the
-    /// answer. It only says which segment caused it, because the raw failure is an ENOTDIR from
-    /// openat and gives an operator nothing to act on.
+    /// This does not change the answer. It only says which segment caused a refusal, because the
+    /// raw failure is an ENOTDIR from openat and gives an operator nothing to act on. Since
+    /// ResolveSymlinkedAncestors, a linked source ancestor normally resolves and is published, so
+    /// this names a link only when that resolution could not remove it from the walk.
     /// </remarks>
     private static string? FindSymlinkedAncestor(string sourcePath)
     {
