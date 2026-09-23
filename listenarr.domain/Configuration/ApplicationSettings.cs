@@ -255,6 +255,14 @@ namespace Listenarr.Domain.Configuration
         public string DefaultSearchRegion { get; set; } = "us";
 
         /// <summary>
+        /// How many indexers one search may query at the same time. 4 is the ceiling that was
+        /// hardcoded before this became a setting, so an upgraded install searches exactly as it
+        /// did. Lower it when a local Jackett or Prowlarr proxy, or an indexer behind it, wants
+        /// gentler treatment.
+        /// </summary>
+        public int MaxConcurrentIndexerSearches { get; set; } = 4;
+
+        /// <summary>
         /// Preferred default language filter for Add New searches.
         /// </summary>
         public string DefaultSearchLanguage { get; set; } = "english";
