@@ -313,7 +313,8 @@
             <div class="filter-group">
               <h4><PhCheck /> Must Contain (Required)</h4>
               <p class="section-description">
-                Releases MUST contain at least one of these words (case-insensitive).
+                Releases MUST contain at least one of these words (case-insensitive, whole words
+                only).
               </p>
               <div class="tag-input-group">
                 <div
@@ -359,7 +360,8 @@
             <div class="filter-group">
               <h4><PhX /> Must Not Contain (Forbidden)</h4>
               <p class="section-description">
-                Releases containing any of these words will be rejected (case-insensitive).
+                Releases containing any of these words will be rejected (case-insensitive, whole
+                words only, so "abridged" does not match "unabridged").
               </p>
               <div class="tag-input-group">
                 <div
@@ -475,6 +477,28 @@
               description="Give bonus points to more recent releases (torrent upload date)"
             />
 
+            <!--
+              Maximum Age is not part of the checkbox above. It is a hard reject applied by
+              SearchResultScorer whenever it is greater than zero, and the scorer never reads
+              PreferNewerReleases. Hiding this input therefore hid a filter that stayed on, and
+              the only way back to it was to tick a box that claims to do something else.
+            -->
+            <FormRow
+              label="Bundle and Omnibus Editions"
+              labelFor="preferredReleaseShape"
+              help="Applies to automatic searches. A release on the wrong side of this is scored down, never rejected, so a book whose only available release is a bundle is still grabbed. A book whose own series position is a range (an omnibus entry) always prefers bundles, whatever is chosen here."
+            >
+              <select
+                id="preferredReleaseShape"
+                v-model="formData.preferredReleaseShape"
+                class="form-select"
+              >
+                <option value="none">No preference</option>
+                <option value="individual">Prefer individual books</option>
+                <option value="bundle">Prefer bundle and omnibus editions</option>
+              </select>
+            </FormRow>
+
             <FormRow
               v-if="formData.preferNewerReleases"
               label="Maximum Age (Days)"
@@ -530,7 +554,13 @@ import {
   PhDotsSixVertical,
   PhMusicNotesSimple,
 } from '@phosphor-icons/vue'
-import type { QualityProfile, CodecDefinition, QualityItem, QualityDefinition } from '@/types'
+import type {
+  QualityProfile,
+  CodecDefinition,
+  QualityItem,
+  QualityDefinition,
+  ReleaseShapePreference,
+} from '@/types'
 import { useToast } from '@/services/toastService'
 
 const props = defineProps<{
@@ -802,6 +832,7 @@ const formData = ref<QualityProfile>({
   isDefault: false,
   preferNewerReleases: false,
   maximumAge: 0,
+  preferredReleaseShape: 'none' as ReleaseShapePreference,
 })
 
 const preferM4b = ref(false)
@@ -841,6 +872,7 @@ watch(
       formData.value.isDefault = newProfile.isDefault
       formData.value.preferNewerReleases = newProfile.preferNewerReleases
       formData.value.maximumAge = newProfile.maximumAge
+      formData.value.preferredReleaseShape = newProfile.preferredReleaseShape || 'none'
 
       preferM4b.value = (formData.value.preferredFormats || []).some(
         (format) => (format || '').toLowerCase().trim() === 'm4b',
@@ -878,6 +910,7 @@ watch(
         isDefault: false,
         preferNewerReleases: false,
         maximumAge: 0,
+        preferredReleaseShape: 'none',
       }
 
       preferM4b.value = false
@@ -895,7 +928,11 @@ watch(
 /**
  * Initialize quality items from profile
  */
-const initializeQualitiesFromProfile = (profile: QualityProfile) => {
+// A function declaration, not a const arrow. The watch above runs with `immediate: true`,
+// so it calls this during setup, before a const at this point in the file has been
+// initialised. As an arrow it threw ReferenceError on every mount that had a profile,
+// Vue caught it, and the qualities were silently left empty.
+function initializeQualitiesFromProfile(profile: QualityProfile) {
   // Clear existing
   qualityItems.value = []
   enabledCodecs.value = new Set()
@@ -947,7 +984,7 @@ const initializeQualitiesFromProfile = (profile: QualityProfile) => {
 /**
  * Parse a quality string into structured data
  */
-const parseQualityString = (qualityStr: string): QualityItem | null => {
+function parseQualityString(qualityStr: string): QualityItem | null {
   // FLAC
   if (qualityStr === 'FLAC') {
     return {
