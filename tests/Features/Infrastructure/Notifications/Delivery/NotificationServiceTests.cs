@@ -518,49 +518,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         }
 
         [Fact]
-        public async Task SendNotificationAsync_SendsNothing_WhenNotificationsDisabled()
+        public async Task SendNotificationAsync_Sends_RegardlessOfEnableNotificationsSetting()
         {
-            var trigger = "book-added";
-            var data = new { id = 1, title = "Should Not Send" };
-            var webhookUrl = "https://discord.com/api/webhooks/test";
-            var enabledTriggers = new List<string> { trigger };
-
-            var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
-            using var postResponse = new HttpResponseMessage(HttpStatusCode.OK);
-            mockHttpMessageHandler
-                .Protected()
-                .Setup<Task<HttpResponseMessage>>(
-                    "SendAsync",
-                    ItExpr.IsAny<HttpRequestMessage>(),
-                    ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(postResponse);
-
-            var mockConfigService = new Mock<IConfigurationService>();
-            mockConfigService
-                .Setup(x => x.GetApplicationSettingsAsync())
-                .ReturnsAsync(new ApplicationSettings { EnableNotifications = false });
-
-            var service = new NotificationService(
-                new HttpClient(mockHttpMessageHandler.Object),
-                Mock.Of<ILogger<NotificationService>>(),
-                mockConfigService.Object,
-                new NotificationPayloadBuilderAdapter(),
-                Mock.Of<IRequestContextAccessor>());
-
-            await service.SendNotificationAsync(trigger, data, webhookUrl, enabledTriggers);
-
-            mockHttpMessageHandler
-                .Protected()
-                .Verify(
-                    "SendAsync",
-                    Times.Never(),
-                    ItExpr.IsAny<HttpRequestMessage>(),
-                    ItExpr.IsAny<CancellationToken>());
-        }
-
-        [Fact]
-        public async Task SendNotificationAsync_Sends_WhenNotificationsEnabled()
-        {
+            // EnableNotifications does not gate delivery: matching Readarr and Sonarr, there is
+            // no global notification switch, only each webhook's own enabled state. This asserts
+            // that a false EnableNotifications value has no effect on whether a webhook fires.
             var trigger = "book-added";
             var data = new { id = 1, title = "Should Send" };
             var webhookUrl = "https://discord.com/api/webhooks/test";
@@ -579,7 +541,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
             var mockConfigService = new Mock<IConfigurationService>();
             mockConfigService
                 .Setup(x => x.GetApplicationSettingsAsync())
-                .ReturnsAsync(new ApplicationSettings { EnableNotifications = true });
+                .ReturnsAsync(new ApplicationSettings { EnableNotifications = false });
 
             var service = new NotificationService(
                 new HttpClient(mockHttpMessageHandler.Object),
