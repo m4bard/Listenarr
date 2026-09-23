@@ -43,3 +43,96 @@ function formatMembership(membership: AudiobookSeriesMembership): string {
   const number = (membership.seriesNumber || '').trim()
   return number ? `${name} #${number}` : name
 }
+
+/** A series entry as the search endpoint and the product lookup both return it. */
+export interface SeriesEntry {
+  asin?: string
+  name?: string
+  position?: string
+}
+
+/** Series data in the shape AudibleBookMetadata expects, memberships and legacy scalars alike. */
+export interface SeriesFields {
+  seriesMemberships?: AudiobookSeriesMembership[]
+  series?: string
+  seriesNumber?: string
+  seriesAsin?: string
+}
+
+// An Audible digital ASIN is the literal prefix B0 followed by eight alphanumerics. A bare
+// ten-character check is not enough: single-word series names of that length, Foundation
+// among them, pass it and then get stored as if they were identifiers.
+const ASIN_PATTERN = /^B0[A-Z0-9]{8}$/i
+
+export function looksLikeAsin(value: string | undefined | null): boolean {
+  const trimmed = value?.trim()
+  return Boolean(trimmed && ASIN_PATTERN.test(trimmed))
+}
+
+/**
+ * A book can belong to more than one series, so every entry becomes a membership, ordered,
+ * with the first marked primary. The legacy scalars come off that primary membership so the
+ * two can never disagree.
+ */
+export function buildSeriesFields(entries: SeriesEntry[] | undefined | null): SeriesFields {
+  const seriesMemberships: AudiobookSeriesMembership[] = (entries ?? [])
+    .filter((entry) => (entry?.name ?? '').trim().length > 0)
+    .map((entry, index) => {
+      const asin = entry.asin?.trim()
+      return {
+        seriesName: (entry.name ?? '').trim(),
+        seriesNumber: entry.position?.trim() || undefined,
+        // The search fallback branch fills `asin` with the series *name* when the ASIN
+        // re-fetch fails, so only keep a value that actually looks like an ASIN.
+        seriesAsin: looksLikeAsin(asin) ? asin : undefined,
+        isPrimary: index === 0,
+        sortOrder: index,
+      }
+    })
+
+  const primary = seriesMemberships[0]
+  return primary
+    ? {
+        seriesMemberships,
+        series: primary.seriesName,
+        seriesNumber: primary.seriesNumber,
+        seriesAsin: primary.seriesAsin,
+      }
+    : {}
+}
+
+// Build a lexicographically-comparable key from a series position number so a plain string
+// sort (localeCompare) yields reading order. Each tier is led by a digit so the tiers sort
+// deterministically across locales (a leading symbol like "~" does NOT reliably sort after
+// digits — that was the original bug for missing positions):
+//   tier 1 = fully-numeric positions ("1", "2.5", "10"), ordered numerically via zero-padding;
+//   tier 2 = other non-empty positions ("1-2", "1a"), ordered by their text, after the numbers;
+//   tier 3 = missing positions, always sorted last.
+export function seriesPositionSortKey(value: string | null | undefined): string {
+  const raw = (value || '').trim()
+  if (!raw) return '3'
+  if (/^\d+(\.\d+)?$/.test(raw)) {
+    const [intPart, fracPart = ''] = raw.split('.')
+    return `1${intPart.padStart(8, '0')}${fracPart ? `.${fracPart}` : ''}`
+  }
+  return `2${raw.toLowerCase()}`
+}
+
+/**
+ * Inline style for one cover in an overlapping series cover mosaic. The covers fan out
+ * across the left half of a 2:1 card, each one stacked under the cover before it.
+ */
+export function seriesCoverMosaicStyle(index: number, count: number) {
+  const left = count <= 1 ? 25 : (index * 50) / Math.max(1, count - 1)
+  const zIndex = count <= 1 ? 1 : Math.max(1, 100 - index)
+
+  return {
+    width: '50%',
+    height: '100%',
+    top: '0%',
+    left: `${left}%`,
+    zIndex,
+    boxShadow: 'rgba(17, 17, 17, 0.4) 4px 0px 10px',
+    borderRadius: '12px',
+  }
+}
