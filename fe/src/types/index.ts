@@ -260,6 +260,7 @@ export interface DownloadClientSettings {
   apiKey?: string
   urlBase?: string
   category?: string
+  postImportCategory?: string
   tags?: string
   recentPriority?: string
   olderPriority?: string

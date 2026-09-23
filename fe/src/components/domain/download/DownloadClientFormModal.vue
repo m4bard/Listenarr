@@ -191,6 +191,20 @@
               <small>{{ getCategoryHelp() }}</small>
             </div>
 
+            <div class="form-group" v-if="formData.type === 'qbittorrent'">
+              <label for="postImportCategory">Post-Import Category</label>
+              <input
+                id="postImportCategory"
+                v-model="formData.postImportCategory"
+                type="text"
+                placeholder="e.g., audiobooks-imported"
+              />
+              <small
+                >Category to set after a torrent has been imported. Listenarr will not remove the
+                torrent if seeding has finished. Leave blank to keep the same category.</small
+              >
+            </div>
+
             <div class="form-group" v-if="!isUsenet">
               <label for="tags">Tags</label>
               <input
@@ -414,6 +428,7 @@ const defaultFormData = {
   useSSL: false,
   isEnabled: true,
   category: '',
+  postImportCategory: '',
   tags: '',
   recentPriority: 'default',
   olderPriority: 'default',
@@ -539,6 +554,7 @@ watch(
         useSSL: newClient.useSSL,
         isEnabled: newClient.isEnabled,
         category: (settings?.category as string) || '',
+        postImportCategory: (settings?.postImportCategory as string) || '',
         tags: (settings?.tags as string) || '',
         recentPriority: (settings?.recentPriority as string) || 'default',
         olderPriority: (settings?.olderPriority as string) || 'default',
@@ -597,6 +613,9 @@ const testConnection = async () => {
           ? { urlBase: formData.value.urlBase }
           : {}),
         ...(formData.value.category && { category: formData.value.category }),
+        ...(formData.value.type === 'qbittorrent' && formData.value.postImportCategory
+          ? { postImportCategory: formData.value.postImportCategory }
+          : {}),
         ...(formData.value.tags && { tags: formData.value.tags }),
         recentPriority: formData.value.recentPriority,
         olderPriority: formData.value.olderPriority,
@@ -657,6 +676,9 @@ const handleSubmit = async () => {
           ? { urlBase: formData.value.urlBase }
           : {}),
         ...(formData.value.category && { category: formData.value.category }),
+        ...(formData.value.type === 'qbittorrent' && formData.value.postImportCategory
+          ? { postImportCategory: formData.value.postImportCategory }
+          : {}),
         ...(formData.value.tags && { tags: formData.value.tags }),
         recentPriority: formData.value.recentPriority,
         olderPriority: formData.value.olderPriority,
