@@ -60,6 +60,15 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
                 DownloadClientId = downloadClientId
             };
 
+        private static IDownloadClientStatusService NoBlockedClients()
+        {
+            var status = new Mock<IDownloadClientStatusService>();
+            status
+                .Setup(s => s.GetBlockedClientIdsAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new HashSet<string>());
+            return status.Object;
+        }
+
         private static DownloadClientSelector CreateSelector(
             Indexer? indexer,
             params DownloadClientConfiguration[] clients)
@@ -78,6 +87,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
                 configurationService.Object,
                 indexerRepository.Object,
                 new DownloadClientRoundRobinState(),
+                NoBlockedClients(),
                 NullLogger<DownloadClientSelector>.Instance);
         }
 
