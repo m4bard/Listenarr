@@ -25,7 +25,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
     [Trait("Area", "LibraryApi")]
     [Trait("Name", "LibraryController_DeleteFilesystemTests")]
     [Trait("Category", "LibraryController")]
-    public class LibraryController_DeleteFilesystemTests : BaseTests
+    public partial class LibraryController_DeleteFilesystemTests : BaseTests
     {
         private async Task AddAuthorizedRootAsync(RootFolder root)
         {
