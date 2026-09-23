@@ -260,6 +260,19 @@ export interface DownloadClientConfiguration {
   lastTestSuccessful?: boolean
 }
 
+// A download client's persisted failure status. A client with no entry has never failed or
+// has fully recovered. Times are UTC.
+export interface DownloadClientStatus {
+  clientId: string
+  // Rung on the backoff ladder, 1 to 5. Zero never appears: a recovered client has no entry.
+  escalationLevel: number
+  initialFailure: string | null
+  mostRecentFailure: string | null
+  // Selection avoids the client until this time; null while it is failing but not yet blocked.
+  disabledTill: string | null
+  isBlocked: boolean
+}
+
 export interface DownloadClientSettings {
   apiKey?: string
   urlBase?: string
