@@ -98,6 +98,15 @@ namespace Listenarr.Domain.Search
         public int Priority { get; set; } = 25;
 
         /// <summary>
+        /// The download client this indexer's grabs go to, or null for any client of the
+        /// right protocol. Readarr and Sonarr call this IndexerDefinition.DownloadClientId and
+        /// use 0 for "any". A bound client that is later deleted or disabled is not cleared:
+        /// the binding is kept and the grab fails loudly, rather than quietly re-routing the
+        /// indexer's grabs to a client the operator did not pick.
+        /// </summary>
+        public string? DownloadClientId { get; set; }
+
+        /// <summary>
         /// Minimum age in minutes before NZBs are grabbed
         /// </summary>
         public int MinimumAge { get; set; } = 0;

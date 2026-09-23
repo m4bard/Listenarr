@@ -2637,6 +2637,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("DisabledTill")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("DownloadClientId")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("EnableAnimeStandardSearch")
                         .HasColumnType("INTEGER");
 
