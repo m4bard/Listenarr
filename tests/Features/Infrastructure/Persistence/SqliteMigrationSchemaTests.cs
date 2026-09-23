@@ -268,6 +268,11 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.All(metadataRefreshMigrationIds, id => Assert.Contains(id, postCanary));
         postCanary = [.. postCanary.Except(metadataRefreshMigrationIds)];
 
+        // Item 170's configurable indexer search ceiling, pinned apart for the same reason.
+        const string searchConcurrencyMigrationId = "20260923050237_AddMaxConcurrentIndexerSearchesSetting";
+        Assert.Contains(searchConcurrencyMigrationId, postCanary);
+        postCanary = [.. postCanary.Except([searchConcurrencyMigrationId])];
+
         Assert.Equal(
             [
                 ProcessExecutionLogRepairId,
