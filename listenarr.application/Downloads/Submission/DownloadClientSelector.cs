@@ -46,6 +46,7 @@ namespace Listenarr.Application.Downloads.Submission
         IConfigurationService configurationService,
         IIndexerRepository indexerRepository,
         DownloadClientRoundRobinState roundRobinState,
+        IDownloadClientStatusService clientStatus,
         ILogger<DownloadClientSelector> logger)
     {
         /// <summary>
