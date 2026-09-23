@@ -415,4 +415,70 @@ describe('DownloadClientFormModal', () => {
     const clamped = (store.saveDownloadClientConfiguration as unknown).mock.calls[1][0]
     expect(clamped.priority).toBe(50)
   })
+
+  // Two different priorities live on this form. Client Priority orders clients against each
+  // other and is read by the selector for every protocol. The queue priority is forwarded to
+  // the client itself, and only the SABnzbd and NZBGet planners read it. They are kept in
+  // separate sections so the heading never claims one is the other.
+  const sectionOf = (wrapper: ReturnType<typeof mount>, selector: string) =>
+    wrapper.findAll('.form-section').find((section) => section.find(selector).exists())
+
+  it('keeps Client Priority and the usenet queue priority in separate sections', async () => {
+    const wrapper = mount(DownloadClientFormModal, {
+      global: { plugins: [createPinia()] },
+      props: { visible: true, editingClient: null },
+    })
+    await wrapper.setProps({
+      editingClient: {
+        id: '1',
+        name: 'sab',
+        type: 'sabnzbd',
+        host: 'sabnzbd.local',
+        port: 8080,
+        isEnabled: true,
+        useSSL: false,
+      } as unknown as import('@/types').DownloadClientConfiguration,
+    })
+    await nextTick()
+
+    const clientSection = sectionOf(wrapper, '#clientPriority')
+    const queueSection = sectionOf(wrapper, '#recentPriority')
+    expect(clientSection).toBeDefined()
+    expect(queueSection).toBeDefined()
+    expect(clientSection!.element).not.toBe(queueSection!.element)
+    expect(clientSection!.find('h3').text()).toBe('Client Selection')
+    expect(queueSection!.find('h3').text()).toBe('Queue Priority')
+
+    wrapper.unmount()
+  })
+
+  it('shows Client Priority for a torrent client but not the usenet-only queue priority', async () => {
+    // Control for the test above: the queue priority section must still disappear for a
+    // protocol whose planner never reads recentPriority, so widening Client Priority to every
+    // client did not widen this with it.
+    const wrapper = mount(DownloadClientFormModal, {
+      global: { plugins: [createPinia()] },
+      props: { visible: true, editingClient: null },
+    })
+    await wrapper.setProps({
+      editingClient: {
+        id: '2',
+        name: 'qbit',
+        type: 'qbittorrent',
+        host: 'qbittorrent.local',
+        port: 8080,
+        isEnabled: true,
+        useSSL: false,
+      } as unknown as import('@/types').DownloadClientConfiguration,
+    })
+    await nextTick()
+
+    expect(wrapper.find('#clientPriority').exists()).toBe(true)
+    expect(wrapper.find('#recentPriority').exists()).toBe(false)
+    const headings = wrapper.findAll('.form-section h3').map((h) => h.text())
+    expect(headings).toContain('Client Selection')
+    expect(headings).not.toContain('Queue Priority')
+
+    wrapper.unmount()
+  })
 })
