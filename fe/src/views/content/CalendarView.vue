@@ -90,14 +90,29 @@
           {{ mode.label }}
         </button>
       </div>
+      <div class="week-start-control">
+        <label for="calendar-first-day-of-week" class="week-start-label">Week starts</label>
+        <select
+          id="calendar-first-day-of-week"
+          data-testid="calendar-first-day-of-week"
+          v-model.number="firstDayOfWeek"
+          class="week-start-select"
+          title="First day of week"
+        >
+          <option :value="0">Sunday</option>
+          <option :value="1">Monday</option>
+        </select>
+      </div>
     </div>
+
+    <CalendarLegend />
 
     <div class="calendar-layout">
       <!-- MONTH VIEW -->
       <div v-if="viewMode === 'month'" class="calendar-panel">
         <div class="calendar-grid">
           <div class="calendar-header">
-            <div v-for="day in weekDays" :key="day" class="day-header">{{ day }}</div>
+            <div v-for="day in weekDaysHeader" :key="day" class="day-header">{{ day }}</div>
           </div>
           <div class="calendar-body">
             <div
@@ -110,7 +125,8 @@
                 <div
                   v-for="item in date.items.slice(0, 3)"
                   :key="item.id"
-                  :class="['calendar-item', { 'status-no-file': item.missing }]"
+                  :data-testid="`calendar-event-${item.id}`"
+                  :class="['calendar-item', `status-${item.status}`]"
                   :title="entryTitle(item)"
                   role="button"
                   tabindex="0"
@@ -143,7 +159,8 @@
               <div
                 v-for="item in day.items"
                 :key="item.id"
-                :class="['week-item', { 'status-no-file': item.missing }]"
+                :data-testid="`calendar-event-${item.id}`"
+                :class="['week-item', `status-${item.status}`]"
                 :title="entryTitle(item)"
                 role="button"
                 tabindex="0"
@@ -166,7 +183,8 @@
             <div
               v-for="item in forecastItems"
               :key="item.id"
-              :class="['forecast-item', { 'status-no-file': item.missing }]"
+              :data-testid="`calendar-event-${item.id}`"
+              :class="['forecast-item', `status-${item.status}`]"
               :title="entryTitle(item)"
               role="button"
               tabindex="0"
@@ -202,7 +220,8 @@
               <div
                 v-for="item in selectedDayItems"
                 :key="item.id"
-                :class="['day-list-item', { 'status-no-file': item.missing }]"
+                :data-testid="`calendar-event-${item.id}`"
+                :class="['day-list-item', `status-${item.status}`]"
                 :title="entryTitle(item)"
                 role="button"
                 tabindex="0"
@@ -234,7 +253,8 @@
             <div
               v-for="item in allItemsSorted"
               :key="item.id"
-              :class="['agenda-item', { 'status-no-file': item.missing }]"
+              :data-testid="`calendar-event-${item.id}`"
+              :class="['agenda-item', `status-${item.status}`]"
               :title="entryTitle(item)"
               role="button"
               tabindex="0"
@@ -266,7 +286,8 @@
             <div
               v-for="item in upcomingItems"
               :key="item.id"
-              :class="['upcoming-item', { 'status-no-file': item.missing }]"
+              :data-testid="`calendar-event-${item.id}`"
+              :class="['upcoming-item', `status-${item.status}`]"
               :title="entryTitle(item)"
               role="button"
               tabindex="0"
@@ -318,11 +339,19 @@ import {
   PhRss,
 } from '@phosphor-icons/vue'
 import { useLibraryStore } from '@/stores/library'
+import { useDownloadsStore } from '@/stores/downloads'
 import { apiService } from '@/services/api'
 import { errorTracking } from '@/services/errorTracking'
 import { ConfirmModal } from '@/components/feedback'
 import { logger } from '@/utils/logger'
 import CalendarFeedModal from '@/components/domain/calendar/CalendarFeedModal.vue'
+import CalendarLegend from '@/components/domain/calendar/CalendarLegend.vue'
+import { getCalendarEventStatus, type CalendarEventStatus } from '@/utils/calendarEventStatus'
+import {
+  getFirstDayOfWeekPreference,
+  setFirstDayOfWeekPreference,
+  type FirstDayOfWeek,
+} from '@/utils/calendarFirstDayOfWeek'
 import type { Audiobook } from '@/types'
 
 interface CalendarItem {
@@ -333,8 +362,14 @@ interface CalendarItem {
   date: Date
   // The calendar used to drop every file/monitor field on the way in, which left it
   // unable to say whether an entry was already on disk. Carried through so the grid and
-  // the search button agree about what "missing" means.
+  // the search button agree about what "missing" means. Kept separate from `status`
+  // below: this is the wanted-list definition (monitored, nothing on disk, regardless of
+  // release date), while `status` follows the family's calendar precedence, which treats
+  // a future release as "unreleased" rather than "missing".
   missing: boolean
+  // The family's calendar status (downloaded/downloading/unmonitored/missing/unreleased).
+  // See src/utils/calendarEventStatus.ts for the precedence and its citations.
+  status: CalendarEventStatus
 }
 
 interface CalendarDate {
@@ -346,7 +381,20 @@ interface CalendarDate {
 }
 
 const currentDate = ref(new Date())
-const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+// Canonical order, Date.prototype.getDay() indexed (0 = Sunday). weekDaysHeader below
+// rotates this to the persisted first-day-of-week preference; this array itself never
+// changes.
+const ALL_WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const firstDayOfWeek = ref<FirstDayOfWeek>(getFirstDayOfWeekPreference())
+const weekDaysHeader = computed(() => {
+  const start = firstDayOfWeek.value
+  return [...ALL_WEEK_DAYS.slice(start), ...ALL_WEEK_DAYS.slice(0, start)]
+})
+
+watch(firstDayOfWeek, (day) => {
+  setFirstDayOfWeekPreference(day)
+})
+
 const monthNames = [
   'January',
   'February',
@@ -362,6 +410,7 @@ const monthNames = [
   'December',
 ]
 const libraryStore = useLibraryStore()
+const downloadsStore = useDownloadsStore()
 const router = useRouter()
 const viewMode = ref<'month' | 'week' | 'forecast' | 'day' | 'agenda'>('month')
 const calendarStorageKey = 'listenarr.calendar.currentDate'
@@ -483,18 +532,39 @@ const extractPublishedDateKey = (book: Audiobook): string | null => {
   return null
 }
 
+// "Downloading" is the one status the library payload itself can't answer: it is transient
+// queue state, not something baked into the audiobook record. The downloads store is
+// already loaded app-wide (App.vue calls downloadsStore.loadDownloads() once at startup
+// and keeps it live over SignalR), so reading it here is a read of already-fetched state,
+// not a new backend call. Same source AudiobooksView.vue uses for the same purpose
+// (activeDownloadAudiobookIds, computeAudiobookStatus).
+const activeDownloadAudiobookIds = computed(() => {
+  const ids = new Set<number>()
+  for (const download of downloadsStore.activeDownloads || []) {
+    if (typeof download?.audiobookId === 'number') {
+      ids.add(download.audiobookId)
+    }
+  }
+  return ids
+})
+
 const calendarItems = computed<CalendarItem[]>(() => {
+  const activeDownloads = activeDownloadAudiobookIds.value
+  const now = new Date()
+
   return libraryStore.audiobooks
     .map((book) => {
       const key = extractPublishedDateKey(book)
       if (!key) return null
+      const date = new Date(`${key}T00:00:00Z`)
       return {
         id: book.id,
         title: book.title || 'Untitled',
         author: book.authors?.length ? book.authors.join(', ') : undefined,
         dateKey: key,
-        date: new Date(`${key}T00:00:00Z`),
+        date,
         missing: isMissing(book),
+        status: getCalendarEventStatus(book, activeDownloads.has(book.id), date, now),
       } as CalendarItem
     })
     .filter((b): b is CalendarItem => b !== null)
@@ -514,12 +584,19 @@ const currentMonthYear = computed(() => {
   return currentDate.value.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 })
 
+// Days between a date's own weekday and the configured first day of the week (always
+// 0-6, never negative), so the grid can step backward from any weekday to whichever one
+// the operator chose as the start of the week.
+const daysSinceWeekStart = (date: Date): number => {
+  return (date.getDay() - firstDayOfWeek.value + 7) % 7
+}
+
 const calendarDates = computed(() => {
   const year = currentDate.value.getFullYear()
   const month = currentDate.value.getMonth()
   const firstDay = new Date(year, month, 1)
   const startDate = new Date(firstDay)
-  startDate.setDate(startDate.getDate() - firstDay.getDay())
+  startDate.setDate(startDate.getDate() - daysSinceWeekStart(firstDay))
 
   const dates: CalendarDate[] = []
   const currentDateObj = new Date(startDate)
@@ -606,8 +683,7 @@ const formatDate = (date: Date): string => {
 // Week view computed properties
 const weekDates = computed(() => {
   const date = new Date(currentDate.value)
-  const day = date.getDay()
-  const diff = date.getDate() - day
+  const diff = date.getDate() - daysSinceWeekStart(date)
   const firstDay = new Date(date.setDate(diff))
 
   const week = []
@@ -615,7 +691,7 @@ const weekDates = computed(() => {
     const d = new Date(firstDay)
     d.setDate(d.getDate() + i)
     const key = toDateKeyLocal(d)
-    const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()]
+    const dayName = ALL_WEEK_DAYS[d.getDay()]
     const isToday = d.toDateString() === new Date().toDateString()
     week.push({
       date: key,
@@ -863,8 +939,43 @@ const confirmSearchMissing = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
   margin-bottom: 1.5rem;
   border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.week-start-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.week-start-label {
+  color: #adb5bd;
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.week-start-select {
+  padding: 0.4rem 0.6rem;
+  background-color: #2a2a2a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: #e6eef8;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.week-start-select:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.week-start-select:focus {
+  outline: none;
+  border-color: var(--brand-focus);
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
 }
 
 .filter-tabs {
@@ -1561,25 +1672,73 @@ const confirmSearchMissing = async () => {
 }
 
 /*
- * Missing: monitored, with nothing on disk. #e74c3c is the colour the library views
- * already use for this state (.status-no-file there puts it on the poster edge), and the
- * left accent bar is the calendar's own existing device. Four of the six entry renderers
- * already carry one in the calendar blue and only change colour here; the month cell and
- * the forecast row get the bar added.
+ * One colour per calendar event status (G3, tracker #189), same left-accent-bar device
+ * the calendar already used for the old missing-only marker, extended to the full set:
+ * downloaded/downloading/unmonitored/missing/unreleased. Colours match
+ * AudiobooksView.vue's own status legend where a status exists in both places
+ * (downloading #3498db, missing/no-file #e74c3c, downloaded/quality-match #2ecc71), so a
+ * colour means the same thing everywhere in the app. Unmonitored and unreleased have no
+ * library-view equivalent, so they get new colours (#7f8c8d muted grey, #9b59b6 purple)
+ * that don't collide with the existing four.
  */
-.calendar-item.status-no-file {
+.calendar-item.status-downloaded,
+.forecast-item.status-downloaded {
+  border-left: 3px solid #2ecc71;
+}
+
+.calendar-item.status-downloading,
+.forecast-item.status-downloading {
+  border-left: 3px solid #3498db;
+}
+
+.calendar-item.status-unmonitored,
+.forecast-item.status-unmonitored {
+  border-left: 3px solid #7f8c8d;
+}
+
+.calendar-item.status-missing,
+.forecast-item.status-missing {
   border-left: 3px solid #e74c3c;
 }
 
-.forecast-item.status-no-file {
-  border-left: 3px solid #e74c3c;
+.calendar-item.status-unreleased,
+.forecast-item.status-unreleased {
+  border-left: 3px solid #9b59b6;
 }
 
-.week-item.status-no-file,
-.day-list-item.status-no-file,
-.agenda-item.status-no-file,
-.upcoming-item.status-no-file {
+.week-item.status-downloaded,
+.day-list-item.status-downloaded,
+.agenda-item.status-downloaded,
+.upcoming-item.status-downloaded {
+  border-left-color: #2ecc71;
+}
+
+.week-item.status-downloading,
+.day-list-item.status-downloading,
+.agenda-item.status-downloading,
+.upcoming-item.status-downloading {
+  border-left-color: #3498db;
+}
+
+.week-item.status-unmonitored,
+.day-list-item.status-unmonitored,
+.agenda-item.status-unmonitored,
+.upcoming-item.status-unmonitored {
+  border-left-color: #7f8c8d;
+}
+
+.week-item.status-missing,
+.day-list-item.status-missing,
+.agenda-item.status-missing,
+.upcoming-item.status-missing {
   border-left-color: #e74c3c;
+}
+
+.week-item.status-unreleased,
+.day-list-item.status-unreleased,
+.agenda-item.status-unreleased,
+.upcoming-item.status-unreleased {
+  border-left-color: #9b59b6;
 }
 
 .agenda-date {
