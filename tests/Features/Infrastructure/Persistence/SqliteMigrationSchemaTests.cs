@@ -77,12 +77,20 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260920025621_AddQualityProfileUpgradeAllowed";
     private const string RecycleBinMigrationId =
         "20260922212616_AddRecycleBinToApplicationSettings";
+    private const string BackupRetentionDaysMigrationId =
+        "20260922212752_AddBackupRetentionDaysToApplicationSettings";
     private const string DownloadClientPriorityMigrationId =
         "20260922212937_AddDownloadClientPriority";
+    private const string FreeSpaceImportSettingsMigrationId =
+        "20260922212944_AddFreeSpaceImportSettings";
+    private const string IndexerSeedCriteriaMigrationId =
+        "20260922213454_AddIndexerSeedCriteria";
     private const string EmailNotificationsMigrationId =
         "20260922220105_AddEmailNotifications";
     private const string HousekeepingRetentionMigrationId =
         "20260922220833_AddHousekeepingRetention";
+    private const string DropProcessExecutionLogsMigrationId =
+        "20260922225847_DropProcessExecutionLogs";
     private const string IndexerDownloadClientBindingMigrationId =
         "20260923051638_AddIndexerDownloadClientBinding";
 
@@ -272,6 +280,19 @@ public class SqliteMigrationSchemaTests : BaseTests
         // default on every write would fail here rather than quietly passing the test above.
         Assert.Equal(1, stored.Single(c => c.Id == "default-priority").Priority);
         Assert.Equal(7, stored.Single(c => c.Id == "explicit-priority").Priority);
+    }
+
+    [Fact]
+    [Trait("Scenario", "ProcessExecutionLogsTableDropped")]
+    public async Task ProcessExecutionLogsTable_DoesNotExistAfterMigrate()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.False(await TableExistsAsync(connection, "ProcessExecutionLogs"));
     }
 
     [Fact]
@@ -525,9 +546,13 @@ public class SqliteMigrationSchemaTests : BaseTests
                 CustomScriptNotificationsMigrationId,
                 QualityProfileUpgradeAllowedMigrationId,
                 RecycleBinMigrationId,
+                BackupRetentionDaysMigrationId,
                 DownloadClientPriorityMigrationId,
+                FreeSpaceImportSettingsMigrationId,
+                IndexerSeedCriteriaMigrationId,
                 EmailNotificationsMigrationId,
                 HousekeepingRetentionMigrationId,
+                DropProcessExecutionLogsMigrationId,
                 IndexerDownloadClientBindingMigrationId
             ],
             postCanary);
@@ -571,13 +596,26 @@ public class SqliteMigrationSchemaTests : BaseTests
         services.AddDbContextFactory<ListenArrDbContext>(options =>
             options.UseSqlite(connection, sqlite =>
                 sqlite.MigrationsAssembly(typeof(ListenArrDbContext).Assembly.GetName().Name)));
+        // This upgrades a populated database, so the startup path takes a pre-migration backup.
+        // Stubbed because this test is about the schema upgrade, not about what is archived.
+        var backupService = new Mock<IBackupService>();
+        backupService
+            .Setup(service => service.CreateAsync(It.IsAny<BackupTrigger>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BackupArchive
+            {
+                Name = "stub.zip",
+                Trigger = BackupTrigger.Migration,
+                SizeBytes = 0,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+        services.AddSingleton(backupService.Object);
         await using var provider = services.BuildServiceProvider();
         provider.ApplyListenarrDatabaseMigrations();
         var factory = provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
         await using var upgraded = await factory.CreateDbContextAsync();
 
         Assert.True(await ColumnExistsAsync(connection, "MoveJobs", "SourcePath"));
-        Assert.True(await TableExistsAsync(connection, "ProcessExecutionLogs"));
+        Assert.False(await TableExistsAsync(connection, "ProcessExecutionLogs"));
         Assert.True(await TableExistsAsync(connection, "AudiobookDeletionIntents"));
         Assert.True(await ColumnExistsAsync(connection, "FileMutationJournals", "AudiobookFileId"));
         Assert.Equal(
@@ -639,6 +677,7 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.True(await ColumnExistsAsync(connection, "MoveJobs", "ExecutionProtocolVersion"));
         Assert.True(await TableExistsAsync(connection, "AudiobookDeletionIntents"));
         Assert.True(await ColumnExistsAsync(connection, "FileMutationJournals", "AudiobookFileId"));
+        Assert.False(await TableExistsAsync(connection, "ProcessExecutionLogs"));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
