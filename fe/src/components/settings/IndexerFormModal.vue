@@ -246,6 +246,25 @@
 
               <FormRow
                 v-if="formData.implementation !== 'InternetArchive'"
+                label="Download Client"
+                labelFor="downloadClientId"
+                help="Send grabs from this indexer to one client. Any uses the client priority order."
+              >
+                <select id="downloadClientId" v-model="formData.downloadClientId">
+                  <option value="">Any</option>
+                  <option v-for="client in bindableClients" :key="client.id" :value="client.id">
+                    {{ client.name }}
+                  </option>
+                  <option v-if="unavailableBinding" :value="unavailableBinding.id">
+                    {{ unavailableBinding.label }}
+                  </option>
+                </select>
+              </FormRow>
+            </div>
+
+            <div class="form-row">
+              <FormRow
+                v-if="formData.implementation !== 'InternetArchive'"
                 label="Minimum Age (minutes)"
                 labelFor="minimumAge"
                 help="Wait time before grabbing new releases (0 = disabled)"
@@ -292,7 +311,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Modal, ModalHeader, ModalFooter, ModalBody, ModalForm } from '@/components/feedback'
 import PasswordInput from '@/components/form/PasswordInput.vue'
 import Checkbox from '@/components/form/Checkbox.vue'
@@ -307,6 +326,7 @@ import {
   testIndexerDraft as apiTestIndexerDraft,
 } from '@/services/api'
 import { useToast } from '@/services/toastService'
+import { useConfigurationStore } from '@/stores/configuration'
 
 interface Props {
   visible: boolean
@@ -321,6 +341,7 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 const toast = useToast()
+const configStore = useConfigurationStore()
 
 const saving = ref(false)
 const testing = ref(false)
@@ -373,6 +394,8 @@ const defaultFormData = {
   enableAnimeStandardSearch: false,
   isEnabled: true,
   priority: 25,
+  // '' is "Any" in the select; the payload sends it as null.
+  downloadClientId: '',
   minimumAge: 0,
   retention: 0,
   maximumSize: 0,
@@ -381,10 +404,47 @@ const defaultFormData = {
 
 const formData = ref({ ...defaultFormData })
 
+// Client types that can take this indexer's grabs. Anything that is not a torrent indexer is
+// treated as usenet, which is what the backend selector does too.
+const clientTypesForIndexer = computed(() =>
+  formData.value.type === 'Torrent' ? ['qbittorrent', 'transmission'] : ['sabnzbd', 'nzbget'],
+)
+
+const bindableClients = computed(() =>
+  configStore.downloadClientConfigurations.filter(
+    (client) => client.isEnabled && clientTypesForIndexer.value.includes(client.type.toLowerCase()),
+  ),
+)
+
+// A stored binding the select cannot offer: the client was deleted, disabled, or is of the
+// other protocol. It is kept and shown rather than dropped, because dropping it would quietly
+// turn it into Any on the next save and re-route this indexer's grabs. The backend refuses to
+// grab through it and says why.
+const unavailableBinding = computed(() => {
+  const id = formData.value.downloadClientId
+  if (!id || bindableClients.value.some((client) => client.id === id)) return null
+  const known = configStore.downloadClientConfigurations.find((client) => client.id === id)
+  const reason = !known ? 'deleted' : !known.isEnabled ? 'disabled' : 'wrong protocol'
+  return { id, label: `${known?.name ?? 'Unknown client'} (unavailable: ${reason})` }
+})
+
+watch(
+  () => props.visible,
+  (visible) => {
+    if (visible && configStore.downloadClientConfigurations.length === 0) {
+      void configStore.loadDownloadClientConfigurations()
+    }
+  },
+  { immediate: true },
+)
+
 type IndexerPayload = Omit<Indexer, 'id' | 'createdAt' | 'updatedAt'>
 
 const buildIndexerPayload = (): IndexerPayload => {
-  const payload = { ...formData.value } as IndexerPayload
+  const payload = {
+    ...formData.value,
+    downloadClientId: formData.value.downloadClientId || null,
+  } as IndexerPayload
   payload.additionalSettings = payload.additionalSettings || ''
 
   if (payload.implementation === 'MyAnonamouse') {
@@ -407,6 +467,8 @@ const buildIndexerPayload = (): IndexerPayload => {
     payload.url = 'https://archive.org'
     // Set sensible defaults for hidden fields
     payload.categories = ''
+    // Direct downloads never reach a configured client, so a binding means nothing here.
+    payload.downloadClientId = null
     payload.enableRss = false
     payload.minimumAge = 0
   }
@@ -432,6 +494,7 @@ watch(
         enableAnimeStandardSearch: newIndexer.enableAnimeStandardSearch,
         isEnabled: newIndexer.isEnabled,
         priority: newIndexer.priority,
+        downloadClientId: newIndexer.downloadClientId ?? '',
         minimumAge: newIndexer.minimumAge,
         retention: newIndexer.retention,
         maximumSize: newIndexer.maximumSize,
