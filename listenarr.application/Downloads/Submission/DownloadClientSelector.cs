@@ -38,6 +38,7 @@ namespace Listenarr.Application.Downloads.Submission
     /// </remarks>
     public class DownloadClientSelector(
         IConfigurationService configurationService,
+        IIndexerRepository indexerRepository,
         DownloadClientRoundRobinState roundRobinState,
         ILogger<DownloadClientSelector> logger)
     {
@@ -59,8 +60,11 @@ namespace Listenarr.Application.Downloads.Submission
         /// or null when no enabled client can carry it. Null is the single not-found answer; the
         /// automatic-search copy used to return an empty string here instead.
         /// </summary>
-        public async Task<string?> GetAppropriateDownloadClientAsync(DownloadProtocol protocol)
+        public async Task<string?> GetAppropriateDownloadClientAsync(DownloadProtocol protocol, int? indexerId = null)
         {
+            _ = indexerRepository;
+            _ = indexerId;
+
             if (protocol == DownloadProtocol.DirectDownload)
             {
                 // Direct downloads are carried by the internal DDL pipeline, not by a

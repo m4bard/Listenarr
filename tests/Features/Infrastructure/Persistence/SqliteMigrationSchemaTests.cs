@@ -91,6 +91,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260922220833_AddHousekeepingRetention";
     private const string DropProcessExecutionLogsMigrationId =
         "20260922225847_DropProcessExecutionLogs";
+    private const string IndexerDownloadClientBindingMigrationId =
+        "20260923051638_AddIndexerDownloadClientBinding";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -550,7 +552,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 IndexerSeedCriteriaMigrationId,
                 EmailNotificationsMigrationId,
                 HousekeepingRetentionMigrationId,
-                DropProcessExecutionLogsMigrationId
+                DropProcessExecutionLogsMigrationId,
+                IndexerDownloadClientBindingMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
