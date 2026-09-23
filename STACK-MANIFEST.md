@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        a630572e983614a52ea409a23da52a99e3b8b91b
     base short:  a630572e9
-    patches:     387
-    version:     1.3.4+m4bard.387
+    patches:     408
+    version:     1.3.4+m4bard.408
 
 ## Patches, oldest first
 
@@ -343,11 +343,11 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     9d17ce8f3  #79   fix(status): stop reporting a non-preferred format as below cutoff
     96447b6c4  #79   test(status): make the agreement test read the real projection, and pin the widened cases
     aed7e0a8b  #252  test: flag the blank-cutoff consequence for the not-yet-landed upgrades flag
-    289d53195  #257  fix(quality): resolve the cutoff through QualityMatcher, changing two answers
+    289d53195  #-    fix(quality): resolve the cutoff through QualityMatcher, changing two answers
     10b3850d8  #255  fix(search): refuse a quality label the gate cannot place
     6409ad63b  #255  fix(search): answer the review of the quality gate fix
-    f6a644c0b  #261  search: skip the bare-title rung when the title cannot carry a query alone
-    b4af09652  #261  search: stop the stem and series rungs unanchoring themselves when there is no author
+    f6a644c0b  #-    search: skip the bare-title rung when the title cannot carry a query alone
+    b4af09652  #-    search: stop the stem and series rungs unanchoring themselves when there is no author
     e63f2d986  #262  Require indexer categories, the way the rest of the *arr family does
     8360a0909  #262  tests: pin that the draft test is gated too, since it binds the same entity
     4310392ee  #262  Make the indexer form usable now that categories are required
@@ -362,22 +362,22 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     0523c9d92  #269  manual-import: a companion goes where the file it accompanies went, and nowhere else
     cf5322744  #269  import: match the companion's neighbour by path identity, and name the rule the manual path uses
     437b5d3ed  #269  import: say why the neighbour comparison is safe for the reason that is actually true
-    c2ece6dce  #21   tests: give the companion placement pass the root folder this branch now requires
+    c2ece6dce  #-    tests: give the companion placement pass the root folder this branch now requires
     de2de1846  #-    quality: split QualityMatcher's internals out, so the file is under the ceiling again
     a433ec0b2  #258  fix(recovery): one unrecoverable deletion intent must not disable the whole filesystem gate
     95c31690f  #-    stack: manifest for a630572e9 plus 356 patches
-    698c75081  #273  cache: make the author and series cache upserts survive a lost race
-    42b742a01  #273  cache: do not retry a collision that re-reading cannot resolve
+    698c75081  #-    cache: make the author and series cache upserts survive a lost race
+    42b742a01  #-    cache: do not retry a collision that re-reading cannot resolve
     cf9989737  #275  fix(metadata): spell a contributor's name without their job title
     24a73a884  #275  fix(metadata): store the author first, and keep an edition out of the byline
-    d8b0dad58  #276  fix(metadata): bind an author's ASIN only to a row that names them
-    4d2b07abb  #276  metadata: lease the shared request budget to callers that are not a refresh run
-    1fc6598c6  #276  repair: a scheduled pass that corrects author identities already written
-    3ccfcf7f9  #276  repair: remove contributor roles from the credits already stored
-    aaf87a515  #276  test(naming): pin byline order on two co-authors, not on a translator
-    be39f3878  #276  test: give the two new test classes the conventions the suite enforces
-    b3ddf6583  #276  repair: a provider that did not answer is not evidence that an author has no ASIN
-    02ca69fda  #276  repair: answer the fresh review, including a starvation defect nothing was checking
+    d8b0dad58  #-    fix(metadata): bind an author's ASIN only to a row that names them
+    4d2b07abb  #-    metadata: lease the shared request budget to callers that are not a refresh run
+    1fc6598c6  #-    repair: a scheduled pass that corrects author identities already written
+    3ccfcf7f9  #-    repair: remove contributor roles from the credits already stored
+    aaf87a515  #-    test(naming): pin byline order on two co-authors, not on a translator
+    be39f3878  #-    test: give the two new test classes the conventions the suite enforces
+    b3ddf6583  #-    repair: a provider that did not answer is not evidence that an author has no ASIN
+    02ca69fda  #-    repair: answer the fresh review, including a starvation defect nothing was checking
     312fd1649  #270  filesystem: let a raced pinned hardlink fall back to a copy, and say so
     b428ec540  #270  filesystem: narrow the hardlink race fallback, because the first attempt claimed too much
     9f4c04341  #277  Fix the fail-open identifier check in DownloadRemovalWorkflow
@@ -388,14 +388,35 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     edcde60b5  #277  Cover the disabled client, the unmapped record, and deleteFiles on the delete path
     9c91ca057  #277  Let the delete control say whether the download client is involved
     4a4d65feb  #277  Make the record-only way out actually work, and stop it claiming too much
-    f18a36051  #276  fe: an Author Identity Repair section in the settings screen
-    ee3df2c40  #276  fe: the preview card promised a run button the frontend does not have
-    9d135941d  #276  fe: the review's findings, one of which the UI could not have shown
+    f18a36051  #-    fe: an Author Identity Repair section in the settings screen
+    ee3df2c40  #-    fe: the preview card promised a run button the frontend does not have
+    9d135941d  #-    fe: the review's findings, one of which the UI could not have shown
     66a8aaa7f  #-    downloads: split the client-name projection out, so the controller is under the ceiling again
     d272dfc1a  #-    cache: the author upsert cannot reach that collision on this build, so pin what it does instead
     c7ee6318a  #-    cache: say only once that a rebind was refused, and describe the collision that can actually happen
     ed66ae7cd  #-    cache: a refusal that first happens on a retry must still be reported
     e3c8a6730  #-    cache: the comment on the test still described the guard that was removed
+    5ee94da2e  #-    stack: manifest for a630572e9 plus 387 patches
+    60bff1298  #-    search: the release score has no ceiling, so a preference can still decide
+    997213935  #-    tests: SearchResultScorerCeilingTests follows the repository test conventions
+    d27fbccb1  #-    settings: the minimum score threshold is no longer capped at 100
+    30e31a707  #-    search: correct what this branch claims, after review
+    7c9bcede2  #-    stack: carry the files the scorer chain modifies but does not own
+    eb7fd7d66  #-    search: the profile's size and quality gates apply to Usenet results too
+    05b9c9712  #-    search: size bounds above 2047 MB, and three corrections to the commit before this
+    53191c5df  #-    search: reconcile the NZB gate hoist with the tests that pinned the exemption
+    3125e4aaa  #-    search: release selection reads the quality profile, not the hardcoded ladder
+    4c15695bf  #-    search: take the best candidate that is an upgrade, and fix two things in the commit before this
+    91b64b663  #-    search: split the rejection gates out of the scorer, so the file is under the cap again
+    efd267161  #-    search: two warnings, one of them a control this stack no longer has
+    b48da939c  #-    tasks ui: put the task surface under System, where the family keeps it
+    19a6bde2b  #-    tasks ui: test the run control against the refusals the API actually answers
+    a20ca9734  #-    tasks ui: fix two in-flight defects, make the refusal reachable, and cover the poll
+    9e9f2d243  #-    Add failing test for metadata repair guard missing Entries include
+    c87d5e2d9  #-    Fix metadata repair guard to load MoveJob Entries and CreatedDirectories
+    fba056f76  #-    notifications: give the Custom Script provider a settings surface
+    dc618b0d6  #-    tests(notifications): pin the item-184 gaps blocked on PR #943 (WIP)
+    ffd32c6c8  #-    tests(notifications): tighten item-184 gap pins after fresh review
 
 ## Items, in application order
 
@@ -403,7 +424,7 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     106  fix/767-series-asin                          1 patch
     43   fix/777-macos-ffprobe-url                    1 patch
     23   fix/bug24-queue-guard                        3 patches
-    21   fix/bug12-companion-import-boundary          5 patches
+    21   local/21-boundary-only                       4 patches
     24   fix/bug11-taglib-writestream                 2 patches
     22   fix/bug4-n-of-m-chapter-stem                 1 patch
     17   fix/bug5-library-import-series-memberships   1 patch
@@ -428,7 +449,7 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     51   feat/release-blocklist                       4 patches
     62   fix/894-download-finalization-settings       0 patches
     65   fix/895-maximum-age-visibility               0 patches
-    46   fix/899-indexer-age-and-size                 0 patches
+    46   local/46-on-27                               0 patches
     47   fix/900-download-client-priority             0 patches
     44   fix/897-image-serving-assertions             0 patches
     83   feat/595-grouped-list-view                   2 patches
@@ -485,53 +506,77 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     161  local/161-on-153-v4                          0 patches
     163  fix/webhook-url-sanitize                     0 patches
     166  local/166b-failure-reason-v2                 0 patches
-    166  local/166-170-flat                           0 patches
+    166  local/166-170-on-166b-v2                     0 patches
     123  local/123-on-872-v2                          0 patches
     123  local/dead-settings-batch-v3                 0 patches
     124  local/124-allowed-file-extensions            0 patches
     129  local/129-remove-indexer-tags                0 patches
     133  local/133-on-980                             0 patches
     138  local/138-on-141                             0 patches
-    199  fix/author-name-normalize-whitespace         0 patches
-    199  local/199-on-99-v2                           0 patches
+    199  local/199-base-shim                          0 patches
+    199  local/199-on-shim                            0 patches
+    199  local/199-dedupe-on-shim                     0 patches
     151  local/151-refresh-narrowing-fix              0 patches
-    201  feat/author-canonicalization-backend         0 patches
-    201  fix/author-grouping-normalize-v2             0 patches
-    200  feat/author-asin-identity-matching           0 patches
+    201  local/201-on-shim                            0 patches
+    201  fix/author-grouping-normalize-v4             0 patches
+    200  local/200-on-shim                            0 patches
     167  fix/167-manual-import-path-traversal         0 patches
-    172  local/scorer-3way-reconciled                 0 patches
+    172  local/scorer-3way-reconciled-v2              0 patches
     173  local/173-on-113                             0 patches
     169  local/169-on-73                              0 patches
-    165  feat/165-detail-page-automatic-search        0 patches
-    165  feat/165-items-2-4-audiobooks-toolbar        0 patches
-    165  feat/165-item3-calendar-search               0 patches
+    165  local/165-detail-on-169                      0 patches
+    165  local/165-toolbar-on-detail                  0 patches
+    165  local/165-calendar-on-detail                 0 patches
     202  feat/wanted-downloads-multi-select           1 patch
-    174  local/174-on-154-v2                          0 patches
+    174  local/174-on-154-v3                          0 patches
+    174  local/174-signature-fix-on-154               0 patches
     205  fix/redacted-sentinel-round-trip             0 patches
     209  fix/private-address-ipv4-mapped              0 patches
     190  fix/indexer-flags                            0 patches
     183  feat/183-task-scheduler                      6 patches
+    183  feat/183-tasks-ui                            0 patches
+    183  feat/183-housekeeping-retention              0 patches
+    285  feat/housekeeping-settings-ui                0 patches
+    281  feat/housekeeping-deferred-populations       0 patches
     185  local/185-on-123                             0 patches
-    189  local/189-on-95                              0 patches
+    189  local/189-with-ui                            0 patches
     79   fix/format-preference-is-not-a-quality-mismatch 2 patches
     252  fix/blank-cutoff-search-loop                 1 patch
-    257  fix/cutoff-lookup-respects-allowed           1 patch
+    257  local/257-on-252-v2                          0 patches
     254  fix/torznab-quality-substring-match          0 patches
     255  fix/quality-gate-respects-allowed            2 patches
     253  fix/deterministic-release-tiebreak           0 patches
     256  fix/validate-quality-profile-cutoff          0 patches
     256  fix/quality-profile-upgrade-allowed          0 patches
-    261  fix/gate-bare-title-on-166                   2 patches
+    261  fix/gate-bare-title-on-166-v2                0 patches
     262  fix/require-indexer-categories               6 patches
     190  fix/mam-ignored-search-parameters            2 patches
     268  fix/companion-relative-path-escape           2 patches
     269  fix/manual-companion-relative-path           4 patches
+    21   local/21-companion-tests-on-269              0 patches
     258  fix/deletion-intent-does-not-brick-startup   1 patch
-    273  fix/author-cache-upsert-is-atomic            2 patches
+    273  local/273-on-shim                            0 patches
     275  fix/strip-role-suffix-from-credits           2 patches
-    276  feat/author-identity-repair                  8 patches
+    276  local/276-base-shim-v3                       0 patches
+    276  local/276-on-shim-v3                         0 patches
     270  fix/hardlink-falls-back-to-copy              2 patches
     277  fix/delete-removes-from-client               8 patches
-    276  feat/author-repair-settings-ui               3 patches
+    276  local/276-ui-on-shim-v3                      0 patches
+    278  feat/custom-script-settings-ui               0 patches
+    286  feat/email-notification                      0 patches
+    176  feat/recycle-bin                             0 patches
+    177  feat/download-client-priority                0 patches
+    179  feat/backup-service                          0 patches
+    180  feat/180-per-indexer-seed-criteria           0 patches
+    181  fix/release-score-ceiling                    0 patches
+    264  local/scorer-base-shim                       0 patches
+    264  local/264-on-shim                            0 patches
+    263  local/263-on-shim                            0 patches
+    181  local/scorer-split-on-263                    0 patches
+    182  feat/182-naming-preview-server-rendered      0 patches
+    184  check/184-notification-event-gaps            0 patches
+    187  feat/import-free-space-check                 0 patches
+    284  fix/metadata-repair-guard-includes           0 patches
+    283  fix/drop-dead-process-execution-store        0 patches
 
 Regenerate with tools/local_stack.sh in the tracker repo.
