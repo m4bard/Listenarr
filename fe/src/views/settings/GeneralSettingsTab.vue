@@ -30,6 +30,11 @@
       </div>
 
       <div v-if="props.settings" class="settings-form">
+        <HostSettingsSection
+          :startupConfig="props.startupConfig"
+          @update:startupConfig="(val) => emit('update:startupConfig', val)"
+        ></HostSettingsSection>
+
         <FileManagementSection
           :settings="localSettings"
           @update:settings="(val) => Object.assign(localSettings, val)"
@@ -44,10 +49,30 @@
           @update:settings="(val) => Object.assign(localSettings, val)"
         ></FeaturesSection>
 
+        <MetadataRefreshSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></MetadataRefreshSection>
+
+        <HousekeepingSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></HousekeepingSection>
+
+        <AuthorIdentityRepairSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></AuthorIdentityRepairSection>
+
         <SearchSettingsSection
           :settings="localSettings"
           @update:settings="(val) => Object.assign(localSettings, val)"
         ></SearchSettingsSection>
+
+        <HistorySettingsSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></HistorySettingsSection>
 
         <AuthenticationSection
           :settings="localSettings"
@@ -69,10 +94,15 @@ import { computed } from 'vue'
 import type { ApplicationSettings, StartupConfig } from '@/types'
 // icons not used directly in this view
 
+import HostSettingsSection from '@/components/settings/HostSettingsSection.vue'
 import FileManagementSection from '@/components/settings/FileManagementSection.vue'
 import DownloadSettingsSection from '@/components/settings/DownloadSettingsSection.vue'
 import FeaturesSection from '@/components/settings/FeaturesSection.vue'
+import MetadataRefreshSection from '@/components/settings/MetadataRefreshSection.vue'
+import HousekeepingSection from '@/components/settings/HousekeepingSection.vue'
+import AuthorIdentityRepairSection from '@/components/settings/AuthorIdentityRepairSection.vue'
 import SearchSettingsSection from '@/components/settings/SearchSettingsSection.vue'
+import HistorySettingsSection from '@/components/settings/HistorySettingsSection.vue'
 import AuthenticationSection from '@/components/settings/AuthenticationSection.vue'
 
 interface Props {

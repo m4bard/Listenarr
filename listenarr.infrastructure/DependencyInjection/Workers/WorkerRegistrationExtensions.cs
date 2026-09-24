@@ -8,8 +8,10 @@
  * (at your option) any later version.
  */
 using Listenarr.Infrastructure.HostedServices;
+using Listenarr.Infrastructure.HostedServices.Scheduling;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Workers;
 
@@ -19,7 +21,13 @@ internal static class WorkerRegistrationExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddSingleton<IScheduledTaskRegistry, ScheduledTaskRegistry>();
         services.AddSingleton<IWorkerCycleRunner, WorkerCycleRunner>();
+
+        // MetadataRefreshOptionsHolder and IMetadataRefreshCoordinator are registered
+        // unconditionally in AddMetadataServices instead of here: this method is skipped
+        // wholesale when background hosted services are disabled, but the coordinator also
+        // gates the foreground API trigger and must remain resolvable either way.
 
         services.AddSingleton<IScanQueueService, ScanQueueService>();
         services.AddSingleton<MoveScanHandoffRecoveryService>();
@@ -43,6 +51,7 @@ internal static class WorkerRegistrationExtensions
         AddHostedProcessor<SeriesMonitoringProcessor, ISeriesMonitoringProcessor, SeriesMonitoringBackgroundService>(services);
         AddHostedProcessor<FfmpegInstallProcessor, IFfmpegInstallProcessor, FfmpegInstallBackgroundService>(services);
         AddHostedProcessor<MetadataRescanProcessor, IMetadataRescanProcessor, MetadataRescanService>(services);
+        AddHostedProcessor<MetadataRefreshProcessor, IMetadataRefreshProcessor, MetadataRefreshBackgroundService>(services);
         services.AddSingleton<DownloadProcessingJobProcessor>();
         services.AddSingleton<IDownloadImportProcessor>(provider =>
             provider.GetRequiredService<DownloadProcessingJobProcessor>());
@@ -57,7 +66,60 @@ internal static class WorkerRegistrationExtensions
             DownloadProcessingJobCleanupService>(services);
 
         AddHostedProcessor<UnmatchedScanProcessor, IUnmatchedScanProcessor, UnmatchedScanBackgroundService>(services);
+
+        // The identity repair pass. The holder is a singleton because the hosted service reads
+        // the interval off it between cycles while a cycle already running reads the rest; the
+        // pass itself is scoped, because it holds repositories and one cycle is one scope.
+        services.AddSingleton<AuthorIdentityRepairOptionsHolder>();
+        services.AddScoped<IAuthorIdentityRepairService, AuthorIdentityRepairService>();
+        AddHostedProcessor<
+            AuthorIdentityRepairProcessor,
+            IAuthorIdentityRepairProcessor,
+            AuthorIdentityRepairBackgroundService>(services);
+
+        // Also its own worker: prunes action-history rows on the configured
+        // HistoryRetentionDays setting, unrelated to any other cleanup service's table.
+        AddHostedProcessor<
+            HistoryRetentionCleanupProcessor,
+            IHistoryRetentionCleanupProcessor,
+            HistoryRetentionCleanupService>(services);
+
+        AddHousekeeping(services);
         return services;
+    }
+
+    /// <summary>
+    /// The daily retention sweep, and the list of tables it sweeps.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The housekeepers are listed here by name rather than found by an assembly scan. That is a
+    /// deliberate divergence from the family, whose scan
+    /// (src/NzbDrone.Common/Composition/Extensions.cs:27-29) leaves the execution order of its
+    /// thirty-odd housekeepers undeclared, and it matches how every other worker in this
+    /// container is registered. A table joins the sweep by being added to this list, where a
+    /// reviewer can see the whole set at once.
+    /// </para>
+    /// <para>
+    /// The sweep is deliberately absent from the manual-run allowlist. It deletes stored rows,
+    /// and ScheduledTaskManualTrigger says on Allowed that such a cycle is not one to put there,
+    /// so it takes the RunPeriodicAsync default of Denied and there is nothing to add here.
+    /// </para>
+    /// </remarks>
+    private static void AddHousekeeping(IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<HousekeepingOptionsHolder>();
+
+        // The list. Order is execution order, cheapest and least consequential first, so a cycle
+        // that is going to fail has already done the harmless work.
+        services.AddSingleton<IHousekeepingTask, AuthorCacheHousekeeper>();
+        services.AddSingleton<IHousekeepingTask, SeriesCacheHousekeeper>();
+        services.AddSingleton<IHousekeepingTask, FileMutationJournalHousekeeper>();
+        services.AddSingleton<IHousekeepingTask, CompatibilityFilePublicationJournalHousekeeper>();
+        services.AddSingleton<IHousekeepingTask, MoveJobHousekeeper>();
+
+        AddHostedProcessor<HousekeepingProcessor, IHousekeepingProcessor, HousekeepingService>(services);
     }
 
     private static void AddProcessor<TProcessor, TContract>(IServiceCollection services)
