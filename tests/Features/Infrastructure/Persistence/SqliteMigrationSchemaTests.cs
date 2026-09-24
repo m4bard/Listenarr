@@ -26,6 +26,15 @@ namespace Listenarr.Tests.Features.Infrastructure.Persistence;
 [Trait("Category", "Infrastructure")]
 public class SqliteMigrationSchemaTests : BaseTests
 {
+    // Migrations this branch adds, declared apart from the consolidated list below and
+    // asserted apart from it. Two branches that each add a migration would otherwise rewrite
+    // the same two lines of this file and conflict on merge in either order.
+    private const string EmbedCoverArtSettingMigrationId =
+        "20260828190320_AddEmbedCoverArtInAudioFilesSetting";
+
+    private static readonly string[] BranchMigrationIds =
+        [EmbedCoverArtSettingMigrationId];
+
     private const string CanaryMigrationFrontierId =
         "20260621002226_AddApplicationSettingsConcurrency";
     private const string MoveJobSourcePathRepairId =
@@ -42,6 +51,18 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260821141235_AddCompatibilityFilePublication";
     private const string WeakStorageVerifiedCleanupMigrationId =
         "20260825021432_AddWeakStorageVerifiedCleanup";
+    private const string ReleaseBlocklistMigrationId =
+        "20260828191810_AddReleaseBlocklist";
+    private const string HistoryProtocolMigrationId =
+        "20260911172407_AddHistoryProtocol";
+    private const string IndexerFailureBackoffMigrationId =
+        "20260914152223_AddIndexerFailureBackoff";
+    private const string PreferredReleaseShapeMigrationId =
+        "20260914153043_AddPreferredReleaseShapeToQualityProfile";
+    private const string HistoryReleaseMetadataMigrationId =
+        "20260914171829_AddHistoryReleaseMetadata";
+    private const string HousekeepingRetentionMigrationId =
+        "20260922220833_AddHousekeepingRetention";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -178,6 +199,115 @@ public class SqliteMigrationSchemaTests : BaseTests
             await ColumnDefaultAsync(connection, "MoveJobs", "SourceCleanupMode"));
     }
 
+    // The protocol column is what makes a recorded protocol survive the write. Without it the
+    // value is built in DownloadHistoryService and then dropped by the mapping, so a test of the
+    // construction alone would pass while nothing reached the database.
+    [Fact]
+    [Trait("Scenario", "HistoryProtocolColumn")]
+    public async Task HistoryProtocolMigration_AddsTheNullableProtocolColumn()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.True(await ColumnExistsAsync(connection, "History", "Protocol"));
+    }
+
+    // Indexer, quality and size are in scope at the one place a grab is recorded and were
+    // discarded there. The columns are the half that has to exist before the call site can stop
+    // throwing them away, and a test of the call site alone would pass with nowhere to store them.
+    [Fact]
+    [Trait("Scenario", "HistoryReleaseMetadataColumns")]
+    public async Task HistoryReleaseMetadataMigration_AddsTheNullableReleaseColumns()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.True(await ColumnExistsAsync(connection, "History", "Indexer"));
+        Assert.True(await ColumnExistsAsync(connection, "History", "Quality"));
+        Assert.True(await ColumnExistsAsync(connection, "History", "Size"));
+    }
+
+    // The columns have to survive a real SQLite round trip, not just exist. An in-memory
+    // provider would accept a write to a column the migration never created.
+    [Fact]
+    [Trait("Scenario", "HistoryReleaseMetadataRoundTrip")]
+    public async Task HistoryReleaseMetadata_SurvivesAWriteAndAReadBack()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        context.History.Add(new History
+        {
+            EventType = HistoryEvents.Grabbed,
+            CorrelationId = "round-trip",
+            Indexer = "Example Indexer",
+            Quality = "M4B 128kbps",
+            Size = 734003200L
+        });
+        await context.SaveChangesAsync();
+
+        await using var reader = new ListenArrDbContext(CreateOptions(connection));
+        var stored = Assert.Single(await reader.History.AsNoTracking().ToListAsync());
+        Assert.Equal("Example Indexer", stored.Indexer);
+        Assert.Equal("M4B 128kbps", stored.Quality);
+        Assert.Equal(734003200L, stored.Size);
+    }
+
+    // A grab that knew none of the three leaves them null rather than zero or empty, so an
+    // unreported size does not read back as an empty release.
+    [Fact]
+    [Trait("Scenario", "HistoryReleaseMetadataStaysNull")]
+    public async Task HistoryReleaseMetadata_IsNullForAnEventWithNoReleaseBehindIt()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        context.History.Add(new History
+        {
+            EventType = "Added",
+            CorrelationId = "library-row"
+        });
+        await context.SaveChangesAsync();
+
+        await using var reader = new ListenArrDbContext(CreateOptions(connection));
+        var stored = Assert.Single(await reader.History.AsNoTracking().ToListAsync());
+        Assert.Null(stored.Indexer);
+        Assert.Null(stored.Quality);
+        Assert.Null(stored.Size);
+    }
+
+    [Fact]
+    [Trait("Scenario", "IndexerFailureBackoffColumns")]
+    public async Task IndexerFailureBackoffMigration_AddsPerIndexerBackoffColumns()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.True(await ColumnExistsAsync(connection, "Indexers", "InitialFailure"));
+        Assert.True(await ColumnExistsAsync(connection, "Indexers", "MostRecentFailure"));
+        Assert.True(await ColumnExistsAsync(connection, "Indexers", "EscalationLevel"));
+        Assert.True(await ColumnExistsAsync(connection, "Indexers", "DisabledTill"));
+        Assert.True(await ColumnExistsAsync(connection, "Indexers", "LastFailureReason"));
+
+        // An existing install's indexers have to come up healthy, not blocked.
+        Assert.Equal("0", await ColumnDefaultAsync(connection, "Indexers", "EscalationLevel"));
+    }
+
     [Fact]
     [Trait("Scenario", "FinalMigrationHistoryIsConsolidated")]
     public async Task MigrationHistory_ContainsOnlyRetainedRepairsAndConsolidatedPrMigrationAfterCanary()
@@ -188,9 +318,39 @@ public class SqliteMigrationSchemaTests : BaseTests
 
         await context.Database.MigrateAsync();
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToList();
-        var postCanary = applied
+        var allPostCanary = applied
             .Where(id => string.CompareOrdinal(id, CanaryMigrationFrontierId) > 0)
             .ToArray();
+        Assert.Equal(
+            BranchMigrationIds,
+            allPostCanary.Where(id => BranchMigrationIds.Contains(id, StringComparer.Ordinal)));
+        Assert.All(
+            BranchMigrationIds,
+            id => Assert.True(
+                string.CompareOrdinal(id, WeakStorageVerifiedCleanupMigrationId) > 0,
+                "A migration this branch adds has to sort after the consolidated history."));
+        var postCanary = allPostCanary
+            .Where(id => !BranchMigrationIds.Contains(id, StringComparer.Ordinal))
+            .ToArray();
+
+        // Pinned on their own rather than appended to the list below. That list is
+        // ordered and every branch that adds a migration has to extend its last line, so
+        // two of them in flight at once is a conflict in a file neither branch is about.
+        // Taking this branch's own out first leaves the check below exactly as strict:
+        // anything else unpinned still fails it.
+        string[] metadataRefreshMigrationIds =
+        [
+            "20260910120000_AddAudiobookLastMetadataRefreshAt",
+            "20260910120500_AddMetadataRefreshSettings",
+            "20260910121000_AddAudiobookLastMetadataRefreshAtIndex"
+        ];
+        Assert.All(metadataRefreshMigrationIds, id => Assert.Contains(id, postCanary));
+        postCanary = [.. postCanary.Except(metadataRefreshMigrationIds)];
+
+        // Item 170's configurable indexer search ceiling, pinned apart for the same reason.
+        const string searchConcurrencyMigrationId = "20260923050237_AddMaxConcurrentIndexerSearchesSetting";
+        Assert.Contains(searchConcurrencyMigrationId, postCanary);
+        postCanary = [.. postCanary.Except([searchConcurrencyMigrationId])];
 
         Assert.Equal(
             [
@@ -199,7 +359,13 @@ public class SqliteMigrationSchemaTests : BaseTests
                 MoveJobRelocationForeignKeyMigrationId,
                 FileMutationParentGenerationProofsMigrationId,
                 CompatibilityFilePublicationMigrationId,
-                WeakStorageVerifiedCleanupMigrationId
+                WeakStorageVerifiedCleanupMigrationId,
+                ReleaseBlocklistMigrationId,
+                HistoryProtocolMigrationId,
+                IndexerFailureBackoffMigrationId,
+                PreferredReleaseShapeMigrationId,
+                HistoryReleaseMetadataMigrationId,
+                HousekeepingRetentionMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
@@ -385,6 +551,22 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.True(await IndexExistsAsync(connection, "IX_RootFolders_SingleDefault"));
         Assert.True(await IndexExistsAsync(connection, "IX_AudiobookFiles_PathOwnershipKey"));
         Assert.True(await IndexExistsAsync(connection, "IX_LibraryDirectoryOwnerships_PathOwnershipKey"));
+
+        // The refresh queue orders by this column and takes the head of it on every cycle and
+        // every API trigger. Unindexed that is a full scan and a sort, which is exactly the
+        // shape LastSearchTime next to it has always been indexed for.
+        Assert.True(await IndexExistsAsync(connection, "IX_Audiobooks_LastMetadataRefreshAt"));
+        Assert.True(await IndexExistsAsync(connection, "IX_Audiobooks_LastSearchTime"));
+
+        // On, for new installs and upgrades alike. What makes that safe on an upgrade is the
+        // startup backfill of LastMetadataRefreshAt, not a default of off: an untouched null
+        // reads as never refreshed, and a library of those is due all at once with nothing to
+        // order it by. AudiobookRepository_MetadataRefreshQueryTests pins the backfill.
+        Assert.Equal("1", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshEnabled"));
+        Assert.Equal("24", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshIntervalHours"));
+        Assert.Equal("30", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshStaleAfterDays"));
+        Assert.Equal("60", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshRequestsPerHour"));
+        Assert.Equal("1000", await ColumnDefaultAsync(connection, "ApplicationSettings", "MetadataRefreshMinimumSpacingMs"));
         Assert.True(await ForeignKeyHasDeleteActionAsync(
             connection,
             "LibraryDirectoryOwnerships",
@@ -410,6 +592,200 @@ public class SqliteMigrationSchemaTests : BaseTests
         await context.Database.MigrateAsync();
 
         Assert.True(await ColumnExistsAsync(connection, "MoveJobs", "SourcePath"));
+    }
+
+    /// <summary>
+    /// The one test in this branch that catches the scaffolder.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// EF writes a bool column default from the CLR default rather than from the property
+    /// initializer, so <c>HousekeepingDryRun</c> scaffolded as <c>false</c> even though the
+    /// entity declares it <c>true</c>. Every upgraded database would then have arrived at its
+    /// first sweep in the deleting state, and no test that reads the entity could have seen it,
+    /// because the entity was never wrong. So this reads the migrated SQLite schema.
+    /// </para>
+    /// <para>
+    /// The second assertion is the control that makes the first one evidence. A helper that had
+    /// quietly stopped reading SQLite, or one that returned a single constant, would still pass
+    /// an isolated "the default is true". The two columns are read by the same helper on the
+    /// same migrated connection and must come back with different values, so a reader that is
+    /// not reading the schema cannot satisfy both.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("Scenario", "HousekeepingDryRunDefaultsOnInAMigratedDatabase")]
+    public async Task HousekeepingMigration_DefaultsTheDryRunColumnOn()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+
+        await context.Database.MigrateAsync();
+
+        Assert.Equal("1", await ColumnDefaultAsync(connection, "ApplicationSettings", "HousekeepingDryRun"));
+        Assert.Equal("30", await ColumnDefaultAsync(connection, "ApplicationSettings", "HousekeepingRetentionDays"));
+    }
+
+    /// <summary>
+    /// A row already in the table when the migration runs takes the column defaults, which is
+    /// the case the default exists for. An install upgrading into this migration has exactly one
+    /// ApplicationSettings row and it was written before either column existed.
+    /// </summary>
+    [Fact]
+    [Trait("Scenario", "HousekeepingDefaultsReachAnExistingSettingsRow")]
+    public async Task HousekeepingMigration_LeavesAnExistingSettingsRowPreviewingAtThirtyDays()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        await using (var beforeHousekeeping = new ListenArrDbContext(CreateOptions(connection)))
+        {
+            await beforeHousekeeping.GetService<IMigrator>().MigrateAsync(WeakStorageVerifiedCleanupMigrationId);
+        }
+
+        Assert.False(await ColumnExistsAsync(connection, "ApplicationSettings", "HousekeepingDryRun"));
+        await InsertRowWithColumnDefaultsAsync(connection, "ApplicationSettings", 1);
+
+        await using (var upgraded = new ListenArrDbContext(CreateOptions(connection)))
+        {
+            await upgraded.Database.MigrateAsync();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT "HousekeepingDryRun", "HousekeepingRetentionDays"
+            FROM "ApplicationSettings" WHERE "Id" = 1;
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.True(reader.GetBoolean(0));
+        Assert.Equal(30, reader.GetInt32(1));
+    }
+
+    /// <summary>
+    /// Inserts one row into <paramref name="table" /> using each column's own default, supplying
+    /// a placeholder only where the schema demands a value and offers none. It exists so a test
+    /// can write a row at an older migration without listing whatever the not-null columns
+    /// happened to be at that point in history.
+    /// </summary>
+    private static async Task InsertRowWithColumnDefaultsAsync(
+        SqliteConnection connection,
+        string table,
+        int id)
+    {
+        var columns = new List<(string Name, string Type)>();
+        await using (var inspect = connection.CreateCommand())
+        {
+            inspect.CommandText =
+                $"SELECT name, type, \"notnull\", dflt_value FROM pragma_table_info('{table}')";
+            await using var reader = await inspect.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var name = reader.GetString(0);
+                var required = reader.GetInt32(2) == 1;
+                var hasDefault = !reader.IsDBNull(3);
+                if (name != "Id" && required && !hasDefault)
+                {
+                    columns.Add((name, reader.GetString(1)));
+                }
+            }
+        }
+
+        var names = string.Join(", ", columns.Select(column => $"\"{column.Name}\"").Prepend("\"Id\""));
+        var placeholders = string.Join(", ", columns.Select((_, index) => $"$p{index}").Prepend("$id"));
+        await using var insert = connection.CreateCommand();
+        insert.CommandText = $"INSERT INTO \"{table}\" ({names}) VALUES ({placeholders});";
+        insert.Parameters.AddWithValue("$id", id);
+        for (var index = 0; index < columns.Count; index++)
+        {
+            var type = columns[index].Type.ToUpperInvariant();
+            object value = type is "INTEGER" or "REAL" or "NUMERIC" ? 0 : string.Empty;
+            insert.Parameters.AddWithValue($"$p{index}", value);
+        }
+
+        await insert.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// The startup backfill that stops the move job sweep being a no-op on every existing
+    /// install. A row that was already terminal when the upgrade ran has no CompletedAt, and
+    /// without a value it can never match a retention predicate.
+    /// </summary>
+    /// <remarks>
+    /// Three arms, and the second and third are the controls. A Completed row with no timestamp
+    /// is stamped from UpdatedAt. A Superseded row whose UpdatedAt is null, which is the case the
+    /// column exists for, falls back to EnqueuedAt rather than staying null. And an active row is
+    /// left alone, so the repair is bounded by status rather than stamping the whole table.
+    /// </remarks>
+    [Fact]
+    [Trait("Scenario", "TerminalMoveJobsGetATerminalTimestampAtStartup")]
+    public async Task StartupRepair_StampsTerminalMoveJobsThatPredateTheColumn()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+        await context.Database.MigrateAsync();
+
+        var completed = Guid.NewGuid();
+        var superseded = Guid.NewGuid();
+        var running = Guid.NewGuid();
+        var enqueuedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var updatedAt = new DateTime(2026, 2, 2, 0, 0, 0, DateTimeKind.Utc);
+        await InsertTerminalMoveJobAsync(connection, completed, "Completed", enqueuedAt, updatedAt);
+        await InsertTerminalMoveJobAsync(connection, superseded, "Superseded", enqueuedAt, null);
+        await InsertTerminalMoveJobAsync(connection, running, "Running", enqueuedAt, updatedAt);
+
+        var repaired = ListenarrDatabaseMigrationPreflight.RepairPostMigrationData(context);
+
+        Assert.Equal(2, repaired.MoveJobTerminalTimestampsBackfilled);
+        Assert.Equal(updatedAt, await ReadCompletedAtAsync(connection, completed));
+        Assert.Equal(enqueuedAt, await ReadCompletedAtAsync(connection, superseded));
+        Assert.Null(await ReadCompletedAtAsync(connection, running));
+
+        // Idempotent: it runs on every start, and a second pass must find nothing left to do.
+        Assert.Equal(0, ListenarrDatabaseMigrationPreflight.RepairPostMigrationData(context)
+            .MoveJobTerminalTimestampsBackfilled);
+    }
+
+    private static async Task InsertTerminalMoveJobAsync(
+        SqliteConnection connection,
+        Guid id,
+        string status,
+        DateTime enqueuedAt,
+        DateTime? updatedAt)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO "MoveJobs"
+                ("Id", "AudiobookId", "RequestedPath", "EnqueuedAt", "Status", "Phase",
+                 "ExecutionProtocolVersion", "SourceDirectoryCleanupState", "FailureKind",
+                 "AttemptCount", "UpdatedAt", "CompletedAt", "IdentityKeyVersion",
+                 "LeaseGeneration", "DeleteEmptySource", "SourceCleanupMode",
+                 "ForceCopyAndRetainSource")
+            VALUES
+                ($id, 1, 'requested', $enqueuedAt, $status, 'None', 1, 'Pending', 'None',
+                 0, $updatedAt, NULL, 1, 0, 1, 'RetainSource', 0);
+            """;
+        command.Parameters.AddWithValue("$id", id.ToString());
+        command.Parameters.AddWithValue("$enqueuedAt", enqueuedAt);
+        command.Parameters.AddWithValue("$status", status);
+        command.Parameters.AddWithValue(
+            "$updatedAt",
+            updatedAt is null ? DBNull.Value : updatedAt.Value);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<DateTime?> ReadCompletedAtAsync(
+        SqliteConnection connection,
+        Guid id)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """SELECT "CompletedAt" FROM "MoveJobs" WHERE "Id" = $id;""";
+        command.Parameters.AddWithValue("$id", id.ToString());
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return reader.IsDBNull(0) ? null : reader.GetDateTime(0);
     }
 
     private static async Task ExecuteNonQueryAsync(

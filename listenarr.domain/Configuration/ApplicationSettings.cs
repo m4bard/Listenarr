@@ -60,11 +60,36 @@ namespace Listenarr.Domain.Configuration
         public string MultiFileNamingPattern { get; set; } = "{Title}-{DiskNumber:00}-{ChapterNumber:00}";
 
         public bool EnableMetadataProcessing { get; set; } = true;
+        /// <summary>
+        /// Dead flag, kept only so this change stays a single additive migration.
+        ///
+        /// Persisted since the Settings page was added and never read by anything. Its
+        /// stored value is true on every existing instance because that was the property
+        /// initialiser, not because an operator chose it, which is why the embedding
+        /// behaviour below is governed by a new column instead of this one. Dropping it is
+        /// a separate mechanical change.
+        /// </summary>
         public bool EnableCoverArtDownload { get; set; } = true;
+
+        /// <summary>
+        /// Embed cover artwork into audio files as they are imported.
+        ///
+        /// This replaces EnableCoverArtDownload, which was persisted from the day the
+        /// Settings page was added and never read by anything. Reusing that column would
+        /// have inherited a stored true on every existing instance, since the value came
+        /// from a property initialiser rather than from anyone choosing it, and embedding
+        /// rewrites the audio file. A new column starts false for everyone, so the
+        /// behaviour is opt-in on upgrade rather than something an operator discovers.
+        /// </summary>
+        public bool EmbedCoverArtInAudioFiles { get; set; } = false;
         public string AudnexusApiUrl { get; set; } = "https://api.audnex.us";
         public int MaxConcurrentDownloads { get; set; } = 3;
         public int PollingIntervalSeconds { get; set; } = 30;
         public bool EnableNotifications { get; set; } = false;
+
+        // Audio file extensions FileUtils.IsAudioFile treats as recognized. Defaults to the same
+        // set FileUtils.AudioExtensions has always used, so an untouched setting reproduces
+        // today's hardcoded behavior exactly.
         public List<string> AllowedFileExtensions
         {
             get
@@ -72,7 +97,7 @@ namespace Listenarr.Domain.Configuration
                 return [.. FileUtils.NormalizeExtensions(field)];
             }
             set;
-        } = [".mp3", ".flac", ".m4a", ".m4b", ".ogg"];
+        } = [.. FileUtils.AudioExtensions];
 
         // Number of seconds a download must be observed in the client as "complete" before
         // the system will finalize it (stability window). Keeping a short default (10s)
@@ -100,6 +125,25 @@ namespace Listenarr.Domain.Configuration
 
         // Number of days to retain action history. Zero keeps history indefinitely.
         public int HistoryRetentionDays { get; set; } = 0;
+
+        /// <summary>
+        /// Number of days the daily housekeeping sweep keeps a terminal row in the append-only
+        /// journal and cache tables. Zero disables the sweep and keeps every row indefinitely.
+        /// </summary>
+        /// <remarks>
+        /// Thirty, and zero to disable, is Prowlarr's HistoryCleanupDays exactly
+        /// (src/NzbDrone.Core/Configuration/ConfigService.cs:80), which is the only
+        /// operator-configurable window over a database table anywhere in the family. Zero
+        /// already means unlimited in this codebase as well, so the two agree.
+        /// </remarks>
+        public int HousekeepingRetentionDays { get; set; } = 30;
+
+        /// <summary>
+        /// When true the housekeeping sweep evaluates every predicate and logs how many rows it
+        /// would remove, and removes none. Shipped on, so an upgraded install lands in a state
+        /// that writes nothing until an operator has read a cycle's counts.
+        /// </summary>
+        public bool HousekeepingDryRun { get; set; } = true;
 
         // Failed download handling settings
         public bool FailedDownloadHandlingEnabled { get; set; } = true;
@@ -234,8 +278,32 @@ namespace Listenarr.Domain.Configuration
         public string DefaultSearchRegion { get; set; } = "us";
 
         /// <summary>
+        /// How many indexers one search may query at the same time. 4 is the ceiling that was
+        /// hardcoded before this became a setting, so an upgraded install searches exactly as it
+        /// did. Lower it when a local Jackett or Prowlarr proxy, or an indexer behind it, wants
+        /// gentler treatment.
+        /// </summary>
+        public int MaxConcurrentIndexerSearches { get; set; } = 4;
+
+        /// <summary>
         /// Preferred default language filter for Add New searches.
         /// </summary>
         public string DefaultSearchLanguage { get; set; } = "english";
+
+        // Scheduled provider-metadata refresh. The interval says how often the walk wakes up;
+        // the staleness age is what actually governs how often a given book is touched.
+        //
+        // On, which is only safe because an upgraded row does not arrive due. Startup gives
+        // every row that has no refresh timestamp the time of that backfill, so an upgraded
+        // library gets a full staleness window before any of it is due, and then ages into the
+        // queue oldest first the way books added after the upgrade do.
+        public bool MetadataRefreshEnabled { get; set; } = true;
+        public int MetadataRefreshIntervalHours { get; set; } = 24;
+        public int MetadataRefreshStaleAfterDays { get; set; } = 30;
+
+        // Deliberately timid. The provider publishes no rate limit, so the shipped budget stays
+        // well under any plausible ceiling; pushback narrows it further at runtime.
+        public int MetadataRefreshRequestsPerHour { get; set; } = 60;
+        public int MetadataRefreshMinimumSpacingMs { get; set; } = 1000;
     }
 }
