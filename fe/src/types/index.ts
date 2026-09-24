@@ -106,6 +106,7 @@ export interface SearchResult extends BaseSearchResult {
   downloadType: string // "Torrent", "Usenet", or "DDL"
   quality?: string
   resultUrl?: string // Canonical indexer page for the result
+  indexerFlags?: string[] // Release flags advertised by the tracker (freeleech, internal, scene, ...)
 
   // Metadata-specific properties
   description?: string
@@ -249,11 +250,27 @@ export interface DownloadClientConfiguration {
   downloadPath: string
   useSSL: boolean
   isEnabled: boolean
+  // Selection order between clients of the same protocol. Lower wins; clients sharing
+  // the lowest value are used in turn. 1 to 50, defaulting to 1.
+  priority?: number
   removeCompletedDownloads?: string // "none", "remove", "remove_and_delete"
   // Client-specific settings. Use `DownloadClientSettings` for typed access
   settings: DownloadClientSettings
   // Optional persisted last test result (true = success, false = failure)
   lastTestSuccessful?: boolean
+}
+
+// A download client's persisted failure status. A client with no entry has never failed or
+// has fully recovered. Times are UTC.
+export interface DownloadClientStatus {
+  clientId: string
+  // Rung on the backoff ladder, 1 to 5. Zero never appears: a recovered client has no entry.
+  escalationLevel: number
+  initialFailure: string | null
+  mostRecentFailure: string | null
+  // Selection avoids the client until this time; null while it is failing but not yet blocked.
+  disabledTill: string | null
+  isBlocked: boolean
 }
 
 export interface DownloadClientSettings {
@@ -262,9 +279,6 @@ export interface DownloadClientSettings {
   category?: string
   tags?: string
   recentPriority?: string
-  olderPriority?: string
-  removeCompleted?: boolean
-  removeFailed?: boolean
   initialState?: string
   sequentialOrder?: boolean
   firstAndLastFirst?: boolean
@@ -336,6 +350,8 @@ export interface RootFolder {
   weakStoragePolicyRevision?: number
   confirmationToken?: string | null
   activeRelocation?: RootFolderPathChangeResult | null
+  freeSpaceBytes?: number | null
+  totalSpaceBytes?: number | null
 }
 
 export interface AudiobookDeleteCapabilities {
@@ -419,6 +435,49 @@ export interface TranslatePathResponse {
   translated: boolean
 }
 
+// The channels a notification subscriber can be enabled for. Matches
+// listenarr.domain/Notifications/NotificationChannel.cs; "Test" is not selectable here because it
+// is reached through the Test button, not delivered on a real event.
+export type NotificationChannel =
+  | 'Grab'
+  | 'Download'
+  | 'DownloadFailed'
+  | 'BookAdded'
+  | 'BookAvailable'
+  | 'Rename'
+
+// One configured custom script: an executable Listenarr runs when an event on one of its enabled
+// channels is published. Matches listenarr.domain/Configuration/CustomScriptConfiguration.cs.
+export interface CustomScriptConfiguration {
+  id: string
+  name: string
+  path: string
+  channels: NotificationChannel[]
+  isEnabled: boolean
+}
+
+// One configured email notification target. Matches
+// listenarr.domain/Configuration/EmailConfiguration.cs, whose field set follows Readarr's
+// EmailSettings.
+export interface EmailConfiguration {
+  id: string
+  name: string
+  server: string
+  port: number
+  requireEncryption: boolean
+  username: string
+  // The stored password is never sent to this page in the clear: a settings read replaces it with
+  // the redaction sentinel, and sending the sentinel back on save keeps the stored value. See
+  // ApiResponseRedactor.RedactedValue and ConfigurationService.PreserveRedactedEmailPasswords.
+  password: string
+  from: string
+  to: string[]
+  cc: string[]
+  bcc: string[]
+  channels: NotificationChannel[]
+  isEnabled: boolean
+}
+
 export interface ApplicationSettings {
   version: number
   outputPath: string
@@ -426,7 +485,7 @@ export interface ApplicationSettings {
   fileNamingPattern: string
   multiFileNamingPattern: string
   enableMetadataProcessing: boolean
-  enableCoverArtDownload: boolean
+  embedCoverArtInAudioFiles: boolean
   audnexusApiUrl: string
   maxConcurrentDownloads: number
   unmatchedScanConcurrency?: number
@@ -437,12 +496,24 @@ export interface ApplicationSettings {
   missingSourceRetryInitialDelaySeconds?: number
   missingSourceMaxRetries?: number
   enableNotifications: boolean
+
+  // How long an automatic backup is kept, in days. Manual backups are never swept.
+  // 28 matches Readarr, Sonarr and Prowlarr. Zero or less keeps everything.
+  backupRetentionDays?: number
   allowedFileExtensions: string[]
   importBlacklistExtensions?: string[]
+  // Automatically extract archive files found during library import and completed-download import
+  extractArchives?: boolean
   // Action to perform for completed downloads.
   completedFileAction?: 'none' | 'move' | 'copy' | 'hardlink/copy'
+  // Free-space guard applied before an import writes to its destination
+  minimumFreeSpaceWhenImporting?: number
+  skipFreeSpaceCheckWhenImporting?: boolean
   // Show completed external downloads (torrents/NZBs) in the Activity view
   showCompletedExternalDownloads?: boolean
+  // Number of days to retain activity history. A background job prunes entries
+  // older than this window daily. Zero keeps history indefinitely.
+  historyRetentionDays?: number
   // Failed download handling
   failedDownloadHandlingEnabled?: boolean
   failedDownloadAutoSearch?: boolean
@@ -463,6 +534,14 @@ export interface ApplicationSettings {
     isEnabled: boolean
   }>
 
+  // Configured custom scripts. Each entry is one executable Listenarr runs on the
+  // channels it is enabled for. See CustomScriptConfiguration.cs.
+  customScripts?: CustomScriptConfiguration[]
+
+  // Configured email notification targets. Each entry is one SMTP server Listenarr sends through
+  // on the channels it is enabled for. See EmailConfiguration.cs.
+  emails?: EmailConfiguration[]
+
   // Discord bot integration settings (optional)
   discordBotEnabled?: boolean
   discordApplicationId?: string
@@ -481,8 +560,42 @@ export interface ApplicationSettings {
   // Search behavior settings
   // Enable OpenLibrary augmentation/search
   enableOpenLibrarySearch?: boolean
+  // Enable direct ASIN (Amazon identifier) lookups during intelligent searches
+  enableAmazonSearch?: boolean
+  // Enable the Audible-first lookup attempt during intelligent searches
+  enableAudibleSearch?: boolean
   defaultSearchRegion?: string
   defaultSearchLanguage?: string
+  maxConcurrentIndexerSearches?: number
+
+  // Scheduled provider-metadata refresh
+  metadataRefreshEnabled?: boolean
+  metadataRefreshIntervalHours?: number
+  metadataRefreshStaleAfterDays?: number
+  metadataRefreshRequestsPerHour?: number
+  metadataRefreshMinimumSpacingMs?: number
+
+  // Housekeeping: the daily sweep that removes finished job records and stale cache rows.
+  // 0 keeps every record and disables the sweep. Ships with dry run on, so an upgraded
+  // install reports what it would remove before it deletes anything.
+  housekeepingRetentionDays?: number
+  housekeepingDryRun?: boolean
+
+  // Scheduled repair of stored author identities. Enabled and dryRun are two switches with
+  // three meaningful states between them: off, preview (looks up and writes nothing) and
+  // repair (looks up and rewrites the stored records).
+  authorIdentityRepairEnabled?: boolean
+  authorIdentityRepairDryRun?: boolean
+  authorIdentityRepairIntervalHours?: number
+  authorIdentityRepairMaxRowsPerRun?: number
+  authorIdentityRepairRecheckAfterDays?: number
+
+  // Recycle bin: where a deleted library file goes instead of being removed outright.
+  // Empty means no recycle bin and deletes are permanent.
+  recycleBinPath?: string
+  // Days a recycled file is kept before the retention sweep removes it. Zero means keep
+  // until the bin is emptied by hand.
+  recycleBinCleanupDays?: number
 }
 
 export interface ProwlarrImportConnectionSettings {
@@ -492,12 +605,20 @@ export interface ProwlarrImportConnectionSettings {
   hasSavedApiKey: boolean
 }
 
+export interface NamingPatternPreview {
+  folderExample: string
+  singleFileExample: string
+  multiFileExamples: string[]
+  multiFileAmbiguous: boolean
+}
+
 export interface StartupConfig {
   logLevel?: string
   enableSsl?: boolean
   port?: number
   sslPort?: number
   urlBase?: string
+  applicationUrl?: string
   bindAddress?: string
   apiKey?: string
   authenticationMethod?: string
@@ -815,16 +936,88 @@ export interface AudiobookUpdateRequest {
   qualityProfileId?: number
 }
 
+/**
+ * Stable operational outcome, matching HistoryOutcome on the server. Sent as the name
+ * rather than the ordinal because the endpoint binds the enum by name.
+ */
+export type HistoryOutcome = 'Requested' | 'Succeeded' | 'Failed' | 'Skipped' | 'Retrying'
+
+export const HISTORY_OUTCOMES: readonly HistoryOutcome[] = [
+  'Requested',
+  'Succeeded',
+  'Failed',
+  'Skipped',
+  'Retrying',
+]
+
+export type DownloadProtocolName = 'Unknown' | 'Torrent' | 'Usenet'
+
+/** Every field on the server's History entity. */
 export interface History {
   id: number
   audiobookId?: number
+  audiobookExternalId?: string
   audiobookTitle?: string
+  /** The release or file the action was about. */
+  sourceTitle?: string
   eventType: string
   message?: string
+  /** Pipeline stage, or the download client's name for download events. */
   source?: string
   timestamp: string
   notificationSent?: boolean
   data?: string
+  outcome?: HistoryOutcome
+  downloadId?: string
+  downloadClientId?: string
+  /** Groups the attempts that belong to one workflow. */
+  correlationId?: string
+  idempotencyKey?: string
+  parentEventId?: number
+  /** Failure detail, kept separately from the display message. */
+  error?: string
+  protocol?: DownloadProtocolName | number
+  indexer?: string
+  quality?: string
+  size?: number
+}
+
+/** One page of history, with the total of the whole filtered set rather than of the page. */
+export interface HistoryPage {
+  history: History[]
+  total: number
+  limit: number
+  offset: number
+}
+
+/** One entry with every other attempt sharing its correlation id, oldest first. */
+export interface HistoryDetails {
+  entry: History
+  related: History[]
+}
+
+export type HistorySortKey = 'timestamp' | 'eventType' | 'outcome' | 'source'
+
+/**
+ * Everything GET /history accepts. An options object rather than positional arguments
+ * because twelve parameters is not callable any other way.
+ */
+export interface HistoryQueryParams {
+  limit?: number
+  offset?: number
+  sortBy?: HistorySortKey
+  sortDirection?: 'asc' | 'desc'
+  /** One event type, or several as a comma-separated list. */
+  eventType?: string
+  outcome?: HistoryOutcome
+  /** Inclusive ISO-8601 lower bound. */
+  from?: string
+  /** Inclusive ISO-8601 upper bound. */
+  to?: string
+  audiobookId?: number
+  downloadId?: string
+  downloadClientId?: string
+  correlationId?: string
 }
 
 export interface Indexer {
@@ -836,22 +1029,36 @@ export interface Indexer {
   apiKey?: string
   categories?: string
   animeCategories?: string
-  tags?: string
   enableRss: boolean
   enableAutomaticSearch: boolean
   enableInteractiveSearch: boolean
   enableAnimeStandardSearch: boolean
   isEnabled: boolean
   priority: number
+  // Download client this indexer's grabs go to, or null/absent for any client of the
+  // right protocol. Matches Readarr's per-indexer Download Client setting.
+  downloadClientId?: string | null
   minimumAge: number
   retention: number
   maximumSize: number
   additionalSettings?: string
+  seedRatio?: number | null // Torrent only. Unset leaves the download client's own ratio alone.
+  seedTime?: number | null // Minutes. Torrent only. Unset leaves the client's own seeding time alone.
   createdAt: string
   updatedAt: string
   lastTestedAt?: string
   lastTestSuccessful?: boolean
   lastTestError?: string
+  /** Start of the current run of failures, set once rather than per failure. */
+  initialFailure?: string
+  /** Most recent failure to answer a search. */
+  mostRecentFailure?: string
+  /** Position on the failure-backoff ladder; 0 means healthy. */
+  escalationLevel: number
+  /** When the current failure cooldown expires. While it is in the future the indexer is not queried. */
+  disabledTill?: string
+  /** Name of the query reason behind the current cooldown, eg. Timeout, RateLimited, AuthFailure. */
+  lastFailureReason?: string
 }
 
 export interface SystemReadiness {
@@ -944,12 +1151,49 @@ export interface ClientStatus {
   name: string
   status: string // "connected", "disconnected", "unknown"
   type?: string
+  /** Why status is not "connected" (e.g. "timeout", "error"). Null when connected or unknown. */
+  failureReason?: string | null
 }
 
 export interface ApiStatus {
   name: string
   status: string // "connected", "disconnected", "unknown"
   enabled: boolean
+}
+
+// One periodic worker as GET /system/tasks reports it.
+export interface ScheduledTask {
+  name: string
+  displayName: string
+  /**
+   * The gap between cycles in whole seconds, or null when the worker's interval cannot be
+   * stated in that unit. Nullable and not optional: the server always sends the key, and
+   * null is a value rather than an absence. Test for null on purpose, because null and 0
+   * are indistinguishable here under `> 0`, `??` and arithmetic, and a real 0 means a
+   * worker that declared a zero interval.
+   */
+  intervalSeconds: number | null
+  /** Why intervalSeconds is null, on the rows where it is, and absent on the rest. */
+  intervalError?: string
+  registeredAt: string // ISO date string
+  /** False once the worker's loop has ended. The row stays so the failure stays visible. */
+  isRegistered: boolean
+  isRunning: boolean
+  /** Whether POST to this task's run route will be accepted, so a button can say so first. */
+  isManualRunAllowed: boolean
+  lastStartedAt?: string // ISO date string
+  lastEndedAt?: string // ISO date string
+  lastDurationSeconds?: number
+  lastOutcome: string // "Unknown", "Succeeded", "Failed", "Canceled"
+  lastTrigger?: string // "Scheduled", "Manual"
+  nextExecution?: string // ISO date string
+}
+
+// The answer to POST /system/tasks/{name}/run. Both outcomes are 202 with an otherwise
+// identical row, so `triggered` is the only thing that tells them apart.
+export interface ScheduledTaskRun {
+  triggered: 'started' | 'already-running'
+  task: ScheduledTask
 }
 
 export interface LogEntry {
@@ -966,6 +1210,9 @@ export interface QualityProfile {
   name: string
   description?: string
   qualities: QualityDefinition[]
+  // Whether an acquired audiobook may be replaced by a better release. Absent on responses from
+  // an older server, where a blank cutoffQuality carried the same meaning.
+  upgradeAllowed?: boolean
   cutoffQuality?: string
   minimumSize?: number // MB (optional - no minimum if not set)
   maximumSize?: number // MB (optional - no maximum if not set)
@@ -979,10 +1226,18 @@ export interface QualityProfile {
   isDefault?: boolean
   preferNewerReleases?: boolean
   maximumAge?: number // days (0 = no limit)
+  preferredReleaseShape?: ReleaseShapePreference
   customGroupNames?: Record<string, string> // Custom names for quality groups by codec
   createdAt?: string
   updatedAt?: string
 }
+
+/**
+ * How a profile treats a bundle or omnibus release against a single-book one. Scored, not
+ * filtered: a release on the wrong side of the preference is penalised and still eligible.
+ * Serialized by name, matching ReleaseShapePreference's JsonStringEnumMemberName values.
+ */
+export type ReleaseShapePreference = 'none' | 'individual' | 'bundle'
 
 export interface QualityDefinition {
   quality: string // e.g., "320kbps", "192kbps", "lossless"
@@ -1286,4 +1541,18 @@ export interface RenameResult {
   conflict: boolean
   error?: string
   renamedFiles: FileRenameResultItem[]
+}
+
+/** Why a backup archive was produced. Mirrors the backend BackupTrigger enum. */
+export type BackupTrigger = 'Manual' | 'Migration'
+
+/**
+ * One backup archive on disk. Carries no path: an archive holds the database and config.json,
+ * so the API never says where it is or hands out its bytes.
+ */
+export interface BackupArchive {
+  name: string
+  trigger: BackupTrigger
+  sizeBytes: number
+  createdAtUtc: string
 }

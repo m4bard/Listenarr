@@ -206,28 +206,49 @@
             </div>
           </FormSection>
 
-          <!-- Priority -->
-          <FormSection title="Priority" :icon="PhSortAscending">
+          <!--
+            Two different priorities, kept in two sections on purpose. Client Priority orders
+            clients against each other and the selector reads it for every protocol. Queue
+            Priority is forwarded to the client as the job's own priority, and only the SABnzbd
+            and NZBGet planners read it, which is why that section stays usenet-only.
+          -->
+          <FormSection title="Client Selection" :icon="PhSortAscending">
             <div class="form-group">
-              <label for="recentPriority">Recent Priority</label>
-              <select id="recentPriority" v-model="formData.recentPriority">
-                <option value="default">Default</option>
-                <option value="last">Last</option>
-                <option value="first">First</option>
-              </select>
+              <label for="clientPriority">Client Priority</label>
+              <input
+                id="clientPriority"
+                v-model.number="formData.priority"
+                type="number"
+                min="1"
+                max="50"
+              />
               <small
-                >Priority to use when grabbing episodes that aired within the last 14 days</small
+                >Which client is used when more than one can take this download. Lower wins. Clients
+                sharing the lowest number are used in turn (1-50)</small
               >
             </div>
+          </FormSection>
 
+          <FormSection title="Queue Priority" :icon="PhListNumbers" v-if="isUsenet">
             <div class="form-group">
-              <label for="olderPriority">Older Priority</label>
-              <select id="olderPriority" v-model="formData.olderPriority">
+              <label for="recentPriority">Priority</label>
+              <!--
+                These values are the ones the planners actually accept. The list used to offer
+                Default, Last and First, which intersect with nothing the switch statements in
+                NzbgetRequestPlanner and SabnzbdAddRequestPlanner match, so every choice other
+                than Default fell through to normal.
+              -->
+              <select id="recentPriority" v-model="formData.recentPriority">
                 <option value="default">Default</option>
-                <option value="last">Last</option>
-                <option value="first">First</option>
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="force">Very High</option>
               </select>
-              <small>Priority to use when grabbing episodes that aired over 14 days ago</small>
+              <small
+                >Priority to give a download when it is sent to the client. Default leaves the
+                priority to SABnzbd's category; NZBGet is always sent Normal.</small
+              >
             </div>
           </FormSection>
 
@@ -246,20 +267,6 @@
                 >Action to take after a download is successfully imported. "Remove and Delete" will
                 delete the downloaded files from the download client after import.</small
               >
-            </div>
-
-            <div class="checkbox-group" v-if="isUsenet">
-              <Checkbox v-model="formData.removeCompleted">
-                <strong>Remove Completed (Legacy)</strong>
-                <small>Remove imported downloads from download client history</small>
-              </Checkbox>
-            </div>
-
-            <div class="checkbox-group" v-if="isUsenet">
-              <Checkbox v-model="formData.removeFailed">
-                <strong>Remove Failed (Legacy)</strong>
-                <small>Remove failed downloads from download client history</small>
-              </Checkbox>
             </div>
           </FormSection>
 
@@ -369,6 +376,7 @@ import {
   PhLock,
   PhTag,
   PhSortAscending,
+  PhListNumbers,
   PhCheckSquare,
   PhWrench,
   PhFolder,
@@ -402,6 +410,18 @@ const toast = useToast()
 const saving = ref(false)
 const testing = ref(false)
 
+// v-model.number yields an empty string when the operator clears the box, and the API
+// binds this straight onto an int, so posting it raw is a JSON parse error rather than the
+// validation message. Coerce here and clamp to the range the backend accepts.
+const MIN_CLIENT_PRIORITY = 1
+const MAX_CLIENT_PRIORITY = 50
+
+function normalizePriority(value: unknown): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return MIN_CLIENT_PRIORITY
+  return Math.min(MAX_CLIENT_PRIORITY, Math.max(MIN_CLIENT_PRIORITY, Math.trunc(parsed)))
+}
+
 const defaultFormData = {
   name: '',
   type: 'qbittorrent' as 'qbittorrent' | 'transmission' | 'sabnzbd' | 'nzbget',
@@ -413,12 +433,10 @@ const defaultFormData = {
   downloadPath: '',
   useSSL: false,
   isEnabled: true,
+  priority: 1,
   category: '',
   tags: '',
   recentPriority: 'default',
-  olderPriority: 'default',
-  removeCompleted: false,
-  removeFailed: false,
   removeCompletedDownloads: 'none',
   initialState: 'default',
   sequentialOrder: false,
@@ -451,6 +469,20 @@ const normalizeHost = (value: string): string => {
   const firstSlash = withoutTrailingSlashes.indexOf('/')
 
   return firstSlash >= 0 ? withoutTrailingSlashes.slice(0, firstSlash) : withoutTrailingSlashes
+}
+
+const PRIORITY_OPTIONS = ['default', 'low', 'normal', 'high', 'force'] as const
+
+// Stored rows still carry the values the old list offered. `last` and `first` are not in the new
+// list and are not in either planner's switch, so before this change both were sent as Normal by
+// SABnzbd and NZBGet alike. Reading them back as `normal` keeps the wire behaviour identical and
+// stops the select rendering with nothing chosen, which is what a value outside its own option
+// list does. Anything else unrecognised falls back the same way `default` always did.
+const normalizeRecentPriority = (stored: unknown): string => {
+  const value = typeof stored === 'string' ? stored.trim().toLowerCase() : ''
+  if (!value) return 'default'
+  if (value === 'last' || value === 'first') return 'normal'
+  return (PRIORITY_OPTIONS as readonly string[]).includes(value) ? value : 'default'
 }
 
 const isUsenet = computed(() => {
@@ -538,12 +570,10 @@ watch(
         downloadPath: newClient.downloadPath,
         useSSL: newClient.useSSL,
         isEnabled: newClient.isEnabled,
+        priority: newClient.priority ?? 1,
         category: (settings?.category as string) || '',
         tags: (settings?.tags as string) || '',
-        recentPriority: (settings?.recentPriority as string) || 'default',
-        olderPriority: (settings?.olderPriority as string) || 'default',
-        removeCompleted: (settings?.removeCompleted as boolean) || false,
-        removeFailed: (settings?.removeFailed as boolean) || false,
+        recentPriority: normalizeRecentPriority(settings?.recentPriority),
         removeCompletedDownloads:
           newClient.removeCompletedDownloads ||
           (settings?.removeCompletedDownloads as string) ||
@@ -588,6 +618,7 @@ const testConnection = async () => {
       downloadPath: formData.value.downloadPath || '',
       useSSL: formData.value.useSSL,
       isEnabled: formData.value.isEnabled,
+      priority: normalizePriority(formData.value.priority),
       removeCompletedDownloads: formData.value.removeCompletedDownloads,
       settings: {
         ...(formData.value.type === 'sabnzbd' && formData.value.apiKey
@@ -599,9 +630,6 @@ const testConnection = async () => {
         ...(formData.value.category && { category: formData.value.category }),
         ...(formData.value.tags && { tags: formData.value.tags }),
         recentPriority: formData.value.recentPriority,
-        olderPriority: formData.value.olderPriority,
-        removeCompleted: formData.value.removeCompleted,
-        removeFailed: formData.value.removeFailed,
         initialState: formData.value.initialState,
         sequentialOrder: formData.value.sequentialOrder,
         firstAndLastFirst: formData.value.firstAndLastFirst,
@@ -648,6 +676,7 @@ const handleSubmit = async () => {
       downloadPath: formData.value.downloadPath || '',
       useSSL: formData.value.useSSL,
       isEnabled: formData.value.isEnabled,
+      priority: normalizePriority(formData.value.priority),
       removeCompletedDownloads: formData.value.removeCompletedDownloads,
       settings: {
         ...(formData.value.type === 'sabnzbd' && formData.value.apiKey
@@ -659,9 +688,6 @@ const handleSubmit = async () => {
         ...(formData.value.category && { category: formData.value.category }),
         ...(formData.value.tags && { tags: formData.value.tags }),
         recentPriority: formData.value.recentPriority,
-        olderPriority: formData.value.olderPriority,
-        removeCompleted: formData.value.removeCompleted,
-        removeFailed: formData.value.removeFailed,
         initialState: formData.value.initialState,
         sequentialOrder: formData.value.sequentialOrder,
         firstAndLastFirst: formData.value.firstAndLastFirst,
