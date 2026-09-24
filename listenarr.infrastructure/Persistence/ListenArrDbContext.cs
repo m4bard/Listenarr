@@ -40,6 +40,7 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<DownloadClientConfiguration> DownloadClientConfigurations { get; set; } = null!;
         public DbSet<User> Users { get; set; } = null!;
         public DbSet<Download> Downloads { get; set; } = null!;
+        public DbSet<BlockedRelease> BlockedReleases { get; set; } = null!;
         public DbSet<DownloadProcessingJob> DownloadProcessingJobs { get; set; } = null!;
         public DbSet<FileMutationJournal> FileMutationJournals { get; set; } = null!;
         public DbSet<CompatibilityFilePublicationJournal> CompatibilityFilePublicationJournals { get; set; } = null!;
@@ -124,7 +125,17 @@ namespace Listenarr.Infrastructure.Persistence
             // Apply configuration classes from this assembly to keep the DbContext small and focused.
             modelBuilder.ApplyConfigurationsFromAssembly(typeof(ListenArrDbContext).Assembly);
 
+            // After the configurations, so an explicit converter on a property wins over this one.
+            UtcDateTimeConverters.ApplyTo(modelBuilder);
+
             // Register commonly used indexes here for safety; prefer moving indexes into configuration classes.
+            // One entry per release per book, and the lookup on the search path is always
+            // "what is blocked for this book", so the pair is both the uniqueness rule and
+            // the access path.
+            modelBuilder.Entity<BlockedRelease>()
+                .HasIndex(entry => new { entry.AudiobookId, entry.ReleaseIdentifier })
+                .IsUnique();
+
             modelBuilder.Entity<Download>().HasIndex(d => d.Status);
             modelBuilder.Entity<Download>().HasIndex(d => d.DownloadClientId);
             modelBuilder.Entity<Download>().HasIndex(d => d.CompletedAt);
@@ -139,6 +150,7 @@ namespace Listenarr.Infrastructure.Persistence
 
             modelBuilder.Entity<Audiobook>().HasIndex(a => a.Monitored);
             modelBuilder.Entity<Audiobook>().HasIndex(a => a.LastSearchTime);
+            modelBuilder.Entity<Audiobook>().HasIndex(a => a.LastMetadataRefreshAt);
             modelBuilder.Entity<MonitoredAuthor>().HasIndex(a => new { a.AuthorNameNormalized, a.Region, a.Language }).IsUnique();
             modelBuilder.Entity<MonitoredAuthor>().HasIndex(a => a.LastCheckedAt);
             modelBuilder.Entity<MonitoredSeries>().HasIndex(s => new { s.SeriesNameNormalized, s.Region, s.Language }).IsUnique();
