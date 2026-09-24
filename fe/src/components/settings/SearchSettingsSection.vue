@@ -60,6 +60,26 @@
         </div>
       </div>
 
+      <div class="form-row">
+        <div class="form-group">
+          <label for="max-concurrent-indexer-searches">Concurrent Indexer Searches</label>
+          <input
+            id="max-concurrent-indexer-searches"
+            :value="settings.maxConcurrentIndexerSearches ?? CONCURRENCY_DEFAULT"
+            type="number"
+            :min="CONCURRENCY_MIN"
+            :max="CONCURRENCY_MAX"
+            @input="updateMaxConcurrentIndexerSearches"
+          />
+          <small class="form-help">
+            How many indexers one search queries at the same time ({{ CONCURRENCY_MIN }}-{{
+              CONCURRENCY_MAX
+            }}). Lower it if a local Jackett or Prowlarr proxy, or an indexer behind it, starts
+            refusing connections.
+          </small>
+        </div>
+      </div>
+
       <CheckboxCard
         :modelValue="settings.enableOpenLibrarySearch"
         @update:modelValue="updateEnableOpenLibrarySearch"
@@ -111,6 +131,23 @@ function updateDefaultSearchRegion(event: Event) {
 
 function updateDefaultSearchLanguage(event: Event) {
   updateField('defaultSearchLanguage', (event.target as HTMLSelectElement).value)
+}
+
+// The same bounds and shipped default the server clamps to (IndexerSearchConcurrency). A number
+// input's min and max are advisory, so a typed or pasted value outside them is clamped here too;
+// an emptied box means the shipped default, not zero.
+const CONCURRENCY_DEFAULT = 4
+const CONCURRENCY_MIN = 1
+const CONCURRENCY_MAX = 32
+
+function updateMaxConcurrentIndexerSearches(event: Event) {
+  const raw = (event.target as HTMLInputElement).value
+  const parsed = Number(raw)
+  const value = raw.trim() === '' || Number.isNaN(parsed) ? CONCURRENCY_DEFAULT : parsed
+  updateField(
+    'maxConcurrentIndexerSearches',
+    Math.min(CONCURRENCY_MAX, Math.max(CONCURRENCY_MIN, Math.round(value))),
+  )
 }
 </script>
 

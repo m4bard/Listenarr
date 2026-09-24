@@ -74,10 +74,14 @@ import {
   API_BASE_PATH,
   API_BASE_URL,
   API_ORIGIN,
+  API_PATH_PREFIX,
   EFFECTIVE_API_BASE,
 } from './apiBase'
 
 const getApiImageOrigin = (): string => (import.meta.env.DEV ? '' : API_ORIGIN)
+// Cached image files are served beside the API rather than under it, so a root-absolute stored
+// path needs the sub-path prefix that API_BASE_PATH already carries.
+const getBackendFileBase = (): string => `${getApiImageOrigin()}${API_PATH_PREFIX}`
 const getApiImagesBaseUrl = (): string => `${getApiImageOrigin()}${API_BASE_PATH}/images`
 const buildApiImageUrl = (identifier: string, sourceUrl?: string): string => {
   let url = `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
@@ -702,6 +706,36 @@ class ApiService {
 
   async cancelDownload(id: string): Promise<boolean> {
     return this.request<boolean>(`/downloads/${id}`, { method: 'DELETE' })
+  }
+
+  async retryBlockedImport(
+    id: string,
+  ): Promise<{ message: string; id: string; status: string; jobId: string }> {
+    return this.request<{ message: string; id: string; status: string; jobId: string }>(
+      `/downloads/${id}/retry-import`,
+      { method: 'POST' },
+    )
+  }
+
+  // Removes the download record only. The route is shared with cancelDownload because the
+  // server does the same thing either way, but the intent differs: cancelling stops something
+  // in flight, whereas this clears a row for a download that has already stopped for good.
+  async deleteDownload(id: string): Promise<{ message: string; id: string }> {
+    return this.request<{ message: string; id: string }>(`/downloads/${id}`, { method: 'DELETE' })
+  }
+
+  async clearCompletedDownloads(): Promise<{ message: string; count: number }> {
+    return this.request<{ message: string; count: number }>('/downloads/completed', {
+      method: 'DELETE',
+    })
+  }
+
+  // The endpoint sweeps ImportBlocked records as well as Failed ones, which the confirmation copy
+  // in QueueToolbar.vue has to say out loud until that is fixed upstream.
+  async clearFailedDownloads(): Promise<{ message: string; count: number }> {
+    return this.request<{ message: string; count: number }>('/downloads/failed', {
+      method: 'DELETE',
+    })
   }
 
   async getCachedAnnounces(
@@ -1717,7 +1751,7 @@ class ApiService {
     }
 
     // Convert other relative URLs to absolute (no query-string auth tokens).
-    return `${getApiImageOrigin()}${imageUrl}`
+    return `${getBackendFileBase()}${imageUrl}`
   }
 
   /**
