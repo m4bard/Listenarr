@@ -17,6 +17,7 @@
  */
 
 using Listenarr.Domain.Common;
+using Listenarr.Infrastructure.Downloads.Blocklist;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Infrastructure.Configuration;
@@ -50,6 +51,7 @@ public static class InfrastructureStartupCompositionExtensions
         services.AddListenarrHostedWorkers(configuration);
         services.AddListenarrExternalRequests(configuration);
         services.AddScoped<IDownloadHistoryService, DownloadHistoryService>();
+        services.AddScoped<IBlocklistService, BlocklistService>();
 
         return services;
     }
@@ -80,6 +82,18 @@ public static class InfrastructureStartupCompositionExtensions
                     "[Startup] Normalized {Count} legacy move job row(s) after applying durable move migrations",
                     repairedPostMigrationData.MoveJobsRepaired);
             }
+
+            var repairedAuthorAsins =
+                ListenarrDatabaseMigrationPreflight.RepairAmbiguousAuthorAsins(ctx);
+            if (repairedAuthorAsins.MonitoredAuthorsRepaired > 0
+                || repairedAuthorAsins.CachedAuthorsRepaired > 0)
+            {
+                Log.Logger.Warning(
+                    "[Startup] Cleared ambiguous author ASINs from {MonitoredCount} monitored author row(s) and {CachedCount} cached author row(s); each name will be resolved again on its next sync",
+                    repairedAuthorAsins.MonitoredAuthorsRepaired,
+                    repairedAuthorAsins.CachedAuthorsRepaired);
+            }
+
             Log.Logger.Information("[Startup] EF Core migrations applied successfully");
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
