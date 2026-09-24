@@ -50,6 +50,19 @@
       </div>
     </div>
 
+    <QueueToolbar
+      :selected="selectedRows"
+      :busy="bulkBusy"
+      :completed-count="clearCompletedCount"
+      :failed-count="clearFailedOnlyCount"
+      :import-blocked-count="clearImportBlockedCount"
+      @clear-selection="clearSelection"
+      @retry-selected="retrySelected"
+      @remove-selected="removeSelected"
+      @clear-completed="clearCompleted"
+      @clear-failed="clearFailed"
+    />
+
     <!-- Queue Grid -->
     <div
       v-if="filteredQueue.length > 0"
@@ -58,12 +71,42 @@
       @scroll="updateVisibleRange"
     >
       <div class="queue-header">
-        <div class="col-title">Title</div>
-        <div class="col-quality">Quality</div>
-        <div class="col-language">Language</div>
-        <div class="col-progress">Progress</div>
-        <div class="col-eta">ETA</div>
-        <div class="col-status">Status</div>
+        <div
+          v-for="column in sortableColumns"
+          :key="column.key"
+          :class="[column.cssClass, 'sortable', { active: sortKey === column.key }]"
+          role="button"
+          tabindex="0"
+          :aria-sort="
+            sortKey === column.key ? (sortAscending ? 'ascending' : 'descending') : 'none'
+          "
+          @click="toggleSort(column.key)"
+          @keydown.enter="toggleSort(column.key)"
+          @keydown.space.prevent="toggleSort(column.key)"
+        >
+          <!-- Select all lives in the first column's header. Its clicks and keys stop
+               here: the cell around it is the sort control, and ticking a box is not a
+               request to re-sort the queue. -->
+          <span
+            v-if="column.key === 'title'"
+            @click.stop
+            @keydown.enter.stop
+            @keydown.space.stop
+          >
+            <QueueSelectCell
+              :checked="allSelectableSelected"
+              :indeterminate="selectedRows.length > 0"
+              :disabled="selectableRows.length === 0"
+              label="Select all downloads in view"
+              dataTest="queue-select-all"
+              @change="onSelectAll"
+            />
+          </span>
+          {{ column.label }}
+          <span v-if="sortKey === column.key" class="sort-indicator">{{
+            sortAscending ? 'v' : '^'
+          }}</span>
+        </div>
         <div class="col-actions"></div>
       </div>
       <div
@@ -84,10 +127,17 @@
               item.eta,
               item.downloadSpeed,
               item.downloadClient,
+              isSelected(item.id),
             ]"
             class="queue-row"
           >
             <div class="col-title">
+              <QueueSelectCell
+                v-if="item.canRemove"
+                :checked="isSelected(item.id)"
+                :label="`Select ${getDisplayTitle(item)}`"
+                @change="toggleSelection(item.id)"
+              />
               <div class="title-cell">
                 <RouterLink
                   v-if="item.audiobookId"
@@ -126,6 +176,7 @@
               <span v-if="item.eta" class="eta-text">{{ formatEta(item.eta) }}</span>
               <span v-else class="muted">-</span>
             </div>
+            <div class="col-added">{{ formatAddedAt(item.addedAt) }}</div>
             <div class="col-status">
               <span :class="['status-badge', item.status]">
                 {{ formatStatus(item.status) }}
@@ -139,6 +190,13 @@
               </span>
             </div>
             <div class="col-actions">
+              <QueueRetryButton
+                class="btn-icon"
+                iconOnly
+                :downloadId="item.id"
+                :status="item.status"
+                @retried="refreshQueue"
+              />
               <button
                 v-if="item.canRemove"
                 class="btn-icon btn-danger-icon"
@@ -235,7 +293,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, unref } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, unref, watch } from 'vue'
 import {
   PhActivity,
   PhSpinner,
@@ -257,6 +315,11 @@ import { useDownloadsStore } from '@/stores/downloads'
 import { useLibraryStore } from '@/stores/library'
 import { useMoveJobsStore, type TrackedMoveJob } from '@/stores/moveJobs'
 import { EmptyState, LoadingState, ProgressBar } from '@/components/base'
+import { useQueueSelection } from '@/composables/useQueueSelection'
+import QueueToolbar from '@/components/domain/download/QueueToolbar.vue'
+import QueueSelectCell from '@/components/domain/download/QueueSelectCell.vue'
+import QueueRetryButton from '@/components/domain/download/QueueRetryButton.vue'
+import { runSequentially, summarizeBulk } from '@/components/domain/download/bulkQueueActions'
 import { useConfigurationStore } from '@/stores/configuration'
 import type { QueueClientStatus, QueueItem, QueueUpdatePayload, Download } from '@/types'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
@@ -402,10 +465,10 @@ const updateActivityLayoutMode = () => {
 
 const visibleQueueItems = computed(() => {
   if (!useVirtualActivityList.value) {
-    return filteredQueue.value
+    return sortedQueue.value
   }
 
-  return filteredQueue.value.slice(visibleRange.value.start, visibleRange.value.end)
+  return sortedQueue.value.slice(visibleRange.value.start, visibleRange.value.end)
 })
 
 const updateVisibleRange = () => {
@@ -512,6 +575,22 @@ const convertMoveJobToQueueItem = (job: TrackedMoveJob): QueueItem => ({
 // Read user preference from configuration store
 const showCompletedExternalDownloads = computed(
   () => configStore.applicationSettings?.showCompletedExternalDownloads ?? false,
+)
+
+// Clear Completed and Clear Failed act on every matching record, not just what's selected or in
+// view, so the toolbar needs the true totals to disclose what a click is actually about to do.
+const clearCompletedCount = computed(() => (downloadsStore.completedDownloads || []).length)
+const clearFailedOnlyCount = computed(
+  () =>
+    (downloadsStore.failedDownloads || []).filter(
+      (d) => (d.status || '').toString().toLowerCase() === 'failed',
+    ).length,
+)
+const clearImportBlockedCount = computed(
+  () =>
+    (downloadsStore.failedDownloads || []).filter(
+      (d) => (d.status || '').toString().toLowerCase() === 'importblocked',
+    ).length,
 )
 
 // All activity items — unified list of queue + downloads
@@ -630,6 +709,76 @@ const filteredQueue = computed(() => {
   })
 })
 
+// Sorting. The sibling apps default their queue to time remaining ascending, so the row that
+// finishes next is the row at the top, and every column header is clickable. Listenarr already had
+// the ETA column and the addedAt value; neither was reachable from the page.
+const sortableColumns = [
+  { key: 'title', label: 'Title', cssClass: 'col-title' },
+  { key: 'quality', label: 'Quality', cssClass: 'col-quality' },
+  { key: 'language', label: 'Language', cssClass: 'col-language' },
+  { key: 'progress', label: 'Progress', cssClass: 'col-progress' },
+  { key: 'eta', label: 'ETA', cssClass: 'col-eta' },
+  { key: 'added', label: 'Added', cssClass: 'col-added' },
+  { key: 'status', label: 'Status', cssClass: 'col-status' },
+] as const
+
+type SortKey = (typeof sortableColumns)[number]['key']
+
+const sortKey = ref<SortKey>('eta')
+const sortAscending = ref(true)
+
+function toggleSort(key: SortKey) {
+  if (sortKey.value === key) {
+    sortAscending.value = !sortAscending.value
+    return
+  }
+  sortKey.value = key
+  sortAscending.value = true
+}
+
+function sortValue(item: QueueItem, key: SortKey): string | number | null {
+  switch (key) {
+    case 'eta':
+      return item.eta ?? null
+    case 'progress':
+      return item.progress ?? null
+    case 'added':
+      return item.addedAt ? Date.parse(item.addedAt) || null : null
+    case 'title':
+      return (getDisplayTitle(item) || '').toLowerCase()
+    default: {
+      const value = item[key]
+      return typeof value === 'string' ? value.toLowerCase() : null
+    }
+  }
+}
+
+const sortedQueue = computed(() => {
+  const key = sortKey.value
+  const direction = sortAscending.value ? 1 : -1
+
+  return [...filteredQueue.value].sort((left, right) => {
+    const a = sortValue(left, key)
+    const b = sortValue(right, key)
+
+    // A row with no value for this column sorts last whichever way the column is pointing. An
+    // unknown ETA is not "finishing soonest", and flipping the direction should not make it so.
+    if (a === null && b === null) return 0
+    if (a === null) return 1
+    if (b === null) return -1
+
+    if (a === b) return 0
+    return (a < b ? -1 : 1) * direction
+  })
+})
+
+function formatAddedAt(value: string | undefined): string {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return parsed.toLocaleString()
+}
+
 const refreshQueue = async () => {
   loading.value = true
   try {
@@ -700,6 +849,122 @@ const confirmRemove = async () => {
     removing.value = false
   }
 }
+
+// Queue management: selection, the toolbar's verbs, and the bulk runs behind them.
+const {
+  selectedIds,
+  isSelected,
+  toggleSelection,
+  selectAll,
+  clearSelection,
+  deselectAll,
+  setSelection,
+  pruneSelection,
+  selectedFrom,
+} = useQueueSelection()
+
+const bulkBusy = ref(false)
+
+const selectableRows = computed(() => filteredQueue.value.filter((item) => item.canRemove))
+const selectedRows = computed(() => selectedFrom(filteredQueue.value))
+const allSelectableSelected = computed(
+  () =>
+    selectableRows.value.length > 0 && selectedRows.value.length === selectableRows.value.length,
+)
+
+// The poll and every SignalR update replace the list wholesale, so a selection only survives if
+// the ids that went away are dropped from it. Watching the merged list covers both paths.
+watch(allActivityItems, (rows) => pruneSelection(rows))
+
+// The filter is a viewport, not a selection change, so select all and its opposite both act on
+// the rows in view and leave anything selected under another filter alone.
+const onSelectAll = (checked: boolean) => {
+  if (checked) selectAll(selectableRows.value)
+  else deselectAll(selectableRows.value)
+}
+
+// The same decision the single-row remove makes in confirmRemove, without editing it: a direct
+// download, or an id the client's queue no longer carries, is a Listenarr record only.
+const removeOne = async (item: QueueItem) => {
+  const isDdl =
+    isDirectDownload(item.downloadClientId) ||
+    (item.downloadClientType || '').toString().toUpperCase() === 'DDL'
+  if (isDdl || !queue.value.some((q) => q.id === item.id)) {
+    await apiService.cancelDownload(item.id)
+    return
+  }
+  await apiService.removeFromQueue(item.id, item.downloadClientId)
+}
+
+const runBulk = async (
+  verb: string,
+  action: (item: QueueItem) => Promise<unknown>,
+  operation: string,
+) => {
+  const rows = selectedRows.value
+  if (rows.length === 0) return
+
+  bulkBusy.value = true
+  const toast = useToast()
+  try {
+    const outcome = await runSequentially(rows, action, (row, error) => {
+      errorTracking.captureException(error as Error, {
+        component: 'ActivityView',
+        operation,
+        metadata: { downloadId: row.id },
+      })
+    })
+
+    // What failed stays selected, so a second attempt does not mean picking the rows out again.
+    // Rows the run never saw, because a filter was hiding them, stay selected too.
+    const touched = new Set(rows.map((row) => row.id))
+    const untouched = Array.from(selectedIds.value).filter((id) => !touched.has(id))
+    setSelection([...untouched, ...outcome.failed])
+
+    const summary = summarizeBulk(verb, outcome)
+    if (outcome.failed.length > 0) toast.warning('Partly done', summary)
+    else toast.success('Done', summary)
+
+    await refreshQueue()
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+const removeSelected = () => runBulk('Removed', removeOne, 'bulkRemoveFromQueue')
+
+const retrySelected = () =>
+  runBulk('Retried', (item) => apiService.retryBlockedImport(item.id), 'bulkRetryBlockedImport')
+
+const clearSweep = async (
+  label: string,
+  call: () => Promise<{ message: string; count: number }>,
+  operation: string,
+) => {
+  bulkBusy.value = true
+  const toast = useToast()
+  try {
+    const result = await call()
+    const noun = result.count === 1 ? 'download' : 'downloads'
+    toast.success(label, `${result.count} ${noun} cleared`)
+    await refreshQueue()
+  } catch (err) {
+    errorTracking.captureException(err as Error, { component: 'ActivityView', operation })
+    toast.error(label, (err as Error).message)
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+const clearCompleted = () =>
+  clearSweep(
+    'Clear completed',
+    () => apiService.clearCompletedDownloads(),
+    'clearCompletedDownloads',
+  )
+
+const clearFailed = () =>
+  clearSweep('Clear failed', () => apiService.clearFailedDownloads(), 'clearFailedDownloads')
 
 const formatStatus = (status: string): string => {
   const labels: Record<string, string> = {
@@ -919,8 +1184,27 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns:
     minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)
-    minmax(0, 1fr) 40px;
+    minmax(0, 1fr) minmax(0, 1fr) 40px;
   align-items: center;
+}
+
+.queue-header .sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.queue-header .sortable:hover,
+.queue-header .sortable:focus-visible {
+  color: var(--brand-500);
+}
+
+.queue-header .sortable.active {
+  color: var(--brand-500);
+}
+
+.sort-indicator {
+  font-size: 0.75em;
+  margin-left: 0.25rem;
 }
 
 .queue-header {
