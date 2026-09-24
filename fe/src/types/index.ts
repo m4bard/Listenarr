@@ -262,9 +262,6 @@ export interface DownloadClientSettings {
   category?: string
   tags?: string
   recentPriority?: string
-  olderPriority?: string
-  removeCompleted?: boolean
-  removeFailed?: boolean
   initialState?: string
   sequentialOrder?: boolean
   firstAndLastFirst?: boolean
@@ -426,7 +423,7 @@ export interface ApplicationSettings {
   fileNamingPattern: string
   multiFileNamingPattern: string
   enableMetadataProcessing: boolean
-  enableCoverArtDownload: boolean
+  embedCoverArtInAudioFiles: boolean
   audnexusApiUrl: string
   maxConcurrentDownloads: number
   unmatchedScanConcurrency?: number
@@ -439,10 +436,15 @@ export interface ApplicationSettings {
   enableNotifications: boolean
   allowedFileExtensions: string[]
   importBlacklistExtensions?: string[]
+  // Automatically extract archive files found during library import and completed-download import
+  extractArchives?: boolean
   // Action to perform for completed downloads.
   completedFileAction?: 'none' | 'move' | 'copy' | 'hardlink/copy'
   // Show completed external downloads (torrents/NZBs) in the Activity view
   showCompletedExternalDownloads?: boolean
+  // Number of days to retain activity history. A background job prunes entries
+  // older than this window daily. Zero keeps history indefinitely.
+  historyRetentionDays?: number
   // Failed download handling
   failedDownloadHandlingEnabled?: boolean
   failedDownloadAutoSearch?: boolean
@@ -481,8 +483,20 @@ export interface ApplicationSettings {
   // Search behavior settings
   // Enable OpenLibrary augmentation/search
   enableOpenLibrarySearch?: boolean
+  // Enable direct ASIN (Amazon identifier) lookups during intelligent searches
+  enableAmazonSearch?: boolean
+  // Enable the Audible-first lookup attempt during intelligent searches
+  enableAudibleSearch?: boolean
   defaultSearchRegion?: string
   defaultSearchLanguage?: string
+  maxConcurrentIndexerSearches?: number
+
+  // Scheduled provider-metadata refresh
+  metadataRefreshEnabled?: boolean
+  metadataRefreshIntervalHours?: number
+  metadataRefreshStaleAfterDays?: number
+  metadataRefreshRequestsPerHour?: number
+  metadataRefreshMinimumSpacingMs?: number
 }
 
 export interface ProwlarrImportConnectionSettings {
@@ -498,6 +512,7 @@ export interface StartupConfig {
   port?: number
   sslPort?: number
   urlBase?: string
+  applicationUrl?: string
   bindAddress?: string
   apiKey?: string
   authenticationMethod?: string
@@ -836,7 +851,6 @@ export interface Indexer {
   apiKey?: string
   categories?: string
   animeCategories?: string
-  tags?: string
   enableRss: boolean
   enableAutomaticSearch: boolean
   enableInteractiveSearch: boolean
@@ -852,6 +866,16 @@ export interface Indexer {
   lastTestedAt?: string
   lastTestSuccessful?: boolean
   lastTestError?: string
+  /** Start of the current run of failures, set once rather than per failure. */
+  initialFailure?: string
+  /** Most recent failure to answer a search. */
+  mostRecentFailure?: string
+  /** Position on the failure-backoff ladder; 0 means healthy. */
+  escalationLevel: number
+  /** When the current failure cooldown expires. While it is in the future the indexer is not queried. */
+  disabledTill?: string
+  /** Name of the query reason behind the current cooldown, eg. Timeout, RateLimited, AuthFailure. */
+  lastFailureReason?: string
 }
 
 export interface SystemReadiness {
@@ -944,6 +968,8 @@ export interface ClientStatus {
   name: string
   status: string // "connected", "disconnected", "unknown"
   type?: string
+  /** Why status is not "connected" (e.g. "timeout", "error"). Null when connected or unknown. */
+  failureReason?: string | null
 }
 
 export interface ApiStatus {
@@ -979,10 +1005,18 @@ export interface QualityProfile {
   isDefault?: boolean
   preferNewerReleases?: boolean
   maximumAge?: number // days (0 = no limit)
+  preferredReleaseShape?: ReleaseShapePreference
   customGroupNames?: Record<string, string> // Custom names for quality groups by codec
   createdAt?: string
   updatedAt?: string
 }
+
+/**
+ * How a profile treats a bundle or omnibus release against a single-book one. Scored, not
+ * filtered: a release on the wrong side of the preference is penalised and still eligible.
+ * Serialized by name, matching ReleaseShapePreference's JsonStringEnumMemberName values.
+ */
+export type ReleaseShapePreference = 'none' | 'individual' | 'bundle'
 
 export interface QualityDefinition {
   quality: string // e.g., "320kbps", "192kbps", "lossless"

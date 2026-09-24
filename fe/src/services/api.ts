@@ -704,6 +704,36 @@ class ApiService {
     return this.request<boolean>(`/downloads/${id}`, { method: 'DELETE' })
   }
 
+  async retryBlockedImport(
+    id: string,
+  ): Promise<{ message: string; id: string; status: string; jobId: string }> {
+    return this.request<{ message: string; id: string; status: string; jobId: string }>(
+      `/downloads/${id}/retry-import`,
+      { method: 'POST' },
+    )
+  }
+
+  // Removes the download record only. The route is shared with cancelDownload because the
+  // server does the same thing either way, but the intent differs: cancelling stops something
+  // in flight, whereas this clears a row for a download that has already stopped for good.
+  async deleteDownload(id: string): Promise<{ message: string; id: string }> {
+    return this.request<{ message: string; id: string }>(`/downloads/${id}`, { method: 'DELETE' })
+  }
+
+  async clearCompletedDownloads(): Promise<{ message: string; count: number }> {
+    return this.request<{ message: string; count: number }>('/downloads/completed', {
+      method: 'DELETE',
+    })
+  }
+
+  // The endpoint sweeps ImportBlocked records as well as Failed ones, which the confirmation copy
+  // in QueueToolbar.vue has to say out loud until that is fixed upstream.
+  async clearFailedDownloads(): Promise<{ message: string; count: number }> {
+    return this.request<{ message: string; count: number }>('/downloads/failed', {
+      method: 'DELETE',
+    })
+  }
+
   async getCachedAnnounces(
     downloadId: string,
   ): Promise<{ downloadId: string; announces: string[] } | null> {
@@ -842,21 +872,14 @@ class ApiService {
   }
 
   async testNotification(
-    trigger?: string,
-    data?: Record<string, unknown>,
+    trigger: string,
+    data: Record<string, unknown>,
     webhookId?: string,
     webhookUrl?: string,
   ): Promise<{ success: boolean; message: string }> {
-    // If trigger and data are provided, use the new diagnostics endpoint
-    if (trigger && data) {
-      return this.request<{ success: boolean; message: string }>('/diagnostics/test-notification', {
-        method: 'POST',
-        body: JSON.stringify({ trigger, data, webhookId, webhookUrl }),
-      })
-    }
-    // Otherwise send a test notification using the saved notification settings.
-    return this.request<{ success: boolean; message: string }>('/notifications/test', {
+    return this.request<{ success: boolean; message: string }>('/diagnostics/test-notification', {
       method: 'POST',
+      body: JSON.stringify({ trigger, data, webhookId, webhookUrl }),
     })
   }
 
@@ -1810,13 +1833,14 @@ class ApiService {
     })
   }
 
-  async cleanupOldHistory(days: number = 90): Promise<{ message: string; deletedCount: number }> {
-    return this.request<{ message: string; deletedCount: number }>(
-      `/history/cleanup?days=${days}`,
-      {
-        method: 'DELETE',
-      },
-    )
+  async cleanupOldHistory(days?: number): Promise<{ message: string; deletedCount: number }> {
+    // When `days` is omitted, no query param is sent, and the server falls back to the
+    // configured HistoryRetentionDays setting. Do not default this to a hardcoded value here:
+    // that would silently override the setting on every call that does not explicitly pass one.
+    const query = days === undefined ? '' : `?days=${days}`
+    return this.request<{ message: string; deletedCount: number }>(`/history/cleanup${query}`, {
+      method: 'DELETE',
+    })
   }
 
   // Indexers API
