@@ -106,6 +106,7 @@ export interface SearchResult extends BaseSearchResult {
   downloadType: string // "Torrent", "Usenet", or "DDL"
   quality?: string
   resultUrl?: string // Canonical indexer page for the result
+  indexerFlags?: string[] // Release flags advertised by the tracker (freeleech, internal, scene, ...)
 
   // Metadata-specific properties
   description?: string
@@ -262,9 +263,6 @@ export interface DownloadClientSettings {
   category?: string
   tags?: string
   recentPriority?: string
-  olderPriority?: string
-  removeCompleted?: boolean
-  removeFailed?: boolean
   initialState?: string
   sequentialOrder?: boolean
   firstAndLastFirst?: boolean
@@ -426,7 +424,7 @@ export interface ApplicationSettings {
   fileNamingPattern: string
   multiFileNamingPattern: string
   enableMetadataProcessing: boolean
-  enableCoverArtDownload: boolean
+  embedCoverArtInAudioFiles: boolean
   audnexusApiUrl: string
   maxConcurrentDownloads: number
   unmatchedScanConcurrency?: number
@@ -439,10 +437,15 @@ export interface ApplicationSettings {
   enableNotifications: boolean
   allowedFileExtensions: string[]
   importBlacklistExtensions?: string[]
+  // Automatically extract archive files found during library import and completed-download import
+  extractArchives?: boolean
   // Action to perform for completed downloads.
   completedFileAction?: 'none' | 'move' | 'copy' | 'hardlink/copy'
   // Show completed external downloads (torrents/NZBs) in the Activity view
   showCompletedExternalDownloads?: boolean
+  // Number of days to retain activity history. A background job prunes entries
+  // older than this window daily. Zero keeps history indefinitely.
+  historyRetentionDays?: number
   // Failed download handling
   failedDownloadHandlingEnabled?: boolean
   failedDownloadAutoSearch?: boolean
@@ -481,8 +484,35 @@ export interface ApplicationSettings {
   // Search behavior settings
   // Enable OpenLibrary augmentation/search
   enableOpenLibrarySearch?: boolean
+  // Enable direct ASIN (Amazon identifier) lookups during intelligent searches
+  enableAmazonSearch?: boolean
+  // Enable the Audible-first lookup attempt during intelligent searches
+  enableAudibleSearch?: boolean
   defaultSearchRegion?: string
   defaultSearchLanguage?: string
+  maxConcurrentIndexerSearches?: number
+
+  // Scheduled provider-metadata refresh
+  metadataRefreshEnabled?: boolean
+  metadataRefreshIntervalHours?: number
+  metadataRefreshStaleAfterDays?: number
+  metadataRefreshRequestsPerHour?: number
+  metadataRefreshMinimumSpacingMs?: number
+
+  // Housekeeping: the daily sweep that removes finished job records and stale cache rows.
+  // 0 keeps every record and disables the sweep. Ships with dry run on, so an upgraded
+  // install reports what it would remove before it deletes anything.
+  housekeepingRetentionDays?: number
+  housekeepingDryRun?: boolean
+
+  // Scheduled repair of stored author identities. Enabled and dryRun are two switches with
+  // three meaningful states between them: off, preview (looks up and writes nothing) and
+  // repair (looks up and rewrites the stored records).
+  authorIdentityRepairEnabled?: boolean
+  authorIdentityRepairDryRun?: boolean
+  authorIdentityRepairIntervalHours?: number
+  authorIdentityRepairMaxRowsPerRun?: number
+  authorIdentityRepairRecheckAfterDays?: number
 }
 
 export interface ProwlarrImportConnectionSettings {
@@ -498,6 +528,7 @@ export interface StartupConfig {
   port?: number
   sslPort?: number
   urlBase?: string
+  applicationUrl?: string
   bindAddress?: string
   apiKey?: string
   authenticationMethod?: string
@@ -815,16 +846,88 @@ export interface AudiobookUpdateRequest {
   qualityProfileId?: number
 }
 
+/**
+ * Stable operational outcome, matching HistoryOutcome on the server. Sent as the name
+ * rather than the ordinal because the endpoint binds the enum by name.
+ */
+export type HistoryOutcome = 'Requested' | 'Succeeded' | 'Failed' | 'Skipped' | 'Retrying'
+
+export const HISTORY_OUTCOMES: readonly HistoryOutcome[] = [
+  'Requested',
+  'Succeeded',
+  'Failed',
+  'Skipped',
+  'Retrying',
+]
+
+export type DownloadProtocolName = 'Unknown' | 'Torrent' | 'Usenet'
+
+/** Every field on the server's History entity. */
 export interface History {
   id: number
   audiobookId?: number
+  audiobookExternalId?: string
   audiobookTitle?: string
+  /** The release or file the action was about. */
+  sourceTitle?: string
   eventType: string
   message?: string
+  /** Pipeline stage, or the download client's name for download events. */
   source?: string
   timestamp: string
   notificationSent?: boolean
   data?: string
+  outcome?: HistoryOutcome
+  downloadId?: string
+  downloadClientId?: string
+  /** Groups the attempts that belong to one workflow. */
+  correlationId?: string
+  idempotencyKey?: string
+  parentEventId?: number
+  /** Failure detail, kept separately from the display message. */
+  error?: string
+  protocol?: DownloadProtocolName | number
+  indexer?: string
+  quality?: string
+  size?: number
+}
+
+/** One page of history, with the total of the whole filtered set rather than of the page. */
+export interface HistoryPage {
+  history: History[]
+  total: number
+  limit: number
+  offset: number
+}
+
+/** One entry with every other attempt sharing its correlation id, oldest first. */
+export interface HistoryDetails {
+  entry: History
+  related: History[]
+}
+
+export type HistorySortKey = 'timestamp' | 'eventType' | 'outcome' | 'source'
+
+/**
+ * Everything GET /history accepts. An options object rather than positional arguments
+ * because twelve parameters is not callable any other way.
+ */
+export interface HistoryQueryParams {
+  limit?: number
+  offset?: number
+  sortBy?: HistorySortKey
+  sortDirection?: 'asc' | 'desc'
+  /** One event type, or several as a comma-separated list. */
+  eventType?: string
+  outcome?: HistoryOutcome
+  /** Inclusive ISO-8601 lower bound. */
+  from?: string
+  /** Inclusive ISO-8601 upper bound. */
+  to?: string
+  audiobookId?: number
+  downloadId?: string
+  downloadClientId?: string
+  correlationId?: string
 }
 
 export interface Indexer {
@@ -836,7 +939,6 @@ export interface Indexer {
   apiKey?: string
   categories?: string
   animeCategories?: string
-  tags?: string
   enableRss: boolean
   enableAutomaticSearch: boolean
   enableInteractiveSearch: boolean
@@ -852,6 +954,16 @@ export interface Indexer {
   lastTestedAt?: string
   lastTestSuccessful?: boolean
   lastTestError?: string
+  /** Start of the current run of failures, set once rather than per failure. */
+  initialFailure?: string
+  /** Most recent failure to answer a search. */
+  mostRecentFailure?: string
+  /** Position on the failure-backoff ladder; 0 means healthy. */
+  escalationLevel: number
+  /** When the current failure cooldown expires. While it is in the future the indexer is not queried. */
+  disabledTill?: string
+  /** Name of the query reason behind the current cooldown, eg. Timeout, RateLimited, AuthFailure. */
+  lastFailureReason?: string
 }
 
 export interface SystemReadiness {
@@ -944,12 +1056,49 @@ export interface ClientStatus {
   name: string
   status: string // "connected", "disconnected", "unknown"
   type?: string
+  /** Why status is not "connected" (e.g. "timeout", "error"). Null when connected or unknown. */
+  failureReason?: string | null
 }
 
 export interface ApiStatus {
   name: string
   status: string // "connected", "disconnected", "unknown"
   enabled: boolean
+}
+
+// One periodic worker as GET /system/tasks reports it.
+export interface ScheduledTask {
+  name: string
+  displayName: string
+  /**
+   * The gap between cycles in whole seconds, or null when the worker's interval cannot be
+   * stated in that unit. Nullable and not optional: the server always sends the key, and
+   * null is a value rather than an absence. Test for null on purpose, because null and 0
+   * are indistinguishable here under `> 0`, `??` and arithmetic, and a real 0 means a
+   * worker that declared a zero interval.
+   */
+  intervalSeconds: number | null
+  /** Why intervalSeconds is null, on the rows where it is, and absent on the rest. */
+  intervalError?: string
+  registeredAt: string // ISO date string
+  /** False once the worker's loop has ended. The row stays so the failure stays visible. */
+  isRegistered: boolean
+  isRunning: boolean
+  /** Whether POST to this task's run route will be accepted, so a button can say so first. */
+  isManualRunAllowed: boolean
+  lastStartedAt?: string // ISO date string
+  lastEndedAt?: string // ISO date string
+  lastDurationSeconds?: number
+  lastOutcome: string // "Unknown", "Succeeded", "Failed", "Canceled"
+  lastTrigger?: string // "Scheduled", "Manual"
+  nextExecution?: string // ISO date string
+}
+
+// The answer to POST /system/tasks/{name}/run. Both outcomes are 202 with an otherwise
+// identical row, so `triggered` is the only thing that tells them apart.
+export interface ScheduledTaskRun {
+  triggered: 'started' | 'already-running'
+  task: ScheduledTask
 }
 
 export interface LogEntry {
@@ -966,6 +1115,9 @@ export interface QualityProfile {
   name: string
   description?: string
   qualities: QualityDefinition[]
+  // Whether an acquired audiobook may be replaced by a better release. Absent on responses from
+  // an older server, where a blank cutoffQuality carried the same meaning.
+  upgradeAllowed?: boolean
   cutoffQuality?: string
   minimumSize?: number // MB (optional - no minimum if not set)
   maximumSize?: number // MB (optional - no maximum if not set)
@@ -979,10 +1131,18 @@ export interface QualityProfile {
   isDefault?: boolean
   preferNewerReleases?: boolean
   maximumAge?: number // days (0 = no limit)
+  preferredReleaseShape?: ReleaseShapePreference
   customGroupNames?: Record<string, string> // Custom names for quality groups by codec
   createdAt?: string
   updatedAt?: string
 }
+
+/**
+ * How a profile treats a bundle or omnibus release against a single-book one. Scored, not
+ * filtered: a release on the wrong side of the preference is penalised and still eligible.
+ * Serialized by name, matching ReleaseShapePreference's JsonStringEnumMemberName values.
+ */
+export type ReleaseShapePreference = 'none' | 'individual' | 'bundle'
 
 export interface QualityDefinition {
   quality: string // e.g., "320kbps", "192kbps", "lossless"
