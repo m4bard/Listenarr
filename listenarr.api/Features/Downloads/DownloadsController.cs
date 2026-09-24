@@ -29,14 +29,16 @@ public class DownloadsController : ControllerBase
     private readonly IDownloadService _downloadService;
     private readonly ILogger<DownloadsController> _logger;
     private readonly IConfigurationService _configurationService;
+    private readonly IDownloadProcessingJobService _downloadProcessingJobService;
     private readonly IMemoryCache? _cache;
 
-    public DownloadsController(IDownloadRepository downloadRepository, IDownloadService downloadService, ILogger<DownloadsController> logger, IConfigurationService configurationService, IMemoryCache? cache = null)
+    public DownloadsController(IDownloadRepository downloadRepository, IDownloadService downloadService, ILogger<DownloadsController> logger, IConfigurationService configurationService, IDownloadProcessingJobService downloadProcessingJobService, IMemoryCache? cache = null)
     {
         _downloadRepository = downloadRepository;
         _downloadService = downloadService;
         _logger = logger;
         _configurationService = configurationService;
+        _downloadProcessingJobService = downloadProcessingJobService;
         _cache = cache;
     }
     /// <summary>
@@ -92,7 +94,12 @@ public class DownloadsController : ControllerBase
                 .ToList();
 
             var all = await _downloadRepository.GetAllAsync();
+            // Terminal failures bypass the enabled-client filter. Hiding a download whose client was
+            // since disabled or deleted is right while it is still live, because nothing can act on
+            // it; for a failed or blocked one it means a row that occupies the queue for good and
+            // cannot be seen, let alone removed. The active endpoint keeps the plain filter.
             var filtered = all.Where(d =>
+                d.IsTerminalFailure() ||
                 d.DownloadClientId == "DDL" ||
                 (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)));
 
@@ -181,7 +188,17 @@ public class DownloadsController : ControllerBase
                 return NotFound(new { error = "Download not found", id });
             }
 
-            if (download.Status != DownloadStatus.ImportBlocked)
+            // ImportPending is accepted as well as ImportBlocked, but only when nothing is
+            // actually working on it. Before this endpoint queued anything it still cleared the
+            // block and set ImportPending, so anyone who called it is left with downloads that no
+            // job will ever pick up. Those are worse off than blocked ones: AutomaticSearchService
+            // and DownloadDuplicateGuard both count ImportPending as an active download and skip
+            // the book, while neither counts ImportBlocked, so the book is never re-searched
+            // either. Refusing them would leave every existing victim stranded permanently.
+            var stranded = download.Status == DownloadStatus.ImportPending
+                && await _downloadProcessingJobService.GetActiveJobAsync(download.Id) == null;
+
+            if (download.Status != DownloadStatus.ImportBlocked && !stranded)
             {
                 return BadRequest(new
                 {
@@ -191,16 +208,49 @@ public class DownloadsController : ControllerBase
                 });
             }
 
+            // At most one active download per audiobook: EfDownloadRepository sets
+            // ActiveAudiobookDeduplicationKey from the audiobook id whenever the status is active,
+            // and a filtered unique index enforces it. ImportPending counts as active and
+            // ImportBlocked does not, so unblocking this one collides with any other active
+            // download for the same book. Without this check that surfaces as a SQLite constraint
+            // violation from deep inside SaveChanges, which tells the caller nothing.
+            if (download.AudiobookId.HasValue)
+            {
+                var siblings = await _downloadRepository.GetByAudiobookIdAsync(download.AudiobookId.Value);
+                var active = siblings.FirstOrDefault(other =>
+                    other.Id != download.Id
+                    && other.ActiveAudiobookDeduplicationKey.HasValue);
+                if (active != null)
+                {
+                    return Conflict(new
+                    {
+                        error = "Another download for this audiobook is already active",
+                        id,
+                        conflictingDownloadId = active.Id,
+                        conflictingStatus = active.Status.ToString()
+                    });
+                }
+            }
+
             download.Unblock();
+
+            // Queue the work before persisting the unblock. Clearing the blocked status is what
+            // makes the download eligible for import, but nothing watches that field: the only
+            // thing that imports a download is a processing job, and the job that would have
+            // created one fires on the download client reporting completion, which already
+            // happened and will not happen again. Persisting first and queueing second would leave
+            // a download that reads as retrying and never is if the queue call failed.
+            var jobId = await _downloadProcessingJobService.RequeueAsync(download);
 
             await _downloadService.UpdateAsync(download);
 
-            _logger.LogInformation("Reset blocked import {DownloadId} back to ImportPending", LogRedaction.SanitizeText(id));
+            _logger.LogInformation("Requeued blocked import {DownloadId} as job {JobId}", LogRedaction.SanitizeText(id), jobId);
             return Ok(new
             {
                 message = "Import retry queued",
                 id,
-                status = download.Status.ToString()
+                status = download.Status.ToString(),
+                jobId
             });
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -250,11 +300,16 @@ public class DownloadsController : ControllerBase
 
 
     /// <summary>
-    /// Delete a download record from the database. This does not cancel an active download in the client.
+    /// Delete a download record and, by default, remove the download from its download client.
+    /// Pass removeFromClient=false to delete only the database record and leave the client alone.
     /// </summary>
     /// <param name="id">Download record ID.</param>
+    /// <param name="removeFromClient">
+    /// When true, the default, the item is also removed from the download client and the record is
+    /// kept if the client does not confirm the removal. When false only the database record goes.
+    /// </param>
     [HttpDelete("{id}")]
-    public async Task<ActionResult> DeleteDownload(string id)
+    public async Task<ActionResult> DeleteDownload(string id, [FromQuery] bool removeFromClient = true)
     {
         try
         {
@@ -265,10 +320,21 @@ public class DownloadsController : ControllerBase
                 return NotFound(new { error = "Download not found", id });
             }
 
-            await _downloadRepository.RemoveAsync(id);
+            var removed = await RemoveDownloadAsync(download, removeFromClient);
 
-            _logger.LogInformation("Deleted download record {DownloadId}", LogRedaction.SanitizeText(id));
-            return Ok(new { message = "Download deleted successfully", id });
+            if (!removed)
+            {
+                _logger.LogWarning("Kept download record {DownloadId} because the download client did not confirm removal", LogRedaction.SanitizeText(id));
+                return Conflict(new
+                {
+                    error = "Download client removal failed",
+                    message = "The download client did not confirm removal, so the record was kept. Retry with removeFromClient=false to delete the record only.",
+                    id
+                });
+            }
+
+            _logger.LogInformation("Deleted download record {DownloadId} (removeFromClient: {RemoveFromClient})", LogRedaction.SanitizeText(id), removeFromClient);
+            return Ok(new { message = "Download deleted successfully", id, removeFromClient });
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
@@ -278,19 +344,31 @@ public class DownloadsController : ControllerBase
     }
 
     /// <summary>
-    /// Delete all download records with Completed status.
+    /// Delete all download records with Completed status, by default removing each one from its
+    /// download client as well.
     /// </summary>
+    /// <param name="removeFromClient">
+    /// When true, the default, each item is also removed from its download client. Records the
+    /// client would not confirm are kept and listed in the response.
+    /// </param>
     [HttpDelete("completed")]
-    public async Task<ActionResult> ClearCompletedDownloads()
+    public async Task<ActionResult> ClearCompletedDownloads([FromQuery] bool removeFromClient = true)
     {
         try
         {
             var all = await _downloadRepository.GetAllAsync();
             var completedDownloads = all.Where(d => d.Status == DownloadStatus.Completed).ToList();
-            foreach (var d in completedDownloads) await _downloadRepository.RemoveAsync(d.Id);
+            var (removedIds, keptIds) = await RemoveDownloadsAsync(completedDownloads, removeFromClient);
 
-            _logger.LogInformation("Cleared {Count} completed downloads", completedDownloads.Count);
-            return Ok(new { message = "Completed downloads cleared", count = completedDownloads.Count });
+            _logger.LogInformation("Cleared {Count} completed downloads, kept {KeptCount} the download client would not confirm", removedIds.Count, keptIds.Count);
+            return Ok(new
+            {
+                message = "Completed downloads cleared",
+                count = removedIds.Count,
+                kept = keptIds.Count,
+                keptIds,
+                removeFromClient
+            });
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
@@ -300,25 +378,90 @@ public class DownloadsController : ControllerBase
     }
 
     /// <summary>
-    /// Delete all download records with Failed or ImportBlocked status.
+    /// Delete all download records with Failed or ImportBlocked status, by default removing each one
+    /// from its download client as well.
     /// </summary>
+    /// <param name="removeFromClient">
+    /// When true, the default, each item is also removed from its download client. Records the
+    /// client would not confirm are kept and listed in the response.
+    /// </param>
     [HttpDelete("failed")]
-    public async Task<ActionResult> ClearFailedDownloads()
+    public async Task<ActionResult> ClearFailedDownloads([FromQuery] bool removeFromClient = true)
     {
         try
         {
             var all = await _downloadRepository.GetAllAsync();
-            var failedDownloads = all.Where(d => d.Status == DownloadStatus.Failed || d.Status == DownloadStatus.ImportBlocked).ToList();
-            foreach (var d in failedDownloads) await _downloadRepository.RemoveAsync(d.Id);
+            var failedDownloads = all.Where(d => d.IsTerminalFailure()).ToList();
+            var (removedIds, keptIds) = await RemoveDownloadsAsync(failedDownloads, removeFromClient);
 
-            _logger.LogInformation("Cleared {Count} failed downloads", failedDownloads.Count);
-            return Ok(new { message = "Failed downloads cleared", count = failedDownloads.Count });
+            _logger.LogInformation("Cleared {Count} failed downloads, kept {KeptCount} the download client would not confirm", removedIds.Count, keptIds.Count);
+            return Ok(new
+            {
+                message = "Failed downloads cleared",
+                count = removedIds.Count,
+                kept = keptIds.Count,
+                keptIds,
+                removeFromClient
+            });
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error clearing failed downloads");
             return StatusCode(500, new { error = "Failed to clear failed downloads", message = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Remove one download through the shared removal workflow, which contacts the download client
+    /// and only drops the database record once the client side is settled. The workflow's force flag
+    /// is the record-only path, so it is exactly the opt-out that removeFromClient=false asks for.
+    /// </summary>
+    private async Task<bool> RemoveDownloadAsync(Download download, bool removeFromClient)
+    {
+        // An empty client id means the record never recorded which client holds the item. Passing
+        // null rather than the empty string lets the workflow sweep every enabled client for it.
+        var downloadClientId = string.IsNullOrWhiteSpace(download.DownloadClientId)
+            ? null
+            : download.DownloadClientId;
+
+        return await _downloadService.RemoveFromQueueAsync(download.Id, downloadClientId, force: !removeFromClient);
+    }
+
+    /// <summary>
+    /// Remove a set of downloads one at a time, reporting per item rather than per sweep. One client
+    /// refusing must not abort the rest of the clear, and must not take the record with it either.
+    /// </summary>
+    private async Task<(List<string> RemovedIds, List<string> KeptIds)> RemoveDownloadsAsync(IEnumerable<Download> downloads, bool removeFromClient)
+    {
+        var removedIds = new List<string>();
+        var keptIds = new List<string>();
+
+        foreach (var download in downloads)
+        {
+            bool removed;
+
+            try
+            {
+                removed = await RemoveDownloadAsync(download, removeFromClient);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error removing download {DownloadId} during bulk clear", LogRedaction.SanitizeText(download.Id));
+                removed = false;
+            }
+
+            if (removed)
+            {
+                removedIds.Add(download.Id);
+            }
+            else
+            {
+                _logger.LogWarning("Kept download record {DownloadId} because the download client did not confirm removal", LogRedaction.SanitizeText(download.Id));
+                keptIds.Add(download.Id);
+            }
+        }
+
+        return (removedIds, keptIds);
     }
 
     /// <summary>

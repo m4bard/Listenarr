@@ -22,6 +22,28 @@
         <PhHeart />
         Wanted
       </h1>
+      <div class="wanted-tabs" role="tablist">
+        <button
+          class="wanted-tab"
+          :class="{ active: wantedMode === 'missing' }"
+          role="tab"
+          :aria-selected="wantedMode === 'missing'"
+          @click="wantedMode = 'missing'"
+        >
+          Missing
+          <span class="wanted-tab-count">{{ wantedAudiobooks.length }}</span>
+        </button>
+        <button
+          class="wanted-tab"
+          :class="{ active: wantedMode === 'cutoff' }"
+          role="tab"
+          :aria-selected="wantedMode === 'cutoff'"
+          @click="wantedMode = 'cutoff'"
+        >
+          Cutoff Unmet
+          <span class="wanted-tab-count">{{ cutoffUnmetAudiobooks.length }}</span>
+        </button>
+      </div>
       <div class="wanted-actions">
         <div class="filter-input-wrapper">
           <PhMagnifyingGlass class="filter-icon" />
@@ -36,12 +58,29 @@
           </button>
         </div>
         <button
+          v-if="selectedCount > 0"
+          class="btn btn-secondary"
+          @click="clearSelection"
+          :disabled="searchRunning"
+        >
+          <PhX />
+          Clear Selection
+        </button>
+        <button
           class="btn btn-primary"
-          @click="searchMissing"
-          :disabled="categorizedWanted.missing.length === 0"
+          @click="requestSearchSelected"
+          :disabled="selectedCount === 0 || searchRunning"
         >
           <PhRobot />
-          Search All
+          Search Selected ({{ selectedCount }})
+        </button>
+        <button
+          class="btn btn-primary"
+          @click="requestSearchMissing"
+          :disabled="searchTargets.length === 0 || searchRunning"
+        >
+          <PhRobot />
+          {{ searchButtonLabel }}
         </button>
         <button class="btn btn-secondary" @click="openManualImport">
           <PhFolderPlus />
@@ -61,6 +100,17 @@
       @scroll="updateVisibleRange"
     >
       <div class="wanted-header">
+        <div class="col-select">
+          <div class="selection-checkbox">
+            <input
+              type="checkbox"
+              aria-label="Select all wanted audiobooks"
+              :checked="allWantedSelected"
+              :disabled="selectableWanted.length === 0 || searchRunning"
+              @change="onSelectAllChange"
+            />
+          </div>
+        </div>
         <div class="col-poster"></div>
         <div class="col-title">Title</div>
         <div class="col-author">Author</div>
@@ -77,7 +127,26 @@
           :class="['wanted-body', { 'is-static': !useVirtualWantedList }]"
           :style="useVirtualWantedList ? { transform: `translateY(${topPadding}px)` } : undefined"
         >
-          <div v-for="item in visibleWanted" :key="item.id" class="wanted-row">
+          <div
+            v-for="item in visibleWanted"
+            :key="item.id"
+            class="wanted-row"
+            :class="{ selected: isSelected(item.id) }"
+          >
+            <div class="col-select">
+              <div class="selection-checkbox">
+                <input
+                  type="checkbox"
+                  :aria-label="`Select ${safeText(item.title)}`"
+                  :checked="isSelected(item.id)"
+                  :disabled="hasActiveDownload(item) || searchRunning"
+                  :title="
+                    hasActiveDownload(item) ? 'Already downloading' : 'Select for Search Selected'
+                  "
+                  @change="onSelectionCheckboxChange(item, $event)"
+                />
+              </div>
+            </div>
             <div class="col-poster">
               <img
                 class="row-poster"
@@ -191,6 +260,17 @@
       @close="closeManualImport"
       @imported="handleImported"
     />
+
+    <!-- Bulk search confirmation: this action hits every configured indexer once per book -->
+    <ConfirmModal
+      :visible="showSearchConfirm"
+      title="Start automatic search"
+      :message="searchConfirmMessage"
+      confirmLabel="Start search"
+      :confirming="searchRunning"
+      @confirm="confirmSearchMissing"
+      @cancel="cancelSearchMissing"
+    />
   </div>
 </template>
 
@@ -203,6 +283,7 @@ import { errorTracking } from '@/services/errorTracking'
 import { handleImageError } from '@/utils/imageFallback'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import ManualImportModal from '@/components/feedback/ManualImportModal.vue'
+import { ConfirmModal } from '@/components/feedback'
 import { EmptyState, LoadingState } from '@/components/base'
 import type { Audiobook, SearchResult, Download } from '@/types'
 import { safeText } from '@/utils/textUtils'
@@ -219,6 +300,7 @@ import {
 import { logger } from '@/utils/logger'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useProtectedImages } from '@/composables/useProtectedImages'
+import { useRowSelection } from '@/composables/useRowSelection'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 
 const downloadsStore = useDownloadsStore()
@@ -228,6 +310,7 @@ const configurationStore = useConfigurationStore()
 
 // Filter
 const filterText = ref('')
+const wantedMode = ref<'missing' | 'cutoff'>('missing')
 
 // Virtual scrolling setup
 const scrollContainer = ref<HTMLElement | null>(null)
@@ -291,6 +374,23 @@ const searchResults = ref<Record<number, string>>({})
 const showManualSearchModal = ref(false)
 const selectedAudiobook = ref<Audiobook | null>(null)
 const showManualImportModal = ref(false)
+const showSearchConfirm = ref(false)
+const bulkSearchRunning = ref(false)
+const searchSelectedRunning = ref(false)
+// Which list the confirmation dialog is currently asking about. Both bulk
+// searches go through the same dialog, so it has to know which one it opened for.
+const pendingSearchScope = ref<'all' | 'selected'>('all')
+// Set once when the view goes away, so a run in progress stops instead of
+// continuing to grab against a component that is no longer mounted.
+let searchRunAborted = false
+
+// Spacing between per-book searches in either bulk action, so one click does not
+// burst every configured indexer.
+const SEARCH_SPACING_MS = 1000
+
+// The two bulk searches draw on the same indexers and the same per-book state,
+// so only one of them runs at a time.
+const searchRunning = computed(() => bulkSearchRunning.value || searchSelectedRunning.value)
 
 const syncWantedLayout = async () => {
   await nextTick()
@@ -317,6 +417,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  searchRunAborted = true
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', handleViewportResize)
   }
@@ -337,19 +438,25 @@ const wantedAudiobooks = computed(() => {
   })
 })
 
-// Categorize wanted audiobooks by their current search state
-const categorizedWanted = computed(() => {
-  const all = wantedAudiobooks.value
-  const missingItems = all.filter((a) => !searching.value[a.id] && !searchResults.value[a.id])
-
-  return {
-    all,
-    missing: missingItems,
-  }
+// Books below their profile cutoff. These can never appear in wantedAudiobooks: the server's
+// `wanted` flag is false for anything that has a file, and a book below cutoff has one. The status
+// this reads is already on the same payload the list is built from, so no extra request is needed.
+const cutoffUnmetAudiobooks = computed(() => {
+  return libraryStore.audiobooks.filter((audiobook) => {
+    if (!audiobook.monitored) return false
+    return audiobook.status === 'quality-mismatch'
+  })
 })
 
+const activeWanted = computed(() =>
+  wantedMode.value === 'cutoff' ? cutoffUnmetAudiobooks.value : wantedAudiobooks.value,
+)
+
+// How the active tab is named wherever the bulk action describes what it is about to do.
+const activeBucketLabel = computed(() => (wantedMode.value === 'cutoff' ? 'cutoff unmet' : 'missing'))
+
 const filteredWanted = computed(() => {
-  const items = wantedAudiobooks.value
+  const items = activeWanted.value
   if (!filterText.value) return items
 
   const query = filterText.value.toLowerCase()
@@ -359,6 +466,33 @@ const filteredWanted = computed(() => {
     const series = (item.series || '').toLowerCase()
     return title.includes(query) || authors.includes(query) || series.includes(query)
   })
+})
+
+// What the bulk search button will actually act on: the rows the grid is showing,
+// minus any that already have a search in flight. This has to stay derived from
+// filteredWanted, not from wantedAudiobooks, or the action silently disagrees with
+// the list the operator is looking at.
+const searchTargets = computed(() =>
+  filteredWanted.value.filter((a) => !searching.value[a.id] && !searchResults.value[a.id]),
+)
+
+const searchButtonLabel = computed(() =>
+  filterText.value
+    ? `Search ${searchTargets.value.length} (${activeBucketLabel.value})`
+    : `Search All (${activeBucketLabel.value})`,
+)
+
+// What the dialog is about to act on, for whichever button opened it.
+const searchConfirmCount = computed(() =>
+  pendingSearchScope.value === 'selected' ? selectedCount.value : searchTargets.value.length,
+)
+
+const searchConfirmMessage = computed(() => {
+  const count = searchConfirmCount.value
+  const noun = count === 1 ? 'audiobook' : 'audiobooks'
+  const subject =
+    pendingSearchScope.value === 'selected' ? 'selected' : activeBucketLabel.value
+  return `Start an automatic search for ${count} ${subject} ${noun}? Each one queries every configured indexer, one per second, so this takes about ${formatSearchDuration(count)}.`
 })
 
 const visibleWanted = computed(() => {
@@ -408,6 +542,41 @@ function getActiveDownload(item: Audiobook): Download | undefined {
   return activeDownloadsByAudiobook.value.get(item.id)
 }
 
+// Rows the user may tick. A book already downloading is excluded: searching it
+// again would send a second grab for a release that is already in flight, which
+// is the thing a per-row Search is careful not to do. Because this is derived
+// rather than pruned on an event, a book that starts downloading while ticked
+// drops out of the count on its own.
+const selectableWanted = computed(() =>
+  filteredWanted.value.filter((item) => !hasActiveDownload(item)),
+)
+
+const selectableWantedIds = computed(() => selectableWanted.value.map((item) => item.id))
+
+const {
+  selectedIds: selectedWantedIds,
+  selectedCount,
+  isSelected,
+  toggleSelection,
+  selectAll,
+  clearSelection,
+  allSelected: allWantedSelected,
+} = useRowSelection<number>(() => selectableWantedIds.value)
+
+function onSelectionCheckboxChange(item: Audiobook, event: Event) {
+  event.stopPropagation()
+  toggleSelection(item.id)
+}
+
+function onSelectAllChange(event: Event) {
+  event.stopPropagation()
+  if (allWantedSelected.value) {
+    clearSelection()
+  } else {
+    selectAll()
+  }
+}
+
 function getStatusClass(item: Audiobook): string {
   if (hasActiveDownload(item)) {
     return 'downloading'
@@ -438,12 +607,98 @@ function getStatusText(item: Audiobook): string {
   return 'Missing'
 }
 
-const searchMissing = async () => {
-  logger.debug('Automatic search for all missing audiobooks')
+function formatSearchDuration(count: number): string {
+  const seconds = Math.round((count * SEARCH_SPACING_MS) / 1000)
+  if (seconds < 60) return `${Math.max(seconds, 1)} seconds`
+  const minutes = Math.round(seconds / 60)
+  return minutes === 1 ? 'a minute' : `${minutes} minutes`
+}
 
-  for (const audiobook of categorizedWanted.value.missing) {
-    await searchAudiobook(audiobook)
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+function requestSearchMissing() {
+  if (searchTargets.value.length === 0) return
+  pendingSearchScope.value = 'all'
+  showSearchConfirm.value = true
+}
+
+// Search Selected is a bulk search too. It goes through the same dialog rather
+// than firing on the click, because Select All puts a whole page's worth of
+// indexer queries one button away, which is the case the dialog was added for.
+function requestSearchSelected() {
+  if (selectedCount.value === 0) return
+  pendingSearchScope.value = 'selected'
+  showSearchConfirm.value = true
+}
+
+function cancelSearchMissing() {
+  if (searchRunning.value) return
+  showSearchConfirm.value = false
+}
+
+const confirmSearchMissing = async () => {
+  if (searchRunning.value) return
+
+  if (pendingSearchScope.value === 'selected') {
+    showSearchConfirm.value = false
+    await searchSelected()
+    return
+  }
+
+  // Snapshot before the first search, because searchAudiobook mutates the
+  // searching/searchResults maps that searchTargets is derived from.
+  const targets = [...searchTargets.value]
+  showSearchConfirm.value = false
+  if (targets.length === 0) return
+
+  bulkSearchRunning.value = true
+  searchRunAborted = false
+  logger.debug(`Automatic search for ${targets.length} ${activeBucketLabel.value} audiobooks`)
+
+  try {
+    for (const audiobook of targets) {
+      if (searchRunAborted) return
+      await searchAudiobook(audiobook)
+      await new Promise((resolve) => setTimeout(resolve, SEARCH_SPACING_MS))
+    }
+  } finally {
+    bulkSearchRunning.value = false
+  }
+}
+
+const searchSelected = async () => {
+  // Read the ids once. The loop awaits, and the selection is derived from live
+  // data, so re-reading it each pass would let the set change mid-run.
+  const ids = [...selectedWantedIds.value]
+  if (ids.length === 0) return
+
+  // Look the books up in the bucket the tab is showing, not in wantedAudiobooks.
+  // Cutoff Unmet rows are never in wantedAudiobooks (the server clears `wanted`
+  // for anything that has a file), so reading that list would find nothing and
+  // the run would quietly search no books at all on that tab.
+  const byId = new Map(activeWanted.value.map((item) => [item.id, item]))
+
+  logger.debug('Automatic search for selected audiobooks:', ids.length)
+  searchSelectedRunning.value = true
+  searchRunAborted = false
+
+  try {
+    for (const id of ids) {
+      if (searchRunAborted) return
+
+      const audiobook = byId.get(id)
+      if (!audiobook) continue
+
+      // Re-check rather than trusting the snapshot: an earlier pass in this same
+      // run, or a push from the downloads hub, may have started a download for
+      // this book since the ids were read.
+      if (hasActiveDownload(audiobook)) continue
+
+      await searchAudiobook(audiobook)
+      await new Promise((resolve) => setTimeout(resolve, SEARCH_SPACING_MS))
+    }
+
+    if (!searchRunAborted) clearSelection()
+  } finally {
+    searchSelectedRunning.value = false
   }
 }
 
@@ -567,6 +822,34 @@ const markAsSkipped = async (item: Audiobook) => {
   height: 32px;
 }
 
+.wanted-tabs {
+  display: flex;
+  gap: 4px;
+  margin-right: auto;
+}
+
+.wanted-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 6px 12px;
+}
+
+.wanted-tab.active {
+  background-color: rgba(var(--brand-rgb), 0.12);
+  border-color: rgba(var(--brand-rgb), 0.35);
+  color: var(--brand-500);
+}
+
+.wanted-tab-count {
+  color: inherit;
+  margin-left: 6px;
+  opacity: 0.75;
+}
+
 .wanted-actions {
   display: flex;
   gap: 0.75rem;
@@ -656,9 +939,36 @@ const markAsSkipped = async (item: Audiobook) => {
 .wanted-row {
   display: grid;
   grid-template-columns:
-    48px minmax(0, 28fr) minmax(0, 20fr) minmax(0, 18fr) minmax(0, 10fr)
+    40px 48px minmax(0, 28fr) minmax(0, 20fr) minmax(0, 18fr) minmax(0, 10fr)
     minmax(0, 12fr) minmax(0, 12fr);
   align-items: center;
+}
+
+/* Selection cell, shared by the header and the rows */
+.col-select {
+  justify-content: center;
+}
+
+.selection-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.selection-checkbox input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #fa5252;
+}
+
+.selection-checkbox input[type='checkbox']:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.wanted-row.selected {
+  background-color: rgba(250, 82, 82, 0.08);
 }
 
 .wanted-header {
@@ -668,6 +978,10 @@ const markAsSkipped = async (item: Audiobook) => {
   background: #252525;
   padding: 0.65rem 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.wanted-header > .col-select {
+  padding: 0;
 }
 
 .wanted-header > div {
@@ -983,7 +1297,7 @@ const markAsSkipped = async (item: Audiobook) => {
 
   /* Each row becomes a card */
   .wanted-row {
-    grid-template-columns: 40px 1fr auto;
+    grid-template-columns: auto 40px 1fr auto;
     grid-template-rows: auto auto;
     gap: 0.2rem 0.6rem;
     padding: 0.75rem;
@@ -1010,28 +1324,34 @@ const markAsSkipped = async (item: Audiobook) => {
     display: none;
   }
 
-  /* Row 1: Poster (spans 2 rows) | Title | Status */
-  .wanted-row .col-poster {
+  /* Row 1: Select (spans 2 rows) | Poster (spans 2 rows) | Title | Status */
+  .wanted-row .col-select {
     grid-column: 1;
     grid-row: 1 / 3;
     align-self: center;
   }
 
-  .wanted-row .col-title {
+  .wanted-row .col-poster {
     grid-column: 2;
+    grid-row: 1 / 3;
+    align-self: center;
+  }
+
+  .wanted-row .col-title {
+    grid-column: 3;
     grid-row: 1;
     min-width: 0;
   }
 
   .wanted-row .col-status {
-    grid-column: 3;
+    grid-column: 4;
     grid-row: 1;
     white-space: nowrap;
   }
 
   /* Row 2: Author | Actions */
   .wanted-row .col-author {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 2;
     min-width: 0;
   }
@@ -1045,7 +1365,7 @@ const markAsSkipped = async (item: Audiobook) => {
   }
 
   .wanted-row .col-actions {
-    grid-column: 3;
+    grid-column: 4;
     grid-row: 2;
     display: flex;
     justify-content: flex-end;
