@@ -21,20 +21,17 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             _logger = logger;
         }
 
-        public string BuildSearchQuery(Audiobook audiobook)
+        /// <summary>
+        /// The ordered query forms for an audiobook the sweep is trying to find.
+        /// </summary>
+        /// <remarks>
+        /// The series used to be appended to the one query this method produced, which narrowed
+        /// every sweep query by a term the indexer's own title may well not carry. It is a rung of
+        /// its own in the plan now, reached only when the title forms come back empty.
+        /// </remarks>
+        public SearchQueryPlan BuildSearchPlan(Audiobook audiobook)
         {
-            var parts = new List<string>();
-
-            if (!string.IsNullOrEmpty(audiobook.Title))
-                parts.Add(audiobook.Title);
-
-            if (audiobook.Authors != null && audiobook.Authors.Any())
-                parts.Add(audiobook.Authors.First());
-
-            if (!string.IsNullOrEmpty(audiobook.Series))
-                parts.Add(audiobook.Series);
-
-            return string.Join(" ", parts);
+            return AudiobookSearchQueryBuilder.BuildPlan(audiobook);
         }
 
         public bool IsTorrentResult(SearchResult result)
