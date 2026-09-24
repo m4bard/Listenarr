@@ -1931,6 +1931,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("MaxConcurrentDownloads")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("MaxConcurrentIndexerSearches")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("MetadataRefreshEnabled")
                         .HasColumnType("INTEGER");
 
