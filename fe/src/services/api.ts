@@ -20,11 +20,15 @@ import type {
   Download,
   ApiConfiguration,
   DownloadClientConfiguration,
+  DownloadClientStatus,
   ApplicationSettings,
   ProwlarrImportConnectionSettings,
   Audiobook,
   AudiobookUpdateRequest,
   History,
+  HistoryDetails,
+  HistoryPage,
+  HistoryQueryParams,
   Indexer,
   QueueItem,
   QueueSnapshot,
@@ -36,6 +40,8 @@ import type {
   SystemInfo,
   StorageInfo,
   ServiceHealth,
+  ScheduledTask,
+  ScheduledTaskRun,
   LogEntry,
   QualityProfile,
   SearchSortBy,
@@ -700,8 +706,45 @@ class ApiService {
     })
   }
 
-  async cancelDownload(id: string): Promise<boolean> {
-    return this.request<boolean>(`/downloads/${id}`, { method: 'DELETE' })
+  /**
+   * Delete a download record. The server also removes the item from its download client
+   * unless removeFromClient is false, in which case only the Listenarr record goes and the
+   * client is left alone. Callers pass the value their UI has promised the user.
+   */
+  async cancelDownload(id: string, removeFromClient: boolean = true): Promise<boolean> {
+    return this.request<boolean>(`/downloads/${id}?removeFromClient=${removeFromClient}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async retryBlockedImport(
+    id: string,
+  ): Promise<{ message: string; id: string; status: string; jobId: string }> {
+    return this.request<{ message: string; id: string; status: string; jobId: string }>(
+      `/downloads/${id}/retry-import`,
+      { method: 'POST' },
+    )
+  }
+
+  // Removes the download record only. The route is shared with cancelDownload because the
+  // server does the same thing either way, but the intent differs: cancelling stops something
+  // in flight, whereas this clears a row for a download that has already stopped for good.
+  async deleteDownload(id: string): Promise<{ message: string; id: string }> {
+    return this.request<{ message: string; id: string }>(`/downloads/${id}`, { method: 'DELETE' })
+  }
+
+  async clearCompletedDownloads(): Promise<{ message: string; count: number }> {
+    return this.request<{ message: string; count: number }>('/downloads/completed', {
+      method: 'DELETE',
+    })
+  }
+
+  // The endpoint sweeps ImportBlocked records as well as Failed ones, which the confirmation copy
+  // in QueueToolbar.vue has to say out loud until that is fixed upstream.
+  async clearFailedDownloads(): Promise<{ message: string; count: number }> {
+    return this.request<{ message: string; count: number }>('/downloads/failed', {
+      method: 'DELETE',
+    })
   }
 
   async getCachedAnnounces(
@@ -841,23 +884,56 @@ class ApiService {
     })
   }
 
+  async getDownloadClientStatuses(): Promise<DownloadClientStatus[]> {
+    return this.request<DownloadClientStatus[]>('/download-clients/status')
+  }
+
   async testNotification(
-    trigger?: string,
-    data?: Record<string, unknown>,
+    trigger: string,
+    data: Record<string, unknown>,
     webhookId?: string,
     webhookUrl?: string,
   ): Promise<{ success: boolean; message: string }> {
-    // If trigger and data are provided, use the new diagnostics endpoint
-    if (trigger && data) {
-      return this.request<{ success: boolean; message: string }>('/diagnostics/test-notification', {
-        method: 'POST',
-        body: JSON.stringify({ trigger, data, webhookId, webhookUrl }),
-      })
-    }
-    // Otherwise send a test notification using the saved notification settings.
-    return this.request<{ success: boolean; message: string }>('/notifications/test', {
+    return this.request<{ success: boolean; message: string }>('/diagnostics/test-notification', {
       method: 'POST',
+      body: JSON.stringify({ trigger, data, webhookId, webhookUrl }),
     })
+  }
+
+  // Exercises one configured notification subscriber instance (e.g. Custom Script) and reports
+  // whether it works. See NotificationsController.TestSubscriber; the endpoint answers 200 on
+  // success and 400/404 on a reported or unresolvable failure, so a non-2xx here is a normal
+  // outcome and is parsed rather than treated as a transport error.
+  async testNotificationSubscriber(
+    subscriberName: string,
+    configurationId: string,
+  ): Promise<{ success: boolean; message: string; failures?: string[] }> {
+    try {
+      return await this.request<{ success: boolean; message: string; failures?: string[] }>(
+        `/notifications/subscribers/${encodeURIComponent(subscriberName)}/test/${encodeURIComponent(configurationId)}`,
+        { method: 'POST' },
+      )
+    } catch (error: unknown) {
+      const err = error as { body?: unknown; message?: string }
+      let message = 'Failed to test notification subscriber'
+      let failures: string[] | undefined
+      if (err?.body) {
+        try {
+          const parsed =
+            typeof err.body === 'string' ? JSON.parse(err.body) : (err.body as Record<string, unknown>)
+          const data = parsed as { message?: string; failures?: string[] }
+          message = data.message || message
+          failures = data.failures
+        } catch {
+          if (typeof err.body === 'string' && err.body.length > 0) {
+            message = err.body
+          }
+        }
+      } else if (err?.message) {
+        message = err.message
+      }
+      return { success: false, message, failures }
+    }
   }
 
   // Application Settings
@@ -874,6 +950,13 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(settings),
     })
+  }
+
+  async emptyRecycleBin(): Promise<{ filesRemoved: number; directoriesRemoved: number }> {
+    return this.request<{ filesRemoved: number; directoriesRemoved: number }>(
+      '/configuration/recyclebin',
+      { method: 'DELETE' },
+    )
   }
 
   async getProwlarrImportSettings(): Promise<ProwlarrImportConnectionSettings> {
@@ -1759,25 +1842,29 @@ class ApiService {
   }
 
   // History API
-  async getHistory(
-    limit?: number,
-    offset?: number,
-  ): Promise<{
-    history: History[]
-    total: number
-    limit: number
-    offset: number
-  }> {
-    const params = new URLSearchParams()
-    if (limit) params.append('limit', limit.toString())
-    if (offset) params.append('offset', offset.toString())
-    const queryString = params.toString()
-    return this.request<{
-      history: History[]
-      total: number
-      limit: number
-      offset: number
-    }>(`/history${queryString ? '?' + queryString : ''}`)
+  /**
+   * Query history. The endpoint takes twelve parameters and this used to send two of them,
+   * so no page built on it could filter, sort or bound a date range. Undefined values are
+   * left off the query string rather than sent empty, because the server treats an empty
+   * string as a filter rather than as no filter.
+   */
+  async getHistory(params: HistoryQueryParams = {}): Promise<HistoryPage> {
+    const query = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === null || value === '') continue
+      query.append(key, String(value))
+    }
+    const queryString = query.toString()
+    return this.request<HistoryPage>(`/history${queryString ? '?' + queryString : ''}`)
+  }
+
+  /**
+   * One history entry plus every other attempt sharing its correlation id. This is the whole
+   * chain behind a download rather than one row's opaque data blob, which is what makes a
+   * per-row expansion worth opening.
+   */
+  async getHistoryDetails(id: number): Promise<HistoryDetails> {
+    return this.request<HistoryDetails>(`/history/${id}/details`)
   }
 
   async getHistoryByAudiobookId(audiobookId: number): Promise<History[]> {
@@ -1810,13 +1897,14 @@ class ApiService {
     })
   }
 
-  async cleanupOldHistory(days: number = 90): Promise<{ message: string; deletedCount: number }> {
-    return this.request<{ message: string; deletedCount: number }>(
-      `/history/cleanup?days=${days}`,
-      {
-        method: 'DELETE',
-      },
-    )
+  async cleanupOldHistory(days?: number): Promise<{ message: string; deletedCount: number }> {
+    // When `days` is omitted, no query param is sent, and the server falls back to the
+    // configured HistoryRetentionDays setting. Do not default this to a hardcoded value here:
+    // that would silently override the setting on every call that does not explicitly pass one.
+    const query = days === undefined ? '' : `?days=${days}`
+    return this.request<{ message: string; deletedCount: number }>(`/history/cleanup${query}`, {
+      method: 'DELETE',
+    })
   }
 
   // Indexers API
@@ -1961,6 +2049,20 @@ class ApiService {
 
   async getServiceHealth(): Promise<ServiceHealth> {
     return this.request<ServiceHealth>('/system/health')
+  }
+
+  async getScheduledTasks(): Promise<ScheduledTask[]> {
+    return this.request<ScheduledTask[]>('/system/tasks')
+  }
+
+  // The name is a path segment, so it is encoded rather than interpolated raw. Not for
+  // the dots in a name like move.scan.handoff.recovery: those are unreserved and come
+  // back unchanged. It guards the characters that would change which route is addressed,
+  // a slash above all, and then ?, # and a space.
+  async runScheduledTask(taskName: string): Promise<ScheduledTaskRun> {
+    return this.request<ScheduledTaskRun>(`/system/tasks/${encodeURIComponent(taskName)}/run`, {
+      method: 'POST',
+    })
   }
 
   async getLogs(limit: number = 100): Promise<LogEntry[]> {
@@ -2304,7 +2406,13 @@ export const translatePath = (request: TranslatePathRequest) => apiService.trans
 export const getSystemInfo = () => apiService.getSystemInfo()
 export const getStorageInfo = () => apiService.getStorageInfo()
 export const getServiceHealth = () => apiService.getServiceHealth()
+export const getScheduledTasks = () => apiService.getScheduledTasks()
+export const runScheduledTask = (taskName: string) => apiService.runScheduledTask(taskName)
 export const getLogs = (limit?: number) => apiService.getLogs(limit)
+export const getHistory = (params?: HistoryQueryParams) => apiService.getHistory(params)
+export const getHistoryDetails = (id: number) => apiService.getHistoryDetails(id)
+export const deleteHistoryEntry = (id: number) => apiService.deleteHistoryEntry(id)
+export const clearAllHistory = () => apiService.clearAllHistory()
 export const downloadLogs = () => apiService.downloadLogs()
 
 // Export individual quality profile functions for convenience
@@ -2323,6 +2431,7 @@ export const scoreSearchResults = (profileId: number, searchResults: SearchResul
 // Download client helpers
 export const testDownloadClient = (config: Partial<DownloadClientConfiguration>) =>
   apiService.testDownloadClient(config)
+export const getDownloadClientStatuses = () => apiService.getDownloadClientStatuses()
 
 // Audible helpers
 // ...existing code...

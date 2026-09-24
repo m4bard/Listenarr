@@ -18,6 +18,11 @@ internal static class SystemDiagnosticRegistrationExtensions
     public static IServiceCollection AddSystemDiagnosticServices(this IServiceCollection services)
     {
         services.AddSingleton<IAppMetricsService, MeterAppMetricsService>();
+        services.AddSingleton<MeterListenerAppMetricsSnapshotProvider>();
+        services.AddSingleton<IAppMetricsSnapshotProvider>(
+            provider => provider.GetRequiredService<MeterListenerAppMetricsSnapshotProvider>());
+        services.AddHostedService(
+            provider => provider.GetRequiredService<MeterListenerAppMetricsSnapshotProvider>());
         services.AddSingleton<IProcessRunner, SystemProcessRunner>();
         services.AddScoped<IProcessExecutionStore, ProcessExecutionStore>();
         services.AddSingleton<IDiskSpaceProbe, DiskSpaceProbe>();
