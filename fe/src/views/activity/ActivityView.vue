@@ -1209,9 +1209,14 @@ onUnmounted(() => {
   opacity: 0.86;
 }
 
-/* Grid container with virtual scrolling */
+/* Grid container with virtual scrolling.
+   height: auto + max-height (rather than a forced height) lets the container
+   shrink to fit content shorter than the viewport-relative cap instead of
+   always reserving calc(100vh - 200px) of space below the last row. Long
+   lists still hit the cap and scroll exactly as before. */
 .queue-grid-container {
-  height: calc(100vh - 200px);
+  height: auto;
+  max-height: calc(100vh - 200px);
   overflow-y: auto;
   position: relative;
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -1221,6 +1226,7 @@ onUnmounted(() => {
 
 .queue-grid-container.is-static {
   height: auto;
+  max-height: none;
   overflow-y: visible;
 }
 
@@ -1722,6 +1728,7 @@ onUnmounted(() => {
 
   .queue-grid-container {
     height: auto;
+    max-height: none;
     overflow-y: visible;
     border: none;
     background: transparent;
