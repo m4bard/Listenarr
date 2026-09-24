@@ -110,6 +110,81 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
             Assert.DoesNotContain(download.ImportBlockMessages, m => m.Contains("{job.Id}", StringComparison.OrdinalIgnoreCase));
         }
 
+        [Theory]
+        [InlineData(0, ProcessingJobStatus.Failed)]
+        [InlineData(3, ProcessingJobStatus.Pending)]
+        [Trait("Scenario", "The configured retry budget decides whether a first failure is terminal")]
+        public async Task MissingSource_RespectsTheConfiguredRetryBudget(int maxRetries, ProcessingJobStatus expected)
+        {
+            // Settings > Download exposes this as Missing-source Max Retries. With a budget of zero
+            // the first failure is terminal; with the default of three it schedules a retry. The
+            // second case is the control: without it this would also pass against an implementation
+            // that always failed immediately.
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithMissingSourceMaxRetries(maxRetries)
+                .Build());
+
+            var sourceDirectory = FileService.GetTempDirectory("budget-source");
+            var missing = Path.Join(sourceDirectory, "notThere");
+
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithAudiobook(await CreateAudiobook())
+                .WithDownloadClientConfiguration(await CreateDownloadClientConfiguration())
+                .WithPath(missing)
+                .WithCompletedStatus(at: DateTime.UtcNow)
+                .Build());
+
+            var job = await _downloadProcessingJobRepository.AddAsync(new DownloadProcessingJobBuilder()
+                .WithDownload(download)
+                .Build());
+
+            await _provider.GetRequiredService<DownloadProcessingJobProcessor>()
+                .ProcessQueueAsync(CancellationToken.None);
+
+            job = await _downloadProcessingJobRepository.GetByIdAsync(job.Id);
+            Assert.NotNull(job);
+            Assert.Equal(maxRetries, job!.MaxRetries);
+            Assert.Equal(expected, job.Status);
+        }
+
+        [Fact]
+        [Trait("Scenario", "The configured initial delay decides when the first retry falls due")]
+        public async Task MissingSource_RespectsTheConfiguredRetryInitialDelay()
+        {
+            // Settings > Download exposes this as Missing-source Retry Initial Delay. Nothing
+            // else asserts that the processor reads it. The domain tests hand ScheduleRetry a
+            // delay directly, so a processor that ignored the setting and let the parameter
+            // default to thirty seconds would keep every one of them green. Ten minutes is far
+            // enough from that default that the two cannot be mistaken for each other.
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithMissingSourceRetryInitialDelaySeconds(600)
+                .Build());
+
+            var sourceDirectory = FileService.GetTempDirectory("delay-source");
+            var missing = Path.Join(sourceDirectory, "notThere");
+
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithAudiobook(await CreateAudiobook())
+                .WithDownloadClientConfiguration(await CreateDownloadClientConfiguration())
+                .WithPath(missing)
+                .WithCompletedStatus(at: DateTime.UtcNow)
+                .Build());
+
+            var job = await _downloadProcessingJobRepository.AddAsync(new DownloadProcessingJobBuilder()
+                .WithDownload(download)
+                .Build());
+
+            var before = DateTime.UtcNow;
+            await _provider.GetRequiredService<DownloadProcessingJobProcessor>()
+                .ProcessQueueAsync(CancellationToken.None);
+
+            job = await _downloadProcessingJobRepository.GetByIdAsync(job.Id);
+            Assert.NotNull(job);
+            Assert.Equal(ProcessingJobStatus.Pending, job!.Status);
+            Assert.NotNull(job.NextRetryAt);
+            Assert.InRange((job.NextRetryAt!.Value - before).TotalSeconds, 570, 660);
+        }
+
         [Fact]
         [Trait("Scenario", "ExternalImportResolverRecoversStaleDownloadPath")]
         public async Task Import_ExternalClientStaleDownloadPath_UsesResolvedSourceFiles()
@@ -284,9 +359,15 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
                     [DirectDownloadMetadataKeys.DownloadType] = DirectDownloadMetadataKeys.ClientId
                 }
             });
-            var job = await _downloadProcessingJobRepository.AddAsync(new DownloadProcessingJobBuilder()
+            // Start with the retry budget spent, so this exercises the attempt that gives up.
+            // A failed publication is retried now rather than blocking on the first attempt, and
+            // the FailedResults contract below is written by the terminal attempt, which is the
+            // one this test is about.
+            var seed = new DownloadProcessingJobBuilder()
                 .WithDownload(download)
-                .Build());
+                .Build();
+            seed.RetryCount = seed.MaxRetries;
+            var job = await _downloadProcessingJobRepository.AddAsync(seed);
 
             await _provider.GetRequiredService<DownloadProcessingJobProcessor>()
                 .ProcessQueueAsync(CancellationToken.None);
@@ -310,9 +391,97 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
             Assert.Equal((int)ImportSourceDisposition.Retained,
                 failedResult.GetProperty("SourceDisposition").GetInt32());
             Assert.Equal(warningCode, failedResult.GetProperty("WarningCode").GetString());
-            Assert.Equal(sourcePath, failedResult.GetProperty("SourcePath").GetString());
-            Assert.Equal(finalPath, failedResult.GetProperty("FinalPath").GetString());
+            // The History API returns this row whole (issue #975), so the directories that
+            // held the source and destination must not survive into it: only the filename.
+            Assert.Equal(Path.GetFileName(sourcePath), failedResult.GetProperty("SourcePath").GetString());
+            Assert.Equal(Path.GetFileName(finalPath), failedResult.GetProperty("FinalPath").GetString());
+            Assert.DoesNotContain(Path.GetDirectoryName(sourcePath)!, failedImport.Data);
+            Assert.DoesNotContain(Path.GetDirectoryName(finalPath)!, failedImport.Data);
+            // This result carries no FailureClass (built directly rather than through a
+            // classifying factory), and its Message is already a safe, descriptive sentence
+            // with no path or exception text, so it survives unchanged.
             Assert.Equal(message, failedResult.GetProperty("Message").GetString());
+        }
+
+        [Fact]
+        public async Task Import_FailedWithPathBearingException_ClassifiesTheFailureWithoutLeakingThePath()
+        {
+            // A distinctive fragment standing in for anything on a real host's directory
+            // layout (a share name, a username) that must never survive into an API response.
+            const string leakCanary = "path-leak-canary-marker";
+            var importService = new Mock<IDownloadImportService>();
+            var sourceDirectory = FileService.GetTempDirectory(leakCanary);
+            var sourcePath = await FileService.GetFileAsync(sourceDirectory, "book.m4b");
+            // Shaped like a real .NET DirectoryNotFoundException: it quotes the full path.
+            // This is the control input a naive fix (e.g. just running the message through
+            // LogRedaction.SanitizeText) would fail against, since SanitizeText strips control
+            // characters and truncates but does not redact path content.
+            var directoryException = new DirectoryNotFoundException(
+                $"Could not find a part of the path '{sourcePath}'.");
+            importService
+                .Setup(service => service.ImportDownloadFilesAsync(
+                    It.IsAny<Audiobook>(),
+                    It.IsAny<List<string>>(),
+                    It.IsAny<CancellationToken>(),
+                    It.IsAny<DownloadImportOptions?>()))
+                .ReturnsAsync([ImportResult.Exception(directoryException, sourcePath)]);
+            Init(builder => builder.WithSingleton<IDownloadImportService>(importService.Object));
+            var audiobook = await CreateAudiobook();
+            var download = await _downloadRepository.AddAsync(new Download
+            {
+                Id = $"ddl-{Guid.NewGuid():N}",
+                AudiobookId = audiobook.Id,
+                Title = "Path Leak Canary Book",
+                Artist = "DDL Author",
+                Album = "Path Leak Canary Book",
+                DownloadClientId = DirectDownloadMetadataKeys.ClientId,
+                Status = DownloadStatus.Completed,
+                StartedAt = DateTime.UtcNow.AddMinutes(-5),
+                CompletedAt = DateTime.UtcNow,
+                DownloadPath = sourcePath,
+                Metadata = new Dictionary<string, object>
+                {
+                    [DirectDownloadMetadataKeys.DownloadType] = DirectDownloadMetadataKeys.ClientId
+                }
+            });
+            // Start with the retry budget spent. An import whose every file failed is retried
+            // now rather than blocking on the first attempt, and the ImportFailed row this
+            // test inspects is written by the terminal attempt.
+            var seed = new DownloadProcessingJobBuilder()
+                .WithDownload(download)
+                .Build();
+            seed.RetryCount = seed.MaxRetries;
+            var job = await _downloadProcessingJobRepository.AddAsync(seed);
+
+            await _provider.GetRequiredService<DownloadProcessingJobProcessor>()
+                .ProcessQueueAsync(CancellationToken.None);
+
+            var page = await _historyRepository.QueryAsync(new HistoryQuery
+            {
+                DownloadId = download.Id.ToUpperInvariant(),
+                Limit = 100
+            });
+            var failedImport = Assert.Single(page.Records, history =>
+                history.EventType == HistoryEvents.ImportFailed);
+
+            // The control: the History API returns this row whole, so neither the
+            // directory nor the canary fragment inside it may appear anywhere in the row.
+            Assert.DoesNotContain(sourceDirectory, failedImport.Data, StringComparison.Ordinal);
+            Assert.DoesNotContain(leakCanary, failedImport.Data, StringComparison.Ordinal);
+            Assert.DoesNotContain(leakCanary, failedImport.Message ?? string.Empty, StringComparison.Ordinal);
+            Assert.DoesNotContain(leakCanary, failedImport.Error ?? string.Empty, StringComparison.Ordinal);
+
+            using var details = JsonDocument.Parse(failedImport.Data!);
+            var failedResult = Assert.Single(details.RootElement
+                .GetProperty("FailedResults")
+                .EnumerateArray());
+            // DirectoryNotFoundException classifies to a fixed sentence: the exception's
+            // own text (which quoted the path) never reaches the row.
+            Assert.Equal(
+                "Failed to import file, destination unavailable",
+                failedResult.GetProperty("Message").GetString());
+            // The filename alone is retained; only the directory is stripped.
+            Assert.Equal(Path.GetFileName(sourcePath), failedResult.GetProperty("SourcePath").GetString());
         }
 
         [Fact]
@@ -622,6 +791,131 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
             Assert.Equal(DownloadStatus.Moved, (await _downloadRepository.GetByIdAsync(download.Id))!.Status);
             Assert.Equal(1, downloadClientGatewayMock.GetCallCount(nameof(downloadClientGatewayMock.GetQueueItemAsync)));
             Assert.Equal(2, downloadClientGatewayMock.GetCallCount(nameof(downloadClientGatewayMock.MarkItemAsImportedAsync)));
+        }
+
+        [Fact]
+        [Trait("Scenario", "FailedFileImportRetriesBeforeBlocking")]
+        public async Task Import_FileImportFailure_RetriesBeforeBlockingTheDownload()
+        {
+            // Arrange
+            var source = FileService.GetTempDirectory("failing-source");
+            var filePath = await FileService.GetFileAsync(source, "audiobook.mp3");
+            downloadClientGatewayMock.SourceFiles = [filePath];
+
+            var importService = new Mock<IDownloadImportService>();
+            importService
+                .Setup(service => service.ImportDownloadFilesAsync(
+                    It.IsAny<Audiobook>(),
+                    It.IsAny<List<string>>(),
+                    It.IsAny<CancellationToken>(),
+                    It.IsAny<DownloadImportOptions?>()))
+                .ReturnsAsync((Audiobook _, List<string> files, CancellationToken _, DownloadImportOptions? _) =>
+                    [ImportResult.ImportFailure(FileAction.Copy, files[0], files[0])]);
+            Init(builder => builder.WithSingleton<IDownloadImportService>(importService.Object));
+
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithAudiobook(await CreateAudiobook())
+                .WithDownloadClientConfiguration(await CreateDownloadClientConfiguration())
+                .WithPath(source)
+                .WithCompletedStatus(at: DateTime.UtcNow)
+                .Build());
+            var job = await _downloadProcessingJobRepository.AddAsync(new DownloadProcessingJobBuilder()
+                .WithDownload(download)
+                .Build());
+
+            // Act
+            var processor = _provider.GetRequiredService<DownloadProcessingJobProcessor>();
+            await processor.ProcessQueueAsync(CancellationToken.None);
+
+            // Assert: the first failure is retried, not treated as terminal
+            job = await _downloadProcessingJobRepository.GetByIdAsync(job.Id);
+            Assert.NotNull(job);
+            Assert.Equal(ProcessingJobStatus.Pending, job.Status);
+            Assert.Equal(1, job.RetryCount);
+
+            download = await _downloadRepository.FindAsync(download.Id);
+            Assert.NotNull(download);
+            Assert.Equal(DownloadStatus.ImportPending, download.Status);
+
+            // Act: spend the remaining attempts
+            job.RetryCount = job.MaxRetries;
+            await TestUtils.CancelJobRetryWait(_downloadProcessingJobRepository, job);
+            await processor.ProcessQueueAsync(CancellationToken.None);
+
+            // Assert: an import that keeps failing still ends up blocked
+            job = await _downloadProcessingJobRepository.GetByIdAsync(job.Id);
+            Assert.NotNull(job);
+            Assert.Equal(ProcessingJobStatus.Failed, job.Status);
+
+            download = await _downloadRepository.FindAsync(download.Id);
+            Assert.NotNull(download);
+            Assert.Equal(DownloadStatus.ImportBlocked, download.Status);
+        }
+
+        [Fact]
+        [Trait("Scenario", "PartialImportFailureStaysTerminal")]
+        public async Task Import_PartialFileImportFailure_BlocksOnTheFirstAttemptAndKeepsFailedResults()
+        {
+            // The other half of the change above, and the reason it is scoped to the all-failed
+            // case. Retrying a partial failure buys nothing: the retry re-enters the import block
+            // from the top, and under the Move completed-file action the file that did import is
+            // no longer in the download directory, so the count guard fails the job on a mismatch
+            // caused by the earlier success. The history entry would then carry that mismatch
+            // instead of the per-file FailedResults asserted below.
+            var source = FileService.GetTempDirectory("partial-failure-source");
+            var importedPath = await FileService.GetFileAsync(source, "one.mp3");
+            var failedPath = await FileService.GetFileAsync(source, "two.mp3");
+            downloadClientGatewayMock.SourceFiles = [importedPath, failedPath];
+
+            var importService = new Mock<IDownloadImportService>();
+            importService
+                .Setup(service => service.ImportDownloadFilesAsync(
+                    It.IsAny<Audiobook>(),
+                    It.IsAny<List<string>>(),
+                    It.IsAny<CancellationToken>(),
+                    It.IsAny<DownloadImportOptions?>()))
+                .ReturnsAsync([
+                    ImportResult.ImportSuccess(FileAction.Move, importedPath, importedPath, wasRegisteredToAudiobook: true),
+                    ImportResult.ImportFailure(FileAction.Move, failedPath, failedPath)
+                ]);
+            Init(builder => builder.WithSingleton<IDownloadImportService>(importService.Object));
+
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithAudiobook(await CreateAudiobook())
+                .WithDownloadClientConfiguration(await CreateDownloadClientConfiguration())
+                .WithPath(source)
+                .WithCompletedStatus(at: DateTime.UtcNow)
+                .Build());
+            var job = await _downloadProcessingJobRepository.AddAsync(new DownloadProcessingJobBuilder()
+                .WithDownload(download)
+                .Build());
+
+            await _provider.GetRequiredService<DownloadProcessingJobProcessor>()
+                .ProcessQueueAsync(CancellationToken.None);
+
+            job = await _downloadProcessingJobRepository.GetByIdAsync(job.Id);
+            Assert.NotNull(job);
+            Assert.Equal(ProcessingJobStatus.Failed, job.Status);
+            Assert.Equal(0, job.RetryCount);
+
+            download = await _downloadRepository.FindAsync(download.Id);
+            Assert.NotNull(download);
+            Assert.Equal(DownloadStatus.ImportBlocked, download.Status);
+
+            var page = await _historyRepository.QueryAsync(new HistoryQuery
+            {
+                DownloadId = download.Id.ToUpperInvariant(),
+                Limit = 100
+            });
+            var failedImport = Assert.Single(page.Records, history =>
+                history.EventType == HistoryEvents.ImportFailed);
+            using var details = JsonDocument.Parse(failedImport.Data!);
+            var failedResult = Assert.Single(details.RootElement
+                .GetProperty("FailedResults")
+                .EnumerateArray());
+            // History rows never carry an absolute filesystem path (issue #975); SourcePath is
+            // reduced to its filename before it reaches this JSON.
+            Assert.Equal(Path.GetFileName(failedPath), failedResult.GetProperty("SourcePath").GetString());
         }
     }
 }
