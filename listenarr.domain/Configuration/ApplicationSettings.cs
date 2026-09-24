@@ -60,11 +60,41 @@ namespace Listenarr.Domain.Configuration
         public string MultiFileNamingPattern { get; set; } = "{Title}-{DiskNumber:00}-{ChapterNumber:00}";
 
         public bool EnableMetadataProcessing { get; set; } = true;
+        /// <summary>
+        /// Dead flag, kept only so this change stays a single additive migration.
+        ///
+        /// Persisted since the Settings page was added and never read by anything. Its
+        /// stored value is true on every existing instance because that was the property
+        /// initialiser, not because an operator chose it, which is why the embedding
+        /// behaviour below is governed by a new column instead of this one. Dropping it is
+        /// a separate mechanical change.
+        /// </summary>
         public bool EnableCoverArtDownload { get; set; } = true;
+
+        /// <summary>
+        /// Embed cover artwork into audio files as they are imported.
+        ///
+        /// This replaces EnableCoverArtDownload, which was persisted from the day the
+        /// Settings page was added and never read by anything. Reusing that column would
+        /// have inherited a stored true on every existing instance, since the value came
+        /// from a property initialiser rather than from anyone choosing it, and embedding
+        /// rewrites the audio file. A new column starts false for everyone, so the
+        /// behaviour is opt-in on upgrade rather than something an operator discovers.
+        /// </summary>
+        public bool EmbedCoverArtInAudioFiles { get; set; } = false;
         public string AudnexusApiUrl { get; set; } = "https://api.audnex.us";
         public int MaxConcurrentDownloads { get; set; } = 3;
         public int PollingIntervalSeconds { get; set; } = 30;
         public bool EnableNotifications { get; set; } = false;
+
+        // Days an automatic backup is kept before it is swept. Manual backups are never swept.
+        // 28 matches the *arr family: Readarr ConfigService.cs:398, Sonarr :422, Prowlarr :179.
+        // Zero or less disables the sweep.
+        public int BackupRetentionDays { get; set; } = 28;
+
+        // Audio file extensions FileUtils.IsAudioFile treats as recognized. Defaults to the same
+        // set FileUtils.AudioExtensions has always used, so an untouched setting reproduces
+        // today's hardcoded behavior exactly.
         public List<string> AllowedFileExtensions
         {
             get
@@ -72,7 +102,7 @@ namespace Listenarr.Domain.Configuration
                 return [.. FileUtils.NormalizeExtensions(field)];
             }
             set;
-        } = [".mp3", ".flac", ".m4a", ".m4b", ".ogg"];
+        } = [.. FileUtils.AudioExtensions];
 
         // Number of seconds a download must be observed in the client as "complete" before
         // the system will finalize it (stability window). Keeping a short default (10s)
@@ -101,6 +131,40 @@ namespace Listenarr.Domain.Configuration
         // Number of days to retain action history. Zero keeps history indefinitely.
         public int HistoryRetentionDays { get; set; } = 0;
 
+        /// <summary>
+        /// Number of days the daily housekeeping sweep keeps a terminal row in the append-only
+        /// journal and cache tables. Zero disables the sweep and keeps every row indefinitely.
+        /// </summary>
+        /// <remarks>
+        /// Thirty, and zero to disable, is Prowlarr's HistoryCleanupDays exactly
+        /// (src/NzbDrone.Core/Configuration/ConfigService.cs:80), which is the only
+        /// operator-configurable window over a database table anywhere in the family. Zero
+        /// already means unlimited in this codebase as well, so the two agree.
+        /// </remarks>
+        public int HousekeepingRetentionDays { get; set; } = 30;
+
+        /// <summary>
+        /// When true the housekeeping sweep evaluates every predicate and logs how many rows it
+        /// would remove, and removes none. Shipped on, so an upgraded install lands in a state
+        /// that writes nothing until an operator has read a cycle's counts.
+        /// </summary>
+        public bool HousekeepingDryRun { get; set; } = true;
+
+        // --- Recycle bin settings (kept as one contiguous block) ---
+
+        // Directory that deleted audiobook files are moved into instead of being unlinked.
+        // Empty means there is no recycle bin and deletion stays permanent. That opt-in
+        // default matches the rest of the family: Readarr ConfigService.cs:93 and Sonarr
+        // ConfigService.cs:100 both default RecycleBin to an empty string.
+        public string RecycleBinPath { get; set; } = string.Empty;
+
+        // How many days a recycled file is kept before the retention sweep removes it.
+        // Zero keeps recycled files until the operator empties the bin by hand. Seven
+        // matches Readarr ConfigService.cs:99 and Sonarr ConfigService.cs:106.
+        public int RecycleBinCleanupDays { get; set; } = 7;
+
+        // --- end recycle bin settings ---
+
         // Failed download handling settings
         public bool FailedDownloadHandlingEnabled { get; set; } = true;
         public bool FailedDownloadAutoSearch { get; set; } = false;
@@ -127,6 +191,18 @@ namespace Listenarr.Domain.Configuration
         /// Multiple webhooks configuration (new format).
         /// </summary>
         public List<WebhookConfiguration>? Webhooks { get; set; }
+
+        /// <summary>
+        /// Configured custom scripts. Each entry is one executable run on the channels it is
+        /// enabled for.
+        /// </summary>
+        public List<CustomScriptConfiguration>? CustomScripts { get; set; }
+
+        /// <summary>
+        /// Configured email notification targets. Each entry is one SMTP server Listenarr sends
+        /// through on the channels it is enabled for.
+        /// </summary>
+        public List<EmailConfiguration>? Emails { get; set; }
 
         // Optional admin credentials submitted from the UI when saving settings.
         // These are NOT mapped to the ApplicationSettings table; they are used to create/update
@@ -234,8 +310,63 @@ namespace Listenarr.Domain.Configuration
         public string DefaultSearchRegion { get; set; } = "us";
 
         /// <summary>
+        /// How many indexers one search may query at the same time. 4 is the ceiling that was
+        /// hardcoded before this became a setting, so an upgraded install searches exactly as it
+        /// did. Lower it when a local Jackett or Prowlarr proxy, or an indexer behind it, wants
+        /// gentler treatment.
+        /// </summary>
+        public int MaxConcurrentIndexerSearches { get; set; } = 4;
+
+        /// <summary>
         /// Preferred default language filter for Add New searches.
         /// </summary>
         public string DefaultSearchLanguage { get; set; } = "english";
+
+        // Scheduled provider-metadata refresh. The interval says how often the walk wakes up;
+        // the staleness age is what actually governs how often a given book is touched.
+        //
+        // On, which is only safe because an upgraded row does not arrive due. Startup gives
+        // every row that has no refresh timestamp the time of that backfill, so an upgraded
+        // library gets a full staleness window before any of it is due, and then ages into the
+        // queue oldest first the way books added after the upgrade do.
+        public bool MetadataRefreshEnabled { get; set; } = true;
+        public int MetadataRefreshIntervalHours { get; set; } = 24;
+        public int MetadataRefreshStaleAfterDays { get; set; } = 30;
+
+        // Deliberately timid. The provider publishes no rate limit, so the shipped budget stays
+        // well under any plausible ceiling; pushback narrows it further at runtime.
+        public int MetadataRefreshRequestsPerHour { get; set; } = 60;
+        public int MetadataRefreshMinimumSpacingMs { get; set; } = 1000;
+
+        // The author identity repair pass. Three states out of two switches, and the order they
+        // are reached in is the point.
+        //
+        // Off, shipped, so an upgrade costs nothing and nothing is rewritten by surprise. Turned
+        // on, it previews: DryRun stays true, so the pass resolves every name it examines and
+        // says what it would change without changing anything, and it can be read twice and give
+        // the same answer. Only when the operator turns DryRun off does it write.
+        //
+        // A pass that rewrites who an author is has to be seen before it runs, which is why the
+        // preview is the state you land in rather than a flag you have to find. The family's
+        // housekeepers do not need this: every Readarr housekeeper is a local recomputation, and
+        // none of them asks a provider who somebody is.
+        public bool AuthorIdentityRepairEnabled { get; set; }
+        public bool AuthorIdentityRepairDryRun { get; set; } = true;
+
+        // Daily, which is HousekeepingCommand's interval in Readarr's TaskManager and the same
+        // one the metadata walk uses here.
+        public int AuthorIdentityRepairIntervalHours { get; set; } = 24;
+
+        // Deliberately small. Every row examined costs at least one provider request out of the
+        // same hourly budget the metadata walk spends, so an unbounded pass would starve the
+        // ordinary refresh for as long as it ran. Rows it does not reach stay at the head of the
+        // queue for the next run.
+        public int AuthorIdentityRepairMaxRowsPerRun { get; set; } = 25;
+
+        // How long a row's identity stays settled before the pass asks about it again. Thirty
+        // days matches MetadataRefreshStaleAfterDays beside it, and it is what makes the queue
+        // finite: without a cutoff a library with more cached authors than the per-run ceiling
+        // re-asks the provider about the same rows every day forever and never reaches the rest.
+        public int AuthorIdentityRepairRecheckAfterDays { get; set; } = 30;
     }
 }
