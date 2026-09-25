@@ -300,10 +300,20 @@ describe('CalendarView search for missing', () => {
   })
 
   it('marks the missing entries on the grid, and only those', async () => {
+    // calendarItems computes status against a real new Date(), not vm.currentDate, so
+    // whether Delta Pending (releases 2026-01-22) reads as missing or unreleased would
+    // otherwise depend on the wall-clock date the suite happens to run on. Pin it to this
+    // fixture's own "now" so the assertion is the fixture's, not the calendar's.
+    vi.useFakeTimers({ now: new Date(2026, 0, 15) })
     const { wrapper } = await mountCalendar()
 
     const entries = wrapper.findAll('.calendar-item')
-    const marked = entries.filter((e) => e.classes().includes('status-no-file'))
+    // "Missing" here is entryTitle's (Missing) suffix, driven by the same isMissing() flag
+    // that decides what the search button targets - independent of the visual status-*
+    // class, which further splits released-but-fileless (status-missing) from
+    // not-yet-released (status-unreleased). The two are allowed to disagree: see the
+    // status-unreleased assertion on Delta Pending below.
+    const marked = entries.filter((e) => (e.attributes('title') ?? '').includes('(Missing)'))
 
     expect(entries.length).toBeGreaterThan(0)
     expect(marked).toHaveLength(3)
@@ -312,10 +322,19 @@ describe('CalendarView search for missing', () => {
     )
 
     const present = entries.find((e) => e.text() === 'Beta Descending')
-    expect(present?.classes()).not.toContain('status-no-file')
+    expect(present?.classes()).toContain('status-downloaded')
     expect(present?.attributes('title')).toBe('Beta Descending - Bob Bard')
 
     const missing = entries.find((e) => e.text() === 'Alpha Rising')
+    expect(missing?.classes()).toContain('status-missing')
     expect(missing?.attributes('title')).toBe('Alpha Rising - Ann Author (Missing)')
+
+    // Delta Pending's release date hasn't arrived, so it's styled unreleased rather than
+    // missing (matching the Readarr-family precedent in calendarEventStatus.ts) - but
+    // isMissing() is unchanged, so it's still a real search target and still reads
+    // "(Missing)" in its title, same as the other two.
+    const unreleased = entries.find((e) => e.text() === 'Delta Pending')
+    expect(unreleased?.classes()).toContain('status-unreleased')
+    expect(unreleased?.attributes('title')).toBe('Delta Pending - Dee Diarist (Missing)')
   })
 })
