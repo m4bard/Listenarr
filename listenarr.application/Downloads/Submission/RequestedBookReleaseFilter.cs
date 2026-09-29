@@ -85,20 +85,25 @@ namespace Listenarr.Application.Downloads.Submission
     /// else. It cannot separate two different books that share an exact short title when neither
     /// the author nor anything else on the release tells them apart, and with no author on the
     /// release that is not decidable from the name at all. It also accepts "Emma - Somebody Else",
-    /// since the words after the dash are as likely a narrator as an author.
+    /// since the words after the dash are as likely a narrator as an author, and for the same
+    /// reason a name in brackets: "Emma (Alexander McCall Smith) [Unabridged]" and
+    /// "Emma [Edna Ferber]" are accepted, because bracketed text is as often the narrator.
     /// </para>
     /// <para>
     /// Known narrowness, each a missed automatic grab rather than a wrong one unless stated:
     /// a number spelled one way in the record and another in the release ("1984" and "Nineteen
     /// Eighty-Four", "Twenty Thousand" and "20000"); British and American spellings ("Colour" and
     /// "Color"); an author field carrying a transliteration, a pen name or a translator instead of
-    /// the author; and a release whose narrator comes before the dash with no author anywhere.
+    /// the author; a release whose narrator comes before the dash with no author anywhere; and,
+    /// for a record with no series set, a release whose Torznab prefix is a series the record does
+    /// not know ("Voyages Extraordinaires 06 - Twenty Thousand Leagues Under the Seas" reads as
+    /// another author).
     /// Two wrong grabs it does not stop: a same-author book whose title contains the requested one
     /// (a sequel such as "Dune Messiah" for "Dune"), and a study guide or summary of the book that
     /// carries its title and author.
     /// </para>
     /// </remarks>
-    public static class RequestedBookReleaseFilter
+    public static partial class RequestedBookReleaseFilter
     {
         /// <summary>
         /// Words that describe the recording or its packaging rather than the work, so neither
@@ -119,26 +124,6 @@ namespace Listenarr.Application.Downloads.Submission
             new HashSet<string>(StringComparer.Ordinal)
             {
                 "book", "bk", "volume", "vol", "part", "pt"
-            };
-
-        /// <summary>
-        /// What parsers and metadata write when they have no author. A placeholder says nothing
-        /// about who wrote the release, so it can neither corroborate nor contradict the book.
-        /// </summary>
-        private static readonly IReadOnlySet<string> PlaceholderAuthors =
-            new HashSet<string>(StringComparer.Ordinal)
-            {
-                "unknown", "unknown author", "various", "various authors", "various artists",
-                "anonymous", "anon", "na", "n a"
-            };
-
-        /// <summary>
-        /// Generational and honorific suffixes, which follow the surname and are not it.
-        /// </summary>
-        private static readonly IReadOnlySet<string> NameSuffixes =
-            new HashSet<string>(StringComparer.Ordinal)
-            {
-                "jr", "sr", "ii", "iii", "iv", "phd", "md"
             };
 
         /// <summary>A trailing ", Book 1", " Volume 2", " (Part 3)" and the like.</summary>
@@ -185,7 +170,7 @@ namespace Listenarr.Application.Downloads.Submission
 
             var matchedForms = titleForms
                 .Where(form => form.Words.All(releaseTitleWords.Contains)
-                    && !NamesADifferentVolume(releaseTitleTokens, form.VolumeNumber))
+                    && !NamesADifferentVolume(releaseTitleTokens, form))
                 .ToList();
 
             if (matchedForms.Count == 0)
@@ -348,21 +333,34 @@ namespace Listenarr.Application.Downloads.Submission
 
         private static bool IsNumber(string token) => token.Length > 0 && token.All(char.IsAsciiDigit);
 
-        /// <summary>
-        /// Whether the release says "Vol 2" (or "Book 2", ...) for a book whose title says 1.
-        /// </summary>
-        private static bool NamesADifferentVolume(List<string> releaseTokens, string? volumeNumber)
+        /// <summary>A four-digit number a release would carry as a publication year.</summary>
+        private static bool IsYear(string token)
         {
-            if (volumeNumber is null)
+            return token.Length == 4 && int.TryParse(token, out var year) && year is >= 1000 and <= 2099;
+        }
+
+        /// <summary>
+        /// Whether the release numbers a different volume from the one the record's title ends
+        /// with: "Vol 2" (or "Book 2", ...), or a bare "02" straight after the title's own words,
+        /// as in "Don Quixote 02 - ..." for "Don Quixote, Book 1". A year in that position is not
+        /// a volume.
+        /// </summary>
+        private static bool NamesADifferentVolume(List<string> releaseTokens, TitleForm form)
+        {
+            if (form.VolumeNumber is null)
             {
                 return false;
             }
 
             for (var index = 0; index + 1 < releaseTokens.Count; index++)
             {
-                if (VolumeMarkers.Contains(releaseTokens[index])
-                    && IsNumber(releaseTokens[index + 1])
-                    && !string.Equals(releaseTokens[index + 1], volumeNumber, StringComparison.Ordinal))
+                var next = releaseTokens[index + 1];
+                var numbersAVolume = VolumeMarkers.Contains(releaseTokens[index])
+                    || (form.Words.Contains(releaseTokens[index]) && !IsYear(next));
+
+                if (numbersAVolume
+                    && IsNumber(next)
+                    && !string.Equals(next, form.VolumeNumber, StringComparison.Ordinal))
                 {
                     return true;
                 }
@@ -372,25 +370,8 @@ namespace Listenarr.Application.Downloads.Submission
         }
 
         /// <summary>
-        /// Whether the release's author field holds anything besides the book's own title words,
-        /// series words and numbers. The Torznab parser fills that field with whatever precedes the
-        /// first " - " of the title, so "Barsoom 01 - A Princess of Mars" arrives with "Barsoom 01"
-        /// as its author, and that must not read as a different author. "Mark Twain" does.
-        /// </summary>
-        private static bool NamesAnotherAuthor(List<string> releaseAuthorTokens, Audiobook audiobook)
-        {
-            var ownWords = new HashSet<string>(Words(audiobook.Title), StringComparer.Ordinal);
-            ownWords.UnionWith(Words(audiobook.Series));
-
-            return releaseAuthorTokens
-                .Where(AudiobookSearchQueryBuilder.IsSignificantWord)
-                .Where(word => !NoiseWords.Contains(word) && !IsNumber(word))
-                .Any(word => !ownWords.Contains(word));
-        }
-
-        /// <summary>
         /// Whether one " - " segment of the release title, with bracketed spans, noise words and
-        /// stray numbers removed, is exactly the book's whole title: every word of it and nothing
+        /// years removed, is exactly the book's whole title: every word of it and nothing
         /// else. "Kim [Unabridged] [M4B]" and "Barsoom 01 - A Princess of Mars" are; "Edna Ferber -
         /// Emma McChesney and Co" is not a match for "Emma", because no segment stops at "Emma".
         /// </summary>
@@ -409,9 +390,10 @@ namespace Listenarr.Application.Downloads.Submission
                 var segmentWords = RequiredWords(DelimitedSpan.Replace(segment, " "));
                 foreach (var form in wholeForms)
                 {
-                    // A year or a track number beside the title is not another work.
+                    // A year beside the title is packaging, not another work. Any other number is
+                    // kept: "Emma 2" is not "Emma".
                     var comparable = segmentWords
-                        .Where(word => !IsNumber(word) || form.Words.Contains(word))
+                        .Where(word => !IsYear(word) || form.Words.Contains(word))
                         .ToHashSet(StringComparer.Ordinal);
 
                     if (comparable.SetEquals(form.Words))
@@ -422,65 +404,6 @@ namespace Listenarr.Application.Downloads.Submission
             }
 
             return false;
-        }
-
-        /// <summary>
-        /// The surname of each usable author, plus the surname joined to the word before it so a
-        /// particle name matches however it is spaced ("Le Guin" and "LeGuin").
-        /// </summary>
-        /// <remarks>
-        /// Only the text before a comma is read, which is the surname in "Doyle, Arthur Conan" and
-        /// the whole name in "Martin Luther King, Jr.". Initials are merged by
-        /// <see cref="StringUtils.NormalizeAuthorName"/> first, so "H. G. Wells" and "HG Wells"
-        /// both end in "wells".
-        /// </remarks>
-        private static HashSet<string> BuildSurnameKeys(IEnumerable<string>? authors)
-        {
-            var keys = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var author in authors ?? [])
-            {
-                if (IsPlaceholderAuthor(author))
-                {
-                    continue;
-                }
-
-                var beforeComma = author.Split(',', 2)[0];
-                var words = StringUtils.NormalizeAuthorName(beforeComma)
-                    .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                    .Where(word => !NameSuffixes.Contains(word))
-                    .ToList();
-
-                if (words.Count == 0 || words[^1].Length < 2)
-                {
-                    continue;
-                }
-
-                keys.Add(words[^1]);
-                if (words.Count >= 2)
-                {
-                    keys.Add(words[^2] + words[^1]);
-                }
-            }
-
-            return keys;
-        }
-
-        private static IEnumerable<string> WordsAndJoinedPairs(IReadOnlyList<string> tokens)
-        {
-            for (var index = 0; index < tokens.Count; index++)
-            {
-                yield return tokens[index];
-                if (index + 1 < tokens.Count)
-                {
-                    yield return tokens[index] + tokens[index + 1];
-                }
-            }
-        }
-
-        private static bool IsPlaceholderAuthor(string? author)
-        {
-            var normalized = StringUtils.NormalizeAuthorName(author);
-            return normalized.Length == 0 || PlaceholderAuthors.Contains(normalized);
         }
     }
 }
