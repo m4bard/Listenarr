@@ -15,9 +15,10 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import type { IndexerHealth, ServiceHealth } from '@/types'
+import { isSystemHealthBadgeEnabled } from '@/utils/systemHealthBadge'
 
 // The badge on the sidebar's System entry: indexer health checks, visible from every page. Until
 // now indexer failure showed only on the Indexers settings page, which nobody is looking at during
@@ -186,4 +187,68 @@ describe('SystemNavHealthBadge', () => {
     await flushPromises()
     expect(wrapper.find('.pill').exists()).toBe(false)
   })
+
+  describe('periodic refresh', () => {
+    // A cooldown that simply runs out produces no broadcast, so without a timer the badge could
+    // stay lit until something else happened.
+    afterEach(() => {
+      vi.useRealTimers()
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    })
+
+    it('re-reads health every minute while enabled, and stops when unmounted', async () => {
+      vi.useFakeTimers()
+      getServiceHealth.mockResolvedValue(healthWith(oneFailing))
+      const wrapper = await mountBadge()
+      expect(getServiceHealth).toHaveBeenCalledTimes(1)
+
+      getServiceHealth.mockResolvedValue(healthWith(healthy))
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(getServiceHealth).toHaveBeenCalledTimes(2)
+      expect(wrapper.find('.pill').exists()).toBe(false)
+
+      wrapper.unmount()
+      await vi.advanceTimersByTimeAsync(180_000)
+      expect(getServiceHealth).toHaveBeenCalledTimes(2)
+    })
+
+    it('skips the timed read while the tab is hidden', async () => {
+      vi.useFakeTimers()
+      getServiceHealth.mockResolvedValue(healthWith(healthy))
+      await mountBadge()
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+
+      await vi.advanceTimersByTimeAsync(180_000)
+
+      expect(getServiceHealth).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not run the timer while disabled', async () => {
+      vi.useFakeTimers()
+      getServiceHealth.mockResolvedValue(healthWith(healthy))
+      await mountBadge(false)
+
+      await vi.advanceTimersByTimeAsync(180_000)
+
+      expect(getServiceHealth).not.toHaveBeenCalled()
+    })
+  })
+})
+
+describe('isSystemHealthBadgeEnabled', () => {
+  it.each([
+    // [startupConfigLoaded, authEnabled, authenticated, expected]
+    [false, false, false, false], // config not loaded yet: authEnabled is only its initial false
+    [false, true, true, false],
+    [true, false, false, true], // auth off: nobody is ever "authenticated", and nobody needs to be
+    [true, true, false, false], // auth on, signed out: /system/health would be refused
+    [true, true, true, true],
+  ])(
+    'loaded=%s authEnabled=%s authenticated=%s -> %s',
+    (startupConfigLoaded, authEnabled, authenticated, expected) => {
+      expect(isSystemHealthBadgeEnabled({ startupConfigLoaded, authEnabled, authenticated })).toBe(
+        expected,
+      )
+    },
+  )
 })
