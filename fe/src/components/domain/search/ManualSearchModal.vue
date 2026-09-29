@@ -80,10 +80,7 @@
               <span
                 >Could not search {{ unavailableIndexers.length }} of {{ totalIndexers }} indexer{{
                   totalIndexers !== 1 ? 's' : ''
-                }}:
-                {{
-                  unavailableIndexers.map((entry) => `${entry.name} (${entry.reason})`).join(', ')
-                }}</span
+                }}: {{ unavailableIndexers.map(describeUnavailable).join(', ') }}</span
               >
             </div>
           </div>
@@ -350,7 +347,15 @@ const downloading = ref<Record<string, boolean>>({})
 const searchedIndexers = ref(0)
 const totalIndexers = ref(0)
 // Indexers that gave no usable answer this search, kept apart from those that answered with nothing.
-const unavailableIndexers = ref<Array<{ name: string; reason: string }>>([])
+const unavailableIndexers = ref<Array<{ name: string; reason: string | null }>>([])
+
+// Reason names come from the backend's query reasons; the few that read badly are reworded.
+const reasonLabels: Record<string, string> = {
+  NotConfigured: 'not configured',
+  NotFound: 'not found',
+}
+const describeUnavailable = (entry: { name: string; reason: string | null }) =>
+  entry.reason ? `${entry.name} (${reasonLabels[entry.reason] ?? entry.reason})` : entry.name
 const qualityScores = ref<Map<string, QualityScore>>(new Map())
 const qualityProfile = ref<QualityProfile | null>(null)
 const sortBy = ref<SearchSortBy | 'Score'>('Score')
@@ -549,6 +554,8 @@ async function search() {
     // Search each indexer individually to show progress
     const allResults: SearchResult[] = []
     const searchPromises = enabledIndexers.map(async (indexer) => {
+      // Recorded at most once per indexer, even if handling its answer throws afterwards.
+      let recordedUnavailable = false
       try {
         // Map MyAnonamouse indexer options (if present on the indexer) to searchByApi opts so backend can apply them
 
@@ -585,9 +592,10 @@ async function search() {
           }),
         )
         if (!outcome.answered) {
+          recordedUnavailable = true
           unavailableIndexers.value.push({
             name: indexer.name,
-            reason: outcome.failureReason || 'Unknown',
+            reason: outcome.failureReason ?? null,
           })
         }
         const indexerResultsRaw: unknown[] = outcome.results
@@ -687,7 +695,9 @@ async function search() {
         searchedIndexers.value++
       } catch (error) {
         logger.warn(`Failed to search indexer ${indexer.name}:`, error)
-        unavailableIndexers.value.push({ name: indexer.name, reason: 'Error' })
+        if (!recordedUnavailable) {
+          unavailableIndexers.value.push({ name: indexer.name, reason: 'Error' })
+        }
         searchedIndexers.value++ // Still count as completed even if failed
       }
     })
