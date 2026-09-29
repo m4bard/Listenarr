@@ -203,7 +203,7 @@ public static class ListenarrBuilderFactory
         return Enum.TryParse(trimmed, ignoreCase: true, out level);
     }
 
-    private static LogEventLevel ResolveMinimumLevel(string? logLevelEnv, string? configLevel)
+    internal static LogEventLevel ResolveMinimumLevel(string? logLevelEnv, string? configLevel)
     {
         if (!string.IsNullOrWhiteSpace(logLevelEnv))
         {

@@ -104,4 +104,113 @@ public sealed class ListenarrBuilderFactoryLogLevelParsingTests
         Assert.True(recognized);
         Assert.Equal(LogEventLevel.Verbose, level);
     }
+
+    // ResolveMinimumLevel takes both candidate values as parameters rather than reading
+    // LISTENARR_LOG_LEVEL or the configuration keys itself, so these tests exercise it
+    // directly and never touch process environment variables. They capture Console output via
+    // Console.SetOut inside a try/finally so a failing assertion can never leave the real
+    // Console.Out redirected for tests that run after it. No other test in this suite captures
+    // Console output (checked via a repo-wide search for Console.SetOut / a Console-capture
+    // xUnit collection), and xUnit runs the [Fact]s within a single test class sequentially by
+    // default, so these four do not race each other or anything else for stdout.
+
+    [Fact]
+    public void ResolveMinimumLevel_BadEnv_GoodConfig_WarnsOnceAndUsesConfig()
+    {
+        var originalOut = Console.Out;
+        using var capturedOut = new StringWriter();
+        Console.SetOut(capturedOut);
+
+        LogEventLevel level;
+        try
+        {
+            level = ListenarrBuilderFactory.ResolveMinimumLevel("NotALevel", "Debug");
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+
+        Assert.Equal(LogEventLevel.Debug, level);
+
+        var output = capturedOut.ToString();
+        Assert.Equal(1, WarningCount(output));
+        Assert.Contains("LISTENARR_LOG_LEVEL 'NotALevel' was not recognized", output);
+    }
+
+    [Fact]
+    public void ResolveMinimumLevel_BadEnv_BadConfig_WarnsTwiceAndFallsBackToInformation()
+    {
+        var originalOut = Console.Out;
+        using var capturedOut = new StringWriter();
+        Console.SetOut(capturedOut);
+
+        LogEventLevel level;
+        try
+        {
+            level = ListenarrBuilderFactory.ResolveMinimumLevel("NotALevel", "AlsoNotALevel");
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+
+        Assert.Equal(LogEventLevel.Information, level);
+
+        var output = capturedOut.ToString();
+        Assert.Equal(2, WarningCount(output));
+        Assert.Contains("LISTENARR_LOG_LEVEL 'NotALevel' was not recognized", output);
+        Assert.Contains("log level 'AlsoNotALevel' was not recognized", output);
+    }
+
+    [Fact]
+    public void ResolveMinimumLevel_GoodEnv_NoWarning_EnvBeatsConfig()
+    {
+        var originalOut = Console.Out;
+        using var capturedOut = new StringWriter();
+        Console.SetOut(capturedOut);
+
+        LogEventLevel level;
+        try
+        {
+            // Config names a different, also-valid level so a test that accidentally read
+            // config instead of env would fail rather than pass by coincidence.
+            level = ListenarrBuilderFactory.ResolveMinimumLevel("Warning", "Debug");
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+
+        Assert.Equal(LogEventLevel.Warning, level);
+        Assert.Equal(string.Empty, capturedOut.ToString());
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", "")]
+    [InlineData(null, "")]
+    [InlineData("", null)]
+    public void ResolveMinimumLevel_BothEmpty_NoWarning_FallsBackToInformation(string? logLevelEnv, string? configLevel)
+    {
+        var originalOut = Console.Out;
+        using var capturedOut = new StringWriter();
+        Console.SetOut(capturedOut);
+
+        LogEventLevel level;
+        try
+        {
+            level = ListenarrBuilderFactory.ResolveMinimumLevel(logLevelEnv, configLevel);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+
+        Assert.Equal(LogEventLevel.Information, level);
+        Assert.Equal(string.Empty, capturedOut.ToString());
+    }
+
+    private static int WarningCount(string output)
+        => output.Split(["[Listenarr] Warning:"], StringSplitOptions.None).Length - 1;
 }
