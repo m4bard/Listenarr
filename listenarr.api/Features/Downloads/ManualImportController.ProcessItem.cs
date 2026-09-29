@@ -436,30 +436,10 @@ public partial class ManualImportController
                     };
                 }
 
-                // Artwork is worth writing for a book that has no ASIN. Anything matched
-                // outside Audible is in that state, and gating the whole call on the ASIN
-                // made the cover art setting silently inert for all of them.
-                if (registrationLease.HasDurablePhysicalObjectIdentity
-                    && (!string.IsNullOrWhiteSpace(audiobook.Asin)
-                        || !string.IsNullOrWhiteSpace(audiobook.ImageUrl)))
-                {
-                    try
-                    {
-                        await _metadataService.WriteImportTagsAsync(
-                            registrationLease,
-                            audiobook.Asin,
-                            audiobook.ImageUrl);
-                    }
-                    catch (Exception exception) when (exception is not (
-                        OutOfMemoryException or StackOverflowException))
-                    {
-                        _logger.LogWarning(
-                            exception,
-                            "Manual import completed, but generation-bound tag enrichment failed for audiobook {AudiobookId} at {Path}",
-                            audiobook.Id,
-                            LogRedaction.SanitizeFilePath(destinationPath));
-                    }
-                }
+                await WriteImportTagsBestEffortAsync(
+                    registrationLease,
+                    audiobook,
+                    destinationPath);
 
                 var completion = registrationLease.CompletePublication();
                 if (completion
