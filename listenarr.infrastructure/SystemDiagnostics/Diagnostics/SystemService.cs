@@ -31,6 +31,8 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
         private readonly IRootFolderService _rootFolderService;
         private readonly IDiskSpaceProbe _diskSpaceProbe;
         private readonly IDownloadClientStatusCache _downloadClientStatusCache;
+        private readonly IIndexerRepository? _indexerRepository;
+        private readonly TimeProvider _timeProvider;
         private readonly DateTime _startTime;
         private static readonly Process _currentProcess = Process.GetCurrentProcess();
 
@@ -41,7 +43,9 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             IApplicationVersionService applicationVersionService,
             IRootFolderService rootFolderService,
             IDiskSpaceProbe diskSpaceProbe,
-            IDownloadClientStatusCache downloadClientStatusCache)
+            IDownloadClientStatusCache downloadClientStatusCache,
+            IIndexerRepository? indexerRepository = null,
+            TimeProvider? timeProvider = null)
         {
             _configurationService = configurationService;
             _logger = logger;
@@ -50,6 +54,8 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             _rootFolderService = rootFolderService;
             _diskSpaceProbe = diskSpaceProbe;
             _downloadClientStatusCache = downloadClientStatusCache;
+            _indexerRepository = indexerRepository;
+            _timeProvider = timeProvider ?? TimeProvider.System;
             _startTime = DateTime.UtcNow;
         }
 
@@ -173,7 +179,9 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
                 // Get external API health
                 var externalApiHealth = await GetExternalApiHealthAsync();
 
-                return SystemHealthMapper.BuildServiceHealth(version, uptimeFormatted, downloadClientHealth, externalApiHealth);
+                var indexerHealth = await GetIndexerHealthAsync();
+
+                return SystemHealthMapper.BuildServiceHealth(version, uptimeFormatted, downloadClientHealth, externalApiHealth, indexerHealth);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -208,6 +216,25 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             {
                 _logger.LogError(ex, "Error getting external API health");
                 return SystemHealthMapper.BuildExternalApiHealthError();
+            }
+        }
+
+        private async Task<IndexerHealth> GetIndexerHealthAsync()
+        {
+            if (_indexerRepository == null)
+            {
+                return new IndexerHealth();
+            }
+
+            try
+            {
+                var indexers = await _indexerRepository.GetAllAsync();
+                return IndexerHealthMapper.BuildIndexerHealth(indexers, _timeProvider.GetUtcNow().UtcDateTime);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error getting indexer health");
+                return IndexerHealthMapper.BuildIndexerHealthError();
             }
         }
 
