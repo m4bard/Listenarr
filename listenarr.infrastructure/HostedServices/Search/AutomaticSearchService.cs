@@ -335,8 +335,14 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             // again by the next automatic pass a minute later, which is what a live install saw.
             using var blocklistScope = _serviceScopeFactory.CreateScope();
             var blocklistService = blocklistScope.ServiceProvider.GetRequiredService<IBlocklistService>();
-            var selectableResults = await BlockedReleaseFilter.ExcludeAsync(
+            var unblockedResults = await BlockedReleaseFilter.ExcludeAsync(
                 blocklistService, audiobook.Id, ranked, _logger);
+
+            // Drop releases that are plainly for a different book, before the pick. Nothing
+            // between the indexer and this point compares a release with the book it was
+            // searched for, so without this the top-scored release wins even when its title and
+            // author name another work entirely.
+            var selectableResults = RequestedBookReleaseFilter.Exclude(audiobook, unblockedResults, _logger);
 
             // ExcludeAsync keeps the order it is given, so these stay in the ranked order: the
             // profile's own quality ordering, then the score, then the deterministic tiebreak.
