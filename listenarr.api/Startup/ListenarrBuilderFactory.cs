@@ -155,25 +155,88 @@ public static class ListenarrBuilderFactory
         }
     }
 
+    /// <summary>
+    /// Accepted names for <c>LISTENARR_LOG_LEVEL</c> and the Serilog/Logging configuration
+    /// level keys, as shown in the warning when a non-empty value is not recognized.
+    /// </summary>
+    internal const string AcceptedLogLevelNamesMessage =
+        "Verbose (or Trace), Debug, Information, Warning, Error, Fatal (or Critical)";
+
+    /// <summary>
+    /// Parses a log level name into a Serilog <see cref="LogEventLevel"/>. Serilog's own levels
+    /// are Verbose, Debug, Information, Warning, Error, Fatal; there is no <c>Trace</c> or
+    /// <c>Critical</c> member. Those two names are accepted case-insensitively as aliases for
+    /// <see cref="LogEventLevel.Verbose"/> and <see cref="LogEventLevel.Fatal"/> respectively,
+    /// because they are exactly the most- and least-verbose level names in
+    /// Microsoft.Extensions.Logging, and anyone arriving from that convention will type
+    /// <c>Trace</c> expecting the most verbose logging, not silently get less of it.
+    /// </summary>
+    /// <remarks>
+    /// Microsoft.Extensions.Logging also defines a <c>None</c> level meaning "no logging at
+    /// all". It is deliberately NOT accepted here: Serilog's <see cref="LogEventLevel"/> has no
+    /// member representing that, and mapping it onto any real level (Fatal being the closest)
+    /// would still emit log lines while claiming to emit none, which is a different flavor of
+    /// the exact silent-surprise bug this method exists to remove.
+    /// </remarks>
+    internal static bool TryParseLogEventLevel(string? value, out LogEventLevel level)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            level = default;
+            return false;
+        }
+
+        var trimmed = value.Trim();
+
+        if (trimmed.Equals("Trace", StringComparison.OrdinalIgnoreCase))
+        {
+            level = LogEventLevel.Verbose;
+            return true;
+        }
+
+        if (trimmed.Equals("Critical", StringComparison.OrdinalIgnoreCase))
+        {
+            level = LogEventLevel.Fatal;
+            return true;
+        }
+
+        return Enum.TryParse(trimmed, ignoreCase: true, out level);
+    }
+
+    private static LogEventLevel ResolveMinimumLevel(string? logLevelEnv, string? configLevel)
+    {
+        if (!string.IsNullOrWhiteSpace(logLevelEnv))
+        {
+            if (TryParseLogEventLevel(logLevelEnv, out var parsedFromEnv))
+            {
+                return parsedFromEnv;
+            }
+
+            Console.WriteLine(
+                $"[Listenarr] Warning: LISTENARR_LOG_LEVEL '{logLevelEnv}' was not recognized; accepted values are {AcceptedLogLevelNamesMessage}.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(configLevel))
+        {
+            if (TryParseLogEventLevel(configLevel, out var parsedFromConfig))
+            {
+                return parsedFromConfig;
+            }
+
+            Console.WriteLine(
+                $"[Listenarr] Warning: log level '{configLevel}' was not recognized; accepted values are {AcceptedLogLevelNamesMessage}.");
+        }
+
+        return LogEventLevel.Information;
+    }
+
     private static void ConfigureSerilog(WebApplicationBuilder builder, ILogEventSink realtimeLogSink)
     {
         var logFilePath = Path.Join(builder.Environment.ContentRootPath, "config", "logs", "listenarr-.log");
         var logLevelEnv = Environment.GetEnvironmentVariable("LISTENARR_LOG_LEVEL");
         var configLevel = builder.Configuration["Serilog:MinimumLevel:Default"] ?? builder.Configuration["Logging:LogLevel:Default"];
 
-        LogEventLevel minimumLevel;
-        if (!string.IsNullOrWhiteSpace(logLevelEnv) && Enum.TryParse<LogEventLevel>(logLevelEnv, ignoreCase: true, out var parsedFromEnv))
-        {
-            minimumLevel = parsedFromEnv;
-        }
-        else if (!string.IsNullOrWhiteSpace(configLevel) && Enum.TryParse<LogEventLevel>(configLevel, ignoreCase: true, out var parsedFromConfig))
-        {
-            minimumLevel = parsedFromConfig;
-        }
-        else
-        {
-            minimumLevel = LogEventLevel.Information;
-        }
+        var minimumLevel = ResolveMinimumLevel(logLevelEnv, configLevel);
 
         Log.Logger = new LoggerConfiguration()
             .Enrich.FromLogContext()
