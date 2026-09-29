@@ -233,7 +233,7 @@
       <div v-if="viewMode === 'grid'" class="grouped-grid">
         <div
           v-for="collection in groupedCollections || []"
-          :key="collection.name"
+          :key="collection.key ?? collection.name"
           :class="[
             'collection-card',
             {
@@ -429,7 +429,7 @@
         </div>
         <div
           v-for="collection in groupedCollections || []"
-          :key="`collection-list-${collection.name}`"
+          :key="`collection-list-${collection.key ?? collection.name}`"
           tabindex="0"
           class="audiobook-list-item collection-list-item"
           @keydown.enter="navigateToCollection(collection)"
@@ -936,6 +936,7 @@ import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobook
 import { safeText } from '@/utils/textUtils'
 import { formatSeriesMemberships } from '@/utils/seriesUtils'
 import { normalizeCollectionText } from '@/utils/collectionText'
+import { createSeriesIdentityResolver } from '@/utils/seriesIdentity'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { errorTracking } from '@/services/errorTracking'
 import { isLikelyBackendImageUrl, useProtectedImages } from '@/composables/useProtectedImages'
@@ -1510,13 +1511,21 @@ const groupedCollections = computed(() => {
 
   const books = filteredAndSortedAudiobooks.value
   const isAuthorsMode = groupBy.value === 'authors'
+  // Series tiles are keyed by series identity (SeriesAsin, else normalized name), resolved over the
+  // whole library so the grid and the series page (CollectionView.vue) agree on it. See
+  // createSeriesIdentityResolver for how rows without an identifier are filed.
+  const seriesIdentity = isAuthorsMode
+    ? null
+    : createSeriesIdentityResolver(libraryStore.audiobooks || [])
   const groups = new Map<
     string,
     {
+      key?: string
       name: string
       count: number
       coverUrl?: string
       coverUrls?: string[]
+      seriesAsin?: string
       seriesNames?: Set<string>
       seriesCount?: number
     }
@@ -1525,8 +1534,14 @@ const groupedCollections = computed(() => {
   books.forEach((book) => {
     const keys = isAuthorsMode
       ? getBookAuthorGroupKeys(book)
-      : getBookSeriesNames(book).map((name) => ({ raw: name, normalized: name }))
-    for (const { raw, normalized } of keys) {
+      : seriesIdentity!
+          .seriesForBook(book)
+          .map((ref) => ({ raw: ref.name, normalized: ref.key, seriesAsin: ref.asin }))
+    for (const { raw, normalized, seriesAsin } of keys as {
+      raw: string
+      normalized: string
+      seriesAsin?: string
+    }[]) {
       if (!raw || !normalized) continue
       if (!groups.has(normalized)) {
         if (isAuthorsMode) {
@@ -1561,9 +1576,11 @@ const groupedCollections = computed(() => {
           })
         } else {
           groups.set(normalized, {
+            key: normalized,
             name: raw,
             count: 0,
             coverUrls: [],
+            seriesAsin,
             seriesNames: new Set<string>(),
           })
         }
@@ -2290,9 +2307,12 @@ async function setGroupBy(mode: GroupByMode) {
   }
 }
 
-function navigateToCollection(collection: { name: string }) {
+function navigateToCollection(collection: { name: string; seriesAsin?: string }) {
   const type = groupBy.value === 'authors' ? 'author' : 'series'
-  router.push(`/collection/${type}/${encodeURIComponent(collection.name)}`)
+  // An identified series carries its identifier, so the series page opens that series rather than
+  // re-resolving whichever series of the same name a lookup finds first.
+  const query = type === 'series' && collection.seriesAsin ? { asin: collection.seriesAsin } : {}
+  router.push({ path: `/collection/${type}/${encodeURIComponent(collection.name)}`, query })
 }
 
 async function waitForImagesToLoad(timeoutMs = 5000) {
