@@ -482,7 +482,7 @@
             >
               <PhMonitor />
               <span>System</span>
-              <Pill variant="error" v-if="systemIssues > 0">{{ systemIssues }}</Pill>
+              <SystemNavHealthBadge :enabled="auth.user.authenticated" />
             </RouterLink>
           </div>
         </nav>
@@ -600,6 +600,7 @@ import { getPlaceholderUrl } from '@/utils/placeholder'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import { logSessionState, clearAllAuthData } from '@/utils/sessionDebug'
 import { signalRService } from '@/services/signalr'
+import SystemNavHealthBadge from '@/components/system/SystemNavHealthBadge.vue'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 import type { QueueItem } from '@/types'
 import { ref as vueRef, ref as vueRef2, reactive } from 'vue'
@@ -834,7 +835,6 @@ const queueItems = ref<QueueItem[]>([])
 const wantedCount = computed(
   () => libraryStore.audiobooks.filter((book) => book.wanted === true).length,
 )
-const systemIssues = ref(0)
 
 // Activity count: Optimized with memoized intermediate computations
 // Breaks down complex logic into cacheable steps for 3-5x performance improvement
