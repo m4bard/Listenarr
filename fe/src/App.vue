@@ -482,7 +482,15 @@
             >
               <PhMonitor />
               <span>System</span>
-              <SystemNavHealthBadge :enabled="auth.user.authenticated" />
+              <SystemNavHealthBadge
+                :enabled="
+                  isSystemHealthBadgeEnabled({
+                    startupConfigLoaded,
+                    authEnabled,
+                    authenticated: auth.user.authenticated,
+                  })
+                "
+              />
             </RouterLink>
           </div>
         </nav>
@@ -601,6 +609,7 @@ import { useProtectedImages } from '@/composables/useProtectedImages'
 import { logSessionState, clearAllAuthData } from '@/utils/sessionDebug'
 import { signalRService } from '@/services/signalr'
 import SystemNavHealthBadge from '@/components/system/SystemNavHealthBadge.vue'
+import { isSystemHealthBadgeEnabled } from '@/utils/systemHealthBadge'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 import type { QueueItem } from '@/types'
 import { ref as vueRef, ref as vueRef2, reactive } from 'vue'
