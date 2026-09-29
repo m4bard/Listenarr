@@ -31,7 +31,11 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
     /// 400 at the same boundary Path and Items are already validated at, before the
     /// filesystem-mutation gate or the audiobook-lock/reconcile pipeline are ever reached.
     /// </summary>
-    public sealed class ManualImportMatchedAudiobookIdValidationTests : IDisposable
+    // No DB or DI is needed here, only BaseTests to satisfy the repository's test-class
+    // convention (BackendArchitectureTests.TestClasses_FollowRepositoryConventions).
+    [Trait("Name", "ManualImportMatchedAudiobookIdValidationTests")]
+    [Trait("Category", "Api")]
+    public sealed class ManualImportMatchedAudiobookIdValidationTests : BaseTests, IDisposable
     {
         private readonly List<string> _tempDirectories = [];
 
