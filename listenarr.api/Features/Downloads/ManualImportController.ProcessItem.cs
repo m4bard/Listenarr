@@ -430,42 +430,11 @@ public partial class ManualImportController
                     };
                 }
 
-                // Artwork is worth writing for a book that has no ASIN. Anything matched
-                // outside Audible is in that state, and gating the whole call on the ASIN
-                // made the cover art setting silently inert for all of them.
-                var hasImportTags = !string.IsNullOrWhiteSpace(audiobook.Asin)
-                    || !string.IsNullOrWhiteSpace(audiobook.ImageUrl);
-
-                // A hardlinked destination is the source's own inode, which a download client
-                // may still be seeding, so writing tags through it would rewrite the source too.
-                if (publicationPlan.EffectiveAction == FileAction.HardlinkCopy
-                    && hasImportTags)
-                {
-                    _logger.LogDebug(
-                        "Skipped tag enrichment for audiobook {AudiobookId} because {Path} was imported as a hardlink of its source",
-                        audiobook.Id,
-                        LogRedaction.SanitizeFilePath(destinationPath));
-                }
-                else if (registrationLease.SupportsMetadataWrite
-                    && hasImportTags)
-                {
-                    try
-                    {
-                        await _metadataService.WriteImportTagsAsync(
-                            registrationLease,
-                            audiobook.Asin,
-                            audiobook.ImageUrl);
-                    }
-                    catch (Exception exception) when (exception is not (
-                        OutOfMemoryException or StackOverflowException))
-                    {
-                        _logger.LogWarning(
-                            exception,
-                            "Manual import completed, but generation-bound tag enrichment failed for audiobook {AudiobookId} at {Path}",
-                            audiobook.Id,
-                            LogRedaction.SanitizeFilePath(destinationPath));
-                    }
-                }
+                await WriteImportTagsBestEffortAsync(
+                    registrationLease,
+                    audiobook,
+                    destinationPath,
+                    isHardlinkToSource: publicationPlan.EffectiveAction == FileAction.HardlinkCopy);
 
                 var completion = registrationLease.CompletePublication();
                 if (completion
