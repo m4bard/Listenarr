@@ -171,23 +171,41 @@ public sealed class RequestedBookReleaseFilterTests : BaseTests
             RequestedBookReleaseFilter.Evaluate(book, Release("The Picture of Dorian Gray [Unabridged] MP3")));
     }
 
-    [Fact]
+    [Theory]
     [Trait("Method", "Evaluate")]
     [Trait("Scenario", "ShortTitleNoAuthorOnRelease")]
-    public void Evaluate_ShortTitleWithNoAuthorAnywhereOnTheRelease_IsRejectedAsNotCorroborated()
+    // The title and nothing else, with packaging noise
+    [InlineData("Kim", "Kim [Unabridged] [M4B]")]
+    [InlineData("Pride and Prejudice", "Pride & Prejudice [Unabridged]")]
+    // A year beside the title is not another work
+    [InlineData("Kim", "Kim (1901) MP3")]
+    // Whatever follows the dash is as likely a narrator as an author
+    [InlineData("Kim", "Kim - Alder Penrose")]
+    public void Evaluate_ShortTitleAndAReleaseSegmentSayingExactlyThatTitle_IsAccepted(string title, string releaseTitle)
     {
-        // Given: the chosen trade-off. A one-word title is exactly what another work's title can
-        // contain, so a short title has to be corroborated by the author somewhere on the release.
-        // A correct release named only "Emma" is therefore not grabbed automatically; it can still
-        // be grabbed by hand. The alternative, accepting any release that contains the word, is
-        // the incident.
+        // Given: a title under three significant words, and a release that names no author but has
+        // a segment that says the title and stops. What made the incident an incident was the
+        // extra words: the decoy's title carried the book's title and then more of its own.
+        var book = Book(title, "Rudyard Kipling");
+
+        // When / Then
+        Assert.Equal(RequestedBookMatch.Accepted, RequestedBookReleaseFilter.Evaluate(book, TorznabRelease(releaseTitle)));
+    }
+
+    [Theory]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "ShortTitleNoAuthorOnRelease")]
+    [InlineData("Emma McChesney and Co [Unabridged] M4B")]
+    [InlineData("Emma.McChesney.and.Co.2014.MP3")]
+    public void Evaluate_ShortTitleInsideALongerTitleWithNoAuthor_IsRejectedAsNotCorroborated(string releaseTitle)
+    {
+        // Given: the incident with the author left off the release entirely. No segment stops at
+        // "Emma", so nothing says this is the requested book rather than one whose title starts
+        // with the same word.
         var book = Book("Emma", "Jane Austen");
 
-        // When
-        var verdict = RequestedBookReleaseFilter.Evaluate(book, Release("Emma [Unabridged] M4B"));
-
-        // Then
-        Assert.Equal(RequestedBookMatch.AuthorNotCorroborated, verdict);
+        // When / Then
+        Assert.Equal(RequestedBookMatch.AuthorNotCorroborated, RequestedBookReleaseFilter.Evaluate(book, TorznabRelease(releaseTitle)));
     }
 
     [Fact]
@@ -308,6 +326,113 @@ public sealed class RequestedBookReleaseFilterTests : BaseTests
 
         // When / Then
         Assert.Equal(RequestedBookMatch.Accepted, RequestedBookReleaseFilter.Evaluate(book, Release("Anything At All")));
+    }
+
+    // ------------------------------------------------------------------
+    // Torznab-shaped releases: the parser sets the author field to whatever precedes the first
+    // " - " of the title, or "Unknown Author" when there is no " - " at all.
+    // ------------------------------------------------------------------
+
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "TorznabAuthorPrefix")]
+    public void Evaluate_TorznabPrefixNamesAnotherAuthorBeforeADistinctiveTitle_IsRejectedAsAuthorMismatch()
+    {
+        // Given: the release carries every word of a long title, and its prefix names a different
+        // author. Comparing that prefix with the release's own title would always find it there,
+        // since the parser cut it from that title.
+        var book = Book("The Picture of Dorian Gray", "Oscar Wilde");
+
+        // When / Then
+        Assert.Equal(
+            RequestedBookMatch.AuthorMismatch,
+            RequestedBookReleaseFilter.Evaluate(book, TorznabRelease("Mark Twain - The Picture of Dorian Gray Parody")));
+    }
+
+    [Theory]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "TorznabAuthorPrefix")]
+    [InlineData("Edna Ferber - Emma McChesney and Co [Unabridged] M4B")]
+    [InlineData("Emma McChesney and Co - Edna Ferber")]
+    public void Evaluate_TorznabShapedIncident_IsRejected(string releaseTitle)
+    {
+        // Given: the incident as the parser actually delivers it, author first and author last
+        var book = Book("Emma", "Jane Austen");
+
+        // When / Then
+        Assert.NotEqual(RequestedBookMatch.Accepted, RequestedBookReleaseFilter.Evaluate(book, TorznabRelease(releaseTitle)));
+    }
+
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "TorznabSeriesPrefix")]
+    public void Evaluate_TorznabPrefixIsTheSeriesAndPosition_IsNotAnotherAuthor()
+    {
+        // Given: "Series 01 - Title" puts the series and its number in the author field. Those
+        // are the book's own words, not somebody else's name.
+        var book = new AudiobookBuilder()
+            .WithTitle("A Princess of Mars")
+            .WithAuthor("Edgar Rice Burroughs")
+            .WithSeries("Barsoom")
+            .Build();
+
+        // When / Then
+        Assert.Equal(
+            RequestedBookMatch.Accepted,
+            RequestedBookReleaseFilter.Evaluate(book, TorznabRelease("Barsoom 01 - A Princess of Mars")));
+    }
+
+    // ------------------------------------------------------------------
+    // Titles stored with a series prefix or a volume tail.
+    // ------------------------------------------------------------------
+
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "SeriesPrefixOnBookTitle")]
+    public void Evaluate_BookTitleHasASeriesPrefixTheReleaseLeavesOut_IsAcceptedOnlyWithTheAuthor()
+    {
+        // Given: "Series: Title" on the record and just the title on the release
+        var book = Book("Sherlock Holmes: A Study in Scarlet", "Arthur Conan Doyle");
+
+        // When / Then
+        Assert.Equal(
+            RequestedBookMatch.Accepted,
+            RequestedBookReleaseFilter.Evaluate(book, TorznabRelease("Arthur Conan Doyle - A Study in Scarlet")));
+
+        // Control: the part after the colon is not enough by itself. Without the author nothing
+        // says it is this book rather than another with that title.
+        Assert.Equal(
+            RequestedBookMatch.AuthorNotCorroborated,
+            RequestedBookReleaseFilter.Evaluate(book, TorznabRelease("A Study in Scarlet [Unabridged]")));
+    }
+
+    [Theory]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "VolumeTailOnBookTitle")]
+    [InlineData("Miguel de Cervantes - Don Quixote Vol 1")]
+    [InlineData("Miguel de Cervantes - Don Quixote")]
+    [InlineData("Don Quixote Vol. 01 [Unabridged]")]
+    public void Evaluate_BookTitleEndsWithAVolumeNumber_AcceptsTheReleaseWithOrWithoutIt(string releaseTitle)
+    {
+        // Given: ", Volume 1" is the series position, spelled several ways and often left off
+        var book = Book("Don Quixote, Volume 1", "Miguel de Cervantes");
+
+        // When / Then
+        Assert.Equal(RequestedBookMatch.Accepted, RequestedBookReleaseFilter.Evaluate(book, TorznabRelease(releaseTitle)));
+    }
+
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "VolumeTailOnBookTitle")]
+    public void Evaluate_ReleaseNamesADifferentVolume_IsRejectedAsTitleMismatch()
+    {
+        // Given: dropping the volume from the title must not make every volume match
+        var book = Book("Don Quixote, Volume 1", "Miguel de Cervantes");
+
+        // When / Then
+        Assert.Equal(
+            RequestedBookMatch.TitleMismatch,
+            RequestedBookReleaseFilter.Evaluate(book, TorznabRelease("Miguel de Cervantes - Don Quixote Vol 2")));
     }
 
     // ------------------------------------------------------------------
@@ -453,6 +578,16 @@ public sealed class RequestedBookReleaseFilterTests : BaseTests
         }
 
         return builder.Build();
+    }
+
+    /// <summary>
+    /// A release as the Torznab parser builds it: the author field is the text before the first
+    /// " - " of the title, or "Unknown Author" when the title has none.
+    /// </summary>
+    private static SearchResult TorznabRelease(string title)
+    {
+        var separator = title.IndexOf(" - ", StringComparison.Ordinal);
+        return Release(title, artist: separator > 0 ? title[..separator].Trim() : "Unknown Author");
     }
 
     private static SearchResult Release(string title, string artist = "", string id = "release")
