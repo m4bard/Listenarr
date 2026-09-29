@@ -161,8 +161,12 @@ namespace Listenarr.Application.Downloads.Submission
             // Only consider non-rejected, score > 0 results that are not already blocked.
             // ExcludeAsync keeps the order it is given, so the grab is still the top of the
             // ranked list rather than whatever the indexer returned first.
-            var selectable = await BlockedReleaseFilter.ExcludeAsync(
+            var unblocked = await BlockedReleaseFilter.ExcludeAsync(
                 blocklistService, audiobookId, ranked, logger);
+
+            // Same identity check as the automatic sweep, since this path grabs without a
+            // person choosing the release too.
+            var selectable = RequestedBookReleaseFilter.Exclude(audiobook, unblocked, logger);
             var topResult = selectable.FirstOrDefault(s => !s.IsRejected && s.TotalScore > 0);
 
             if (topResult == null)
