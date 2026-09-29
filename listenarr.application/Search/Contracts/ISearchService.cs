@@ -52,15 +52,7 @@ namespace Listenarr.Application.Search.Contracts
         /// nothing from one that could not be asked. Null when the indexer does not exist or is
         /// disabled.
         /// </summary>
-        /// <remarks>
-        /// The default body exists so an implementation written before this member keeps compiling;
-        /// it cannot see a failure and reports every answer as readable.
-        /// </remarks>
-        async Task<IndexerQueryObservation?> SearchIndexerObservationAsync(string apiId, string query, string? category = null, SearchRequest? request = null)
-        {
-            var results = await SearchIndexerResultsAsync(apiId, query, category, request);
-            return IndexerQueryObservation.FromResults(results, query);
-        }
+        Task<IndexerQueryObservation?> SearchIndexerObservationAsync(string apiId, string query, string? category = null, SearchRequest? request = null);
 
         /// <summary>
         /// Tests connectivity and authentication for a specific API
