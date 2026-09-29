@@ -835,11 +835,13 @@ describe('AudiobooksView Grouping', () => {
     const groupedCollections = vm.groupedCollections ?? []
     expect(groupedCollections).toHaveLength(2)
     expect(groupedCollections.find((g) => g.name === 'Series 1')).toEqual({
+      key: 'name:series 1',
       name: 'Series 1',
       count: 2,
       coverUrls: ['cover1.jpg', 'cover2.jpg'],
     })
     expect(groupedCollections.find((g) => g.name === 'Series 2')).toEqual({
+      key: 'name:series 2',
       name: 'Series 2',
       count: 1,
       coverUrls: ['cover3.jpg'],
