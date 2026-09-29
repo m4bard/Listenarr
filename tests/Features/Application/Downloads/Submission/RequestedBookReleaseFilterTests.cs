@@ -435,6 +435,103 @@ public sealed class RequestedBookReleaseFilterTests : BaseTests
             RequestedBookReleaseFilter.Evaluate(book, TorznabRelease("Miguel de Cervantes - Don Quixote Vol 2")));
     }
 
+    [Theory]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "VolumeTailOnBookTitle")]
+    // The next volume, numbered straight after the series name with no "Vol" before it
+    [InlineData("Don Quixote, Book 1", "Miguel de Cervantes", "Miguel de Cervantes - Don Quixote 02 - The Ingenious Knight")]
+    [InlineData("Les Misérables, Volume 1", "Victor Hugo", "Victor Hugo - Les Miserables 02")]
+    public void Evaluate_ReleaseNumbersADifferentVolumeWithoutAMarker_IsRejectedAsTitleMismatch(
+        string title, string author, string releaseTitle)
+    {
+        // Given: the record carries a volume number and the release carries another one right
+        // after the same words. The author matching does not make it the same volume.
+        var book = Book(title, author);
+
+        // When / Then
+        Assert.Equal(RequestedBookMatch.TitleMismatch, RequestedBookReleaseFilter.Evaluate(book, TorznabRelease(releaseTitle)));
+    }
+
+    [Theory]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "VolumeTailOnBookTitle")]
+    [InlineData("Victor Hugo - Les Miserables 01")]
+    [InlineData("Victor Hugo - Les Miserables Vol 1")]
+    [InlineData("Les Miserables 01 [Unabridged]")]
+    [InlineData("Les Miserables Vol 1 [Unabridged]")]
+    public void Evaluate_ReleaseNumbersTheSameVolume_IsAccepted(string releaseTitle)
+    {
+        // Given: the control for the test above. The same number, with or without a marker, with
+        // or without the author, is this volume.
+        var book = Book("Les Misérables, Volume 1", "Victor Hugo");
+
+        // When / Then
+        Assert.Equal(RequestedBookMatch.Accepted, RequestedBookReleaseFilter.Evaluate(book, TorznabRelease(releaseTitle)));
+    }
+
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "ShortTitleNoAuthorOnRelease")]
+    public void Evaluate_ShortTitleFollowedByANumberTheTitleLacks_IsRejectedButAYearIsNot()
+    {
+        // Given: "Emma 2" is a different work from "Emma" as surely as "Emma McChesney" is. Only a
+        // year beside the title is packaging.
+        var book = Book("Emma", "Jane Austen");
+
+        // When / Then
+        Assert.Equal(
+            RequestedBookMatch.AuthorNotCorroborated,
+            RequestedBookReleaseFilter.Evaluate(book, TorznabRelease("Emma 2 [Unabridged]")));
+
+        // Control: a year, in brackets or not, is still accepted
+        Assert.Equal(
+            RequestedBookMatch.Accepted,
+            RequestedBookReleaseFilter.Evaluate(book, TorznabRelease("Emma (1996) [Unabridged]")));
+        Assert.Equal(
+            RequestedBookMatch.Accepted,
+            RequestedBookReleaseFilter.Evaluate(book, TorznabRelease("Emma 1996 [Unabridged]")));
+    }
+
+    // ------------------------------------------------------------------
+    // Documented limits, pinned so the class comment stays true.
+    // ------------------------------------------------------------------
+
+    [Theory]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "DocumentedLimit")]
+    [InlineData("Emma - Edna Ferber")]
+    [InlineData("Emma (Edna Ferber) [Unabridged]")]
+    [InlineData("Emma [Edna Ferber]")]
+    public void Evaluate_ExactShortTitleBesideSomeoneElsesName_IsAcceptedBecauseItCannotBeDecided(string releaseTitle)
+    {
+        // Given: a name after the dash or in brackets is as often the narrator as the author, so
+        // an exact short title beside one is accepted. A different book with the same short title
+        // gets through here; the name alone cannot say which it is.
+        var book = Book("Emma", "Jane Austen");
+
+        // When / Then
+        Assert.Equal(RequestedBookMatch.Accepted, RequestedBookReleaseFilter.Evaluate(book, TorznabRelease(releaseTitle)));
+    }
+
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "DocumentedLimit")]
+    public void Evaluate_UnknownSeriesPrefixOnARecordWithNoSeries_IsAMissedGrab()
+    {
+        // Given: with no series on the record the prefix reads as another author. A missed grab,
+        // never a wrong one.
+        var book = Book("Twenty Thousand Leagues Under the Seas", "Jules Verne");
+        var release = TorznabRelease("Voyages Extraordinaires 06 - Twenty Thousand Leagues Under the Seas");
+
+        // When / Then
+        Assert.Equal(RequestedBookMatch.AuthorMismatch, RequestedBookReleaseFilter.Evaluate(book, release));
+
+        // Control: the same release with the author on it is accepted
+        Assert.Equal(
+            RequestedBookMatch.Accepted,
+            RequestedBookReleaseFilter.Evaluate(book, Release(release.Title, artist: "Jules Verne")));
+    }
+
     // ------------------------------------------------------------------
     // Exclude: order, and an empty answer rather than an exception.
     // ------------------------------------------------------------------
