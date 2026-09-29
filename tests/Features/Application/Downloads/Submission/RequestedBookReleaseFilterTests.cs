@@ -395,8 +395,12 @@ public sealed class RequestedBookReleaseFilterTests : BaseTests
         // Then: the same outcome as a search whose results the quality filter emptied
         Assert.Empty(await _downloadRepository.GetByAudiobookIdAsync(audiobook.Id));
 
-        // Control: the book was processed rather than the cycle failing on it
-        var reloaded = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+        // Control: the book was processed to the end rather than the cycle failing on it. The
+        // processor catches a per-book exception and moves on without stamping, so an exception
+        // thrown by the check would leave this unset. Read through a fresh scope, since the test's
+        // own repository still tracks the instance it saved.
+        using var scope = _provider.CreateScope();
+        var reloaded = await scope.ServiceProvider.GetRequiredService<IAudiobookRepository>().GetByIdAsync(audiobook.Id);
         Assert.NotNull(reloaded!.LastSearchTime);
     }
 
