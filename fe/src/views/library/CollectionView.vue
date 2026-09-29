@@ -973,6 +973,18 @@ const preferredSeriesCatalogLanguageFilter = preferredAuthorCatalogLanguageFilte
 const seriesLanguageLabel = authorLanguageLabel
 const isCurrentSeriesMonitored = computed(() => Boolean(seriesMonitoringStatus.value))
 const seriesIdentity = computed(() => createSeriesIdentityResolver(libraryStore.audiobooks || []))
+// The link's identifier, when some library book resolves to it. A link whose identifier no book
+// carries any more (a bookmark from before a refresh, say) falls back to matching by name rather
+// than showing an empty page.
+const pageSeriesAsin = computed(() => {
+  const asin = routeSeriesAsin.value
+  if (!asin || !isSeriesCollection.value) return ''
+  const wanted = seriesKeyForAsin(asin)
+  const inLibrary = (libraryStore.audiobooks || []).some((book) =>
+    seriesIdentity.value.seriesForBook(book).some((ref) => ref.key === wanted),
+  )
+  return inLibrary ? asin : ''
+})
 // The series identifier the page resolves its metadata by: the one in the link, else the one the
 // library's memberships agree on for this name. Two or more identifiers for one name is ambiguous,
 // and the lookup falls back to its name search exactly as before.
@@ -1002,7 +1014,7 @@ function matchesCurrentCollection(book: Audiobook): boolean {
   }
 
   if (type.value === 'series') {
-    if (routeSeriesAsin.value) {
+    if (pageSeriesAsin.value) {
       return resolveSeriesForCollection(book) !== null
     }
     const target = normalizeCollectionText(name.value)
@@ -1078,9 +1090,9 @@ function resolveBookSeries(book: Audiobook): { seriesName: string; seriesNumber?
 function resolveSeriesForCollection(
   book: Audiobook,
 ): { seriesName: string; seriesNumber?: string } | null {
-  if (routeSeriesAsin.value) {
+  if (pageSeriesAsin.value) {
     // Same identity the library grid used to build the tile this page was opened from.
-    const wanted = seriesKeyForAsin(routeSeriesAsin.value)
+    const wanted = seriesKeyForAsin(pageSeriesAsin.value)
     const match = seriesIdentity.value.seriesForBook(book).find((ref) => ref.key === wanted)
     return match ? { seriesName: match.name, seriesNumber: match.seriesNumber } : null
   }
@@ -2143,9 +2155,17 @@ async function toggleSeriesMonitoring() {
       return
     }
 
+    // Opened by identifier, the page's series is that identifier, not whatever the name-resolved
+    // catalog found. Limitation, backend side: monitoring records are keyed by name, region and
+    // language, and the first sync resolves the catalog by name and overwrites SeriesAsin with the
+    // catalog's (SeriesMonitoringService SyncSeriesInternalAsync). Sending the right identifier is
+    // harmless and records the intent, but for an ambiguous name it does not by itself make the
+    // sync follow that series.
     const response = await apiService.monitorSeries({
       name: name.value,
-      asin: seriesCatalog.value?.series?.asin || seriesLookup.value?.asin,
+      asin: routeSeriesAsin.value
+        ? seriesIdentityAsin.value
+        : seriesCatalog.value?.series?.asin || seriesLookup.value?.asin,
       region: seriesCatalogRegion.value,
       language: preferredSeriesMonitoringLanguage.value,
     })
