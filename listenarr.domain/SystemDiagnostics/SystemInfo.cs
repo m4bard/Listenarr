@@ -97,6 +97,37 @@ namespace Listenarr.Domain.SystemDiagnostics
         public string Uptime { get; set; } = string.Empty;
         public DownloadClientHealth DownloadClients { get; set; } = new();
         public ExternalApiHealth ExternalApis { get; set; } = new();
+        public IndexerHealth Indexers { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Enabled indexers against those currently in a failure-backoff cooldown, with the checks
+    /// that say which ones and for how long.
+    /// </summary>
+    public class IndexerHealth
+    {
+        public string Status { get; set; } = "unknown"; // healthy, warning, error, unknown
+        /// <summary>Enabled indexers not in a cooldown right now.</summary>
+        public int Available { get; set; }
+        /// <summary>Enabled indexers.</summary>
+        public int Total { get; set; }
+        /// <summary>One entry per check that fired; empty when every enabled indexer is available.</summary>
+        public List<IndexerHealthCheck> Checks { get; set; } = new();
+    }
+
+    /// <summary>
+    /// One failed indexer health check. <see cref="Kind"/> separates a failure run that began
+    /// recently from one that has lasted more than six hours: the second means nobody has noticed.
+    /// </summary>
+    public class IndexerHealthCheck
+    {
+        public const string NearTermKind = "IndexerStatus";
+        public const string LongTermKind = "IndexerLongTermStatus";
+
+        public string Kind { get; set; } = string.Empty;
+        public string Status { get; set; } = "warning"; // warning, error
+        public string Message { get; set; } = string.Empty;
+        public List<string> IndexerNames { get; set; } = new();
     }
 
     public class DownloadClientHealth
