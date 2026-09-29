@@ -850,6 +850,7 @@ import {
   normalizeIdentifier,
   buildTitleAuthorKey,
 } from '@/utils/collectionText'
+import { createSeriesIdentityResolver, seriesKeyForAsin } from '@/utils/seriesIdentity'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import {
   getPreferredSearchLanguageFilter,
@@ -888,6 +889,13 @@ const { getProtectedImageSrc } = useProtectedImages()
 
 const type = computed(() => route.params.type as string)
 const name = computed(() => decodeURIComponent(route.params.name as string))
+// A series link from the library grid carries the series identifier (`?asin=`) when the series has
+// one, because two different series can share a display name. Without it the page falls back to
+// matching by name, which is what every other link to a series page does.
+const routeSeriesAsin = computed(() => {
+  const raw = route.query.asin
+  return normalizeIdentifier(Array.isArray(raw) ? raw[0] : raw)
+})
 const isAuthorCollection = computed(() => type.value === 'author')
 const isSeriesCollection = computed(() => type.value === 'series')
 const isGenreCollection = computed(() => type.value === 'genre')
@@ -966,6 +974,16 @@ const preferredSeriesMonitoringLanguage = preferredAuthorMonitoringLanguage
 const preferredSeriesCatalogLanguageFilter = preferredAuthorCatalogLanguageFilter
 const seriesLanguageLabel = authorLanguageLabel
 const isCurrentSeriesMonitored = computed(() => Boolean(seriesMonitoringStatus.value))
+const seriesIdentity = computed(() => createSeriesIdentityResolver(libraryStore.audiobooks || []))
+// The series identifier the page resolves its metadata by: the one in the link, else the one the
+// library's memberships agree on for this name. Two or more identifiers for one name is ambiguous,
+// and the lookup falls back to its name search exactly as before.
+const seriesIdentityAsin = computed(() => {
+  if (!isSeriesCollection.value) return ''
+  if (routeSeriesAsin.value) return routeSeriesAsin.value
+  const asins = seriesIdentity.value.asinsForName(name.value)
+  return asins.length === 1 ? asins[0]! : ''
+})
 const seriesMetadataContextLabel = computed(() => {
   return `${seriesRegionLabel.value} / ${seriesLanguageLabel.value}`
 })
@@ -986,6 +1004,9 @@ function matchesCurrentCollection(book: Audiobook): boolean {
   }
 
   if (type.value === 'series') {
+    if (routeSeriesAsin.value) {
+      return resolveSeriesForCollection(book) !== null
+    }
     const target = normalizeCollectionText(name.value)
     const memberships = book.seriesMemberships
     if (memberships && memberships.length > 0) {
@@ -1059,6 +1080,12 @@ function resolveBookSeries(book: Audiobook): { seriesName: string; seriesNumber?
 function resolveSeriesForCollection(
   book: Audiobook,
 ): { seriesName: string; seriesNumber?: string } | null {
+  if (routeSeriesAsin.value) {
+    // Same identity the library grid used to build the tile this page was opened from.
+    const wanted = seriesKeyForAsin(routeSeriesAsin.value)
+    const match = seriesIdentity.value.seriesForBook(book).find((ref) => ref.key === wanted)
+    return match ? { seriesName: match.name, seriesNumber: match.seriesNumber } : null
+  }
   const target = normalizeCollectionText(name.value)
   const memberships = book.seriesMemberships
   if (memberships && memberships.length > 0) {
@@ -1866,7 +1893,9 @@ async function loadCollectionData(forceLibrary = false, forceAuthorMetadataRefre
     const refreshedCatalog = await loadSeriesCatalog(forceAuthorMetadataRefresh)
     await loadSeriesMonitoringStatus()
     await loadSeriesLookup(
-      refreshedCatalog?.series?.asin || seriesCatalog.value?.series?.asin,
+      seriesIdentityAsin.value ||
+        refreshedCatalog?.series?.asin ||
+        seriesCatalog.value?.series?.asin,
       forceAuthorMetadataRefresh,
     )
   } else {
@@ -1974,7 +2003,10 @@ async function refreshSeriesMetadata() {
   try {
     const refreshedCatalog = await loadSeriesCatalog(true)
     const refreshedLookup = await loadSeriesLookup(
-      refreshedCatalog?.series?.asin || seriesCatalog.value?.series?.asin || seriesHeroAsin.value,
+      seriesIdentityAsin.value ||
+        refreshedCatalog?.series?.asin ||
+        seriesCatalog.value?.series?.asin ||
+        seriesHeroAsin.value,
       true,
     )
 
@@ -2356,7 +2388,7 @@ watch(searchQuery, () => {
   currentPage.value = 1
 })
 
-watch([type, name], async () => {
+watch([type, name, routeSeriesAsin], async () => {
   currentPage.value = 1
   lastClickedIndex.value = null
   showFullAuthorDescription.value = false
