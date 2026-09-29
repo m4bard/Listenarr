@@ -1132,6 +1132,25 @@ export interface ServiceHealth {
   uptime: string
   downloadClients: DownloadClientHealth
   externalApis: ExternalApiHealth
+  /** Absent from a backend that predates indexer health checks. */
+  indexers?: IndexerHealth
+}
+
+export interface IndexerHealth {
+  status: string // "healthy", "warning", "error", "unknown"
+  /** Enabled indexers not in a failure-backoff cooldown right now. */
+  available: number
+  /** Enabled indexers. */
+  total: number
+  checks: IndexerHealthCheck[]
+}
+
+export interface IndexerHealthCheck {
+  /** "IndexerStatus" (failure run began within six hours) or "IndexerLongTermStatus" (longer). */
+  kind: string
+  status: string // "warning", "error"
+  message: string
+  indexerNames: string[]
 }
 
 export interface DownloadClientHealth {

@@ -110,6 +110,40 @@
           </div>
         </StatusCard>
 
+        <StatusCard
+          v-if="indexerHealth"
+          title="Indexers"
+          :icon="PhMagnifyingGlass"
+          data-testid="indexer-health"
+        >
+          <template #header-badge>
+            <span :class="['status-badge', indexerHealth.status]">
+              {{ indexerHealth.available }}/{{ indexerHealth.total }}
+            </span>
+          </template>
+          <div v-if="indexerHealth.checks.length === 0" class="empty-message">
+            <PhInfo />
+            <span>{{
+              indexerHealth.total === 0 ? 'No indexers enabled' : 'All indexers available'
+            }}</span>
+          </div>
+          <div v-else>
+            <div
+              v-for="check in indexerHealth.checks"
+              :key="check.kind"
+              :class="['client-status', check.status]"
+              :data-kind="check.kind"
+              data-testid="indexer-health-check"
+            >
+              <component
+                :is="check.status === 'error' ? PhXCircle : PhWarning"
+                :class="check.status === 'error' ? 'error' : 'warning'"
+              />
+              <span class="client-name">{{ check.message }}</span>
+            </div>
+          </div>
+        </StatusCard>
+
         <StatusCard title="WebSockets" :icon="PhWifiX">
           <template #header-badge>
             <span :class="['status-badge', isConnected ? 'healthy' : 'error']">
@@ -242,6 +276,7 @@ import {
   PhEye,
   PhDownloadSimple,
   PhTrash,
+  PhMagnifyingGlass,
 } from '@phosphor-icons/vue'
 import { useSignalR } from '@/composables/useSignalR'
 import { useSystemLogs } from '@/composables/useSystemLogs'
@@ -256,7 +291,7 @@ import {
   getServiceHealth,
   downloadLogs as downloadLogsApi,
 } from '@/services/api'
-import type { SystemInfo, StorageInfo, ServiceHealth } from '@/types'
+import type { SystemInfo, StorageInfo, ServiceHealth, IndexerHealth } from '@/types'
 import { logger } from '@/utils/logger'
 
 const router = useRouter()
@@ -284,6 +319,9 @@ const downloadClientsStatus = ref({
 const downloadClients = ref<
   Array<{ name: string; status: string; failureReason?: string | null }>
 >([])
+
+// Null against a backend that predates indexer health checks, which hides the card.
+const indexerHealth = ref<IndexerHealth | null>(null)
 
 const externalApis = ref({
   status: 'unknown' as string,
@@ -335,6 +373,8 @@ const loadSystemData = async () => {
       status: client.status,
       failureReason: client.failureReason,
     }))
+
+    indexerHealth.value = health.indexers ?? null
 
     // Update external APIs status
     externalApis.value = {
