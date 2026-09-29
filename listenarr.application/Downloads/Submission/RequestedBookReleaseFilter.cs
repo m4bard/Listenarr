@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Text.RegularExpressions;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
@@ -62,27 +63,62 @@ namespace Listenarr.Application.Downloads.Submission
     /// grab of a correct release and the operator cannot see why.
     /// </para>
     /// <para>
-    /// The rules, in order:
-    /// every significant word of the book's title, or of the part before its subtitle, must appear
-    /// in the release title as a whole word; case, accents, punctuation and extra words are
-    /// ignored. The book's author then counts as corroborated when their surname appears in the
-    /// release title or author field. When it does not, a release whose author field names
-    /// somebody else is rejected, and a release that names nobody is accepted only when the
-    /// matched title is at least <see cref="AudiobookSearchQueryBuilder.MinimumSignificantWordsToIssueAlone"/>
-    /// significant words long, the same bar the query ladder uses for sending a title with no
-    /// author. A book with no title or no author is judged on whatever it does have.
+    /// The rules, in order. The release title must carry every significant word of one spelling
+    /// of the book's title, as whole words, ignoring case, accents, punctuation, edition and format
+    /// words, and volume markers such as "Book" or "Vol". The spellings are the stored title, the
+    /// part before a subtitle, the title with a trailing ", Book N" or ", Volume N" removed, and,
+    /// only when the author is corroborated, the part after a "Series: " prefix. The book's author
+    /// is corroborated when their surname appears in the release title or author field, and then
+    /// the release is accepted. Otherwise a release whose author field names somebody else is
+    /// rejected; the field only counts as naming somebody when it holds words that are not the
+    /// book's own title, series or a number, because the Torznab parser fills it with whatever
+    /// precedes the first " - " of the title. A release that names nobody is accepted when the
+    /// matched title is at least
+    /// <see cref="AudiobookSearchQueryBuilder.MinimumSignificantWordsToIssueAlone"/> significant
+    /// words long, the same bar the query ladder uses for sending a title with no author, or when
+    /// one " - " segment of the release title, brackets and noise removed, says exactly the book's
+    /// title and nothing more. A book with no title or no author is judged on what it does have.
+    /// </para>
+    /// <para>
+    /// That last rule is what separates the incident from an ordinary short-titled release. "Emma
+    /// McChesney and Co" contains "Emma" and says more; "Emma [Unabridged]" says "Emma" and nothing
+    /// else. It cannot separate two different books that share an exact short title when neither
+    /// the author nor anything else on the release tells them apart, and with no author on the
+    /// release that is not decidable from the name at all. It also accepts "Emma - Somebody Else",
+    /// since the words after the dash are as likely a narrator as an author.
+    /// </para>
+    /// <para>
+    /// Known narrowness, each a missed automatic grab rather than a wrong one unless stated:
+    /// a number spelled one way in the record and another in the release ("1984" and "Nineteen
+    /// Eighty-Four", "Twenty Thousand" and "20000"); British and American spellings ("Colour" and
+    /// "Color"); an author field carrying a transliteration, a pen name or a translator instead of
+    /// the author; and a release whose narrator comes before the dash with no author anywhere.
+    /// Two wrong grabs it does not stop: a same-author book whose title contains the requested one
+    /// (a sequel such as "Dune Messiah" for "Dune"), and a study guide or summary of the book that
+    /// carries its title and author.
     /// </para>
     /// </remarks>
     public static class RequestedBookReleaseFilter
     {
         /// <summary>
-        /// Words a book record's title can carry that describe the recording rather than the
-        /// work, so a release that leaves them out is not missing any of the title.
+        /// Words that describe the recording or its packaging rather than the work, so neither
+        /// side is required to carry them.
         /// </summary>
-        private static readonly IReadOnlySet<string> EditionWords =
+        private static readonly IReadOnlySet<string> NoiseWords =
             new HashSet<string>(StringComparer.Ordinal)
             {
-                "unabridged", "abridged", "audiobook", "edition", "dramatized", "dramatised"
+                "unabridged", "abridged", "audiobook", "edition", "dramatized", "dramatised",
+                "mp3", "m4a", "m4b", "flac", "aac", "ogg", "opus", "kbps"
+            };
+
+        /// <summary>
+        /// Words that introduce a volume number. The number that follows them is identity; the
+        /// word itself is spelled too many ways ("Volume", "Vol.", "Book", "Bk") to require.
+        /// </summary>
+        private static readonly IReadOnlySet<string> VolumeMarkers =
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "book", "bk", "volume", "vol", "part", "pt"
             };
 
         /// <summary>
@@ -105,6 +141,32 @@ namespace Listenarr.Application.Downloads.Submission
                 "jr", "sr", "ii", "iii", "iv", "phd", "md"
             };
 
+        /// <summary>A trailing ", Book 1", " Volume 2", " (Part 3)" and the like.</summary>
+        private static readonly Regex VolumeTail = new(
+            @"^(?<stem>.*?\S)[\s,:;\-\(\[]*\b(?:book|bk|volume|vol|part|pt)\.?\s*(?<number>\d+)\s*[\)\]]?\s*$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+        /// <summary>The separators the Torznab parser and most release names use between fields.</summary>
+        private static readonly string[] SegmentSeparators = [" - ", " – ", " — "];
+
+        private static readonly Regex DelimitedSpan = new(
+            @"\[[^\]]*\]|\([^\)]*\)|\{[^\}]*\}",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        private enum TitleFormKind
+        {
+            /// <summary>The whole title; also the only kind a bare release segment is compared with.</summary>
+            Whole,
+
+            /// <summary>Less than the whole title, still enough without the author when long enough.</summary>
+            Shortened,
+
+            /// <summary>The part after a "Series: " prefix; only with the author corroborated.</summary>
+            AfterPrefix
+        }
+
+        private sealed record TitleForm(IReadOnlySet<string> Words, TitleFormKind Kind, string? VolumeNumber);
+
         public static RequestedBookMatch Evaluate(Audiobook audiobook, SearchResult release)
         {
             ArgumentNullException.ThrowIfNull(audiobook);
@@ -118,32 +180,23 @@ namespace Listenarr.Application.Downloads.Submission
                 return RequestedBookMatch.Accepted;
             }
 
-            var releaseTitleTokens = AudiobookSearchQueryBuilder.Tokenize(release.Title);
+            var releaseTitleTokens = Words(release.Title);
             var releaseTitleWords = new HashSet<string>(releaseTitleTokens, StringComparer.Ordinal);
 
-            // The longest form the release fully carries. "Frankenstein [m4b]" carries the stem of
-            // "Frankenstein: or, The Modern Prometheus" and not the whole title, so it has shown
-            // one word of identity, not three.
-            var matchedWordCount = titleForms
-                .Where(form => form.All(releaseTitleWords.Contains))
-                .Select(form => form.Count)
-                .DefaultIfEmpty(0)
-                .Max();
+            var matchedForms = titleForms
+                .Where(form => form.Words.All(releaseTitleWords.Contains)
+                    && !NamesADifferentVolume(releaseTitleTokens, form.VolumeNumber))
+                .ToList();
 
-            if (matchedWordCount == 0)
+            if (matchedForms.Count == 0)
             {
                 return RequestedBookMatch.TitleMismatch;
             }
 
             var surnames = BuildSurnameKeys(audiobook.Authors);
-            if (surnames.Count == 0)
-            {
-                return RequestedBookMatch.Accepted;
-            }
-
             var releaseAuthorTokens = IsPlaceholderAuthor(release.Artist)
                 ? new List<string>()
-                : AudiobookSearchQueryBuilder.Tokenize(release.Artist);
+                : Words(release.Artist);
 
             var corroborated = surnames.Overlaps(WordsAndJoinedPairs(releaseTitleTokens))
                 || surnames.Overlaps(WordsAndJoinedPairs(releaseAuthorTokens));
@@ -152,18 +205,34 @@ namespace Listenarr.Application.Downloads.Submission
                 return RequestedBookMatch.Accepted;
             }
 
-            // An author field made entirely of words already in the title is not independent
-            // information. The Torznab parser fills it with whatever precedes " - ", so for
-            // "Title - Narrator" it holds the title, and reading that as the release's author
-            // would reject the release for a disagreement it never made.
-            var namesAnotherAuthor = releaseAuthorTokens.Count > 0
-                && !releaseAuthorTokens.All(releaseTitleWords.Contains);
-            if (namesAnotherAuthor)
+            // "Heir to the Empire" is the whole of "Star Wars: Heir to the Empire" to anyone who
+            // knows the book, and a common enough title to anyone who does not. Only the author
+            // can say which, so a release that matched nothing else does not get past here.
+            var matchedWithoutAuthor = matchedForms.Where(form => form.Kind != TitleFormKind.AfterPrefix).ToList();
+            if (matchedWithoutAuthor.Count == 0)
+            {
+                return surnames.Count == 0
+                    ? RequestedBookMatch.TitleMismatch
+                    : RequestedBookMatch.AuthorNotCorroborated;
+            }
+
+            if (surnames.Count == 0)
+            {
+                return RequestedBookMatch.Accepted;
+            }
+
+            if (NamesAnotherAuthor(releaseAuthorTokens, audiobook))
             {
                 return RequestedBookMatch.AuthorMismatch;
             }
 
-            return matchedWordCount >= AudiobookSearchQueryBuilder.MinimumSignificantWordsToIssueAlone
+            var matchedWordCount = matchedWithoutAuthor.Max(form => form.Words.Count);
+            if (matchedWordCount >= AudiobookSearchQueryBuilder.MinimumSignificantWordsToIssueAlone)
+            {
+                return RequestedBookMatch.Accepted;
+            }
+
+            return HasSegmentSayingExactlyTheTitle(release.Title, matchedWithoutAuthor)
                 ? RequestedBookMatch.Accepted
                 : RequestedBookMatch.AuthorNotCorroborated;
         }
@@ -202,45 +271,157 @@ namespace Listenarr.Application.Downloads.Submission
         {
             RequestedBookMatch.TitleMismatch => "release title does not contain the book's title",
             RequestedBookMatch.AuthorMismatch => "release names a different author",
-            RequestedBookMatch.AuthorNotCorroborated => "title is too short to identify the book and the author is not on the release",
+            RequestedBookMatch.AuthorNotCorroborated => "title alone does not identify the book and the author is not on the release",
             _ => verdict.ToString()
         };
 
         /// <summary>
-        /// The sets of words a release title has to carry, one per acceptable spelling of the
-        /// book's title: as stored minus edition annotations, the part before the subtitle, and
-        /// with every bracketed span removed. Forms with no significant words are left out.
+        /// The spellings of the book's title a release may carry, as sets of required words.
+        /// Spellings with no significant words are left out.
         /// </summary>
-        private static List<HashSet<string>> BuildTitleForms(string? title)
+        private static List<TitleForm> BuildTitleForms(string? title)
         {
-            var forms = new List<HashSet<string>>();
+            var forms = new List<TitleForm>();
             if (string.IsNullOrWhiteSpace(title))
             {
                 return forms;
             }
 
             var queryTitle = AudiobookSearchQueryBuilder.BuildQueryTitle(title);
-            var spellings = new[]
-            {
-                queryTitle,
-                AudiobookSearchQueryBuilder.BuildTitleStem(queryTitle),
-                TitleUtils.NormalizeTitle(title)
-            };
+            Add(queryTitle, TitleFormKind.Whole, null);
+            Add(TitleUtils.NormalizeTitle(title), TitleFormKind.Whole, null);
+            Add(AudiobookSearchQueryBuilder.BuildTitleStem(queryTitle), TitleFormKind.Shortened, null);
 
-            foreach (var spelling in spellings)
+            // "..., Book 1" is the series position, which a release often leaves off. The number is
+            // kept aside so a release that names a different volume is still not this one.
+            var volumeTail = VolumeTail.Match(queryTitle);
+            if (volumeTail.Success)
             {
-                var required = AudiobookSearchQueryBuilder.Tokenize(spelling)
-                    .Where(AudiobookSearchQueryBuilder.IsSignificantWord)
-                    .Where(word => !EditionWords.Contains(word))
-                    .ToHashSet(StringComparer.Ordinal);
+                Add(volumeTail.Groups["stem"].Value, TitleFormKind.Whole, NormalizeNumber(volumeTail.Groups["number"].Value));
+            }
 
-                if (required.Count > 0 && !forms.Any(existing => existing.SetEquals(required)))
-                {
-                    forms.Add(required);
-                }
+            var colon = queryTitle.IndexOf(':');
+            if (colon > 0 && colon < queryTitle.Length - 1)
+            {
+                Add(queryTitle[(colon + 1)..], TitleFormKind.AfterPrefix, null);
             }
 
             return forms;
+
+            void Add(string spelling, TitleFormKind kind, string? volumeNumber)
+            {
+                var required = RequiredWords(spelling);
+                if (required.Count > 0 && !forms.Any(existing => existing.Kind == kind && existing.Words.SetEquals(required)))
+                {
+                    forms.Add(new TitleForm(required, kind, volumeNumber));
+                }
+            }
+        }
+
+        private static HashSet<string> RequiredWords(string? text)
+        {
+            return Words(text)
+                .Where(AudiobookSearchQueryBuilder.IsSignificantWord)
+                .Where(word => !NoiseWords.Contains(word) && !VolumeMarkers.Contains(word))
+                .ToHashSet(StringComparer.Ordinal);
+        }
+
+        /// <summary>
+        /// Tokens as the query builder produces them, with numbers written without leading zeros
+        /// so "01" and "1" are the same volume.
+        /// </summary>
+        private static List<string> Words(string? text)
+        {
+            return AudiobookSearchQueryBuilder.Tokenize(text).Select(NormalizeNumber).ToList();
+        }
+
+        private static string NormalizeNumber(string token)
+        {
+            if (token.Length < 2 || !IsNumber(token))
+            {
+                return token;
+            }
+
+            var trimmed = token.TrimStart('0');
+            return trimmed.Length > 0 ? trimmed : "0";
+        }
+
+        private static bool IsNumber(string token) => token.Length > 0 && token.All(char.IsAsciiDigit);
+
+        /// <summary>
+        /// Whether the release says "Vol 2" (or "Book 2", ...) for a book whose title says 1.
+        /// </summary>
+        private static bool NamesADifferentVolume(List<string> releaseTokens, string? volumeNumber)
+        {
+            if (volumeNumber is null)
+            {
+                return false;
+            }
+
+            for (var index = 0; index + 1 < releaseTokens.Count; index++)
+            {
+                if (VolumeMarkers.Contains(releaseTokens[index])
+                    && IsNumber(releaseTokens[index + 1])
+                    && !string.Equals(releaseTokens[index + 1], volumeNumber, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Whether the release's author field holds anything besides the book's own title words,
+        /// series words and numbers. The Torznab parser fills that field with whatever precedes the
+        /// first " - " of the title, so "Barsoom 01 - A Princess of Mars" arrives with "Barsoom 01"
+        /// as its author, and that must not read as a different author. "Mark Twain" does.
+        /// </summary>
+        private static bool NamesAnotherAuthor(List<string> releaseAuthorTokens, Audiobook audiobook)
+        {
+            var ownWords = new HashSet<string>(Words(audiobook.Title), StringComparer.Ordinal);
+            ownWords.UnionWith(Words(audiobook.Series));
+
+            return releaseAuthorTokens
+                .Where(AudiobookSearchQueryBuilder.IsSignificantWord)
+                .Where(word => !NoiseWords.Contains(word) && !IsNumber(word))
+                .Any(word => !ownWords.Contains(word));
+        }
+
+        /// <summary>
+        /// Whether one " - " segment of the release title, with bracketed spans, noise words and
+        /// stray numbers removed, is exactly the book's whole title: every word of it and nothing
+        /// else. "Kim [Unabridged] [M4B]" and "Barsoom 01 - A Princess of Mars" are; "Edna Ferber -
+        /// Emma McChesney and Co" is not a match for "Emma", because no segment stops at "Emma".
+        /// </summary>
+        private static bool HasSegmentSayingExactlyTheTitle(string? releaseTitle, List<TitleForm> matchedForms)
+        {
+            if (string.IsNullOrWhiteSpace(releaseTitle))
+            {
+                return false;
+            }
+
+            // Only spellings the release already matched, so a volume the release contradicts
+            // cannot come back in through here.
+            var wholeForms = matchedForms.Where(form => form.Kind == TitleFormKind.Whole).ToList();
+            foreach (var segment in releaseTitle.Split(SegmentSeparators, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var segmentWords = RequiredWords(DelimitedSpan.Replace(segment, " "));
+                foreach (var form in wholeForms)
+                {
+                    // A year or a track number beside the title is not another work.
+                    var comparable = segmentWords
+                        .Where(word => !IsNumber(word) || form.Words.Contains(word))
+                        .ToHashSet(StringComparer.Ordinal);
+
+                    if (comparable.SetEquals(form.Words))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
