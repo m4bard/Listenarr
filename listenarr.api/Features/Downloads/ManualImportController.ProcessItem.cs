@@ -139,6 +139,23 @@ public partial class ManualImportController
                     };
             }
 
+            // Registration refuses a file its extension rules out, but it only runs after the
+            // destination has been published, and nothing on that refusal removes what was
+            // published. Ask the same question here, before any filesystem mutation, so the
+            // refusal leaves the library folder as it found it. The planner keeps the source
+            // extension, so the source path answers for the destination. Deliberately the same
+            // predicate registration applies, with no allowlist argument, so the two cannot
+            // disagree about a file.
+            if (!FileUtils.MayBeAudioPendingProbe(item.FullPath))
+            {
+                _logger.LogInformation(
+                    "Refused manual import before publication because registration does not accept its extension: {Path}",
+                    LogRedaction.SanitizeFilePath(item.FullPath));
+                return ManualImportResultDto.FailureResult(
+                    "The file is not an audio format Listenarr can import.",
+                    item.FullPath);
+            }
+
             if (!TryResolveManagedDestinationBasePath(
                     audiobook,
                     rootFolders,
