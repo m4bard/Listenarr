@@ -66,7 +66,14 @@ public class MetadataRefreshBackgroundService(
             initialDelay: TimeSpan.FromMinutes(10),
             intervalProvider: NextDelay,
             runCycle: processor.RunCycleAsync,
-            stoppingToken);
+            stoppingToken,
+            // A refresh is one of the things item 183's task surface exists to bring forward
+            // (ScheduledTaskManualTrigger.cs). Safe to allow: the coordinator's own single-run
+            // gate (MetadataRefreshCoordinator._running) refuses a manual trigger that lands
+            // while a scheduled cycle is in flight rather than running both, and the shared
+            // MetadataRefreshBudget is re-read from settings on every cycle either path takes,
+            // so a manual run spends against the same rate limit rather than a fresh one.
+            manualTrigger: ScheduledTaskManualTrigger.Allowed);
 
         logger.LogInformation("MetadataRefreshBackgroundService stopped");
     }
