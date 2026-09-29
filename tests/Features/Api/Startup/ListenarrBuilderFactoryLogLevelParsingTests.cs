@@ -17,6 +17,7 @@
  */
 
 using Listenarr.Api.Startup;
+using Listenarr.Tests.Common;
 using Serilog.Events;
 
 namespace Listenarr.Tests.Features.Api.Startup;
@@ -28,7 +29,11 @@ namespace Listenarr.Tests.Features.Api.Startup;
 /// Error, Fatal), so a value typed by someone coming from Microsoft.Extensions.Logging
 /// conventions used to fail <c>Enum.TryParse</c> silently and fall back to Information.
 /// </summary>
-public sealed class ListenarrBuilderFactoryLogLevelParsingTests
+// No DB or DI is needed here, only BaseTests to satisfy the repository's test-class
+// convention (BackendArchitectureTests.TestClasses_FollowRepositoryConventions).
+[Trait("Name", "ListenarrBuilderFactoryLogLevelParsingTests")]
+[Trait("Category", "Api")]
+public sealed class ListenarrBuilderFactoryLogLevelParsingTests : BaseTests
 {
     [Theory]
     [InlineData("Trace", LogEventLevel.Verbose)]
