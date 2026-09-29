@@ -35,9 +35,16 @@ import CollectionView from '@/views/library/CollectionView.vue'
 import { useLibraryStore } from '@/stores/library'
 import type { Audiobook, AudiobookSeriesMembership } from '@/types'
 
-const { mockGetSeriesCatalog, mockGetSeriesLookup } = vi.hoisted(() => ({
+const { mockGetSeriesCatalog, mockGetSeriesLookup, mockMonitorSeries } = vi.hoisted(() => ({
   mockGetSeriesCatalog: vi.fn(async () => null as unknown),
   mockGetSeriesLookup: vi.fn(async () => null as unknown),
+  mockMonitorSeries: vi.fn(async () => ({
+    message: 'ok',
+    monitoredSeries: null as unknown,
+    addedCount: 0,
+    existingCount: 0,
+    failedCount: 0,
+  })),
 }))
 
 vi.mock('@/services/api', () => ({
@@ -54,6 +61,7 @@ vi.mock('@/services/api', () => ({
     getSeriesLookup: mockGetSeriesLookup,
     getAuthorMonitoringStatus: vi.fn(async () => ({ isMonitored: false, monitoredAuthor: null })),
     getSeriesMonitoringStatus: vi.fn(async () => ({ isMonitored: false, monitoredSeries: null })),
+    monitorSeries: mockMonitorSeries,
     getAudiobookDeleteCapabilities: vi.fn(async () => ({
       canRemoveFromLibrary: true,
       canDeleteTrackedFiles: true,
@@ -91,6 +99,10 @@ function book(id: number, title: string, memberships: AudiobookSeriesMembership[
     imageUrl: `cover-${id}.jpg`,
     files: [],
   } as unknown as Audiobook
+}
+
+function byAuthor(author: string, target: Audiobook): Audiobook {
+  return { ...target, authors: [author] } as Audiobook
 }
 
 function installBrowserShims() {
@@ -277,6 +289,74 @@ describe('library grid: series tiles are keyed by series identity (#953)', () =>
     })
     wrapper.unmount()
   })
+
+  it('gives series with non-Latin names their own tiles, with or without an identifier', async () => {
+    const { wrapper, vm } = await mountGrid([
+      book(1, 'Voina i mir', [membership('Война и мир')]),
+      book(2, 'Priklyucheniya', [membership('Приключения Шерлока Холмса', 'SERRU00001')]),
+      book(3, 'Hon', [membership('シャーロック・ホームズ')]),
+    ])
+
+    const result = tiles(vm)
+    expect(result.map((t) => [t.name, t.count]).sort()).toEqual(
+      [
+        ['Война и мир', 1],
+        ['Приключения Шерлока Холмса', 1],
+        ['シャーロック・ホームズ', 1],
+      ].sort(),
+    )
+    expect(result.find((t) => t.name === 'Приключения Шерлока Холмса')?.seriesAsin).toBe(
+      'SERRU00001',
+    )
+    wrapper.unmount()
+  })
+
+  it('does not merge a mixed-script name into the name made of its digits', async () => {
+    const { wrapper, vm } = await mountGrid([
+      book(1, 'Metro', [membership('Метро 2033')]),
+      book(2, 'Other', [membership('2033')]),
+    ])
+
+    expect(
+      tiles(vm)
+        .map((t) => t.name)
+        .sort(),
+    ).toEqual(['2033', 'Метро 2033'])
+    wrapper.unmount()
+  })
+
+  it('keeps a same-named row by a different author out of an identified series', async () => {
+    // Partially backfilled library: another author's series of the same name has its identifier,
+    // these rows do not. A shared name alone is not evidence they are the same series.
+    const { wrapper, vm } = await mountGrid([
+      book(1, 'Doyle One', [membership('Foundation', undefined, '1')]),
+      book(2, 'Doyle Two', [membership('Foundation', undefined, '2')]),
+      byAuthor('Other Author', book(3, 'Other One', [membership('Foundation', 'SEROTHER01')])),
+    ])
+
+    const result = tiles(vm)
+    expect(result.map((t) => [t.name, t.count, t.seriesAsin ?? null])).toEqual([
+      ['Foundation', 2, null],
+      ['Foundation', 1, 'SEROTHER01'],
+    ])
+    wrapper.unmount()
+  })
+
+  it('files a row without an identifier under the same-named series by the same author', async () => {
+    // Two identified series share the name but not the author, so the author settles it.
+    const { wrapper, vm } = await mountGrid([
+      book(1, 'Doyle One', [membership('Foundation', 'SERDOYLE01', '1')]),
+      book(2, 'Doyle Two', [membership('Foundation', undefined, '2')]),
+      byAuthor('Other Author', book(3, 'Other One', [membership('Foundation', 'SEROTHER01')])),
+    ])
+
+    const result = tiles(vm)
+    expect(result.map((t) => [t.name, t.count, t.seriesAsin ?? null])).toEqual([
+      ['Foundation', 2, 'SERDOYLE01'],
+      ['Foundation', 1, 'SEROTHER01'],
+    ])
+    wrapper.unmount()
+  })
 })
 
 async function mountSeriesPage(path: string, books: Audiobook[]) {
@@ -334,6 +414,7 @@ describe('series page: resolves the series by identity (#953)', () => {
     mockGetSeriesCatalog.mockResolvedValue(null)
     mockGetSeriesLookup.mockReset()
     mockGetSeriesLookup.mockResolvedValue(null)
+    mockMonitorSeries.mockClear()
   })
 
   it('shows only the books of the series named by the identifier in the link', async () => {
@@ -416,6 +497,53 @@ describe('series page: resolves the series by identity (#953)', () => {
     )
     const vm = wrapper.vm as unknown as { audiobooks: Array<{ seriesNumber?: string }> }
     expect(vm.audiobooks.map((b) => b.seriesNumber)).toEqual(['7'])
+    wrapper.unmount()
+  })
+
+  it('falls back to the name when no library book carries the identifier in the link', async () => {
+    // A bookmark from before a refresh changed the identifier: showing an empty page would hide
+    // books that are plainly in this series by name.
+    const { wrapper } = await mountSeriesPage(
+      `/collection/series/${encodeURIComponent(NAME)}?asin=NOTINLIB01`,
+      [
+        book(1, 'A Study in Scarlet', [membership(NAME, ORIGINAL, '1')]),
+        book(2, 'The Jungle Book', [membership('The Jungle Book')]),
+      ],
+    )
+    expect(shownTitles(wrapper)).toEqual(['A Study in Scarlet'])
+    wrapper.unmount()
+  })
+
+  it('shows the books of a non-Latin series opened by its identifier', async () => {
+    const { wrapper } = await mountSeriesPage(
+      `/collection/series/${encodeURIComponent('Приключения')}?asin=SERRU00001`,
+      [
+        book(1, 'Odin', [membership('Приключения', 'SERRU00001')]),
+        book(2, 'Dva', [membership('Война и мир')]),
+      ],
+    )
+    expect(shownTitles(wrapper)).toEqual(['Odin'])
+    wrapper.unmount()
+  })
+
+  it('monitors the series the link identifies, not the name-resolved catalog series', async () => {
+    mockGetSeriesCatalog.mockResolvedValue({
+      series: { asin: ORIGINAL, name: NAME },
+      books: [],
+      totalBooks: 0,
+    })
+    const { wrapper } = await mountSeriesPage(
+      `/collection/series/${encodeURIComponent(NAME)}?asin=${TRANSLATED}`,
+      MIXED_LIBRARY(),
+    )
+    await (
+      wrapper.vm as unknown as { toggleSeriesMonitoring: () => Promise<void> }
+    ).toggleSeriesMonitoring()
+    expect(mockMonitorSeries).toHaveBeenCalledTimes(1)
+    expect((mockMonitorSeries.mock.calls[0] as unknown[])[0]).toMatchObject({
+      name: NAME,
+      asin: TRANSLATED,
+    })
     wrapper.unmount()
   })
 })

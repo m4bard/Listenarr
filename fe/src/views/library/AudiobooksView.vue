@@ -1506,6 +1506,12 @@ function getBookAuthorGroupKeys(book: Audiobook): { raw: string; normalized: str
   return keys
 }
 
+// Built over the whole library, not the filtered list, so it does not rebuild on every search
+// keystroke and so a tile's identity does not depend on what the filter happens to show.
+const librarySeriesIdentity = computed(() =>
+  createSeriesIdentityResolver(libraryStore.audiobooks || []),
+)
+
 const groupedCollections = computed(() => {
   if (groupBy.value === 'books') return []
 
@@ -1514,9 +1520,7 @@ const groupedCollections = computed(() => {
   // Series tiles are keyed by series identity (SeriesAsin, else normalized name), resolved over the
   // whole library so the grid and the series page (CollectionView.vue) agree on it. See
   // createSeriesIdentityResolver for how rows without an identifier are filed.
-  const seriesIdentity = isAuthorsMode
-    ? null
-    : createSeriesIdentityResolver(libraryStore.audiobooks || [])
+  const seriesIdentity = isAuthorsMode ? null : librarySeriesIdentity.value
   const groups = new Map<
     string,
     {
@@ -1587,9 +1591,9 @@ const groupedCollections = computed(() => {
       }
       const group = groups.get(normalized)!
       group.count++
-      // Distinct series this author appears in. getBookSeriesNames is membership-aware and already
-      // used by the series grouping below, so a book in several series counts once per series
-      // rather than once overall.
+      // Distinct series this author appears in. getBookSeriesNames is membership-aware, so a book
+      // in several series counts once per series rather than once overall. It counts by lowercase
+      // name, not by the series identity the series grouping uses.
       if (group.seriesNames) {
         for (const seriesName of getBookSeriesNames(book)) {
           group.seriesNames.add(seriesName.toLowerCase())
