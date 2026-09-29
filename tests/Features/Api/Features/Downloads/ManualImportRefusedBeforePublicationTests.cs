@@ -43,15 +43,23 @@ public sealed class ManualImportRefusedBeforePublicationTests : BaseTests
 
     public ManualImportRefusedBeforePublicationTests()
     {
+        // Both overloads answer with audio-only content, so the audio controls pass on what the
+        // probe reports rather than leaning on the always-audio extension short-circuit.
+        var probed = new AudioMetadata
+        {
+            Title = BookTitle,
+            Format = "mp3",
+            BitRate = 128000,
+            HasAudioStream = true,
+            HasVideoStream = false
+        };
         var metadata = new Mock<IMetadataService>();
         metadata.Setup(service => service.ExtractFileMetadataAsync(
                 It.IsAny<string>()))
-            .ReturnsAsync(new AudioMetadata
-            {
-                Title = BookTitle,
-                Format = "mp3",
-                BitRate = 128000
-            });
+            .ReturnsAsync(probed);
+        metadata.Setup(service => service.ExtractFileMetadataAsync(
+                It.IsAny<MetadataFileSource>()))
+            .ReturnsAsync(probed);
         Init(builder => builder.WithSingleton(metadata.Object));
     }
 
@@ -62,6 +70,12 @@ public sealed class ManualImportRefusedBeforePublicationTests : BaseTests
         { FileAction.Move, "incoming.MKV" },
         { FileAction.Copy, "incoming.txt" },
         { FileAction.HardlinkCopy, "incoming.mkv" },
+        // No extension at all. The planner would name these .m4b and registration would then
+        // accept them, so before the gate they imported; refusing them is intended.
+        { FileAction.Move, "incoming" },
+        { FileAction.Copy, "incoming" },
+        { FileAction.Move, "incoming." },
+        { FileAction.Copy, "incoming." },
     };
 
     [Theory]
