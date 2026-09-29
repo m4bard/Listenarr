@@ -105,6 +105,10 @@ function byAuthor(author: string, target: Audiobook): Audiobook {
   return { ...target, authors: [author] } as Audiobook
 }
 
+function withAuthors(authors: string[], target: Audiobook): Audiobook {
+  return { ...target, authors } as Audiobook
+}
+
 function installBrowserShims() {
   const g = globalThis as unknown as Record<string, unknown>
   if (typeof g.ResizeObserver === 'undefined') {
@@ -357,6 +361,50 @@ describe('library grid: series tiles are keyed by series identity (#953)', () =>
     ])
     wrapper.unmount()
   })
+
+  // One series, one book with its identifier and one without, by these authors. Every row here is
+  // the same series and must be one tile; the unrelated-author case above must stay two.
+  const SAME_SERIES_AUTHORS: Array<[string, string[], string[]]> = [
+    [
+      'a co-author on the book without the identifier',
+      ['Robert Jordan'],
+      ['Robert Jordan', 'Brandon Sanderson'],
+    ],
+    [
+      'a co-author on the book with the identifier',
+      ['Robert Jordan', 'Brandon Sanderson'],
+      ['Robert Jordan'],
+    ],
+    ['the same non-Latin author', ['Лев Толстой'], ['Лев Толстой']],
+    ['the same authors in another order', ['A One', 'B Two'], ['B Two', 'A One']],
+    ['no authors on the book without the identifier', ['Robert Jordan'], []],
+  ]
+  for (const [label, identifiedAuthors, bareAuthors] of SAME_SERIES_AUTHORS) {
+    it(`files a row without an identifier into its series with ${label}`, async () => {
+      const { wrapper, vm } = await mountGrid([
+        withAuthors(identifiedAuthors, book(1, 'One', [membership('Saga', 'SERSAGA001', '1')])),
+        withAuthors(bareAuthors, book(2, 'Two', [membership('Saga', undefined, '2')])),
+      ])
+      expect(tiles(vm).map((t) => [t.name, t.count, t.seriesAsin ?? null])).toEqual([
+        ['Saga', 2, 'SERSAGA001'],
+      ])
+      wrapper.unmount()
+    })
+  }
+
+  it('keeps an author-less row apart when another same-named row by other authors stays apart', async () => {
+    // The author-less row could belong to either; neither is evidence, so it is not guessed.
+    const { wrapper, vm } = await mountGrid([
+      book(1, 'Doyle One', [membership('Foundation', 'SERDOYLE01', '1')]),
+      byAuthor('Other Author', book(2, 'Other One', [membership('Foundation', undefined, '1')])),
+      withAuthors([], book(3, 'Nobody', [membership('Foundation', undefined, '2')])),
+    ])
+    expect(tiles(vm).map((t) => [t.count, t.seriesAsin ?? null])).toEqual([
+      [2, null],
+      [1, 'SERDOYLE01'],
+    ])
+    wrapper.unmount()
+  })
 })
 
 async function mountSeriesPage(path: string, books: Audiobook[]) {
@@ -544,6 +592,21 @@ describe('series page: resolves the series by identity (#953)', () => {
       name: NAME,
       asin: TRANSLATED,
     })
+    wrapper.unmount()
+  })
+
+  it('does not send a stale link identifier to the lookup or to Monitor', async () => {
+    const { wrapper } = await mountSeriesPage(
+      `/collection/series/${encodeURIComponent(NAME)}?asin=NOTINLIB01`,
+      [book(1, 'A Study in Scarlet', [membership(NAME, ORIGINAL, '1')])],
+    )
+    // The page fell back to the name, so it resolves by what the library holds for that name.
+    expect(lookupAsins()).toEqual([ORIGINAL])
+    await (
+      wrapper.vm as unknown as { toggleSeriesMonitoring: () => Promise<void> }
+    ).toggleSeriesMonitoring()
+    const sent = (mockMonitorSeries.mock.calls[0] as unknown[])[0] as { asin?: string }
+    expect(sent.asin).not.toBe('NOTINLIB01')
     wrapper.unmount()
   })
 })
