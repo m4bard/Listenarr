@@ -116,7 +116,8 @@ export interface IndexerSearchOutcome {
   results: unknown[]
   /** False when the indexer timed out, errored, or could not be used: its empty list means nothing. */
   answered: boolean
-  failureReason: string | null
+  /** Left out of the JSON when null: when the indexer answered, or no reason was recorded. */
+  failureReason?: string | null
 }
 
 class ApiService {
