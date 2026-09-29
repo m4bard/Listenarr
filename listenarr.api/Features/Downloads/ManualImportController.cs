@@ -203,6 +203,11 @@ public partial class ManualImportController : ControllerBase
             return BadRequest(new { error = "No items to import" });
         }
 
+        if (request.Items.Any(item => item.MatchedAudiobookId <= 0))
+        {
+            return BadRequest(new { error = "Each item must have a valid matchedAudiobookId" });
+        }
+
         _filesystemMutationGate.EnsureReady();
 
         var results = new List<ManualImportResultDto>();
