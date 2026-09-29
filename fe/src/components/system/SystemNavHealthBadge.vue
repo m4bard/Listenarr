@@ -21,7 +21,8 @@
  * outage is visible from every page rather than only on the Indexers settings page.
  *
  * Refreshed when an indexer enters or leaves failure backoff (the backend broadcasts
- * IndexersUpdated on every transition) and when the realtime connection comes back. Red when no
+ * IndexersUpdated on every transition), when the realtime connection comes back, and once a minute
+ * while the tab is visible, because a cooldown that simply runs out broadcasts nothing. Red when no
  * enabled indexer is left to ask, amber otherwise.
  */
 import { onUnmounted, ref, watch } from 'vue'
@@ -32,14 +33,17 @@ import { logger } from '@/utils/logger'
 import type { ServiceHealth } from '@/types'
 
 const props = defineProps<{
-  /** False until the user is signed in, so the badge never asks a protected endpoint first. */
+  /** False until health may be asked for; see isSystemHealthBadgeEnabled. */
   enabled: boolean
 }>()
 
 const issueCount = ref(0)
 const variant = ref<'warning' | 'error'>('warning')
 
+const PERIODIC_REFRESH_MS = 60_000
+
 let unsubscribers: Array<() => void> = []
+let timer: ReturnType<typeof setInterval> | null = null
 let inFlight = false
 let pending = false
 
@@ -74,7 +78,7 @@ const refresh = async () => {
 }
 
 const start = () => {
-  if (unsubscribers.length > 0) return
+  if (unsubscribers.length > 0 || timer !== null) return
   try {
     unsubscribers = [
       signalRService.onIndexersUpdated(() => void refresh()),
@@ -83,12 +87,19 @@ const start = () => {
   } catch (err) {
     logger.debug('System health badge could not subscribe to realtime updates', err)
   }
+  timer = setInterval(() => {
+    if (document.visibilityState !== 'hidden') void refresh()
+  }, PERIODIC_REFRESH_MS)
   void refresh()
 }
 
 const stop = () => {
   unsubscribers.forEach((unsubscribe) => unsubscribe())
   unsubscribers = []
+  if (timer !== null) {
+    clearInterval(timer)
+    timer = null
+  }
 }
 
 watch(
