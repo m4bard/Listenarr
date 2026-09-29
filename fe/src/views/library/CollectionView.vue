@@ -985,12 +985,13 @@ const pageSeriesAsin = computed(() => {
   )
   return inLibrary ? asin : ''
 })
-// The series identifier the page resolves its metadata by: the one in the link, else the one the
-// library's memberships agree on for this name. Two or more identifiers for one name is ambiguous,
-// and the lookup falls back to its name search exactly as before.
+// The series identifier the page resolves its metadata by: the one in the link when a library book
+// carries it (pageSeriesAsin), else the one the library's memberships agree on for this name. Two
+// or more identifiers for one name is ambiguous, and the lookup falls back to its name search
+// exactly as before.
 const seriesIdentityAsin = computed(() => {
   if (!isSeriesCollection.value) return ''
-  if (routeSeriesAsin.value) return routeSeriesAsin.value
+  if (pageSeriesAsin.value) return pageSeriesAsin.value
   const asins = seriesIdentity.value.asinsForName(name.value)
   return asins.length === 1 ? asins[0]! : ''
 })
@@ -2163,7 +2164,7 @@ async function toggleSeriesMonitoring() {
     // sync follow that series.
     const response = await apiService.monitorSeries({
       name: name.value,
-      asin: routeSeriesAsin.value
+      asin: pageSeriesAsin.value
         ? seriesIdentityAsin.value
         : seriesCatalog.value?.series?.asin || seriesLookup.value?.asin,
       region: seriesCatalogRegion.value,
