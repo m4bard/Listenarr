@@ -142,10 +142,22 @@ public partial class ManualImportController
             // Registration refuses a file its extension rules out, but it only runs after the
             // destination has been published, and nothing on that refusal removes what was
             // published. Ask the same question here, before any filesystem mutation, so the
-            // refusal leaves the library folder as it found it. The planner keeps the source
-            // extension, so the source path answers for the destination. Deliberately the same
-            // predicate registration applies, with no allowlist argument, so the two cannot
-            // disagree about a file.
+            // refusal leaves the library folder as it found it. This is registration's own
+            // predicate, with no allowlist argument, and the planner keeps the source extension,
+            // so for any source that has an extension the two give the same answer.
+            //
+            // The one place they differ is a source with no extension ("name" or "name."). The
+            // planner names that destination .m4b, which registration accepts, so such a file
+            // used to import. It is now refused here, deliberately: it matches the *arr practice
+            // of admitting only known media extensions, and it stops an arbitrary extensionless
+            // file (a README, say) being registered as an audiobook under a .m4b name.
+            //
+            // Not covered: registration can still refuse after publication for reasons the source
+            // cannot predict (folder containment, a concurrent ownership claim, the audiobook
+            // removed mid-import), or because its content gate probes the published destination
+            // and gets no metadata or no audio where the probe of the source above passed. Those
+            // refusals still leave the published file; removing it safely needs the registration
+            // journal to prove the entry is one this operation created.
             if (!FileUtils.MayBeAudioPendingProbe(item.FullPath))
             {
                 _logger.LogInformation(
