@@ -58,7 +58,8 @@ const hit = (guid: string) => ({
   indexerId: 1,
 })
 
-type Answer = unknown[] | { results: unknown[]; answered: boolean; failureReason: string | null }
+// failureReason is left out of the JSON when null (the controllers ignore nulls when writing).
+type Answer = unknown[] | { results: unknown[]; answered: boolean; failureReason?: string | null }
 
 const searchWith = async (answers: Record<string, Answer | Error>) => {
   vi.spyOn(apiService, 'getEnabledIndexers').mockResolvedValue(indexers as never)
@@ -136,6 +137,43 @@ describe('ManualSearchModal could-not-search reporting', () => {
 
     expect(wrapper.text()).toContain('No results found')
     expect(wrapper.find('[data-testid="could-not-search"]').exists()).toBe(false)
+  })
+
+  it('names the indexer without a parenthetical when no reason came back', async () => {
+    const wrapper = await searchWith({
+      '1': { results: [hit('a1')], answered: true },
+      '2': { results: [], answered: false },
+      '3': { results: [], answered: true },
+    })
+
+    const text = wrapper.find('[data-testid="could-not-search"]').text()
+    expect(text).toContain('Birchfield')
+    expect(text).not.toContain('Birchfield (')
+  })
+
+  it('words an indexer that is not usable as configured for a person', async () => {
+    const wrapper = await searchWith({
+      '1': { results: [hit('a1')], answered: true },
+      '2': { results: [], answered: false, failureReason: 'NotConfigured' },
+      '3': { results: [], answered: true },
+    })
+
+    expect(wrapper.find('[data-testid="could-not-search"]').text()).toContain(
+      'Birchfield (not configured)',
+    )
+  })
+
+  it('counts an indexer once when handling its unanswered result also throws', async () => {
+    // A null entry makes the result normalisation throw after the indexer was already recorded
+    const wrapper = await searchWith({
+      '1': { results: [hit('a1')], answered: true },
+      '2': { results: [null], answered: false, failureReason: 'Timeout' },
+      '3': { results: [], answered: true },
+    })
+
+    const text = wrapper.find('[data-testid="could-not-search"]').text()
+    expect(text).toContain('1 of 3')
+    expect(text.match(/Birchfield/g)).toHaveLength(1)
   })
 
   it('treats a bare list from an older backend as answered', async () => {
