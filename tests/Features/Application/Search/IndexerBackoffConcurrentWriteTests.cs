@@ -37,12 +37,20 @@ namespace Listenarr.Tests.Features.Application.Search;
 /// a context before the first completes, and the loser's backoff state is dropped with a warning.
 /// </summary>
 /// <remarks>
-/// Overlap is forced rather than hoped for. <see cref="UpdateGate"/> holds every backoff UPDATE at
-/// the command interceptor until as many of them have arrived as the test expects, or until a short
-/// timeout. On a shared context the second write never reaches the interceptor (EF throws first),
-/// so the gate times out and the collision is certain; with a context per write all of them arrive
-/// and the gate opens at once. Without the gate the writes are short enough to miss each other most
-/// of the time, which is also why production saw this once in a day and not on every search.
+/// <para>
+/// The primary assertion is which context each backoff UPDATE ran on, recorded by
+/// <see cref="UpdateRecorder"/> from the command interceptor: one distinct context per write, none
+/// of them the scope's. That holds or fails regardless of scheduling. Whether two operations on one
+/// context actually collide does not: EF's concurrency detector only throws when the second
+/// operation arrives from a different thread, so on a single CPU two writes on one shared context
+/// can run back to back on one thread and succeed, and an outcome-only test passes on the broken
+/// code.
+/// </para>
+/// <para>
+/// The recorder also holds each UPDATE until the expected number have arrived, or a short timeout,
+/// so on a multi-core machine the writes really do overlap and the secondary outcome assertions
+/// (every rung persisted) exercise concurrent SQLite writers. Nothing asserts on that overlap.
+/// </para>
 /// </remarks>
 [Trait("Area", "Search")]
 [Trait("Name", "IndexerBackoffConcurrentWriteTests")]
@@ -58,18 +66,23 @@ public sealed class IndexerBackoffConcurrentWriteTests : BaseTests
     {
         // Given: four indexers, all answering 503 in the same batch, wired the way the app wires
         // them: repository, status service and workflow resolved from one scope.
-        var gate = new UpdateGate(expected: IndexerCount);
-        await using var provider = await BuildServiceProviderAsync(gate);
+        var recorder = new UpdateRecorder(expected: IndexerCount);
+        await using var provider = await BuildServiceProviderAsync(recorder);
         var logger = new RecordingLogger<IndexerSearchWorkflow>();
 
         // When
         await using (var scope = provider.CreateAsyncScope())
         {
+            var scopedContext = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
             var workflow = BuildWorkflow(scope.ServiceProvider, logger);
             await workflow.SearchIndexersAsync("the time machine");
+
+            // Then: each indexer's write ran on a context of its own, and none on the one every
+            // indexer in this search shares.
+            AssertOneOwnContextPerWrite(recorder, scopedContext);
         }
 
-        // Then: every indexer is on rung 1, not just the one that won the race.
+        // And: every indexer is on rung 1, not just the one that won the race.
         var stored = await ReadIndexersAsync(provider);
         Assert.All(stored, indexer =>
         {
@@ -78,10 +91,6 @@ public sealed class IndexerBackoffConcurrentWriteTests : BaseTests
             Assert.Equal(nameof(IndexerQueryReason.HttpStatus), indexer.LastFailureReason);
         });
         Assert.DoesNotContain(logger.Warnings, w => w.StartsWith("Failed to record failure backoff state", StringComparison.Ordinal));
-
-        // And: the writes really did overlap. Without this the test would also pass on a
-        // workflow that happened to record outcomes one at a time.
-        Assert.Equal(IndexerCount, gate.MaxInFlight);
     }
 
     [Fact]
@@ -90,13 +99,14 @@ public sealed class IndexerBackoffConcurrentWriteTests : BaseTests
     public async Task UpdateBackoffStateAsync_ConcurrentCallsOnOneScopedRepository_AllLand()
     {
         // Given: the DI-resolved repository, the one every indexer in a search shares.
-        var gate = new UpdateGate(expected: IndexerCount);
-        await using var provider = await BuildServiceProviderAsync(gate);
+        var recorder = new UpdateRecorder(expected: IndexerCount);
+        await using var provider = await BuildServiceProviderAsync(recorder);
         var till = new DateTime(2026, 9, 14, 18, 0, 0, DateTimeKind.Utc);
 
         // When: one write per indexer, all at once
         await using (var scope = provider.CreateAsyncScope())
         {
+            var scopedContext = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
             var repository = scope.ServiceProvider.GetRequiredService<IIndexerRepository>();
 
             // The scope has already read the indexer list, as SearchIndexersAsync does before its
@@ -107,34 +117,46 @@ public sealed class IndexerBackoffConcurrentWriteTests : BaseTests
                 repository.UpdateBackoffStateAsync(
                     id,
                     new IndexerBackoffState(till.AddHours(-1), till.AddHours(-1), id, till, "Timeout")))));
+
+            // Then
+            AssertOneOwnContextPerWrite(recorder, scopedContext);
         }
 
-        // Then: each row carries its own rung, so no write was lost or applied to the wrong row.
+        // And: each row carries its own rung, so no write was lost or applied to the wrong row.
         var stored = await ReadIndexersAsync(provider);
         Assert.Equal(Enumerable.Range(1, IndexerCount), stored.Select(i => i.EscalationLevel));
         Assert.All(stored, indexer => Assert.Equal(till, indexer.DisabledTill));
     }
 
     [Fact]
-    [Trait("Scenario", "ControlSharedContextCollides")]
-    public async Task Control_TwoGatedUpdatesOnOneContext_Collide()
+    [Trait("Scenario", "ControlRecorderSeesTheSharedContext")]
+    public async Task Control_RepositoryWithoutAFactory_WritesOnTheScopedContext()
     {
-        // The apparatus check. If the gate did not hold a write open, the tests above would pass
-        // on the shared-context code too and prove nothing. Two writes through one context under
-        // the same gate must fail in exactly the way production logged.
-        var gate = new UpdateGate(expected: 2);
-        await using var provider = await BuildServiceProviderAsync(gate);
+        // The apparatus check, and the shape the code had before the fix: a repository holding
+        // only the scope's context. The recorder must report that context, or the assertion the
+        // tests above rely on could not tell the two apart. Sequential and single-write, so
+        // nothing here depends on scheduling.
+        var recorder = new UpdateRecorder(expected: 1);
+        await using var provider = await BuildServiceProviderAsync(recorder);
 
         await using var scope = provider.CreateAsyncScope();
-        var shared = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-        await shared.Indexers.AsNoTracking().ToListAsync();
+        var scopedContext = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+        var repository = new EfIndexerRepository(scopedContext);
 
-        var writes = Enumerable.Range(1, 2).Select(id => Task.Run(() => shared.Indexers
-            .Where(i => i.Id == id)
-            .ExecuteUpdateAsync(s => s.SetProperty(i => i.EscalationLevel, 5)))).ToArray();
+        await repository.UpdateBackoffStateAsync(
+            1,
+            new IndexerBackoffState(null, null, 2, new DateTime(2026, 9, 14, 18, 0, 0, DateTimeKind.Utc), "Timeout"));
 
-        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => Task.WhenAll(writes));
-        Assert.Contains("A second operation was started on this context instance", failure.Message);
+        var context = Assert.Single(recorder.Contexts);
+        Assert.Same(scopedContext, context);
+    }
+
+    private static void AssertOneOwnContextPerWrite(UpdateRecorder recorder, ListenArrDbContext scopedContext)
+    {
+        var contexts = recorder.Contexts;
+        Assert.Equal(IndexerCount, contexts.Count);
+        Assert.Equal(IndexerCount, contexts.Distinct(ReferenceEqualityComparer.Instance).Count());
+        Assert.DoesNotContain(contexts, c => ReferenceEquals(c, scopedContext));
     }
 
     private IndexerSearchWorkflow BuildWorkflow(IServiceProvider services, ILogger<IndexerSearchWorkflow> logger) =>
@@ -153,7 +175,7 @@ public sealed class IndexerBackoffConcurrentWriteTests : BaseTests
     /// the real search registration extensions. Over a migrated SQLite file, not the in-memory
     /// provider, because the in-memory provider cannot run ExecuteUpdate at all.
     /// </summary>
-    private async Task<ServiceProvider> BuildServiceProviderAsync(UpdateGate gate)
+    private async Task<ServiceProvider> BuildServiceProviderAsync(UpdateRecorder recorder)
     {
         var databasePath = Path.Combine(FileService.GetTempPath(), $"backoff-race-{Guid.NewGuid():N}.db");
         var connectionString = $"Data Source={databasePath}";
@@ -161,7 +183,7 @@ public sealed class IndexerBackoffConcurrentWriteTests : BaseTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddDbContextFactory<ListenArrDbContext>(
-            options => options.UseSqlite(connectionString).AddInterceptors(gate),
+            options => options.UseSqlite(connectionString).AddInterceptors(recorder),
             ServiceLifetime.Singleton);
         services.AddSearchInfrastructure();
         services.AddSingleton(TimeProvider.System);
@@ -184,7 +206,7 @@ public sealed class IndexerBackoffConcurrentWriteTests : BaseTests
         }
         await seed.SaveChangesAsync();
 
-        gate.Arm();
+        recorder.Arm();
         return provider;
     }
 
@@ -201,19 +223,27 @@ public sealed class IndexerBackoffConcurrentWriteTests : BaseTests
     }
 
     /// <summary>
-    /// Holds each Indexers UPDATE until <c>expected</c> of them are in flight together, or a short
-    /// timeout passes. The timeout is what lets the shared-context case finish: there, only one
-    /// write ever gets this far.
+    /// Records the context every Indexers UPDATE ran on, and holds each one until <c>expected</c>
+    /// have arrived or a short timeout passes, so writes that can overlap do. The timeout is what
+    /// lets a shared-context run finish when its siblings never reach this point.
     /// </summary>
-    private sealed class UpdateGate(int expected) : DbCommandInterceptor
+    private sealed class UpdateRecorder(int expected) : DbCommandInterceptor
     {
         private static readonly TimeSpan HoldLimit = TimeSpan.FromSeconds(2);
         private readonly TaskCompletionSource _allArrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly List<DbContext?> _contexts = new();
         private int _armed;
-        private int _inFlight;
-        private int _maxInFlight;
 
-        public int MaxInFlight => Volatile.Read(ref _maxInFlight);
+        public IReadOnlyList<DbContext?> Contexts
+        {
+            get
+            {
+                lock (_contexts)
+                {
+                    return _contexts.ToList();
+                }
+            }
+        }
 
         public void Arm() => Volatile.Write(ref _armed, 1);
 
@@ -226,14 +256,14 @@ public sealed class IndexerBackoffConcurrentWriteTests : BaseTests
             if (Volatile.Read(ref _armed) == 1
                 && command.CommandText.TrimStart().StartsWith("UPDATE \"Indexers\"", StringComparison.Ordinal))
             {
-                var now = Interlocked.Increment(ref _inFlight);
-                int seen;
-                while ((seen = Volatile.Read(ref _maxInFlight)) < now
-                       && Interlocked.CompareExchange(ref _maxInFlight, now, seen) != seen)
+                int arrived;
+                lock (_contexts)
                 {
+                    _contexts.Add(eventData.Context);
+                    arrived = _contexts.Count;
                 }
 
-                if (now >= expected)
+                if (arrived >= expected)
                 {
                     _allArrived.TrySetResult();
                 }
@@ -249,29 +279,6 @@ public sealed class IndexerBackoffConcurrentWriteTests : BaseTests
             }
 
             return result;
-        }
-
-        public override void CommandFailed(DbCommand command, CommandErrorEventData eventData) => Leave(command);
-
-        public override Task CommandFailedAsync(DbCommand command, CommandErrorEventData eventData, CancellationToken cancellationToken = default)
-        {
-            Leave(command);
-            return Task.CompletedTask;
-        }
-
-        public override ValueTask<int> NonQueryExecutedAsync(DbCommand command, CommandExecutedEventData eventData, int result, CancellationToken cancellationToken = default)
-        {
-            Leave(command);
-            return ValueTask.FromResult(result);
-        }
-
-        private void Leave(DbCommand command)
-        {
-            if (Volatile.Read(ref _armed) == 1
-                && command.CommandText.TrimStart().StartsWith("UPDATE \"Indexers\"", StringComparison.Ordinal))
-            {
-                Interlocked.Decrement(ref _inFlight);
-            }
         }
     }
 
