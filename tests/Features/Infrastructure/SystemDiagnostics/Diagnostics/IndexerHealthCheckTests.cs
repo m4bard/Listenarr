@@ -17,7 +17,6 @@
  */
 
 using Listenarr.Domain.SystemDiagnostics;
-using Listenarr.Infrastructure.SystemDiagnostics.Diagnostics;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.Logging.Abstractions;
 

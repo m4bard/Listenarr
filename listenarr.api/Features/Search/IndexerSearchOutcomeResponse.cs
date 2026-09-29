@@ -35,7 +35,12 @@ namespace Listenarr.Api.Features.Search
         /// </summary>
         public bool Answered { get; set; }
 
-        /// <summary>Why the indexer could not be asked; null when <see cref="Answered"/> is true.</summary>
+        /// <summary>
+        /// Why the indexer could not be asked: a query reason such as <c>Timeout</c>, or
+        /// <c>NotConfigured</c>, or <c>NotFound</c> for an indexer that does not exist or is disabled.
+        /// Null, and so absent from the JSON under the controllers' ignore-when-null setting, when
+        /// <see cref="Answered"/> is true or when no reason was recorded.
+        /// </summary>
         public string? FailureReason { get; set; }
 
         /// <summary>
@@ -54,9 +59,18 @@ namespace Listenarr.Api.Features.Search
             {
                 Results = results,
                 Answered = answered,
-                // A null observation is an indexer that does not exist or is disabled.
-                FailureReason = answered ? null : observation?.Reason.ToString() ?? "NotFound"
+                FailureReason = answered ? null : DescribeFailure(observation)
             };
         }
+
+        private static string? DescribeFailure(IndexerQueryObservation? observation) => observation switch
+        {
+            // A null observation is an indexer that does not exist or is disabled.
+            null => "NotFound",
+            // Never sent; the provider-lookup detail behind it is not what the operator acts on.
+            { Outcome: IndexerQueryOutcome.NotConfigured } => "NotConfigured",
+            { Reason: IndexerQueryReason.None } => null,
+            _ => observation.Reason.ToString()
+        };
     }
 }

@@ -40,7 +40,14 @@ namespace Listenarr.Tests.Features.Api.Features.Search;
 [Trait("Category", "IndexerSearchOutcome")]
 public sealed class SearchByApiCouldNotAskTests : BaseTests
 {
-    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
+    // The controllers' own settings (Startup/ListenarrServiceRegistration.cs, AddJsonOptions): web
+    // defaults, enums as strings, and nulls left out. Asserting against anything looser would pass a
+    // shape the frontend never receives.
+    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+    };
 
     [Fact]
     [Trait("Method", "SearchIndexerObservationAsync")]
@@ -151,7 +158,8 @@ public sealed class SearchByApiCouldNotAskTests : BaseTests
         var body = await CallAsync(service, includeOutcome: true);
 
         Assert.True(body.GetProperty("answered").GetBoolean());
-        Assert.Equal(JsonValueKind.Null, body.GetProperty("failureReason").ValueKind);
+        // Null, so left out entirely under the app's settings
+        Assert.False(body.TryGetProperty("failureReason", out _));
         var result = Assert.Single(body.GetProperty("results").EnumerateArray());
         Assert.Equal("Alice in the Orchard", result.GetProperty("title").GetString());
     }
@@ -170,6 +178,41 @@ public sealed class SearchByApiCouldNotAskTests : BaseTests
 
         Assert.False(body.GetProperty("answered").GetBoolean());
         Assert.Equal("NotFound", body.GetProperty("failureReason").GetString());
+    }
+
+    [Fact]
+    [Trait("Method", "SearchByApi")]
+    [Trait("Scenario", "EnvelopeForAnUnusableIndexer")]
+    public async Task SearchByApi_WithOutcome_NoProviderForTheIndexer_SaysNotConfigured()
+    {
+        // The request was never sent, so the reason worth showing is the outcome, not the
+        // provider-lookup detail behind it.
+        var service = new Mock<ISearchService>();
+        service
+            .Setup(s => s.SearchIndexerObservationAsync("1", "Alice", null, It.IsAny<SearchRequest?>()))
+            .ReturnsAsync(IndexerQueryObservation.NotConfigured(IndexerQueryReason.NoProviderForImplementation, "Alice"));
+
+        var body = await CallAsync(service, includeOutcome: true);
+
+        Assert.False(body.GetProperty("answered").GetBoolean());
+        Assert.Equal("NotConfigured", body.GetProperty("failureReason").GetString());
+    }
+
+    [Fact]
+    [Trait("Method", "SearchByApi")]
+    [Trait("Scenario", "EnvelopeWithoutAReason")]
+    public async Task SearchByApi_WithOutcome_FailureWithNoRecordedReason_OmitsTheReason()
+    {
+        // "None" is not a reason; sending it would put "(None)" in front of the operator.
+        var service = new Mock<ISearchService>();
+        service
+            .Setup(s => s.SearchIndexerObservationAsync("1", "Alice", null, It.IsAny<SearchRequest?>()))
+            .ReturnsAsync(IndexerQueryObservation.Unavailable(IndexerQueryReason.None, "Alice"));
+
+        var body = await CallAsync(service, includeOutcome: true);
+
+        Assert.False(body.GetProperty("answered").GetBoolean());
+        Assert.False(body.TryGetProperty("failureReason", out _));
     }
 
     [Fact]
