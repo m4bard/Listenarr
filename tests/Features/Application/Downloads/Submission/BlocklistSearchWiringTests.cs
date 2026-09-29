@@ -49,7 +49,9 @@ public sealed class BlocklistSearchWiringTests : BaseTests
             new QualityProfileBuilder().Build());
         var audiobook = await _audiobookRepository.AddAsync(
             new AudiobookBuilder()
-                .WithTitle("Blocked Book")
+                // The listing's own title, so the candidate is for this book and the only thing
+                // that can stop the second grab is the blocklist.
+                .WithTitle("The Only Listing")
                 .WithQualityProfile(qualityProfile)
                 .Build());
 
