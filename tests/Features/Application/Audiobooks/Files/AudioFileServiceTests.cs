@@ -1120,6 +1120,14 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Files
                 $"/proc/{Environment.ProcessId}/fd/",
                 registrationLease.MetadataPath);
 
+            // Control: confirm lstat genuinely disagrees with the real file on
+            // this box, so a runtime change that made lstat follow the link
+            // could not make this test pass without exercising
+            // TryGetRegisteredFileLength at all.
+            Assert.NotEqual(
+                audioBytes.Length,
+                new FileInfo(registrationLease.MetadataPath).Length);
+
             Assert.True(await _provider
                 .GetRequiredService<IAudiobookFileService>()
                 .EnsureAudiobookFileAsync(_audiobook, registrationLease, "test"));
@@ -1162,6 +1170,14 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Files
             Assert.StartsWith(
                 $"/proc/{Environment.ProcessId}/fd/",
                 replacementLease.MetadataPath);
+
+            // Control: confirm lstat genuinely disagrees with the real file on
+            // this box, so a runtime change that made lstat follow the link
+            // could not make this test pass without exercising
+            // TryGetRegisteredFileLength at all.
+            Assert.NotEqual(
+                replacementBytes.Length,
+                new FileInfo(replacementLease.MetadataPath).Length);
 
             var refreshed = await service.RefreshPhysicalGenerationAsync(
                 _audiobook,
