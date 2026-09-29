@@ -126,7 +126,7 @@ public static class AudiobookSearchQueryBuilder
     /// worth saying so plainly rather than presenting it as the family's answer.
     /// </para>
     /// </remarks>
-    private const int MinimumSignificantWordsToIssueAlone = 3;
+    internal const int MinimumSignificantWordsToIssueAlone = 3;
 
     /// <summary>
     /// A parenthesised or bracketed span, captured without its delimiters.
@@ -296,7 +296,16 @@ public static class AudiobookSearchQueryBuilder
     /// </remarks>
     internal static int CountSignificantWords(string? text)
     {
-        return Tokenize(text).Count(token => !InsignificantWords.Contains(token));
+        return Tokenize(text).Count(IsSignificantWord);
+    }
+
+    /// <summary>
+    /// Whether one token from <see cref="Tokenize"/> names anything, by the same closed list
+    /// <see cref="CountSignificantWords"/> counts with.
+    /// </summary>
+    internal static bool IsSignificantWord(string token)
+    {
+        return !InsignificantWords.Contains(token);
     }
 
     /// <summary>
@@ -385,7 +394,7 @@ public static class AudiobookSearchQueryBuilder
             : left + " " + author;
     }
 
-    private static List<string> Tokenize(string? value)
+    internal static List<string> Tokenize(string? value)
     {
         var tokens = new List<string>();
         if (string.IsNullOrWhiteSpace(value))
