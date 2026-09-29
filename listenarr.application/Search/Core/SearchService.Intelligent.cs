@@ -412,6 +412,11 @@ namespace Listenarr.Application.Search.Core
             return await _indexerSearchWorkflow.SearchIndexerResultsAsync(apiId, query, category, request);
         }
 
+        public async Task<IndexerQueryObservation?> SearchIndexerObservationAsync(string apiId, string query, string? category = null, SearchRequest? request = null)
+        {
+            return await _indexerSearchWorkflow.SearchIndexerObservationAsync(apiId, query, category, request);
+        }
+
         public async Task<bool> TestApiConnectionAsync(string apiId)
         {
             return await _indexerSearchWorkflow.TestApiConnectionAsync(apiId);
