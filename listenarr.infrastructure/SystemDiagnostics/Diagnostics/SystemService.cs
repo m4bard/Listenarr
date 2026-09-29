@@ -30,6 +30,7 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
         private readonly IApplicationVersionService _applicationVersionService;
         private readonly IRootFolderService _rootFolderService;
         private readonly IDiskSpaceProbe _diskSpaceProbe;
+        private readonly IDownloadClientStatusCache _downloadClientStatusCache;
         private readonly DateTime _startTime;
         private static readonly Process _currentProcess = Process.GetCurrentProcess();
 
@@ -39,7 +40,8 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             IApplicationPathService applicationPathService,
             IApplicationVersionService applicationVersionService,
             IRootFolderService rootFolderService,
-            IDiskSpaceProbe diskSpaceProbe)
+            IDiskSpaceProbe diskSpaceProbe,
+            IDownloadClientStatusCache downloadClientStatusCache)
         {
             _configurationService = configurationService;
             _logger = logger;
@@ -47,6 +49,7 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             _applicationVersionService = applicationVersionService;
             _rootFolderService = rootFolderService;
             _diskSpaceProbe = diskSpaceProbe;
+            _downloadClientStatusCache = downloadClientStatusCache;
             _startTime = DateTime.UtcNow;
         }
 
@@ -184,7 +187,8 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             try
             {
                 var clients = await _configurationService.GetDownloadClientConfigurationsAsync();
-                return SystemHealthMapper.BuildDownloadClientHealth(clients);
+                var polledStatuses = _downloadClientStatusCache.GetStatuses();
+                return SystemHealthMapper.BuildDownloadClientHealth(clients, polledStatuses);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -300,34 +304,16 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
 
                 if (!File.Exists(logFilePath))
                 {
-                    // Return some sample logs if file doesn't exist yet
+                    // Report the absence, the same way the empty-parse branch below does.
+                    // Both this list and the /system/logs/download export are read as a record
+                    // of what the application did, so an entry invented here is indistinguishable
+                    // from one the application actually wrote.
                     logs.Add(new LogEntry
                     {
-                        Timestamp = DateTime.UtcNow.AddMinutes(-5),
+                        Timestamp = DateTime.UtcNow,
                         Level = "Info",
-                        Message = "Listenarr application started",
-                        Source = "Application"
-                    });
-                    logs.Add(new LogEntry
-                    {
-                        Timestamp = DateTime.UtcNow.AddMinutes(-3),
-                        Level = "Info",
-                        Message = "Database connection established",
-                        Source = "Database"
-                    });
-                    logs.Add(new LogEntry
-                    {
-                        Timestamp = DateTime.UtcNow.AddMinutes(-2),
-                        Level = "Info",
-                        Message = "System health check completed successfully",
+                        Message = "No log file has been written yet",
                         Source = "System"
-                    });
-                    logs.Add(new LogEntry
-                    {
-                        Timestamp = DateTime.UtcNow.AddMinutes(-1),
-                        Level = "Info",
-                        Message = "Ready to accept requests",
-                        Source = "Application"
                     });
                     return logs;
                 }

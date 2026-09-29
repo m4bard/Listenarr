@@ -237,50 +237,6 @@ namespace Listenarr.Api.Features.Search
         }
 
         /// <summary>
-        /// Search for audiobook series by name using the Audible catalog provider.
-        /// </summary>
-        /// <param name="name">Series name to search for.</param>
-        /// <param name="region">Audible marketplace region (default: us).</param>
-        [HttpGet("audible/series")]
-        public async Task<ActionResult<object>> SearchAudibleSeries([FromQuery] string name, [FromQuery] string region = "us")
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(name)) return BadRequest("name query parameter is required");
-                var res = await _audibleService.SearchSeriesByNameAsync(name, region);
-                if (res == null) return NotFound();
-                return Ok(res);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                _logger.LogError(ex, "Error proxying Audible series search for name {Name}", name);
-                return StatusCode(500, "Internal server error");
-            }
-        }
-
-        /// <summary>
-        /// Get all books in a series by the series ASIN.
-        /// </summary>
-        /// <param name="asin">Audible series ASIN.</param>
-        /// <param name="region">Audible marketplace region (default: us).</param>
-        [HttpGet("audible/series/books/{asin}")]
-        public async Task<ActionResult<object>> GetAudibleSeriesBooks(string asin, [FromQuery] string region = "us")
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(asin)) return BadRequest("asin is required");
-                var res = await _audibleService.GetBooksBySeriesAsinAsync(asin, region);
-                if (res == null) return NotFound();
-                return Ok(res);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                _logger.LogError(ex, "Error proxying Audible series books for ASIN {Asin}", asin);
-                return StatusCode(500, "Internal server error");
-            }
-        }
-
-        /// <summary>
         /// Search configured indexers only (no metadata enrichment). Supports MyAnonamouse-specific query parameters.
         /// </summary>
         /// <param name="query">Search term.</param>
@@ -349,7 +305,20 @@ namespace Listenarr.Api.Features.Search
         /// <summary>
         /// Search the Audible catalog for audiobooks.
         /// </summary>
+        /// <remarks>
+        /// The one caller that should keep failing rather than degrade. An empty result list is
+        /// a claim about the catalog, and a provider that did not answer has made no such
+        /// claim, so this endpoint reports the outage. It reports it as a 503 rather than the
+        /// 500 a raised fault would otherwise become: a rate-limited host is not a bug in
+        /// Listenarr, and the caller is owed the difference, because for one of the two
+        /// retrying is the right move.
+        /// </remarks>
         [HttpGet("audible")]
+        [ProducesResponseType(typeof(AudibleSearchResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<AudibleSearchResponse>> SearchAudible(
             [FromQuery] string query,
             [FromQuery] string region = "us",
@@ -368,7 +337,25 @@ namespace Listenarr.Api.Features.Search
                     return NotFound("No results found");
                 }
 
+                // Audible did not answer. Returning the empty result would be a 200 that
+                // says "this book is not in the catalogue", which is a different claim and
+                // one a caller acts on differently. 503 says try again instead.
+                if (result.ProviderUnavailable)
+                {
+                    _logger.LogWarning(
+                        "Audible did not answer for query: {Query}; reporting unavailable rather than zero matches",
+                        LogRedaction.SanitizeText(query));
+                    return StatusCode(StatusCodes.Status503ServiceUnavailable, "The Audible catalog did not respond. This is not a confirmed zero-match; retry shortly.");
+                }
+
                 return Ok(result);
+            }
+            catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
+            {
+                _logger.LogWarning(ex, "Provider did not answer searching the Audible catalog for query: {Query}", LogRedaction.SanitizeText(query));
+                return StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "The metadata provider did not answer; try again shortly");
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
