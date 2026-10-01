@@ -18,7 +18,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             var service = new FfmpegService(
                 new Mock<ILogger<FfmpegService>>().Object,
                 processRunner.Object,
-                Mock.Of<IApplicationPathService>(applicationPathService => applicationPathService.FfmpegRootPath == ffmpegDirectory));
+                Mock.Of<IApplicationPathService>(applicationPathService => applicationPathService.FfmpegRootPath == ffmpegDirectory),
+                FileService.GetTempDirectory("ffprobe-no-packaged-binary"));
 
             await Assert.ThrowsAsync<FfmpegException>(() => service.RunFfprobeAsync(textFile));
             processRunner.Verify(runner => runner.RunAsync(It.IsAny<System.Diagnostics.ProcessStartInfo>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -54,7 +55,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
                 new Mock<ILogger<FfmpegService>>().Object,
                 processRunner.Object,
                 Mock.Of<IApplicationPathService>(applicationPathService =>
-                    applicationPathService.FfmpegRootPath == ffmpegDirectory));
+                    applicationPathService.FfmpegRootPath == ffmpegDirectory),
+                FileService.GetTempDirectory("ffprobe-no-packaged-binary"));
 
             var metadata = await service.RunFfprobeAsync(
                 new MetadataFileSource(stableReadPath, publicPath));
@@ -110,7 +112,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
                 new Mock<ILogger<FfmpegService>>().Object,
                 processRunner.Object,
                 Mock.Of<IApplicationPathService>(applicationPathService =>
-                    applicationPathService.FfmpegRootPath == ffmpegDirectory));
+                    applicationPathService.FfmpegRootPath == ffmpegDirectory),
+                FileService.GetTempDirectory("ffprobe-no-packaged-binary"));
 
             var metadata = await service.RunFfprobeAsync(
                 new MetadataFileSource(lease.MetadataPath, lease.PublicPath));
@@ -156,7 +159,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
                 new Mock<ILogger<FfmpegService>>().Object,
                 processRunner.Object,
                 Mock.Of<IApplicationPathService>(applicationPathService =>
-                    applicationPathService.FfmpegRootPath == ffmpegDirectory));
+                    applicationPathService.FfmpegRootPath == ffmpegDirectory),
+                FileService.GetTempDirectory("ffprobe-no-packaged-binary"));
 
             await Assert.ThrowsAsync<FfmpegException>(() =>
                 service.RunFfprobeAsync(new MetadataFileSource(
@@ -176,7 +180,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             var service = new FfmpegService(
                 new Mock<ILogger<FfmpegService>>().Object,
                 processRunner.Object,
-                Mock.Of<IApplicationPathService>(applicationPathService => applicationPathService.FfmpegRootPath == ffmpegDirectory));
+                Mock.Of<IApplicationPathService>(applicationPathService => applicationPathService.FfmpegRootPath == ffmpegDirectory),
+                FileService.GetTempDirectory("ffprobe-no-packaged-binary"));
 
             await Assert.ThrowsAsync<FfmpegException>(() => service.RunFfprobeAsync(missingFile));
             processRunner.Verify(runner => runner.RunAsync(It.IsAny<System.Diagnostics.ProcessStartInfo>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);

@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Text.RegularExpressions;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
@@ -67,7 +68,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
         }
 
         [Fact]
-        public void FfmpegInfrastructure_HasNoNetworkDependency()
+        public void FfmpegTypes_TakeNoHttpClientDependency()
         {
             var networkTypes = new[] { typeof(HttpClient), typeof(IHttpClientFactory), typeof(HttpMessageHandler) };
             var offenders = typeof(FfmpegService).Assembly
@@ -86,7 +87,52 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
 
             Assert.True(
                 offenders.Length == 0,
-                $"ffprobe provisioning must not reach the network: {string.Join(", ", offenders)}");
+                $"ffprobe provisioning must not take an HTTP dependency: {string.Join(", ", offenders)}");
+        }
+
+        [Fact]
+        public void FfmpegSources_ContainNoNetworkCalls()
+        {
+            // The reflection test above misses an HttpClient created inside a method body, so
+            // scan the source for any network API as well.
+            var forbidden = new Regex(@"\b(HttpClient|HttpMessageHandler|System\.Net\.Http|WebClient|WebRequest|Socket|SslStream)\b", RegexOptions.Compiled);
+            var ffmpegRoot = Path.Join(RepositoryRoot(), "listenarr.infrastructure", "Ffmpeg");
+            var offenders = Directory.EnumerateFiles(ffmpegRoot, "*.cs", SearchOption.AllDirectories)
+                .SelectMany(file => File.ReadLines(file)
+                    .Select((line, index) => (line, index))
+                    .Where(entry => !entry.line.TrimStart().StartsWith("//", StringComparison.Ordinal) && forbidden.IsMatch(entry.line))
+                    .Select(entry => $"{Path.GetFileName(file)}:{entry.index + 1}"))
+                .ToArray();
+
+            Assert.True(offenders.Length == 0, $"Network API in ffprobe sources: {string.Join(", ", offenders)}");
+        }
+
+        [Fact]
+        public void PackagedVersion_MatchesTheCentralPackageVersion()
+        {
+            var props = System.Xml.Linq.XDocument.Load(Path.Join(RepositoryRoot(), "Directory.Packages.props"));
+            var version = props.Descendants("PackageVersion")
+                .Single(element => (string?)element.Attribute("Include") == "Openur.FFprobeStatic")
+                .Attribute("Version")?.Value;
+
+            Assert.Equal(FfmpegService.PackagedVersion, version);
+        }
+
+        [Fact]
+        public async Task GetLicenseAsync_NamesTheSourceOfTheBinaryInUse()
+        {
+            var applicationBase = FileService.GetTempDirectory("ffprobe-license-app");
+            var legacyDirectory = FileService.GetTempDirectory("ffprobe-license-legacy");
+            var service = CreateService(new Mock<IProcessRunner>().Object, legacyDirectory, applicationBase);
+
+            Assert.Equal(string.Empty, await service.GetLicenseAsync());
+
+            await File.WriteAllTextAsync(Path.Join(legacyDirectory, ExecutableName), "placed by hand");
+            Assert.Equal(FfmpegService.LegacyLicenseNotice, await service.GetLicenseAsync());
+
+            await File.WriteAllTextAsync(Path.Join(applicationBase, ExecutableName), "packaged");
+            Assert.Equal(FfmpegService.PackagedLicenseNotice, await service.GetLicenseAsync());
+            Assert.Contains(FfmpegService.PackagedVersion, FfmpegService.PackagedLicenseNotice);
         }
 
         [Fact]
@@ -118,7 +164,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
         [SupportedOSPlatform("linux")]
         public async Task EnsureFfprobeInstalledAsync_PackagedBinaryWithoutExecuteBit_IsMadeExecutable()
         {
-            // nupkg entries carry no Unix mode, so a restored ffprobe can land as 0644.
+            // Restore leaves owner-execute only, and an unzip tool or artifact transfer can strip
+            // even that; the service restores the bits when it owns the file.
             var applicationBase = FileService.GetTempDirectory("ffprobe-mode");
             var packaged = Path.Join(applicationBase, "ffprobe");
             await File.WriteAllTextAsync(packaged, "packaged");
@@ -172,6 +219,18 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             {
                 throw new NotSupportedException();
             }
+        }
+
+        private static string RepositoryRoot()
+        {
+            var directory = new DirectoryInfo(AppContext.BaseDirectory);
+            while (directory != null && !File.Exists(Path.Join(directory.FullName, "listenarr.slnx")))
+            {
+                directory = directory.Parent;
+            }
+
+            Assert.NotNull(directory);
+            return directory.FullName;
         }
 
         private static byte[] BuildSilentWav(int sampleRate, int seconds)

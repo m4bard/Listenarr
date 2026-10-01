@@ -25,19 +25,27 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
     /// Resolves and runs ffprobe. In this option for upstream #791 the binary is provided by the
     /// Openur.FFprobeStatic NuGet package and restored at build time, so nothing is downloaded at
     /// first boot and the version is pinned in Directory.Packages.props like any other dependency.
-    /// A binary in the configured ffmpeg directory is still honoured as a fallback, for platforms
-    /// the package does not cover and for installs that placed one there by hand.
+    /// A binary in the configured ffmpeg directory is used only when no packaged binary matches
+    /// the running platform; while a packaged one exists, a hand-placed or previously downloaded
+    /// copy there is ignored, even if the packaged one later fails to run.
     /// </summary>
     public partial class FfmpegService : IFfmpegService
     {
+        // Must match the Openur.FFprobeStatic version in Directory.Packages.props; a test enforces it.
+        internal const string PackagedVersion = "9.0.2.508";
+
         internal const string PackagedLicenseNotice =
-            "ffprobe is provided by the Openur.FFprobeStatic NuGet package (a static FFmpeg build; see Directory.Packages.props for the pinned version). "
-            + "Review FFmpeg licensing (LGPL/GPL) at https://ffmpeg.org/legal.html";
+            "ffprobe is a static FFmpeg build shipped with Listenarr in the Openur.FFprobeStatic "
+            + PackagedVersion + " package. Review FFmpeg licensing (LGPL/GPL) at https://ffmpeg.org/legal.html";
+
+        internal const string LegacyLicenseNotice =
+            "ffprobe was found in the ffmpeg directory under the config directory and did not ship with Listenarr. "
+            + "Its licence depends on where it came from; review FFmpeg licensing (LGPL/GPL) at https://ffmpeg.org/legal.html";
 
         private const UnixFileMode ExecuteBits = UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
 
         private readonly string _applicationBaseDirectory;
-        private readonly string _runtimeIdentifier;
+        private readonly IReadOnlyList<string> _runtimeIdentifiers;
         private readonly bool _isWindows;
         private readonly string _legacyDirectory;
         private readonly ILogger<FfmpegService> _logger;
@@ -53,7 +61,9 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
             _logger = logger;
             _processRunner = processRunner;
             _applicationBaseDirectory = applicationBaseDirectory ?? AppContext.BaseDirectory;
-            _runtimeIdentifier = runtimeIdentifier ?? RuntimeInformation.RuntimeIdentifier;
+            _runtimeIdentifiers = runtimeIdentifier == null
+                ? FfprobeBinaryLocator.CurrentRuntimeIdentifiers()
+                : new[] { runtimeIdentifier }.Concat(FfprobeBinaryLocator.CurrentRuntimeIdentifiers()).Distinct(StringComparer.Ordinal).ToArray();
             _isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
             _legacyDirectory = applicationPathService.FfmpegRootPath;
         }
@@ -64,7 +74,7 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
         /// </summary>
         private string? ResolveFfprobePath()
         {
-            var packaged = FfprobeBinaryLocator.Locate(_applicationBaseDirectory, _runtimeIdentifier, _isWindows);
+            var packaged = ResolvePackagedFfprobePath();
             if (packaged != null)
             {
                 return packaged;
@@ -72,6 +82,11 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
 
             var legacy = Path.Join(_legacyDirectory, FfprobeBinaryLocator.ExecutableName(_isWindows));
             return File.Exists(legacy) ? legacy : null;
+        }
+
+        private string? ResolvePackagedFfprobePath()
+        {
+            return FfprobeBinaryLocator.Locate(_applicationBaseDirectory, _runtimeIdentifiers, _isWindows);
         }
 
         /// <summary>
@@ -87,8 +102,8 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
             else
             {
                 _logger.LogInformation(
-                    "No ffprobe found for runtime {Rid} under {ApplicationBase} or {LegacyDirectory}",
-                    _runtimeIdentifier,
+                    "No ffprobe found for runtimes {Rids} under {ApplicationBase} or {LegacyDirectory}",
+                    string.Join(", ", _runtimeIdentifiers),
                     _applicationBaseDirectory,
                     _legacyDirectory);
             }
@@ -97,10 +112,11 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
         }
 
         /// <summary>
-        /// Resolve the packaged ffprobe and make sure it can be executed. NuGet does not preserve
-        /// Unix file modes, so a restored binary can arrive without its execute bit; restoring it
-        /// here is best effort, because a read-only or foreign-owned install directory cannot be
-        /// changed and the Docker image sets the mode at build time instead.
+        /// Resolve ffprobe and make sure it can be executed. Never downloads. NuGet restore leaves
+        /// the binary executable by its owner only (0766 less the umask), and an unzip tool or an
+        /// artifact transfer can strip even that, so the execute bits are restored here when this
+        /// process owns the file. A foreign-owned install cannot be changed from here, which is
+        /// why the Docker image sets the mode at build time.
         /// </summary>
         public Task<string?> EnsureFfprobeInstalledAsync()
         {
@@ -108,8 +124,8 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
             if (path == null)
             {
                 _logger.LogWarning(
-                    "No packaged ffprobe for runtime {Rid}; audio metadata extraction is unavailable until one is placed at {LegacyDirectory}",
-                    _runtimeIdentifier,
+                    "No packaged ffprobe for runtimes {Rids}; audio metadata extraction is unavailable until one is placed at {LegacyDirectory}",
+                    string.Join(", ", _runtimeIdentifiers),
                     _legacyDirectory);
                 return Task.FromResult<string?>(null);
             }

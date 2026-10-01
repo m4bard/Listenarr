@@ -1,5 +1,5 @@
-using System.Runtime.InteropServices;
 using System.Xml.Linq;
+using Arch = System.Runtime.InteropServices.Architecture;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
@@ -68,6 +68,43 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
         }
 
         [Fact]
+        public async Task Locate_DistroSpecificRid_FallsBackToPortableRid()
+        {
+            // Distro-built .NET reports e.g. "ubuntu.24.04-x64"; the package only has portable RIDs.
+            var appBase = FileService.GetTempDirectory("ffprobe-distro");
+            var expected = Path.Join(appBase, "runtimes", "linux-x64", "native", "ffprobe");
+            Directory.CreateDirectory(Path.GetDirectoryName(expected)!);
+            await File.WriteAllTextAsync(expected, "packaged");
+
+            Assert.Null(FfprobeBinaryLocator.Locate(appBase, ["ubuntu.24.04-x64"], isWindows: false));
+            Assert.Equal(
+                expected,
+                FfprobeBinaryLocator.Locate(appBase, ["ubuntu.24.04-x64", "linux-x64"], isWindows: false));
+        }
+
+        [Theory]
+        [InlineData("linux", Arch.X64, false, new[] { "linux-x64" })]
+        [InlineData("linux", Arch.Arm64, true, new[] { "linux-musl-arm64", "linux-arm64" })]
+        [InlineData("linux", Arch.Arm, false, new[] { "linux-arm" })]
+        [InlineData("osx", Arch.Arm64, false, new[] { "osx-arm64" })]
+        [InlineData("win", Arch.X86, false, new[] { "win-x86" })]
+        [InlineData("freebsd", Arch.X64, false, new[] { "freebsd-x64" })]
+        public void PortableRuntimeIdentifiers_MapsPlatformAndArchitecture(
+            string os,
+            Arch architecture,
+            bool isMusl,
+            string[] expected)
+        {
+            Assert.Equal(expected, FfprobeBinaryLocator.PortableRuntimeIdentifiers(os, architecture, isMusl));
+        }
+
+        [Fact]
+        public void PortableRuntimeIdentifiers_UnknownArchitecture_ReturnsNothing()
+        {
+            Assert.Empty(FfprobeBinaryLocator.PortableRuntimeIdentifiers("linux", Arch.S390x, isMusl: false));
+        }
+
+        [Fact]
         public void BuildOutput_CarriesPackagedFfprobeForEveryPublishedRid()
         {
             // The RIDs Listenarr publishes come from the API project itself, so adding a RID
@@ -79,11 +116,13 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
                 .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             Assert.NotEmpty(publishedRids);
 
+            // The runtimes/<rid>/native path specifically: the flat candidate would let one
+            // binary satisfy every RID if this assembly were ever built RID-specific.
             var missing = publishedRids
-                .Where(rid => FfprobeBinaryLocator.Locate(
+                .Where(rid => !File.Exists(FfprobeBinaryLocator.CandidatePaths(
                     AppContext.BaseDirectory,
                     rid,
-                    isWindows: rid.StartsWith("win-", StringComparison.Ordinal)) == null)
+                    isWindows: rid.StartsWith("win-", StringComparison.Ordinal))[1]))
                 .ToArray();
 
             Assert.True(
@@ -96,7 +135,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
         {
             var located = FfprobeBinaryLocator.Locate(
                 AppContext.BaseDirectory,
-                RuntimeInformation.RuntimeIdentifier,
+                FfprobeBinaryLocator.CurrentRuntimeIdentifiers(),
                 OperatingSystem.IsWindows());
 
             Assert.NotNull(located);

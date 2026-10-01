@@ -106,7 +106,13 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
 
         public Task<string> GetLicenseAsync()
         {
-            return Task.FromResult(PackagedLicenseNotice);
+            var path = ResolveFfprobePath();
+            if (path == null)
+            {
+                return Task.FromResult(string.Empty);
+            }
+
+            return Task.FromResult(path == ResolvePackagedFfprobePath() ? PackagedLicenseNotice : LegacyLicenseNotice);
         }
     }
 }

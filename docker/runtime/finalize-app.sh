@@ -12,6 +12,20 @@ fi
 # leaves it under runtimes/<rid>/native/.
 find /app -maxdepth 1 -type f -name ffprobe -exec chmod 755 {} +
 if [ -d /app/runtimes ]; then
+	# A RID-agnostic publish (the root Dockerfile) carries ffprobe for every platform the
+	# package supports, around 185 MB. Keep only this image's Linux builds.
+	case "$(uname -m)" in
+		x86_64) keep_arch=x64 ;;
+		aarch64) keep_arch=arm64 ;;
+		armv7l) keep_arch=arm ;;
+		*) keep_arch="" ;;
+	esac
+	if [ -n "$keep_arch" ]; then
+		find /app/runtimes -type f -path '*/native/ffprobe*' \
+			! -path "/app/runtimes/linux-$keep_arch/*" \
+			! -path "/app/runtimes/linux-musl-$keep_arch/*" \
+			-delete
+	fi
 	find /app/runtimes -type f -path '*/native/ffprobe' -exec chmod 755 {} +
 fi
 
