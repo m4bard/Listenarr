@@ -90,7 +90,7 @@ Contains ASP.NET Core data protection keys used for authentication cookies and r
 
 ### ffmpeg/
 
-Contains downloaded FFmpeg/FFprobe binaries and associated license notices.
+Optional. ffprobe ships with the application as a NuGet-provided binary; an `ffprobe` (or `ffprobe.exe`) placed here is used only when no packaged binary matches the running platform. Older releases downloaded ffprobe into this directory; such a copy is ignored while a packaged one exists.
 
 ### logs/
 
