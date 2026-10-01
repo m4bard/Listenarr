@@ -44,6 +44,11 @@ namespace Listenarr.Domain.Configuration
         public string? SslCertPath { get; set; }
         public string? SslCertPassword { get; set; }
 
+        // FFmpeg/ffprobe installer configuration. Not read by the packaged-ffprobe option for #791,
+        // which has no download to configure; kept so existing config files round-trip unchanged and
+        // so this option stays off the startup-config surface. Removing it is a separate decision.
+        public FfmpegConfig? Ffmpeg { get; set; }
+
         public bool IsAuthenticationEnabled()
         {
             var value = AuthenticationRequired;

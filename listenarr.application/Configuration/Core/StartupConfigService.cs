@@ -283,7 +283,14 @@ namespace Listenarr.Application.Configuration.Core
                 AnalyticsEnabled = false,
                 ApiVersion = "1",
                 SslCertPath = null,
-                SslCertPassword = null
+                SslCertPassword = null,
+                Ffmpeg = new FfmpegConfig
+                {
+                    Provider = "gyan", // Default to gyan.dev for Windows
+                    ReleaseOverride = null,
+                    ChecksumUrl = null,
+                    Arch = null
+                }
             };
         }
 
