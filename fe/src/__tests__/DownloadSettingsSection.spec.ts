@@ -40,7 +40,7 @@ describe('DownloadSettingsSection', () => {
     })
 
     const inputs = wrapper.findAll('input[type="number"]')
-    expect(inputs).toHaveLength(6)
+    expect(inputs).toHaveLength(7)
 
     // Max concurrent
     await inputs[0].setValue('4')
@@ -77,5 +77,61 @@ describe('DownloadSettingsSection', () => {
     last =
       wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.missingSourceMaxRetries).toBe(5)
+  })
+
+  async function mountStallSection(settings: Record<string, unknown>) {
+    const { default: DownloadSettingsSection } =
+      await import('@/components/settings/DownloadSettingsSection.vue')
+    const wrapper = mount(DownloadSettingsSection, { props: { settings } })
+    return { wrapper, input: wrapper.find('[data-testid="stalled-download-timeout-hours"]') }
+  }
+
+  function lastEmitted(wrapper: Awaited<ReturnType<typeof mountStallSection>>['wrapper']) {
+    const emitted = wrapper.emitted()['update:settings']!
+    return emitted[emitted.length - 1][0] as Record<string, unknown>
+  }
+
+  it('shows the stalled download timeout as off (0) when the setting is absent', async () => {
+    const { input } = await mountStallSection({ failedDownloadHandlingEnabled: true })
+
+    expect(input.exists()).toBe(true)
+    expect((input.element as HTMLInputElement).value).toBe('0')
+    expect(input.attributes('min')).toBe('0')
+    expect(input.attributes('max')).toBe('720')
+  })
+
+  it('emits the stalled download timeout in whole hours, held to 0-720', async () => {
+    const { wrapper, input } = await mountStallSection({
+      failedDownloadHandlingEnabled: true,
+      stalledDownloadTimeoutHours: 0,
+    })
+
+    await input.setValue('24')
+    expect(lastEmitted(wrapper).stalledDownloadTimeoutHours).toBe(24)
+
+    await input.setValue('5000')
+    expect(lastEmitted(wrapper).stalledDownloadTimeoutHours).toBe(720)
+
+    await input.setValue('-3')
+    expect(lastEmitted(wrapper).stalledDownloadTimeoutHours).toBe(0)
+
+    await input.setValue('')
+    expect(lastEmitted(wrapper).stalledDownloadTimeoutHours).toBe(0)
+  })
+
+  it('disables the stalled download timeout while failed download handling is off', async () => {
+    const off = await mountStallSection({
+      failedDownloadHandlingEnabled: false,
+      stalledDownloadTimeoutHours: 24,
+    })
+    expect(off.input.attributes('disabled')).toBeDefined()
+
+    // Control: the same field is editable with handling on.
+    const on = await mountStallSection({
+      failedDownloadHandlingEnabled: true,
+      stalledDownloadTimeoutHours: 24,
+    })
+    expect(on.input.attributes('disabled')).toBeUndefined()
+    expect((on.input.element as HTMLInputElement).value).toBe('24')
   })
 })
