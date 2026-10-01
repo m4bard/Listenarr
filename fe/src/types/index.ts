@@ -518,6 +518,10 @@ export interface ApplicationSettings {
   // Failed download handling
   failedDownloadHandlingEnabled?: boolean
   failedDownloadAutoSearch?: boolean
+  // Hours a torrent may go without any download progress before it is handled as a failed
+  // download. 0 turns it off; the server accepts 0-720. Only read while failed download
+  // handling is on.
+  stalledDownloadTimeoutHours?: number
   // Optional admin credentials used when saving settings to create/update an initial admin user
   adminUsername?: string
   adminPassword?: string
