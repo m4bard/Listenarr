@@ -40,12 +40,16 @@ internal sealed partial class AudiobookScanService
             return discovery with { Issues = issues };
         }
 
-        // Files another audiobook already owns are skipped before extraction: discovery
-        // already refuses to attribute them, a match could only fail at claim time, and
-        // a decline would be noise about a file that was never this book's to take.
+        // Files another audiobook owns are still probed: a metadata match on one of them
+        // feeds the boundary calculation below, which is what turns "the same metadata in
+        // two unrelated folders" into MetadataAttributionConflict instead of a claim.
         foreach (var candidate in discovery.Candidates.Where(path =>
             !attributed.Contains(path)
-            && IsClaimableCandidate(path, discovery, owned, semantics)))
+            && ScanFileDiscovery.CanClaimNewPath(
+                path,
+                discovery.SelectedStableIdentifierBoundary,
+                owned,
+                semantics)))
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
@@ -74,13 +78,16 @@ internal sealed partial class AudiobookScanService
                 {
                     metadataMatches.Add(candidate);
                 }
-                else if (metadata != null)
+                else if (metadata != null
+                    && !discovery.ForeignOwnedCandidates.Contains(candidate))
                 {
                     // A diagnostic, not a ScanDiscoveryIssue: issues feed completeness
                     // and attribution-conflict decisions, and a decline must not change
                     // what the scan does, only make the skipped file visible. This also
                     // covers the filename fallback MetadataService returns when ffprobe
-                    // fails. Name the candidate, never the pinned descriptor path.
+                    // fails. A file another audiobook owns was never this book's to take,
+                    // so declining it is not reported. Name the candidate, never the
+                    // pinned descriptor path.
                     logger.LogInformation(
                         "Embedded metadata for scan candidate {Path} did not match audiobook {AudiobookId}; the file was not attributed",
                         LogRedaction.SanitizeFilePath(candidate),
