@@ -377,6 +377,7 @@ namespace Listenarr.Application.Search.Scoring
             // (src/NzbDrone.Core/DecisionEngine/DownloadDecisionComparer.cs:79-82), and
             // MinFormatScore and CutoffFormatScore (QualityProfile.cs:19-20) are thresholds over
             // the unbounded sum.
+            ApplyNewerReleaseBonus(searchResult, profile, score);
             return score;
         }
 
