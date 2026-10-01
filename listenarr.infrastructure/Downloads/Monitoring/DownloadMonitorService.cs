@@ -203,7 +203,7 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 try
                 {
                     var previousDownloads = clientDownloads.Select(item => item.Clone()).ToList();
-                    var updatedDownloads = await downloadClientGateway.FetchDownloadsAsync(client, clientDownloads, cancellationToken);
+                    var updatedDownloads = await FetchDownloadsAndJudgeStallsAsync(downloadClientGateway, client, clientDownloads, appSettings, cancellationToken);
 
                     foreach (Download download in updatedDownloads)
                     {
