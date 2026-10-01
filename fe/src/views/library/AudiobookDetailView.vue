@@ -789,6 +789,7 @@ const displayedScanStatus = computed(() => {
   if (status === 'queued') return 'Queued'
   if (status === 'processing') return 'Processing'
   if (status === 'completed') return 'Completed'
+  if (status === 'completednofilesaccepted') return 'No files matched'
   if (status === 'failed') return 'Failed'
   if (status === 'superseded') return 'Stopped'
   return 'No active scan'

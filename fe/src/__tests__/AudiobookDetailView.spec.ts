@@ -239,6 +239,49 @@ describe('AudiobookDetailView image recache behavior', () => {
     expect(wrapper.find('.scan-job-status').exists()).toBe(false)
   })
 
+  it('labels a scan that accepted no files and refreshes missing files after it', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [{ id: 5, title: 'Detail Book', files: [] }] as unknown as ReturnType<
+      typeof useLibraryStore
+    >['audiobooks']
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+    const filesTab = wrapper.findAll('.tab').find((tab) => tab.text().includes('Files'))
+    await filesTab!.trigger('click')
+
+    const scanCallback = vi.mocked(signalRService.onScanJobUpdate).mock.calls.at(-1)?.[0] as
+      | ((job: { jobId: string; audiobookId: number; status: string; error?: string }) => void)
+      | undefined
+    expect(scanCallback).toBeDefined()
+    useScanNotificationsStore().registerManualScan('scan-none-5', 5)
+
+    // Control: an active update does not refresh the missing-file list.
+    const refreshesBefore = vi.mocked(apiService.getWeakStorageMissingFiles).mock.calls.length
+    scanCallback!({ jobId: 'scan-none-5', audiobookId: 5, status: 'Processing' })
+    await wrapper.vm.$nextTick()
+    expect(vi.mocked(apiService.getWeakStorageMissingFiles).mock.calls.length).toBe(refreshesBefore)
+
+    scanCallback!({
+      jobId: 'scan-none-5',
+      audiobookId: 5,
+      status: 'CompletedNoFilesAccepted',
+      error: 'Found 1 audio file in the scan folder that this audiobook could claim.',
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(vi.mocked(apiService.getWeakStorageMissingFiles).mock.calls.length).toBe(
+      refreshesBefore + 1,
+    )
+    const status = wrapper.find('.scan-job-status').text()
+    expect(status).toContain('scan-none-5')
+    expect(status).toContain('No files matched')
+    expect(status).not.toContain('No active scan')
+  })
+
   it('shows the newest visible manual scan for the audiobook', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
