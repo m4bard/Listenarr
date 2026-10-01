@@ -26,10 +26,13 @@ namespace Listenarr.Application.Search.Scoring
     {
         /// <summary>The bonus a release published today earns when the profile prefers newer releases.</summary>
         /// <remarks>
-        /// Ten is the same order as the seeder bonus, so it can decide between releases that are
-        /// otherwise close but cannot outweigh a step on the quality ladder or a mismatch penalty.
+        /// Four is deliberately below the smallest explicit preference the operator can express:
+        /// one preferred word, the format match bonus and the release shape match are each worth
+        /// five. No difference in this bonus between two releases can make up one of those, so it
+        /// only separates releases that are otherwise comparable. The unconditional age penalty
+        /// in Score() is separate and applies whatever this setting says.
         /// </remarks>
-        public int NewerReleaseMaxBonus { get; set; } = 10;
+        public int NewerReleaseMaxBonus { get; set; } = 4;
 
         /// <summary>The age in days at which the newer-release bonus has faded to nothing.</summary>
         public int NewerReleaseHorizonDays { get; set; } = 365;
@@ -48,6 +51,14 @@ namespace Listenarr.Application.Search.Scoring
                 return;
             }
 
+            // Some gates record a rejection and keep scoring rather than returning, the disallowed
+            // quality among them. Such a release is already lost; a bonus in its breakdown would
+            // only mislead whoever reads it.
+            if (score.RejectionReasons.Count > 0)
+            {
+                return;
+            }
+
             var bonus = NewerReleaseBonus(searchResult.PublishedDate, DateTime.UtcNow);
             if (bonus > 0)
             {
@@ -58,8 +69,8 @@ namespace Listenarr.Application.Search.Scoring
 
         /// <summary>
         /// The bonus for a release published at <paramref name="publishedDate"/>: the full
-        /// <see cref="NewerReleaseMaxBonus"/> on the day it was published, fading linearly over
-        /// <see cref="NewerReleaseHorizonDays"/> and never negative.
+        /// <see cref="NewerReleaseMaxBonus"/> when it is new, falling in whole-point steps over
+        /// <see cref="NewerReleaseHorizonDays"/> and reaching nothing exactly at the horizon.
         /// </summary>
         /// <remarks>
         /// A release with no published date, or one that does not parse, earns nothing. The gates
@@ -68,6 +79,10 @@ namespace Listenarr.Application.Search.Scoring
         ///
         /// The age is counted in whole days, so a release published earlier today earns the full
         /// bonus. A date in the future is treated as today: it earns the full bonus and no more.
+        ///
+        /// The value is max * (horizon - age) / horizon rounded up, in integer arithmetic. Rounding
+        /// up is what makes the last point last until the horizon itself; rounding down reached
+        /// zero weeks early, and doing it in floating point lost a point at some ages.
         /// </remarks>
         internal int NewerReleaseBonus(string? publishedDate, DateTime nowUtc)
         {
@@ -81,9 +96,10 @@ namespace Listenarr.Application.Search.Scoring
                 return 0;
             }
 
-            var wholeDaysOld = Math.Max(0, Math.Floor((nowUtc - publishedUtc).TotalDays));
-            var bonus = (int)Math.Floor(NewerReleaseMaxBonus * (1 - (wholeDaysOld / NewerReleaseHorizonDays)));
-            return Math.Max(0, bonus);
+            var wholeDaysOld = (nowUtc - publishedUtc).Days;
+            var age = Math.Clamp(wholeDaysOld, 0, NewerReleaseHorizonDays);
+            var horizon = NewerReleaseHorizonDays;
+            return ((NewerReleaseMaxBonus * (horizon - age)) + horizon - 1) / horizon;
         }
     }
 }
