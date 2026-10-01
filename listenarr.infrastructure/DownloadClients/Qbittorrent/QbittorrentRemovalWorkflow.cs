@@ -9,6 +9,7 @@
  */
 
 using System.Net;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
@@ -60,6 +61,38 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                         _logger.LogWarning("qBittorrent login failed with status {Status} for client {ClientId}", loginResp.StatusCode, client.Id);
                         return false;
                     }
+                }
+
+                // qBittorrent's delete endpoint is unconditionally idempotent-success: it returns
+                // HTTP 200 with an empty body whether or not the given hash is actually present,
+                // so a bare success check there cannot tell a real removal from a no-op against a
+                // hash qBittorrent never had. Confirm presence first and fail closed on anything
+                // we can't read cleanly, rather than letting the caller believe something was
+                // resolved when it wasn't.
+                using var infoResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?hashes={Uri.EscapeDataString(id)}", ct);
+                if (!infoResp.IsSuccessStatusCode)
+                {
+                    var infoBody = await infoResp.Content.ReadAsStringAsync(ct);
+                    _logger.LogWarning("qBittorrent presence check returned {Status}: {Body}", infoResp.StatusCode, LogRedaction.RedactText(infoBody, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    return false;
+                }
+
+                var infoJson = await infoResp.Content.ReadAsStringAsync(ct);
+                List<JsonElement>? matches;
+                try
+                {
+                    matches = JsonSerializer.Deserialize<List<JsonElement>>(infoJson);
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogWarning(ex, "qBittorrent presence check returned an unparseable response for torrent {Id}", LogRedaction.SanitizeText(id));
+                    return false;
+                }
+
+                if (matches == null || matches.Count == 0)
+                {
+                    _logger.LogWarning("qBittorrent no longer has torrent {Id}; it was already absent from the client, nothing to delete", LogRedaction.SanitizeText(id));
+                    return false;
                 }
 
                 using var deleteData = new FormUrlEncodedContent(new[]
