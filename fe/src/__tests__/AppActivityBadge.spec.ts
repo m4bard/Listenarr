@@ -293,6 +293,39 @@ describe('App.vue activity badge', () => {
     expect(scanNotification?.find('.dismiss-btn').exists()).toBe(true)
   })
 
+  it('shows a scan that found files but accepted none as its own outcome, not a failure', async () => {
+    const { default: AppComponent } = await import('@/App.vue')
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', name: 'home', component: { template: '<div />' } }],
+    })
+    await router.push('/')
+    await router.isReady().catch(() => {})
+
+    wrapper = mount(AppComponent, {
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    scanSignalRMock.callback?.({ jobId: 'scan-none', audiobookId: 42, status: 'Queued' })
+    await wrapper.vm.$nextTick()
+    scanSignalRMock.callback?.({
+      jobId: 'scan-none',
+      audiobookId: 42,
+      status: 'CompletedNoFilesAccepted',
+      found: 0,
+      created: 0,
+      error: 'Found 2 audio files in the scan folder but none could be matched to this audiobook.',
+    })
+    await wrapper.vm.$nextTick()
+    await wrapper.find('.notification-wrapper .nav-btn').trigger('click')
+
+    const dropdown = wrapper.find('.notification-dropdown').text()
+    expect(dropdown).toContain('Scan found no usable files: audiobook folder')
+    expect(dropdown).toContain('Found 2 audio files in the scan folder but none could be matched')
+    expect(dropdown).not.toContain('Scan failed')
+  })
+
   it('reconciles a missed terminal scan update from the authoritative status endpoint', async () => {
     scanJobStatusMock.mockResolvedValue({
       id: 'scan-reconcile',
