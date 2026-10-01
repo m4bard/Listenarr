@@ -18,6 +18,7 @@
 
 using Listenarr.Api.Attributes;
 using Listenarr.Application.Common.Exceptions;
+using Listenarr.Application.Library.RecycleBin;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using System.Text.Json;
@@ -32,17 +33,23 @@ namespace Listenarr.Api.Features.Configuration
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<SettingsController> _logger;
         private readonly IHubBroadcaster _hubBroadcaster;
+        private readonly IRecycleBinService _recycleBinService;
+        private readonly IFileNamingService _fileNamingService;
         private readonly IMemoryCache? _cache;
 
         public SettingsController(
             IConfigurationService configurationService,
             ILogger<SettingsController> logger,
             IHubBroadcaster hubBroadcaster,
+            IRecycleBinService recycleBinService,
+            IFileNamingService fileNamingService,
             IMemoryCache? cache = null)
         {
             _configurationService = configurationService;
             _logger = logger;
             _hubBroadcaster = hubBroadcaster;
+            _recycleBinService = recycleBinService;
+            _fileNamingService = fileNamingService;
             _cache = cache;
         }
 
@@ -81,6 +88,21 @@ namespace Listenarr.Api.Features.Configuration
             try
             {
                 _logger.LogDebug("Saving application settings");
+
+                // Validated before the save, not after. A bin saved inside a root folder
+                // would be walked by the next library scan and its contents re-imported,
+                // which would undo every delete the bin was holding.
+                var recycleBinValidation = await _recycleBinService.ValidatePathAsync(
+                    settings.RecycleBinPath);
+                if (!recycleBinValidation.IsValid)
+                {
+                    return BadRequest(new
+                    {
+                        code = "invalid_recycle_bin_path",
+                        message = recycleBinValidation.Message
+                    });
+                }
+
                 await _configurationService.SaveApplicationSettingsAsync(settings);
                 _cache?.Remove("default-search-region");
 
@@ -122,7 +144,28 @@ namespace Listenarr.Api.Features.Configuration
             clone.AdminUsername = null;
             clone.AdminPassword = null;
             clone.ProwlarrApiKeyEncrypted = null;
+            ApiResponseRedactor.RedactEmailPasswordsInPlace(clone);
             return clone;
+        }
+
+        /// <summary>
+        /// Render the folder, single-file and multi-file naming patterns against a fixed
+        /// sample audiobook, through the same renderer import and rename use, so the settings
+        /// screen shows what will actually be written instead of an independent approximation.
+        /// Patterns are taken from the query string rather than saved settings so the preview
+        /// updates for a pattern the operator has typed but not yet saved.
+        /// </summary>
+        /// <param name="folderPattern">In-progress folder naming pattern.</param>
+        /// <param name="filePattern">In-progress single-file naming pattern.</param>
+        /// <param name="multiFilePattern">In-progress multi-file naming pattern.</param>
+        [Tags("Settings")]
+        [HttpGet("naming/examples")]
+        public ActionResult<NamingPatternPreview> GetNamingPatternExamples(
+            [FromQuery] string? folderPattern,
+            [FromQuery] string? filePattern,
+            [FromQuery] string? multiFilePattern)
+        {
+            return Ok(_fileNamingService.PreviewNamingPatterns(folderPattern, filePattern, multiFilePattern));
         }
 
         /// <summary>
@@ -143,6 +186,32 @@ namespace Listenarr.Api.Features.Configuration
             {
                 _logger.LogError(ex, "Error retrieving saved Prowlarr import settings");
                 return StatusCode(500, "Internal server error");
+            }
+        }
+
+        /// <summary>
+        /// Permanently remove everything in the recycle bin, regardless of age.
+        /// </summary>
+        [Tags("Settings")]
+        [HttpDelete("recyclebin")]
+        public async Task<IActionResult> EmptyRecycleBin(CancellationToken cancellationToken)
+        {
+            try
+            {
+                var result = await _recycleBinService.EmptyAsync(cancellationToken);
+                _logger.LogInformation(
+                    "Recycle bin emptied on request: {FileCount} files removed",
+                    result.FilesRemoved);
+                return Ok(new
+                {
+                    filesRemoved = result.FilesRemoved,
+                    directoriesRemoved = result.DirectoriesRemoved
+                });
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error emptying the recycle bin");
+                return StatusCode(500, new { error = "Failed to empty the recycle bin" });
             }
         }
     }
