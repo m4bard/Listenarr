@@ -943,9 +943,11 @@ const scanNotifications = computed<HistoryNotification[]>(() =>
             ? `Scanning ${subject}`
             : normalizedStatus === 'completed'
               ? `Scan complete: ${subject}`
-              : normalizedStatus === 'superseded'
-                ? `Scan stopped: ${subject}`
-                : `Scan failed: ${subject}`
+              : normalizedStatus === 'completednofilesaccepted'
+                ? `Scan found no usable files: ${subject}`
+                : normalizedStatus === 'superseded'
+                  ? `Scan stopped: ${subject}`
+                  : `Scan failed: ${subject}`
       const message =
         normalizedStatus === 'queued'
           ? 'Waiting to scan folder'
@@ -955,7 +957,9 @@ const scanNotifications = computed<HistoryNotification[]>(() =>
               ? job.found != null
                 ? `${job.found} file${job.found === 1 ? '' : 's'} found${job.created != null ? ` · ${job.created} added` : ''}`
                 : 'Folder scan completed'
-              : job.error || 'The folder scan did not complete'
+              : normalizedStatus === 'completednofilesaccepted'
+                ? job.error || 'Audio files were found but none could be matched to this audiobook'
+                : job.error || 'The folder scan did not complete'
 
       return {
         id: `scan-${job.jobId}`,
