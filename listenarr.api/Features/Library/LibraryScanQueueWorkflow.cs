@@ -111,7 +111,7 @@ namespace Listenarr.Api.Features.Library
                     job.Id,
                     job.AudiobookId,
                     job.Status,
-                    ScanJobPublicError.FromInternal(job.Error),
+                    ScanJobPublicError.FromInternal(job.Error, job.Status),
                     job.EnqueuedAt,
                     CanRequeueJob(job.Status)));
             }
@@ -145,7 +145,7 @@ namespace Listenarr.Api.Features.Library
 
         private static bool CanRequeueJob(string status) =>
             string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase)
+            || ScanJobStatuses.IsCompletion(status)
             || string.Equals(status, "Queued", StringComparison.OrdinalIgnoreCase);
 
         private async Task BroadcastQueuedAsync(Guid jobId, int? audiobookId)
