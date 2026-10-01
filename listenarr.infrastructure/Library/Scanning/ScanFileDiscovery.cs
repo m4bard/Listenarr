@@ -51,6 +51,7 @@ internal static partial class ScanFileDiscovery
         var authorTokens = BuildExpectedAuthorTokens(audiobook);
         var identifierTokens = BuildExpectedIdentifierTokens(audiobook);
         var preliminary = new List<AttributionEvidence>();
+        var foreignOwned = new HashSet<string>(semantics.Comparer);
 
         foreach (var candidate in enumeration.Candidates)
         {
@@ -61,6 +62,7 @@ internal static partial class ScanFileDiscovery
                 && ownershipByCanonicalPath.TryGetValue(canonicalCandidate, out var ownerId)
                 && ownerId != audiobook.Id)
             {
+                foreignOwned.Add(candidate);
                 issues.Add(new ScanDiscoveryIssue(
                     ScanDiscoveryIssueKind.AttributionConflict,
                     candidate,
@@ -244,7 +246,10 @@ internal static partial class ScanFileDiscovery
             enumeration.FileObjectIdentities,
             selectedStableIdentifierBoundary,
             identifierBoundaries.Count > 1,
-            issues);
+            issues)
+        {
+            ForeignOwnedCandidates = foreignOwned
+        };
     }
 
     internal static bool CanClaimNewPath(
