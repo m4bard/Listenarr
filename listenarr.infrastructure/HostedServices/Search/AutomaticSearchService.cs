@@ -278,7 +278,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             //
             // InPreferenceOrder puts the operator's own quality ordering above the score, which
             // is the key this used to be missing: the score ranks by the hardcoded ladder in
-            // SearchResultScorer, and that ladder disagrees with the shipped default profile.
+            // QualityScoreLadder, and that ladder disagrees with the shipped default profile.
             // Everything after it is unchanged, so the score still separates releases the profile
             // ranks equally, indexer priority still separates equal scores, and the tiebreaker
             // still separates whatever is left.
