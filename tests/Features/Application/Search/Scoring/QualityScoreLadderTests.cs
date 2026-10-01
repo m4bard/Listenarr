@@ -125,6 +125,27 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         [InlineData("128", 50)]
         [InlineData("MP3 64kbps", 40)]
         [InlineData("64", 40)]
+        // Rows below pin the relative order of adjacent rungs that no single input above
+        // happens to hit together. Without these, swapping the if-order of two adjacent
+        // rungs (e.g. flac/aax, or 128/64) leaves every other row green, because no other
+        // row's input matches both rungs at once. Each value is the earlier-checked rung's
+        // score, worked out by hand from the current order in QualityScoreLadder.Score.
+        [InlineData("FLAC AAX", 100)] // flac checked before aax
+        [InlineData("AAX M4B", 95)] // aax checked before m4b
+        [InlineData("M4B OPUS", 90)] // m4b checked before opus
+        [InlineData("OPUS V0", 85)] // opus checked before the v0 preset
+        [InlineData("V0 V1", 82)] // v0 preset checked before v1
+        [InlineData("V1 V2", 76)] // v1 preset checked before v2
+        [InlineData("AAC V2", 70)] // v2 preset checked before aac/m4a
+        [InlineData("AAC 320", 78)] // aac/m4a checked before the numeric 320 rung
+        [InlineData("320 256", 80)] // 320 checked before 256
+        [InlineData("256 192", 74)] // 256 checked before 192
+        [InlineData("MP3 VBR 192", 60)] // 192 checked before the vbr/cbr generic rung
+        [InlineData("MP3 128 64", 50)] // 128 checked before 64
+        // Two adjacent pairs are deliberately not pinned here: vbr/cbr and the generic mp3
+        // rung both score 65, so swapping them changes nothing observable; and the generic
+        // mp3 rung explicitly excludes any input containing "128", so it and the 128 rung
+        // can never both match the same input for their order to matter.
         public void Score_TokenCorpus_LandsOnExpectedRung(string? quality, int expected)
         {
             Assert.Equal(expected, QualityScoreLadder.Score(quality));
@@ -161,13 +182,32 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         public void LadderRungs_ContainNoLetterI()
         {
             var source = File.ReadAllText(LadderSourcePath());
-            var rungs = Regex.Matches(source, @"Contains\(\s*""([^""]+)""\s*\)")
+
+            // Scoped to the Score method onward (which also covers the two helpers it calls,
+            // declared below it), with line/doc comments stripped first. The class summary
+            // above Score has <see cref="..."/> references (e.g. "CompositeScorer", which does
+            // contain the letter this test checks for) and Score itself has a worked example in
+            // a comment ("AAC 256"); neither is a rung, and a blind literal scan over the whole
+            // file would wrongly flag both.
+            var scoreIndex = source.IndexOf("public static int Score", StringComparison.Ordinal);
+            Assert.True(scoreIndex >= 0, "Could not find the Score method to scope the literal scan to");
+            var withoutComments = Regex.Replace(source[scoreIndex..], "//.*", string.Empty);
+
+            // Every quoted literal from here on, not just the ones wrapped in a direct
+            // Contains("..."): a rung passed through ContainsVbrPreset(lowerQuality, "v2") or
+            // ContainsAnyBitrate(lowerQuality, "64", ...) is just as much a rung as a direct one.
+            var rungs = Regex.Matches(withoutComments, "\"([^\"]*)\"")
                 .Select(match => match.Groups[1].Value)
                 .ToArray();
 
-            // Control: the extraction has to find the ladder's rungs, or an empty list would pass.
+            // Control: the extraction has to find rungs reached only through a helper, or a
+            // list missing them would pass by omission. "v0" only ever appears as a
+            // ContainsVbrPreset argument; "64" appears both directly and inside
+            // ContainsAnyBitrate's params array.
             Assert.Contains("flac", rungs);
             Assert.Contains("mp3", rungs);
+            Assert.Contains("v0", rungs);
+            Assert.Contains("64", rungs);
 
             var withI = rungs
                 .Where(rung => rung.IndexOfAny(['i', 'I', 'ı', 'İ']) >= 0)
