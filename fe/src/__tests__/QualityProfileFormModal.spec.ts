@@ -56,6 +56,7 @@ describe('QualityProfileFormModal maximum age', () => {
     const wrapper = await mountModal(false)
 
     expect(wrapper.find('#maximumAge').exists()).toBe(true)
+    expect(wrapper.find('#maximumAge').isVisible()).toBe(true)
     expect((wrapper.find('#maximumAge').element as HTMLInputElement).value).toBe('30')
 
     wrapper.unmount()
@@ -67,14 +68,16 @@ describe('QualityProfileFormModal maximum age', () => {
     const wrapper = await mountModal(true)
 
     expect(wrapper.find('#maximumAge').exists()).toBe(true)
+    expect(wrapper.find('#maximumAge').isVisible()).toBe(true)
 
     wrapper.unmount()
   })
 
   it('keeps the Maximum Age input usable as the checkbox is toggled either way', async () => {
     // The two tests above only see the state the form opened in. This one ticks and unticks
-    // the box in place, so a condition that hid or disabled the input reactively, rather than
-    // on first render, would also fail.
+    // the box in place, so a condition that removed, hid or disabled the input reactively,
+    // rather than on first render, would also fail. Visibility is checked as well as presence
+    // because v-show hides the input while leaving it in the DOM.
     const wrapper = await mountModal(false)
     const checkbox = wrapper
       .findAll('input[type="checkbox"]')
@@ -89,6 +92,7 @@ describe('QualityProfileFormModal maximum age', () => {
 
       const maximumAge = wrapper.find('#maximumAge')
       expect(maximumAge.exists()).toBe(true)
+      expect(maximumAge.isVisible()).toBe(true)
       expect((maximumAge.element as HTMLInputElement).disabled).toBe(false)
       expect((maximumAge.element as HTMLInputElement).value).toBe('30')
     }
@@ -103,6 +107,8 @@ describe('QualityProfileFormModal maximum age', () => {
       .find((label) => label.text().includes('Prefer newer releases'))
 
     expect(card).toBeDefined()
+    expect(card!.text()).toContain('up to 4 points, fading to none at a year old')
+    expect(card!.text()).toContain('Smaller than a preferred word')
     expect(card!.text()).toContain('Never rejects or accepts a release on its own')
 
     wrapper.unmount()
