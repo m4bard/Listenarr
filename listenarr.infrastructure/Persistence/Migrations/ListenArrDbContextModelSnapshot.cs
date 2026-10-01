@@ -1984,6 +1984,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<bool>("SkipFreeSpaceCheckWhenImporting")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("StalledDownloadTimeoutHours")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("UnmatchedScanConcurrency")
                         .HasColumnType("INTEGER");
 
