@@ -484,7 +484,7 @@
             <CheckboxCard
               v-model="formData.preferNewerReleases"
               title="Prefer newer releases"
-              description="Give bonus points to more recent releases (torrent upload date)"
+              description="Ranks a more recent release higher among releases that already pass the profile: up to 10 points for one published today, fading to none at a year old. Never rejects or accepts a release on its own."
             />
 
             <FormRow
@@ -505,9 +505,10 @@
 
             <!--
               Maximum Age is not part of the checkbox above. It is a hard reject applied by
-              SearchResultScorer whenever it is greater than zero, and the scorer never reads
-              PreferNewerReleases. Hiding this input therefore hid a filter that stayed on, and
-              the only way back to it was to tick a box that claims to do something else.
+              SearchResultScorer whenever it is greater than zero, whatever PreferNewerReleases
+              says; that setting only adds a ranking bonus to releases already accepted. Hiding
+              this input therefore hid a filter that stayed on, and the only way back to it was to
+              tick a box that does something else.
             -->
             <FormRow
               label="Maximum Age (Days)"
