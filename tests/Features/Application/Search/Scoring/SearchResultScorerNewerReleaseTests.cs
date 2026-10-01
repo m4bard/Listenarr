@@ -22,9 +22,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Listenarr.Tests.Features.Application.Search.Scoring
 {
     /// <summary>
-    /// The profile's "Prefer newer releases" setting adds a bonus that fades from 10 points for a
-    /// release published today to nothing at a year old, applied only to a release that has
-    /// already been accepted.
+    /// The profile's "Prefer newer releases" setting adds a bonus that falls in whole-point steps
+    /// from 4 for a new release to nothing at a year old, applied only to a release that has
+    /// already been accepted. Four is below the 5 a single preferred word is worth, so the bonus
+    /// separates otherwise comparable releases and does not outvote an explicit preference.
     /// </summary>
     /// <remarks>
     /// Every release here carries no quality label, no format and no language, and the profile
@@ -49,7 +50,8 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             int minimumScore = 0,
             int maximumAge = 0,
             int maximumSize = 0,
-            List<string>? mustNotContain = null) =>
+            List<string>? mustNotContain = null,
+            List<string>? preferredWords = null) =>
             new QualityProfile
             {
                 Name = "newer release test",
@@ -61,7 +63,7 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
                 MaximumSize = maximumSize,
                 PreferredFormats = new List<string>(),
                 PreferredLanguages = new List<string>(),
-                PreferredWords = new List<string>(),
+                PreferredWords = preferredWords ?? new List<string>(),
                 MustContain = new List<string>(),
                 MustNotContain = mustNotContain ?? new List<string>(),
                 MinimumSeeders = 0,
@@ -81,7 +83,7 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
                 DownloadType = "torrent",
                 Size = 300L * 1024 * 1024,
                 Seeders = 0,
-                PublishedDate = publishedDate,
+                PublishedDate = publishedDate!,
             };
 
         // An hour old rather than this instant, so the release is unambiguously in the past and
@@ -91,15 +93,19 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         private static string PublishedDaysAgo(int days) => DateTime.UtcNow.AddDays(-days).ToString("o", CultureInfo.InvariantCulture);
 
         [Theory]
-        [InlineData(0, 10)]
-        [InlineData(1, 9)]
-        [InlineData(182, 5)]
-        [InlineData(300, 1)]
-        [InlineData(328, 1)]
-        [InlineData(329, 0)]
+        [InlineData(0, 4)]
+        [InlineData(1, 4)]
+        [InlineData(91, 4)]
+        [InlineData(92, 3)]
+        [InlineData(182, 3)]
+        [InlineData(183, 2)]
+        [InlineData(273, 2)]
+        [InlineData(274, 1)]
+        [InlineData(292, 1)]
+        [InlineData(364, 1)]
         [InlineData(365, 0)]
         [InlineData(3650, 0)]
-        public void TheBonusFadesLinearlyOverAYearAndIsNeverNegative(int daysOld, int expectedBonus)
+        public void TheBonusStepsDownOverAYearAndIsNeverNegative(int daysOld, int expectedBonus)
         {
             var now = new DateTime(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
             var published = now.AddDays(-daysOld).ToString("o", CultureInfo.InvariantCulture);
@@ -110,21 +116,20 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         [Fact]
         public void AReleaseFromEarlierTodayEarnsTheFullBonus()
         {
-            // The age is counted in whole days. A fractional age would floor a release published
-            // an hour ago to 9, and only a release dated in the future could ever reach 10.
+            // The age is counted in whole days, so eleven hours old is day zero.
             var now = new DateTime(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
 
-            Assert.Equal(10, CreateScorer().NewerReleaseBonus(now.AddHours(-11).ToString("o", CultureInfo.InvariantCulture), now));
+            Assert.Equal(4, CreateScorer().NewerReleaseBonus(now.AddHours(-11).ToString("o", CultureInfo.InvariantCulture), now));
         }
 
         [Fact]
         public void AFutureDatedReleaseEarnsTheFullBonusAndNoMore()
         {
             // A year and more ahead, far enough that an unclamped negative age would push the
-            // linear formula well past 10 rather than being lost in the floor.
+            // formula well past 4.
             var now = new DateTime(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
 
-            Assert.Equal(10, CreateScorer().NewerReleaseBonus(now.AddDays(400).ToString("o", CultureInfo.InvariantCulture), now));
+            Assert.Equal(4, CreateScorer().NewerReleaseBonus(now.AddDays(400).ToString("o", CultureInfo.InvariantCulture), now));
         }
 
         [Fact]
@@ -141,12 +146,12 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             Assert.False(halfAYear.IsRejected);
             Assert.False(older.IsRejected);
 
-            Assert.Equal(10, today.ScoreBreakdown[BonusKey]);
-            Assert.Equal(UnlabelledScore + 10, today.TotalScore);
+            Assert.Equal(4, today.ScoreBreakdown[BonusKey]);
+            Assert.Equal(UnlabelledScore + 4, today.TotalScore);
 
-            // 182 days: the age penalty is floor(182 / 3650 * 60) = 2 and the bonus is 5.
-            Assert.Equal(5, halfAYear.ScoreBreakdown[BonusKey]);
-            Assert.Equal(UnlabelledScore - 2 + 5, halfAYear.TotalScore);
+            // 182 days: the age penalty is floor(182 / 3650 * 60) = 2 and the bonus is 3.
+            Assert.Equal(3, halfAYear.ScoreBreakdown[BonusKey]);
+            Assert.Equal(UnlabelledScore - 2 + 3, halfAYear.TotalScore);
 
             // 300 days: the age penalty is floor(300 / 3650 * 60) = 4 and the bonus is 1.
             Assert.Equal(1, older.ScoreBreakdown[BonusKey]);
@@ -206,7 +211,7 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             // The control: one just inside the limit is accepted and does carry the bonus, so the
             // rejection above is the gate and not the bonus failing to apply at that age.
             Assert.False(withinLimit.IsRejected);
-            Assert.Equal(9, withinLimit.ScoreBreakdown[BonusKey]);
+            Assert.Equal(4, withinLimit.ScoreBreakdown[BonusKey]);
         }
 
         [Fact]
@@ -214,19 +219,93 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         {
             var scorer = CreateScorer();
 
-            // Without the bonus this release scores 90; with it, 100. A minimum of 95 sits
+            // Without the bonus this release scores 90; with it, 94. A minimum of 92 sits
             // between the two, so it is rejected only if the bonus is applied after the check.
-            var belowMinimum = await scorer.Score(Release(PublishedToday()), CreateProfile(preferNewerReleases: true, minimumScore: 95));
+            var belowMinimum = await scorer.Score(Release(PublishedToday()), CreateProfile(preferNewerReleases: true, minimumScore: 92));
 
             Assert.True(belowMinimum.IsRejected);
-            Assert.Contains(belowMinimum.RejectionReasons, reason => reason.Contains($"Score {UnlabelledScore} below profile minimum 95", StringComparison.Ordinal));
+            Assert.Contains(belowMinimum.RejectionReasons, reason => reason.Contains($"Score {UnlabelledScore} below profile minimum 92", StringComparison.Ordinal));
             Assert.False(belowMinimum.ScoreBreakdown.ContainsKey(BonusKey));
 
             // The control: at a minimum it does meet, the same release is accepted with the bonus.
             var atMinimum = await scorer.Score(Release(PublishedToday()), CreateProfile(preferNewerReleases: true, minimumScore: UnlabelledScore));
 
             Assert.False(atMinimum.IsRejected);
-            Assert.Equal(UnlabelledScore + 10, atMinimum.TotalScore);
+            Assert.Equal(UnlabelledScore + 4, atMinimum.TotalScore);
+        }
+
+        [Fact]
+        public async Task TheBonusDoesNotLiftAScoreOfZeroOrLessOverTheFinalRejection()
+        {
+            // BaseScore is lowered so this release arrives at the final check on exactly 0, the
+            // top of the range the bonus could carry over it, without leaning on the quality ladder.
+            var scorer = CreateScorer();
+            scorer.BaseScore = 10;
+            var profile = CreateProfile(preferNewerReleases: true);
+
+            var zero = await scorer.Score(Release(PublishedToday()), profile);
+
+            Assert.Equal(0, zero.TotalScore);
+            Assert.True(zero.IsRejected);
+            Assert.Contains(zero.RejectionReasons, reason => reason.Contains("Computed score <= 0", StringComparison.Ordinal));
+            Assert.False(zero.ScoreBreakdown.ContainsKey(BonusKey));
+
+            // The control: one point higher it passes the check and does carry the bonus.
+            scorer.BaseScore = 11;
+            var one = await scorer.Score(Release(PublishedToday()), profile);
+
+            Assert.False(one.IsRejected);
+            Assert.Equal(4, one.ScoreBreakdown[BonusKey]);
+        }
+
+        [Fact]
+        public async Task ARejectionThatKeepsScoringEarnsNoBonus()
+        {
+            // A quality the profile refuses records its rejection and carries on scoring rather
+            // than returning, so without a guard it would reach the bonus. The rung is the only
+            // one on the profile and it is switched off, which refuses the release by name.
+            var scorer = CreateScorer();
+            var preferring = CreateProfile(preferNewerReleases: true);
+            preferring.Qualities[0].Allowed = false;
+            var indifferent = CreateProfile(preferNewerReleases: false);
+            indifferent.Qualities[0].Allowed = false;
+            var release = Release(PublishedToday());
+            release.Quality = "MP3 128kbps";
+
+            var refused = await scorer.Score(release, preferring);
+            var refusedWithoutPreference = await scorer.Score(release, indifferent);
+
+            Assert.True(refused.IsRejected);
+            Assert.True(refused.ScoreBreakdown.ContainsKey("QualityNotAllowed"));
+            Assert.False(refused.ScoreBreakdown.ContainsKey(BonusKey));
+
+            // It really did reach the end of scoring: a positive total that was not cut short by
+            // the final rejection, and the same total the preference-off profile gives it.
+            Assert.True(refused.TotalScore > 0, $"total was {refused.TotalScore}");
+            Assert.DoesNotContain(refused.RejectionReasons, reason => reason.Contains("Computed score <= 0", StringComparison.Ordinal));
+            Assert.Equal(refusedWithoutPreference.TotalScore, refused.TotalScore);
+        }
+
+        [Fact]
+        public async Task ANewReleaseWithoutAPreferredWordStillRanksBelowAnOlderOneWithIt()
+        {
+            // The bonus is capped below one preferred word so that it separates comparable
+            // releases rather than outvoting what the operator asked for. 182 days is the oldest
+            // age at which that holds strictly: from 183 days the unconditional age penalty, which
+            // applies whatever this setting says, closes the remaining gap to a tie.
+            var scorer = CreateScorer();
+            var profile = CreateProfile(preferNewerReleases: true, preferredWords: new List<string> { "unabridged" });
+
+            var newWithoutWord = await scorer.Score(Release(PublishedToday()), profile);
+            var olderWithWord = await scorer.Score(Release(PublishedDaysAgo(182), title: "Some Author - Some Book unabridged"), profile);
+
+            Assert.Equal(5, olderWithWord.ScoreBreakdown["PreferredWords"]);
+            Assert.True(
+                olderWithWord.TotalScore > newWithoutWord.TotalScore,
+                $"182 days with the word scored {olderWithWord.TotalScore} and today without it {newWithoutWord.TotalScore}");
+
+            var ranked = new[] { newWithoutWord, olderWithWord }.InPreferenceOrder(profile).ToList();
+            Assert.Same(olderWithWord, ranked[0]);
         }
 
         [Fact]
