@@ -60,9 +60,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
 
             var updatedJob = GetRequiredJob(queue, job.Id);
             Assert.Equal("CompletedNoFilesAccepted", updatedJob.Status);
-            Assert.False(string.IsNullOrWhiteSpace(updatedJob.Error));
-            Assert.Contains("2", updatedJob.Error, StringComparison.Ordinal);
-            Assert.DoesNotContain(basePath, updatedJob.Error, StringComparison.Ordinal);
+            Assert.Equal(
+                "Found 2 audio files in the scan folder that this audiobook could claim, but none could be matched to it. Check the files' names and tags, then rescan.",
+                updatedJob.Error);
             Assert.Empty(await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
 
             var history = Assert.Single(
@@ -153,6 +153,48 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
             Assert.Equal("Completed", updatedJob.Status);
             Assert.Null(updatedJob.Error);
             Assert.Single(await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_ScanRootHoldsOnlyAnotherBooksFiles_ReportsPlainCompleted()
+        {
+            var sharedPath = FileService.GetTempDirectory("scan-processor-other-owner");
+            await FileService.GetFileAsync(sharedPath, "Owned Book.m4b", "audio");
+            var owner = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Owned Book")
+                .WithBasePath(sharedPath)
+                .Build());
+            var processor = _provider.GetRequiredService<IScanJobProcessor>();
+            var (ownerQueue, ownerJob) = await CreateQueuedScanJobAsync(owner);
+            await processor.ProcessJobAsync(ownerJob, CancellationToken.None);
+            // Control: the file is claimed by its own book first.
+            Assert.Equal("Completed", GetRequiredJob(ownerQueue, ownerJob.Id).Status);
+            Assert.Single(await _audiobookFileRepository.GetByAudiobookIdAsync(owner.Id));
+
+            var other = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Unrelated Other Book")
+                .Build());
+            var authorization = await _provider
+                .GetRequiredService<IScanPathAuthorizationService>()
+                .AuthorizeAsync(sharedPath);
+            Assert.True(authorization.IsAuthorized, authorization.Error);
+            var queue = Assert.IsType<ScanQueueService>(
+                _provider.GetRequiredService<IScanQueueService>());
+            var jobId = await queue.EnqueueScanAsync(new ScanEnqueueCommand(
+                other,
+                sharedPath,
+                authorization.Identity,
+                authorization.PhysicalIdentity,
+                AuthorizationMode: ScanAuthorizationMode.PreauthorizedPath));
+            Assert.True(queue.Reader.TryRead(out var job));
+            Assert.Equal(jobId, job.Id);
+
+            await processor.ProcessJobAsync(job, CancellationToken.None);
+
+            var updatedJob = GetRequiredJob(queue, job.Id);
+            Assert.Equal("Completed", updatedJob.Status);
+            Assert.Null(updatedJob.Error);
+            Assert.Empty(await _audiobookFileRepository.GetByAudiobookIdAsync(other.Id));
         }
 
         private static ScanJob GetRequiredJob(ScanQueueService queue, Guid jobId)
