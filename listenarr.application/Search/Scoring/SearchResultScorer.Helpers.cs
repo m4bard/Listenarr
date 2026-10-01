@@ -54,31 +54,6 @@ namespace Listenarr.Application.Search.Scoring
             return null;
         }
 
-        private int GetQualityScore(string quality)
-        {
-            if (string.IsNullOrEmpty(quality)) return 0;
-            var lowerQuality = quality.ToLower();
-            if (lowerQuality.Contains("flac")) return 100;
-            if (lowerQuality.Contains("aax")) return 95;
-            if (lowerQuality.Contains("m4b")) return 90;
-            if (lowerQuality.Contains("opus")) return 85;
-            if (ContainsVbrPreset(lowerQuality, "v0")) return 82;
-            if (ContainsVbrPreset(lowerQuality, "v1")) return 76;
-            if (ContainsVbrPreset(lowerQuality, "v2")) return 70;
-            if (lowerQuality.Contains("aac") || lowerQuality.Contains("m4a")) return 78;
-            if (lowerQuality.Contains("320")) return 80;
-            if (lowerQuality.Contains("256")) return 74;
-            if (lowerQuality.Contains("192")) return 60;
-            if (lowerQuality.Contains("vbr") || lowerQuality.Contains("cbr")) return 65;
-            if (lowerQuality.Contains("mp3") && !ContainsAnyBitrate(lowerQuality, "64", "128", "192", "256", "320")) return 65;
-            if (lowerQuality.Contains("128")) return 50;
-            if (lowerQuality.Contains("64")) return 40;
-            return 0;
-        }
-
-        private static bool ContainsVbrPreset(string qualityLower, string preset) => qualityLower.Contains(preset) || qualityLower.Contains($"-{preset}") || qualityLower.Contains($" {preset}");
-        private static bool ContainsAnyBitrate(string qualityLower, params string[] bitrates) => bitrates.Any(b => qualityLower.Contains(b));
-
         private static bool IsNzbResult(SearchResult r)
         {
             bool hasNzbUrl = !string.IsNullOrEmpty(r.NzbUrl);
