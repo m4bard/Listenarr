@@ -588,6 +588,24 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             Assert.Null(apiMock.LastDeleteForm);
         }
 
+        [Fact]
+        public async Task RemoveAsync_WhenPresenceCheckReturnsUnparseableBody_ReturnsFalseWithoutCallingDelete()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = "not json";
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.False(result);
+            Assert.Contains(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/info", StringComparison.Ordinal));
+            Assert.DoesNotContain(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/delete", StringComparison.Ordinal));
+            Assert.Null(apiMock.LastDeleteForm);
+        }
+
         [Theory]
         [InlineData("uploading")]
         [InlineData("stalledUP")]
