@@ -79,6 +79,22 @@ internal sealed partial class AudiobookScanService
                 {
                     metadataMatches.Add(candidate);
                 }
+                else if (metadata != null)
+                {
+                    // A diagnostic, not a ScanDiscoveryIssue: issues feed completeness
+                    // and attribution-conflict decisions, and a decline must not change
+                    // what the scan does, only make the skipped file visible. This also
+                    // covers the filename fallback MetadataService returns when ffprobe
+                    // fails. Name the candidate, never the pinned descriptor path.
+                    logger.LogInformation(
+                        "Embedded metadata for scan candidate {Path} did not match audiobook {AudiobookId}; the file was not attributed",
+                        LogRedaction.SanitizeFilePath(candidate),
+                        audiobook.Id);
+                    diagnostics.Add(new AudiobookScanDiagnostic(
+                        "MetadataDeclined",
+                        candidate,
+                        "The file's metadata did not match this audiobook, so the file was not added."));
+                }
             }
             catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
             {
