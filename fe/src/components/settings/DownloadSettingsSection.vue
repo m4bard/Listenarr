@@ -147,6 +147,24 @@
         title="Auto-search on Failed Downloads"
         description="Automatically search for a replacement when a download fails (requires failed download handling)."
       />
+
+      <FormRow
+        label="Stalled Download Timeout (hours)"
+        labelFor="stalled-download-timeout-hours"
+        help="Hours a torrent can go without any download progress before it is handled exactly like a failed download: blocklisted, removed from the client, and its book eligible for search again. 0 disables this. Applies to torrent clients (qBittorrent, Transmission) only, and requires failed download handling."
+      >
+        <input
+          id="stalled-download-timeout-hours"
+          data-testid="stalled-download-timeout-hours"
+          :value="settings.stalledDownloadTimeoutHours ?? 0"
+          @input="(e) => updateStalledDownloadTimeoutHours((e.target as HTMLInputElement).value)"
+          :disabled="!settings.failedDownloadHandlingEnabled"
+          type="number"
+          min="0"
+          :max="MAX_STALLED_DOWNLOAD_TIMEOUT_HOURS"
+          step="1"
+        />
+      </FormRow>
     </div>
   </div>
 </template>
@@ -173,6 +191,18 @@ function updateFailedDownloadHandlingEnabled(value: boolean) {
 
 function updateFailedDownloadAutoSearch(value: boolean) {
   updateField('failedDownloadAutoSearch', value)
+}
+
+// Mirrors ApplicationSettings.MaxStalledDownloadTimeoutHours; the server rejects anything outside
+// 0 to this, so the field holds the value inside the range rather than letting a save fail.
+const MAX_STALLED_DOWNLOAD_TIMEOUT_HOURS = 720
+
+function updateStalledDownloadTimeoutHours(raw: string) {
+  const hours = Math.trunc(Number(raw))
+  const bounded = Number.isFinite(hours)
+    ? Math.min(MAX_STALLED_DOWNLOAD_TIMEOUT_HOURS, Math.max(0, hours))
+    : 0
+  updateField('stalledDownloadTimeoutHours', bounded)
 }
 </script>
 
@@ -212,6 +242,11 @@ h3 {
   background-color: #1a1a1a;
   color: #fff;
   font-size: 0.95rem;
+}
+
+.form-row-control input[type='number']:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .form-group input:focus,
