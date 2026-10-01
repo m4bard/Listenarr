@@ -38,6 +38,13 @@ public sealed record AudiobookScanResult(
     /// folder with nothing in it from one whose files were all declined.
     /// </summary>
     public int DiscoveredCandidateCount { get; init; }
+
+    /// <summary>
+    /// True when at least one attributed file is durably owned by the audiobook after
+    /// the scan: newly claimed, already tracked, or created by legacy reconciliation.
+    /// Attribution alone is not enough, because an ownership claim can still be refused.
+    /// </summary>
+    public bool HasDurableAttributedOwnership { get; init; }
 }
 
 public interface IAudiobookScanService
