@@ -207,6 +207,38 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
         }
 
         [Theory]
+        [Trait("Scenario", "A pause shorter than the observation gap cap still clears the clock")]
+        [InlineData("stoppedDL")]
+        [InlineData("pausedDL")]
+        [InlineData("queuedDL")]
+        public async Task ABriefPauseAfterALongStall_ClearsTheClock_SoResumeIsNotFailedAtOnce(string waitingState)
+        {
+            // The long-pause test above cannot tell clearing from the gap cap: a six hour pause
+            // restarts the clock either way. Here every gap stays under the cap, so only clearing
+            // the markers while the torrent is not eligible keeps the old clock from firing.
+            await SaveSettingsAsync(handlingEnabled: true, hours: TimeoutHours);
+            var download = await AddTorrentDownloadAsync();
+
+            // 100 minutes of stall against a 120 minute timeout.
+            ReportTorrent("stalledDL", progress: 0.25, size: 1000, downloaded: 250);
+            await PollAsync();
+            await PollEveryUntilAsync(TimeSpan.FromMinutes(100));
+
+            // 20 minutes waiting, polled every 10.
+            ReportTorrent(waitingState, progress: 0.25, size: 1000, downloaded: 250);
+            await PollEveryUntilAsync(TimeSpan.FromMinutes(20));
+
+            // Resumed with no bytes, 25 minutes after the last stalled poll (under the 30 minute
+            // cap) and 125 minutes after the stall began (past the timeout on the old clock).
+            ReportTorrent("stalledDL", progress: 0.25, size: 1000, downloaded: 250);
+            _clock.Advance(TimeSpan.FromMinutes(5));
+            await PollAsync();
+
+            Assert.Equal(DownloadStatus.Downloading, (await _downloadRepository.GetByIdAsync(download.Id))!.Status);
+            Assert.Null(_qbittorrent.LastDeleteForm);
+        }
+
+        [Theory]
         [Trait("Scenario", "Time spent paused or queued does not count")]
         [InlineData("stoppedDL")]
         [InlineData("pausedDL")]
