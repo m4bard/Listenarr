@@ -260,7 +260,7 @@ namespace Listenarr.Application.Search.Scoring
                 // left every NZB on the base score, so an NZB outranked any torrent regardless of
                 // what it contained, and a quality the operator had switched off was grabbed over
                 // Usenet with no rejection reason.
-                int qualityScore = GetQualityScore(normalizedQuality);
+                int qualityScore = QualityScoreLadder.Score(normalizedQuality);
                 var qualityDeduction = 100 - qualityScore;
                 score.TotalScore -= qualityDeduction;
                 score.ScoreBreakdown["Quality"] = qualityScore;
