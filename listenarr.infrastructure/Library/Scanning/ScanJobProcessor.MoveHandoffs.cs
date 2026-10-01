@@ -13,13 +13,14 @@ public partial class ScanJobProcessor
     private async Task<ScanTerminalDecision> RecordScanCompletionAsync(
         IHistoryRepository historyRepository,
         ScanJob job,
-        Audiobook audiobook,
-        int found,
-        int created,
-        int discovered,
+        AudiobookScanResult scanResult,
         string scanRoot,
         CancellationToken cancellationToken)
     {
+        var audiobook = scanResult.Audiobook;
+        var found = scanResult.AttributedFiles.Count;
+        var created = scanResult.CreatedCount;
+        var discovered = scanResult.DiscoveredCandidateCount;
         // Move-owned scans keep the plain durable handoff outcome: the handoff store,
         // its lease renewal and its recovery all map back to Completed, so a distinct
         // status here would be overwritten and disagree with the durable record.
@@ -39,7 +40,9 @@ public partial class ScanJobProcessor
             return ToTerminalDecision(result);
         }
 
-        var decision = ToCompletionDecision(found, discovered);
+        var decision = ToCompletionDecision(
+            scanResult.HasDurableAttributedOwnership,
+            discovered);
         var correlationId = job.CorrelationId ?? job.Id.ToString("N");
         var idempotencyKey = $"scan:{job.Id:N}:completed";
         var existing = await historyRepository.GetByCorrelationIdAsync(
@@ -70,7 +73,7 @@ public partial class ScanJobProcessor
                 : HistoryOutcome.Succeeded,
             Source = "LibraryScan",
             Message = noFilesAccepted
-                ? $"Library scan completed: {discovered} audio files found, none matched this audiobook"
+                ? $"Library scan completed: {discovered} claimable audio files found, none added to this audiobook"
                 : $"Library scan completed: {found} found, {created} created",
             Error = decision.Error,
             Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
@@ -91,11 +94,15 @@ public partial class ScanJobProcessor
     // The Error for CompletedNoFilesAccepted is shown to users unmasked
     // (ScanJobPublicError.FromInternal(error, status) passes it through), so it must
     // stay composed from counts only: never a path, file name or exception text.
-    private static ScanTerminalDecision ToCompletionDecision(int found, int discovered) =>
-        found == 0 && discovered > 0
+    // Accepted means durably owned, not merely attributed: a file can be attributed and
+    // then have its ownership claim rejected, which leaves the book just as empty.
+    private static ScanTerminalDecision ToCompletionDecision(
+        bool hasDurableAttributedOwnership,
+        int discovered) =>
+        !hasDurableAttributedOwnership && discovered > 0
             ? new ScanTerminalDecision(
                 ScanJobStatuses.CompletedNoFilesAccepted,
-                $"Found {discovered} audio file{(discovered == 1 ? string.Empty : "s")} in the scan folder that this audiobook could claim, but none could be matched to it. Check the files' names and tags, then rescan.",
+                $"Found {discovered} audio file{(discovered == 1 ? string.Empty : "s")} in the scan folder that this audiobook could claim, but none were added to it. Check the files' names, tags and permissions, then rescan.",
                 MoveOwned: false)
             : new ScanTerminalDecision(ScanJobStatuses.Completed, null, MoveOwned: false);
 
