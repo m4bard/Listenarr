@@ -127,6 +127,38 @@ namespace Listenarr.Tests.Features.Application.Metadata.Extraction
         }
 
         [Fact]
+        public async Task ExtractFileMetadataAsync_FfprobeFails_WarningNamesPublicFileNotDescriptor()
+        {
+            const string readPath = "/proc/self/fd/399";
+            var publicPath = Path.Join(
+                FileService.GetTempPath(),
+                "Some Book",
+                "Part 01.m4b");
+            var ffmpeg = new Mock<IFfmpegService>();
+            ffmpeg.Setup(service => service.GetFfprobePathAsync())
+                .ReturnsAsync("ffprobe");
+            ffmpeg.Setup(service => service.RunFfprobeAsync(
+                    It.IsAny<MetadataFileSource>()))
+                .ThrowsAsync(new FfmpegException("ffprobe cannot read/process the file"));
+            var logger = new CapturingLogger<MetadataService>();
+            var service = CreateMetadataService(ffmpeg.Object, logger);
+
+            var metadata = await service.ExtractFileMetadataAsync(
+                new MetadataFileSource(readPath, publicPath));
+
+            Assert.NotNull(metadata);
+            var warning = Assert.Single(logger.Entries, entry =>
+                entry.Level == LogLevel.Warning
+                && entry.Exception is FfmpegException);
+            Assert.Contains("Part 01.m4b", warning.Message, StringComparison.Ordinal);
+            Assert.All(logger.Entries, entry =>
+            {
+                Assert.DoesNotContain("/proc/", entry.Message, StringComparison.Ordinal);
+                Assert.DoesNotMatch(@"\b399\b", entry.Message);
+            });
+        }
+
+        [Fact]
         [Trait("Method", "FetchMetadataAsync")]
         public async Task FetchMetadataAsync()
         {
@@ -174,7 +206,8 @@ namespace Listenarr.Tests.Features.Application.Metadata.Extraction
         }
 
         private static MetadataService CreateMetadataService(
-            IFfmpegService ffmpegService)
+            IFfmpegService ffmpegService,
+            ILogger<MetadataService>? logger = null)
         {
             var configuration = new Mock<IConfigurationService>();
             configuration.Setup(service => service.GetApplicationSettingsAsync())
@@ -189,10 +222,28 @@ namespace Listenarr.Tests.Features.Application.Metadata.Extraction
             return new MetadataService(
                 new HttpClient(),
                 configuration.Object,
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<MetadataService>.Instance,
+                logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<MetadataService>.Instance,
                 ffmpegService,
                 Mock.Of<IAudioTagWriter>(),
                 fileSystem.Object);
+        }
+
+        private sealed class CapturingLogger<T> : ILogger<T>
+        {
+            public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter) =>
+                Entries.Add((logLevel, formatter(state, exception), exception));
         }
     }
 }
