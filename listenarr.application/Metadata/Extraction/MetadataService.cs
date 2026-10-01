@@ -199,7 +199,8 @@ namespace Listenarr.Application.Metadata.Extraction
                 {
                     _logger.LogWarning(
                         ex,
-                        "Unable to extract metadata using ffprobe; using public filename metadata");
+                        "Unable to extract metadata using ffprobe for file {File}; using public filename metadata",
+                        LogRedaction.SanitizeFilePath(fileSource.PublicPath));
                 }
 
                 _logger.LogInformation(
