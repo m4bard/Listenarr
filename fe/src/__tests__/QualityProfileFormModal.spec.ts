@@ -51,8 +51,8 @@ const mountModal = async (
 describe('QualityProfileFormModal maximum age', () => {
   it('offers the Maximum Age input when Prefer newer releases is off', async () => {
     // Maximum Age is a hard reject applied by SearchResultScorer whenever it is above zero,
-    // and the scorer never reads PreferNewerReleases. Hiding the input behind the checkbox
-    // hid a filter that stayed switched on.
+    // whatever PreferNewerReleases says; that setting only adds a ranking bonus. Hiding the
+    // input behind the checkbox hid a filter that stayed switched on.
     const wrapper = await mountModal(false)
 
     expect(wrapper.find('#maximumAge').exists()).toBe(true)
@@ -67,6 +67,43 @@ describe('QualityProfileFormModal maximum age', () => {
     const wrapper = await mountModal(true)
 
     expect(wrapper.find('#maximumAge').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('keeps the Maximum Age input usable as the checkbox is toggled either way', async () => {
+    // The two tests above only see the state the form opened in. This one ticks and unticks
+    // the box in place, so a condition that hid or disabled the input reactively, rather than
+    // on first render, would also fail.
+    const wrapper = await mountModal(false)
+    const checkbox = wrapper
+      .findAll('input[type="checkbox"]')
+      .find((input) =>
+        input.element.closest('label')?.textContent?.includes('Prefer newer releases'),
+      )
+    expect(checkbox).toBeDefined()
+
+    for (const checked of [true, false]) {
+      await checkbox!.setValue(checked)
+      expect((checkbox!.element as HTMLInputElement).checked).toBe(checked)
+
+      const maximumAge = wrapper.find('#maximumAge')
+      expect(maximumAge.exists()).toBe(true)
+      expect((maximumAge.element as HTMLInputElement).disabled).toBe(false)
+      expect((maximumAge.element as HTMLInputElement).value).toBe('30')
+    }
+
+    wrapper.unmount()
+  })
+
+  it('describes Prefer newer releases as a ranking preference, not a filter', async () => {
+    const wrapper = await mountModal(false)
+    const card = wrapper
+      .findAll('label')
+      .find((label) => label.text().includes('Prefer newer releases'))
+
+    expect(card).toBeDefined()
+    expect(card!.text()).toContain('Never rejects or accepts a release on its own')
 
     wrapper.unmount()
   })
