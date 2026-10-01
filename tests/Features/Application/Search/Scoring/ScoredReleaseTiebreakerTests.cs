@@ -49,9 +49,16 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
 
         private static QualityProfile BuildProfile()
         {
-            return new QualityProfileBuilder()
+            var profile = new QualityProfileBuilder()
                 .WithName("Tiebreak profile")
                 .Build();
+
+            // Off, because these tests need dated and dateless releases to tie on score. With it on
+            // (the domain default) a release from the last year earns a newer-release bonus that a
+            // dateless or older one does not, the score separates them, and the tiebreak under test
+            // is never reached. The bonus has its own tests in SearchResultScorerNewerReleaseTests.
+            profile.PreferNewerReleases = false;
+            return profile;
         }
 
         private static QualityProfileService CreateQualityProfileService()
