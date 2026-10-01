@@ -92,6 +92,18 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
 
         private static string PublishedDaysAgo(int days) => DateTime.UtcNow.AddDays(-days).ToString("o", CultureInfo.InvariantCulture);
 
+        [Fact]
+        public void NewQualityProfile_DefaultsPreferNewerReleasesToFalse()
+        {
+            // Pins the default itself, not just the scoring behaviour: a profile built without
+            // setting the field at all (a raw API call that omits it, not the settings modal,
+            // which already sends false explicitly) must not silently pick up this bonus. See
+            // QualityProfile.cs's own comment on the property for the reasoning.
+            var profile = new QualityProfile { Name = "default check" };
+
+            Assert.False(profile.PreferNewerReleases);
+        }
+
         [Theory]
         [InlineData(0, 4)]
         [InlineData(1, 4)]
