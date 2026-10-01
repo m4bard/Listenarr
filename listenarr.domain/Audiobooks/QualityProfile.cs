@@ -95,9 +95,14 @@ namespace Listenarr.Domain.Audiobooks
         public bool IsDefault { get; set; } = false;
 
         /// <summary>
-        /// Whether to prefer newer releases (higher age score)
+        /// Whether to prefer newer releases (higher age score). Defaults false to match the
+        /// settings modal, which always creates a new profile with this unticked -- before this
+        /// field had a reader at all, the default here was never visible to anyone, so changing
+        /// it now costs nothing for any existing profile but avoids a profile created any other
+        /// way (a raw API call omitting the field) silently getting a new ranking bonus nobody
+        /// chose.
         /// </summary>
-        public bool PreferNewerReleases { get; set; } = true;
+        public bool PreferNewerReleases { get; set; } = false;
 
         /// <summary>
         /// Maximum age in days for releases (0 = no limit)
