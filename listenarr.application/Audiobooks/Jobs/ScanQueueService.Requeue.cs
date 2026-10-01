@@ -200,7 +200,7 @@ public partial class ScanQueueService
 
     private static bool CanRequeueJobStatus(string status) =>
         string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase)
+        || ScanJobStatuses.IsCompletion(status)
         || string.Equals(status, "Queued", StringComparison.OrdinalIgnoreCase);
 
     private sealed record DispatchReservation(MoveScanHandoffClaim Claim)

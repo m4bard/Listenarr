@@ -213,6 +213,30 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Jobs
         }
 
         [Fact]
+        public async Task ScanQueue_CompletedNoFilesAcceptedJobCanBeRequeued()
+        {
+            var queue = new ScanQueueService(
+                NullLogger<ScanQueueService>.Instance);
+            var audiobook = new AudiobookBuilder()
+                .WithId(1015)
+                .WithTitle("Nothing Matched")
+                .Build();
+            var jobId = await queue.EnqueueScanAsync(audiobook);
+            Assert.True(queue.Reader.TryRead(out _));
+            queue.UpdateJobStatus(
+                jobId,
+                "CompletedNoFilesAccepted",
+                "Found 2 audio files in the scan folder but none could be matched to this audiobook.");
+
+            var replacementId = await queue.RequeueScanAsync(jobId);
+
+            Assert.NotNull(replacementId);
+            Assert.NotEqual(jobId, replacementId);
+            Assert.True(queue.Reader.TryRead(out var replacement));
+            Assert.Equal(replacementId, replacement.Id);
+        }
+
+        [Fact]
         public async Task ScanQueue_CompletedCorrelationCreatesReplacementHandoff()
         {
             var queue = new ScanQueueService(
