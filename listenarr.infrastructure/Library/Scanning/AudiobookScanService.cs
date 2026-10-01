@@ -181,7 +181,9 @@ internal sealed partial class AudiobookScanService(
             DiscoveredCandidateCount = CountClaimableCandidates(
                 discovery,
                 resolvedExistingPaths.Values,
-                semantics)
+                semantics),
+            HasDurableAttributedOwnership = hasDurableAttributedOwnership
+                || createdCount > 0
         };
     }
 
