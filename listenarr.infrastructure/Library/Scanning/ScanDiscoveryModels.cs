@@ -28,6 +28,13 @@ internal sealed record ScanDiscoveryResult(
     bool HasStableIdentifierBoundaryConflict,
     IReadOnlyList<ScanDiscoveryIssue> Issues)
 {
+    /// <summary>
+    /// Candidates already owned by a different audiobook. They stay in
+    /// <see cref="Candidates"/> for enumeration bookkeeping but are never claimable.
+    /// </summary>
+    public IReadOnlySet<string> ForeignOwnedCandidates { get; init; } =
+        new HashSet<string>(StringComparer.Ordinal);
+
     public bool IsComplete => Issues.All(issue =>
         issue.Kind is not (ScanDiscoveryIssueKind.EnumerationFailure
             or ScanDiscoveryIssueKind.LinkSkipped
