@@ -19,6 +19,12 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public ApplicationSettingsBuilder WithStalledDownloadTimeoutHours(int value)
+        {
+            _applicationSettings.StalledDownloadTimeoutHours = value;
+            return this;
+        }
+
         public ApplicationSettingsBuilder WithCompletionStabilitySeconds(int value)
         {
             _applicationSettings.DownloadCompletionStabilitySeconds = value;
