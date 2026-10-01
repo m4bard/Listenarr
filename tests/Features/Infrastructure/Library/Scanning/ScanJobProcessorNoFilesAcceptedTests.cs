@@ -61,7 +61,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
             var updatedJob = GetRequiredJob(queue, job.Id);
             Assert.Equal("CompletedNoFilesAccepted", updatedJob.Status);
             Assert.Equal(
-                "Found 2 audio files in the scan folder that this audiobook could claim, but none could be matched to it. Check the files' names and tags, then rescan.",
+                "Found 2 audio files in the scan folder that this audiobook could claim, but none were added to it. Check the files' names, tags and permissions, then rescan.",
                 updatedJob.Error);
             Assert.Empty(await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
 
@@ -195,6 +195,48 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
             Assert.Equal("Completed", updatedJob.Status);
             Assert.Null(updatedJob.Error);
             Assert.Empty(await _audiobookFileRepository.GetByAudiobookIdAsync(other.Id));
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_FilesAttributedButEveryClaimRejected_ReportsCompletedNoFilesAccepted()
+        {
+            // Every ownership claim is refused, as an IdentityUnavailable or similar
+            // rejection would be: attribution succeeds but nothing becomes durable.
+            var fileService = new Mock<IAudiobookFileService>();
+            fileService.Setup(service => service.EnsureAudiobookFileAsync(
+                    It.IsAny<Audiobook>(),
+                    It.IsAny<IAudiobookFileRegistrationLease>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
+            _services.AddSingleton(fileService.Object);
+            Init();
+            await _applicationSettingsRepository.SaveAsync(
+                new ApplicationSettingsBuilder()
+                    .WithOutputPath(FileService.GetTempPath())
+                    .Build());
+            var basePath = FileService.GetTempDirectory("scan-processor-claim-rejected");
+            await FileService.GetFileAsync(basePath, "Rejected Claim Book.m4b", "audio");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Rejected Claim Book")
+                .WithBasePath(basePath)
+                .Build());
+            var (queue, job) = await CreateQueuedScanJobAsync(audiobook);
+
+            await _provider.GetRequiredService<IScanJobProcessor>()
+                .ProcessJobAsync(job, CancellationToken.None);
+
+            fileService.Verify(service => service.EnsureAudiobookFileAsync(
+                It.IsAny<Audiobook>(),
+                It.IsAny<IAudiobookFileRegistrationLease>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()), Times.Once);
+            var updatedJob = GetRequiredJob(queue, job.Id);
+            Assert.Equal("CompletedNoFilesAccepted", updatedJob.Status);
+            Assert.Equal(
+                "Found 1 audio file in the scan folder that this audiobook could claim, but none were added to it. Check the files' names, tags and permissions, then rescan.",
+                updatedJob.Error);
+            Assert.Empty(await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
         }
 
         private static ScanJob GetRequiredJob(ScanQueueService queue, Guid jobId)

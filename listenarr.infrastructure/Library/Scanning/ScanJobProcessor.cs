@@ -131,10 +131,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
                     commitToken => RecordScanCompletionAsync(
                         historyRepository,
                         job,
-                        result.Audiobook,
-                        result.AttributedFiles.Count,
-                        result.CreatedCount,
-                        result.DiscoveredCandidateCount,
+                        result,
                         scanRoot,
                         commitToken),
                     stoppingToken);
@@ -158,7 +155,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
                         StringComparison.Ordinal))
                 {
                     _logger.LogWarning(
-                        "Scan job {JobId} found {Discovered} audio files for audiobook {AudiobookId} but none could be matched to it",
+                        "Scan job {JobId} found {Discovered} claimable audio files for audiobook {AudiobookId} but none were added to it",
                         job.Id,
                         result.DiscoveredCandidateCount,
                         job.AudiobookId);
