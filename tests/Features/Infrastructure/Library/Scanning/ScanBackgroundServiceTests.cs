@@ -152,6 +152,79 @@ public sealed class ScanBackgroundServiceTests : BaseTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_LaterProcessorException_PreservesCompletedNoFilesAcceptedStatus()
+    {
+        var queue = new ScanQueueService(
+            NullLogger<ScanQueueService>.Instance);
+        await using var services = new ServiceCollection()
+            .AddSingleton(new Mock<IHistoryRepository>().Object)
+            .AddSingleton(new Mock<IAudiobookRepository>().Object)
+            .BuildServiceProvider();
+        var handoffStore = new Mock<IMoveScanHandoffStore>();
+        handoffStore.Setup(store => store.GetClaimableIdsAsync(
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        var recovery = new MoveScanHandoffRecoveryService(
+            queue,
+            handoffStore.Object,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            TimeProvider.System,
+            NullLogger<MoveScanHandoffRecoveryService>.Instance);
+        // The second job is a barrier: the worker handles jobs in order, so once it
+        // runs, the first job's exception handling has already finished.
+        var secondProcessed = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Guid? firstId = null;
+        var processor = new Mock<IScanJobProcessor>();
+        processor.Setup(service => service.ProcessJobAsync(
+                It.IsAny<ScanJob>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ScanJob, CancellationToken>((job, _) =>
+            {
+                if (job.Id != firstId)
+                {
+                    secondProcessed.TrySetResult();
+                    return Task.CompletedTask;
+                }
+
+                queue.UpdateJobStatus(
+                    job.Id,
+                    "CompletedNoFilesAccepted",
+                    "Found 1 audio file in the scan folder but none could be matched to this audiobook.");
+                return Task.FromException(new InvalidOperationException("post-commit effect failed"));
+            });
+        var service = new ScanBackgroundService(
+            queue,
+            processor.Object,
+            recovery,
+            new ImmediateCycleRunner(),
+            TestLibraryFilesystemReadiness.Ready(),
+            NullLogger<ScanBackgroundService>.Instance);
+        firstId = await queue.EnqueueScanAsync(new AudiobookBuilder()
+            .WithId(503)
+            .WithTitle("Terminal Preservation")
+            .Build());
+        await queue.EnqueueScanAsync(new AudiobookBuilder()
+            .WithId(504)
+            .WithTitle("Terminal Preservation Barrier")
+            .Build());
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            await secondProcessed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(queue.TryGetJob(firstId.Value, out var first));
+            Assert.Equal("CompletedNoFilesAccepted", Assert.IsType<ScanJob>(first).Status);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task ExecuteAsync_StatusUpdateFailure_DoesNotStopLaterJobs()
     {
         var channel = Channel.CreateUnbounded<ScanJob>();

@@ -7,6 +7,7 @@ public partial class ScanJobProcessor
     private async Task RunSuccessfulPostCompletionEffectsAsync(
         ScanJob job,
         Audiobook audiobook,
+        ScanTerminalDecision decision,
         int found,
         int created,
         CancellationToken cancellationToken)
@@ -25,7 +26,8 @@ public partial class ScanJobProcessor
             {
                 jobId = job.Id.ToString(),
                 audiobookId = job.AudiobookId,
-                status = "Completed",
+                status = decision.Status,
+                error = ScanJobPublicError.FromInternal(decision.Error, decision.Status),
                 found,
                 created,
                 completedAt = _timeProvider.GetUtcNow().UtcDateTime

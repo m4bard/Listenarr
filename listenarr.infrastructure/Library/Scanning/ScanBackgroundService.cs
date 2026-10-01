@@ -105,7 +105,7 @@ namespace Listenarr.Infrastructure.Library.Scanning
             {
                 if (queue.TryGetJob(job.Id, out var current)
                     && current != null
-                    && (string.Equals(current.Status, "Completed", StringComparison.OrdinalIgnoreCase)
+                    && (ScanJobStatuses.IsCompletion(current.Status)
                         || string.Equals(current.Status, "Failed", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(current.Status, "Superseded", StringComparison.OrdinalIgnoreCase)))
                 {

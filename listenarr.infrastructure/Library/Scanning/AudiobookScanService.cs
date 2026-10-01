@@ -175,7 +175,10 @@ internal sealed partial class AudiobookScanService(
                 && command.IsAuthoritativeScope
                 && command.ScanPhysicalIdentity.HasDurableGenerationProof
                 && discovery.CanReconcile,
-            diagnostics);
+            diagnostics)
+        {
+            DiscoveredCandidateCount = discovery.Candidates.Count
+        };
     }
 
     private async Task<FileSystemPathSemantics> ValidateCommandAsync(

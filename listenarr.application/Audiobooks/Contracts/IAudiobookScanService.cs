@@ -30,7 +30,15 @@ public sealed record AudiobookScanResult(
     string? BasePath,
     bool IsComplete,
     bool ReconciliationPerformed,
-    IReadOnlyList<AudiobookScanDiagnostic> Diagnostics);
+    IReadOnlyList<AudiobookScanDiagnostic> Diagnostics)
+{
+    /// <summary>
+    /// Audio files discovery found in the scan scope, whether or not they were
+    /// attributed. Compared with <see cref="AttributedFiles"/> it distinguishes a
+    /// folder with nothing in it from one whose files were all declined.
+    /// </summary>
+    public int DiscoveredCandidateCount { get; init; }
+}
 
 public interface IAudiobookScanService
 {
