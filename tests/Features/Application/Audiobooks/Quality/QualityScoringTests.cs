@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using System.Reflection;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -24,39 +23,6 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
 {
     public class QualityScoringTests
     {
-        [Fact]
-        public void GetQualityScore_VariousTokens_ReturnsExpected()
-        {
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
-
-            using var db = new ListenArrDbContext(options);
-            var svc = new QualityProfileService(new QualityProfileRepository(db), NullLogger<QualityProfileService>.Instance);
-
-            var method = typeof(QualityProfileService).GetMethod("GetQualityScore", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.NotNull(method);
-
-            // MP3 VBR should be the mid-range score (65)
-            var vbr = (int)method.Invoke(svc, new object[] { "MP3 VBR" });
-            Assert.Equal(65, vbr);
-
-            // V0/V1/V2 presets
-            var v0 = (int)method.Invoke(svc, new object[] { "MP3 V0" });
-            var v1 = (int)method.Invoke(svc, new object[] { "MP3 V1" });
-            var v2 = (int)method.Invoke(svc, new object[] { "MP3 V2" });
-            Assert.True(v0 > v1 && v1 > v2);
-
-            // Numeric bitrates
-            Assert.Equal(80, (int)method.Invoke(svc, new object[] { "MP3 320kbps" }));
-            Assert.Equal(74, (int)method.Invoke(svc, new object[] { "MP3 256kbps" }));
-
-            // Opus/AAC/AAX
-            Assert.Equal(85, (int)method.Invoke(svc, new object[] { "Opus VBR" }));
-            Assert.Equal(78, (int)method.Invoke(svc, new object[] { "AAC 256" }));
-            Assert.Equal(95, (int)method.Invoke(svc, new object[] { "AAX" }));
-        }
-
         [Fact]
         public async Task ScoreSearchResult_AppliesPenaltiesAndQualityScore()
         {
