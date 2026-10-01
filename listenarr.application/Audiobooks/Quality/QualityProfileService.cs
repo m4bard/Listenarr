@@ -245,72 +245,6 @@ namespace Listenarr.Application.Audiobooks.Quality
 
 
 
-        // Manual search scoring logic for quality
-        private int GetQualityScore(string? quality)
-        {
-            if (string.IsNullOrEmpty(quality))
-                return 0;
-
-            var lowerQuality = quality.ToLower();
-
-            // Highest quality
-            if (lowerQuality.Contains("flac"))
-                return 100;
-
-            // Audible format (AAX) - high quality
-            if (lowerQuality.Contains("aax"))
-                return 95;
-
-            // Container formats
-            if (lowerQuality.Contains("m4b"))
-                return 90;
-
-            // Modern efficient codecs
-            if (lowerQuality.Contains("opus"))
-                return 85;
-
-            // VBR quality presets (LAME VBR presets like V0/V1/V2)
-            if (ContainsVbrPreset(lowerQuality, "v0"))
-                return 82;
-            if (ContainsVbrPreset(lowerQuality, "v1"))
-                return 76;
-            if (ContainsVbrPreset(lowerQuality, "v2"))
-                return 70;
-
-
-            // AAC / M4A (check before numeric bitrates to prefer codec score for e.g. "AAC 256")
-            if (lowerQuality.Contains("aac") || lowerQuality.Contains("m4a"))
-                return 78;
-
-            // Explicit numeric bitrates
-            if (lowerQuality.Contains("320"))
-                return 80;
-            if (lowerQuality.Contains("256"))
-                return 74;
-            if (lowerQuality.Contains("192"))
-                return 60;
-
-            // VBR / CBR generic tokens (treat as mid-range if no numeric bitrate provided)
-            if (lowerQuality.Contains("vbr") || lowerQuality.Contains("cbr"))
-            {
-                // If there's an explicit numeric bitrate elsewhere, that will have matched above.
-                return 65;
-            }
-
-            // Generic MP3 mention without explicit bitrate -> mid-range
-            if (lowerQuality.Contains("mp3") && !ContainsAnyBitrate(lowerQuality, "64", "128", "192", "256", "320"))
-                return 65;
-
-            if (lowerQuality.Contains("128"))
-                return 50;
-            if (lowerQuality.Contains("64"))
-                return 40;
-
-            return 0;
-        }
-
-
-
         public async Task<List<QualityScore>> ScoreSearchResults(List<SearchResult> searchResults, QualityProfile profile, bool targetIsBundle = false)
         {
             // Resolve every indexer this batch refers to before fanning out, not inside it.
@@ -326,7 +260,7 @@ namespace Listenarr.Application.Audiobooks.Quality
             // Rejected results last, then the operator's own quality ordering, then the score,
             // then ScoredReleaseTiebreaker so the ranking does not depend on the order the
             // indexer returned results in. Sorting on the score alone ranked by the hardcoded
-            // ladder in SearchResultScorer, which ties every AAC rung and puts MP3 320kbps above
+            // ladder in QualityScoreLadder, which ties every AAC rung and puts MP3 320kbps above
             // all of them, inverting the ordering the shipped default profile itself sets.
             return scores
                 .InPreferenceOrder(profile)
@@ -369,24 +303,6 @@ namespace Listenarr.Application.Audiobooks.Quality
             }
 
             return resolved;
-        }
-
-        /// <summary>
-        /// Checks if a quality string contains VBR preset indicators (v0, v1, v2).
-        /// </summary>
-        private static bool ContainsVbrPreset(string qualityLower, string preset)
-        {
-            return qualityLower.Contains(preset) ||
-                   qualityLower.Contains($"-{preset}") ||
-                   qualityLower.Contains($" {preset}");
-        }
-
-        /// <summary>
-        /// Checks if a quality string contains any of the specified bitrate indicators.
-        /// </summary>
-        private static bool ContainsAnyBitrate(string qualityLower, params string[] bitrates)
-        {
-            return bitrates.Any(b => qualityLower.Contains(b));
         }
 
         /// <summary>
