@@ -177,7 +177,10 @@ internal sealed partial class AudiobookScanService(
                 && discovery.CanReconcile,
             diagnostics)
         {
-            DiscoveredCandidateCount = discovery.Candidates.Count
+            DiscoveredCandidateCount = CountClaimableCandidates(
+                discovery,
+                resolvedExistingPaths.Values,
+                semantics)
         };
     }
 

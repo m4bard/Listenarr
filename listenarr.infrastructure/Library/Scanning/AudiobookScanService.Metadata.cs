@@ -33,24 +33,19 @@ internal sealed partial class AudiobookScanService
             semantics.Comparer);
         var issues = discovery.Issues.ToList();
         var metadataMatches = new List<string>();
-        var owned = new HashSet<string>(
-            ownedPaths.Select(path => FileSystemPathIdentity.Canonicalize(
-                path,
-                semantics.Syntax)),
-            semantics.Comparer);
+        var owned = CanonicalOwnedPaths(ownedPaths, semantics);
 
         if (discovery.HasStableIdentifierBoundaryConflict)
         {
             return discovery with { Issues = issues };
         }
 
+        // Files another audiobook already owns are skipped before extraction: discovery
+        // already refuses to attribute them, a match could only fail at claim time, and
+        // a decline would be noise about a file that was never this book's to take.
         foreach (var candidate in discovery.Candidates.Where(path =>
             !attributed.Contains(path)
-            && ScanFileDiscovery.CanClaimNewPath(
-                path,
-                discovery.SelectedStableIdentifierBoundary,
-                owned,
-                semantics)))
+            && IsClaimableCandidate(path, discovery, owned, semantics)))
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
@@ -154,6 +149,40 @@ internal sealed partial class AudiobookScanService
             Issues = issues
         };
     }
+
+    // Counts the audio files this book could actually have claimed: not owned by
+    // another audiobook, and not outside a selected stable-identifier boundary. A
+    // shared root full of other books' files must not read as "files found here".
+    private static int CountClaimableCandidates(
+        ScanDiscoveryResult discovery,
+        IEnumerable<string> ownedPaths,
+        FileSystemPathSemantics semantics)
+    {
+        var owned = CanonicalOwnedPaths(ownedPaths, semantics);
+        return discovery.Candidates.Count(path =>
+            IsClaimableCandidate(path, discovery, owned, semantics));
+    }
+
+    private static bool IsClaimableCandidate(
+        string path,
+        ScanDiscoveryResult discovery,
+        IReadOnlySet<string> ownedCanonicalPaths,
+        FileSystemPathSemantics semantics) =>
+        !discovery.ForeignOwnedCandidates.Contains(path)
+        && ScanFileDiscovery.CanClaimNewPath(
+            path,
+            discovery.SelectedStableIdentifierBoundary,
+            ownedCanonicalPaths,
+            semantics);
+
+    private static HashSet<string> CanonicalOwnedPaths(
+        IEnumerable<string> ownedPaths,
+        FileSystemPathSemantics semantics) =>
+        new(
+            ownedPaths.Select(path => FileSystemPathIdentity.Canonicalize(
+                path,
+                semantics.Syntax)),
+            semantics.Comparer);
 
     private static string? CalculateMetadataBoundary(
         IReadOnlyCollection<string> paths,
