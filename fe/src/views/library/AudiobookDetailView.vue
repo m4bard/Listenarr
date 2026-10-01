@@ -1353,11 +1353,15 @@ watch(
   async ([jobId, status, scanError]) => {
     if (!jobId || !status) return
     const normalizedStatus = status.toLowerCase()
-    if (normalizedStatus !== 'completed' && normalizedStatus !== 'failed') return
+    // A scan that found files but accepted none (CompletedNoFilesAccepted) is a completion,
+    // not a failure: refresh the same way, and the status label says what happened.
+    const completed =
+      normalizedStatus === 'completed' || normalizedStatus === 'completednofilesaccepted'
+    if (!completed && normalizedStatus !== 'failed') return
     if (lastHandledTerminalScanJobId === jobId) return
     lastHandledTerminalScanJobId = jobId
 
-    if (normalizedStatus === 'completed') {
+    if (completed) {
       await refreshAudiobookAfterScan(jobId)
       return
     }
