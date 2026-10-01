@@ -122,6 +122,11 @@ jobs:
       - name: Publish API (linux-x64)
         run: dotnet publish ${{ env.API_PROJECT }} -c Release -r linux-x64 --no-restore --self-contained true /p:PublishSingleFile=true -o listenarr.api/publish/linux-x64
 
+      - name: Check the packaged ffprobe sits beside the published app
+        run: |
+          test -f listenarr.api/publish/linux-x64/ffprobe
+          listenarr.api/publish/linux-x64/ffprobe -version > /dev/null
+
   backend-tests-windows:
     runs-on: windows-2025
     env:
