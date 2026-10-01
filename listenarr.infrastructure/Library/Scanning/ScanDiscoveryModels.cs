@@ -31,6 +31,8 @@ internal sealed record ScanDiscoveryResult(
     /// <summary>
     /// Candidates already owned by a different audiobook. They stay in
     /// <see cref="Candidates"/> for enumeration bookkeeping but are never claimable.
+    /// Discovery fills it with the scan's semantic comparer. The default is only ever
+    /// empty, and an empty set answers Contains the same under any comparer.
     /// </summary>
     public IReadOnlySet<string> ForeignOwnedCandidates { get; init; } =
         new HashSet<string>(StringComparer.Ordinal);
