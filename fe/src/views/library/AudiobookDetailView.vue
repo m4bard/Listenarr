@@ -1267,7 +1267,8 @@ onMounted(async () => {
     if (!audiobook.value) return
     if (String(job.audiobookId) !== String(audiobook.value.id)) return
     scanNotificationsStore.applyUpdate(job)
-    if (job.status.toLowerCase() === 'completed') {
+    const status = job.status.toLowerCase()
+    if (status === 'completed' || status === 'completednofilesaccepted') {
       void loadWeakStorageMissingFiles()
     }
   })
