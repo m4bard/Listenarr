@@ -822,6 +822,58 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             Assert.Equal(expected, form["deleteFiles"]);
         }
 
+        [Fact]
+        public async Task RemoveAsync_WhenTorrentPresentInClient_ChecksPresenceThenDeletesAndReturnsTrue()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.True(result, $"Last request: {apiMock.GetLastRequest().RequestUri}; content: {apiMock.GetLastContent()}");
+            Assert.Contains(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/info", StringComparison.Ordinal));
+            Assert.NotNull(apiMock.LastDeleteForm);
+            Assert.Equal("ABCDEF123456", apiMock.LastDeleteForm!["hashes"]);
+        }
+
+        [Fact]
+        public async Task RemoveAsync_WhenTorrentAbsentFromClient_ReturnsFalseWithoutCallingDelete()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = "[]";
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.False(result);
+            Assert.Contains(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/info", StringComparison.Ordinal));
+            Assert.DoesNotContain(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/delete", StringComparison.Ordinal));
+            Assert.Null(apiMock.LastDeleteForm);
+        }
+
+        [Fact]
+        public async Task RemoveAsync_WhenPresenceCheckFails_ReturnsFalseWithoutCallingDelete()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoStatusCode = HttpStatusCode.InternalServerError;
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.False(result);
+            Assert.Contains(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/info", StringComparison.Ordinal));
+            Assert.DoesNotContain(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/delete", StringComparison.Ordinal));
+            Assert.Null(apiMock.LastDeleteForm);
+        }
+
         [Theory]
         [InlineData("uploading")]
         [InlineData("stalledUP")]
