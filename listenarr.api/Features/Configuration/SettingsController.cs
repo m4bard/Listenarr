@@ -103,6 +103,15 @@ namespace Listenarr.Api.Features.Configuration
                     });
                 }
 
+                if (settings.StalledDownloadTimeoutHours is < 0 or > ApplicationSettings.MaxStalledDownloadTimeoutHours)
+                {
+                    return BadRequest(new
+                    {
+                        code = "invalid_stalled_download_timeout",
+                        message = $"Stalled download timeout must be between 0 (off) and {ApplicationSettings.MaxStalledDownloadTimeoutHours} hours."
+                    });
+                }
+
                 await _configurationService.SaveApplicationSettingsAsync(settings);
                 _cache?.Remove("default-search-region");
 

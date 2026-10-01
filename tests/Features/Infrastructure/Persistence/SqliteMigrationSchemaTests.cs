@@ -537,6 +537,11 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.Contains(searchConcurrencyMigrationId, postCanary);
         postCanary = [.. postCanary.Except([searchConcurrencyMigrationId])];
 
+        // Item 81's stalled-download timeout, pinned apart for the same reason.
+        const string stalledDownloadTimeoutMigrationId = "20261001150702_AddStalledDownloadTimeoutSetting";
+        Assert.Contains(stalledDownloadTimeoutMigrationId, postCanary);
+        postCanary = [.. postCanary.Except([stalledDownloadTimeoutMigrationId])];
+
         Assert.Equal(
             [
                 ProcessExecutionLogRepairId,

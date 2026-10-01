@@ -179,6 +179,19 @@ namespace Listenarr.Domain.Configuration
         // Failed download handling settings
         public bool FailedDownloadHandlingEnabled { get; set; } = true;
         public bool FailedDownloadAutoSearch { get; set; } = false;
+
+        // Hours a torrent may sit in a downloading state with no observed change in progress or
+        // downloaded bytes before it is treated as a failed download: blocklisted, removed from
+        // the client, and the book left free to be searched for again. Zero turns it off, and
+        // the settings endpoint accepts 0 to MaxStalledDownloadTimeoutHours.
+        // Off by default because the family has no such policy: Sonarr QBittorrent.cs:319-322
+        // and Readarr QBittorrent.cs:273-275 map stalledDL to a warning with a message and never
+        // fail it on their own. An operator opts in to Listenarr failing one for them. Only read
+        // while FailedDownloadHandlingEnabled is on, since a stall is handled as a failure.
+        public int StalledDownloadTimeoutHours { get; set; } = 0;
+
+        // Thirty days. Past that the setting stops meaning "stalled" in any useful sense.
+        public const int MaxStalledDownloadTimeoutHours = 720;
         public List<string> ImportBlacklistExtensions
         {
             get
