@@ -44,9 +44,6 @@ namespace Listenarr.Domain.Configuration
         public string? SslCertPath { get; set; }
         public string? SslCertPassword { get; set; }
 
-        // FFmpeg/ffprobe installer configuration
-        public FfmpegConfig? Ffmpeg { get; set; }
-
         public bool IsAuthenticationEnabled()
         {
             var value = AuthenticationRequired;
