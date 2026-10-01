@@ -88,11 +88,14 @@ public partial class ScanJobProcessor
         return decision;
     }
 
+    // The Error for CompletedNoFilesAccepted is shown to users unmasked
+    // (ScanJobPublicError.FromInternal(error, status) passes it through), so it must
+    // stay composed from counts only: never a path, file name or exception text.
     private static ScanTerminalDecision ToCompletionDecision(int found, int discovered) =>
         found == 0 && discovered > 0
             ? new ScanTerminalDecision(
                 ScanJobStatuses.CompletedNoFilesAccepted,
-                $"Found {discovered} audio file{(discovered == 1 ? string.Empty : "s")} in the scan folder but none could be matched to this audiobook. Review the server logs for the files that were skipped.",
+                $"Found {discovered} audio file{(discovered == 1 ? string.Empty : "s")} in the scan folder that this audiobook could claim, but none could be matched to it. Check the files' names and tags, then rescan.",
                 MoveOwned: false)
             : new ScanTerminalDecision(ScanJobStatuses.Completed, null, MoveOwned: false);
 
