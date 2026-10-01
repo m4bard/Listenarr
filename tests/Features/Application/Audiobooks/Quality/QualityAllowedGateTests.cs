@@ -142,7 +142,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
             //
             // Found by reading the gate's contract, not in a search log: no shipped parser emits
             // "AAX" as a Quality today, so nothing can reach this yet. The scorer already ranks
-            // AAX at 95, second only to FLAC (SearchResultScorer.GetQualityScore), which is the
+            // AAX at 95, second only to FLAC (QualityScoreLadder.Score), which is the
             // branch waiting for the first parser that does.
             var service = CreateService();
             var ladder = SeededLadder(allowed: false);
