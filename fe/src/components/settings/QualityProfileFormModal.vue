@@ -484,7 +484,7 @@
             <CheckboxCard
               v-model="formData.preferNewerReleases"
               title="Prefer newer releases"
-              description="Ranks a more recent release higher among releases that already pass the profile: up to 10 points for one published today, fading to none at a year old. Never rejects or accepts a release on its own."
+              description="Ranks a more recent release slightly higher among releases that already pass the profile: up to 4 points, fading to none at a year old. Smaller than a preferred word, so it only separates otherwise comparable releases. Never rejects or accepts a release on its own."
             />
 
             <FormRow
