@@ -168,7 +168,58 @@ public sealed class AudiobookScanServiceMetadataBoundaryTests : BaseTests
         Assert.Equal(0, otherResult.DiscoveredCandidateCount);
         Assert.DoesNotContain(otherResult.Diagnostics, diagnostic =>
             diagnostic.Code == "MetadataDeclined");
-        Assert.Empty(readPublicPaths);
+        // The other book's file is still probed (it guards metadata attribution
+        // conflicts) but is neither counted nor reported as declined.
+        Assert.Equal(ownedFile, Assert.Single(readPublicPaths));
+        Assert.Single(await _audiobookFileRepository.GetByAudiobookIdAsync(owner.Id));
+    }
+
+    [LinuxFact]
+    public async Task ScanAsync_MetadataMatchesForeignOwnedAndUnownedFolders_StaysConflicting()
+    {
+        var root = FileService.GetTempDirectory("scan-service-foreign-metadata-conflict");
+        var ownedDirectory = Path.Join(root, "Folder A");
+        var unownedDirectory = Path.Join(root, "Folder B");
+        var ownedFile = Path.Join(ownedDirectory, "part-a.m4b");
+        var unownedFile = Path.Join(unownedDirectory, "part-b.m4b");
+        var metadata = new Mock<IMetadataService>(MockBehavior.Strict);
+        metadata.Setup(service => service.ExtractFileMetadataAsync(
+                It.IsAny<MetadataFileSource>()))
+            .ReturnsAsync(MatchingMetadata());
+        Init(services => services.WithSingleton<IMetadataService>(metadata.Object));
+        Directory.CreateDirectory(ownedDirectory);
+        Directory.CreateDirectory(unownedDirectory);
+        await File.WriteAllTextAsync(ownedFile, "audio");
+        await _applicationSettingsRepository.SaveAsync(
+            new ApplicationSettingsBuilder()
+                .WithOutputPath(FileService.GetTempPath())
+                .Build());
+        var owner = await _audiobookRepository.AddAsync(
+            new AudiobookBuilder()
+                .WithTitle("Expected Title")
+                .WithAuthor("Expected Author")
+                .Build());
+        var target = await _audiobookRepository.AddAsync(
+            new AudiobookBuilder()
+                .WithTitle("Expected Title")
+                .WithAuthor("Expected Author")
+                .WithBasePath(root)
+                .Build());
+        var scanService = _provider.GetRequiredService<IAudiobookScanService>();
+        var ownerResult = await scanService.ScanAsync(await AuthorizedCommandAsync(
+            owner.Id,
+            ownedDirectory));
+        Assert.Equal(1, ownerResult.CreatedCount);
+        await File.WriteAllTextAsync(unownedFile, "audio");
+
+        var result = await scanService.ScanAsync(await AuthorizedCommandAsync(
+            target.Id,
+            root));
+
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Code == "MetadataAttributionConflict");
+        Assert.Equal(0, result.CreatedCount);
+        Assert.Empty(await _audiobookFileRepository.GetByAudiobookIdAsync(target.Id));
         Assert.Single(await _audiobookFileRepository.GetByAudiobookIdAsync(owner.Id));
     }
 
