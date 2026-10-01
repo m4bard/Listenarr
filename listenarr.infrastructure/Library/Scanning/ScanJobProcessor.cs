@@ -134,13 +134,11 @@ namespace Listenarr.Infrastructure.Library.Scanning
                         result.Audiobook,
                         result.AttributedFiles.Count,
                         result.CreatedCount,
+                        result.DiscoveredCandidateCount,
                         scanRoot,
                         commitToken),
                     stoppingToken);
-                if (!string.Equals(
-                        terminalDecision.Status,
-                        "Completed",
-                        StringComparison.OrdinalIgnoreCase))
+                if (!ScanJobStatuses.IsCompletion(terminalDecision.Status))
                 {
                     _metrics.Increment("worker.scan.job.skipped");
                     return;
@@ -150,9 +148,24 @@ namespace Listenarr.Infrastructure.Library.Scanning
                     RunSuccessfulPostCompletionEffectsAsync(
                         job,
                         result.Audiobook,
+                        terminalDecision,
                         result.AttributedFiles.Count,
                         result.CreatedCount,
                         token));
+                if (string.Equals(
+                        terminalDecision.Status,
+                        ScanJobStatuses.CompletedNoFilesAccepted,
+                        StringComparison.Ordinal))
+                {
+                    _logger.LogWarning(
+                        "Scan job {JobId} found {Discovered} audio files for audiobook {AudiobookId} but none could be matched to it",
+                        job.Id,
+                        result.DiscoveredCandidateCount,
+                        job.AudiobookId);
+                    _metrics.Increment("worker.scan.job.completed_no_files_accepted");
+                    return;
+                }
+
                 _metrics.Increment("worker.scan.job.completed");
             }
             catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))

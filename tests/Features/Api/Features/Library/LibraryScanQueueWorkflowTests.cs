@@ -96,6 +96,49 @@ public sealed class LibraryScanQueueWorkflowTests : BaseTests
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public void GetStatus_CompletedNoFilesAccepted_IsRequeueableAndKeepsItsExplanation()
+    {
+        const string explanation =
+            "Found 2 audio files in the scan folder but none could be matched to this audiobook.";
+        var noFilesJob = new ScanJob
+        {
+            AudiobookId = 4402,
+            Status = "CompletedNoFilesAccepted",
+            Error = explanation
+        };
+        var failedJob = new ScanJob
+        {
+            AudiobookId = 4403,
+            Status = "Failed",
+            Error = "internal detail that must stay private"
+        };
+        var queue = new Mock<IScanQueueService>(MockBehavior.Strict);
+        foreach (var job in new[] { noFilesJob, failedJob })
+        {
+            var captured = job;
+            queue.Setup(service => service.TryGetJob(captured.Id, out captured))
+                .Returns(true);
+        }
+        using var provider = BuildProvider(new Mock<IHubBroadcaster>().Object);
+        var workflow = new LibraryScanQueueWorkflow(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            TestLibraryFilesystemReadiness.Ready(),
+            Mock.Of<ILogger<LibraryScanQueueWorkflow>>(),
+            queue.Object);
+
+        var noFiles = Assert.IsType<ScanJobStatusResponse>(
+            Assert.IsType<OkObjectResult>(workflow.GetStatus(noFilesJob.Id.ToString())).Value);
+        var failed = Assert.IsType<ScanJobStatusResponse>(
+            Assert.IsType<OkObjectResult>(workflow.GetStatus(failedJob.Id.ToString())).Value);
+
+        Assert.Equal("CompletedNoFilesAccepted", noFiles.Status);
+        Assert.True(noFiles.CanRequeue);
+        Assert.Equal(explanation, noFiles.Error);
+        Assert.True(failed.CanRequeue);
+        Assert.Equal("The scan failed. Review the server logs for details.", failed.Error);
+    }
+
     private static Mock<IHubBroadcaster> CreateCanceledBroadcaster()
     {
         var broadcaster = new Mock<IHubBroadcaster>(MockBehavior.Strict);
