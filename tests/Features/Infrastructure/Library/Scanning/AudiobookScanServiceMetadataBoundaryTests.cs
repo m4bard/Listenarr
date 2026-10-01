@@ -120,6 +120,73 @@ public sealed class AudiobookScanServiceMetadataBoundaryTests : BaseTests
         Assert.DoesNotContain("/proc/", declined.Message, StringComparison.Ordinal);
     }
 
+    [LinuxFact]
+    public async Task ScanAsync_RootHoldsOnlyAnotherBooksFile_IsNotCountedOrDeclined()
+    {
+        var root = FileService.GetTempDirectory("scan-service-other-owner");
+        var ownerDirectory = Path.Join(root, "Owner Folder");
+        var ownedFile = Path.Join(ownerDirectory, "part-a.m4b");
+        var readPublicPaths = new List<string>();
+        var metadata = new Mock<IMetadataService>(MockBehavior.Strict);
+        metadata.Setup(service => service.ExtractFileMetadataAsync(
+                It.IsAny<MetadataFileSource>()))
+            .Callback((MetadataFileSource source) => readPublicPaths.Add(source.PublicPath))
+            .ReturnsAsync(MatchingMetadata());
+        Init(services => services.WithSingleton<IMetadataService>(metadata.Object));
+        Directory.CreateDirectory(ownerDirectory);
+        await File.WriteAllTextAsync(ownedFile, "audio");
+        await _applicationSettingsRepository.SaveAsync(
+            new ApplicationSettingsBuilder()
+                .WithOutputPath(FileService.GetTempPath())
+                .Build());
+        var owner = await _audiobookRepository.AddAsync(
+            new AudiobookBuilder()
+                .WithTitle("Expected Title")
+                .WithAuthor("Expected Author")
+                .Build());
+        var other = await _audiobookRepository.AddAsync(
+            new AudiobookBuilder()
+                .WithTitle("Unrelated Title")
+                .WithAuthor("Unrelated Author")
+                .Build());
+        var scanService = _provider.GetRequiredService<IAudiobookScanService>();
+
+        // Control: the owner claims its file through embedded metadata.
+        var ownerResult = await scanService.ScanAsync(await AuthorizedCommandAsync(
+            owner.Id,
+            ownerDirectory));
+        Assert.Equal(ownedFile, Assert.Single(ownerResult.AttributedFiles));
+        Assert.Equal(1, ownerResult.CreatedCount);
+        Assert.Equal(1, ownerResult.DiscoveredCandidateCount);
+        readPublicPaths.Clear();
+
+        var otherResult = await scanService.ScanAsync(await AuthorizedCommandAsync(
+            other.Id,
+            root));
+
+        Assert.Empty(otherResult.AttributedFiles);
+        Assert.Equal(0, otherResult.DiscoveredCandidateCount);
+        Assert.DoesNotContain(otherResult.Diagnostics, diagnostic =>
+            diagnostic.Code == "MetadataDeclined");
+        Assert.Empty(readPublicPaths);
+        Assert.Single(await _audiobookFileRepository.GetByAudiobookIdAsync(owner.Id));
+    }
+
+    private async Task<AudiobookScanCommand> AuthorizedCommandAsync(
+        int audiobookId,
+        string scanRoot)
+    {
+        var authorization = await _provider
+            .GetRequiredService<IScanPathAuthorizationService>()
+            .AuthorizeAsync(scanRoot);
+        Assert.True(authorization.IsAuthorized, authorization.Error);
+        return new AudiobookScanCommand(
+            audiobookId,
+            scanRoot,
+            Assert.IsType<PathIdentitySnapshot>(authorization.Identity),
+            Assert.IsType<ScanPathPhysicalIdentity>(authorization.PhysicalIdentity));
+    }
+
     private static AudioMetadata MatchingMetadata() => new()
     {
         Title = "Expected Title",
