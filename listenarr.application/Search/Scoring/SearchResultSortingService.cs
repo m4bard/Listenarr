@@ -94,8 +94,8 @@ public class SearchResultSortingService
 
             case SearchSortBy.Quality:
                 orderedResults = sortDirection == SearchSortDirection.Descending
-                    ? results.OrderByDescending(r => GetQualityScore(r.Quality))
-                    : results.OrderBy(r => GetQualityScore(r.Quality));
+                    ? results.OrderByDescending(r => QualityScoreLadder.Score(r.Quality))
+                    : results.OrderBy(r => QualityScoreLadder.Score(r.Quality));
                 break;
 
             case SearchSortBy.Smart:
@@ -132,58 +132,5 @@ public class SearchResultSortingService
             var score = CompositeScorer.CalculateProwlarrStyleScore(r, indexer, _logger).Total;
             return (Result: r, Score: score);
         }).ToList();
-    }
-
-    private static int GetQualityScore(string? quality)
-    {
-        if (string.IsNullOrEmpty(quality))
-            return 0;
-
-        var lowerQuality = quality.ToLowerInvariant();
-
-        if (lowerQuality.Contains("flac"))
-            return 100;
-        if (lowerQuality.Contains("aax"))
-            return 95;
-        if (lowerQuality.Contains("m4b"))
-            return 90;
-        if (lowerQuality.Contains("opus"))
-            return 85;
-        if (ContainsVbrPreset(lowerQuality, "v0"))
-            return 82;
-        if (ContainsVbrPreset(lowerQuality, "v1"))
-            return 76;
-        if (ContainsVbrPreset(lowerQuality, "v2"))
-            return 70;
-        if (lowerQuality.Contains("aac") || lowerQuality.Contains("m4a"))
-            return 78;
-        if (lowerQuality.Contains("320"))
-            return 80;
-        if (lowerQuality.Contains("256"))
-            return 74;
-        if (lowerQuality.Contains("192"))
-            return 60;
-        if (lowerQuality.Contains("vbr") || lowerQuality.Contains("cbr"))
-            return 65;
-        if (lowerQuality.Contains("mp3") && !ContainsAnyBitrate(lowerQuality, "64", "128", "192", "256", "320"))
-            return 65;
-        if (lowerQuality.Contains("128"))
-            return 50;
-        if (lowerQuality.Contains("64"))
-            return 40;
-
-        return 0;
-    }
-
-    private static bool ContainsVbrPreset(string qualityLower, string preset)
-    {
-        return qualityLower.Contains(preset) ||
-               qualityLower.Contains($"-{preset}") ||
-               qualityLower.Contains($" {preset}");
-    }
-
-    private static bool ContainsAnyBitrate(string qualityLower, params string[] bitrates)
-    {
-        return bitrates.Any(b => qualityLower.Contains(b));
     }
 }

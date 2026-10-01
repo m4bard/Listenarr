@@ -79,7 +79,7 @@ namespace Listenarr.Domain.Common
         /// refused release is one candidate missing from a list, carrying its reason. A wrongly
         /// permitted one is a grab, and it wins the ranking on the way through, because the labels
         /// in this gap are containers the scorer ranks highly: AAX is 95, second only to FLAC
-        /// (SearchResultScorer.GetQualityScore).
+        /// (QualityScoreLadder.Score, in the application layer).
         ///
         /// Reachability, stated so nobody has to re-derive it: no parser in this repo emits AAX,
         /// AAXC or MP4 as a quality or a format today, so neither the defect nor the risk of

@@ -82,7 +82,7 @@ public sealed class AutomaticSearchScoringService(
     /// </summary>
     /// <remarks>
     /// The profile's own rung order decides first (see ReleaseRanking): the score ranks by the
-    /// hardcoded ladder in SearchResultScorer, and that ladder disagrees with the shipped default
+    /// hardcoded ladder in QualityScoreLadder, and that ladder disagrees with the shipped default
     /// profile. TotalScore separates releases the profile ranks equally; indexer priority only
     /// breaks an exact score tie, so it can never make a worse release win (see
     /// QualityScoreComparer). Candidates still tied go to ScoredReleaseTiebreaker and then to

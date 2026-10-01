@@ -36,7 +36,7 @@ describe('useScore composable - indexer normalization (backend/frontend scale re
   })
 
   it('agrees with the Quality/Format tiers: divisor equals the backend multiplier for every component', () => {
-    // Quality: backend multiplies GetQualityScore (0-100) by 1000; frontend divides by 1000.
+    // Quality: backend multiplies QualityScoreLadder.Score (0-100) by 1000; frontend divides by 1000.
     // Format: backend multiplies GetFormatScore (0-100) by 100; frontend divides by 100.
     // Indexer: backend multiplies the 1-50 priority inversion by 1.0; frontend must not divide
     // further, or the two sides drift apart again exactly as they did before this fix.
