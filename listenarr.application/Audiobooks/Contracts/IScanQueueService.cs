@@ -26,12 +26,35 @@ namespace Listenarr.Application.Audiobooks.Contracts
         MoveHandoff
     }
 
+    public static class ScanJobStatuses
+    {
+        public const string Completed = "Completed";
+
+        /// <summary>
+        /// The scan finished and found audio files in scope, but none of them could be
+        /// attributed to the audiobook, so no file rows were written for them.
+        /// </summary>
+        public const string CompletedNoFilesAccepted = "CompletedNoFilesAccepted";
+
+        public static bool IsCompletion(string? status) =>
+            string.Equals(status, Completed, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, CompletedNoFilesAccepted, StringComparison.OrdinalIgnoreCase);
+    }
+
     public static class ScanJobPublicError
     {
         public static string? FromInternal(string? error) =>
             string.IsNullOrWhiteSpace(error)
                 ? null
                 : "The scan failed. Review the server logs for details.";
+
+        // The no-files-accepted message is composed by the scan processor from counts
+        // only, never from paths or exception text, so it is safe to show as written.
+        public static string? FromInternal(string? error, string? status) =>
+            string.Equals(status, ScanJobStatuses.CompletedNoFilesAccepted, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(error)
+                ? error
+                : FromInternal(error);
     }
 
     public sealed record ScanEnqueueCommand(

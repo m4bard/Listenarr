@@ -16,9 +16,13 @@ public partial class ScanJobProcessor
         Audiobook audiobook,
         int found,
         int created,
+        int discovered,
         string scanRoot,
         CancellationToken cancellationToken)
     {
+        // Move-owned scans keep the plain durable handoff outcome: the handoff store,
+        // its lease renewal and its recovery all map back to Completed, so a distinct
+        // status here would be overwritten and disagree with the durable record.
         if (job.MoveScanHandoffId.HasValue && _moveScanHandoffStore != null)
         {
             var result = await _moveScanHandoffStore.CompleteAttemptAsync(
@@ -35,6 +39,7 @@ public partial class ScanJobProcessor
             return ToTerminalDecision(result);
         }
 
+        var decision = ToCompletionDecision(found, discovered);
         var correlationId = job.CorrelationId ?? job.Id.ToString("N");
         var idempotencyKey = $"scan:{job.Id:N}:completed";
         var existing = await historyRepository.GetByCorrelationIdAsync(
@@ -45,8 +50,13 @@ public partial class ScanJobProcessor
                 idempotencyKey,
                 StringComparison.Ordinal)))
         {
-            return new ScanTerminalDecision("Completed", null, MoveOwned: false);
+            return decision;
         }
+
+        var noFilesAccepted = string.Equals(
+            decision.Status,
+            ScanJobStatuses.CompletedNoFilesAccepted,
+            StringComparison.Ordinal);
 
         await historyRepository.AddAsync(new History
         {
@@ -55,9 +65,14 @@ public partial class ScanJobProcessor
             SourceTitle = audiobook.Title,
             DownloadId = job.DownloadId,
             EventType = HistoryEvents.ScanCompleted,
-            Outcome = HistoryOutcome.Succeeded,
+            Outcome = noFilesAccepted
+                ? HistoryOutcome.Skipped
+                : HistoryOutcome.Succeeded,
             Source = "LibraryScan",
-            Message = $"Library scan completed: {found} found, {created} created",
+            Message = noFilesAccepted
+                ? $"Library scan completed: {discovered} audio files found, none matched this audiobook"
+                : $"Library scan completed: {found} found, {created} created",
+            Error = decision.Error,
             Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
             CorrelationId = correlationId,
             IdempotencyKey = idempotencyKey,
@@ -66,11 +81,20 @@ public partial class ScanJobProcessor
                 ScanJobId = job.Id,
                 Found = found,
                 Created = created,
+                Discovered = discovered,
                 Path = scanRoot
             })
         }, cancellationToken);
-        return new ScanTerminalDecision("Completed", null, MoveOwned: false);
+        return decision;
     }
+
+    private static ScanTerminalDecision ToCompletionDecision(int found, int discovered) =>
+        found == 0 && discovered > 0
+            ? new ScanTerminalDecision(
+                ScanJobStatuses.CompletedNoFilesAccepted,
+                $"Found {discovered} audio file{(discovered == 1 ? string.Empty : "s")} in the scan folder but none could be matched to this audiobook. Review the server logs for the files that were skipped.",
+                MoveOwned: false)
+            : new ScanTerminalDecision(ScanJobStatuses.Completed, null, MoveOwned: false);
 
     private async Task<ScanTerminalDecision> RecordScanFailureHistoryAsync(
         IHistoryRepository historyRepository,
