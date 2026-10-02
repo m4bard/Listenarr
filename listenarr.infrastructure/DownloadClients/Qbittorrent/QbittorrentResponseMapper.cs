@@ -25,7 +25,12 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
         public static QueueItem MapQueueItem(
             Dictionary<string, JsonElement> torrent,
             DownloadClientConfiguration client,
-            List<Dictionary<string, JsonElement>> files)
+            List<Dictionary<string, JsonElement>> files,
+            bool removeCompletedDownloads,
+            bool globalMaxRatioEnabled,
+            float globalMaxRatio,
+            bool globalMaxSeedingTimeEnabled,
+            long globalMaxSeedingTime)
         {
             var name = GetString(torrent, "name");
             var progress = GetDouble(torrent, "progress") * 100;
@@ -39,8 +44,20 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             var numSeeds = GetNullableInt32(torrent, "num_seeds");
             var numLeechs = GetNullableInt32(torrent, "num_leechs");
             var ratio = GetNullableDouble(torrent, "ratio");
+            var ratioLimit = (float)GetDouble(torrent, "ratio_limit", -2);
+            var seedingTimeLimit = GetInt64(torrent, "seeding_time_limit", -2);
+            var seedingTime = GetNullableInt64(torrent, "seeding_time");
             var savePath = GetString(torrent, "save_path");
             var status = MapQueueStatus(state, progress);
+            var seedLimitReached = QbittorrentSeedLimitEvaluator.HasReachedSeedLimit(
+                ratio ?? 0,
+                ratioLimit,
+                seedingTime,
+                seedingTimeLimit,
+                globalMaxRatioEnabled,
+                globalMaxRatio,
+                globalMaxSeedingTimeEnabled,
+                globalMaxSeedingTime);
 
             return new QueueItem
             {
@@ -61,7 +78,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 Leechers = numLeechs,
                 Ratio = ratio,
                 CanPause = status == "downloading" || status == "queued",
-                CanRemove = true,
+                CanRemove = removeCompletedDownloads && seedLimitReached,
                 RemotePath = savePath,
                 LocalPath = savePath,
                 SourceFiles = TorrentClientPathMapper.BuildQbittorrentSourceFiles(savePath, files),

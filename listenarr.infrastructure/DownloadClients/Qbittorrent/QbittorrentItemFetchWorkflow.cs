@@ -43,40 +43,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 }
 
                 // Fetch qBittorrent global preferences for seed limit evaluation (Sonarr parity).
-                // Keep this behavior inside item fetch because queue polling should remain lean.
-                bool globalMaxRatioEnabled = false;
-                float globalMaxRatio = -1f;
-                bool globalMaxSeedingTimeEnabled = false;
-                long globalMaxSeedingTime = -1;
-                var seedPolicyKnown = false;
-                try
-                {
-                    using var prefsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/preferences", ct);
-                    if (prefsResp.IsSuccessStatusCode)
-                    {
-                        var prefsJson = await prefsResp.Content.ReadAsStringAsync(ct);
-                        if (!string.IsNullOrWhiteSpace(prefsJson))
-                        {
-                            var prefs = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(prefsJson);
-                            if (prefs != null
-                                && prefs.ContainsKey("max_ratio_enabled")
-                                && prefs.ContainsKey("max_ratio")
-                                && prefs.ContainsKey("max_seeding_time_enabled")
-                                && prefs.ContainsKey("max_seeding_time"))
-                            {
-                                globalMaxRatioEnabled = prefs.TryGetValue("max_ratio_enabled", out var mre) && mre.GetBoolean();
-                                globalMaxRatio = prefs.TryGetValue("max_ratio", out var mr) ? (float)mr.GetDouble() : -1f;
-                                globalMaxSeedingTimeEnabled = prefs.TryGetValue("max_seeding_time_enabled", out var mste) && mste.GetBoolean();
-                                globalMaxSeedingTime = prefs.TryGetValue("max_seeding_time", out var mst) ? mst.GetInt64() : -1;
-                                seedPolicyKnown = true;
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                {
-                    logger.LogDebug(ex, "Failed to fetch qBittorrent preferences for seed limit evaluation, will use conservative defaults");
-                }
+                var (seedPolicyKnown, globalMaxRatioEnabled, globalMaxRatio, globalMaxSeedingTimeEnabled, globalMaxSeedingTime) =
+                    await QbittorrentGlobalSeedPreferences.FetchAsync(httpClient, baseUrl, logger, ct);
 
                 var removeCompletedDownloads = !string.IsNullOrEmpty(client.RemoveCompletedDownloads) &&
                     client.RemoveCompletedDownloads != "none";

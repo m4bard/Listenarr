@@ -18,7 +18,6 @@
 
 using System.Text.Json;
 using Listenarr.Application.Mapping;
-using Listenarr.Infrastructure.DownloadClients.Transmission;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
@@ -148,7 +147,15 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
                 globalMaxSeedingTime: -1);
             Assert.False(seedAware.CanBeRemoved);
 
-            var queueItem = QbittorrentResponseMapper.MapQueueItem(torrent, client, files: []);
+            var queueItem = QbittorrentResponseMapper.MapQueueItem(
+                torrent,
+                client,
+                files: [],
+                removeCompletedDownloads: true,
+                globalMaxRatioEnabled: false,
+                globalMaxRatio: -1f,
+                globalMaxSeedingTimeEnabled: false,
+                globalMaxSeedingTime: -1);
             var download = new Download
             {
                 Id = "download-1",
@@ -171,7 +178,15 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
             var torrent = ParseTorrent(MetRatioLimitTorrentJson);
             var client = BuildClient("remove");
 
-            var queueItem = QbittorrentResponseMapper.MapQueueItem(torrent, client, files: []);
+            var queueItem = QbittorrentResponseMapper.MapQueueItem(
+                torrent,
+                client,
+                files: [],
+                removeCompletedDownloads: true,
+                globalMaxRatioEnabled: false,
+                globalMaxRatio: -1f,
+                globalMaxSeedingTimeEnabled: false,
+                globalMaxSeedingTime: -1);
 
             Assert.True(
                 queueItem.CanRemove,
@@ -188,7 +203,15 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
             var torrent = ParseTorrent(MetRatioLimitTorrentJson);
             var client = BuildClient("none");
 
-            var queueItem = QbittorrentResponseMapper.MapQueueItem(torrent, client, files: []);
+            var queueItem = QbittorrentResponseMapper.MapQueueItem(
+                torrent,
+                client,
+                files: [],
+                removeCompletedDownloads: false,
+                globalMaxRatioEnabled: false,
+                globalMaxRatio: -1f,
+                globalMaxSeedingTimeEnabled: false,
+                globalMaxSeedingTime: -1);
 
             Assert.False(
                 queueItem.CanRemove,
@@ -205,7 +228,15 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
             var torrent = ParseTorrent(NoSeedPolicyTorrentJson);
             var client = BuildClient("remove");
 
-            var queueItem = QbittorrentResponseMapper.MapQueueItem(torrent, client, files: []);
+            var queueItem = QbittorrentResponseMapper.MapQueueItem(
+                torrent,
+                client,
+                files: [],
+                removeCompletedDownloads: true,
+                globalMaxRatioEnabled: false,
+                globalMaxRatio: -1f,
+                globalMaxSeedingTimeEnabled: false,
+                globalMaxSeedingTime: -1);
 
             Assert.True(
                 queueItem.CanRemove,
@@ -225,15 +256,13 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
         private static readonly (bool SeedRatioLimited, double SeedRatioLimit, bool IdleSeedingLimitEnabled, int IdleSeedingLimit) NoSessionLimits =
             (false, 0, false, 0);
 
-        private static DownloadClientConfiguration BuildClient(bool? removeCompletedDownloads) => new()
+        private static DownloadClientConfiguration BuildClient(bool removeCompletedDownloads) => new()
         {
             Id = "transmission-1",
             Name = "Transmission",
             Type = "transmission",
             IsEnabled = true,
-            Settings = removeCompletedDownloads.HasValue
-                ? new Dictionary<string, object> { ["removeCompletedDownloads"] = removeCompletedDownloads.Value }
-                : new Dictionary<string, object>()
+            RemoveCompletedDownloads = removeCompletedDownloads ? "remove" : "none"
         };
 
         private static JsonElement BuildTorrent(
@@ -282,9 +311,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
             var torrent = BuildTorrent(statusCode: 6, uploadRatio: 0.10, seedRatioMode: 1, seedRatioLimit: 2.0);
             var client = BuildClient(removeCompletedDownloads: true);
 
-            // TODO(item69-red): switch to MapQueueItem(client, torrent, NoSessionLimits) once
-            // the production signature grows a sessionConfig parameter.
-            var queueItem = TransmissionResponseMapper.MapQueueItem(client, torrent);
+            var queueItem = TransmissionResponseMapper.MapQueueItem(client, torrent, NoSessionLimits);
 
             Assert.False(
                 queueItem.CanRemove,
@@ -301,9 +328,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
             var torrent = BuildTorrent(statusCode: 0, uploadRatio: 2.50, seedRatioMode: 1, seedRatioLimit: 2.0);
             var client = BuildClient(removeCompletedDownloads: true);
 
-            // TODO(item69-red): switch to MapQueueItem(client, torrent, NoSessionLimits) once
-            // the production signature grows a sessionConfig parameter.
-            var queueItem = TransmissionResponseMapper.MapQueueItem(client, torrent);
+            var queueItem = TransmissionResponseMapper.MapQueueItem(client, torrent, NoSessionLimits);
 
             Assert.True(
                 queueItem.CanRemove,
@@ -320,9 +345,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
             var torrent = BuildTorrent(statusCode: 0, uploadRatio: 2.50, seedRatioMode: 1, seedRatioLimit: 2.0);
             var client = BuildClient(removeCompletedDownloads: false);
 
-            // TODO(item69-red): switch to MapQueueItem(client, torrent, NoSessionLimits) once
-            // the production signature grows a sessionConfig parameter.
-            var queueItem = TransmissionResponseMapper.MapQueueItem(client, torrent);
+            var queueItem = TransmissionResponseMapper.MapQueueItem(client, torrent, NoSessionLimits);
 
             Assert.False(
                 queueItem.CanRemove,
@@ -339,9 +362,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
             var torrent = BuildTorrent(statusCode: 6, uploadRatio: 0.05, seedRatioMode: 0, seedRatioLimit: 0, seedIdleMode: 0, seedIdleLimit: 0);
             var client = BuildClient(removeCompletedDownloads: true);
 
-            // TODO(item69-red): switch to MapQueueItem(client, torrent, NoSessionLimits) once
-            // the production signature grows a sessionConfig parameter.
-            var queueItem = TransmissionResponseMapper.MapQueueItem(client, torrent);
+            var queueItem = TransmissionResponseMapper.MapQueueItem(client, torrent, NoSessionLimits);
 
             Assert.True(
                 queueItem.CanRemove,
