@@ -378,7 +378,13 @@ const queueHealthMessage = computed(() => {
 
 // Virtual scrolling setup
 const scrollContainer = ref<HTMLElement | null>(null)
-const ROW_HEIGHT = 37
+// Must be at least the rendered desktop row height (cell padding 0.5rem x 2,
+// a 1px bottom border, and the ~24px status badge come to about 41.3px).
+// When it was smaller than the real row, the absolutely positioned rows
+// overflowed the spacer, so a short list was clipped once the container
+// started sizing to its content. Same arrangement as WantedView, whose
+// stride (48) sits just above its rendered row.
+const ROW_HEIGHT = 42
 const BUFFER_ROWS = 5
 const MOBILE_ACTIVITY_BREAKPOINT = 768
 
