@@ -1115,6 +1115,35 @@ namespace Listenarr.Tests.Features.Api
                 Times.Once);
         }
 
+        [Fact]
+        public async Task StartMetadataRefresh_AuthorIdWithWrongJsonType_Returns400_NotAnUnhandled500()
+        {
+            // A known field with the wrong JSON type (authorId sent as a quoted string) used to
+            // get a clean 400 from the old strict-typed binder's automatic model validation.
+            // Reading the body as JsonElement first bypasses that pipeline, so this must stay a
+            // handled 400 rather than an uncaught JsonException reaching the exception handler
+            // as a 500.
+            var coordinator = AcceptingCoordinatorMock();
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IMetadataRefreshCoordinator>();
+                    services.AddSingleton(coordinator.Object);
+                });
+            });
+
+            using var client = factory.CreateClient();
+            var response = await PostRefreshMetadataAsync(client, "{\"authorId\": \"not-a-number\"}");
+
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Contains("metadata_refresh_invalid_body", body, StringComparison.Ordinal);
+            coordinator.Verify(
+                c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
         private static Mock<IMetadataRefreshCoordinator> AcceptingCoordinatorMock()
         {
             var coordinator = new Mock<IMetadataRefreshCoordinator>();
