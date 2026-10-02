@@ -36,6 +36,7 @@ internal sealed partial class AudiobookScanService
         // two unrelated folders" into MetadataAttributionConflict instead of a claim.
         foreach (var candidate in discovery.Candidates.Where(path =>
             !attributed.Contains(path)
+            && !discovery.ContentDeclinedCandidates.Contains(path)
             && ScanFileDiscovery.CanClaimNewPath(
                 path,
                 discovery.SelectedStableIdentifierBoundary,
