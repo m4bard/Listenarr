@@ -1,0 +1,820 @@
+# Stack manifest
+
+This build is NOT a stock release. It is upstream canary plus unmerged patches.
+
+    base:        a630572e983614a52ea409a23da52a99e3b8b91b
+    base short:  a630572e9
+    patches:     562
+    version:     1.3.4+m4bard.562
+
+## Patches, oldest first
+
+    e8313a84f  #105  fix(naming): don't lose a series position that isn't a plain number
+    ff74cf72d  #105  fix(naming): derive both series-position fields from one source
+    d5dadca8e  #106  fix(metadata): populate SeriesAsin from the Audnexus series record
+    873428e77  #106  fix(metadata): carry the Audnexus series list, with identifiers, through the product lookup
+    08dc813d1  #106  test(metadata): pin what a blank Audnexus series ASIN stores
+    a6e592df8  #43   fix(ffmpeg): point macOS at evermeet's ffprobe archive, not its ffmpeg one
+    84a8b7b00  #23   fix(qbittorrent): one unreadable torrent should not truncate the queue poll
+    dc5a3b324  #23   fix(qbittorrent): let a client that stops answering fail the poll
+    70759237e  #23   fix(qbittorrent): quieten the per-torrent skip and escape the hash
+    bb9d19ed0  #21   manual-import: authorize companion files against the root folder, not the book folder
+    db0e36142  #21   tests: pin the managed boundary the companion pass hands the ownership store
+    48fd2cbad  #21   tests: adapt the boundary test to the publication path #864 introduced
+    bfcfbab9a  #21   tests: give the out-of-root case the roots the pass now needs
+    4a1da6ff8  #21   fix(manual-import): mark the companion pass failed when a boundary is missing
+    843ebbd10  #21   tests: assert a companion file reaches its destination under the new boundary
+    a71209497  #24   fix(import): actually embed the ASIN after an import
+    82b51609f  #24   comment: drop the em dash from the read-write stream note
+    319bef040  #24   tests: drive ApplyAsinTag through a stub TagLib.File
+    30fc10da1  #22   Group chapter files indexed as "N of M" into one unmatched-scan item
+    c01e0b001  #22   test(scan): make the bare "N of M" case able to fail
+    39203de7b  #22   fix(scan): leave a Book or Volume index alone when stripping "N of M"
+    a36a16042  #17   Library import: keep every series membership, not just the first
+    609fffafc  #17   fix(library-import): build series memberships from the enriched product and fix the unmatched-files mapping
+    8dc2dc914  #17   fix(library-import): require the B0 prefix before keeping a series ASIN
+    3e13789e3  #11   fix(scan): stop the Linux descriptor path leaking into metadata and size
+    0e903a0f4  #11   tests: follow the scan's metadata read onto the two-part file source
+    9585974fd  #11   fix(scan): narrow to the metadata boundary, leave the size to #901
+    e9d696044  #30   fix(recovery): name every legacy journal blocking startup, not just the first
+    b4a8490c0  #30   test(recovery): cover the capped listing branch of the legacy-journal message
+    6d63ae62d  #30   fix(recovery): name the state each mutation reached, and log the whole set
+    989f99936  #29   fix(download-clients): one circuit breaker per client, not one for all of them
+    2287a7512  #29   test(download-clients): say what the isolation test does not cover
+    8b6ae590e  #42   fix(manual-import): match the rename naming table on casing and missing tokens
+    9ef34a9fb  #42   test(manual-import): assert path segments, not substrings
+    31d2b3270  #42   fix(manual-import): build every naming key the rename table builds
+    75e0440d5  #37   fix(downloads): resolve a client's path mappings once per batch, not per item
+    02a382abe  #37   fix(downloads): translate a queue item's source files from the resolved mappings too
+    676974c88  #37   fix(downloads): skip the mapping lookup when the queue is empty
+    656143ba8  #37   fix(downloads): serve a client's path mappings from the cache it already invalidates
+    7b0f5a86d  #37   test(downloads): create mappings through the service so the cache sees them
+    78a7beb5a  #37   test(downloads): hold the new cache tests to the repository's test conventions
+    68df163b3  #32   fix(prowlarr-import): build proxy URLs from the base Prowlarr answered on
+    300fdb915  #32   fix(prowlarr-import): only adopt a discovery base on the origin that was asked
+    ed2005fc7  #34   Serve under a URL sub-path by honouring the UrlBase that already exists
+    fae01fe6c  #34   feat(notifications): give notifications their own ApplicationUrl
+    b0bea1b3d  #34   feat(notifications): read LISTENARR_PUBLIC_URL as the notification base
+    72bfc2cb7  #34   fix(api): set the path base from UrlBase instead of appending to it
+    f7c338702  #35   Record a failed grab in history when the download client rejects it
+    2b877500d  #35   test(downloads): assert the failure record on the blank-identifier path
+    9f0262415  #35   fix(downloads): sanitize the client message written to history
+    4064ac20f  #36   fix(metadata): order series positions with an invariant parse
+    a7e6ea358  #36   tests: bring the series-position test up to the convention #717 added
+    a037a3eca  #36   fix(metadata): reject a grouped series position instead of misreading it
+    1ea967010  #36   fix(parsing): pin machine-format number parses to the invariant culture
+    8248442d4  #36   fix(parsing): match size units and reject non machine-format numbers
+    451fbbd20  #35   fix(qbittorrent): tell a refused release apart from a failed submission
+    5fc78c574  #35   test(downloads): pin the controller half of the 409 change
+    0938ca12e  #35   fix(downloads): answer a refused release with 409 on the manual send path
+    b9724f487  #160  fix(config): overlay a posted startup config onto the file instead of replacing it
+    bf416e3b3  #160  fix(fe): do not post a startup config the settings view never loaded
+    f01a2ee20  #64   feat(settings): add a URL Base field to General settings
+    2ac218f3f  #64   feat(settings): tie the URL Base warning to the field it is about
+    c2bba1eb7  #64   feat(settings): show an empty URL Base box when the stored value is the site root
+    503c20a7a  #64   feat(settings): add an Application URL field beside URL Base
+    6c7dc1d14  #64   feat(api): reject a UrlBase that is a full URL
+    73e954b9b  #33   fix(audible): tell a failed catalog lookup apart from a confirmed zero-match
+    eb6aa6f9f  #33   test(audible): cover the other ways the catalog lookup fails, and the 503 itself
+    951664a54  #33   test(audible): give the new controller class the repository's test conventions
+    54a55640b  #33   fix(audible): declare the search endpoint's responses, including the new 503
+    6df8c0fae  #25   feat(import): embed cover art into imported files, behind a setting
+    38184a7d8  #25   docs: attach the new doc comments to the members they describe
+    35c3b3b99  #25   tests: pin that cover art replaces the existing artwork rather than appending
+    ac7b37f68  #25   fix(import): embed cover art for a book that has artwork but no ASIN
+    40049aea6  #25   tests: keep this branch's migration out of the shared expected list
+    91e74d62c  #25   refactor: keep the cover art code clear of PR 843's edits to the same file
+    269b10d49  #60   fix(filesystem): record why a file mutation failed, not only that it did
+    f73fa53e6  #60   test(downloads): name the no-inner-cause case for what it now does
+    e440aad5c  #60   refactor(downloads): format the failure cause where both writers can reach it
+    4e32914d7  #61   fix(downloads): make retry-import actually requeue the import
+    67fb03c81  #61   fix(downloads): survive two retry requests racing on the same download
+    18d46b23f  #51   feat(downloads): blocklist a release that failed, so the retry stops
+    25f98775b  #51   fix(downloads): key a blocked release on something that survives a re-grab
+    204122509  #51   fix(search): consult the blocklist on the path that actually re-grabs
+    de358782f  #51   fix(downloads): work out a release identity once, at the grab, and store it
+    71d881493  #51   chore(downloads): drop the using directives this branch duplicated globally
+    a629618a7  #51   chore(downloads): drop the using directives the identity fix restated globally
+    daada37a7  #51   fix(downloads): treat a losing blocklist insert as already blocked
+    148a02414  #51   feat(downloads): give a blocked release a way back out
+    4ba1929ad  #51   fix(downloads): remove a book's blocklist entries when the book is deleted
+    0c396db77  #51   fix(downloads): block a release only when failed-download handling is on
+    c1db9079d  #51   fix(downloads): satisfy the three architecture rules the new surface broke
+    88bfe9cb6  #51   test(downloads): pin the release identity wire format with golden vectors
+    e5847f072  #51   test(downloads): fail the build when a second place works out a release key
+    504969f5b  #62   fix(downloads): give the three download-finalization settings a reader again
+    eacbdfd4f  #62   test(downloads): pin that the processor reads the configured retry delay
+    e1ff77638  #62   fix(downloads): stop the retry backoff doubling past a day
+    e8ba98ab7  #62   fix(downloads): hold only a first transition into Completed
+    a78ec5cba  #62   test(downloads): scope the completion-stability save to the one test that needs it
+    7f5679e23  #65   fix(quality-profiles): stop hiding Maximum Age, and load a profile's qualities
+    dd8065fdd  #46   fix(search): read Indexer.MinimumAge and Indexer.MaximumSize, and measure age in UTC
+    311b561bb  #46   refactor(search): split the scorer, and test the UTC date parse directly
+    60347398a  #46   test(search): pin that the indexer size ceiling applies to Usenet too
+    d7353c80c  #46   test(search): make the new parse tests follow the repository conventions
+    9c3ed32c1  #46   fix(scoring): resolve indexers once per batch, not once per result in parallel
+    f898f7b5b  #46   test(scoring): assert the pre-resolved indexer actually reaches the scorer
+    36b9744bf  #46   fix(search): compute the profile size gates in long, not int
+    b33ed1aed  #47   fix(download-clients): make the Priority dropdown speak the planners' vocabulary
+    f0bad8aa2  #47   test(download-clients): drop two usings the global usings already cover
+    a35febe89  #47   fix(download-clients): read a stored legacy priority back as Normal
+    3b1ec05b2  #47   fix(download-clients): say what Default does per client, and name Force's band
+    e2ed2ef4b  #47   fix(download-clients): lower the priority in the addurl path too
+    f25c937cb  #44   test(images): assert that a cached image is served, not that something happened
+    b3dba9c66  #83   feat(library): render the list view when grouping by author or series
+    eba0a2756  #83   fix(library): fetch author covers and remember the mode in the grouped list
+    f6e623f82  #45   fix(qbittorrent): send the four Advanced Settings to the client
+    53eb99a94  #45   fix(qbittorrent): do not fail a submission the client already accepted
+    4c5b90206  #68   fix(filesystem): say why a source file could not be pinned
+    12805721a  #68   fix(filesystem): sanitize the pinning cause before it reaches the log
+    cb8b6a16a  #68   test(filesystem): fail the refusal test when no cause is captured
+    a463c9eeb  #68   fix(filesystem): lead the refusal with the cause, through the shared formatter
+    f05c38006  #72   fix(imports): retry a failed file import instead of blocking on the first attempt
+    221f5ba32  #72   fix(imports): retry a failed import only when every file in it failed
+    a38a113e7  #80   fix(quality): let a real encoder bitrate reach the rung it was encoded for
+    87d713afd  #80   test(quality): pin the bitrate tolerance from both sides, not just the floor
+    0fd785102  #102  fix(docker): give the image a healthcheck it can actually run
+    313f1a277  #31   fix(notifications): dispatch webhooks for the triggers the settings screen offers
+    3d1476ae6  #49   Make the frontend follow the UrlBase by injecting a <base href> into the shell
+    f294a20e7  #49   fix(spa): anchor the shell at the site root even with no UrlBase
+    be5b19d25  #109  stack: let a local build stamp its own version
+    b148a0d42  #109  stack: publish the patched build to GHCR from the fork
+    8bd1aea29  #109  stack: publish a moving current tag beside the immutable commit tag
+    3f5cc2f92  #107  fix(search): one indexer timeout no longer discards every other indexer's results
+    3835b518a  #108  fix(files): physical-generation snapshots reject database-loaded observation timestamps
+    c6a81af93  #108  fix(persistence): restore the UTC contract for PhysicalIdentityObservedAtUtc at EF materialization
+    c0d1f4bd4  #73   feat(wanted): add a cutoff-unmet bucket to the Wanted page
+    f97a9e687  #74   fix(collection): show an author's books under their membership series
+    e0dc8de70  #75   feat(library): count the distinct series an author appears in
+    0f138ac4e  #76   feat(downloads): implement the three reprocess endpoints instead of returning success
+    7ec5dd1e2  #76   fix(downloads): refuse an ineligible reprocess instead of throwing at the caller
+    4fbe0724c  #76   fix(downloads): drop the unused using and the seam-adjacent whitespace
+    276082602  #83   feat(activity): sort the queue, and show when an item was added
+    0182f0965  #86   fix(collection): apply the language preference to library books, not just suggestions
+    ea60c4941  #94   fix(search): the minimum seeders gate never fired on a real torrent
+    d9ef76093  #110  fix(import): match blacklisted extensions without regard to case
+    97f6b1c88  #111  fix(qbittorrent): map 4.x paused torrent states alongside 5.x stopped states
+    4126244da  #112  fix(ui): match System recent-log severity classes to the stylesheet
+    c980e1e17  #20   fix(search): derive one indexer query title, shared by both search paths
+    8feeb780f  #66   fix(downloads): give the queue a control that removes a terminal download
+    244ec21d6  #66   fix(downloads): tie a processing job's retention to the download it explains
+    1ce559cfd  #99   fix(authors): stop attributing one author's ASIN to every co-author
+    35f7409e4  #100  fix(naming): spell an author's initials one way in folder names
+    9d35b22ff  #100  test(naming): pin byline order on two co-authors, not on a translator
+    7114d399b  #113  fix(system): stop inventing log entries when no log file exists
+    d7c0e5f95  #114  fix(library): stop announcing the list-view status badge as a button
+    89bf18909  #115  fix(settings): stop a failed clipboard write from reporting a failed regeneration
+    5b3ef047e  #95   fix(api): the authentication gate ignored requests that varied the path casing
+    75842fd41  #68   fix(filesystem): resolve a symlinked source path instead of refusing it
+    1b8e0ef39  #68   docs(filesystem): stop two comments claiming what the symlink commit retracted
+    1186f310f  #98   fix(logging): give silent catch blocks a real log call or a stated reason
+    e28a7401d  #108  fix(persistence): keep a persisted UTC timestamp UTC when it is read back
+    eefbf123b  #78   test(scoring): pin the four hand-copied quality ladders to each other
+    95b843031  #69   test(metadata): count the attempts the Audible retry policy actually makes
+    7f62bda18  #69   test(metadata): stop the retry policy tests racing the caller's clock
+    885118fdc  #136  NZBGet: warn once per failed history entry, and only for monitored entries in polls
+    02b713f52  #136  fix(nzbget): keep the warn-once keys case-insensitive after a scoped read
+    bf49a547f  #92   refactor(collection): lift shared series and text helpers out of the collection view
+    045041042  #92   feat(collection): show an author's series as a section on the author page
+    c0f314909  #141  fix(monitoring): keep every series membership and its ASIN when a monitored author or series adds a book
+    e85364a1e  #141  fix(library): let a legacy-only metadata payload carry its series identifier
+    00b816074  #145  feat(activity): queue selection that survives the poll instead of being reset by it
+    c66f21876  #145  feat(activity): sequential bulk runner with per-id outcomes and one summary line
+    b9feb477e  #145  feat(api): keep the queue-management API tests, drop the methods #917 and #927 already added
+    7ebfc4bda  #145  feat(activity): a queue toolbar whose verbs say what they will do before doing it
+    aa4977c1a  #145  fix(activity): the select cell reasserts its props after a click that changed nothing
+    3d001af2f  #145  feat(downloads): a Retry button that appears only where the endpoint will accept it
+    1728ea892  #145  feat(activity): select queue rows and act on them together
+    1e4434309  #145  fix(activity): the filter is a viewport, so selection controls act on the rows in view
+    838b944e2  #145  feat(downloads): the Retry button does the retry, instead of promising one later
+    10384e05e  #145  fix(activity): the retry button dresses itself and select all goes quiet with nothing to select
+    cc2311009  #145  fix(activity): the toolbar drops a confirmation the selection outlived and rests while busy
+    7862f6e75  #145  fix(queue): overlay import status onto queue rows the client cannot represent
+    b3b683c9e  #145  fix(activity): disclose the true count before an unbounded sweep
+    70d4032ac  #144  metadata: name the two nothings a provider can answer with
+    4a5eebfa3  #144  metadata: answer the ASIN endpoints with a status, not a stack trace
+    6254e2477  #144  images: keep serving the placeholder when the provider does not answer
+    bcaa112b7  #144  search: move the Audible series endpoints into a partial
+    384d51b9a  #144  search: say the provider did not answer, rather than returning nothing
+    a5429ae43  #144  metadata: walk every source, then report the fault rather than a miss
+    9f3f8ce51  #144  metadata: let the Audible client raise when the provider did not answer
+    d6ea456c0  #144  metadata: hold the Audnexus book lookup to the same division
+    577ab1646  #144  library: record when a book's provider metadata was last refreshed
+    80a251a86  #144  settings: the refresh interval, staleness age and budget are operator-set
+    756317b8d  #144  metadata: a request budget with an hourly refill and a spacing floor
+    02514770e  #144  metadata: lift the per-book rescan out of its HTTP wrapper
+    7d7d29962  #144  metadata: one gate, one run, one budget across every refresh entry point
+    90d960730  #144  metadata: walk the stalest books on an interval, and let an operator ask
+    aa5f39dff  #144  fe: a Metadata Refresh section in the settings screen
+    faf45c72e  #151  fix(logging): sanitize ASIN log arguments, rebased onto the metadata-refresh chain
+    108d47966  #153  Attach download history rows to the audiobook they belong to
+    2307e8916  #153  fix(history): record the protocol a download actually used
+    a9fb75229  #153  fix(history): resolve the protocol for the remaining event types too
+    114f2a238  #153  test(history): cover the audiobook key and the protocol on one call
+    af604643b  #154  test(downloads): match the int? audiobook id in the grab history verifies
+    b9535ec68  #155  fix(imports): classify failures at the boundary instead of leaking them to History
+    e2ba2e1f7  #156  fix(naming): key the remaining naming tables case insensitively
+    f2dfe0627  #158  fix(qbittorrent): a 200 carrying "Fails." is a refusal, not a grab
+    ae55117a9  #159  fix(search): stop reporting a series name as the series identifier
+    1976f251b  #161  Record a download client timeout as a failed grab, not a shutdown
+    dc7cd6a5a  #163  fix(notifications): sanitize webhook URLs before logging them
+    67df76470  #163  test(notifications): cover SanitizeWebhookUrl and pin the webhook log call sites
+    2ab002d46  #166  feat(search): tell an indexer that answered with nothing apart from one that never answered
+    52803040e  #166  fix(search): give the per-indexer timeout its own catch, correctly typed
+    06435f3cb  #166  test(search): match the fake provider to the observation-returning interface
+    08cd9aa23  #166  search: isolate a per-indexer HTTP timeout from the multi-indexer fan-out
+    08bdf182f  #166  search: bound indexer fan-out concurrency to 4 (tracker #119)
+    27f0a9894  #166  search: separate a rate limit and a refused credential from any other non-2xx
+    cc25d0187  #166  search: persist a per-indexer failure backoff ladder
+    3d9ab89e6  #166  search: skip an indexer that is in failure backoff, and record what each one answered
+    956bb6f54  #166  search: do not stamp LastSearchTime on a book whose indexer set was degraded
+    67759d734  #166  indexers: show on the card when an indexer is in failure backoff
+    2880f5db2  #166  feat(search): try a second form of a search before saying the book does not exist
+    bfc9757f8  #166  search: cover what the query ladder and indexer backoff do to each other
+    48bb4cc16  #166  search: drop the bare series-name query rung
+    2d339f40c  #166  test(search): thread the cancellation token through item 107's fake provider
+    7cd466605  #172  172: fix Abridged substring match stamping unabridged books abridged
+    7e97b4485  #172  172: fix Abridged substring match on the frontend too
+    b28a2ae17  #173  173c: expose the Listenarr.Backend meter through a listener and an endpoint
+    f502cbade  #170  search: make the indexer fan-out ceiling an operator setting, shipped at 4
+    36e4caa42  #170  settings: expose the indexer search concurrency ceiling in Search Settings
+    4420446cf  #123  notifications(#126): make EnableNotifications actually gate delivery
+    f60c4059b  #123  notifications(#127): dispatch webhooks by stored Type, not URL sniffing
+    a61439b42  #123  fix(notifications): route webhook Type through the central dispatcher, not per-callsite loops
+    b4b3896dc  #126  notifications(#126): drop EnableNotifications, matching the family
+    584e91658  #123  search(#123): wire up EnableAmazonSearch/EnableAudibleSearch, dead since introduction
+    b785d51cf  #123  notifications(#128): remove the unreachable legacy /notifications/test endpoint
+    55abfc887  #123  settings(#131): add a UI control for ExtractArchives, backend-only until now
+    ace85b52a  #123  downloads(#132): fix RemoveCompletedDownloads for Transmission, SABnzbd, NZBGet
+    780f0f0be  #124  fix: wire AllowedFileExtensions into FileUtils.IsAudioFile
+    ade79b0cb  #124  cleanup: remove two orphaned private AudioExtensions arrays
+    838887f44  #129  Remove vestigial Indexer.Tags field
+    6709e30d7  #133  history: add retention setting UI and a daily cleanup worker
+    5b445bbff  #138  Preserve series ASIN when mapping monitored author/series books
+    7e42b6840  #138  test(monitoring): resolve the series-monitoring root through identity, not a raw builder
+    fe229b631  #199  Fix author name normalization to merge spaced-out initials
+    b92da4968  #199  test(domain): bring StringUtilsNormalizeAuthorNameTests up to convention
+    56a4b996d  #199  fix(authors): dedupe author-cache methods reintroduced against fix/72's own copy
+    b0c659c36  #151  fix(authors): skip the SQL narrowing pre-filter for non-ASCII author names
+    55cc0311f  #151  fix: complete the NormalizeAuthorName redirect this branch left half-done
+    8911a21eb  #201  Finish the author-normalizer consolidation and re-derive the keys it left behind
+    f5a617533  #201  Keep the canonical author spelling the ASIN lookup already returned
+    71cb42153  #201  Converge existing books onto one spelling per author at startup
+    7eea0de82  #201  fix(library): normalize author grouping and include every co-author
+    14406e790  #200  Pin the author-identity behaviour these fixes are meant to change
+    3eff4fc77  #200  Stop reading author identity out of a list that never recorded it
+    c1c6b3783  #200  Refuse to rename a cached author when an ASIN is already somebody else's
+    bc98297e4  #200  Confirm an author ASIN with Audible before binding it as an identity
+    3ad7097bd  #200  Pin what stops a renamed cache row reaching stored author names
+    5a1df6c22  #200  fix(authors): dedupe author-cache methods a third time, keeping the collision-safe version
+    143fb92d3  #167  Fix: manual import path traversal check trips on legitimate paths (#167)
+    b8d8a4b92  #167  test(manual-import): bring the path-traversal test class up to convention
+    f9dc11f8d  #122  search: add ReleaseShapeDetector, which tells a bundle from a single edition
+    deaea7c8f  #122  search: a per-profile preference between bundle and single-book releases
+    3f8f6649a  #122  fe: the release shape control, and a Bundle badge on search results
+    5375f214c  #172  fix(search): word-boundary word filters, and any-of required words
+    e671e7c7b  #172  fix(search): route PreferredWords through the same word-boundary matcher
+    76eeabf91  #172  fix(search): make indexer priority a genuine tie-break instead of dead weight or dominant term
+    bd3669c52  #172  search: give the word-boundary term matcher its own file
+    fa175ff97  #172  search: pin the precedence between the three scorer concerns
+    8cdec3109  #173  fix(system): stop fabricating download-client connectivity
+    ff26dbc13  #173  tests(system-service-logs): pass the download-client status cache the constructor now requires
+    723efa908  #169  fix(wanted): Search All acted on the unfiltered list, not the one on screen
+    9cc699e53  #169  fix(nav): dismiss the header search panel when the route changes
+    a834b8e90  #169  fix(library): Select All reached past the filter into the whole library
+    06f6c37f9  #165  feat(detail): add Automatic Search action to audiobook detail toolbar
+    b43e19394  #165  feat(library): per-item automatic search icon on the audiobooks list
+    1f0ff5fa2  #165  feat(library): bulk automatic search on the audiobooks index toolbar
+    35328c26b  #165  feat(calendar): search for the missing books in the window on screen
+    eeb44621e  #202  feat(ui): multi-row selection on Wanted and Downloads
+    1a89af472  #289  tests: catch up DownloadsView.selection and WantedView.selection with items 73, 169 and 145
+    0fd1dfb3d  #174  fix(history): style the events that happen, not four that cannot
+    769442a88  #174  fix(history): keep what a grab knew, and name the download client
+    48bcc928d  #174  feat(history): a global History page over the API that already existed
+    ae619f333  #174  tests(download-service): match RecordDownloadFailedAsync's protocol parameter in the sanitize test
+    ce00d7cb9  #205  Keep stored secrets when a save carries the redaction sentinel
+    e79bdf16f  #209  fix(security): an IPv4 address in its mapped form never matched the private ranges
+    19abdc2a9  #190  fix(myanonamouse): spend the freeleech wedge on the download, not the search
+    39422c9c1  #190  refactor(search): give SearchResultConverters its own file
+    c6a24e083  #190  feat(indexers): parse the release flags trackers advertise
+    771634d72  #183  Add a task surface over the periodic workers, with a manual trigger
+    e2d02014a  #183  scheduled tasks: an allowlist for manual runs, not a deny-list
+    a8f61b3c5  #183  scheduled tasks: answer the trigger with the row it started, and keep stopped workers
+    79698ba6c  #183  scheduled tasks: say which request started the cycle, and stop 404ing a listed task
+    44e7e1d87  #183  scheduled tasks: release the gate under the lock that ends the cycle
+    ac7877204  #183  scheduled tasks: publish the interval in whole seconds, and refuse what will not fit
+    6a6bc5298  #183  scheduled tasks: put the interval refusal on the row, and correct two claims made for it
+    0486b5bab  #183  scheduled tasks: make the interval refusal audible, and stop overclaiming what it buys
+    4e12ce8ec  #183  tasks ui: put the task surface under System, where the family keeps it
+    fa5cb2d41  #183  tasks ui: test the run control against the refusals the API actually answers
+    e2f117256  #183  tasks ui: fix two in-flight defects, make the refusal reachable, and cover the poll
+    02c2a7ddb  #183  housekeeping: the frame for a daily retention sweep, with no table in it yet
+    a80e14df0  #183  housekeeping: three tables, and the two that were left out on purpose
+    7e1244ba7  #183  housekeeping: move jobs and their three child tables, with the cascade measured
+    da4e86f29  #183  housekeeping: the supersede that never stamped its terminal timestamp, and four comments that overclaimed
+    f2fb75fa4  #285  settings: a Housekeeping section for the two switches item 183 shipped API-only
+    f6eaef88b  #281  housekeeping: the two deferred populations, and the one slice of each that is provably unreachable
+    289f8df1d  #281  housekeeping: say what the compatibility sweep's query actually costs
+    57dc25635  #185  notifications: a subscriber model and a Custom Script provider
+    378f27f28  #185  configuration: keep stored custom scripts when a save omits them
+    3a5462f36  #185  notifications: let the EnableNotifications switch gate the subscriber fan-out
+    0e94d2f05  #189  feat(calendar): add the calendar endpoint and iCalendar feed
+    4076a223b  #189  feat(calendar): give the calendar page a feed subscribe URL
+    51040165e  #189  fix(calendar): correct the status precedence and test the two seams
+    4db649168  #189  fix(calendar): accept Readarr's tag spelling, and test the rest of the review
+    1cc33837d  #189  fix(calendar): close the rest of the parse/query seam, and stop citing what cannot be opened
+    c1ba50ac7  #189  test(calendar): the case-variant feed is refused by the enforcer now, not the attribute
+    e42a358f1  #189  feat(calendar): resolve per-event status in Readarr/Sonarr precedence order
+    fa60f0410  #189  feat(calendar): add a first-day-of-week preference, defaulted from locale
+    41e64b219  #189  feat(calendar): add a legend component for the event status colours
+    758ae32cc  #189  feat(calendar): colour events by status, add a legend, and a week-start option
+    782f52c11  #189  test(calendar): reconcile search-missing spec with item 189's status classes
+    536cdd8b7  #79   fix(status): stop reporting a non-preferred format as below cutoff
+    750611b67  #79   test(status): make the agreement test read the real projection, and pin the widened cases
+    a107e04a7  #252  WIP fix(quality): a blank cutoff means satisfied, not "search forever"
+    640fb34fe  #252  test: bring the new cutoff tests up to the repository's test conventions
+    25097021a  #252  test: flag the blank-cutoff consequence for the not-yet-landed upgrades flag
+    dd80e7349  #257  fix(quality): resolve the cutoff through QualityMatcher, changing two answers
+    d554e648f  #254  torznab: a bitrate has to be its own token, not digits inside one
+    ac1f9d743  #254  torznab: tests for the x264 mislabel, each with its control
+    af916a815  #254  torznab: a number is a bitrate only where the text says it is
+    3add2da26  #254  torznab: recover the bracketed bitrate the tightening had lost
+    a8f175527  #255  fix(search): let a quality profile's Allowed flag actually gate
+    64fddc1a6  #255  fix(search): correct the claims around the quality gate, and pin what it does not decide
+    d4c7edfdd  #255  fix(search): refuse a quality label the gate cannot place
+    888903001  #255  fix(search): answer the review of the quality gate fix
+    5142123c4  #253  Break release selection ties deterministically instead of by indexer order
+    6f96127ff  #253  Make the consuming-site tests actually discriminate their own site
+    ec6dce6f5  #253  Restore Readarr's protocol step, without which the chain is not transitive
+    fcdc6070b  #253  Close the second intransitivity, and three more review findings
+    010db9416  #253  Rank once per site instead of twice, to stay inside the focus budget
+    f0f394996  #253  Put the same-group invariant in the code, and close the last apparatus gap
+    522432ead  #256  quality profile: refuse a cutoff the profile does not allow
+    3e7d3ec5e  #256  tests: cover the cutoff rule at the API and at the attribute
+    71524fa7d  #256  quality profile: make the cutoff rule agree with the code that reads it
+    cbc89ae40  #256  quality profile: give it the UpgradeAllowed flag the family has
+    4fc8656a7  #256  quality profile: carry upgrades-off across the upgrade, in a startup repair
+    dbe00c07b  #256  tests: pin both directions of the upgrade flag, each against its control
+    02a69d320  #256  status evaluator: drop the upgrades-off guard, it was never the reason
+    86818cf81  #256  tests: pin the new migration id, the backfill gate depends on it
+    4524fce49  #256  quality profile: decide "blank cutoff" the way the readers decide it
+    495766202  #256  comments: correct three claims a reviewer could check and find false
+    c8890f19a  #261  search: skip the bare-title rung when the title cannot carry a query alone
+    96cb2c82c  #261  search: stop the stem and series rungs unanchoring themselves when there is no author
+    7611bb99e  #262  Require indexer categories, the way the rest of the *arr family does
+    871e8741c  #262  tests: pin that the draft test is gated too, since it binds the same entity
+    b2acfa81d  #262  Make the indexer form usable now that categories are required
+    4d0912ac2  #262  Move the category default off the entity, where it rewrote stored values
+    1fc82d70d  #262  tests: pin that an explicit null category list is not a way past the rule
+    8064d2bc6  #262  Validate the merged indexer on update, not just the request body
+    55538b6ed  #190  fix(myanonamouse): send the torrent filter as tor[searchType]
+    77a2a3e21  #190  fix(myanonamouse): send the page size as perpage, not tor[perpage]
+    3d04e9f31  #190  fix(myanonamouse): send the language the caller asked for
+    325f15cb2  #190  fix(myanonamouse): stop asking the search for a freeleech wedge
+    8c0bc1f47  #268  import: give each companion file the source root it actually came from
+    08a85a921  #268  import: resolve the companion source roots once per batch, not per file
+    9ee3df22a  #269  manual-import: place companions by the selected files' structure, not the caller's path
+    956361ece  #269  manual-import: a companion goes where the file it accompanies went, and nowhere else
+    2cdcaaca2  #269  import: match the companion's neighbour by path identity, and name the rule the manual path uses
+    190c6177a  #269  import: say why the neighbour comparison is safe for the reason that is actually true
+    18ea57723  #21   tests: give the companion placement pass the root folder this branch now requires
+    b642cca8f  #258  fix(recovery): one unrecoverable deletion intent must not disable the whole filesystem gate
+    bff23f3b7  #273  cache: make the author and series cache upserts survive a lost race
+    86c609d90  #273  cache: do not retry a collision that re-reading cannot resolve
+    09bd9ff12  #273  cache: the author upsert cannot reach that collision on this build, so pin what it does instead
+    8bec45d19  #273  cache: say only once that a rebind was refused, and describe the collision that can actually happen
+    3f57ec65e  #273  cache: a refusal that first happens on a retry must still be reported
+    99f2045fd  #273  cache: the comment on the test still described the guard that was removed
+    81bdd9a2a  #275  fix(metadata): spell a contributor's name without their job title
+    2cbfb09ae  #275  fix(metadata): store the author first, and keep an edition out of the byline
+    d5ae3fe86  #276  fix(metadata): bind an author's ASIN only to a row that names them
+    dda159b7a  #276  metadata: lease the shared request budget to callers that are not a refresh run
+    cd1b153b1  #276  repair: a scheduled pass that corrects author identities already written
+    12cbda998  #276  repair: remove contributor roles from the credits already stored
+    730a6d63f  #276  test: give the two new test classes the conventions the suite enforces
+    35a0b49eb  #276  repair: a provider that did not answer is not evidence that an author has no ASIN
+    fb9738716  #276  repair: answer the fresh review, including a starvation defect nothing was checking
+    09bc639d8  #270  filesystem: let a raced pinned hardlink fall back to a copy, and say so
+    3f337d191  #270  filesystem: narrow the hardlink race fallback, because the first attempt claimed too much
+    e4caa2be2  #277  Fix the fail-open identifier check in DownloadRemovalWorkflow
+    4596e9285  #277  Route the downloads delete endpoints through the client removal workflow
+    858ee7bb6  #277  Add tests for the client-removing delete and the identifier check
+    1c500f854  #277  Make a disabled client deletable again, and fail closed when no client id is known
+    914ae2de4  #277  Correct the outer-catch mechanism described in a test comment
+    35dd54213  #277  Cover the disabled client, the unmapped record, and deleteFiles on the delete path
+    2128f7708  #277  Let the delete control say whether the download client is involved
+    cc3f2eafd  #277  Make the record-only way out actually work, and stop it claiming too much
+    79be441dc  #277  qbittorrent: check presence before delete, fail closed on idempotent-success
+    5b5920b96  #277  qbittorrent: cover the unparseable-presence-check-body fail-closed path
+    a2281c24f  #276  fe: an Author Identity Repair section in the settings screen
+    f7c9cb076  #276  fe: the preview card promised a run button the frontend does not have
+    a2a93b598  #276  fe: the review's findings, one of which the UI could not have shown
+    4c4a431b7  #278  notifications: give the Custom Script provider a settings surface
+    7833a481d  #286  notifications: an Email provider, the case a webhook type cannot express
+    e286afb5c  #286  notifications: give the Email provider a settings surface
+    0cdda1236  #286  notifications: assert both providers are actually wired into the container
+    36501579b  #286  notifications: act on review of the Email provider
+    7c0208ac2  #286  notifications: cover the sentinel guard on a database with no settings row
+    bebe12574  #286  configuration: move the email members into their own partial
+    8fdd7e5c5  #286  notifications: exercise the SMTP transport against a socket, not a mock
+    e8ed68ccc  #286  notifications: act on the second review of the Email provider
+    bd6b1dce3  #286  configuration: split startup config out of ConfigurationService, so the file is under the cap again
+    daa1370a7  #176  settings: a recycle bin path and retention, off by default
+    146a3db93  #176  fs: recycle a library file instead of unlinking it
+    af3a6e81f  #176  library: send tracked file deletes to the bin when one is configured
+    a333ca486  #176  recyclebin: validation, an empty control, and a retention sweep
+    93cf2d8be  #176  tests: the recycle primitive, each case with a control that differs
+    4ca0189d5  #176  tests: pin down that an import never displaces an existing tracked file
+    573ce67a3  #176  workers: a daily recycle bin retention sweep
+    3216b8dcf  #176  tests: recycle bin validation and the retention sweep
+    a47ac7bd2  #176  fe: a Recycle Bin settings section, and two holes in its spec
+    0657a4b01  #176  tests: AGPL headers on the two new recycle bin test files
+    1427c6f71  #176  library: an explicit flag instead of a sentinel string for an unreadable config
+    8dcdb45db  #176  recyclebin: the sweep followed directory links out of the bin
+    54e51aa71  #176  fs: stamp the recycle time before the rename, not after
+    e74c1bb62  #176  recyclebin: the bin-inside-a-root check was ordinal, so case folding slipped past it
+    14f648d93  #176  recyclebin: a bin path of / validated clean and the sweep would have walked the disk
+    467674c95  #176  tests: the delete wiring had no test at all
+    d5bf102e2  #176  recyclebin: refuse a bin path that goes through a symbolic link, at save time
+    aac68a3cc  #176  fs: map the native rename errors off Linux, and cover the stamp ordering
+    cf67ec7a5  #176  recyclebin: stamping is best effort, and the delete path validates the bin too
+    f33a7700c  #176  tests: the recursive folder delete ignores the recycle bin
+    818f0ac7a  #176  tests: the folder recycle's overlap and cross-filesystem guards, at the primitive
+    c86ec87c4  #176  library: send the recursive folder delete to the recycle bin too
+    1d4cbd0e3  #177  feat(download-clients): one selector, with a priority the operator sets
+    429142723  #177  test(download-clients): pin the selection policy and the migration default
+    f85385660  #177  settings(download-clients): a Client Priority control, so the field is reachable
+    5c2ac5997  #177  test(download-clients): pin the rotation cursor's lifetime, with a control that moves
+    c2f90e204  #177  fix(download-clients): four things a fresh review found
+    5603df118  #177  settings(download-clients): give Client Priority its own section, keep queue priority usenet-only
+    7d85b83ad  #177  test(indexers): pin per-indexer download client binding, failing first
+    2688ddfc7  #177  indexers: give an indexer a nullable download client binding (shape only)
+    34fdd10f5  #177  indexers: route a bound indexer's grabs to its client, and fail loudly
+    d70ed8db4  #177  test(download-clients): pin persisted client failure status, failing first
+    196f11f16  #177  download-clients: persisted client failure status, shape only
+    f03370440  #177  download-clients: record client failures, back off, and route around a blocked client
+    152634603  #177  download-clients: record status in a gateway subclass, not a wrapper
+    e76b4c317  #177  stack: make item 177's two migration Designers the cumulative model at their position
+    bb7f4732c  #179  backup: take a copy of the database before migrations run
+    958f1cc92  #179  backup: the settings column, and two defects the suite caught
+    19dadc7ba  #179  backup: tests, each paired with a case that comes out differently
+    6f2d97123  #179  backup: the operator surface, so this is reachable without a shell
+    c07048a55  #179  docs: describe the backups directory and the startup override
+    56d446896  #179  backup: take the copy before the startup path's own repair writes
+    74cfccb47  #179  backup: cover what the review found had no test
+    1ec9df235  #179  wip: retarget the auth test
+    6156335de  #179  backup: close the gaps the review found in the code and in its tests
+    99adf1f6d  #179  backup: fix what the second review found, and rethink the manual limit
+    941aea208  #179  backup: pin the negative retention case
+    15a83f0a6  #180  feat(indexers): per-indexer seed ratio and seed time
+    37cb07702  #180  fix(indexers): close review findings on seed criteria
+    7301770df  #181  search: the release score has no ceiling, so a preference can still decide
+    f73ba299b  #181  tests: SearchResultScorerCeilingTests follows the repository test conventions
+    5c456bd2a  #181  settings: the minimum score threshold is no longer capped at 100
+    edda6a1a0  #181  search: correct what this branch claims, after review
+    ba7de503a  #264  search: the profile's size and quality gates apply to Usenet results too
+    985150db7  #264  search: size bounds above 2047 MB, and three corrections to the commit before this
+    8398aa84a  #264  search: reconcile the NZB gate hoist with the tests that pinned the exemption
+    aee36c4ae  #263  search: release selection reads the quality profile, not the hardcoded ladder
+    e904f8e15  #263  search: take the best candidate that is an upgrade, and fix two things in the commit before this
+    35ea493a1  #181  search: split the rejection gates out of the scorer, so the file is under the cap again
+    9209258d0  #181  search: two warnings, one of them a control this stack no longer has
+    460d82b8a  #182  naming(#182): render the settings naming preview through the real backend renderer
+    12421776e  #182  naming(#182): wire the settings naming preview to the backend renderer
+    caec3b656  #182  naming(#182): fix real divergences a fresh review found from GenerateFilePathAsync
+    f0571a661  #182  naming(#182): flip the lowercase-token preview test now that the case fix is in the tree
+    2bdf26fe3  #184  tests(notifications): pin the item-184 gaps blocked on PR #943 (WIP)
+    d80f9efba  #184  tests(notifications): tighten item-184 gap pins after fresh review
+    43fa3ffe4  #187  feat(#187): free-space check before import (G7)
+    b4b9baf3f  #187  feat(#187): free-space on root folders (G9), tests, and settings UI (G7/G9)
+    1779d5d80  #187  fix(#187): the free-space guard silently never fired under the default naming pattern
+    9669f5823  #187  test(#187): prove required bytes are the real file size, not a stand-in like #821's 64
+    ea2967f87  #284  Add failing test for metadata repair guard missing Entries include
+    e8d587f0f  #284  Fix metadata repair guard to load MoveJob Entries and CreatedDirectories
+    001b4b339  #283  tests: add failing control for ProcessExecutionLogs table drop
+    d732b1fa8  #283  Drop the dead ProcessExecutionLogs store, repository, entity, and table
+    e009953b4  #237  fix(search): reconcile the query ladder with fakes and tests from three unrelated items
+    568ecd683  #237  test(startup): mock the metadata-refresh backfill this test's strict repository was missing
+    57b876687  #237  style: run prettier over item 201's two touched files
+    e3d96dc4d  #237  fix(search): reconcile the scorer 3-way with fakes and tests from unrelated items, plus two more real bugs found by the suite
+    9ac74ce28  #237  style: run prettier over the two files item 165's resolution touched
+    90e2ebf74  #237  fix(wanted): compose the restored multi-select with items 73, 169 and 145
+    d360fe591  #237  stack: reconcile the manual-run allowlist with the stacked tree
+    78bc2f21d  #237  tests: read the observation's results, the way its sibling case already does
+    065906a11  #237  tests: point the tiebreak harness at the signatures the stack actually has
+    f31aa9afd  #237  tests: move the blank-cutoff pin to the answer fix/blank-cutoff-search-loop gave it
+    117a3265a  #237  downloads: split the client-name projection out, so the controller is under the ceiling again
+    a8b4d39cd  #237  quality: split QualityMatcher's internals out, so the file is under the ceiling again
+    fc6f199f9  #237  tests: guard that every migration Designer is its predecessor plus its own Up
+    675a25e86  #237  stack: make every composed migration Designer the cumulative model at its position
+    2a8d32cd7  #212  tests: pin the no-audio-candidate import block from #890
+    e46bab1e8  #212  fix(import): admit audio-only .mp4 via a probed ambiguous-container tier
+    7a40e717e  #212  fix(import): let manual import admit an audio-only .mp4
+    29d3dd76c  #212  tests: move the #890 cases out of a file PR 993 is rewriting
+    f0cf8dbf0  #212  refactor(files): move the content gate into its own partial, so it fits beside #901
+    9179e5484  #91   Wanted: skip books with an active download in the bulk search
+    a45cb844f  #191  qbittorrent: failing spec for postImportCategory form field
+    9bcf20edf  #191  qbittorrent: add Post-Import Category field to the client form
+    a71e92594  #288  symlink-chain: fail-first tests for a two-or-more-hop chain
+    853365c80  #288  symlink-chain: walk the whole chain, not just the last segment
+    9fc099fae  #237  stack: make the three Designers after item 170's migration the cumulative model again
+    84a700a7f  #293  fix: grid containers shrink to content instead of forcing viewport height
+    581775d24  #213  startup: accept Trace/Critical log level aliases, warn on unrecognized values
+    8e5252b20  #213  tests: cover the level fallback order and the warning
+    f8842f59b  #213  tests: follow the repository test-class conventions
+    4ef32fcc9  #279  metadata-refresh: allow the scheduled walk onto the task surface's Run button
+    716d0efd9  #146  manual-import: reject items missing a matched audiobook id with 400
+    4ca252c99  #146  tests: follow the repository test-class conventions
+    46ccf3b4b  #215  fix(import): refuse a manual import on its extension before publishing it
+    54f95a5f2  #215  fix(import): say that extensionless sources are refused too, and pin it
+    ebf818968  #236  fix(files): file registration records the proc-fd link size (64 bytes) instead of the real file length
+    09c0b4f2b  #236  tests: pin AudiobookFile.Size to the audio file, which fails today
+    f5901cc87  #236  tests: cover both #901 sites with a real /proc fd lease, not a two-file double
+    b02450d46  #236  tests: assert lstat genuinely disagrees before the two proc-fd size tests
+    71937ee6f  #292  search: WIP failing tests for the requested-book release check
+    3d660dd23  #292  search: drop releases that are plainly for a different book before an auto-grab
+    984b0250f  #292  test(search): give the blocklist wiring fixture a release for its own book
+    a2a827f1a  #292  search: fix the requested-book check's author and short-title rules from review
+    5729453a8  #292  search: a bare number after the title is a different volume, and only a year is packaging
+    11ac10bbe  #139  fix(library): identify a series by its SeriesAsin, not its display name
+    288bf0dac  #139  fix(library): series identity fixes from review: non-Latin names, author guard, stale links
+    15fe74500  #139  fix(library): series author guard joins on a shared author, script-preserving
+    680f57ef0  #291  fix(search): give the indexer backoff write a context of its own
+    1b00fdf53  #291  test(search): assert which context the backoff write used, not whether it collided
+    3076fe51d  #215  import: move the tag enrichment out of ProcessItem, so the file is under the cap again
+    ee1ddb9f8  #295  health: report indexers in failure backoff, and separately those failing for more than six hours
+    4cd2eaaca  #295  search: tell an indexer that could not be asked from one that had nothing
+    508549a5f  #295  ui: count indexer health checks on the sidebar's System entry
+    bbf915430  #295  search: no default for the outcome search, and tidier could-not-search reasons
+    ff10bbf55  #295  ui: show the System health badge with authentication off, and re-read it every minute
+    a4c873af5  #81   settings: add a stalled-download timeout, off by default
+    6fe1af4b3  #81   downloads: fail a torrent that has made no progress for the stalled-download timeout
+    34fc30a6d  #81   ui: stalled download timeout field under failed download handling
+    1a4f487ec  #81   test: a pause shorter than the gap cap still clears the stall clock
+    19edec87c  #223  search: one quality ladder instead of four copies
+    3f367e054  #223  test(scoring): pin the ladder's rung order and every rung literal
+    84d903476  #63   search: make Prefer newer releases a real ranking bonus
+    e12f840b6  #63   ui: say what Prefer newer releases now does, and pin Maximum Age across a toggle
+    44d31112d  #63   search: cap the newer-release bonus below a preferred word, and keep it off rejected releases
+    fa98684e1  #63   ui: describe the smaller newer-release bonus, and check Maximum Age is visible
+    12db0d37a  #63   search: default PreferNewerReleases to false, matching the settings modal
+    041d71756  #218  fix(scan): report a scan whose files were all declined as CompletedNoFilesAccepted
+    e00b717c3  #218  fix(ui): show a scan that accepted no files as its own outcome
+    c2a408316  #218  fix(scan): record a diagnostic when a candidate's metadata is read and declined
+    3643ff6ce  #218  fix(metadata): name the file in the ffprobe-failure warning
+    6b5343def  #218  fix(scan): count only files this book could claim, and skip other books' files
+    539091ff8  #218  fix(ui): label a no-files-accepted scan on the detail view's Files tab
+    3a011fef9  #218  fix(scan): probe other books' files again so the metadata conflict guard is unchanged
+    b27981c41  #218  fix(scan): decide no-files-accepted on durable ownership, not attribution
+    bc23bf9cf  #218  test(scan): reproduce a folder-attributed file whose tags name another book (red)
+    1c101c841  #218  fix(scan): decline folder-attributed files whose tags name another book
+    f333478e6  #218  test(scan): update probe-count and swap-timing expectations for the new pass
+    200b12226  #218  test(scan): give the tracked-file guard a real identity and a Times.Never
+    5c6c77627  #3    791 option D (NuGet ffprobe) composed onto the stack, for validation on the install
+
+## Items, in application order
+
+    105  fix/series-position-not-lost                 2 patches
+    106  fix/767-series-asin                          3 patches
+    43   fix/777-macos-ffprobe-url                    1 patch
+    23   fix/bug24-queue-guard                        3 patches
+    21   local/21-boundary-only                       6 patches
+    24   fix/bug11-taglib-writestream                 3 patches
+    22   fix/bug4-n-of-m-chapter-stem                 3 patches
+    17   fix/bug5-library-import-series-memberships   3 patches
+    11   fix/818-descriptor-path-leaks                3 patches
+    30   fix/bug26-journal-repair-visibility          3 patches
+    29   fix/bug25-shared-circuit-breaker             2 patches
+    42   fix/bug13-manual-import-naming-variables     3 patches
+    37   fix/gateway-path-mapping-concurrency         6 patches
+    32   fix/bug1-prowlarr-urlbase                    2 patches
+    34   fix/bug28-urlbase-subpath                    4 patches
+    35   fix/bug19-duplicate-release-guard            3 patches
+    36   fix/795-series-order-culture                 3 patches
+    36   fix/796-culture-parse                        2 patches
+    35   fix/qbittorrent-409-rejected-release         3 patches
+    160  fix/startupconfig-merge                      2 patches
+    64   local/980-with-urlbase-validation            5 patches
+    33   fix/audible-timeout-not-zero-match           4 patches
+    25   prreview/914-on-843                          6 patches
+    60   fix/surface-file-mutation-cause              3 patches
+    61   fix/retry-import-requeues                    2 patches
+    51   feat/release-blocklist                       13 patches
+    62   fix/894-download-finalization-settings       5 patches
+    65   fix/895-maximum-age-visibility               1 patch
+    46   consolidate/921-863-985                      7 patches
+    47   fix/900-download-client-priority             5 patches
+    44   fix/897-image-serving-assertions             1 patch
+    83   feat/595-grouped-list-view                   2 patches
+    45   fix/898-qbittorrent-advanced-settings        2 patches
+    68   fix/source-capability-cause                  4 patches
+    72   fix/bug31-stranded-import-retry              2 patches
+    80   fix/quality-bitrate-tolerance                2 patches
+    102  fix/72-container-healthcheck                 1 patch
+    31   872/option-2-dispatch-learns-ui-names        1 patch
+    49   feat/urlbase-fe-basehref                     2 patches
+    109  local/patch-version-stamp                    1 patch
+    109  local/patch-publish-workflow                 2 patches
+    107  pr-757-rebased                               1 patch
+    108  pr-902                                       2 patches
+    73   feat/wanted-cutoff-unmet                     1 patch
+    74   fix/author-page-series-memberships           1 patch
+    75   feat/authors-series-count                    1 patch
+    76   feat/implement-reprocess                     3 patches
+    83   feat/activity-queue-sorting                  1 patch
+    86   fix/author-page-language-filter              1 patch
+    94   fix/minimum-seeders-case                     1 patch
+    110  fix/import-blacklist-extension-casing        1 patch
+    111  fix/qbittorrent-paused-states                1 patch
+    112  fix/system-log-level-casing                  1 patch
+    20   fix/848-search-query-title                   1 patch
+    66   fix/927-removal-control                      1 patch
+    66   927/option-1-couple-job-lifetime             1 patch
+    99   fix/72-author-asin-collision                 1 patch
+    100  fix/72-author-folder-canonical               2 patches
+    113  fix/system-logs-no-fabrication               1 patch
+    114  fix/collection-status-badge-role             1 patch
+    115  fix/api-key-clipboard-failure                1 patch
+    95   fix/auth-enforcer-path-casing                1 patch
+    68   local/rb-resolve-symlinked-source-path-resolved 2 patches
+    98   fix/928-silent-catch-blocks                  1 patch
+    108  fix/persisted-utc-kind                       1 patch
+    78   check/bug45-quality-ladder-parity            1 patch
+    69   fix/bug6-audible-timeout-retry               2 patches
+    136  fix/136-nzbget-history-warn-once             2 patches
+    92   feat/author-series-section                   2 patches
+    141  fix/monitoring-series-memberships            2 patches
+    145  feat/queue-management-1                      13 patches
+    144  fix/provider-silence-is-not-absence          8 patches
+    144  feat/metadata-refresh-foundation             4 patches
+    144  feat/metadata-refresh-scheduled              3 patches
+    151  local/rb-971-on-144-base                     0 patches
+    151  local/rb-971-on-144                          1 patch
+    153  local/973-on-974-v2                          4 patches
+    154  local/35-tests-on-154-signature              1 patch
+    155  local/rb-975-resolved-base                   0 patches
+    155  local/rb-975-resolved                        1 patch
+    156  fix/naming-table-casing                      1 patch
+    158  fold/158-qbittorrent-fails-body              1 patch
+    159  fix/search-fallback-series-asin              1 patch
+    161  local/rb-161-on-153-base                     0 patches
+    161  local/rb-161-on-153                          1 patch
+    163  fix/webhook-url-sanitize                     2 patches
+    166  local/166b-failure-reason-v2                 3 patches
+    166  local/rb-166-170-on-166b-base                0 patches
+    166  local/rb-166-170-on-166b                     11 patches
+    172  local/rb-abridged-flag-word-boundary-0924-base 0 patches
+    172  local/rb-abridged-flag-word-boundary-0924    2 patches
+    173  feat/expose-app-metrics                      1 patch
+    170  feat/search-request-budget                   2 patches
+    123  local/123-on-872-v2                          3 patches
+    126  local/126-drop-enable-notifications          1 patch
+    123  local/rb-dead-settings-batch-0924-base       0 patches
+    123  local/rb-dead-settings-batch-0924-no7df      4 patches
+    124  local/124-allowed-file-extensions            2 patches
+    129  local/129-remove-indexer-tags                1 patch
+    133  local/133-on-980                             1 patch
+    138  local/138-on-141                             2 patches
+    199  local/199-base-shim                          0 patches
+    199  local/199-on-shim                            2 patches
+    199  local/199-dedupe-on-shim                     1 patch
+    151  local/rb-151-refresh-narrowing-fix           2 patches
+    201  local/201-on-shim                            3 patches
+    201  fix/author-grouping-normalize-v4             1 patch
+    200  local/200-on-shim                            6 patches
+    167  fix/167-manual-import-path-traversal         2 patches
+    122  local/rb-122-bundle-individual-preference-0924-base 0 patches
+    122  local/rb-122-bundle-individual-preference-0924 3 patches
+    172  local/rb-scorer-3way-reconciled-0924-base    0 patches
+    172  local/rb-scorer-3way-reconciled-0924         5 patches
+    173  local/173-on-113                             2 patches
+    169  local/169-on-73                              3 patches
+    165  local/165-detail-on-169                      1 patch
+    165  local/165-toolbar-on-detail                  2 patches
+    165  local/165-calendar-on-detail                 1 patch
+    202  local/rb-wanted-downloads-multi-select-base  0 patches
+    202  local/rb-wanted-downloads-multi-select       1 patch
+    289  local/rb-selection-spec-reconcile-v2         1 patch
+    174  local/rb-174-on-154-0924-base                0 patches
+    174  local/rb-174-on-154-0924                     3 patches
+    174  local/174-signature-fix-on-154               1 patch
+    205  fix/redacted-sentinel-round-trip             1 patch
+    209  fix/private-address-ipv4-mapped              1 patch
+    190  fix/indexer-flags                            3 patches
+    183  feat/183-task-scheduler                      8 patches
+    183  feat/183-tasks-ui                            3 patches
+    183  local/rb-183-housekeeping-retention-0924-base 0 patches
+    183  local/rb-183-housekeeping-retention-0924     4 patches
+    285  local/rb-housekeeping-settings-ui-0924-base  0 patches
+    285  local/rb-housekeeping-settings-ui-0924       1 patch
+    281  local/rb-housekeeping-deferred-populations-0924 2 patches
+    185  local/rb-185-on-123-0924-base                0 patches
+    185  local/rb-185-on-123-0924                     3 patches
+    189  local/rb-189-with-ui-base                    0 patches
+    189  local/rb-189-with-ui                         6 patches
+    189  feat/calendar-status-and-week-start          4 patches
+    189  local/165-189-status-test-reconcile-v2       1 patch
+    79   fix/format-preference-is-not-a-quality-mismatch 2 patches
+    252  fix/blank-cutoff-search-loop                 3 patches
+    257  local/257-on-252-v2                          1 patch
+    254  fix/torznab-quality-substring-match          4 patches
+    255  local/rb-quality-gate-respects-allowed-base  0 patches
+    255  local/rb-quality-gate-respects-allowed       4 patches
+    253  local/rb-deterministic-release-tiebreak-base 0 patches
+    253  local/rb-deterministic-release-tiebreak      6 patches
+    256  fix/validate-quality-profile-cutoff          3 patches
+    256  local/rb-quality-profile-upgrade-allowed-0924-base 0 patches
+    256  local/rb-quality-profile-upgrade-allowed-0924 7 patches
+    261  local/rb-gate-bare-title-on-166              2 patches
+    262  fix/require-indexer-categories               6 patches
+    190  fix/mam-ignored-search-parameters            4 patches
+    268  fix/companion-relative-path-escape           2 patches
+    269  fix/manual-companion-relative-path           4 patches
+    21   local/21-companion-tests-on-269              1 patch
+    258  fix/deletion-intent-does-not-brick-startup   1 patch
+    273  local/273-on-shim                            6 patches
+    275  local/rb-strip-role-suffix-from-credits-base 0 patches
+    275  local/rb-strip-role-suffix-from-credits      2 patches
+    276  local/rb-276-on-shim-0924-base               0 patches
+    276  local/rb-276-on-shim-0924                    7 patches
+    270  fix/hardlink-falls-back-to-copy              2 patches
+    277  local/rb-delete-removes-from-client-0924-base 0 patches
+    277  local/rb-delete-removes-from-client-0924     10 patches
+    276  local/rb-276-ui-on-shim-0924-base            0 patches
+    276  local/rb-276-ui-on-shim-0924                 3 patches
+    278  local/rb-custom-script-settings-ui-0924-base 0 patches
+    278  local/rb-custom-script-settings-ui-0924      1 patch
+    286  local/rb-email-notification-0924-base        0 patches
+    286  local/rb-email-notification-0924             8 patches
+    286  local/rb-configservice-split-on-email-notification-0924 1 patch
+    176  local/rb-recycle-bin-0924-base               0 patches
+    176  local/rb-recycle-bin-0924                    19 patches
+    176  local/rb-recycle-bin-folders-0924            3 patches
+    177  local/rb-download-client-priority-0924-base  0 patches
+    177  local/rb-download-client-priority-0924       6 patches
+    177  local/rb-indexer-download-client-binding-0924-base 0 patches
+    177  local/rb-indexer-download-client-binding-0924 3 patches
+    177  local/rb-download-client-status-0924-base    0 patches
+    177  local/rb-download-client-status-0924         4 patches
+    177  local/rb-download-client-status-designers-0924 1 patch
+    179  local/rb-backup-service-0924-base            0 patches
+    179  local/rb-backup-service-0924                 11 patches
+    180  local/rb-180-per-indexer-seed-criteria-0924-base 0 patches
+    180  local/rb-180-per-indexer-seed-criteria-0924  2 patches
+    181  fix/release-score-ceiling                    4 patches
+    264  local/rb-264-on-shim-base                    0 patches
+    264  local/rb-264-on-shim                         3 patches
+    263  local/rb-263-on-shim-0924-base               0 patches
+    263  local/rb-263-on-shim-0924                    2 patches
+    181  local/rb-scorer-split-on-263-0924            2 patches
+    182  local/rb-182-naming-preview-server-rendered-0924-base 0 patches
+    182  local/rb-182-naming-preview-server-rendered-0924 4 patches
+    184  check/184-notification-event-gaps            2 patches
+    187  local/rb-import-free-space-check-0924-base   0 patches
+    187  local/rb-import-free-space-check-0924        4 patches
+    284  fix/metadata-repair-guard-includes           2 patches
+    283  local/rb-drop-dead-process-execution-store-0924-base 0 patches
+    283  local/rb-drop-dead-process-execution-store-0924 2 patches
+    237  local/rb-stack-reconcile-0924-base           0 patches
+    237  local/rb-stack-reconcile-0924                12 patches
+    237  local/rb-migration-designers-base            0 patches
+    237  local/rb-migration-designers                 2 patches
+    212  local/rb-mp4-audio-import-0924-base          0 patches
+    212  local/rb-mp4-audio-import-0924               5 patches
+    91   local/rb-936-wanted-search-skips-active-downloads-0924-base 0 patches
+    91   local/rb-936-wanted-search-skips-active-downloads-0924 1 patch
+    191  local/rb-qbittorrent-post-import-category-control-0924-base 0 patches
+    191  local/rb-qbittorrent-post-import-category-control-0924 2 patches
+    288  fix/symlink-chain-walks-every-hop            2 patches
+    237  local/rb-designer-chain-0924-base            0 patches
+    237  local/rb-designer-chain-0924                 1 patch
+    293  fix/grid-container-height-shrinks-to-content 1 patch
+    213  fix/996-trace-log-level                      3 patches
+    279  local/rb-279-metadata-refresh-manual-trigger-base 0 patches
+    279  local/rb-279-metadata-refresh-manual-trigger 1 patch
+    146  local/rb-146-manual-import-requires-matched-book-base 0 patches
+    146  local/rb-146-manual-import-requires-matched-book 2 patches
+    215  local/rb-215-refused-manual-import-rolls-back-base 0 patches
+    215  local/rb-215-refused-manual-import-rolls-back 2 patches
+    236  local/rb-901-proc-fd-file-size-base          0 patches
+    236  local/rb-901-proc-fd-file-size               4 patches
+    292  local/rb-292-release-matches-requested-book-base 0 patches
+    292  local/rb-292-release-matches-requested-book  5 patches
+    139  local/rb-953-series-identity-not-display-name-base 0 patches
+    139  local/rb-953-series-identity-not-display-name 3 patches
+    291  local/rb-291-indexer-backoff-own-dbcontext-base 0 patches
+    291  local/rb-291-indexer-backoff-own-dbcontext   2 patches
+    215  local/rb-manual-import-processitem-split     1 patch
+    295  local/rb-295-indexer-health-surfacing-base   0 patches
+    295  local/rb-295-indexer-health-surfacing        5 patches
+    81   local/rb-81-stalled-downloads-base           0 patches
+    81   local/rb-81-stalled-downloads                4 patches
+    223  local/rb-896-quality-ladder-one-copy-base    0 patches
+    223  local/rb-896-quality-ladder-one-copy         2 patches
+    63   local/rb-895-prefer-newer-bonus-base         0 patches
+    63   local/rb-895-prefer-newer-bonus              5 patches
+    218  fix/822-scan-no-files-accepted               12 patches
+    3    local/rb-3-791-option-d-nuget-ffprobe-base   0 patches
+    3    local/rb-3-791-option-d-nuget-ffprobe        1 patch
+
+Regenerate with tools/local_stack.sh in the tracker repo.
