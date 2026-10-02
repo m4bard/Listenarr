@@ -91,6 +91,22 @@ internal static class MetadataRefreshRequestReader
         }
 
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        return (JsonSerializer.Deserialize<MetadataRefreshRequest>(body.GetRawText(), options), null);
+        try
+        {
+            return (JsonSerializer.Deserialize<MetadataRefreshRequest>(body.GetRawText(), options), null);
+        }
+        catch (JsonException)
+        {
+            // A known field with the wrong JSON type (e.g. authorId sent as a quoted string)
+            // used to be a clean 400 from the old strict-typed [FromBody] binder's automatic
+            // model validation. Reading the body as JsonElement first bypasses that pipeline,
+            // so without this catch the JsonException reaches the exception handler unhandled
+            // and downgrades to a 500.
+            return (null, new BadRequestObjectResult(new
+            {
+                message = "The refresh-metadata request body has a field with the wrong JSON type.",
+                code = "metadata_refresh_invalid_body"
+            }));
+        }
     }
 }
