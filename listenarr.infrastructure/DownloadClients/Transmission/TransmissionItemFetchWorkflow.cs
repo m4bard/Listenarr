@@ -22,7 +22,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
             if (client == null) return items;
 
             var configuredCategory = DownloadClientCategoryFilter.GetConfiguredCategory(client);
-            var sessionConfig = await ReadSessionConfigAsync(client, ct);
+            var sessionConfig = await TransmissionSessionConfigReader.ReadAsync(rpcClient, client, logger, ct);
 
             var payload = new
             {
@@ -71,34 +71,6 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
             }
 
             return items;
-        }
-
-        private async Task<(bool SeedRatioLimited, double SeedRatioLimit, bool IdleSeedingLimitEnabled, int IdleSeedingLimit)> ReadSessionConfigAsync(
-            DownloadClientConfiguration client,
-            CancellationToken ct)
-        {
-            var sessionSeedRatioLimited = false;
-            var sessionSeedRatioLimit = 0.0;
-            var sessionIdleSeedingLimitEnabled = false;
-            var sessionIdleSeedingLimit = 0;
-            try
-            {
-                var sessionPayload = new { method = "session-get", arguments = new { }, tag = 99 };
-                var sessionResp = await rpcClient.InvokeAsync(client, sessionPayload, ct);
-                if (sessionResp.TryGetProperty("arguments", out var sessionArgs))
-                {
-                    sessionSeedRatioLimited = (sessionArgs.TryGetProperty("seedRatioLimited", out var srl) || sessionArgs.TryGetProperty("seed_ratio_limited", out srl)) && srl.GetBoolean();
-                    sessionSeedRatioLimit = (sessionArgs.TryGetProperty("seedRatioLimit", out var srlv) || sessionArgs.TryGetProperty("seed_ratio_limit", out srlv)) ? srlv.GetDouble() : 0;
-                    sessionIdleSeedingLimitEnabled = (sessionArgs.TryGetProperty("idle-seeding-limit-enabled", out var isle) || sessionArgs.TryGetProperty("idle_seeding_limit_enabled", out isle)) && isle.GetBoolean();
-                    sessionIdleSeedingLimit = (sessionArgs.TryGetProperty("idle-seeding-limit", out var isl) || sessionArgs.TryGetProperty("idle_seeding_limit", out isl)) ? isl.GetInt32() : 0;
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                logger.LogDebug(ex, "Failed to fetch Transmission session config for seed limit evaluation, will use conservative defaults");
-            }
-
-            return (sessionSeedRatioLimited, sessionSeedRatioLimit, sessionIdleSeedingLimitEnabled, sessionIdleSeedingLimit);
         }
     }
 }

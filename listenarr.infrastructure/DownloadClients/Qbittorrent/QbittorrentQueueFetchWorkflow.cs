@@ -44,9 +44,18 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                     return items;
                 }
 
-                // Limit fields returned to reduce memory usage.
-                var fields = "name,progress,size,downloaded,dlspeed,eta,state,hash,added_on,num_seeds,num_leechs,ratio,save_path";
+                // Limit fields returned to reduce memory usage. ratio_limit/seeding_time_limit/
+                // seeding_time are included so CanRemove can be seed-limit-aware (same HTTP
+                // call, no extra round trip for per-torrent data).
+                var fields = "name,progress,size,downloaded,dlspeed,eta,state,hash,added_on,num_seeds,num_leechs,ratio,save_path,ratio_limit,seeding_time_limit,seeding_time";
                 var categoryFilter = QBittorrentHelpers.BuildCategoryParameter(client.Settings, "&");
+
+                // One preferences fetch per poll cycle (not per torrent) so CanRemove can resolve
+                // a per-torrent limit that is set to "inherit global".
+                var (globalMaxRatioEnabled, globalMaxRatio, globalMaxSeedingTimeEnabled, globalMaxSeedingTime) =
+                    await QbittorrentGlobalSeedPreferences.FetchAsync(httpClient, baseUrl, logger, ct);
+                var removeCompletedDownloads = !string.IsNullOrEmpty(client.RemoveCompletedDownloads) &&
+                    client.RemoveCompletedDownloads != "none";
 
                 var category = client.Settings?.TryGetValue("category", out var categoryObj) is true
                     ? categoryObj?.ToString()
@@ -125,7 +134,15 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                             files = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(filesJson) ?? [];
                         }
 
-                        items.Add(QbittorrentResponseMapper.MapQueueItem(torrent, client, files));
+                        items.Add(QbittorrentResponseMapper.MapQueueItem(
+                            torrent,
+                            client,
+                            files,
+                            removeCompletedDownloads,
+                            globalMaxRatioEnabled,
+                            globalMaxRatio,
+                            globalMaxSeedingTimeEnabled,
+                            globalMaxSeedingTime));
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not HttpRequestException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
