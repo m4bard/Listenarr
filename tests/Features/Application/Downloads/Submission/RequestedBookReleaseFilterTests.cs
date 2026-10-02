@@ -655,6 +655,32 @@ public sealed class RequestedBookReleaseFilterTests : BaseTests
             RequestedBookReleaseFilter.Evaluate(book, releaseForADifferentEntry));
     }
 
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "SeriesEntryPosition")]
+    public void Evaluate_CatalogSeriesNumberHasAThousandsSeparatorComma_FailsOpenAndIsAccepted()
+    {
+        // Given: a malformed catalog SeriesNumber, "1,2" -- the shape a thousands separator would
+        // read as 12. PositionNumberStyle is deliberately AllowDecimalPoint only, not
+        // AllowThousands, so this stays unparseable and the check fails open. The release is
+        // honestly titled for entry 1 of the same series by the same author: if "1,2" were ever
+        // misparsed as 12, this release's genuine position of 1 would be compared against 12
+        // instead of nothing, and a correct grab would be wrongly rejected as a different series
+        // entry.
+        var book = new AudiobookBuilder()
+            .WithTitle("Barsoom")
+            .WithAuthor("Edgar Rice Burroughs")
+            .WithSeriesNumber("1,2")
+            .Build();
+        var releaseForEntryOne = TorznabRelease(
+            "Barsoom 1 - Edgar Rice Burroughs - 2024 (miok) [Audiobook] (Sci-Fi)");
+
+        // When / Then
+        Assert.Equal(
+            RequestedBookMatch.Accepted,
+            RequestedBookReleaseFilter.Evaluate(book, releaseForEntryOne));
+    }
+
     // ------------------------------------------------------------------
     // Documented limits, pinned so the class comment stays true.
     // ------------------------------------------------------------------
