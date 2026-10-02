@@ -26,6 +26,9 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
 
             // Keep local filtering for monitor calls. Listenarr stores hash-shaped IDs,
             // while Transmission RPC ID targeting varies across server versions.
+            // seedRatioMode/seedRatioLimit/seedIdleMode/seedIdleLimit/secondsSeeding are included
+            // so CanRemove can be seed-limit-aware (same RPC call, no extra round trip for
+            // per-torrent data).
             var payload = new
             {
                 method = "torrent-get",
@@ -34,11 +37,16 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
                     fields = new[]
                     {
                         "id", "hashString", "name", "percentDone", "status", "totalSize", "rateDownload", "rateUpload",
-                        "leftUntilDone", "eta", "downloadDir", "addedDate", "uploadedEver", "uploadRatio", "labels"
+                        "leftUntilDone", "eta", "downloadDir", "addedDate", "uploadedEver", "uploadRatio", "labels",
+                        "seedRatioMode", "seedRatioLimit", "seedIdleMode", "seedIdleLimit", "secondsSeeding"
                     }
                 },
                 tag = 3
             };
+
+            // One session-config fetch per poll cycle (not per torrent) so CanRemove can resolve
+            // a per-torrent limit that is set to "inherit session".
+            var sessionConfig = await TransmissionSessionConfigReader.ReadAsync(rpcClient, client, logger, ct);
 
             try
             {
@@ -64,7 +72,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
                             continue;
                         }
 
-                        items.Add(TransmissionResponseMapper.MapQueueItem(client, torrent));
+                        items.Add(TransmissionResponseMapper.MapQueueItem(client, torrent, sessionConfig));
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {

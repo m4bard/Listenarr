@@ -24,7 +24,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
 {
     internal static class TransmissionResponseMapper
     {
-        public static QueueItem MapQueueItem(DownloadClientConfiguration client, JsonElement torrent)
+        public static QueueItem MapQueueItem(
+            DownloadClientConfiguration client,
+            JsonElement torrent,
+            (bool SeedRatioLimited, double SeedRatioLimit, bool IdleSeedingLimitEnabled, int IdleSeedingLimit) sessionConfig)
         {
             var id = GetString(torrent, "hash_string", "hashString");
             if (string.IsNullOrEmpty(id) && torrent.TryGetProperty("id", out var numericId))
@@ -42,6 +45,11 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
             var statusCode = torrent.TryGetProperty("status", out var statusProp) ? statusProp.GetInt32() : 0;
             var addedDate = GetInt64(torrent, "added_date", "addedDate");
             var uploadRatio = GetDouble(torrent, "upload_ratio", "uploadRatio");
+            var seedRatioMode = GetInt32(torrent, "seed_ratio_mode", "seedRatioMode");
+            var seedRatioLimit = GetDouble(torrent, "seed_ratio_limit", "seedRatioLimit");
+            var seedIdleMode = GetInt32(torrent, "seed_idle_mode", "seedIdleMode");
+            var seedIdleLimit = GetInt32(torrent, "seed_idle_limit", "seedIdleLimit");
+            var secondsSeeding = GetInt64(torrent, "seconds_seeding", "secondsSeeding");
             var downloaded = Math.Max(0, totalSize - leftUntilDone);
             var status = MapQueueStatus(statusCode, percentDone);
             var addedAt = addedDate > 0 ? DateTimeOffset.FromUnixTimeSeconds(addedDate).UtcDateTime : DateTime.UtcNow;
@@ -49,6 +57,22 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
                 ? FileUtils.CombineWithOptionalBase(downloadDir, name)
                 : downloadDir;
             var primaryLabel = ExtractLabels(torrent).FirstOrDefault() ?? string.Empty;
+            var removeCompletedDownloads = ReadRemoveCompletedDownloads(client);
+            var isStopped = statusCode == 0;
+            var isSeeding = statusCode == 6;
+            var seedLimitReached = TransmissionSeedLimitEvaluator.HasReachedSeedLimit(
+                isStopped,
+                isSeeding,
+                uploadRatio,
+                seedRatioMode,
+                seedRatioLimit,
+                seedIdleMode,
+                seedIdleLimit,
+                secondsSeeding,
+                sessionConfig.SeedRatioLimited,
+                sessionConfig.SeedRatioLimit,
+                sessionConfig.IdleSeedingLimitEnabled,
+                sessionConfig.IdleSeedingLimit);
 
             return new QueueItem
             {
@@ -67,7 +91,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
                 AddedAt = addedAt,
                 Ratio = uploadRatio,
                 CanPause = status is "downloading" or "queued",
-                CanRemove = true,
+                CanRemove = removeCompletedDownloads && seedLimitReached,
                 RemotePath = downloadDir,
                 LocalPath = downloadDir,
                 ContentPath = contentPath
@@ -101,8 +125,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
             var primaryLabel = ExtractLabels(torrent).FirstOrDefault() ?? string.Empty;
             TimeSpan? remainingTime = eta >= 0 ? TimeSpan.FromSeconds(eta) : null;
             var downloadId = !string.IsNullOrEmpty(hash) ? hash.ToUpperInvariant() : numericId.ToString(CultureInfo.InvariantCulture);
-            var removeCompletedDownloads = client.Settings?.TryGetValue("removeCompletedDownloads", out var removeVal) is true &&
-                removeVal is bool boolVal && boolVal;
+            var removeCompletedDownloads = ReadRemoveCompletedDownloads(client);
             var isStopped = statusCode == 0;
             var isSeeding = statusCode == 6;
             var seedLimitReached = TransmissionSeedLimitEvaluator.HasReachedSeedLimit(
@@ -209,6 +232,29 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
             }
 
             return labels;
+        }
+
+        /// <summary>
+        /// Reads the "removeCompletedDownloads" toggle out of <see cref="DownloadClientConfiguration.Settings"/>.
+        /// That dictionary is always round-tripped through <see cref="DownloadClientConfiguration.SettingsJson"/>,
+        /// so a value stored as a CLR <see cref="bool"/> comes back out as a boxed <see cref="JsonElement"/>
+        /// (System.Text.Json's default behavior for a <c>Dictionary&lt;string, object&gt;</c>), not a <see cref="bool"/>.
+        /// Check both shapes so a configured "true" is actually honored.
+        /// </summary>
+        private static bool ReadRemoveCompletedDownloads(DownloadClientConfiguration client)
+        {
+            if (client.Settings?.TryGetValue("removeCompletedDownloads", out var removeVal) is not true)
+            {
+                return false;
+            }
+
+            return removeVal switch
+            {
+                bool boolVal => boolVal,
+                JsonElement { ValueKind: JsonValueKind.True } => true,
+                JsonElement jsonVal when jsonVal.ValueKind == JsonValueKind.String => bool.TryParse(jsonVal.GetString(), out var parsed) && parsed,
+                _ => false
+            };
         }
 
         private static string GetString(JsonElement value, string snakeCaseName, string? camelCaseName = null)
