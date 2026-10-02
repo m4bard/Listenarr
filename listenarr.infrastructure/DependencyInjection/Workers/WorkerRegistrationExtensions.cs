@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 using Listenarr.Infrastructure.HostedServices;
+using Listenarr.Infrastructure.HostedServices.Scheduling;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -19,6 +20,7 @@ internal static class WorkerRegistrationExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddSingleton<IScheduledTaskRegistry, ScheduledTaskRegistry>();
         services.AddSingleton<IWorkerCycleRunner, WorkerCycleRunner>();
 
         services.AddSingleton<IScanQueueService, ScanQueueService>();
