@@ -78,6 +78,29 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
         }
         """;
 
+        private const string ExactRatioLimitTorrentJson = """
+        {
+            "hash": "e0123456789abcdef0123456789abcdef012345",
+            "name": "A Fourth Public Domain Book",
+            "progress": 1.0,
+            "size": 100000000,
+            "downloaded": 100000000,
+            "dlspeed": 0,
+            "eta": 8640000,
+            "state": "pausedUP",
+            "added_on": 1700000000,
+            "num_seeds": 3,
+            "num_leechs": 1,
+            "ratio": 2.0,
+            "ratio_limit": 2.0,
+            "seeding_time": 90000,
+            "seeding_time_limit": 86400,
+            "save_path": "/downloads/complete",
+            "content_path": "/downloads/complete/A Fourth Public Domain Book",
+            "category": "audiobooks"
+        }
+        """;
+
         private const string NoSeedPolicyTorrentJson = """
         {
             "hash": "a0123456789abcdef0123456789abcdef012345",
@@ -192,6 +215,31 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
                 queueItem.CanRemove,
                 "A torrent at ratio 2.50 against a per-torrent ratio limit of 2.0 has met its seed limit, " +
                 "and removeCompletedDownloads is on, so it should be reported removable.");
+        }
+
+        [Fact]
+        [Trait("Method", "MapQueueItem")]
+        public void MapQueueItem_MarksExactRatioLimitTorrentRemovable_WhenRemoveCompletedDownloadsOn()
+        {
+            // Exact-boundary case: ratio == ratio_limit (2.0 == 2.0). HasReachedSeedLimit's own
+            // comparison is `ratioLimit - ratio <= 0.001`, so an exact match must count as reached,
+            // not just the over-met case.
+            var torrent = ParseTorrent(ExactRatioLimitTorrentJson);
+            var client = BuildClient("remove");
+
+            var queueItem = QbittorrentResponseMapper.MapQueueItem(
+                torrent,
+                client,
+                files: [],
+                removeCompletedDownloads: true,
+                globalMaxRatioEnabled: false,
+                globalMaxRatio: -1f,
+                globalMaxSeedingTimeEnabled: false,
+                globalMaxSeedingTime: -1);
+
+            Assert.True(
+                queueItem.CanRemove,
+                "A torrent at ratio exactly 2.0 against a per-torrent ratio limit of 2.0 has reached its seed limit.");
         }
 
         [Fact]
@@ -336,6 +384,23 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
                 queueItem.CanRemove,
                 "A stopped torrent at ratio 2.50 against a per-torrent ratio limit of 2.0 has met its seed limit, " +
                 "and removeCompletedDownloads is on, so it should be reported removable.");
+        }
+
+        [Fact]
+        [Trait("Method", "MapQueueItem")]
+        public void MapQueueItem_MarksExactRatioLimitTorrentRemovable_WhenRemoveCompletedDownloadsOn()
+        {
+            // Exact-boundary case: ratio == seedRatioLimit (2.0 == 2.0), stopped. The evaluator's
+            // own comparison is `ratio >= seedRatioLimit`, so an exact match must count as
+            // reached too, not just the over-met case.
+            var torrent = BuildTorrent(statusCode: 0, uploadRatio: 2.0, seedRatioMode: 1, seedRatioLimit: 2.0);
+            var client = BuildClient(removeCompletedDownloads: true);
+
+            var queueItem = TransmissionResponseMapper.MapQueueItem(client, torrent, NoSessionLimits);
+
+            Assert.True(
+                queueItem.CanRemove,
+                "A stopped torrent at ratio exactly 2.0 against a per-torrent ratio limit of 2.0 has reached its seed limit.");
         }
 
         [Fact]
