@@ -23,8 +23,23 @@ public partial class ManualImportController
     private async Task WriteImportTagsBestEffortAsync(
         IAudiobookFileRegistrationLease registrationLease,
         Audiobook audiobook,
-        string destinationPath)
+        string destinationPath,
+        bool isHardlinkToSource)
     {
+        // A hardlinked destination is the source's own inode, which a download client may
+        // still be seeding, so writing ANY tag through it -- ASIN or artwork, both go through
+        // the same registrationLease-backed write -- would rewrite the source too.
+        if (isHardlinkToSource
+            && (!string.IsNullOrWhiteSpace(audiobook.Asin)
+                || !string.IsNullOrWhiteSpace(audiobook.ImageUrl)))
+        {
+            _logger.LogDebug(
+                "Skipped tag enrichment for audiobook {AudiobookId} because {Path} was imported as a hardlink of its source",
+                audiobook.Id,
+                LogRedaction.SanitizeFilePath(destinationPath));
+            return;
+        }
+
         // Artwork is worth writing for a book that has no ASIN. Anything matched
         // outside Audible is in that state, and gating the whole call on the ASIN
         // made the cover art setting silently inert for all of them.

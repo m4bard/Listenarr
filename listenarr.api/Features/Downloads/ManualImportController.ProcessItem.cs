@@ -439,7 +439,8 @@ public partial class ManualImportController
                 await WriteImportTagsBestEffortAsync(
                     registrationLease,
                     audiobook,
-                    destinationPath);
+                    destinationPath,
+                    isHardlinkToSource: publicationPlan.EffectiveAction == FileAction.HardlinkCopy);
 
                 var completion = registrationLease.CompletePublication();
                 if (completion
