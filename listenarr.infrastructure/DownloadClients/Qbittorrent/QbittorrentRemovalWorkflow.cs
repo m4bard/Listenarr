@@ -66,9 +66,13 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 // qBittorrent's delete endpoint is unconditionally idempotent-success: it returns
                 // HTTP 200 with an empty body whether or not the given hash is actually present,
                 // so a bare success check there cannot tell a real removal from a no-op against a
-                // hash qBittorrent never had. Confirm presence first and fail closed on anything
-                // we can't read cleanly, rather than letting the caller believe something was
-                // resolved when it wasn't.
+                // hash qBittorrent never had. Ask first, and act on three distinct answers:
+                //   - cannot tell (error status, unreadable body): fail closed, report not removed;
+                //   - confirmed absent: the goal of removal already holds, whatever removed it
+                //     (a share-limit rule, a manual delete), so report removed without deleting.
+                //     Reporting false here would leave deferred cleanup retrying a torrent that
+                //     can never be found, and retaining the record indefinitely;
+                //   - present: delete as before.
                 using var infoResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?hashes={Uri.EscapeDataString(id)}", ct);
                 if (!infoResp.IsSuccessStatusCode)
                 {
@@ -78,21 +82,17 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 }
 
                 var infoJson = await infoResp.Content.ReadAsStringAsync(ct);
-                List<JsonElement>? matches;
-                try
+                var presence = ParsePresence(infoJson, id);
+                if (presence == TorrentPresence.Unknown)
                 {
-                    matches = JsonSerializer.Deserialize<List<JsonElement>>(infoJson);
-                }
-                catch (JsonException ex)
-                {
-                    _logger.LogWarning(ex, "qBittorrent presence check returned an unparseable response for torrent {Id}", LogRedaction.SanitizeText(id));
+                    _logger.LogWarning("qBittorrent presence check returned an unparseable response for torrent {Id}", LogRedaction.SanitizeText(id));
                     return false;
                 }
 
-                if (matches == null || matches.Count == 0)
+                if (presence == TorrentPresence.Absent)
                 {
-                    _logger.LogWarning("qBittorrent no longer has torrent {Id}; it was already absent from the client, nothing to delete", LogRedaction.SanitizeText(id));
-                    return false;
+                    _logger.LogInformation("Torrent {Id} was already absent from qBittorrent; treating it as removed", LogRedaction.SanitizeText(id));
+                    return true;
                 }
 
                 using var deleteData = new FormUrlEncodedContent(new[]
@@ -118,5 +118,55 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 return false;
             }
         }
+
+        private enum TorrentPresence
+        {
+            Unknown,
+            Absent,
+            Present
+        }
+
+        // The info endpoint filtered by hashes returns a JSON array of torrent objects. A torrent
+        // is present when an entry carries the requested id as its hash or as either info-hash
+        // (hybrid and v2 torrents expose both). Anything that is not an array of objects with a
+        // string hash is treated as unreadable rather than as absence.
+        private static TorrentPresence ParsePresence(string json, string id)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(json);
+                if (document.RootElement.ValueKind != JsonValueKind.Array)
+                {
+                    return TorrentPresence.Unknown;
+                }
+
+                foreach (var entry in document.RootElement.EnumerateArray())
+                {
+                    if (entry.ValueKind != JsonValueKind.Object
+                        || !entry.TryGetProperty("hash", out var hash)
+                        || hash.ValueKind != JsonValueKind.String)
+                    {
+                        return TorrentPresence.Unknown;
+                    }
+
+                    if (HashMatches(hash, id)
+                        || (entry.TryGetProperty("infohash_v1", out var v1) && HashMatches(v1, id))
+                        || (entry.TryGetProperty("infohash_v2", out var v2) && HashMatches(v2, id)))
+                    {
+                        return TorrentPresence.Present;
+                    }
+                }
+
+                return TorrentPresence.Absent;
+            }
+            catch (JsonException)
+            {
+                return TorrentPresence.Unknown;
+            }
+        }
+
+        private static bool HashMatches(JsonElement value, string id) =>
+            value.ValueKind == JsonValueKind.String
+            && string.Equals(value.GetString(), id, StringComparison.OrdinalIgnoreCase);
     }
 }
