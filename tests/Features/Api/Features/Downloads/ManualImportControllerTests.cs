@@ -2372,9 +2372,10 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             Assert.True(File.Exists(source));
             var destination = Path.Join(destinationRoot, "Linked Book.mp3");
             Assert.Equal("audio", await File.ReadAllTextAsync(destination));
-            metadata.Verify(service => service.WriteAsinTagAsync(
+            metadata.Verify(service => service.WriteImportTagsAsync(
                 It.IsAny<IAudiobookFileRegistrationLease>(),
-                book.Asin), Times.Exactly(expectedTagWrites));
+                book.Asin,
+                It.IsAny<string?>()), Times.Exactly(expectedTagWrites));
 
             // The call count above is the gate; this pins its premise rather than assuming it.
             // A write through the destination reaches the source exactly when the import
@@ -2513,6 +2514,85 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
 
             Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
             Assert.Empty(recorder.ImportTagWrites);
+        }
+
+        [Theory]
+        [InlineData(FileAction.Copy, 1)]
+        [InlineData(FileAction.HardlinkCopy, 0)]
+        public async Task InteractiveManualImport_ImportTags_AreNotWrittenThroughAHardlinkToTheSource(
+            FileAction fileAction,
+            int expectedTagWrites)
+        {
+            // A hardlinked destination is the source's own inode, which a download client may
+            // still be seeding, so writing tags or artwork through it would rewrite the source as
+            // well. The Copy case is the control: the same import with an independent
+            // destination is tagged.
+            var destinationRoot = CreateTempDirectory(
+                $"listenarr-manual-tags-link-dest-{fileAction}");
+            var sourceDir = CreateTempDirectory(
+                $"listenarr-manual-tags-link-src-{fileAction}");
+            var source = Path.Join(sourceDir, "book.mp3");
+            await File.WriteAllTextAsync(source, "audio");
+            var book = new Audiobook
+            {
+                Id = 337,
+                Title = "Linked Cover Book",
+                Asin = "B000TEST",
+                ImageUrl = "https://images.example.com/cover.jpg",
+                BasePath = destinationRoot
+            };
+            var metadata = new Mock<IMetadataService>();
+            metadata.Setup(service => service.ExtractFileMetadataAsync(source))
+                .ReturnsAsync(new AudioMetadata
+                {
+                    Title = book.Title,
+                    Format = "mp3",
+                    BitRate = 128000
+                });
+            var controller = GetController(
+                book,
+                new ApplicationSettings
+                {
+                    OutputPath = destinationRoot,
+                    FolderNamingPattern = "",
+                    FileNamingPattern = "{Title}"
+                },
+                metadataMock: metadata);
+            var request = new ManualImportRequestDto
+            {
+                Path = sourceDir,
+                Mode = "interactive",
+                Action = fileAction,
+                Items =
+                [
+                    new ManualImportItemDto
+                    {
+                        FullPath = source,
+                        MatchedAudiobookId = book.Id
+                    }
+                ]
+            };
+
+            var action = await controller.Start(request);
+
+            var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(
+                action.Result);
+            var results = Assert.IsAssignableFrom<IEnumerable<ManualImportResultDto>>(
+                ok.Value!.GetType().GetProperty("results")!.GetValue(ok.Value));
+            Assert.True(Assert.Single(results).Success);
+            var destination = Path.Join(destinationRoot, "Linked Cover Book.mp3");
+            Assert.Equal("audio", await File.ReadAllTextAsync(destination));
+            metadata.Verify(service => service.WriteImportTagsAsync(
+                It.IsAny<IAudiobookFileRegistrationLease>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()), Times.Exactly(expectedTagWrites));
+
+            // Pin the premise rather than assume it: a write through the destination reaches
+            // the source exactly when the import produced a hardlink.
+            await File.AppendAllTextAsync(destination, "+");
+            Assert.Equal(
+                fileAction == FileAction.HardlinkCopy ? "audio+" : "audio",
+                await File.ReadAllTextAsync(source));
         }
 
         [Fact]
