@@ -19,6 +19,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Cleanup
     /// processor's reading of RemoveAsync's result is exercised against what the adapter returns
     /// for each presence-check answer.
     /// </summary>
+    [Trait("Name", "MovedDownloadCleanupQbittorrentTests")]
+    [Trait("Category", "Infrastructure")]
     public sealed class MovedDownloadCleanupQbittorrentTests : BaseTests
     {
         private const string TorrentHash = "ABCDEF1234567890ABCDEF1234567890ABCDEF12";
