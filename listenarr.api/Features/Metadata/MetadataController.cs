@@ -120,9 +120,7 @@ namespace Listenarr.Api.Features.Metadata
                 // Same three answers as the ISBN endpoint. A provider that would not answer is
                 // not a missing book, and is not a fault in this service either.
                 _logger.LogWarning(ex, "Provider did not answer fetching metadata for ASIN: {Asin}", LogRedaction.SanitizeText(asin));
-                return StatusCode(
-                    StatusCodes.Status503ServiceUnavailable,
-                    "The metadata provider did not answer; try again shortly");
+                return MetadataProviderUnavailableProblem.Create(Response, ex);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -168,9 +166,7 @@ namespace Listenarr.Api.Features.Metadata
             catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
             {
                 _logger.LogWarning(ex, "Provider did not answer fetching Audible metadata for ASIN: {Asin}", LogRedaction.SanitizeText(asin));
-                return StatusCode(
-                    StatusCodes.Status503ServiceUnavailable,
-                    "The metadata provider did not answer; try again shortly");
+                return MetadataProviderUnavailableProblem.Create(Response, ex);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -204,9 +200,13 @@ namespace Listenarr.Api.Features.Metadata
             catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
             {
                 _logger.LogWarning(ex, "Provider did not answer resolving an ASIN from an ISBN");
-                return StatusCode(
-                    StatusCodes.Status503ServiceUnavailable,
-                    new { success = false, error = "The metadata provider did not answer; try again shortly" });
+                // The same body as every other provider 503, plus the { success, error } pair
+                // this endpoint's other answers carry, so a caller reading either still works.
+                var unavailable = MetadataProviderUnavailableProblem.Create(Response, ex);
+                var problem = (ProblemDetails)unavailable.Value!;
+                problem.Extensions["success"] = false;
+                problem.Extensions["error"] = problem.Detail;
+                return unavailable;
             }
 
             if (!result.Success)
