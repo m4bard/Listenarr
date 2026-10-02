@@ -1,0 +1,566 @@
+using Listenarr.Application.Common.Scheduling;
+using Listenarr.Infrastructure.HostedServices.Scheduling;
+using Listenarr.Tests.Common;
+
+namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Scheduling;
+
+[Trait("Name", "ScheduledTaskRegistryTests")]
+[Trait("Category", "BackgroundWorkers")]
+public sealed class ScheduledTaskRegistryTests : BaseTests
+{
+    private static readonly TimeSpan Interval = PeriodicWorkerHarness.DefaultInterval;
+    private static readonly TimeSpan Patience = PeriodicWorkerHarness.Patience;
+
+    [Fact]
+    public async Task Worker_IsDiscoveredWithoutRegisteringItself()
+    {
+        var registry = CreateRegistry();
+        using var worker = new PeriodicWorkerHarness(registry, "DiscoveredWorker");
+
+        await worker.WaitForCycleAsync(1);
+
+        var listed = registry.GetAll();
+        Assert.Equal(new[] { "DiscoveredWorker" }, listed.Select(task => task.TaskName));
+        Assert.True(listed[0].IsRegistered);
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public async Task SucceededCycle_RecordsTimingOutcomeAndNextExecution()
+    {
+        var registry = CreateRegistry();
+        using var worker = new PeriodicWorkerHarness(registry, "SucceedingWorker");
+
+        await worker.WaitForCycleAsync(1);
+        var status = await WaitForIdleAsync(registry, "SucceedingWorker");
+
+        Assert.Equal(ScheduledTaskOutcome.Succeeded, status.LastOutcome);
+        Assert.Equal(ScheduledTaskTrigger.Scheduled, status.LastTrigger);
+        Assert.NotNull(status.LastStartedAt);
+        Assert.NotNull(status.LastEndedAt);
+        Assert.NotNull(status.LastDuration);
+        Assert.Equal(Interval, status.Interval);
+        Assert.NotNull(status.NextExecution);
+        Assert.True(
+            status.NextExecution >= status.LastEndedAt,
+            "Next execution must be scheduled after the cycle that preceded it.");
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public async Task FailedCycle_IsRecordedAsFailedRatherThanHidden()
+    {
+        var registry = CreateRegistry();
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "FailingWorker",
+            failure: () => new InvalidOperationException("cycle blew up"));
+
+        await worker.WaitForCycleAsync(1);
+        var status = await WaitForIdleAsync(registry, "FailingWorker");
+
+        Assert.Equal(ScheduledTaskOutcome.Failed, status.LastOutcome);
+        Assert.NotNull(status.LastEndedAt);
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public void Trigger_UnknownTask_IsNotFound()
+    {
+        var registry = CreateRegistry();
+
+        var outcome = registry.Trigger("NoSuchWorker");
+
+        Assert.Equal(ScheduledTaskTriggerResult.NotFound, outcome.Result);
+        Assert.Null(outcome.Status);
+    }
+
+    [Fact]
+    public async Task Trigger_IdleTask_RunsAnExtraCycleAndRecordsTheManualTrigger()
+    {
+        var registry = CreateRegistry();
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "TriggerableWorker",
+            manualTrigger: ScheduledTaskManualTrigger.Allowed);
+
+        await worker.WaitForCycleAsync(1);
+        await WaitForIdleAsync(registry, "TriggerableWorker");
+
+        Assert.Equal(
+            ScheduledTaskTriggerResult.Accepted,
+            registry.Trigger("TriggerableWorker").Result);
+
+        await worker.WaitForCycleAsync(2);
+        var status = await WaitForIdleAsync(registry, "TriggerableWorker");
+
+        Assert.Equal(ScheduledTaskTrigger.Manual, status.LastTrigger);
+        Assert.Equal(ScheduledTaskOutcome.Succeeded, status.LastOutcome);
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public async Task Trigger_IdleTask_AnswersWithTheManualCycleAlreadyStarted()
+    {
+        // The row handed back has to describe the run the caller just asked for. The
+        // cycle body is dispatched onto the thread pool, so anything that waits for the
+        // body to set the state describes the cycle before it instead: not running, last
+        // triggered by the schedule. Nothing here awaits between the trigger and the
+        // assertions, which is what makes the claim settleable in process rather than
+        // needing a live instance and a stopwatch.
+        var registry = CreateRegistry();
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "PromptWorker",
+            manualTrigger: ScheduledTaskManualTrigger.Allowed);
+
+        await worker.WaitForCycleAsync(1);
+        await WaitForIdleAsync(registry, "PromptWorker");
+
+        var outcome = registry.Trigger("PromptWorker");
+
+        Assert.Equal(ScheduledTaskTriggerResult.Accepted, outcome.Result);
+        Assert.NotNull(outcome.Status);
+        Assert.True(outcome.Status.IsRunning);
+        Assert.Equal(ScheduledTaskTrigger.Manual, outcome.Status.LastTrigger);
+        Assert.NotNull(outcome.Status.LastStartedAt);
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public async Task Trigger_TaskAlreadyRunning_AnswersWithTheCycleInFlightWithoutOverlapping()
+    {
+        var registry = CreateRegistry();
+        using var gate = new SemaphoreSlim(0, 1);
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "BusyWorker",
+            holdCycleOn: gate,
+            manualTrigger: ScheduledTaskManualTrigger.Allowed);
+
+        await worker.WaitForCycleAsync(1);
+
+        var outcome = registry.Trigger("BusyWorker");
+
+        Assert.Equal(ScheduledTaskTriggerResult.AlreadyRunning, outcome.Result);
+
+        // The answer carries the cycle that is in flight, the way the family's
+        // CommandQueueManager.Push hands back a command already queued or started
+        // (NzbDrone.Core/Messaging/Commands/CommandQueueManager.cs:111-121).
+        Assert.NotNull(outcome.Status);
+        Assert.True(outcome.Status.IsRunning);
+        Assert.Equal(ScheduledTaskTrigger.Scheduled, outcome.Status.LastTrigger);
+
+        // Answering with it is not the same as starting it twice. Give a wrongly
+        // accepted run room to appear rather than racing it.
+        await Task.Delay(200);
+        Assert.Equal(1, worker.CycleCount);
+
+        gate.Release();
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public async Task ScheduledCycleInFlight_HasNoNextExecutionUntilItEnds()
+    {
+        // A scheduled cycle consumes the deadline it was waiting for, so while it runs
+        // there is no next execution to report. Without the clear, the row keeps
+        // advertising a deadline that has already been spent, which for the first cycle
+        // is the registration time and therefore already in the past.
+        var registry = CreateRegistry();
+        using var gate = new SemaphoreSlim(0, 1);
+        using var worker = new PeriodicWorkerHarness(registry, "HeldWorker", holdCycleOn: gate);
+
+        await worker.WaitForCycleAsync(1);
+
+        var midCycle = registry.Find("HeldWorker");
+        Assert.NotNull(midCycle);
+        Assert.True(midCycle.IsRunning);
+        Assert.Null(midCycle.NextExecution);
+
+        gate.Release();
+        var afterCycle = await WaitForIdleAsync(registry, "HeldWorker");
+        Assert.NotNull(afterCycle.NextExecution);
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public async Task ManualCycleInFlight_LeavesTheScheduledDeadlineStanding()
+    {
+        // The mirror of the case above, and the reason the clear is keyed on the trigger
+        // rather than applied to every cycle. A manual run happens beside the interval
+        // wait, so the scheduled deadline is still real and has to survive it.
+        var registry = CreateRegistry();
+        using var gate = new SemaphoreSlim(0, 1);
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "ManuallyHeldWorker",
+            holdCycleOn: gate,
+            holdFromCycle: 2,
+            manualTrigger: ScheduledTaskManualTrigger.Allowed);
+
+        await worker.WaitForCycleAsync(1);
+        var idle = await WaitForIdleAsync(registry, "ManuallyHeldWorker");
+        var deadline = idle.NextExecution;
+        Assert.NotNull(deadline);
+
+        var outcome = registry.Trigger("ManuallyHeldWorker");
+
+        Assert.Equal(ScheduledTaskTriggerResult.Accepted, outcome.Result);
+        Assert.NotNull(outcome.Status);
+        Assert.True(outcome.Status.IsRunning);
+        Assert.Equal(deadline, outcome.Status.NextExecution);
+
+        await worker.WaitForCycleAsync(2);
+        var midManual = registry.Find("ManuallyHeldWorker");
+        Assert.NotNull(midManual);
+        Assert.Equal(deadline, midManual.NextExecution);
+
+        gate.Release();
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public void InitialDelay_IsPublishedAsTheFirstNextExecution()
+    {
+        // Four of the shipped workers wait before their first cycle, and until that
+        // cycle runs the deadline is the only thing the surface can say about them.
+        // RunPeriodicAsync registers and publishes the deadline before it reaches its
+        // first await, so nothing has to be polled for here.
+        var clock = new FixedClock(new DateTimeOffset(2026, 3, 4, 5, 6, 7, TimeSpan.Zero));
+        var registry = CreateRegistry(clock);
+        var delay = TimeSpan.FromMinutes(5);
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "DelayedWorker",
+            initialDelay: delay,
+            timeProvider: clock);
+
+        var status = registry.Find("DelayedWorker");
+
+        Assert.NotNull(status);
+        Assert.Equal(clock.GetUtcNow(), status.RegisteredAt);
+        Assert.Equal(clock.GetUtcNow() + delay, status.NextExecution);
+        Assert.Equal(ScheduledTaskOutcome.Unknown, status.LastOutcome);
+        Assert.Null(status.LastStartedAt);
+        Assert.Null(status.LastTrigger);
+        Assert.False(status.IsRunning);
+        Assert.Equal(0, worker.CycleCount);
+    }
+
+    [Fact]
+    public async Task StoppedWorker_StaysOnTheSurfaceMarkedStopped()
+    {
+        // A monitoring surface whose one invisible state is "this worker is gone" is
+        // worse than no surface. The row keeps its last outcome and says it stopped.
+        var registry = CreateRegistry();
+        using var worker = new PeriodicWorkerHarness(registry, "StoppingWorker");
+
+        await worker.WaitForCycleAsync(1);
+        await WaitForIdleAsync(registry, "StoppingWorker");
+        await worker.StopAsync();
+
+        var stopped = Assert.Single(registry.GetAll());
+        Assert.Equal("StoppingWorker", stopped.TaskName);
+        Assert.False(stopped.IsRegistered);
+        Assert.False(stopped.IsRunning);
+        Assert.Equal(ScheduledTaskOutcome.Succeeded, stopped.LastOutcome);
+        Assert.NotNull(stopped.LastEndedAt);
+    }
+
+    [Fact]
+    public async Task Trigger_StoppedWorker_IsRefusedAsStoppedRatherThanAsUnknown()
+    {
+        // The row is still listed, so "no such task" would be read as a typo. A stopped
+        // worker and a name nobody ever registered are different answers.
+        var registry = CreateRegistry();
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "GoneWorker",
+            manualTrigger: ScheduledTaskManualTrigger.Allowed);
+
+        await worker.WaitForCycleAsync(1);
+        await worker.StopAsync();
+        var cyclesBefore = worker.CycleCount;
+
+        var outcome = registry.Trigger("GoneWorker");
+
+        Assert.Equal(ScheduledTaskTriggerResult.WorkerStopped, outcome.Result);
+        Assert.NotNull(outcome.Status);
+        Assert.False(outcome.Status.IsRegistered);
+        Assert.NotEqual(ScheduledTaskTriggerResult.NotFound, outcome.Result);
+
+        await Task.Delay(200);
+        Assert.Equal(cyclesBefore, worker.CycleCount);
+    }
+
+    [Fact]
+    public async Task Trigger_AsACycleIsEnding_NeverRefusesWithARowSayingNothingIsRunning()
+    {
+        // The gate is released under the same lock that clears IsRunning, so "already
+        // running" and "not running" cannot both be true of one answer. Released outside
+        // that lock there was a window where the gate was still held while IsRunning was
+        // already false, and a request landing in it got exactly that pair.
+        var registry = CreateRegistry();
+        using var hold = new SemaphoreSlim(0, 1);
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "EndingWorker",
+            holdCycleOn: hold,
+            holdFromCycle: 2,
+            manualTrigger: ScheduledTaskManualTrigger.Allowed);
+
+        await worker.WaitForCycleAsync(1);
+        await WaitForIdleAsync(registry, "EndingWorker");
+        Assert.Equal(ScheduledTaskTriggerResult.Accepted, registry.Trigger("EndingWorker").Result);
+        await worker.WaitForCycleAsync(2);
+
+        // One refusal with the cycle provably still held, so the invariant is exercised
+        // even if the loop below never lands in the moment the cycle ends. Without this
+        // the test could pass by never observing a refusal at all, which is also what a
+        // dead harness looks like.
+        AssertRefusalSaysRunning(registry.Trigger("EndingWorker"));
+
+        // Then keep asking across the moment the cycle ends, which is where the window
+        // used to be: gate still held, IsRunning already cleared.
+        hold.Release();
+
+        var deadline = DateTimeOffset.UtcNow + Patience;
+        var accepted = false;
+        while (!accepted && DateTimeOffset.UtcNow < deadline)
+        {
+            var outcome = registry.Trigger("EndingWorker");
+            if (outcome.Result == ScheduledTaskTriggerResult.AlreadyRunning)
+            {
+                AssertRefusalSaysRunning(outcome);
+            }
+            else
+            {
+                accepted = outcome.Result == ScheduledTaskTriggerResult.Accepted;
+            }
+        }
+
+        Assert.True(accepted, "the ending cycle never released the gate");
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public async Task GetAll_WhenAnIntervalProviderThrows_ReportsItsLastGoodIntervalRatherThanFailing()
+    {
+        // GetAll reads every worker's interval delegate on one request thread, so without
+        // this a single worker computing a bad interval takes the whole task list down.
+        var registry = CreateRegistry();
+        var failing = false;
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "MoodyIntervalWorker",
+            intervalProvider: () => Volatile.Read(ref failing)
+                ? throw new InvalidOperationException("interval blew up")
+                : TimeSpan.FromMinutes(3));
+
+        // Wait for rest, not just for the cycle body: the runner reads the interval
+        // itself once the cycle ends, and that read is outside its own error handling.
+        // Flipping the flag before then kills the worker loop instead of testing GetAll.
+        await worker.WaitForCycleAsync(1);
+        await WaitForIdleAsync(registry, "MoodyIntervalWorker");
+        Assert.Equal(TimeSpan.FromMinutes(3), Assert.Single(registry.GetAll()).Interval);
+
+        Volatile.Write(ref failing, true);
+
+        var listed = Assert.Single(registry.GetAll());
+        Assert.Equal(TimeSpan.FromMinutes(3), listed.Interval);
+        Assert.Equal("MoodyIntervalWorker", listed.TaskName);
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public async Task StoppedWorker_IsNoLongerAskedForItsInterval()
+    {
+        // Keeping the row means the handle outlives the worker, so its interval delegate
+        // would otherwise be called on API request threads for the life of the process,
+        // against a worker whose dependencies may be gone. The row reports the interval
+        // the task had when it stopped instead.
+        var registry = CreateRegistry();
+        var intervalReads = 0;
+        using var worker = new PeriodicWorkerHarness(
+            registry,
+            "InterrogatedWorker",
+            intervalProvider: () =>
+            {
+                Interlocked.Increment(ref intervalReads);
+                return TimeSpan.FromMinutes(7);
+            });
+
+        await worker.WaitForCycleAsync(1);
+        await worker.StopAsync();
+
+        var readsAtStop = Volatile.Read(ref intervalReads);
+        Assert.True(readsAtStop > 0, "the running worker must have been asked at least once");
+
+        var stopped = Assert.Single(registry.GetAll());
+        Assert.Equal(TimeSpan.FromMinutes(7), stopped.Interval);
+        _ = registry.GetAll();
+        _ = registry.Find("InterrogatedWorker");
+
+        Assert.Equal(readsAtStop, Volatile.Read(ref intervalReads));
+    }
+
+    [Fact]
+    public async Task RestartedWorker_ReplacesItsOwnStoppedRow()
+    {
+        // Keeping stopped rows must not turn an ordinary stop and start into two rows,
+        // or into the "two workers registered as X" warning that means a real collision.
+        var registry = CreateRegistry();
+        using var first = new PeriodicWorkerHarness(registry, "RestartingWorker");
+        await first.WaitForCycleAsync(1);
+        await first.StopAsync();
+
+        using var second = new PeriodicWorkerHarness(registry, "RestartingWorker");
+        await second.WaitForCycleAsync(1);
+
+        var listed = Assert.Single(registry.GetAll());
+        Assert.True(listed.IsRegistered);
+        await second.StopAsync();
+    }
+
+    [Fact]
+    public async Task Worker_ThatSaysNothing_IsNotTriggerable()
+    {
+        var registry = CreateRegistry();
+        using var worker = new PeriodicWorkerHarness(registry, "QuietWorker");
+
+        await worker.WaitForCycleAsync(1);
+
+        var status = registry.Find("QuietWorker");
+        Assert.NotNull(status);
+        Assert.Equal(ScheduledTaskManualTrigger.Denied, status.ManualTrigger);
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public async Task Trigger_TaskNotOnTheAllowlist_IsRefusedAndItsCycleIsNeverEntered()
+    {
+        // The case the allowlist exists for. A deny-list would have had to know this
+        // worker's name in advance; here it is refused because nobody said otherwise.
+        var registry = CreateRegistry();
+        using var worker = new PeriodicWorkerHarness(registry, "DestructiveWorker");
+
+        await worker.WaitForCycleAsync(1);
+        await WaitForIdleAsync(registry, "DestructiveWorker");
+        var cyclesBefore = worker.CycleCount;
+
+        var refused = registry.Trigger("DestructiveWorker");
+
+        Assert.Equal(ScheduledTaskTriggerResult.NotAllowed, refused.Result);
+
+        // Refusing is not enough on its own: prove the cycle body was never reached.
+        // The manual run is dispatched on a pool thread when it is accepted, so give a
+        // wrongly accepted one room to show up rather than racing it.
+        await Task.Delay(200);
+        Assert.Equal(cyclesBefore, worker.CycleCount);
+        await worker.StopAsync();
+    }
+
+    [Fact]
+    public async Task Trigger_RefusalIsDistinctFromAnUnknownTask()
+    {
+        // NotFound and NotAllowed must not collapse into each other, or a caller cannot
+        // tell a typo from a task they are simply not allowed to start.
+        var registry = CreateRegistry();
+        using var worker = new PeriodicWorkerHarness(registry, "PresentButDeniedWorker");
+
+        await worker.WaitForCycleAsync(1);
+
+        Assert.Equal(
+            ScheduledTaskTriggerResult.NotAllowed,
+            registry.Trigger("PresentButDeniedWorker").Result);
+        Assert.Equal(
+            ScheduledTaskTriggerResult.NotFound,
+            registry.Trigger("NoSuchWorker").Result);
+        await worker.StopAsync();
+    }
+
+    private static void AssertRefusalSaysRunning(ScheduledTaskTriggerOutcome outcome)
+    {
+        Assert.Equal(ScheduledTaskTriggerResult.AlreadyRunning, outcome.Result);
+        Assert.NotNull(outcome.Status);
+        Assert.True(
+            outcome.Status.IsRunning,
+            "A request refused as already running must carry a row that says so.");
+    }
+
+    [Fact]
+    public void Worker_WhoseIntervalCannotBeStatedInWholeSeconds_IsWarnedAboutAtRegistration()
+    {
+        // Without this the refusal exists only on an API row, so a worker nobody can
+        // describe stays invisible to an operator who never calls the task surface. The
+        // decision this implements asked for the refusal to be loud, and a log is the one
+        // channel that does not require somebody to go looking.
+        var logger = new Mock<ILogger<ScheduledTaskRegistry>>();
+        var registry = new ScheduledTaskRegistry(TimeProvider.System, logger.Object);
+
+        using var handle = registry.Register(
+            "SubSecondWorker",
+            () => TimeSpan.FromMilliseconds(500),
+            _ => Task.CompletedTask,
+            ScheduledTaskManualTrigger.Denied,
+            CancellationToken.None);
+
+        Assert.Single(WarningsMentioning(logger, "SubSecondWorker"));
+    }
+
+    [Fact]
+    public void Worker_WhoseIntervalIsWholeSeconds_IsNotWarnedAbout()
+    {
+        // The control. Same registry, same call, an interval one step away, and no
+        // warning, so the assertion above is the guard firing rather than a rig that warns
+        // about every registration.
+        var logger = new Mock<ILogger<ScheduledTaskRegistry>>();
+        var registry = new ScheduledTaskRegistry(TimeProvider.System, logger.Object);
+
+        using var handle = registry.Register(
+            "WholeSecondWorker",
+            () => TimeSpan.FromSeconds(10),
+            _ => Task.CompletedTask,
+            ScheduledTaskManualTrigger.Denied,
+            CancellationToken.None);
+
+        Assert.Empty(WarningsMentioning(logger, "WholeSecondWorker"));
+    }
+
+    private static IReadOnlyList<IInvocation> WarningsMentioning(
+        Mock<ILogger<ScheduledTaskRegistry>> logger,
+        string taskName) =>
+        logger.Invocations
+            .Where(invocation =>
+                invocation.Method.Name == nameof(ILogger.Log) &&
+                invocation.Arguments[0] is LogLevel.Warning &&
+                invocation.Arguments[2]?.ToString()?.Contains(taskName, StringComparison.Ordinal) == true)
+            .ToList();
+
+    private static ScheduledTaskRegistry CreateRegistry(TimeProvider? timeProvider = null) =>
+        new(timeProvider ?? TimeProvider.System, Mock.Of<ILogger<ScheduledTaskRegistry>>());
+
+    private static async Task<ScheduledTaskStatus> WaitForIdleAsync(
+        IScheduledTaskRegistry registry,
+        string taskName)
+    {
+        var deadline = DateTimeOffset.UtcNow + Patience;
+        ScheduledTaskStatus? status;
+
+        do
+        {
+            status = registry.Find(taskName);
+            if (status is { IsRunning: false, LastEndedAt: not null, NextExecution: not null })
+            {
+                return status;
+            }
+
+            await Task.Delay(10);
+        }
+        while (DateTimeOffset.UtcNow < deadline);
+
+        Assert.Fail($"'{taskName}' never came to rest: {status?.LastOutcome.ToString() ?? "not registered"}");
+        throw new InvalidOperationException("unreachable");
+    }
+}
