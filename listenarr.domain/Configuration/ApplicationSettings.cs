@@ -103,7 +103,7 @@ namespace Listenarr.Domain.Configuration
 
         // Failed download handling settings
         public bool FailedDownloadHandlingEnabled { get; set; } = true;
-        public bool FailedDownloadAutoSearch { get; set; } = false;
+        public bool FailedDownloadAutoSearch { get; set; } = true;
         public List<string> ImportBlacklistExtensions
         {
             get
