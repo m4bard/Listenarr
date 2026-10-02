@@ -129,6 +129,8 @@
     </div>
 
     <div class="system-sections">
+      <ScheduledTasksSection />
+
       <div class="section">
         <div class="section-header">
           <h2>
@@ -236,6 +238,7 @@ import { useSystemLogs } from '@/composables/useSystemLogs'
 import { useRouter } from 'vue-router'
 import { LoadingState, StatusCard, InfoCard } from '@/components/base'
 import StorageDisksList from '@/components/system/StorageDisksList.vue'
+import ScheduledTasksSection from '@/components/system/ScheduledTasksSection.vue'
 import {
   getSystemInfo,
   getStorageInfo,
