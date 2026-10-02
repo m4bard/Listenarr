@@ -481,15 +481,22 @@ public sealed class AudiobookScanServiceMetadataBoundaryTests : BaseTests
         var trackedFile = Path.Join(bookDirectory, "tracked.m4b");
         Directory.CreateDirectory(bookDirectory);
         await File.WriteAllTextAsync(trackedFile, "audio");
+
+        // First, an ordinary scan with metadata that matches the audiobook, so the
+        // tracked row ends up with a real, durable PhysicalObjectIdentity. That gives
+        // ReconcileMissingFilesAsync's unrelated identity-backfill path nothing to do on
+        // the second scan below, so the only thing that could probe this file there is
+        // the new content-verification pass itself. One mock plays both roles (Init()
+        // cannot be called a second time mid-test: BaseTests.Init disposes the previous
+        // provider synchronously, and FfmpegServiceMock is IAsyncDisposable-only), so the
+        // first scan's calls are cleared from its invocation list before the rescan.
         var metadata = new Mock<IMetadataService>(MockBehavior.Strict);
         metadata.Setup(service => service.ExtractFileMetadataAsync(
                 It.IsAny<MetadataFileSource>()))
             .ReturnsAsync(new AudioMetadata
             {
-                Title = "Unrelated Title",
-                Album = "Unrelated Title",
-                Artist = "Unrelated Author",
-                AlbumArtist = "Unrelated Author",
+                Title = "Expected Title",
+                Artist = "Expected Author",
                 Duration = TimeSpan.FromSeconds(1),
                 Format = "m4b"
             });
@@ -504,17 +511,26 @@ public sealed class AudiobookScanServiceMetadataBoundaryTests : BaseTests
             .Build();
         audiobookToAdd.Asin = "B012345678";
         var audiobook = await _audiobookRepository.AddAsync(audiobookToAdd);
-        // Give it real duration/format/sample-rate so the unrelated background
-        // MetadataRescanService does not also pick it up as "missing metadata" and
-        // probe it independently of the scan under test.
-        var trackedFileRecord = new AudiobookFileBuilder()
-            .WithAudiobook(audiobook)
-            .WithPath(trackedFile)
-            .WithFormat("m4b")
-            .WithSampleRate(44100)
-            .Build();
-        trackedFileRecord.DurationSeconds = 1;
-        await _audiobookFileRepository.AddAsync(trackedFileRecord);
+        var initialResult = await _provider
+            .GetRequiredService<IAudiobookScanService>()
+            .ScanAsync(await AuthorizedCommandAsync(audiobook.Id, bookDirectory));
+        // Control: the file is now durably tracked with a real physical identity.
+        Assert.Equal(1, initialResult.CreatedCount);
+
+        // Now rescan with tags that contradict the audiobook. The mock must never be
+        // invoked for this already-tracked path at all, from this point on.
+        metadata.Invocations.Clear();
+        metadata.Setup(service => service.ExtractFileMetadataAsync(
+                It.IsAny<MetadataFileSource>()))
+            .ReturnsAsync(new AudioMetadata
+            {
+                Title = "Unrelated Title",
+                Album = "Unrelated Title",
+                Artist = "Unrelated Author",
+                AlbumArtist = "Unrelated Author",
+                Duration = TimeSpan.FromSeconds(1),
+                Format = "m4b"
+            });
 
         var result = await _provider
             .GetRequiredService<IAudiobookScanService>()
@@ -524,17 +540,14 @@ public sealed class AudiobookScanServiceMetadataBoundaryTests : BaseTests
         Assert.Empty(result.RemovedFiles);
         Assert.DoesNotContain(result.Diagnostics, diagnostic =>
             diagnostic.Code == "MetadataContradictsPath");
-        // Exactly one probe, not zero: this tracked row was seeded without a physical
-        // object identity, so the pre-existing (and unrelated) backfill reconciliation in
-        // ReconcileMissingFilesAsync/RefreshPhysicalGenerationAsync legitimately reads it
-        // once to enroll one. What this proves is the absence of a SECOND probe: the new
-        // content-verification pass's own candidate filter excludes every owned path (see
-        // IsOwnedOrLegacy), so it never also reads this file. Two calls here would mean
-        // that exclusion regressed.
+        // With a real physical identity already on file, nothing else in a normal
+        // rescan has a reason to read this path, so a clean Times.Never is now the
+        // real regression guard: any call here would mean the new pass's owned-path
+        // exclusion (IsOwnedOrLegacy) stopped working and it probed a tracked file.
         metadata.Verify(
             service => service.ExtractFileMetadataAsync(
                 It.Is<MetadataFileSource>(source => source.PublicPath == trackedFile)),
-            Times.Once);
+            Times.Never);
     }
 
     [LinuxFact]
