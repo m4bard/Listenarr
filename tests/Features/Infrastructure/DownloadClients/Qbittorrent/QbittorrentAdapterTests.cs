@@ -524,6 +524,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         [InlineData(true, "true")]
         public async Task RemoveAsync_PreservesDeleteFilesPolicy(bool deleteFiles, string expected)
         {
+            _provider.GetRequiredService<QbittorrentApiMock>().InfoResponseOverride =
+                """[{"hash":"abcdef123456","name":"Book"}]""";
             var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
 
             var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles);
@@ -540,6 +542,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         public async Task RemoveAsync_WhenTorrentPresentInClient_ChecksPresenceThenDeletesAndReturnsTrue()
         {
             var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            // qBittorrent reports hashes in lower case; the stored id may be upper case.
+            apiMock.InfoResponseOverride = """[{"hash":"abcdef123456","name":"Book"}]""";
             apiMock.ResetRequestHistory();
             var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
 
@@ -553,8 +557,10 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         }
 
         [Fact]
-        public async Task RemoveAsync_WhenTorrentAbsentFromClient_ReturnsFalseWithoutCallingDelete()
+        public async Task RemoveAsync_WhenTorrentAbsentFromClient_ReturnsTrueWithoutCallingDelete()
         {
+            // Confirmed absent means the removal goal already holds (a share-limit rule or a
+            // manual delete got there first), so it is reported as removed without a delete call.
             var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
             apiMock.InfoResponseOverride = "[]";
             apiMock.ResetRequestHistory();
@@ -562,9 +568,59 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
 
             var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
 
-            Assert.False(result);
+            Assert.True(result);
             Assert.Contains(apiMock.RequestHistory,
                 request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/info", StringComparison.Ordinal));
+            Assert.DoesNotContain(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/delete", StringComparison.Ordinal));
+            Assert.Null(apiMock.LastDeleteForm);
+        }
+
+        [Fact]
+        public async Task RemoveAsync_WhenPresenceCheckListsOnlyOtherTorrents_ReturnsTrueWithoutCallingDelete()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = """[{"hash":"0123456789","name":"Other"}]""";
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.True(result);
+            Assert.DoesNotContain(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/delete", StringComparison.Ordinal));
+            Assert.Null(apiMock.LastDeleteForm);
+        }
+
+        [Fact]
+        public async Task RemoveAsync_WhenPresenceCheckMatchesV2InfoHash_DeletesAndReturnsTrue()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = """[{"hash":"0123456789","infohash_v1":"","infohash_v2":"abcdef123456","name":"Book"}]""";
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.True(result);
+            Assert.NotNull(apiMock.LastDeleteForm);
+            Assert.Equal("ABCDEF123456", apiMock.LastDeleteForm!["hashes"]);
+        }
+
+        [Theory]
+        [InlineData("{}")]
+        [InlineData("""[{"name":"Book"}]""")]
+        [InlineData("[1]")]
+        public async Task RemoveAsync_WhenPresenceCheckBodyIsNotATorrentArray_ReturnsFalseWithoutCallingDelete(string body)
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = body;
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.False(result);
             Assert.DoesNotContain(apiMock.RequestHistory,
                 request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/delete", StringComparison.Ordinal));
             Assert.Null(apiMock.LastDeleteForm);
