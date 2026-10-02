@@ -353,9 +353,7 @@ namespace Listenarr.Api.Features.Search
             catch (Exception ex) when (MetadataProviderFaults.IsProviderUnavailable(ex))
             {
                 _logger.LogWarning(ex, "Provider did not answer searching the Audible catalog for query: {Query}", LogRedaction.SanitizeText(query));
-                return StatusCode(
-                    StatusCodes.Status503ServiceUnavailable,
-                    "The metadata provider did not answer; try again shortly");
+                return MetadataProviderUnavailableProblem.Create(Response, ex);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

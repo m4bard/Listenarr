@@ -65,9 +65,12 @@ public sealed class SearchController_ProviderUnavailableTests : BaseTests
         var status = Assert.IsType<ObjectResult>(result.Result);
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, status.StatusCode);
 
-        // And the body is the service's own fixed text. A client that raises composes its
-        // message from the request it made, search terms and all.
-        var body = Assert.IsType<string>(status.Value);
+        // And the body is the service's own fixed text, as a ProblemDetails so the server-error
+        // filter passes it through. A client that raises composes its message from the request
+        // it made, search terms and all.
+        var problem = Assert.IsType<ProblemDetails>(status.Value);
+        Assert.Equal("metadata_provider_unavailable", problem.Extensions["code"]);
+        var body = Assert.IsType<string>(problem.Detail);
         Assert.DoesNotContain("http", body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("voyage", body, StringComparison.OrdinalIgnoreCase);
     }
