@@ -96,6 +96,17 @@ namespace Listenarr.Application.Downloads.Submission
     /// "Emma [Edna Ferber]" are accepted, because bracketed text is as often the narrator.
     /// </para>
     /// <para>
+    /// The title words alone cannot tell two entries of the same series apart when the catalog
+    /// record's own title carries no textual volume marker, so a separate check reads
+    /// <see cref="Audiobook.SeriesNumber"/>, the structured field, rather than parsing the title
+    /// string. It rejects only when that field and a position parsed from the release's own title
+    /// (the same marker-word-plus-number or title-word-plus-number shape <c>NamesADifferentVolume</c>
+    /// looks for, applied to the release rather than the catalog title) are both present and
+    /// disagree; either side missing or unparseable passes through unchanged, because this rule
+    /// exists to catch a release that is clearly for a different entry, not to refuse one it
+    /// cannot read a position from.
+    /// </para>
+    /// <para>
     /// Known narrowness, each a missed automatic grab rather than a wrong one unless stated:
     /// a number spelled one way in the record and another in the release ("1984" and "Nineteen
     /// Eighty-Four", "Twenty Thousand" and "20000"); British and American spellings ("Colour" and
@@ -182,6 +193,11 @@ namespace Listenarr.Application.Downloads.Submission
             if (matchedForms.Count == 0)
             {
                 return RequestedBookMatch.TitleMismatch;
+            }
+
+            if (NamesADifferentSeriesEntry(audiobook, releaseTitleTokens, matchedForms))
+            {
+                return RequestedBookMatch.SeriesEntryMismatch;
             }
 
             var surnames = BuildSurnameKeys(audiobook.Authors);
@@ -374,6 +390,67 @@ namespace Listenarr.Application.Downloads.Submission
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Whether the catalog record's own series position and a position parsed from the
+        /// release's title are both known and name different entries. Reads
+        /// <see cref="Audiobook.SeriesNumber"/>, the structured field, instead of the catalog
+        /// <c>Title</c> string, so a bare title such as "Barsoom" (no "Book N" or "Vol N" of its
+        /// own) still gets this protection. Fails open whenever either side has no usable
+        /// position: a record with no series number set, or a release whose title carries
+        /// nothing that parses as one.
+        /// </summary>
+        private static bool NamesADifferentSeriesEntry(
+            Audiobook audiobook, List<string> releaseTokens, List<TitleForm> matchedForms)
+        {
+            var catalogPosition = ParsePosition(audiobook.SeriesNumber);
+            if (catalogPosition is null)
+            {
+                return false;
+            }
+
+            foreach (var form in matchedForms)
+            {
+                var releasePosition = ParseReleasePosition(releaseTokens, form.Words);
+                if (releasePosition is decimal position)
+                {
+                    return position != catalogPosition;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// The number that follows one of the book's own title words, or a volume marker, in the
+        /// release's title tokens -- the same shape <see cref="NamesADifferentVolume"/> treats as
+        /// a position, but read from whatever the release names rather than compared against a
+        /// number the catalog title itself carries.
+        /// </summary>
+        private static decimal? ParseReleasePosition(List<string> releaseTokens, IReadOnlySet<string> titleWords)
+        {
+            for (var index = 0; index + 1 < releaseTokens.Count; index++)
+            {
+                var next = releaseTokens[index + 1];
+                var numbersAPosition = VolumeMarkers.Contains(releaseTokens[index])
+                    || (titleWords.Contains(releaseTokens[index]) && !IsYear(next));
+
+                if (numbersAPosition && IsNumber(next) && decimal.TryParse(next, out var parsed))
+                {
+                    return parsed;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>A series-number field read as a number, or null when it is absent or not one.</summary>
+        private static decimal? ParsePosition(string? value)
+        {
+            return !string.IsNullOrWhiteSpace(value) && decimal.TryParse(value, out var parsed)
+                ? parsed
+                : null;
         }
 
         /// <summary>
