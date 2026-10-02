@@ -314,7 +314,14 @@ const wantedMode = ref<'missing' | 'cutoff'>('missing')
 
 // Virtual scrolling setup
 const scrollContainer = ref<HTMLElement | null>(null)
-const ROW_HEIGHT = 48
+// Row stride for the virtual list. A desktop row's height comes from rem-based
+// padding and line-heights, so it follows the browser's default font size
+// (about 45.8px at 16px, about 51px at 20px). A fixed stride shorter than the
+// real row lets the absolutely positioned rows overflow the spacer, which clips
+// the last rows; a longer one leaves a gap. So the stride is measured from a
+// rendered row, and ROW_HEIGHT_FALLBACK is only used until one exists.
+const ROW_HEIGHT_FALLBACK = 48
+const rowHeight = ref(ROW_HEIGHT_FALLBACK)
 const BUFFER_ROWS = 5
 const MOBILE_WANTED_BREAKPOINT = 768
 
@@ -346,8 +353,8 @@ const updateVisibleRange = () => {
   const scrollTop = scrollContainer.value.scrollTop
   const viewportHeight = scrollContainer.value.clientHeight
 
-  const firstVisibleIndex = Math.floor(scrollTop / ROW_HEIGHT)
-  const visibleItemCount = Math.ceil(viewportHeight / ROW_HEIGHT)
+  const firstVisibleIndex = Math.floor(scrollTop / rowHeight.value)
+  const visibleItemCount = Math.ceil(viewportHeight / rowHeight.value)
 
   const startIndex = Math.max(0, firstVisibleIndex - BUFFER_ROWS)
   const endIndex = Math.min(
@@ -392,8 +399,16 @@ const SEARCH_SPACING_MS = 1000
 // so only one of them runs at a time.
 const searchRunning = computed(() => bulkSearchRunning.value || searchSelectedRunning.value)
 
+const measureRowHeight = () => {
+  if (!useVirtualWantedList.value || !scrollContainer.value) return
+  const row = scrollContainer.value.querySelector<HTMLElement>('.wanted-row')
+  const measured = row?.getBoundingClientRect().height ?? 0
+  if (measured > 0) rowHeight.value = measured
+}
+
 const syncWantedLayout = async () => {
   await nextTick()
+  measureRowHeight()
   updateVisibleRange()
 }
 
@@ -512,12 +527,12 @@ const visibleWanted = computed(() => {
 
 const totalHeight = computed(() => {
   if (!useVirtualWantedList.value) return 0
-  return filteredWanted.value.length * ROW_HEIGHT
+  return filteredWanted.value.length * rowHeight.value
 })
 
 const topPadding = computed(() => {
   if (!useVirtualWantedList.value) return 0
-  return visibleRange.value.start * ROW_HEIGHT
+  return visibleRange.value.start * rowHeight.value
 })
 
 watch(

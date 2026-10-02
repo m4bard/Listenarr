@@ -451,13 +451,14 @@ const queueHealthMessage = computed(() => {
 
 // Virtual scrolling setup
 const scrollContainer = ref<HTMLElement | null>(null)
-// Must be at least the rendered desktop row height (cell padding 0.5rem x 2,
-// a 1px bottom border, and the ~24px status badge come to about 41.3px).
-// When it was smaller than the real row, the absolutely positioned rows
-// overflowed the spacer, so a short list was clipped once the container
-// started sizing to its content. Same arrangement as WantedView, whose
-// stride (48) sits just above its rendered row.
-const ROW_HEIGHT = 42
+// Row stride for the virtual list. A desktop row's height comes from rem-based
+// cell padding and line-heights, so it follows the browser's default font size
+// (about 41.3px at 16px, about 51.4px at 20px). A fixed stride shorter than the
+// real row lets the absolutely positioned rows overflow the spacer, which clips
+// the last rows; a longer one leaves a gap. So the stride is measured from a
+// rendered row, and ROW_HEIGHT_FALLBACK is only used until one exists.
+const ROW_HEIGHT_FALLBACK = 42
+const rowHeight = ref(ROW_HEIGHT_FALLBACK)
 const BUFFER_ROWS = 5
 const MOBILE_ACTIVITY_BREAKPOINT = 768
 
@@ -498,8 +499,8 @@ const updateVisibleRange = () => {
   const scrollTop = scrollContainer.value.scrollTop
   const viewportHeight = scrollContainer.value.clientHeight
 
-  const firstVisibleIndex = Math.floor(scrollTop / ROW_HEIGHT)
-  const visibleItemCount = Math.ceil(viewportHeight / ROW_HEIGHT)
+  const firstVisibleIndex = Math.floor(scrollTop / rowHeight.value)
+  const visibleItemCount = Math.ceil(viewportHeight / rowHeight.value)
 
   const startIndex = Math.max(0, firstVisibleIndex - BUFFER_ROWS)
   const endIndex = Math.min(
@@ -511,15 +512,23 @@ const updateVisibleRange = () => {
 }
 
 const totalHeight = computed(() => {
-  return filteredQueue.value.length * ROW_HEIGHT
+  return filteredQueue.value.length * rowHeight.value
 })
 
 const topPadding = computed(() => {
-  return visibleRange.value.start * ROW_HEIGHT
+  return visibleRange.value.start * rowHeight.value
 })
+
+const measureRowHeight = () => {
+  if (!useVirtualActivityList.value || !scrollContainer.value) return
+  const row = scrollContainer.value.querySelector<HTMLElement>('.queue-row')
+  const measured = row?.getBoundingClientRect().height ?? 0
+  if (measured > 0) rowHeight.value = measured
+}
 
 const syncActivityLayout = async () => {
   await nextTick()
+  measureRowHeight()
   updateVisibleRange()
 }
 
@@ -794,6 +803,16 @@ function formatAddedAt(value: string | undefined): string {
   if (Number.isNaN(parsed.getTime())) return ''
   return parsed.toLocaleString()
 }
+
+// The grid only mounts once there is something to show, so the first rendered
+// row may arrive after onMounted's layout sync; measure the stride then.
+watch(
+  () => filteredQueue.value.length > 0,
+  (hasRows) => {
+    if (hasRows) void syncActivityLayout()
+  },
+  { flush: 'post' },
+)
 
 const refreshQueue = async () => {
   loading.value = true
