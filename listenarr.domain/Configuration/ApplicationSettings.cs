@@ -178,7 +178,7 @@ namespace Listenarr.Domain.Configuration
 
         // Failed download handling settings
         public bool FailedDownloadHandlingEnabled { get; set; } = true;
-        public bool FailedDownloadAutoSearch { get; set; } = false;
+        public bool FailedDownloadAutoSearch { get; set; } = true;
 
         // Hours a torrent may sit in a downloading state with no observed change in progress or
         // downloaded bytes before it is treated as a failed download: blocklisted, removed from
