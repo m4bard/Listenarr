@@ -46,6 +46,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260828191810_AddReleaseBlocklist";
     private const string OperationEvidencePublicationsMigrationId =
         "20261002210137_AddOperationEvidencePublications";
+    private const string QualityProfileUpgradeAllowedMigrationId =
+        "20261018212549_AddQualityProfileUpgradeAllowed";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -229,7 +231,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 CompatibilityFilePublicationMigrationId,
                 WeakStorageVerifiedCleanupMigrationId,
                 ReleaseBlocklistMigrationId,
-                OperationEvidencePublicationsMigrationId
+                OperationEvidencePublicationsMigrationId,
+                QualityProfileUpgradeAllowedMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
