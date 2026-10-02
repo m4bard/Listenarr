@@ -893,6 +893,12 @@ namespace Listenarr.Tests.Features.Api
             Assert.Equal(
                 "metadata_provider_unavailable",
                 json.RootElement.GetProperty("code").GetString());
+            Assert.Equal(
+                "Metadata provider unavailable",
+                json.RootElement.GetProperty("title").GetString());
+
+            // Nothing on this path knows how long the provider wants, so nothing is invented.
+            Assert.False(response.Headers.Contains("Retry-After"));
         }
 
         [Fact]
