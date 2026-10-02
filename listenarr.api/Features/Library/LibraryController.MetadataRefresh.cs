@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library;
@@ -25,17 +26,27 @@ public partial class LibraryController
     /// <summary>
     /// Start a throttled provider-metadata refresh. Omit the author id for the whole library.
     /// </summary>
-    /// <param name="request">Author id and force flag.</param>
+    /// <param name="requestBody">
+    /// Raw JSON, read before the strict-typed binder would silently drop a field it does not
+    /// recognize (see <see cref="MetadataRefreshRequestReader"/>). Author id and force flag are
+    /// the only valid top-level fields.
+    /// </param>
     /// <param name="cancellationToken">Request cancellation token.</param>
     /// <returns>
-    /// Accepted with a run id, Conflict naming the run already in flight, or TooManyRequests
-    /// while this caller's cooldown is still running.
+    /// Accepted with a run id, Conflict naming the run already in flight, BadRequest for an
+    /// unrecognized field, or TooManyRequests while this caller's cooldown is still running.
     /// </returns>
     [HttpPost("refresh-metadata")]
     public async Task<IActionResult> StartMetadataRefresh(
-        [FromBody] MetadataRefreshRequest? request,
+        [FromBody] JsonElement? requestBody,
         CancellationToken cancellationToken = default)
     {
+        var (request, error) = MetadataRefreshRequestReader.Read(requestBody);
+        if (error != null)
+        {
+            return error;
+        }
+
         return await _metadataRefreshWorkflow.StartAsync(request, HttpContext, cancellationToken);
     }
 
