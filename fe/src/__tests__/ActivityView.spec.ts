@@ -591,4 +591,52 @@ describe('ActivityView', () => {
     expect(vm.allActivityItems[0]?.status).toBe('completed')
     expect(vm.allActivityItems[0]?.title).toBe('Artemis')
   })
+
+  it('sizes the virtual list from the rendered row height, not a fixed stride', async () => {
+    // jsdom has no layout, so report the height a desktop row renders at with
+    // a 20px browser default font. A fixed 42px stride would make the spacer
+    // shorter than the rows it holds and clip the last of them.
+    const renderedRowHeight = 51.4
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const height = this.classList.contains('queue-row') ? renderedRowHeight : 0
+      return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: height, width: 0, height } as DOMRect
+    })
+
+    const items = Array.from({ length: 3 }, (_, i) => ({
+      id: `q${i + 1}`,
+      title: `Book ${i + 1}`,
+      status: 'downloading',
+      progress: 50,
+      size: 1000,
+      downloaded: 500,
+      downloadSpeed: 10,
+      quality: 'MP3',
+      downloadClient: 'QBIT',
+      downloadClientId: 'qb-1',
+      downloadClientType: 'qbittorrent',
+      addedAt: new Date().toISOString(),
+    }))
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => ({
+        items,
+        clients: [],
+        generatedAt: new Date().toISOString(),
+        hasStaleData: false,
+        hasUnavailableClients: false,
+      })),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
+
+    const wrapper = await mountActivityView()
+    await flushPromises()
+
+    expect(wrapper.findAll('.queue-row')).toHaveLength(3)
+    const spacer = wrapper.find('.queue-body-spacer').element as HTMLElement
+    expect(parseFloat(spacer.style.height)).toBeCloseTo(3 * renderedRowHeight, 5)
+  })
 })
