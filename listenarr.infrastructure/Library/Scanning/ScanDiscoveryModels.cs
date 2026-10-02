@@ -37,6 +37,18 @@ internal sealed record ScanDiscoveryResult(
     public IReadOnlySet<string> ForeignOwnedCandidates { get; init; } =
         new HashSet<string>(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Candidates that folder/path-name evidence attributed to this audiobook, but whose
+    /// embedded tags named a different book and author, so content verification removed
+    /// them from <see cref="AttributedFiles"/>. Kept distinct from <see cref="Issues"/>
+    /// (which feed completeness/attribution-conflict decisions) so a later pass, such as
+    /// <c>EnrichWithMetadataAsync</c>, can skip re-probing a file that was already
+    /// declined on content grounds. Same default-comparer convention as
+    /// <see cref="ForeignOwnedCandidates"/>.
+    /// </summary>
+    public IReadOnlySet<string> ContentDeclinedCandidates { get; init; } =
+        new HashSet<string>(StringComparer.Ordinal);
+
     public bool IsComplete => Issues.All(issue =>
         issue.Kind is not (ScanDiscoveryIssueKind.EnumerationFailure
             or ScanDiscoveryIssueKind.LinkSkipped
