@@ -81,12 +81,12 @@ namespace Listenarr.Domain.Common
         /// in this gap are containers the scorer ranks highly: AAX is 95, second only to FLAC
         /// (SearchResultScorer.GetQualityScore).
         ///
-        /// Reachability, stated so nobody has to re-derive it: no parser in this repo emits AAX,
-        /// AAXC or MP4 as a quality or a format today, so neither the defect nor the risk of
-        /// over-refusing is reachable through a shipped indexer. Both sides of the argument above
-        /// are about the contract rather than about an observed grab. The scorer's aax branch is
-        /// already there waiting for the first parser that emits one, which is the case this rule
-        /// is here to meet.
+        /// Reachability, stated so nobody has to re-derive it: no Torznab parser emits AAX, AAXC
+        /// or MP4 as a quality or a format today. MyAnonamouse can: its enrichment passes the
+        /// remote filetype through unmapped and uppercased (MyAnonamouseSearchProvider, where it
+        /// assigns r.Format = format.ToUpper()), so a release can arrive with Format "AAX" and a
+        /// Quality of "Unknown", which the scorer normalises to no quality at all. That is the
+        /// case the scorer's format gate exists for, and the scorer's aax branch ranks it highly.
         ///
         /// Two things this is NOT. It is not new severity. The scorer used to build this allow-list
         /// inline from the Allowed=true rungs and refuse any label that matched none of them, so
