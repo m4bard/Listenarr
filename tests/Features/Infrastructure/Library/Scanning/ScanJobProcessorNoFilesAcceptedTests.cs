@@ -198,6 +198,55 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
         }
 
         [Fact]
+        public async Task ProcessJobAsync_BookFolderHoldsAnotherBooksTaggedFile_ReportsCompletedNoFilesAccepted()
+        {
+            // The book's own folder carries its ASIN, so Discover() attributes anything inside
+            // it on the folder name alone. The file's embedded tags name a different book by a
+            // different author; that content evidence has to override the folder match.
+            var metadata = new Mock<IMetadataService>();
+            metadata.Setup(service => service.ExtractFileMetadataAsync(
+                    It.IsAny<MetadataFileSource>()))
+                .ReturnsAsync(new AudioMetadata
+                {
+                    Title = "Unrelated Title",
+                    Album = "Unrelated Title",
+                    Artist = "Unrelated Author",
+                    AlbumArtist = "Unrelated Author",
+                    Duration = TimeSpan.FromSeconds(1),
+                    Format = "m4b"
+                });
+            _services.AddSingleton(metadata.Object);
+            Init();
+            await _applicationSettingsRepository.SaveAsync(
+                new ApplicationSettingsBuilder()
+                    .WithOutputPath(FileService.GetTempPath())
+                    .Build());
+            var basePath = Path.Join(
+                FileService.GetTempDirectory("scan-processor-wrong-book-tags"),
+                "Expected Title [B012345678]");
+            Directory.CreateDirectory(basePath);
+            await FileService.GetFileAsync(basePath, "borrowed.m4b", "audio");
+            var audiobookToAdd = new AudiobookBuilder()
+                .WithTitle("Expected Title")
+                .WithAuthor("Expected Author")
+                .WithBasePath(basePath)
+                .Build();
+            audiobookToAdd.Asin = "B012345678";
+            var audiobook = await _audiobookRepository.AddAsync(audiobookToAdd);
+            var (queue, job) = await CreateQueuedScanJobAsync(audiobook, "scan:wrong-book-tags");
+
+            await _provider.GetRequiredService<IScanJobProcessor>()
+                .ProcessJobAsync(job, CancellationToken.None);
+
+            var updatedJob = GetRequiredJob(queue, job.Id);
+            Assert.Equal("CompletedNoFilesAccepted", updatedJob.Status);
+            Assert.Equal(
+                "Found 1 audio file in the scan folder that this audiobook could claim, but none were added to it. Check the files' names, tags and permissions, then rescan.",
+                updatedJob.Error);
+            Assert.Empty(await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
+        }
+
+        [Fact]
         public async Task ProcessJobAsync_FilesAttributedButEveryClaimRejected_ReportsCompletedNoFilesAccepted()
         {
             // Every ownership claim is refused, as an IdentityUnavailable or similar
