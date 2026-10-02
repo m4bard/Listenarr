@@ -37,8 +37,8 @@ namespace Listenarr.Tests.Features.Application.Search
         [Trait("Method", "Build")]
         public void Build_BothEntryPointsAgreeWhenTheSeriesIsNotInTheTitle()
         {
-            // The agreement must not be an accident of one example. Here the series
-            // survives into the query, and both paths still say the same thing.
+            // The agreement must not be an accident of one example. A series the title
+            // does not mention is still left out, and both paths say the same thing.
             var audiobook = Book("Dracula", "Bram Stoker", "Gothic Horror");
             var classifier = new AutomaticSearchResultClassifier(
                 Mock.Of<ILogger>());
@@ -47,44 +47,24 @@ namespace Listenarr.Tests.Features.Application.Search
             var downloadQuery = DownloadSearchQueryBuilder.Build(audiobook);
 
             Assert.Equal(automaticQuery, downloadQuery);
-            Assert.Equal("Dracula Bram Stoker Gothic Horror", downloadQuery);
+            Assert.Equal("Dracula Bram Stoker", downloadQuery);
         }
 
-        [Fact]
+        [Theory]
         [Trait("Method", "Build")]
-        public void Build_DoesNotRepeatASeriesAlreadyInTheTitle()
+        // Following Readarr, whose BookSearchCriteria has no series field, the series
+        // never enters the query, whether or not the title already contains it.
+        [InlineData("The Wonderful Wizard of Oz", "L. Frank Baum", "Oz", "The Wonderful Wizard of Oz L. Frank Baum")]
+        [InlineData("Ozymandias", "Percy Bysshe Shelley", "Oz", "Ozymandias Percy Bysshe Shelley")]
+        [InlineData("Dracula", "Bram Stoker", "Gothic Horror", "Dracula Bram Stoker")]
+        public void Build_NeverAppendsTheSeries(string title, string author, string series, string expected)
         {
-            var query = AudiobookSearchQueryBuilder.Build(
-                Book("The Wonderful Wizard of Oz", "L. Frank Baum", "Oz"));
-
-            Assert.Equal("The Wonderful Wizard of Oz L. Frank Baum", query);
+            Assert.Equal(expected, AudiobookSearchQueryBuilder.Build(Book(title, author, series)));
         }
 
         [Fact]
         [Trait("Method", "Build")]
-        public void Build_MatchesASeriesInTheTitleIgnoringCaseAndPunctuation()
-        {
-            var query = AudiobookSearchQueryBuilder.Build(
-                Book("Alice's Adventures in Wonderland", "Lewis Carroll", "alices adventures"));
-
-            Assert.Equal("Alice's Adventures in Wonderland Lewis Carroll", query);
-        }
-
-        [Fact]
-        [Trait("Method", "Build")]
-        public void Build_AppendsASeriesTheTitleOnlyResemblesInPart()
-        {
-            // "Oz" is a word run in "Wizard of Oz" but not in "Ozymandias". A raw
-            // substring test would drop the series here and lose real information.
-            var query = AudiobookSearchQueryBuilder.Build(
-                Book("Ozymandias", "Percy Bysshe Shelley", "Oz"));
-
-            Assert.Equal("Ozymandias Percy Bysshe Shelley Oz", query);
-        }
-
-        [Fact]
-        [Trait("Method", "Build")]
-        public void Build_StripsAnEditionAnnotationBeforeTheSeriesContainmentCheck()
+        public void Build_StripsAnEditionAnnotationFromTheTitle()
         {
             var query = AudiobookSearchQueryBuilder.Build(
                 Book("The Marvelous Land of Oz (Unabridged)", "L. Frank Baum", "Oz"));
@@ -100,6 +80,9 @@ namespace Listenarr.Tests.Features.Application.Search
             Assert.Equal(
                 "Frankenstein Mary Shelley",
                 AudiobookSearchQueryBuilder.Build(Book("Frankenstein", "Mary Shelley", "   ")));
+            Assert.Equal(
+                "Frankenstein",
+                AudiobookSearchQueryBuilder.Build(Book("Frankenstein", "   ")));
             Assert.Equal(string.Empty, AudiobookSearchQueryBuilder.Build(Book(null)));
         }
 
