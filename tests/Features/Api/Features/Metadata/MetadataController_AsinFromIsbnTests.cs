@@ -67,10 +67,13 @@ public sealed class MetadataController_AsinFromIsbnTests : BaseTests
         var status = Assert.IsType<ObjectResult>(result);
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, status.StatusCode);
 
-        // The body keeps the { success, error } shape the callers already read, and says
-        // nothing about which host was asked or what it was asked for.
-        var payload = Assert.IsType<string>(status.Value?.GetType().GetProperty("error")?.GetValue(status.Value));
-        Assert.False((bool)status.Value!.GetType().GetProperty("success")!.GetValue(status.Value)!);
+        // The body is the shared provider ProblemDetails, still carrying the { success, error }
+        // pair the callers already read, and says nothing about which host was asked or what
+        // it was asked for.
+        var problem = Assert.IsType<ProblemDetails>(status.Value);
+        Assert.Equal("metadata_provider_unavailable", problem.Extensions["code"]);
+        var payload = Assert.IsType<string>(problem.Extensions["error"]);
+        Assert.False(Assert.IsType<bool>(problem.Extensions["success"]));
         Assert.DoesNotContain("http", payload, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("audible", payload, StringComparison.OrdinalIgnoreCase);
     }
