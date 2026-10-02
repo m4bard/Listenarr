@@ -269,11 +269,19 @@ namespace Listenarr.Application.Search.Scoring
                     // A release with no quality label has still made a claim if it declared a
                     // format, and the profile gates that claim the same way it gates a quality.
                     // Only the release that declared neither is genuinely unclassified, and that
-                    // one stays in the pool carrying the missing-quality penalty below. Readarr
-                    // does the same for its audiobook profile: it allows the UnknownAudio tier by
-                    // default and ranks it last rather than refusing it.
-                    // Nothing here is inferred from the title. A title-derived veto rejects "Magnum
-                    // Opus" for naming a codec, so only the release's own format field is read.
+                    // one stays in the pool carrying the missing-quality penalty below.
+                    //
+                    // Both gates are only as good as whatever classified the release. Today that
+                    // is TorznabResponseParser, which overwrites an explicit filetype attribute
+                    // with a substring scan of title plus description (:349-379), so a book called
+                    // "Magnum Opus" arrives here with Format "OPUS" and one called "The Year 1864"
+                    // with Quality "MP3 64kbps". Neither gate reads a title itself, and neither can
+                    // tell a parsed title apart from a declared attribute. Fixing that precedence
+                    // belongs in the parser.
+                    //
+                    // DetectFormatFromTitle can also write into normalizedFormat, but only under
+                    // isNzb, and this branch is torrent-only. Anyone hoisting these gates out of
+                    // the isNzb branch inherits that second title-to-veto path.
                     if (!string.IsNullOrEmpty(normalizedFormat) && QualityGate.Refuses(normalizedFormat, profile))
                     {
                         score.TotalScore += QualityNotAllowedPenalty;
