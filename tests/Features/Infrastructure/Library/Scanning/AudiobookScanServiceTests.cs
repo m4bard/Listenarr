@@ -77,10 +77,14 @@ public sealed class AudiobookScanServiceTests : BaseTests
             await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
         Assert.Equal(inside, tracked.Path);
         Assert.DoesNotContain(outside, result.AttributedFiles);
+        // Two probes for the single attributed candidate: the content-verification pass
+        // (ScanAsync's new step between Discover() and EnrichWithMetadataAsync, which
+        // checks every folder-attributed file's tags before anything is claimed) and the
+        // existing claim-time probe inside EnsureAudiobookFileAsync.
         metadata.Verify(
             service => service.ExtractFileMetadataAsync(
                 It.IsAny<MetadataFileSource>()),
-            Times.Once);
+            Times.Exactly(2));
     }
 
     [Fact]
@@ -217,19 +221,30 @@ public sealed class AudiobookScanServiceTests : BaseTests
         var displaced = Path.Join(root, "original-generation.displaced");
         var replacementSucceeded = false;
         var metadata = new Mock<IMetadataService>(MockBehavior.Strict);
+        var probeCount = 0;
         metadata.Setup(service => service.ExtractFileMetadataAsync(
                 It.IsAny<MetadataFileSource>()))
             .Returns<MetadataFileSource>(async fileSource =>
             {
-                try
+                // The content-verification pass now probes this attributed candidate
+                // before the claim loop starts. The replacement side effect is what this
+                // test exercises at claim time, so it is gated to the second probe
+                // rather than firing on the pass's own first, harmless read (which would
+                // otherwise trip the claim-time ValidateDiscoveredPathParent check with
+                // an unhandled exception instead of the graceful decline under test).
+                var isClaimTimeProbe = ++probeCount > 1;
+                if (isClaimTimeProbe)
                 {
-                    File.Move(candidate, displaced);
-                    await File.WriteAllTextAsync(candidate, "replacement-generation");
-                    replacementSucceeded = true;
-                }
-                catch (IOException)
-                {
-                    // Windows stable-registration handles deny delete and rename sharing.
+                    try
+                    {
+                        File.Move(candidate, displaced);
+                        await File.WriteAllTextAsync(candidate, "replacement-generation");
+                        replacementSucceeded = true;
+                    }
+                    catch (IOException)
+                    {
+                        // Windows stable-registration handles deny delete and rename sharing.
+                    }
                 }
 
                 var observed = await File.ReadAllTextAsync(
@@ -1382,12 +1397,23 @@ public sealed class AudiobookScanServiceTests : BaseTests
                 pathIdentity,
                 physicalIdentity));
         var metadata = new Mock<IMetadataService>(MockBehavior.Strict);
+        var probeCount = 0;
         metadata.Setup(service => service.ExtractFileMetadataAsync(
                 It.IsAny<MetadataFileSource>()))
             .Returns<MetadataFileSource>(async fileSource =>
             {
-                File.Move(candidate, displaced);
-                await File.WriteAllTextAsync(candidate, "replacement-generation");
+                // The content-verification pass now probes this attributed candidate
+                // before the claim ever starts. The "publication replaced mid-read" side
+                // effect is the thing under test at claim time specifically, so it is
+                // gated to the second probe rather than firing on the pass's own first,
+                // harmless read.
+                var isClaimTimeProbe = ++probeCount > 1;
+                if (isClaimTimeProbe)
+                {
+                    File.Move(candidate, displaced);
+                    await File.WriteAllTextAsync(candidate, "replacement-generation");
+                }
+
                 var observed = await File.ReadAllTextAsync(fileSource.ReadPath);
                 return new AudioMetadata
                 {
@@ -1422,10 +1448,13 @@ public sealed class AudiobookScanServiceTests : BaseTests
         Assert.Empty(await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
         Assert.Equal("replacement-generation", await File.ReadAllTextAsync(candidate));
         Assert.Equal("original-generation", await File.ReadAllTextAsync(displaced));
+        // Two probes on the pinned descriptor path: the content-verification pass (which
+        // finds no contradiction, since the swap hasn't happened yet) and the claim-time
+        // probe (where the swap fires and the claim is correctly refused).
         metadata.Verify(service => service.ExtractFileMetadataAsync(
             It.Is<MetadataFileSource>(source =>
                 source.PublicPath == candidate
-                && source.ReadPath != candidate)), Times.Once);
+                && source.ReadPath != candidate)), Times.Exactly(2));
         authorization.VerifyAll();
     }
 
