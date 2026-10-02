@@ -589,6 +589,53 @@ public sealed class RequestedBookReleaseFilterTests : BaseTests
     [Fact]
     [Trait("Method", "Evaluate")]
     [Trait("Scenario", "SeriesEntryPosition")]
+    public void Evaluate_ReleaseForAFractionalEntryDifferentFromTheCatalogsWholeNumber_IsRejectedAsSeriesEntryMismatch()
+    {
+        // Given: the catalog record is entry 2, the release is honestly titled for the
+        // interstitial novella entry 2.5 of the same series by the same author. Tokenizing "2.5"
+        // the way ordinary title words are tokenized splits it into "2" and "5" and drops the
+        // fraction, which would make the release's parsed position come back as the catalog's
+        // own "2" and silently pass -- this is the gap a reviewer caught.
+        var book = new AudiobookBuilder()
+            .WithTitle("Barsoom")
+            .WithAuthor("Edgar Rice Burroughs")
+            .WithSeriesNumber("2")
+            .Build();
+        var releaseForAFractionalEntry = TorznabRelease(
+            "Barsoom 2.5 - Edgar Rice Burroughs - 2024 (miok) [Audiobook] (Sci-Fi)");
+
+        // When
+        var verdict = RequestedBookReleaseFilter.Evaluate(book, releaseForAFractionalEntry);
+
+        // Then
+        Assert.Equal(RequestedBookMatch.SeriesEntryMismatch, verdict);
+    }
+
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "SeriesEntryPosition")]
+    public void Evaluate_CatalogAndReleaseFractionalPositionsMatch_IsAccepted()
+    {
+        // Given: the sanity check for the case above -- both sides honestly name the same
+        // interstitial entry, so a fractional position must not falsely reject just for being
+        // fractional.
+        var book = new AudiobookBuilder()
+            .WithTitle("Barsoom")
+            .WithAuthor("Edgar Rice Burroughs")
+            .WithSeriesNumber("2.5")
+            .Build();
+        var releaseForTheSameFractionalEntry = TorznabRelease(
+            "Barsoom 2.5 - Edgar Rice Burroughs - 2024 (miok) [Audiobook] (Sci-Fi)");
+
+        // When / Then
+        Assert.Equal(
+            RequestedBookMatch.Accepted,
+            RequestedBookReleaseFilter.Evaluate(book, releaseForTheSameFractionalEntry));
+    }
+
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "SeriesEntryPosition")]
     public void Evaluate_CatalogTitleAlreadyNamesTheVolumeInText_StaysRejectedAsTitleMismatch()
     {
         // Given: Book 3 and Book 6 from the finding's own catalog, where the number lives in the
