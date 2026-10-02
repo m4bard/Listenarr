@@ -308,8 +308,9 @@ namespace Listenarr.Application.Search.Scoring
 
                     // The profile's Allowed flags are the gate. PreferredFormats is a preference
                     // and was already applied above as a score adjustment; letting it also widen
-                    // the allowed set made the flag inert, because every rung name in the ladder
-                    // contains one of the default preferred tokens.
+                    // the allowed set made the flag inert for any label containing a default
+                    // preferred token: every MP3 rung, FLAC and M4B. Only the seeded "AAC ...kbps"
+                    // rungs escaped it.
                     if (QualityGate.Refuses(normalizedQuality, profile))
                     {
                         score.TotalScore += QualityNotAllowedPenalty;
