@@ -16,8 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using System.Globalization;
-using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Listenarr.Application.Search.Core;
@@ -30,6 +28,9 @@ namespace Listenarr.Application.Search.Core;
 /// sweep and the download path call it, so the two cannot describe the same audiobook
 /// differently. The stored <see cref="Audiobook.Title"/> stays untouched for display;
 /// what goes on the wire is the derived query title from <see cref="BuildQueryTitle"/>.
+/// The series is never part of the query. Readarr's BookSearchCriteria carries no series
+/// field either, and a series name is often already in the title, so appending it mostly
+/// repeated words.
 /// </remarks>
 public static class AudiobookSearchQueryBuilder
 {
@@ -87,15 +88,6 @@ public static class AudiobookSearchQueryBuilder
             parts.Add(author.Trim());
         }
 
-        // A series name is only worth sending when it adds something the title does not
-        // already say. "The Wonderful Wizard of Oz" in the "Oz" series otherwise went out
-        // as "The Wonderful Wizard of Oz L. Frank Baum Oz".
-        var series = audiobook.Series;
-        if (!string.IsNullOrWhiteSpace(series) && !ContainsPhrase(queryTitle, series))
-        {
-            parts.Add(series.Trim());
-        }
-
         return string.Join(" ", parts);
     }
 
@@ -125,80 +117,6 @@ public static class AudiobookSearchQueryBuilder
         // Stripping must never empty a title. If the annotation was the whole thing,
         // the stored title is a better query than nothing.
         return stripped.Length == 0 ? Collapse(title) : stripped;
-    }
-
-    /// <summary>
-    /// Reports whether <paramref name="phrase"/> occurs in <paramref name="text"/> as a
-    /// run of whole words, ignoring case, accents and punctuation.
-    /// </summary>
-    /// <remarks>
-    /// Word runs rather than raw substrings, so the series "Oz" is found in "The
-    /// Wonderful Wizard of Oz" but not in a title that merely mentions "Ozymandias".
-    /// </remarks>
-    internal static bool ContainsPhrase(string? text, string? phrase)
-    {
-        var haystack = Tokenize(text);
-        var needle = Tokenize(phrase);
-
-        if (needle.Count == 0 || needle.Count > haystack.Count)
-        {
-            return false;
-        }
-
-        for (var start = 0; start <= haystack.Count - needle.Count; start++)
-        {
-            var matched = true;
-            for (var offset = 0; offset < needle.Count; offset++)
-            {
-                if (!string.Equals(haystack[start + offset], needle[offset], StringComparison.Ordinal))
-                {
-                    matched = false;
-                    break;
-                }
-            }
-
-            if (matched)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static List<string> Tokenize(string? value)
-    {
-        var tokens = new List<string>();
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return tokens;
-        }
-
-        var builder = new StringBuilder(value.Length);
-        foreach (var ch in value.Normalize(NormalizationForm.FormD))
-        {
-            if (CharUnicodeInfo.GetUnicodeCategory(ch) == UnicodeCategory.NonSpacingMark)
-            {
-                continue;
-            }
-
-            // An apostrophe joins a word rather than breaking it, so "Alice's" is one
-            // token and matches a series recorded as "Alices". Readarr treats the same
-            // characters as word characters in SearchCriteriaBase.GetQueryTitle.
-            if (ch is '\'' or '’' or 'ʼ' or '`' or '´')
-            {
-                continue;
-            }
-
-            builder.Append(char.IsLetterOrDigit(ch) ? char.ToLowerInvariant(ch) : ' ');
-        }
-
-        foreach (var token in builder.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries))
-        {
-            tokens.Add(token);
-        }
-
-        return tokens;
     }
 
     private static string Collapse(string value)
