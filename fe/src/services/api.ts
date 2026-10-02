@@ -36,6 +36,8 @@ import type {
   SystemInfo,
   StorageInfo,
   ServiceHealth,
+  ScheduledTask,
+  ScheduledTaskRun,
   LogEntry,
   QualityProfile,
   SearchSortBy,
@@ -1963,6 +1965,20 @@ class ApiService {
     return this.request<ServiceHealth>('/system/health')
   }
 
+  async getScheduledTasks(): Promise<ScheduledTask[]> {
+    return this.request<ScheduledTask[]>('/system/tasks')
+  }
+
+  // The name is a path segment, so it is encoded rather than interpolated raw. Not for
+  // the dots in a name like move.scan.handoff.recovery: those are unreserved and come
+  // back unchanged. It guards the characters that would change which route is addressed,
+  // a slash above all, and then ?, # and a space.
+  async runScheduledTask(taskName: string): Promise<ScheduledTaskRun> {
+    return this.request<ScheduledTaskRun>(`/system/tasks/${encodeURIComponent(taskName)}/run`, {
+      method: 'POST',
+    })
+  }
+
   async getLogs(limit: number = 100): Promise<LogEntry[]> {
     return this.request<LogEntry[]>(`/system/logs?limit=${limit}`)
   }
@@ -2304,6 +2320,8 @@ export const translatePath = (request: TranslatePathRequest) => apiService.trans
 export const getSystemInfo = () => apiService.getSystemInfo()
 export const getStorageInfo = () => apiService.getStorageInfo()
 export const getServiceHealth = () => apiService.getServiceHealth()
+export const getScheduledTasks = () => apiService.getScheduledTasks()
+export const runScheduledTask = (taskName: string) => apiService.runScheduledTask(taskName)
 export const getLogs = (limit?: number) => apiService.getLogs(limit)
 export const downloadLogs = () => apiService.downloadLogs()
 
