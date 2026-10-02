@@ -40,7 +40,13 @@ namespace Listenarr.Application.Downloads.Submission
         /// The title matched, but it is too short to identify the book by itself and the book's
         /// author appears nowhere on the release.
         /// </summary>
-        AuthorNotCorroborated
+        AuthorNotCorroborated,
+
+        /// <summary>
+        /// The book's own structured series position and the release's parsed position are both
+        /// known, and they disagree.
+        /// </summary>
+        SeriesEntryMismatch
     }
 
     /// <summary>
@@ -257,6 +263,7 @@ namespace Listenarr.Application.Downloads.Submission
             RequestedBookMatch.TitleMismatch => "release title does not contain the book's title",
             RequestedBookMatch.AuthorMismatch => "release names a different author",
             RequestedBookMatch.AuthorNotCorroborated => "title alone does not identify the book and the author is not on the release",
+            RequestedBookMatch.SeriesEntryMismatch => "release's own series position does not match the book's",
             _ => verdict.ToString()
         };
 

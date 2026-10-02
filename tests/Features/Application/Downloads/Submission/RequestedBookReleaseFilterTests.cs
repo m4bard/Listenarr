@@ -493,6 +493,122 @@ public sealed class RequestedBookReleaseFilterTests : BaseTests
     }
 
     // ------------------------------------------------------------------
+    // Series position: a structured-field check, not a title-text one. Item 292's guard only
+    // ever read a volume number out of the catalog Title string; it never looked at
+    // Audiobook.SeriesNumber, so a bare title with no "Book N"/"Vol N" of its own got zero
+    // protection against a same-author, same-series release honestly titled for a different
+    // entry. These cases drove that fix.
+    // ------------------------------------------------------------------
+
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "SeriesEntryPosition")]
+    public void Evaluate_ReleaseForADifferentEntryInTheSameSeriesBySameAuthor_IsRejectedAsSeriesEntryMismatch()
+    {
+        // Given: the catalog record's title carries no volume marker of its own -- only the
+        // structured SeriesNumber field says this is entry 1. The release is honestly titled for
+        // entry 5 of the same series by the same author: no string ambiguity at all, just a
+        // field the old guard never read. This is the actual gap item 310 measured.
+        var book = new AudiobookBuilder()
+            .WithTitle("Barsoom")
+            .WithAuthor("Edgar Rice Burroughs")
+            .WithSeriesNumber("1")
+            .Build();
+        var releaseForADifferentEntry = TorznabRelease(
+            "Barsoom 5 - Edgar Rice Burroughs - 2024 (miok) [Audiobook] (Sci-Fi)");
+
+        // When
+        var verdict = RequestedBookReleaseFilter.Evaluate(book, releaseForADifferentEntry);
+
+        // Then
+        Assert.Equal(RequestedBookMatch.SeriesEntryMismatch, verdict);
+    }
+
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "SeriesEntryPosition")]
+    public void Evaluate_NoSeriesNumberOnTheCatalogRecord_FailsOpenAndIsAccepted()
+    {
+        // Given: nothing on the catalog side to compare against, so this check must not be the
+        // thing that blocks an otherwise-grabbable release.
+        var book = new AudiobookBuilder()
+            .WithTitle("Barsoom")
+            .WithAuthor("Edgar Rice Burroughs")
+            .Build();
+        var releaseForADifferentLookingEntry = TorznabRelease(
+            "Barsoom 5 - Edgar Rice Burroughs - 2024 (miok) [Audiobook] (Sci-Fi)");
+
+        // When / Then
+        Assert.Equal(
+            RequestedBookMatch.Accepted,
+            RequestedBookReleaseFilter.Evaluate(book, releaseForADifferentLookingEntry));
+    }
+
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "SeriesEntryPosition")]
+    public void Evaluate_CatalogHasAPositionButTheReleaseTitleParsesNone_FailsOpenAndIsAccepted()
+    {
+        // Given: the catalog record has a structured position, but nothing on the release's
+        // title parses as one at all -- no marker word, no bare number after the title's own
+        // words. There is nothing to compare it against, so this must still pass through.
+        var book = new AudiobookBuilder()
+            .WithTitle("Barsoom")
+            .WithAuthor("Edgar Rice Burroughs")
+            .WithSeriesNumber("1")
+            .Build();
+        var releaseWithNoParsablePosition = TorznabRelease("Barsoom - Edgar Rice Burroughs (miok) [Audiobook]");
+
+        // When / Then
+        Assert.Equal(
+            RequestedBookMatch.Accepted,
+            RequestedBookReleaseFilter.Evaluate(book, releaseWithNoParsablePosition));
+    }
+
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "SeriesEntryPosition")]
+    public void Evaluate_CatalogAndReleasePositionsMatch_IsAccepted()
+    {
+        // Given: the sanity check -- same entry, named structurally on one side and in the
+        // release's own title on the other, must still be the normal accepted case.
+        var book = new AudiobookBuilder()
+            .WithTitle("Barsoom")
+            .WithAuthor("Edgar Rice Burroughs")
+            .WithSeriesNumber("5")
+            .Build();
+        var releaseForTheSameEntry = TorznabRelease(
+            "Barsoom 5 - Edgar Rice Burroughs - 2024 (miok) [Audiobook] (Sci-Fi)");
+
+        // When / Then
+        Assert.Equal(
+            RequestedBookMatch.Accepted,
+            RequestedBookReleaseFilter.Evaluate(book, releaseForTheSameEntry));
+    }
+
+    [Fact]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "SeriesEntryPosition")]
+    public void Evaluate_CatalogTitleAlreadyNamesTheVolumeInText_StaysRejectedAsTitleMismatch()
+    {
+        // Given: Book 3 and Book 6 from the finding's own catalog, where the number lives in the
+        // title text itself. Item 292's existing text-regex guard already caught this; the new
+        // structured check must not change the rejection reason or stop it being caught.
+        var book = new AudiobookBuilder()
+            .WithTitle("Barsoom, Book 3")
+            .WithAuthor("Edgar Rice Burroughs")
+            .WithSeriesNumber("3")
+            .Build();
+        var releaseForADifferentEntry = TorznabRelease(
+            "Barsoom 5 - Edgar Rice Burroughs - 2024 (miok) [Audiobook] (Sci-Fi)");
+
+        // When / Then: still the pre-existing title-text rejection, not the new field-based one
+        Assert.Equal(
+            RequestedBookMatch.TitleMismatch,
+            RequestedBookReleaseFilter.Evaluate(book, releaseForADifferentEntry));
+    }
+
+    // ------------------------------------------------------------------
     // Documented limits, pinned so the class comment stays true.
     // ------------------------------------------------------------------
 
