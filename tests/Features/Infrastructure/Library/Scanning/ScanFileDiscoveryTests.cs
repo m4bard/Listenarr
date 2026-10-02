@@ -314,6 +314,183 @@ public sealed class ScanFileDiscoveryTests : BaseTests, IDisposable
             && issue.Path == link);
     }
 
+    [Fact]
+    public void MetadataContradictsAudiobook_AlbumAndArtistBothForeign_ReturnsTrue()
+    {
+        var audiobook = new AudiobookBuilder()
+            .WithTitle("Expected Title")
+            .WithAuthor("Expected Author")
+            .Build();
+        var metadata = new AudioMetadata
+        {
+            Album = "Unrelated Title",
+            Title = "Unrelated Title",
+            Artist = "Unrelated Author",
+            AlbumArtist = "Unrelated Author"
+        };
+
+        Assert.True(ScanFileDiscovery.MetadataContradictsAudiobook(
+            metadata,
+            audiobook,
+            "/library/book/borrowed.m4b"));
+    }
+
+    [Fact]
+    public void MetadataContradictsAudiobook_AlbumForeignArtistMatches_ReturnsFalse()
+    {
+        var audiobook = new AudiobookBuilder()
+            .WithTitle("Expected Title")
+            .WithAuthor("Expected Author")
+            .Build();
+        var metadata = new AudioMetadata
+        {
+            Album = "Unrelated Title",
+            Artist = "Expected Author"
+        };
+
+        Assert.False(ScanFileDiscovery.MetadataContradictsAudiobook(
+            metadata,
+            audiobook,
+            "/library/book/borrowed.m4b"));
+    }
+
+    [Fact]
+    public void MetadataContradictsAudiobook_AlbumForeignNoArtistTag_ReturnsFalse()
+    {
+        var audiobook = new AudiobookBuilder()
+            .WithTitle("Expected Title")
+            .WithAuthor("Expected Author")
+            .Build();
+        var metadata = new AudioMetadata
+        {
+            Album = "Unrelated Title"
+        };
+
+        Assert.False(ScanFileDiscovery.MetadataContradictsAudiobook(
+            metadata,
+            audiobook,
+            "/library/book/borrowed.m4b"));
+    }
+
+    [Fact]
+    public void MetadataContradictsAudiobook_ArtistForeignAlbumIsTitleWithSubtitleAndTag_ReturnsFalse()
+    {
+        var audiobook = new AudiobookBuilder()
+            .WithTitle("Expected Title")
+            .WithAuthor("Expected Author")
+            .Build();
+        var metadata = new AudioMetadata
+        {
+            Album = "Expected Title: A Novel (Unabridged)",
+            Artist = "Unrelated Author"
+        };
+
+        Assert.False(ScanFileDiscovery.MetadataContradictsAudiobook(
+            metadata,
+            audiobook,
+            "/library/book/borrowed.m4b"));
+    }
+
+    [Fact]
+    public void MetadataContradictsAudiobook_TitleEqualsFilenameStemForeignArtist_ReturnsFalse()
+    {
+        var audiobook = new AudiobookBuilder()
+            .WithTitle("Expected Title")
+            .WithAuthor("Expected Author")
+            .Build();
+        var metadata = new AudioMetadata
+        {
+            Title = "Track07",
+            Artist = "Unrelated Author"
+        };
+
+        // The Title merely echoes the filename: the ffprobe filename fallback, not a
+        // real tag, so it must not be treated as evidence either way.
+        Assert.False(ScanFileDiscovery.MetadataContradictsAudiobook(
+            metadata,
+            audiobook,
+            "/library/book/Track07.m4b"));
+    }
+
+    [Fact]
+    public void MetadataContradictsAudiobook_RealTitleNoAlbumArtistMatches_ReturnsFalse()
+    {
+        var audiobook = new AudiobookBuilder()
+            .WithTitle("Expected Title")
+            .WithAuthor("Expected Author")
+            .Build();
+        var metadata = new AudioMetadata
+        {
+            Title = "Chapter 01",
+            Artist = "Expected Author"
+        };
+
+        Assert.False(ScanFileDiscovery.MetadataContradictsAudiobook(
+            metadata,
+            audiobook,
+            "/library/book/Track07.m4b"));
+    }
+
+    [Fact]
+    public void MetadataContradictsAudiobook_ArtistIsLastFirstWithNarratorAppended_ReturnsFalse()
+    {
+        var audiobook = new AudiobookBuilder()
+            .WithTitle("Expected Title")
+            .WithAuthor("Expected Author")
+            .Build();
+        var metadata = new AudioMetadata
+        {
+            Album = "Unrelated Title",
+            Artist = "Author, Expected; Some Narrator"
+        };
+
+        // Title disagrees on its own, but the artist tag's words are a superset of the
+        // expected author's words (reordered, with a narrator appended), so the author
+        // side does not disagree and the overall contradiction must not fire.
+        Assert.False(ScanFileDiscovery.MetadataContradictsAudiobook(
+            metadata,
+            audiobook,
+            "/library/book/borrowed.m4b"));
+    }
+
+    [Fact]
+    public void MetadataContradictsAudiobook_NoAuthorsConfigured_ReturnsFalse()
+    {
+        var audiobook = new AudiobookBuilder()
+            .WithTitle("Expected Title")
+            .Build();
+        var metadata = new AudioMetadata
+        {
+            Album = "Unrelated Title",
+            Artist = "Unrelated Author",
+            AlbumArtist = "Unrelated Author"
+        };
+
+        Assert.False(ScanFileDiscovery.MetadataContradictsAudiobook(
+            metadata,
+            audiobook,
+            "/library/book/borrowed.m4b"));
+    }
+
+    [Fact]
+    public void MetadataContradictsAudiobook_MetadataAlreadyAccepted_ReturnsFalse()
+    {
+        var audiobook = new AudiobookBuilder()
+            .WithTitle("Expected Title")
+            .WithAuthor("Expected Author")
+            .Build();
+        var metadata = new AudioMetadata
+        {
+            Title = "Expected Title",
+            Artist = "Expected Author"
+        };
+
+        Assert.False(ScanFileDiscovery.MetadataContradictsAudiobook(
+            metadata,
+            audiobook,
+            "/library/book/borrowed.m4b"));
+    }
+
     private List<string> Discover(Audiobook audiobook) =>
         DiscoverResult(audiobook).AttributedFiles.ToList();
 

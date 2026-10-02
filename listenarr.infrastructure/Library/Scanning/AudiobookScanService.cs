@@ -62,6 +62,15 @@ internal sealed partial class AudiobookScanService(
             ownershipMap,
             pinnedAuthority.Root,
             command.ScanPhysicalIdentity.HasDurableGenerationProof);
+        discovery = await VerifyPathAttributedContentAsync(
+            command,
+            pinnedAuthority,
+            discovery,
+            audiobook,
+            resolvedExistingPaths.Values,
+            semantics,
+            diagnostics,
+            cancellationToken);
         discovery = await EnrichWithMetadataAsync(
             command,
             pinnedAuthority,
