@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using Listenarr.Tests.Mocks;
 using Microsoft.AspNetCore.Http;
@@ -890,6 +891,260 @@ namespace Listenarr.Tests.Features.Api
             Assert.Contains("metadata_refresh_disabled", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
 
             await SetMetadataRefreshEnabledAsync(_factory, true);
+        }
+
+        [Fact]
+        public async Task StartMetadataRefresh_UnknownField_Returns400_AndNeverCallsTheCoordinator()
+        {
+            // The exact mistake #299 describes: a typo'd field name silently bound to AuthorId
+            // null and upgraded into a whole-library run instead of being rejected.
+            var coordinator = AcceptingCoordinatorMock();
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IMetadataRefreshCoordinator>();
+                    services.AddSingleton(coordinator.Object);
+                });
+            });
+
+            using var client = factory.CreateClient();
+            var response = await PostRefreshMetadataAsync(client, "{\"audiobookId\": 5}");
+
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Contains("metadata_refresh_unknown_field", body, StringComparison.Ordinal);
+            Assert.Contains("audiobookId", body, StringComparison.Ordinal);
+            coordinator.Verify(
+                c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task StartMetadataRefresh_ADifferentUnknownField_Returns400_AndNeverCallsTheCoordinator()
+        {
+            // A second, differently-named typo, so the check is proven to be a real allowlist
+            // rather than a single hardcoded string match.
+            var coordinator = AcceptingCoordinatorMock();
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IMetadataRefreshCoordinator>();
+                    services.AddSingleton(coordinator.Object);
+                });
+            });
+
+            using var client = factory.CreateClient();
+            var response = await PostRefreshMetadataAsync(client, "{\"scope\": \"author\"}");
+
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Contains("metadata_refresh_unknown_field", body, StringComparison.Ordinal);
+            Assert.Contains("scope", body, StringComparison.Ordinal);
+            coordinator.Verify(
+                c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task StartMetadataRefresh_AuthorId_StillProducesAnAuthorScopedRequest()
+        {
+            var coordinator = AcceptingCoordinatorMock();
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IMetadataRefreshCoordinator>();
+                    services.AddSingleton(coordinator.Object);
+                });
+            });
+
+            using var client = factory.CreateClient();
+            var response = await PostRefreshMetadataAsync(client, "{\"authorId\": 7}");
+
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+            coordinator.Verify(
+                c => c.StartAsync(
+                    It.Is<MetadataRefreshScopeRequest>(request =>
+                        request.Scope == MetadataRefreshRunScope.Author
+                        && request.MonitoredAuthorId == 7
+                        && !request.Force),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task StartMetadataRefresh_ForceOnly_StillProducesALibraryScopedForcedRequest()
+        {
+            // The genuinely-intended whole-library case: no authorId, force set. This must keep
+            // working exactly as it did before the fix.
+            var coordinator = AcceptingCoordinatorMock();
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IMetadataRefreshCoordinator>();
+                    services.AddSingleton(coordinator.Object);
+                });
+            });
+
+            using var client = factory.CreateClient();
+            var response = await PostRefreshMetadataAsync(client, "{\"force\": true}");
+
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+            coordinator.Verify(
+                c => c.StartAsync(
+                    It.Is<MetadataRefreshScopeRequest>(request =>
+                        request.Scope == MetadataRefreshRunScope.Library
+                        && request.MonitoredAuthorId == null
+                        && request.Force),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task StartMetadataRefresh_EmptyObjectBody_StillProducesALibraryScopedRequest()
+        {
+            var coordinator = AcceptingCoordinatorMock();
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IMetadataRefreshCoordinator>();
+                    services.AddSingleton(coordinator.Object);
+                });
+            });
+
+            using var client = factory.CreateClient();
+            var response = await PostRefreshMetadataAsync(client, "{}");
+
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+            coordinator.Verify(
+                c => c.StartAsync(
+                    It.Is<MetadataRefreshScopeRequest>(request =>
+                        request.Scope == MetadataRefreshRunScope.Library
+                        && request.MonitoredAuthorId == null
+                        && !request.Force),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task StartMetadataRefresh_NullBody_StillProducesALibraryScopedRequest()
+        {
+            // No body at all, distinct from the Features/Api StartMetadataRefresh_EmptyBody test
+            // above, which exercises the full cancel flow over the real coordinator; this one
+            // asserts directly on what scope request came out of the fixed binding path.
+            var coordinator = AcceptingCoordinatorMock();
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IMetadataRefreshCoordinator>();
+                    services.AddSingleton(coordinator.Object);
+                });
+            });
+
+            using var client = factory.CreateClient();
+            var response = await PostRefreshMetadataAsync(client, jsonBody: null);
+
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+            coordinator.Verify(
+                c => c.StartAsync(
+                    It.Is<MetadataRefreshScopeRequest>(request =>
+                        request.Scope == MetadataRefreshRunScope.Library
+                        && request.MonitoredAuthorId == null
+                        && !request.Force),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task StartMetadataRefresh_MixedCaseAuthorIdKey_StillBinds()
+        {
+            // Case-insensitive property matching, matching this project's existing convention
+            // elsewhere (e.g. SearchRequestReader).
+            var coordinator = AcceptingCoordinatorMock();
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IMetadataRefreshCoordinator>();
+                    services.AddSingleton(coordinator.Object);
+                });
+            });
+
+            using var client = factory.CreateClient();
+            var response = await PostRefreshMetadataAsync(client, "{\"AuthorId\": 7}");
+
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+            coordinator.Verify(
+                c => c.StartAsync(
+                    It.Is<MetadataRefreshScopeRequest>(request =>
+                        request.Scope == MetadataRefreshRunScope.Author
+                        && request.MonitoredAuthorId == 7),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task StartMetadataRefresh_BothValidFieldsTogether_BindBoth()
+        {
+            var coordinator = AcceptingCoordinatorMock();
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IMetadataRefreshCoordinator>();
+                    services.AddSingleton(coordinator.Object);
+                });
+            });
+
+            using var client = factory.CreateClient();
+            var response = await PostRefreshMetadataAsync(client, "{\"authorId\": 7, \"force\": true}");
+
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+            coordinator.Verify(
+                c => c.StartAsync(
+                    It.Is<MetadataRefreshScopeRequest>(request =>
+                        request.Scope == MetadataRefreshRunScope.Author
+                        && request.MonitoredAuthorId == 7
+                        && request.Force),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        private static Mock<IMetadataRefreshCoordinator> AcceptingCoordinatorMock()
+        {
+            var coordinator = new Mock<IMetadataRefreshCoordinator>();
+            coordinator
+                .Setup(c => c.StartAsync(It.IsAny<MetadataRefreshScopeRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((MetadataRefreshScopeRequest request, CancellationToken _) => new MetadataRefreshStartResult(
+                    true,
+                    new MetadataRefreshRunSnapshot(
+                        Guid.NewGuid(),
+                        request.Scope.ToString(),
+                        "Running",
+                        0, 0, 0, 0, 0, 0, 0,
+                        DateTime.UtcNow,
+                        null)));
+            return coordinator;
+        }
+
+        private static async Task<HttpResponseMessage> PostRefreshMetadataAsync(
+            HttpClient client,
+            string? jsonBody)
+        {
+            var csrfToken = await GetAntiforgeryTokenAsync(client);
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/library/refresh-metadata");
+            request.Headers.Add("X-XSRF-TOKEN", csrfToken);
+            if (jsonBody != null)
+            {
+                request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+            }
+
+            return await client.SendAsync(request);
         }
 
         private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(30);
