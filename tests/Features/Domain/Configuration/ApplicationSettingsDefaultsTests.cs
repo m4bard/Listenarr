@@ -16,11 +16,16 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Tests.Common;
+
 namespace Listenarr.Tests.Features.Domain.Configuration;
 
-public sealed class ApplicationSettingsDefaultsTests
+[Trait("Name", "ApplicationSettingsDefaultsTests")]
+[Trait("Category", "ApplicationSettings")]
+public sealed class ApplicationSettingsDefaultsTests : BaseTests
 {
     [Fact]
+    [Trait("Method", "FailedDownloadAutoSearch")]
     public void FailedDownloadAutoSearch_DefaultsToTrue_MatchingArrFamilyConvention()
     {
         // Sonarr/Radarr/Readarr all default the equivalent AutoRedownloadFailed setting
