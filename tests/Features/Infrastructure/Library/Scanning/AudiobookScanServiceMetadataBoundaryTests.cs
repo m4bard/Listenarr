@@ -223,6 +223,67 @@ public sealed class AudiobookScanServiceMetadataBoundaryTests : BaseTests
         Assert.Single(await _audiobookFileRepository.GetByAudiobookIdAsync(owner.Id));
     }
 
+    [LinuxFact]
+    public async Task ScanAsync_IdentifierFolderHoldsAnotherBooksTaggedFile_DeclinesAndClaimsNothing()
+    {
+        // The folder name carries the book's ASIN, so Discover() attributes the file on the
+        // folder alone. Its embedded tags name a different book by a different author, and
+        // that content evidence must override the folder match.
+        var bookDirectory = Path.Join(
+            FileService.GetTempDirectory("scan-service-wrong-book-tags"),
+            "Expected Title [B012345678]");
+        var candidate = Path.Join(bookDirectory, "borrowed.m4b");
+        var probedPublicPaths = new List<string>();
+        var metadata = new Mock<IMetadataService>(MockBehavior.Strict);
+        metadata.Setup(service => service.ExtractFileMetadataAsync(
+                It.IsAny<MetadataFileSource>()))
+            .Callback((MetadataFileSource source) => probedPublicPaths.Add(source.PublicPath))
+            .ReturnsAsync(new AudioMetadata
+            {
+                Title = "Unrelated Title",
+                Album = "Unrelated Title",
+                Artist = "Unrelated Author",
+                AlbumArtist = "Unrelated Author",
+                Duration = TimeSpan.FromSeconds(1),
+                Format = "m4b"
+            });
+        Init(services => services.WithSingleton<IMetadataService>(metadata.Object));
+        Directory.CreateDirectory(bookDirectory);
+        await File.WriteAllTextAsync(candidate, "audio");
+        await _applicationSettingsRepository.SaveAsync(
+            new ApplicationSettingsBuilder()
+                .WithOutputPath(FileService.GetTempPath())
+                .Build());
+        var audiobookToAdd = new AudiobookBuilder()
+            .WithTitle("Expected Title")
+            .WithAuthor("Expected Author")
+            .Build();
+        audiobookToAdd.Asin = "B012345678";
+        var audiobook = await _audiobookRepository.AddAsync(audiobookToAdd);
+        var command = await AuthorizedCommandAsync(audiobook.Id, bookDirectory);
+        // Control: metadata enrichment is not skipped for limited storage here, so a pass
+        // cannot come from the enrichment gate rather than the content check.
+        Assert.True(command.ScanPhysicalIdentity.HasDurableGenerationProof);
+
+        var result = await _provider
+            .GetRequiredService<IAudiobookScanService>()
+            .ScanAsync(command);
+
+        Assert.Empty(result.AttributedFiles);
+        Assert.Equal(0, result.CreatedCount);
+        Assert.Empty(await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
+        Assert.Equal(1, result.DiscoveredCandidateCount);
+        Assert.False(result.HasDurableAttributedOwnership);
+        Assert.Null(result.Audiobook.BasePath);
+        var contradiction = Assert.Single(result.Diagnostics, diagnostic =>
+            diagnostic.Code == "MetadataContradictsPath");
+        Assert.Equal(candidate, contradiction.Path);
+        Assert.DoesNotContain("/proc/", contradiction.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic =>
+            diagnostic.Code == "MetadataDeclined");
+        Assert.Equal(candidate, Assert.Single(probedPublicPaths));
+    }
+
     private async Task<AudiobookScanCommand> AuthorizedCommandAsync(
         int audiobookId,
         string scanRoot)
