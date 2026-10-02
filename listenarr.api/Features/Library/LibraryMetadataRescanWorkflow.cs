@@ -126,29 +126,10 @@ namespace Listenarr.Api.Features.Library
                     message = "The audiobook metadata changed during the rescan. Refresh and try again.",
                     code = "audiobook_metadata_changed"
                 }),
-                // A ProblemDetails body, because ServerErrorProblemDetailsFilter rewrites any
-                // result of 500 or above that is not already one, and a generic internal_error
-                // would hide the one thing this outcome exists to say.
-                MetadataRefreshOutcome.Deferred => new ObjectResult(BuildProviderUnavailableProblem())
-                {
-                    StatusCode = StatusCodes.Status503ServiceUnavailable,
-                    ContentTypes = { "application/problem+json" }
-                },
+                // The shared provider 503. The outcome carries no Retry-After, so none is sent.
+                MetadataRefreshOutcome.Deferred => MetadataProviderUnavailableProblem.Create(httpContext.Response),
                 _ => new NotFoundObjectResult(new { message = "Audiobook not found" })
             };
-        }
-
-        private static ProblemDetails BuildProviderUnavailableProblem()
-        {
-            var problem = new ProblemDetails
-            {
-                Status = StatusCodes.Status503ServiceUnavailable,
-                Title = "Service unavailable",
-                Detail = "The metadata provider is not answering. Try again shortly."
-            };
-            problem.Extensions["code"] = "metadata_provider_unavailable";
-            problem.Extensions["message"] = "The metadata provider is not answering. Try again shortly.";
-            return problem;
         }
     }
 
