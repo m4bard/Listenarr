@@ -345,12 +345,13 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     // method takes the bounded retry path; this one did not, so that ended the
                     // download permanently with RetryCount still zero.
                     //
-                    // Every file, not some of them. A partial failure stays terminal, as it is on
-                    // canary and in Readarr's CompletedDownloadService. Retrying one would not even
-                    // reach the import: the retry re-enters this block from the top, and under the
-                    // Move completed-file action the files that did land are gone from the download
-                    // directory, so the count guard above fails the job on a mismatch caused by the
-                    // earlier success and the history entry loses the per-file failedResults.
+                    // Every file, not some of them. A partial failure stays terminal, as it was
+                    // before this change and as it is in Readarr's CompletedDownloadService.
+                    // Retrying one would not even reach the import: the retry re-enters this block
+                    // from the top, and under the Move completed-file action the files that did
+                    // land are gone from the download directory, so the count guard above fails
+                    // the job on a mismatch caused by the earlier success and the history entry
+                    // loses the per-file failedResults.
                     //
                     // The terminal call is FailImportAsync rather than letting ScheduleRetryAsync
                     // exhaust itself, because only FailImportAsync records failedResults. That is
