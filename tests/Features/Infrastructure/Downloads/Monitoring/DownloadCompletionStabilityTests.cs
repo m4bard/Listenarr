@@ -17,6 +17,7 @@
  */
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
+using Listenarr.Tests.Mocks;
 
 namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
 {
@@ -99,6 +100,70 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             Assert.NotNull(released);
             Assert.Equal(DownloadStatus.Completed, released!.Status);
         }
+
+        [Fact]
+        [Trait("Scenario", "A held download that vanishes from its client is finalized, not lost")]
+        public async Task CompletionProceeds_WhenAHeldDownloadDisappearsFromTheClient()
+        {
+            // The hold writes the row back with its pre-completion status, so the completion edge
+            // lives only in memory. If the client drops the item before the window passes, a later
+            // poll never sees it complete again, and orphan cleanup would delete the row. Canary
+            // enqueued the import on the first pass; the hold must not do worse than that.
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithCompletionStabilitySeconds(60)
+                .Build());
+
+            var download = await DriveToCompletionAsync();
+            Assert.NotEqual(DownloadStatus.Completed, (await _downloadRepository.GetByIdAsync(download.Id))!.Status);
+            Assert.Null(await _downloadProcessingJobRepository.GetActiveByDownloadIdAsync(download.Id));
+
+            ClientAdapter().QueueItemsMock = [];
+
+            _monitor.ScheduleNextClientPoll(_client, -100);
+            await _monitor.MonitorDownloadsAsync(CancellationToken.None);
+
+            var finalized = await _downloadRepository.GetByIdAsync(download.Id);
+            Assert.NotNull(finalized);
+            Assert.Equal(DownloadStatus.Completed, finalized!.Status);
+            Assert.NotNull(await _downloadProcessingJobRepository.GetActiveByDownloadIdAsync(download.Id));
+        }
+
+        [Fact]
+        [Trait("Scenario", "A held download the client still lists as in progress keeps waiting")]
+        public async Task CompletionStaysHeld_WhenTheClientReportsTheDownloadInProgressAgain()
+        {
+            // The control for the test above: an item the client still lists, but no longer as
+            // complete (a recheck, or post-processing), restarts the window rather than being
+            // finalized. Without this, finalizing every held download on its next poll would pass.
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithCompletionStabilitySeconds(60)
+                .Build());
+
+            var download = await DriveToCompletionAsync();
+
+            var path = FileUtils.GetAbsolutePath(DownloadCLientAdapterMock.RemotePath, "random title");
+            ClientAdapter().QueueItemsMock = [
+                new QueueItemBuilder()
+                    .WithId("1")
+                    .WithRemotePath(path)
+                    .WithContentPath(path)
+                    .WithSourceFile(Path.Join(path, "file1.mp3"))
+                    .WithProgress(99)
+                    .WithStatus("downloading")
+                    .Build()
+            ];
+
+            _monitor.ScheduleNextClientPoll(_client, -100);
+            await _monitor.MonitorDownloadsAsync(CancellationToken.None);
+
+            Assert.NotEqual(DownloadStatus.Completed, (await _downloadRepository.GetByIdAsync(download.Id))!.Status);
+            Assert.Null(await _downloadProcessingJobRepository.GetActiveByDownloadIdAsync(download.Id));
+        }
+
+        private DownloadCLientAdapterMock ClientAdapter() =>
+            _provider.GetServices<IDownloadClientAdapter>()
+                .OfType<DownloadCLientAdapterMock>()
+                .Single();
 
         [Fact]
         [Trait("Scenario", "A zero window finalizes in the same pass, as before")]
