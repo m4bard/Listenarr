@@ -117,7 +117,7 @@ public partial class FileMover : IFilePublicationSourceCapability
             _logger.LogWarning(
                 exception,
                 "Source publication capability unavailable for {Source}: {Detail} (native error {NativeError})",
-                LogRedaction.SanitizeText(sourcePath),
+                LogRedaction.SanitizeFilePath(sourcePath),
                 reason,
                 // Nullable on purpose. Zero is a real errno meaning success, so reporting it for
                 // the six exception types that carry no native code would be a false reading.
@@ -133,20 +133,21 @@ public partial class FileMover : IFilePublicationSourceCapability
     /// The refusal an operator reads, cause first.
     /// </summary>
     /// <remarks>
-    /// Every consumer of <c>Reason</c> renders it through <c>LogRedaction.SanitizeText</c>, whose
-    /// 200-character default used to cut the exception off the end and leave behind only the fixed
-    /// sentence the operator already knew. Leading with the cause means the half that survives
-    /// truncation is the half that says what went wrong.
-    ///
-    /// The cause is formatted by <c>ExceptionCause</c> rather than here, because the import result
+    /// Nothing downstream truncates or redacts this again: what this method returns is what
+    /// reaches the operator and, through <c>ImportResult</c> and History, the activity API. The
+    /// cause is formatted by <c>ExceptionCause</c> rather than here, because the import result
     /// that persists a failure into History has to say the same thing this does. It also gives
     /// this gate the inner chain it had no way to reach while it formatted the outer exception
-    /// on its own.
+    /// on its own. Leading with the cause means that if some other consumer still truncates the
+    /// combined string, the half that survives is the half that says what went wrong.
     ///
-    /// Both interpolated values are attacker-influenced: a download client writes the file name,
-    /// and the file name is what most of these exception messages quote. A newline in either would
-    /// let a crafted name forge a second log record, so they go through the same SanitizeText
-    /// every other call site in this directory uses.
+    /// The linked-ancestor segment is a filesystem path, not free text, so it goes through
+    /// <c>LogRedaction.SanitizeFilePath</c> like every other path in this directory
+    /// (<c>FileMover.PathSafety.cs</c> among them) rather than through <c>SanitizeText</c> on the
+    /// full path, which would have put the host's directory layout into that same API response.
+    /// It is still attacker-influenced, since a download client names the directories under it,
+    /// so the filename <c>SanitizeFilePath</c> keeps is also run through <c>SanitizeText</c>,
+    /// which strips a newline a crafted directory name could use to forge a second log line.
     /// </remarks>
     internal static string ComposeUnsupportedReason(Exception exception, string? linkedAncestor)
     {
@@ -155,7 +156,7 @@ public partial class FileMover : IFilePublicationSourceCapability
         return linkedAncestor == null
             ? $"{cause} The source file could not be pinned to a durable physical generation and content proof."
             : $"{cause} The source file could not be pinned: it is reached through a symbolic link at "
-              + $"'{LogRedaction.SanitizeText(linkedAncestor)}', which cannot be pinned, so configure the real path instead.";
+              + $"'{LogRedaction.SanitizeText(LogRedaction.SanitizeFilePath(linkedAncestor))}', which cannot be pinned, so configure the real path instead.";
     }
 
     /// <summary>

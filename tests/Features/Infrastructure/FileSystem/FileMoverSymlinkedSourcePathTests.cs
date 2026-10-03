@@ -87,5 +87,9 @@ public sealed class FileMoverSymlinkedSourcePathTests : BaseTests
         // the type name comes from the caught exception, so an empty cause fails here.
         Assert.Contains(Path.GetFileName(layout.Link), result.Reason, StringComparison.Ordinal);
         Assert.Matches(@"\w+Exception: \S", result.Reason!);
+
+        // The link lives under a real temp directory, so its full path names this machine's
+        // directory layout. Only the filename belongs in a message that reaches the activity API.
+        Assert.DoesNotContain(layout.Link, result.Reason, StringComparison.Ordinal);
     }
 }

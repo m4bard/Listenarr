@@ -5,8 +5,10 @@ namespace Listenarr.Tests.Features.Infrastructure.FileSystem;
 
 /// <summary>
 /// The refusal string this gate hands back is the only thing an operator gets when a source file
-/// cannot be pinned, and every consumer of it logs it through LogRedaction.SanitizeText. These
-/// assert what survives that, and that the cause is spelled the way the import record spells it.
+/// cannot be pinned, and nothing downstream sanitizes it again before it reaches the activity
+/// API. These assert that the cause is spelled the way the import record spells it, that a
+/// linked ancestor is reduced to a filename rather than its full path, and that neither half can
+/// forge a second record.
 /// </summary>
 [Trait("Area", "FileSystem")]
 [Trait("Name", "FileMoverSourceCapabilityReasonTests")]
@@ -34,12 +36,16 @@ public sealed class FileMoverSourceCapabilityReasonTests : BaseTests
 
         Assert.Contains("symbolic link", reason, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("configure the real path", reason, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("/mnt/pool/media/library/downloads/completed/audiobooks", reason, StringComparison.Ordinal);
 
-        // The point of the ordering. Every consumer renders the reason through SanitizeText,
-        // whose 200-character default cut the exception off the end while the advice led. The
-        // cause is the half that cannot be reconstructed from anywhere else, so it goes first
-        // and the truncation costs the fixed sentence instead.
+        // The segment is a path, not free text, so only its filename survives: the host's
+        // directory layout does not belong in a message that reaches the activity API. This is
+        // the regression this test exists to catch (see #975).
+        Assert.DoesNotContain("/mnt/pool/media/library/downloads/completed/audiobooks", reason, StringComparison.Ordinal);
+        Assert.Contains("'audiobooks'", reason, StringComparison.Ordinal);
+
+        // The point of the ordering. Every consumer renders the reason as-is, so if something
+        // downstream still truncates it, the cause (which cannot be reconstructed from anywhere
+        // else) has to be the half that survives, not the fixed advice sentence.
         Assert.True(reason.Length > 200, $"the case is only meaningful when truncation bites: {reason.Length}");
         var rendered = LogRedaction.SanitizeText(reason);
         Assert.Contains("Win32Exception: Could not open a newly created pinned directory.", rendered, StringComparison.Ordinal);
@@ -68,6 +74,21 @@ public sealed class FileMoverSourceCapabilityReasonTests : BaseTests
         var reason = FileMover.ComposeUnsupportedReason(
             new IOException("book.m4b\nfatal: everything is fine"),
             linkedAncestor: null);
+
+        Assert.DoesNotContain('\n', reason);
+        Assert.DoesNotContain('\r', reason);
+    }
+
+    [Fact]
+    public void ComposeUnsupportedReason_NewlineInTheLinkedAncestor_CannotForgeASecondRecord()
+    {
+        // The linked-ancestor segment is as attacker-influenced as the exception message: a
+        // download client names the directories under it. Reducing it to a filename with
+        // SanitizeFilePath does not by itself strip a newline inside that filename, so this
+        // checks the composition still does.
+        var reason = FileMover.ComposeUnsupportedReason(
+            new Win32Exception("Could not open a newly created pinned directory."),
+            linkedAncestor: "/mnt/pool/book.m4b\nfatal: everything is fine");
 
         Assert.DoesNotContain('\n', reason);
         Assert.DoesNotContain('\r', reason);
