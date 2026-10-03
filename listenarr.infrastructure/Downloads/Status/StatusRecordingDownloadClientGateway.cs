@@ -111,12 +111,12 @@ namespace Listenarr.Infrastructure.Downloads.Status
             }
         }
 
-        public override async Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken ct = default)
+        public override async Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken ct = default, ISet<string>? reportedDownloadIds = null)
         {
             List<Download> result;
             try
             {
-                result = await base.FetchDownloadsAsync(client, downloads, ct);
+                result = await base.FetchDownloadsAsync(client, downloads, ct, reportedDownloadIds);
             }
             catch (Exception ex) when (IsRecordable(ex, ct))
             {
