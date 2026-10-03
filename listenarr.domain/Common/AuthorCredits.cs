@@ -31,9 +31,9 @@ namespace Listenarr.Domain.Common
     ///
     /// Two rules were considered for this. Readarr's is positional: keep the first credit and
     /// drop the rest. That is unsafe here, because the order is a publisher's editorial choice.
-    /// Two editions of the same work credit the same pair in opposite orders: <c>B002V9ZF3K</c>
-    /// lists Dostoevsky then Garnett, <c>B00EZAXAF8</c> lists Garnett then Dostoevsky, so
-    /// keeping index 0 files the second under its translator.
+    /// The catalogue has both orders: <c>B00S710A4U</c> lists Homer then Samuel Butler - translator,
+    /// while <c>B00EZAXAF8</c> lists Constance Garnett - translator then Fyodor Dostoevsky, so
+    /// keeping index 0 files the second book under its translator.
     ///
     /// The second was to drop any credit that names a role. This class does neither: it removes
     /// the role and keeps the person. Two reasons, both measured.

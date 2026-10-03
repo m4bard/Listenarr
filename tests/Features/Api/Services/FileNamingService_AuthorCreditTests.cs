@@ -55,8 +55,8 @@ namespace Listenarr.Tests.Features.Api.Services
         [Fact]
         public void AuthorFolder_UsesTheAuthorWhenTheTranslatorIsCreditedSecond()
         {
-            // B002V9ZF3K, Crime and Punishment.
-            Assert.Equal("Fyodor Dostoevsky", RenderAuthor("Fyodor Dostoevsky", "Constance Garnett - translator"));
+            // B00S710A4U, The Odyssey.
+            Assert.Equal("Homer", RenderAuthor("Homer", "Samuel Butler - translator"));
         }
 
         [Fact]

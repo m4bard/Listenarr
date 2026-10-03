@@ -302,7 +302,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
         [Fact]
         public void WithoutRoleSuffixes_CleansTheContributorAndKeepsEverybody()
         {
-            // B002V9ZF3K. Both credits survive, and both are spelled as people rather than as
+            // B00S710A4U. Both credits survive, and both are spelled as people rather than as
             // people plus a job title.
             Assert.Equal(
                 new[] { "Homer", "Samuel Butler" },
