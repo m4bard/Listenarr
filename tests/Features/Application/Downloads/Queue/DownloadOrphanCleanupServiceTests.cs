@@ -12,7 +12,15 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
         public override async Task InitializeAsync()
         {
             _metricsMock = new Mock<IAppMetricsService>();
-            Init(services => services.WithSingleton<IAppMetricsService>(_metricsMock.Object));
+
+            // The default test DI setup registers IDownloadHistoryService as a bare
+            // Mock<IDownloadHistoryService>() (see ServiceCollectionBuilder), which silently
+            // no-ops any Record*Async call. This suite asserts on real persisted History rows,
+            // so it needs the real implementation wired to the same (in-memory) DbContext as
+            // _historyRepository.
+            Init(services => services
+                .WithSingleton<IAppMetricsService>(_metricsMock.Object)
+                .WithScoped<IDownloadHistoryService, DownloadHistoryService>());
 
             await base.InitializeAsync();
         }
@@ -160,6 +168,88 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             _metricsMock.Verify(m => m.Increment("download.orphan.unlinked_removed", It.IsAny<double>()), Times.Never);
         }
 
+        [Fact]
+        [Trait("Method", "RemoveOrphansAsync")]
+        public async Task RemoveOrphansAsync_RecordsHistoryEntry_WhenRemovingOrphanMissingFromSnapshot()
+        {
+            var client = CreateClient();
+            var download = await AddDownloadAsync(
+                id: "orphan-with-history",
+                clientId: client.Id,
+                status: DownloadStatus.Downloading,
+                startedAt: DateTime.UtcNow.AddMinutes(-10),
+                metadata: new Dictionary<string, object>
+                {
+                    ["ClientDownloadId"] = "missing-client-id"
+                },
+                audiobookId: 42);
+            var service = _provider.GetRequiredService<DownloadOrphanCleanupService>();
+
+            await service.RemoveOrphansAsync(
+                client,
+                CreateLiveSnapshot(client, [new QueueItem { Id = "other-live-item" }]),
+                [new QueueItem { Id = "other-live-item" }],
+                [download]);
+
+            Assert.Null(await _downloadRepository.GetByIdAsync(download.Id));
+
+            var historyEntries = await GetHistoryForDownloadAsync(download.Id);
+            var removedEntry = Assert.Single(historyEntries);
+            Assert.Equal(HistoryEvents.Removed, removedEntry.EventType);
+            Assert.Equal(42, removedEntry.AudiobookId);
+            Assert.False(string.IsNullOrWhiteSpace(removedEntry.Message));
+        }
+
+        [Fact]
+        [Trait("Method", "RemoveOrphansAsync")]
+        public async Task RemoveOrphansAsync_RecordsHistoryEntry_WhenRemovingOrphanMissingExternalId()
+        {
+            var client = CreateClient();
+            var download = await AddDownloadAsync(
+                id: "orphan-missing-external-id-with-history",
+                clientId: client.Id,
+                status: DownloadStatus.Downloading,
+                startedAt: DateTime.UtcNow.AddMinutes(-10),
+                audiobookId: 7);
+            var service = _provider.GetRequiredService<DownloadOrphanCleanupService>();
+
+            await service.RemoveOrphansAsync(
+                client,
+                CreateLiveSnapshot(client, [new QueueItem { Id = "other-live-item" }]),
+                [new QueueItem { Id = "other-live-item" }],
+                [download]);
+
+            Assert.Null(await _downloadRepository.GetByIdAsync(download.Id));
+
+            var historyEntries = await GetHistoryForDownloadAsync(download.Id);
+            var removedEntry = Assert.Single(historyEntries);
+            Assert.Equal(HistoryEvents.Removed, removedEntry.EventType);
+            Assert.Equal(7, removedEntry.AudiobookId);
+            Assert.False(string.IsNullOrWhiteSpace(removedEntry.Message));
+        }
+
+        [Fact]
+        [Trait("Method", "RemoveOrphansAsync")]
+        public async Task RemoveOrphansAsync_DoesNotRecordHistory_WhenWithinGracePeriod()
+        {
+            var client = CreateClient();
+            var download = await AddDownloadAsync(
+                id: "recent-download-no-history",
+                clientId: client.Id,
+                status: DownloadStatus.Downloading,
+                startedAt: DateTime.UtcNow.AddMinutes(-1));
+            var service = _provider.GetRequiredService<DownloadOrphanCleanupService>();
+
+            await service.RemoveOrphansAsync(
+                client,
+                CreateLiveSnapshot(client, [new QueueItem { Id = "other-live-item" }]),
+                [new QueueItem { Id = "other-live-item" }],
+                [download]);
+
+            Assert.NotNull(await _downloadRepository.GetByIdAsync(download.Id));
+            Assert.Empty(await GetHistoryForDownloadAsync(download.Id));
+        }
+
         [Theory]
         [Trait("Method", "RemoveOrphansAsync")]
         [InlineData(true, false)]
@@ -197,20 +287,34 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             string clientId,
             DownloadStatus status,
             DateTime startedAt,
-            Dictionary<string, object>? metadata = null)
+            Dictionary<string, object>? metadata = null,
+            int? audiobookId = null)
         {
-            var download = new DownloadBuilder()
+            var builder = new DownloadBuilder()
                 .WithId(id)
                 .WithStatus(status)
                 .WithStartDate(startedAt)
-                .WithTitle(id)
-                .Build();
+                .WithTitle(id);
+
+            if (audiobookId.HasValue)
+            {
+                builder.WithAudiobookId(audiobookId.Value);
+            }
+
+            var download = builder.Build();
 
             download.DownloadClientId = clientId;
             download.Metadata = metadata ?? new Dictionary<string, object>();
 
             return await _downloadRepository.AddAsync(download);
         }
+
+        private async Task<List<History>> GetHistoryForDownloadAsync(string downloadId) =>
+            (await _historyRepository.QueryAsync(new HistoryQuery
+            {
+                DownloadId = downloadId.ToUpperInvariant(),
+                Limit = 50
+            })).Records;
 
         private static DownloadClientConfiguration CreateClient() => new()
         {
