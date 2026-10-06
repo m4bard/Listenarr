@@ -150,9 +150,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
         // though NZBGet's own Status string never carries a FAILURE/ prefix for them
         // (e.g. Status="DELETED/COPY" when DeleteStatus="COPY"). Sourced from Sonarr's
         // Nzbget.cs:24 (_deleteFailedStatus) at commit 76c684e09; Readarr carries the
-        // identical array at the same path and line. Five values, not the four in the
-        // original task brief: "BAD" is a real DeleteStatus value NZBGet sets itself
-        // during post-processing, distinct from MarkStatus="BAD".
+        // identical array at Nzbget.cs:23 at commit 14f14e5da (one line earlier than
+        // Sonarr's, not the same line). Five values, not the four in the original task
+        // brief: "BAD" is a real DeleteStatus value NZBGet sets itself during
+        // post-processing, distinct from MarkStatus="BAD".
         private static readonly string[] DeleteFailedStatuses =
             ["HEALTH", "DUPE", "SCAN", "COPY", "BAD"];
 
@@ -171,11 +172,12 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                 return NzbgetHistoryOutcome.Failed;
             }
 
-            // Mirrors Sonarr's MANUAL/BAD short-circuit (Nzbget.cs:141-148 @ 76c684e09,
-            // same at Readarr's Nzbget.cs:141-148 @ 14f14e5da): a user-initiated MANUAL
-            // delete is only a failure when the user also marked it BAD. Any other
-            // MANUAL delete is benign and must not fall through to the array check
-            // below, regardless of MarkStatus.
+            // Mirrors Sonarr's MANUAL/BAD short-circuit (Nzbget.cs:141-151 @ 76c684e09,
+            // including the `continue` on line 151 that is the actual short-circuit
+            // mechanism there; same shape at Readarr's Nzbget.cs:134-144 @ 14f14e5da):
+            // a user-initiated MANUAL delete is only a failure when the user also
+            // marked it BAD. Any other MANUAL delete is benign and must not fall
+            // through to the array check below, regardless of MarkStatus.
             if (string.Equals(deleteStatus, "MANUAL", StringComparison.OrdinalIgnoreCase))
             {
                 return string.Equals(markStatus, "BAD", StringComparison.OrdinalIgnoreCase)
