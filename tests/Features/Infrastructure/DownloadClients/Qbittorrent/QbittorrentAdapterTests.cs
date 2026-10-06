@@ -569,6 +569,141 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             Assert.Equal(2, items.Count);
         }
 
+        // A single torrent whose given field carries the given raw JSON token, everything else
+        // filled in with ordinary, well-formed values. Used below to probe one numeric helper at
+        // a time without the three-torrent bookending the drop tests above need. `downloaded` is
+        // the field under test as often as any other, so it is folded into the substitution
+        // itself rather than also appearing as a fixed property, which would otherwise duplicate
+        // the JSON key.
+        private static string SingleTorrentWithField(string fieldName, string rawToken)
+        {
+            var downloadedToken = fieldName == "downloaded" ? rawToken : "500";
+            var extraField = fieldName == "downloaded" ? "" : $$""", "{{fieldName}}": {{rawToken}}""";
+
+            return $$"""
+            [
+                {
+                    "hash": "ffff4444", "name": "Single", "progress": 0.5, "size": 1000,
+                    "downloaded": {{downloadedToken}}, "state": "downloading",
+                    "save_path": "/downloads/single"{{extraField}}
+                }
+            ]
+            """;
+        }
+
+        // #1008: `downloaded` is read with `GetInt64`, which called `JsonElement.GetInt64()`
+        // directly and threw on any token that was not already a bare integer. The fix tolerates
+        // every numeric shape qBittorrent might actually send and only falls back to the default
+        // for a token that cannot be read as a number at all.
+        //
+        // - "600.0" is an integral JSON number: TryGetInt64 succeeds directly.
+        // - "600.5" is non-integral: TryGetInt64 fails, TryGetDouble succeeds (600.5), truncates.
+        // - "6e2" is exponent notation: TryGetInt64 fails even though the value is whole,
+        //   TryGetDouble succeeds (600.0), truncates to the same 600.
+        // - "1.8446744073709552e+19" is a finite double about 2x long.MaxValue. TryGetDouble
+        //   succeeds, but the value is rejected because it cannot be represented as a long, so
+        //   this is the case that actually proves the range check exists.
+        // - JSON `null` is not a Number at all, so it falls back to the default immediately.
+        [Theory]
+        [InlineData("600.0", 600L)]
+        [InlineData("600.5", 600L)]
+        [InlineData("6e2", 600L)]
+        [InlineData("1.8446744073709552e+19", 0L)]
+        [InlineData("null", 0L)]
+        public async Task GetQueueAsync_TheDownloadedFieldToleratesEveryNumericShape(string downloadedToken, long expectedDownloaded)
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = SingleTorrentWithField("downloaded", downloadedToken);
+            var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
+            var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
+
+            var items = await adapter.GetQueueAsync(_client);
+
+            // None of these shapes throw any more, so the torrent survives regardless of which
+            // one of the five it was given, unlike the drop tests above which exercise genuinely
+            // unreadable input.
+            var item = Assert.Single(items);
+            Assert.Equal(expectedDownloaded, item.Downloaded);
+        }
+
+        // Representative coverage for the other numeric helpers touched by the same fix.
+        // `dlspeed` goes through `GetDouble`, which has no narrower integer range to reject into:
+        // any finite number is accepted as-is, and a non-Number token falls back to the default.
+        [Theory]
+        [InlineData("500.0", 500.0)]
+        [InlineData("6e2", 600.0)]
+        [InlineData("{}", 0.0)]
+        public async Task GetQueueAsync_TheDlspeedFieldToleratesEveryNumericShape(string dlspeedToken, double expectedDlspeed)
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = SingleTorrentWithField("dlspeed", dlspeedToken);
+            var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
+            var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
+
+            var items = await adapter.GetQueueAsync(_client);
+
+            var item = Assert.Single(items);
+            Assert.Equal(expectedDlspeed, item.DownloadSpeed);
+        }
+
+        // `ratio` goes through `GetNullableDouble`: a non-Number token (here, a quoted string)
+        // falls back to null rather than throwing `InvalidOperationException`.
+        [Theory]
+        [InlineData("1.5", 1.5)]
+        [InlineData("\"1.5\"", null)]
+        public async Task GetQueueAsync_TheRatioFieldToleratesEveryNumericShape(string ratioToken, double? expectedRatio)
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = SingleTorrentWithField("ratio", ratioToken);
+            var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
+            var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
+
+            var items = await adapter.GetQueueAsync(_client);
+
+            var item = Assert.Single(items);
+            Assert.Equal(expectedRatio, item.Ratio);
+        }
+
+        // `eta` goes through `GetNullableInt32`: the same truncate-or-reject behavior as
+        // `downloaded`, just on the 32-bit nullable path, plus the JSON `null` literal case.
+        [Theory]
+        [InlineData("120.5", 120)]
+        [InlineData("6e2", 600)]
+        [InlineData("null", null)]
+        public async Task GetQueueAsync_TheEtaFieldToleratesEveryNumericShape(string etaToken, int? expectedEta)
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = SingleTorrentWithField("eta", etaToken);
+            var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
+            var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
+
+            var items = await adapter.GetQueueAsync(_client);
+
+            var item = Assert.Single(items);
+            Assert.Equal(expectedEta, item.Eta);
+        }
+
+        // `seeding_time` goes through `GetNullableInt64` and is only consumed internally by the
+        // seed-limit evaluator, with no field of its own on the mapped item. Unlike the fields
+        // above, this case only confirms the mapping survives at all for a malformed value; it
+        // doesn't assert the resulting seed-limit decision, since that depends on several other
+        // fields too and is already covered by QbittorrentSeedLimitEvaluatorTests-equivalent
+        // cases elsewhere in this file.
+        [Theory]
+        [InlineData("7200.5")]
+        [InlineData("{}")]
+        public async Task GetItemsAsync_TheSeedingTimeFieldNeverThrows(string seedingTimeToken)
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = SingleTorrentWithField("seeding_time", seedingTimeToken);
+            var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
+            var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
+
+            var items = await adapter.GetItemsAsync(_client);
+
+            Assert.Single(items);
+        }
+
         // The counterpart control for the guard above. The per-torrent files request lives inside
         // the guarded block, so a client that stops answering after the torrent list arrives
         // throws once per remaining torrent. If the guard swallowed those, a monitor poll would
