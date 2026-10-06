@@ -21,6 +21,9 @@ namespace Listenarr.Application.Downloads.Contracts
 
         Task<IReadOnlyList<BlockedRelease>> GetForAudiobookAsync(int audiobookId);
 
+        /// <summary>Every blocked release across every book, newest first. Backs the Blocklist page.</summary>
+        Task<IReadOnlyList<BlockedRelease>> GetAllAsync();
+
         /// <summary>
         /// Remove one entry, so a release blocked by a failure that has since been fixed can be
         /// grabbed again. False when no entry with that id exists.

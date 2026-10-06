@@ -101,6 +101,13 @@ namespace Listenarr.Infrastructure.Downloads.Blocklist
                 .ToListAsync();
         }
 
+        public async Task<IReadOnlyList<BlockedRelease>> GetAllAsync()
+        {
+            return await _context.BlockedReleases
+                .OrderByDescending(entry => entry.BlockedAt)
+                .ToListAsync();
+        }
+
         public async Task<bool> DeleteAsync(int id)
         {
             var entry = await _context.BlockedReleases

@@ -43,6 +43,16 @@ public class BlocklistController(
     ILogger<BlocklistController> logger) : ControllerBase
 {
     /// <summary>
+    /// Every release currently blocked, across every book, newest first. Backs the Blocklist page.
+    /// </summary>
+    [HttpGet]
+    [ProducesResponseType(typeof(IReadOnlyList<BlockedRelease>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<BlockedRelease>>> GetAll()
+    {
+        return Ok(await blocklistService.GetAllAsync());
+    }
+
+    /// <summary>
     /// The releases currently blocked for one audiobook, newest first.
     /// </summary>
     /// <param name="audiobookId">Audiobook ID.</param>
