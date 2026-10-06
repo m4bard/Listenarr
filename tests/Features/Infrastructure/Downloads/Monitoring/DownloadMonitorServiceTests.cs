@@ -394,6 +394,130 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             Assert.Equal("The Failing Listing", entry.Title);
         }
 
+        [Fact]
+        [Trait("Method", "OnDownloadFailed")]
+        public async Task OnDownloadFailed_WhenBlocklistThrowsUnexpectedException_StillRemovesFromClientAndStillAutoSearches()
+        {
+            // BlocklistService.BlockAsync only swallows the one expected race (two near-
+            // simultaneous failures for the same release). Anything else it throws must not
+            // abort the client removal and auto-search that follow, even though History for
+            // this failure was already written before this method runs.
+            var gatewayMock = new DownloadClientGatewayMock { RemoveResult = true };
+
+            var blocklistMock = new Mock<IBlocklistService>();
+            blocklistMock
+                .Setup(service => service.BlockAsync(
+                    It.IsAny<int>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<long?>(),
+                    It.IsAny<string>()))
+                .ThrowsAsync(new InvalidOperationException("simulated unexpected blocklist failure"));
+
+            var downloadServiceMock = new Mock<IDownloadService>();
+            downloadServiceMock
+                .Setup(service => service.SearchAndDownloadAsync(It.IsAny<int>()))
+                .ReturnsAsync(new SearchAndDownloadResult { Success = true });
+
+            // Everything that needs to be visible to the freshly built provider's repositories
+            // is created after this call: Init() swaps in a new ServiceProvider, and data saved
+            // through repositories resolved from the old one is not guaranteed to be visible to
+            // DbContext instances resolved from the new one.
+            Init(services => services
+                .WithSingleton<IDownloadClientGateway>(gatewayMock)
+                .WithSingleton<IBlocklistService>(blocklistMock.Object)
+                .WithSingleton<IDownloadService>(downloadServiceMock.Object));
+
+            client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithType("mock")
+                .WithName("Mock")
+                .Build());
+
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithFailedDownloadHandling()
+                .WithFailedDownloadAutoSearch()
+                .Build());
+
+            var audiobook = await CreateAudiobook();
+
+            var download = new DownloadBuilder()
+                .WithId("blocklist-throws")
+                .WithStatus(DownloadStatus.Failed)
+                .WithTitle("The Failing Listing")
+                .WithAudiobook(audiobook)
+                .WithDownloadClientConfiguration(client)
+                .WithExternalId("ext-blocklist-throws")
+                .Build();
+            download.Metadata[ReleaseIdentity.MetadataKey] =
+                ReleaseIdentity.For("1234567890ABCDEF1234567890ABCDEF12345678", null, null, null)!;
+            download = await _downloadRepository.AddAsync(download);
+
+            await InvokeOnDownloadFailedAsync(download);
+
+            Assert.Equal(1, gatewayMock.GetCallCount(nameof(IDownloadClientGateway.RemoveAsync)));
+            downloadServiceMock.Verify(
+                service => service.SearchAndDownloadAsync(audiobook.Id),
+                Times.Once);
+        }
+
+        [Fact]
+        [Trait("Method", "OnDownloadFailed")]
+        public async Task OnDownloadFailed_WhenAutoSearchThrows_DoesNotPropagateAndEarlierStepsAlreadyCompleted()
+        {
+            // The auto-search step already had its own try/catch before this fix. This
+            // confirms that isolation still holds (and that bumping its log level to Warning
+            // did not change the behaviour): a throwing auto-search must not undo, or be seen
+            // as undoing, the blocklist entry and the client removal that ran before it.
+            var gatewayMock = new DownloadClientGatewayMock { RemoveResult = true };
+
+            var downloadServiceMock = new Mock<IDownloadService>();
+            downloadServiceMock
+                .Setup(service => service.SearchAndDownloadAsync(It.IsAny<int>()))
+                .ThrowsAsync(new InvalidOperationException("simulated auto-search failure"));
+
+            // See the comment on the equivalent Init() call above: data has to be created after
+            // this, against the repositories the new provider hands back.
+            Init(services => services
+                .WithSingleton<IDownloadClientGateway>(gatewayMock)
+                .WithSingleton<IDownloadService>(downloadServiceMock.Object));
+
+            client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithType("mock")
+                .WithName("Mock")
+                .Build());
+
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithFailedDownloadHandling()
+                .WithFailedDownloadAutoSearch()
+                .Build());
+
+            var audiobook = await CreateAudiobook();
+
+            var download = new DownloadBuilder()
+                .WithId("autosearch-throws")
+                .WithStatus(DownloadStatus.Failed)
+                .WithTitle("The Failing Listing")
+                .WithAudiobook(audiobook)
+                .WithDownloadClientConfiguration(client)
+                .WithExternalId("ext-autosearch-throws")
+                .Build();
+            download.Metadata[ReleaseIdentity.MetadataKey] =
+                ReleaseIdentity.For("ABCDEF1234567890ABCDEF1234567890ABCDEF99", null, null, null)!;
+            download = await _downloadRepository.AddAsync(download);
+
+            // Must not throw: the auto-search failure is swallowed, same as before this fix.
+            await InvokeOnDownloadFailedAsync(download);
+
+            var blocklist = _provider.GetRequiredService<IBlocklistService>();
+            Assert.Single(await blocklist.GetForAudiobookAsync(audiobook.Id));
+            Assert.Equal(1, gatewayMock.GetCallCount(nameof(IDownloadClientGateway.RemoveAsync)));
+            // Without this, a lookup failure that skipped the auto-search branch entirely (never
+            // reaching the throw) would read as a pass here for the wrong reason.
+            downloadServiceMock.Verify(
+                service => service.SearchAndDownloadAsync(audiobook.Id),
+                Times.Once);
+        }
+
         private async Task<Download> AddFailedDownloadAsync(string id)
         {
             var audiobook = await CreateAudiobook();
