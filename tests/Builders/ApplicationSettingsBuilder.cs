@@ -199,6 +199,12 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public ApplicationSettingsBuilder WithFailedDownloadAutoSearch()
+        {
+            _applicationSettings.FailedDownloadAutoSearch = true;
+            return this;
+        }
+
         public ApplicationSettings Build()
         {
             _applicationSettings.ImportBlacklistExtensions = _importBlacklistExtensions;

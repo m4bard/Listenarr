@@ -434,12 +434,22 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 var identifier = ReleaseIdentity.ForGrabbed(download);
                 if (identifier is not null)
                 {
-                    await blocklistService.BlockAsync(
-                        download.AudiobookId.Value,
-                        identifier,
-                        download.Title ?? "Unknown",
-                        download.ExpectedFileSize ?? (download.TotalSize > 0 ? download.TotalSize : null),
-                        errorMessage);
+                    // BlocklistService.BlockAsync only swallows the one expected race (see its own
+                    // comment). Anything else it throws must not take the removal and auto-search
+                    // below down with it; History for this failure is already written.
+                    try
+                    {
+                        await blocklistService.BlockAsync(
+                            download.AudiobookId.Value,
+                            identifier,
+                            download.Title ?? "Unknown",
+                            download.ExpectedFileSize ?? (download.TotalSize > 0 ? download.TotalSize : null),
+                            errorMessage);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException && exception is not OutOfMemoryException && exception is not StackOverflowException)
+                    {
+                        logger.LogError(exception, "Failed to blocklist release for failed download {DownloadId}; continuing with removal and auto-search", download.Id);
+                    }
                 }
             }
 
@@ -450,7 +460,15 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
             if (!string.IsNullOrWhiteSpace(clientItemId) &&
                 ShouldRemoveFailedClientItem(client))
             {
-                await downloadClientGateway.RemoveAsync(client, clientItemId, deleteFiles: false, cancellationToken);
+                // Isolated for the same reason as the blocklist call above.
+                try
+                {
+                    await downloadClientGateway.RemoveAsync(client, clientItemId, deleteFiles: false, cancellationToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException && exception is not OutOfMemoryException && exception is not StackOverflowException)
+                {
+                    logger.LogError(exception, "Failed to remove failed download {DownloadId} from the download client; continuing with auto-search", download.Id);
+                }
             }
 
             if (settings.FailedDownloadAutoSearch && download.AudiobookId.HasValue)
@@ -473,7 +491,7 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
-                    logger.LogDebug(ex, "Failed to auto-search after failed download {DownloadId}", download.Id);
+                    logger.LogWarning(ex, "Failed to auto-search after failed download {DownloadId}", download.Id);
                 }
             }
         }
