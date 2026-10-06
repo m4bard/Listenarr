@@ -288,6 +288,93 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
             Assert.Empty(await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
         }
 
+        [Fact]
+        public async Task ProcessJobAsync_MetadataContradictsPathDiagnostic_LogsSanitizedPathNeverRawPath()
+        {
+            // Same wrong-book-tags fixture as the test above: folder attribution fires,
+            // content verification declines it, and the AudiobookScanDiagnostic this
+            // produces carries the RAW candidate path. ScanJobProcessor must re-log it
+            // through LogRedaction before it reaches the job-level warning, never as-is.
+            var metadata = new Mock<IMetadataService>();
+            metadata.Setup(service => service.ExtractFileMetadataAsync(
+                    It.IsAny<MetadataFileSource>()))
+                .ReturnsAsync(new AudioMetadata
+                {
+                    Title = "Unrelated Title",
+                    Album = "Unrelated Title",
+                    Artist = "Unrelated Author",
+                    AlbumArtist = "Unrelated Author",
+                    Duration = TimeSpan.FromSeconds(1),
+                    Format = "m4b"
+                });
+            _services.AddSingleton(metadata.Object);
+            var capturingLogger = new CapturingLogger<ScanJobProcessor>();
+            _services.AddSingleton<ILogger<ScanJobProcessor>>(capturingLogger);
+            Init();
+            await _applicationSettingsRepository.SaveAsync(
+                new ApplicationSettingsBuilder()
+                    .WithOutputPath(FileService.GetTempPath())
+                    .Build());
+            var basePath = Path.Join(
+                FileService.GetTempDirectory("scan-processor-diagnostic-logging"),
+                "Expected Title [B023456789]");
+            Directory.CreateDirectory(basePath);
+            await FileService.GetFileAsync(basePath, "borrowed.m4b", "audio");
+            var audiobookToAdd = new AudiobookBuilder()
+                .WithTitle("Expected Title")
+                .WithAuthor("Expected Author")
+                .WithBasePath(basePath)
+                .Build();
+            audiobookToAdd.Asin = "B023456789";
+            var audiobook = await _audiobookRepository.AddAsync(audiobookToAdd);
+            var (queue, job) = await CreateQueuedScanJobAsync(audiobook, "scan:diagnostic-logging");
+
+            await _provider.GetRequiredService<IScanJobProcessor>()
+                .ProcessJobAsync(job, CancellationToken.None);
+
+            var updatedJob = GetRequiredJob(queue, job.Id);
+            Assert.Equal("CompletedNoFilesAccepted", updatedJob.Status);
+
+            // The raw candidate path, exactly as AudiobookScanDiagnostic.Path carries it,
+            // and the directory component that SanitizeFilePath strips from it.
+            var rawCandidatePath = Path.Join(basePath, "borrowed.m4b");
+            Assert.Contains(basePath, rawCandidatePath, StringComparison.Ordinal);
+
+            var diagnosticEntry = Assert.Single(capturingLogger.Entries, entry =>
+                entry.Message.Contains("MetadataContradictsPath", StringComparison.Ordinal));
+            Assert.Contains("borrowed.m4b", diagnosticEntry.Message, StringComparison.Ordinal);
+            Assert.Contains(
+                "different book and author",
+                diagnosticEntry.Message,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(basePath, diagnosticEntry.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                rawCandidatePath,
+                diagnosticEntry.Message,
+                StringComparison.Ordinal);
+
+            // No captured log entry at all leaks the directory component, not just the
+            // one we expect to carry it.
+            Assert.All(capturingLogger.Entries, entry =>
+                Assert.DoesNotContain(basePath, entry.Message, StringComparison.Ordinal));
+
+            // History.Data stays composed from counts only: Found/Created/Discovered/
+            // Path (the scan root), unchanged in shape by this fix.
+            var history = Assert.Single(
+                await _historyRepository.GetByCorrelationIdAsync("scan:diagnostic-logging"),
+                entry => entry.EventType == HistoryEvents.ScanCompleted);
+            var data = JsonSerializer.Deserialize<JsonElement>(history.Data!);
+            var dataProperties = data.EnumerateObject()
+                .Select(property => property.Name)
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray();
+            Assert.Equal(
+                new[] { "Created", "Discovered", "Found", "Path", "ScanJobId" },
+                dataProperties);
+            Assert.Equal(basePath, data.GetProperty("Path").GetString());
+            Assert.DoesNotContain("borrowed.m4b", history.Data, StringComparison.Ordinal);
+        }
+
         private static ScanJob GetRequiredJob(ScanQueueService queue, Guid jobId)
         {
             Assert.True(queue.TryGetJob(jobId, out var job));
@@ -303,6 +390,24 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
             Assert.True(queue.Reader.TryRead(out var job));
             Assert.Equal(jobId, job.Id);
             return (queue, job);
+        }
+
+        private sealed class CapturingLogger<T> : ILogger<T>
+        {
+            public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter) =>
+                Entries.Add((logLevel, formatter(state, exception), exception));
         }
     }
 }
