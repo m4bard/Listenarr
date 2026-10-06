@@ -166,6 +166,71 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Common
         }
 
         [Fact]
+        public void BuildQbittorrentSourceFiles_ExcludesPriorityZeroFiles()
+        {
+            // qBittorrent's /api/v2/torrents/files priority values: 0 = Do not download,
+            // 1 = Normal, 6 = High, 7 = Maximal. Only 0 means excluded.
+            var savePath = FileUtils.GetAbsolutePath("downloads");
+            var files = ParseFiles(
+                """
+                [
+                  { "name": "Book/chapter1.m4b", "priority": 1 },
+                  { "name": "Book/skip-me.m4b", "priority": 0 },
+                  { "name": "Book/chapter2.m4b", "priority": 6 },
+                  { "name": "Book/chapter3.m4b", "priority": 7 }
+                ]
+                """);
+
+            var sourceFiles = TorrentClientPathMapper.BuildQbittorrentSourceFiles(savePath, files);
+
+            Assert.Equal(
+                [
+                    Path.Join(savePath, "Book", "chapter1.m4b"),
+                    Path.Join(savePath, "Book", "chapter2.m4b"),
+                    Path.Join(savePath, "Book", "chapter3.m4b")
+                ],
+                sourceFiles);
+        }
+
+        [Fact]
+        public void BuildQbittorrentSourceFiles_AllPriorityZero_ReturnsEmpty()
+        {
+            var savePath = FileUtils.GetAbsolutePath("downloads");
+            var files = ParseFiles(
+                """
+                [
+                  { "name": "Book/chapter1.m4b", "priority": 0 },
+                  { "name": "Book/chapter2.m4b", "priority": 0 }
+                ]
+                """);
+
+            var sourceFiles = TorrentClientPathMapper.BuildQbittorrentSourceFiles(savePath, files);
+
+            Assert.Empty(sourceFiles);
+        }
+
+        [Fact]
+        public void BuildQbittorrentSourceFiles_MissingPriorityKey_IncludesFile()
+        {
+            // qBittorrent's real API always includes "priority" on every file entry; a missing
+            // key only happens with malformed/partial data (e.g. a hand-built test fixture or a
+            // client bug), not a real "do not download" response. Treat it as "include" rather
+            // than "exclude": that is the safe default, since it matches the pre-fix behavior for
+            // this case and never silently drops a file we have no positive evidence to exclude.
+            var savePath = FileUtils.GetAbsolutePath("downloads");
+            var files = ParseFiles(
+                """
+                [
+                  { "name": "Book/chapter1.m4b" }
+                ]
+                """);
+
+            var sourceFiles = TorrentClientPathMapper.BuildQbittorrentSourceFiles(savePath, files);
+
+            Assert.Equal([Path.Join(savePath, "Book", "chapter1.m4b")], sourceFiles);
+        }
+
+        [Fact]
         public void BuildQbittorrentSourceFiles_RootedChildPathsStayUnderSavePath()
         {
             var savePath = FileUtils.GetAbsolutePath("downloads");
