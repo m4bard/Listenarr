@@ -1,7 +1,9 @@
 using System.Reflection;
+using System.Xml.Linq;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks;
+using Listenarr.Tests.Mocks.Api;
 
 namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
 {
@@ -524,6 +526,214 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             downloadServiceMock.Verify(
                 service => service.SearchAndDownloadAsync(audiobook.Id),
                 Times.Once);
+        }
+
+        // AC: tracker#333. These three exercise the real pipeline end to end -
+        // NzbgetApiMock's XML-RPC "history" response, through the real NzbgetAdapter and
+        // NzbgetHistoryEnrichmentWorkflow (ClassifyOutcome), through the real
+        // DownloadClientGateway and DownloadMonitorProcessor, into the real BlocklistService
+        // - rather than asserting classification alone. Covers both halves the task calls
+        // for: the NZBGet-reported delete family reaching a Failed Download row, and that
+        // Failed transition actually reaching a written blocklist entry (or, for the benign
+        // MANUAL case, confirming no entry is written at all).
+        [Fact]
+        [Trait("Method", "MonitorDownloadsAsync")]
+        [Trait("Third-Party", "Nzbget")]
+        public async Task MonitorDownloadsAsync_NzbgetDeletedCopyHistory_FailsDownloadAndBlocksRelease()
+        {
+            var nzbgetClient = await SetUpNzbgetClientAsync();
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithFailedDownloadHandling()
+                .Build());
+            var audiobook = await CreateAudiobook();
+            var download = await AddActiveNzbgetDownloadAsync(
+                "nzbget-deleted-copy",
+                "901",
+                audiobook,
+                nzbgetClient,
+                "1111111111111111111111111111111111111111");
+            QueueNzbgetHistoryPoll(
+                nzbId: "901",
+                title: "Audiobook 901",
+                status: "DELETED/COPY",
+                deleteStatus: "COPY",
+                markStatus: "NONE");
+
+            var downloadMonitorService = _provider.GetRequiredService<DownloadMonitorService>();
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+
+            var updated = await _downloadRepository.GetByIdAsync(download.Id);
+            Assert.NotNull(updated);
+            Assert.Equal(DownloadStatus.Failed, updated!.Status);
+
+            var blocklist = _provider.GetRequiredService<IBlocklistService>();
+            Assert.Single(await blocklist.GetForAudiobookAsync(audiobook.Id));
+        }
+
+        // DUPE, HEALTH and SCAN are covered at the classification level
+        // (HistoryReader_DeleteStatusFamily_ClassifiesFailedOrIgnoredLikeSonarrReadarr in
+        // NzbgetAdapterTests.cs) rather than repeated here: the task brief allows reusing
+        // either the pipeline-level or the classification-level assertion for that case,
+        // and COPY above already proves the DeleteStatus family reaches the blocklist end
+        // to end, so repeating the full DI pipeline for every sibling value would only be
+        // retesting the same wiring four times over.
+        [Fact]
+        [Trait("Method", "MonitorDownloadsAsync")]
+        [Trait("Third-Party", "Nzbget")]
+        public async Task MonitorDownloadsAsync_NzbgetDeletedManualWithoutBadMark_LeavesDownloadActiveAndWritesNoBlocklistEntry()
+        {
+            var nzbgetClient = await SetUpNzbgetClientAsync();
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithFailedDownloadHandling()
+                .Build());
+            var audiobook = await CreateAudiobook();
+            var download = await AddActiveNzbgetDownloadAsync(
+                "nzbget-deleted-manual-benign",
+                "902",
+                audiobook,
+                nzbgetClient,
+                "2222222222222222222222222222222222222222");
+            QueueNzbgetHistoryPoll(
+                nzbId: "902",
+                title: "Audiobook 902",
+                status: "DELETED/MANUAL",
+                deleteStatus: "MANUAL",
+                markStatus: "NONE");
+
+            var downloadMonitorService = _provider.GetRequiredService<DownloadMonitorService>();
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+
+            var updated = await _downloadRepository.GetByIdAsync(download.Id);
+            Assert.NotNull(updated);
+            Assert.Equal(DownloadStatus.Downloading, updated!.Status);
+
+            var blocklist = _provider.GetRequiredService<IBlocklistService>();
+            Assert.Empty(await blocklist.GetForAudiobookAsync(audiobook.Id));
+        }
+
+        [Fact]
+        [Trait("Method", "MonitorDownloadsAsync")]
+        [Trait("Third-Party", "Nzbget")]
+        public async Task MonitorDownloadsAsync_NzbgetDeletedManualMarkedBad_FailsDownloadAndBlocksRelease()
+        {
+            var nzbgetClient = await SetUpNzbgetClientAsync();
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithFailedDownloadHandling()
+                .Build());
+            var audiobook = await CreateAudiobook();
+            var download = await AddActiveNzbgetDownloadAsync(
+                "nzbget-deleted-manual-bad",
+                "903",
+                audiobook,
+                nzbgetClient,
+                "3333333333333333333333333333333333333333");
+            QueueNzbgetHistoryPoll(
+                nzbId: "903",
+                title: "Audiobook 903",
+                status: "DELETED/MANUAL",
+                deleteStatus: "MANUAL",
+                markStatus: "BAD");
+
+            var downloadMonitorService = _provider.GetRequiredService<DownloadMonitorService>();
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+
+            var updated = await _downloadRepository.GetByIdAsync(download.Id);
+            Assert.NotNull(updated);
+            Assert.Equal(DownloadStatus.Failed, updated!.Status);
+
+            var blocklist = _provider.GetRequiredService<IBlocklistService>();
+            Assert.Single(await blocklist.GetForAudiobookAsync(audiobook.Id));
+        }
+
+        private async Task<DownloadClientConfiguration> SetUpNzbgetClientAsync()
+        {
+            return await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithType("nzbget")
+                .WithName("NZBGet")
+                .WithHost("localhost")
+                .WithPort(6789)
+                .WithApiKey("apiKey")
+                .Build());
+        }
+
+        private async Task<Download> AddActiveNzbgetDownloadAsync(
+            string id,
+            string externalId,
+            Audiobook audiobook,
+            DownloadClientConfiguration nzbgetClient,
+            string releaseIdentityHash)
+        {
+            var download = new DownloadBuilder()
+                .WithId(id)
+                .WithStatus(DownloadStatus.Downloading)
+                .WithTitle($"Audiobook {externalId}")
+                .WithAudiobook(audiobook)
+                .WithDownloadClientConfiguration(nzbgetClient)
+                .WithExternalId(externalId)
+                .Build();
+            download.Metadata[ReleaseIdentity.MetadataKey] =
+                ReleaseIdentity.For(releaseIdentityHash, null, null, null)!;
+            return await _downloadRepository.AddAsync(download);
+        }
+
+        // Queues one round of listgroups (always empty - no active telemetry to merge
+        // against) + history for FetchDownloadsAsync's poll, and a second, identical round
+        // for the orphan-cleanup poll that runs later in the same MonitorDownloadsAsync
+        // cycle. By the time that second poll runs the Download under test has already
+        // transitioned (or not) in the first round, so its content does not change either
+        // assertion; it only needs to exist so NzbgetApiMock does not 404 the second
+        // listgroups call.
+        private void QueueNzbgetHistoryPoll(
+            string nzbId,
+            string title,
+            string status,
+            string deleteStatus,
+            string markStatus)
+        {
+            var apiMock = _provider.GetRequiredService<NzbgetApiMock>();
+            var historyEntry = HistoryEntryValue(nzbId, title, status, deleteStatus, markStatus);
+            for (var round = 0; round < 2; round++)
+            {
+                apiMock.QueueXmlRpcResponse(
+                    "listgroups",
+                    NzbgetApiMock.CreateListGroupsResponse(string.Empty));
+                apiMock.QueueXmlRpcResponse(
+                    "history",
+                    NzbgetApiMock.CreateHistoryResponse(historyEntry));
+            }
+        }
+
+        private static string HistoryEntryValue(
+            string nzbId,
+            string title,
+            string status,
+            string deleteStatus,
+            string markStatus)
+        {
+            var members = new[]
+            {
+                HistoryMember("NZBID", nzbId),
+                HistoryMember("NZBName", title),
+                HistoryMember("Category", string.Empty),
+                HistoryMember("Status", status),
+                HistoryMember("DeleteStatus", deleteStatus),
+                HistoryMember("MarkStatus", markStatus),
+                HistoryMember("FinalDir", string.Empty),
+                HistoryMember("DestDir", string.Empty),
+                HistoryMember("FileSizeMB", "100"),
+                HistoryMember("DownloadedSizeMB", "100")
+            };
+
+            return $"<value><struct>{string.Concat(members)}</struct></value>";
+        }
+
+        private static string HistoryMember(string name, string value)
+        {
+            return new XElement(
+                "member",
+                new XElement("name", name),
+                new XElement("value", new XElement("string", value)))
+                .ToString(SaveOptions.DisableFormatting);
         }
 
         private async Task<Download> AddFailedDownloadAsync(string id)
