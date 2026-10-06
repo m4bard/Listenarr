@@ -19,6 +19,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
         public required string Title { get; init; }
         public required string Category { get; init; }
         public required string RawStatus { get; init; }
+        public required string DeleteStatus { get; init; }
+        public required string MarkStatus { get; init; }
         public required NzbgetHistoryOutcome Outcome { get; init; }
         public required string DestDir { get; init; }
         public required string FinalDir { get; init; }
@@ -95,6 +97,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                 member => member.Element("value"),
                 StringComparer.Ordinal);
             var rawStatus = ReadScalar(members, "Status").Trim();
+            var deleteStatus = ReadScalar(members, "DeleteStatus").Trim();
+            var markStatus = ReadScalar(members, "MarkStatus").Trim();
             var (totalSizeBytes, totalSizeKnown) = ParseMegabytes(ReadScalar(members, "FileSizeMB"));
             var (downloadedSizeBytes, _) = ParseMegabytes(ReadScalar(members, "DownloadedSizeMB"));
 
@@ -109,7 +113,9 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                 Title = ReadScalar(members, "NZBName"),
                 Category = ReadScalar(members, "Category"),
                 RawStatus = rawStatus,
-                Outcome = ClassifyOutcome(rawStatus),
+                DeleteStatus = deleteStatus,
+                MarkStatus = markStatus,
+                Outcome = ClassifyOutcome(rawStatus, deleteStatus, markStatus),
                 DestDir = ReadScalar(members, "DestDir"),
                 FinalDir = ReadScalar(members, "FinalDir"),
                 TotalSizeBytes = totalSizeBytes,
@@ -140,14 +146,44 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                     : string.Empty;
         }
 
-        private static NzbgetHistoryOutcome ClassifyOutcome(string rawStatus)
+        // Delete-status family that Sonarr/Readarr treat as a client-side failure even
+        // though NZBGet's own Status string never carries a FAILURE/ prefix for them
+        // (e.g. Status="DELETED/COPY" when DeleteStatus="COPY"). Sourced from Sonarr's
+        // Nzbget.cs:24 (_deleteFailedStatus) at commit 76c684e09; Readarr carries the
+        // identical array at the same path and line. Five values, not the four in the
+        // original task brief: "BAD" is a real DeleteStatus value NZBGet sets itself
+        // during post-processing, distinct from MarkStatus="BAD".
+        private static readonly string[] DeleteFailedStatuses =
+            ["HEALTH", "DUPE", "SCAN", "COPY", "BAD"];
+
+        private static NzbgetHistoryOutcome ClassifyOutcome(
+            string rawStatus,
+            string deleteStatus,
+            string markStatus)
         {
             if (rawStatus.StartsWith("SUCCESS/", StringComparison.OrdinalIgnoreCase))
             {
                 return NzbgetHistoryOutcome.Completed;
             }
 
-            return rawStatus.StartsWith("FAILURE/", StringComparison.OrdinalIgnoreCase)
+            if (rawStatus.StartsWith("FAILURE/", StringComparison.OrdinalIgnoreCase))
+            {
+                return NzbgetHistoryOutcome.Failed;
+            }
+
+            // Mirrors Sonarr's MANUAL/BAD short-circuit (Nzbget.cs:141-148 @ 76c684e09,
+            // same at Readarr's Nzbget.cs:141-148 @ 14f14e5da): a user-initiated MANUAL
+            // delete is only a failure when the user also marked it BAD. Any other
+            // MANUAL delete is benign and must not fall through to the array check
+            // below, regardless of MarkStatus.
+            if (string.Equals(deleteStatus, "MANUAL", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Equals(markStatus, "BAD", StringComparison.OrdinalIgnoreCase)
+                    ? NzbgetHistoryOutcome.Failed
+                    : NzbgetHistoryOutcome.Ignored;
+            }
+
+            return DeleteFailedStatuses.Contains(deleteStatus, StringComparer.OrdinalIgnoreCase)
                 ? NzbgetHistoryOutcome.Failed
                 : NzbgetHistoryOutcome.Ignored;
         }
