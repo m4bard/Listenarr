@@ -601,6 +601,9 @@ export interface ApplicationSettings {
   // Days a recycled file is kept before the retention sweep removes it. Zero means keep
   // until the bin is emptied by hand.
   recycleBinCleanupDays?: number
+
+  // Opt-in content-type gate: reject releases that are clearly music (default off)
+  rejectClearlyMusicReleases?: boolean
 }
 
 export interface ProwlarrImportConnectionSettings {
