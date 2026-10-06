@@ -3816,6 +3816,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 Title = title,
                 Category = "audiobooks",
                 RawStatus = outcome == NzbgetHistoryOutcome.Failed ? "FAILURE/UNPACK" : "SUCCESS/ALL",
+                DeleteStatus = string.Empty,
+                MarkStatus = string.Empty,
                 Outcome = outcome,
                 DestDir = string.Empty,
                 FinalDir = string.Empty,
