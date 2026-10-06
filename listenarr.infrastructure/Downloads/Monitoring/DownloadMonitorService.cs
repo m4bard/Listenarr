@@ -423,10 +423,38 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
             // a qBittorrent 409 out of the blocklist: that answer means the client already
             // holds the release, so blocking it would ban something the user is currently
             // downloading. The carve-out is structural rather than a condition to remember.
-            await FailedDownloadBlocker.BlockAsync(
-                scope.ServiceProvider.GetRequiredService<IBlocklistService>(),
-                download,
-                errorMessage);
+            if (download.AudiobookId.HasValue)
+            {
+                var blocklistService = scope.ServiceProvider.GetRequiredService<IBlocklistService>();
+                // Read back the identity stamped on the download when it was grabbed. This method
+                // must not work one out for itself: by the time a download fails, its TotalSize
+                // has been overwritten from the client's queue snapshot and its OriginalUrl may be
+                // a spent per-fetch link, so anything derived here disagrees with what the search
+                // side derives from the indexer's listing and the row never matches. A live
+                // install wrote one correctly formatted row after the first failure and then
+                // grabbed the identical release more than a hundred times over the next eleven
+                // hours.
+                var identifier = ReleaseIdentity.ForGrabbed(download);
+                if (identifier is not null)
+                {
+                    // BlocklistService.BlockAsync only swallows the one expected race (see its own
+                    // comment). Anything else it throws must not take the removal and auto-search
+                    // below down with it; History for this failure is already written.
+                    try
+                    {
+                        await blocklistService.BlockAsync(
+                            download.AudiobookId.Value,
+                            identifier,
+                            download.Title ?? "Unknown",
+                            download.ExpectedFileSize ?? (download.TotalSize > 0 ? download.TotalSize : null),
+                            errorMessage);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException && exception is not OutOfMemoryException && exception is not StackOverflowException)
+                    {
+                        logger.LogError(exception, "Failed to blocklist release for failed download {DownloadId}; continuing with removal and auto-search", download.Id);
+                    }
+                }
+            }
 
             var clientItemId = download.GetExternalId();
             // NZBGet history is part of failure diagnostics and final-path recovery.
@@ -435,7 +463,15 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
             if (!string.IsNullOrWhiteSpace(clientItemId) &&
                 ShouldRemoveFailedClientItem(client))
             {
-                await downloadClientGateway.RemoveAsync(client, clientItemId, deleteFiles: false, cancellationToken);
+                // Isolated for the same reason as the blocklist call above.
+                try
+                {
+                    await downloadClientGateway.RemoveAsync(client, clientItemId, deleteFiles: false, cancellationToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException && exception is not OutOfMemoryException && exception is not StackOverflowException)
+                {
+                    logger.LogError(exception, "Failed to remove failed download {DownloadId} from the download client; continuing with auto-search", download.Id);
+                }
             }
 
             if (settings.FailedDownloadAutoSearch && download.AudiobookId.HasValue)
@@ -458,7 +494,7 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
-                    logger.LogDebug(ex, "Failed to auto-search after failed download {DownloadId}", download.Id);
+                    logger.LogWarning(ex, "Failed to auto-search after failed download {DownloadId}", download.Id);
                 }
             }
         }
