@@ -86,6 +86,26 @@ public sealed class BlocklistServiceTests : BaseTests
         Assert.Equal("first", Assert.Single(await ReadAllAsync()).Reason);
     }
 
+    [Fact]
+    public async Task GetAllAsync_ReturnsEntriesAcrossEveryBook_NewestFirst()
+    {
+        // The per-audiobook read (GetForAudiobookAsync) already has its own "only that book's
+        // entries" coverage in BlocklistControllerTests. This is the list the frontend's
+        // Blocklist page needs instead: every entry, regardless of which book it belongs to,
+        // ordered the same way as the per-audiobook read (newest first).
+        await using var context = new ListenArrDbContext(_options);
+        var service = new BlocklistService(context, NullLogger<BlocklistService>.Instance);
+
+        await service.BlockAsync(7, Identifier, "First", 1, "a");
+        await service.BlockAsync(9, OtherIdentifier, "Second, a different book", 2, "b");
+
+        var all = await service.GetAllAsync();
+
+        Assert.Equal(2, all.Count);
+        Assert.Equal("Second, a different book", all[0].Title);
+        Assert.Equal("First", all[1].Title);
+    }
+
     private async Task<List<BlockedRelease>> ReadAllAsync()
     {
         await using var db = new ListenArrDbContext(_options);
