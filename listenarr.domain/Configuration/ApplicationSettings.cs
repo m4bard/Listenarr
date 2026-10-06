@@ -237,5 +237,15 @@ namespace Listenarr.Domain.Configuration
         /// Preferred default language filter for Add New searches.
         /// </summary>
         public string DefaultSearchLanguage { get; set; } = "english";
+
+        /// <summary>
+        /// Opt-in content-type gate. When enabled, a release search result whose category or
+        /// title/shape clearly indicates a music release (rather than an audiobook) is rejected
+        /// during scoring. Default off, matching the *arr family: neither Readarr nor Sonarr gates
+        /// on content type at decision time, their control is the per-indexer Categories field used
+        /// to build the search request. Fails open: a release with missing or ambiguous category/
+        /// shape signals is never rejected by this setting.
+        /// </summary>
+        public bool RejectClearlyMusicReleases { get; set; } = false;
     }
 }
