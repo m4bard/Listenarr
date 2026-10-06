@@ -100,6 +100,13 @@
         title="Enable Audible Searching"
         description="Try Audible first when performing intelligent searches."
       />
+
+      <CheckboxCard
+        :modelValue="settings.rejectClearlyMusicReleases"
+        @update:modelValue="updateRejectClearlyMusicReleases"
+        title="Reject releases that are clearly music"
+        description="Skip a release whose category or title clearly identifies it as a music release instead of an audiobook. Off by default; a release with no category or an ambiguous one is never rejected."
+      />
     </div>
   </div>
 </template>
@@ -137,6 +144,10 @@ function updateEnableAmazonSearch(value: boolean) {
 
 function updateEnableAudibleSearch(value: boolean) {
   updateField('enableAudibleSearch', value)
+}
+
+function updateRejectClearlyMusicReleases(value: boolean) {
+  updateField('rejectClearlyMusicReleases', value)
 }
 
 const defaultSearchRegion = computed(() =>
