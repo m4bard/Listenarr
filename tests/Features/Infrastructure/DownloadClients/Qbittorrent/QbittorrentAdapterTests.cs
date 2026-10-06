@@ -559,10 +559,16 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             Assert.Empty(items);
         }
 
-        // A queue response whose middle torrent carries `downloaded` in the given JSON token form.
+        // A queue response whose middle torrent carries `state` in the given JSON token form.
         // The torrents either side of it are well formed, so anything missing from the result is
         // attributable to that one field.
-        private static string QueueWithMalformedMiddleTorrent(string malformedDownloaded) => $$"""
+        //
+        // This used to malform `downloaded` instead. #1008's numeric-tolerance fix means no JSON
+        // shape in `downloaded` throws any more: a non-Number token (the old quoted-string case)
+        // now falls back to the default the same as a missing field would, rather than throwing.
+        // `state` is read with `GetString`, which this fix does not touch, so it is still the
+        // field that can genuinely make a torrent unreadable.
+        private static string QueueWithMalformedMiddleTorrent(string malformedState) => $$"""
         [
             {
                 "hash": "aaaa1111", "name": "First", "progress": 0.5, "size": 1000,
@@ -570,7 +576,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             },
             {
                 "hash": "bbbb2222", "name": "Second", "progress": 0.5, "size": 1000,
-                "downloaded": {{malformedDownloaded}}, "state": "downloading", "save_path": "/downloads/b"
+                "downloaded": 600, "state": {{malformedState}}, "save_path": "/downloads/b"
             },
             {
                 "hash": "cccc3333", "name": "Third", "progress": 0.5, "size": 1000,
@@ -579,23 +585,25 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         ]
         """;
 
-        // qBittorrent documents `downloaded` as an integer, so the typed accessor reading it is
-        // right about the normal case. It was not resilient about the abnormal one: a value in
-        // another token form threw out of the mapper, out of the loop walking the response, and
-        // took every torrent after it along with it, while the poll still reported itself as a
-        // healthy live snapshot.
+        // qBittorrent documents `state` as a string, so the typed accessor reading it is right
+        // about the normal case. It is not resilient about the abnormal one: a non-string value
+        // throws `InvalidOperationException` out of the mapper, out of the loop walking the
+        // response, and takes every torrent after it along with it, while the poll still reports
+        // itself as a healthy live snapshot.
         //
-        // "600.5" is a JSON number that is not an integer (FormatException from GetInt64) and
-        // "\"600\"" is a quoted one (InvalidOperationException). The quoted form is the shape
-        // already reported against the NZBGet adapter in #618 and #619.
+        // These cases used to malform `downloaded` instead, with "600.5" (FormatException),
+        // "\"600\"" (InvalidOperationException) and "6e2" (FormatException). #1008's fix makes
+        // `downloaded` tolerate all three: a non-integral number truncates, exponent notation
+        // truncates, and a quoted string now falls back to the default rather than throwing. None
+        // of them is "unreadable" any more, so this malforms `state` instead: "123" and "{}" are
+        // both JSON values `GetString` cannot read, and that helper was not touched by the fix.
         [Theory]
-        [InlineData("600.5")]
-        [InlineData("\"600\"")]
-        [InlineData("6e2")]
-        public async Task GetQueueAsync_WhenOneTorrentIsUnreadable_DropsOnlyThatTorrent(string malformedDownloaded)
+        [InlineData("123")]
+        [InlineData("{}")]
+        public async Task GetQueueAsync_WhenOneTorrentIsUnreadable_DropsOnlyThatTorrent(string malformedState)
         {
             var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
-            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent(malformedDownloaded);
+            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent(malformedState);
             var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
             var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
 
@@ -615,13 +623,12 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         // rather than merely going missing from a view. Without a case of its own, deleting the
         // guard in QbittorrentItemFetchWorkflow leaves every test in this file green.
         [Theory]
-        [InlineData("600.5")]
-        [InlineData("\"600\"")]
-        [InlineData("6e2")]
-        public async Task GetItemsAsync_WhenOneTorrentIsUnreadable_DropsOnlyThatTorrent(string malformedDownloaded)
+        [InlineData("123")]
+        [InlineData("{}")]
+        public async Task GetItemsAsync_WhenOneTorrentIsUnreadable_DropsOnlyThatTorrent(string malformedState)
         {
             var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
-            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent(malformedDownloaded);
+            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent(malformedState);
             var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
             var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
 
@@ -777,7 +784,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         public async Task GetQueueAsync_WithIds_WhenTheClientStopsAnsweringMidPoll_StillFailsThePoll()
         {
             var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
-            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("500");
+            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("\"downloading\"");
             apiMock.FilesRequestFailsAtTransport = true;
             var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
             var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
@@ -799,7 +806,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
                 .WithSingleton<ILoggerProvider>(logs)
                 .WithMocks(RecordingLoggerProvider.CaptureEveryLevel));
             var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
-            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("\"600\"");
+            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("123");
             var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
             var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
 
@@ -818,7 +825,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
                 .WithSingleton<ILoggerProvider>(logs)
                 .WithMocks(RecordingLoggerProvider.CaptureEveryLevel));
             var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
-            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("\"600\"");
+            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("123");
             var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
             var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
 
