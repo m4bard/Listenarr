@@ -1978,6 +1978,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<string>("ProwlarrUrl")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("RejectClearlyMusicReleases")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("ShowCompletedExternalDownloads")
                         .HasColumnType("INTEGER");
 
