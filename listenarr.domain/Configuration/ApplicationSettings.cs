@@ -392,5 +392,15 @@ namespace Listenarr.Domain.Configuration
         // finite: without a cutoff a library with more cached authors than the per-run ceiling
         // re-asks the provider about the same rows every day forever and never reaches the rest.
         public int AuthorIdentityRepairRecheckAfterDays { get; set; } = 30;
+
+        /// <summary>
+        /// Opt-in content-type gate. When enabled, a release search result whose category or
+        /// title/shape clearly indicates a music release (rather than an audiobook) is rejected
+        /// during scoring. Default off, matching the *arr family: neither Readarr nor Sonarr gates
+        /// on content type at decision time, their control is the per-indexer Categories field used
+        /// to build the search request. Fails open: a release with missing or ambiguous category/
+        /// shape signals is never rejected by this setting.
+        /// </summary>
+        public bool RejectClearlyMusicReleases { get; set; } = false;
     }
 }
