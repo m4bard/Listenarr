@@ -71,7 +71,11 @@ namespace Listenarr.Application.Search.Scoring
         /// omnibus record is a six-book omnibus, so when this is set the profile's preference
         /// is overridden for that book rather than penalising every candidate it can match.
         /// </param>
-        public async Task<QualityScore> Score(SearchResult searchResult, QualityProfile profile, bool targetIsBundle = false)
+        /// <param name="rejectMusicReleases">
+        /// Whether to reject a candidate that <see cref="MusicReleaseClassifier"/> identifies as a
+        /// music release rather than an audiobook (ApplicationSettings.RejectClearlyMusicReleases).
+        /// </param>
+        public async Task<QualityScore> Score(SearchResult searchResult, QualityProfile profile, bool targetIsBundle = false, bool rejectMusicReleases = false)
         {
             // Mirror existing QualityProfileService semantics, but organized and configurable
             var score = new QualityScore
@@ -110,6 +114,16 @@ namespace Listenarr.Application.Search.Scoring
             {
                 var wordList = string.Join("', '", requiredWords.Select(required => required.Trim()));
                 score.RejectionReasons.Add($"Missing required word: title matches none of '{wordList}'");
+                score.TotalScore = -1;
+                return score;
+            }
+
+            // Opt-in content-type gate (ApplicationSettings.RejectClearlyMusicReleases, default off).
+            // Fails open: MusicReleaseClassifier only returns true on a clear positive category or
+            // title/shape match, never on missing or ambiguous signals.
+            if (rejectMusicReleases && MusicReleaseClassifier.LooksLikeMusicRelease(searchResult, out var musicReason))
+            {
+                score.RejectionReasons.Add(musicReason ?? "Release looks like a music release, not an audiobook");
                 score.TotalScore = -1;
                 return score;
             }
