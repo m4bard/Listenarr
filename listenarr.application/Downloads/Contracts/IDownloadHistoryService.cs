@@ -111,7 +111,13 @@ namespace Listenarr.Application.Downloads.Contracts
         /// <summary>
         /// Record that a download was removed from the client.
         /// </summary>
-        Task RecordRemovedAsync(string downloadId, string clientId, string title);
+        /// <param name="downloadId">The download ID</param>
+        /// <param name="clientId">Download client configuration ID</param>
+        /// <param name="title">Title of the download</param>
+        /// <param name="audiobookId">The AudiobookId this download was linked to, if any</param>
+        /// <param name="reason">Optional free-text explanation of why the download was removed</param>
+        Task RecordRemovedAsync(string downloadId, string clientId, string title,
+            int? audiobookId = null, string? reason = null);
 
         /// <summary>
         /// Get the full event history for a download.
