@@ -304,15 +304,16 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients
         private static readonly (bool SeedRatioLimited, double SeedRatioLimit, bool IdleSeedingLimitEnabled, int IdleSeedingLimit) NoSessionLimits =
             (false, 0, false, 0);
 
+        // RemoveCompletedDownloads is a directly-typed string column (migration
+        // AddRemoveCompletedDownloadsToClients), not a value read out of Settings/SettingsJson --
+        // "none" (the column's own default) and empty both mean off, anything else means on.
         private static DownloadClientConfiguration BuildClient(bool? removeCompletedDownloads) => new()
         {
             Id = "transmission-1",
             Name = "Transmission",
             Type = "transmission",
             IsEnabled = true,
-            Settings = removeCompletedDownloads.HasValue
-                ? new Dictionary<string, object> { ["removeCompletedDownloads"] = removeCompletedDownloads.Value }
-                : new Dictionary<string, object>()
+            RemoveCompletedDownloads = removeCompletedDownloads == true ? "remove" : "none"
         };
 
         private static JsonElement BuildTorrent(
