@@ -97,6 +97,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260923054821_AddDownloadClientStatus";
     private const string OperationEvidencePublicationsMigrationId =
         "20261002210137_AddOperationEvidencePublications";
+    private const string RejectClearlyMusicReleasesMigrationId =
+        "20261006202151_AddRejectClearlyMusicReleasesToApplicationSettings";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -558,13 +560,14 @@ public class SqliteMigrationSchemaTests : BaseTests
                 BackupRetentionDaysMigrationId,
                 DownloadClientPriorityMigrationId,
                 FreeSpaceImportSettingsMigrationId,
-                IndexerSeedCriteriaMigrationId
+                IndexerSeedCriteriaMigrationId,
                 EmailNotificationsMigrationId,
                 HousekeepingRetentionMigrationId,
                 DropProcessExecutionLogsMigrationId,
                 IndexerDownloadClientBindingMigrationId,
                 DownloadClientStatusMigrationId,
-                OperationEvidencePublicationsMigrationId
+                OperationEvidencePublicationsMigrationId,
+                RejectClearlyMusicReleasesMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
