@@ -827,6 +827,22 @@ export interface History {
   data?: string
 }
 
+/**
+ * One release that failed for one book and will not be grabbed for that book again, as the
+ * backend's BlockedRelease domain model stores it. Scoped to the book: there is no navigation
+ * property to the audiobook, so the book's own title is resolved on the frontend the same way
+ * ActivityView resolves a queue item's title, not carried on this object.
+ */
+export interface BlockedRelease {
+  id: number
+  audiobookId: number
+  releaseIdentifier: string
+  title: string
+  size?: number | null
+  blockedAt: string
+  reason: string
+}
+
 export interface Indexer {
   id: number
   name: string

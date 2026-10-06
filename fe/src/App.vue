@@ -371,6 +371,18 @@
               <span>Wanted</span>
               <Pill variant="count" v-if="wantedCount > 0">{{ wantedCount }}</Pill>
             </RouterLink>
+            <RouterLink
+              to="/blocklist"
+              class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/blocklist' }"
+              @mouseenter="preload('blocklist')"
+              @focus="preload('blocklist')"
+              @touchstart.passive="preload('blocklist')"
+              @click="closeMobileMenu"
+            >
+              <PhProhibit />
+              <span>Blocklist</span>
+            </RouterLink>
           </div>
 
           <div class="nav-section">
@@ -555,6 +567,7 @@ import {
   PhActivity,
   PhCalendar,
   PhHeart,
+  PhProhibit,
   PhGear,
   PhMonitor,
   PhFileMinus,

@@ -25,6 +25,7 @@ import type {
   Audiobook,
   AudiobookUpdateRequest,
   History,
+  BlockedRelease,
   Indexer,
   QueueItem,
   QueueSnapshot,
@@ -1817,6 +1818,19 @@ class ApiService {
         method: 'DELETE',
       },
     )
+  }
+
+  // Blocklist API
+  async getBlocklist(): Promise<BlockedRelease[]> {
+    return this.request<BlockedRelease[]>('/blocklist')
+  }
+
+  async getBlocklistForAudiobook(audiobookId: number): Promise<BlockedRelease[]> {
+    return this.request<BlockedRelease[]>(`/blocklist/audiobook/${audiobookId}`)
+  }
+
+  async deleteBlocklistEntry(id: number): Promise<void> {
+    return this.request<void>(`/blocklist/${id}`, { method: 'DELETE' })
   }
 
   // Indexers API
