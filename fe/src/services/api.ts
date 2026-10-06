@@ -30,6 +30,7 @@ import type {
   HistoryDetails,
   HistoryPage,
   HistoryQueryParams,
+  BlockedRelease,
   Indexer,
   QueueItem,
   QueueSnapshot,
@@ -1943,6 +1944,19 @@ class ApiService {
     return this.request<{ message: string; deletedCount: number }>(`/history/cleanup${query}`, {
       method: 'DELETE',
     })
+  }
+
+  // Blocklist API
+  async getBlocklist(): Promise<BlockedRelease[]> {
+    return this.request<BlockedRelease[]>('/blocklist')
+  }
+
+  async getBlocklistForAudiobook(audiobookId: number): Promise<BlockedRelease[]> {
+    return this.request<BlockedRelease[]>(`/blocklist/audiobook/${audiobookId}`)
+  }
+
+  async deleteBlocklistEntry(id: number): Promise<void> {
+    return this.request<void>(`/blocklist/${id}`, { method: 'DELETE' })
   }
 
   // Indexers API
