@@ -36,12 +36,33 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
             // whitespace from path segments; only strip separators when intentionally
             // converting a rooted-looking child path into a relative child path.
             return files
+                .Where(file => !IsExcludedByPriority(file))
                 .Select(file => file.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty)
                 .Where(name => !string.IsNullOrEmpty(name))
                 .Select(name => CombineClientReportedPath(savePath, name))
                 .Where(path => !string.IsNullOrEmpty(path))
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
+        }
+
+        // qBittorrent's /api/v2/torrents/files "priority" field: 0 = Do not download,
+        // 1 = Normal, 6 = High, 7 = Maximal. 0 is the only value meaning "excluded" -
+        // it is not a threshold, so the check is an exact equality, not a <= comparison.
+        // A file dict missing the "priority" key entirely is treated as included: the real
+        // qBittorrent API always sets it, so a missing key only shows up with malformed or
+        // partial data (hand-built test fixtures, a client bug), never a genuine "do not
+        // download" response, and the safe default for that defensive case is to not drop
+        // a file we have no positive evidence to exclude.
+        private static bool IsExcludedByPriority(Dictionary<string, JsonElement> file)
+        {
+            if (!file.TryGetValue("priority", out var priorityEl))
+            {
+                return false;
+            }
+
+            return priorityEl.ValueKind == JsonValueKind.Number
+                && priorityEl.TryGetInt32(out var priority)
+                && priority == 0;
         }
 
         public static List<string> BuildTransmissionSourceFiles(string? downloadDir, JsonElement filesElement)
