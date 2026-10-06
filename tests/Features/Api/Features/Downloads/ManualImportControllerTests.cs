@@ -2310,14 +2310,15 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
         [Theory]
         [InlineData(FileAction.Copy, 1)]
         [InlineData(FileAction.HardlinkCopy, 0)]
-        public async Task InteractiveManualImport_ImportTags_AreNotWrittenThroughAHardlinkToTheSource(
+        public async Task InteractiveManualImport_AsinOnlyImportTags_AreNotWrittenThroughAHardlinkToTheSource(
             FileAction fileAction,
             int expectedTagWrites)
         {
             // A hardlinked destination is the source's own inode, which a download client may
             // still be seeding, so rewriting its tags -- ASIN or artwork, both go through the
             // same best-effort write -- would rewrite the source as well. The Copy case is the
-            // control: the same import with an independent destination is tagged.
+            // control: the same import with an independent destination is tagged. This book has
+            // only an ASIN and no artwork; the sibling test below covers both set together.
             var destinationRoot = CreateTempDirectory(
                 $"listenarr-manual-asin-link-dest-{fileAction}");
             var sourceDir = CreateTempDirectory(
