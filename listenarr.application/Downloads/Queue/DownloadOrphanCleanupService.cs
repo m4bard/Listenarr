@@ -21,6 +21,7 @@ namespace Listenarr.Application.Downloads.Queue
 {
     public sealed class DownloadOrphanCleanupService(
         IDownloadRepository downloadRepository,
+        IDownloadHistoryService downloadHistoryService,
         IAppMetricsService metrics,
         ILogger<DownloadOrphanCleanupService> logger)
     {
@@ -91,6 +92,7 @@ namespace Listenarr.Application.Downloads.Queue
                 // debugging: a known client item disappeared from a trusted snapshot,
                 // or a legacy/corrupt non-DDL active record has no external client ID
                 // and therefore cannot ever be monitored or reconciled with a client.
+                string removalReason;
                 if (candidate.Reason == OrphanCleanupReason.MissingExternalId)
                 {
                     logger.LogInformation(
@@ -98,6 +100,7 @@ namespace Listenarr.Application.Downloads.Queue
                         download.Id,
                         download.Title,
                         client.Name);
+                    removalReason = "Removed: no external client ID stored, could not be reconciled with client queue";
                 }
                 else
                 {
@@ -108,7 +111,18 @@ namespace Listenarr.Application.Downloads.Queue
                         download.Title,
                         client.Name,
                         externalId);
+                    removalReason = "Removed from client, reason unknown";
                 }
+
+                // Record the removal in History before the row disappears so the audit trail
+                // carries the download's identity and audiobook link. This is a deliberate
+                // divergence from a silent drop: see the commit message for the rationale.
+                await downloadHistoryService.RecordRemovedAsync(
+                    download.Id,
+                    download.DownloadClientId,
+                    download.Title ?? "Unknown",
+                    download.AudiobookId,
+                    reason: removalReason);
 
                 await downloadRepository.RemoveAsync(download.Id);
             }

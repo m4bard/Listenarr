@@ -333,7 +333,8 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
             _logger.LogInformation("Recorded Resumed event for {DownloadId} ({Title})", downloadId, title);
         }
 
-        public async Task RecordRemovedAsync(string downloadId, string clientId, string title)
+        public async Task RecordRemovedAsync(string downloadId, string clientId, string title,
+            int? audiobookId = null, string? reason = null)
         {
             var client = await ResolveClientAsync(clientId, null);
             var history = new DownloadHistory
@@ -346,12 +347,15 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
                 DownloadClientId = clientId,
                 Protocol = client.Protocol,
                 Title = title,
+                ErrorMessage = reason,
                 WasImported = false
             };
 
-            await AddUnifiedAsync(history);
+            await AddUnifiedAsync(history, audiobookId);
 
-            _logger.LogInformation("Recorded Removed event for {DownloadId} ({Title})", downloadId, title);
+            _logger.LogInformation(
+                "Recorded Removed event for {DownloadId} ({Title}) audiobook {AudiobookId}: {Reason}",
+                downloadId, title, audiobookId, reason ?? "No reason provided");
         }
 
         public async Task<List<DownloadHistory>> GetHistoryAsync(string downloadId, string clientId)
