@@ -159,6 +159,30 @@ namespace Listenarr.Infrastructure.Library.Scanning
                         job.Id,
                         result.DiscoveredCandidateCount,
                         job.AudiobookId);
+                    // History.Data stays composed from counts only (see the comment on
+                    // ToCompletionDecision), so the per-file reason a folder-attributed
+                    // file was declined never reaches the user-visible job error. This is
+                    // its only surviving record: the queued path never otherwise reads
+                    // result.Diagnostics, unlike the synchronous manual-scan HTTP path.
+                    foreach (var diagnostic in result.Diagnostics)
+                    {
+                        if (!string.Equals(
+                                diagnostic.Code,
+                                "MetadataContradictsPath",
+                                StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        _logger.LogWarning(
+                            "Scan job {JobId} declined a folder-matched file ({Code}) for audiobook {AudiobookId}: {Path} - {Message}",
+                            job.Id,
+                            diagnostic.Code,
+                            job.AudiobookId,
+                            LogRedaction.SanitizeFilePath(diagnostic.Path),
+                            diagnostic.Message);
+                    }
+
                     _metrics.Increment("worker.scan.job.completed_no_files_accepted");
                     return;
                 }
