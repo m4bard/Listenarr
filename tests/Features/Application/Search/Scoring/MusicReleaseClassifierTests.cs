@@ -60,6 +60,24 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             Assert.Null(reason);
         }
 
+        [Theory]
+        [InlineData("3030,3010")] // explicit Audiobooks id alongside a music subcategory id
+        [InlineData("3030,3000")] // explicit Audiobooks id alongside the generic Audio parent id
+        [InlineData("3000,3030")] // same override, id order reversed
+        public void AudiobooksCategoryCoOccurringWithMusicId_OverrideWins_IsNotRejected(string category)
+        {
+            // A multi-category tag carrying an explicit, unambiguous Audiobooks id must never be
+            // rejected just because it also carries a broader Audio-range id in the same string --
+            // that is a real audiobook, and rejecting it is the exact false-positive this gate must
+            // avoid.
+            var result = Result(category: category);
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
+
+            Assert.False(looksLikeMusic);
+            Assert.Null(reason);
+        }
+
         [Fact]
         public void MissingCategory_FailsOpen_IsNotRejected()
         {

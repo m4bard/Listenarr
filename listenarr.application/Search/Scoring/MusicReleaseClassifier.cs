@@ -95,14 +95,23 @@ namespace Listenarr.Application.Search.Scoring
 
             if (ids.Count > 0)
             {
-                var musicIds = ids.Where(id => id >= AudioCategoryMin && id <= AudioCategoryMax && id != AudiobooksCategoryId).ToList();
+                // An explicit Audiobooks id anywhere in a multi-category string (e.g. "3030,3000"
+                // from an indexer that also tags the generic Audio parent) always overrides: this is
+                // an unambiguous audiobook signal and must never be rejected just because a broader
+                // Audio-range id rides along with it.
+                if (ids.Contains(AudiobooksCategoryId))
+                {
+                    return false;
+                }
+
+                var musicIds = ids.Where(id => id >= AudioCategoryMin && id <= AudioCategoryMax).ToList();
                 if (musicIds.Count > 0)
                 {
                     reason = $"Category id {musicIds[0]} is a Newznab/Torznab music category ({AudioCategoryMin}-{AudioCategoryMax} excluding {AudiobooksCategoryId}/Audiobooks)";
                     return true;
                 }
 
-                // Had numeric ids but none in the music range (this includes an explicit 3030):
+                // Had numeric ids but none in the music range and no Audiobooks id either:
                 // fall through to the textual check below in case the string also carries a name.
             }
 
