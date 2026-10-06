@@ -48,6 +48,11 @@ namespace Listenarr.Infrastructure.DownloadClients.Common
         // qBittorrent's /api/v2/torrents/files "priority" field: 0 = Do not download,
         // 1 = Normal, 6 = High, 7 = Maximal. 0 is the only value meaning "excluded" -
         // it is not a threshold, so the check is an exact equality, not a <= comparison.
+        // qBittorrent's DownloadPriority enum also defines Mixed = -1, but that is an
+        // aggregate/UI value for a multi-file selection, never a value this per-file
+        // endpoint assigns to an individual file (filesAction() in torrentscontroller.cpp
+        // serializes one concrete priority per file from torrent->filePriorities()), so it
+        // is out of scope here by construction rather than unhandled.
         // A file dict missing the "priority" key entirely is treated as included: the real
         // qBittorrent API always sets it, so a missing key only shows up with malformed or
         // partial data (hand-built test fixtures, a client bug), never a genuine "do not
