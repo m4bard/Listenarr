@@ -383,6 +383,18 @@
               <PhClockCounterClockwise />
               <span>History</span>
             </RouterLink>
+            <RouterLink
+              to="/blocklist"
+              class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/blocklist' }"
+              @mouseenter="preload('blocklist')"
+              @focus="preload('blocklist')"
+              @touchstart.passive="preload('blocklist')"
+              @click="closeMobileMenu"
+            >
+              <PhProhibit />
+              <span>Blocklist</span>
+            </RouterLink>
           </div>
 
           <div class="nav-section">
@@ -576,6 +588,7 @@ import {
   PhCalendar,
   PhHeart,
   PhClockCounterClockwise,
+  PhProhibit,
   PhGear,
   PhMonitor,
   PhFileMinus,
