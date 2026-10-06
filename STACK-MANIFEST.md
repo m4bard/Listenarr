@@ -4,8 +4,58 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        a630572e983614a52ea409a23da52a99e3b8b91b
     base short:  a630572e9
-    patches:     584
-    version:     1.3.4+m4bard.584
+    patches:     607
+    version:     1.3.4+m4bard.607
+
+## Composition note (2026-10-06, third incremental bake tonight, hand-composed)
+
+This bake folded in two tracker items on top of the second bake's published tip
+(`7196554b0bbcece9c7ca9371373db24aae30d444`): #336 (content-type/category gate toggle,
+`fix/336-music-category-gate`, 5 commits) and #335 (#918 blocklist frontend,
+`feat/918-blocklist-frontend`, 2 commits), applied as narrow cherry-picked ranges via
+`stack_items.py ranges`, not full branch merges. Two real conflicts in each item (trivial,
+additive -- another already-stacked setting/migration/nav-entry landed at the same insertion
+point in `ApplicationSettings.cs`, the EF model snapshot, `App.vue`'s nav list and icon imports,
+and `fe/src/services/api.ts`'s type imports) were resolved directly, keeping both sides. One
+real conflict in `SearchResultScorer.cs`/`QualityProfileService.cs` -- item #336's branch was
+rooted on `upstream/canary` before the later `resolvedIndexers`/`ApplyRejectionGates`/Gates.cs
+refactor landed, so its stale diff conflicted with the current architecture -- was dispatched to
+a different agent, which threaded `rejectMusicReleases` through the current method signatures
+without regressing `resolvedIndexers` batching or the composite Smart-score calculation, and
+verified with a scoped build plus the area's own filtered tests (76/76) before handing back.
+A frontend test-index conflict in `SearchSettingsSection.spec.ts` (a 4th checkbox shifted the
+existing Amazon/Audible checkbox indices) was resolved directly and confirmed by running vitest.
+
+Also folded in, as this bake's own composition-only fixes (not tracker items): item #336's
+migration Designer snapshot was regenerated against the composed stack (see commit
+`f90d2c051`, full reasoning there) after `MigrationDesignerChainTests` caught it stale by 221
+lines of unrelated model drift; and the version-stamp CI safeguard below (commit `17764d3b7`),
+requested directly by the Director as a separate investigation.
+
+### Version-stamp finding (Director-requested investigation)
+
+Bakes 1 and 2 tonight both published `1.3.4+m4bard.584` despite bake 2 landing 13 more commits
+on top of bake 1. Measured: `git diff` between bake 1's tip (`8ebb403a4`) and bake 2's tip
+(`7196554b0`) shows this file byte-identical across that entire 13-commit range -- bake 2 never
+regenerated it. The real total for bake 2's tip was 598 (585 + 13; bake 1's own manifest commit
+counts as one of its 585), so bake 2's correct stamp would have been `1.3.4+m4bard.598`. The
+counting logic in `tools/local_stack.sh` itself is not the bug -- `git rev-list --count
+canary..stack`, run fresh, is correct every time it actually runs. The bug is that nothing
+enforced running it before a push, so a hand-composed bake (the pattern every recent bake has
+used, since narrow per-item cherry-picking needs more care than a full rebuild) could skip it
+silently. Fixed in `.github/workflows/stack-image.yml`: the build now recomputes the patch count
+from a full-history checkout and fails loudly if it does not match the manifest's declared
+count, instead of trusting a file nothing was forced to keep current. This bake's own manifest
+(607) was generated fresh and passes that check.
+
+Deliberately NOT done here: hand-extending the "Patches, oldest first" and "Items, in
+application order" sections below to cover bake 2's 13 commits or this bake's 9. Those sections
+were already a hand-maintained, best-effort narrative (see the 2026-10-02 note immediately
+below), and bake 2 never touched this file at all, so they are accurate only through bake 1's
+own +22. Hand-extending them further risked compounding exactly the kind of error this
+investigation exists to catch. The authoritative figures are the header above (patches: 607,
+cross-checked by the new CI step against real git history) and `git log
+a630572e9..<published-tip>`, not the narrative sections below.
 
 ## Composition note (2026-10-02, hand-composed)
 
