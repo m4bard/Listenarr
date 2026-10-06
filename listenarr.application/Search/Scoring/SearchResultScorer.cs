@@ -40,7 +40,7 @@ namespace Listenarr.Application.Search.Scoring
             _logger = logger;
         }
 
-        public async Task<QualityScore> Score(SearchResult searchResult, QualityProfile profile)
+        public async Task<QualityScore> Score(SearchResult searchResult, QualityProfile profile, bool rejectMusicReleases = false)
         {
             // Mirror existing QualityProfileService semantics, but organized and configurable
             var score = new QualityScore
@@ -82,6 +82,16 @@ namespace Listenarr.Application.Search.Scoring
             if (missingRequired != null)
             {
                 score.RejectionReasons.Add($"Missing required word: '{missingRequired}'");
+                score.TotalScore = -1;
+                return score;
+            }
+
+            // Opt-in content-type gate (ApplicationSettings.RejectClearlyMusicReleases, default off).
+            // Fails open: MusicReleaseClassifier only returns true on a clear positive category or
+            // title/shape match, never on missing or ambiguous signals.
+            if (rejectMusicReleases && MusicReleaseClassifier.LooksLikeMusicRelease(searchResult, out var musicReason))
+            {
+                score.RejectionReasons.Add(musicReason ?? "Release looks like a music release, not an audiobook");
                 score.TotalScore = -1;
                 return score;
             }
