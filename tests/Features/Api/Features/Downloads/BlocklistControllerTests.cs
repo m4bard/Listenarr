@@ -120,6 +120,23 @@ public sealed class BlocklistControllerTests : BaseTests
     }
 
     [Fact]
+    public async Task GetAll_ReturnsEntriesAcrossEveryBook()
+    {
+        // GetForAudiobook_ReturnsOnlyThatBooksEntries above pins the scoped read. This is the
+        // Blocklist page's own endpoint: everything, not filtered to one book.
+        var blocklist = _provider.GetRequiredService<IBlocklistService>();
+        await blocklist.BlockAsync(7, ReleaseIdentity.For(FirstHash, null, null, null)!, "Mine", 1, "a");
+        await blocklist.BlockAsync(9, ReleaseIdentity.For(SecondHash, null, null, null)!, "Also mine", 2, "b");
+
+        var response = Assert.IsType<OkObjectResult>((await NewController().GetAll()).Result);
+        var entries = Assert.IsAssignableFrom<IReadOnlyList<BlockedRelease>>(response.Value);
+
+        Assert.Equal(2, entries.Count);
+        Assert.Contains(entries, entry => entry.Title == "Mine");
+        Assert.Contains(entries, entry => entry.Title == "Also mine");
+    }
+
+    [Fact]
     public void Controller_HasNoBroadCatch_SoNo5xxBodyCanCarryAnExceptionMessage()
     {
         // The controllers this sits beside answer 500 with ex.Message, which is the house pattern
