@@ -294,6 +294,71 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             Assert.Equal((NzbgetHistoryOutcome)expectedOutcome, entry.Outcome);
         }
 
+        // AC: tracker#333. NZBGet's own client-side duplicate/health detection (and a
+        // user's manual bad-mark) deletes a download without ever putting a FAILURE/
+        // prefix on Status. DeleteStatus/MarkStatus are the only fields that carry that
+        // signal (e.g. Status="DELETED/COPY", DeleteStatus="COPY"). Mirrors Sonarr's
+        // _deleteFailedStatus array and MANUAL/BAD short-circuit (Nzbget.cs:24 and
+        // :141-148 @ 76c684e09; same shape in Readarr's Nzbget.cs @ 14f14e5da).
+        [Theory]
+        [InlineData("COPY", "", 2)]
+        [InlineData("DUPE", "", 2)]
+        [InlineData("HEALTH", "", 2)]
+        [InlineData("SCAN", "", 2)]
+        [InlineData("BAD", "", 2)]
+        [InlineData("MANUAL", "", 0)]
+        [InlineData("MANUAL", "NONE", 0)]
+        [InlineData("MANUAL", "BAD", 2)]
+        [InlineData("", "", 0)]
+        public async Task HistoryReader_DeleteStatusFamily_ClassifiesFailedOrIgnoredLikeSonarrReadarr(
+            string deleteStatus,
+            string markStatus,
+            int expectedOutcome)
+        {
+            using var apiMock = new NzbgetApiMock();
+            apiMock.QueueXmlRpcResponse(
+                "history",
+                NzbgetApiMock.CreateHistoryResponse(
+                    HistoryEntryValue(
+                        nzbId: "801",
+                        title: "Audiobook 801",
+                        status: string.IsNullOrEmpty(deleteStatus) ? "" : $"DELETED/{deleteStatus}",
+                        deleteStatus: deleteStatus,
+                        markStatus: markStatus)));
+            using var http = new HttpClient(apiMock);
+            var reader = CreateHistoryReader(http);
+
+            var entry = Assert.Single(await reader.ReadAsync(CreateClient(), CancellationToken.None));
+
+            Assert.Equal(deleteStatus, entry.DeleteStatus);
+            Assert.Equal(markStatus, entry.MarkStatus);
+            Assert.Equal((NzbgetHistoryOutcome)expectedOutcome, entry.Outcome);
+        }
+
+        // A FAILURE/-prefixed Status must stay Failed regardless of what DeleteStatus
+        // says; the new delete-status classification only runs for the "else" case the
+        // existing SUCCESS/FAILURE prefix checks did not already resolve.
+        [Fact]
+        public async Task HistoryReader_FailurePrefixTakesPriorityOverDeleteStatus()
+        {
+            using var apiMock = new NzbgetApiMock();
+            apiMock.QueueXmlRpcResponse(
+                "history",
+                NzbgetApiMock.CreateHistoryResponse(
+                    HistoryEntryValue(
+                        nzbId: "802",
+                        title: "Audiobook 802",
+                        status: "FAILURE/UNPACK",
+                        deleteStatus: "NONE",
+                        markStatus: "GOOD")));
+            using var http = new HttpClient(apiMock);
+            var reader = CreateHistoryReader(http);
+
+            var entry = Assert.Single(await reader.ReadAsync(CreateClient(), CancellationToken.None));
+
+            Assert.Equal(NzbgetHistoryOutcome.Failed, entry.Outcome);
+        }
+
         [Fact]
         public async Task HistoryReader_Fields_ApplyPathNumericTimeAndFallbackSemantics()
         {
@@ -3123,6 +3188,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 CanonicalNzbId = "501",
                 Title = "Book Folder",
                 RawStatus = "SUCCESS/UNPACK",
+                DeleteStatus = string.Empty,
+                MarkStatus = string.Empty,
                 Outcome = NzbgetHistoryOutcome.Completed,
                 Category = "audiobooks",
                 FinalDir = "/downloads/completed/Book Folder",
@@ -3149,6 +3216,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 CanonicalNzbId = "502",
                 Title = "Failed Book Folder",
                 RawStatus = "FAILURE/MOVE",
+                DeleteStatus = string.Empty,
+                MarkStatus = string.Empty,
                 Outcome = NzbgetHistoryOutcome.Failed,
                 Category = "audiobooks",
                 FinalDir = "/downloads/completed/Failed Book Folder",
@@ -3186,6 +3255,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 CanonicalNzbId = "503",
                 Title = "Failed Book",
                 RawStatus = status,
+                DeleteStatus = string.Empty,
+                MarkStatus = string.Empty,
                 Outcome = NzbgetHistoryOutcome.Failed,
                 Category = "audiobooks",
                 FinalDir = string.Empty,
@@ -3544,7 +3615,9 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             string? fileSizeMb = null,
             string? downloadedSizeMb = null,
             string? historyTime = null,
-            string? legacyId = null)
+            string? legacyId = null,
+            string? deleteStatus = null,
+            string? markStatus = null)
         {
             var members = new[]
             {
@@ -3553,6 +3626,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 HistoryMember("NZBName", title),
                 HistoryMember("Category", category),
                 HistoryMember("Status", status),
+                HistoryMember("DeleteStatus", deleteStatus),
+                HistoryMember("MarkStatus", markStatus),
                 HistoryMember("FinalDir", finalDir),
                 HistoryMember("DestDir", destDir),
                 HistoryMember("FileSizeMB", fileSizeMb),
