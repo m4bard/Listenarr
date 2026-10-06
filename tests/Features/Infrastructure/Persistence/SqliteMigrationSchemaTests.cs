@@ -95,6 +95,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260923054821_AddDownloadClientStatus";
     private const string OperationEvidencePublicationsMigrationId =
         "20261002210137_AddOperationEvidencePublications";
+    private const string RejectClearlyMusicReleasesMigrationId =
+        "20261006202151_AddRejectClearlyMusicReleasesToApplicationSettings";
     private const string AutomaticSearchTimingMigrationId =
         "20261021212418_AddAutomaticSearchTiming";
     private const string ReleaseBlocklistMigrationId =
@@ -559,13 +561,14 @@ public class SqliteMigrationSchemaTests : BaseTests
                 BackupRetentionDaysMigrationId,
                 DownloadClientPriorityMigrationId,
                 FreeSpaceImportSettingsMigrationId,
-                IndexerSeedCriteriaMigrationId
+                IndexerSeedCriteriaMigrationId,
                 EmailNotificationsMigrationId,
                 HousekeepingRetentionMigrationId,
                 DropProcessExecutionLogsMigrationId,
                 IndexerDownloadClientBindingMigrationId,
                 DownloadClientStatusMigrationId,
                 OperationEvidencePublicationsMigrationId,
+                RejectClearlyMusicReleasesMigrationId,
                 AutomaticSearchTimingMigrationId,
                 ReleaseBlocklistMigrationId
             ],
