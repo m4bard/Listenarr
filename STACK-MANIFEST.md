@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        a630572e983614a52ea409a23da52a99e3b8b91b
     base short:  a630572e9
-    patches:     607
-    version:     1.3.4+m4bard.607
+    patches:     608
+    version:     1.3.4+m4bard.608
 
 ## Composition note (2026-10-06, third incremental bake tonight, hand-composed)
 
@@ -29,8 +29,12 @@ existing Amazon/Audible checkbox indices) was resolved directly and confirmed by
 Also folded in, as this bake's own composition-only fixes (not tracker items): item #336's
 migration Designer snapshot was regenerated against the composed stack (see commit
 `f90d2c051`, full reasoning there) after `MigrationDesignerChainTests` caught it stale by 221
-lines of unrelated model drift; and the version-stamp CI safeguard below (commit `17764d3b7`),
-requested directly by the Director as a separate investigation.
+lines of unrelated model drift; and the version-stamp CI safeguard below (commits `17764d3b7`
+and `bc4d421c4` -- the latter fixing an unanchored-grep bug in the former that an independent
+reviewer caught by running the check's own bash against this exact file before it ever reached
+CI), requested directly by the Director as a separate investigation. That second fix is itself
+one more commit, which is why the header above says 608, not 607 -- the count is real and moves
+every time a commit does, which is the entire point of the check below.
 
 ### Version-stamp finding (Director-requested investigation)
 
@@ -46,14 +50,14 @@ used, since narrow per-item cherry-picking needs more care than a full rebuild) 
 silently. Fixed in `.github/workflows/stack-image.yml`: the build now recomputes the patch count
 from a full-history checkout and fails loudly if it does not match the manifest's declared
 count, instead of trusting a file nothing was forced to keep current. This bake's own manifest
-(607) was generated fresh and passes that check.
+(608) was generated fresh and passes that check.
 
 Deliberately NOT done here: hand-extending the "Patches, oldest first" and "Items, in
 application order" sections below to cover bake 2's 13 commits or this bake's 9. Those sections
 were already a hand-maintained, best-effort narrative (see the 2026-10-02 note immediately
 below), and bake 2 never touched this file at all, so they are accurate only through bake 1's
 own +22. Hand-extending them further risked compounding exactly the kind of error this
-investigation exists to catch. The authoritative figures are the header above (patches: 607,
+investigation exists to catch. The authoritative figures are the header above (patches: 608,
 cross-checked by the new CI step against real git history) and `git log
 a630572e9..<published-tip>`, not the narrative sections below.
 
