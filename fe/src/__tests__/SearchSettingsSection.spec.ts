@@ -88,7 +88,8 @@ describe('SearchSettingsSection', () => {
     })
 
     const checks = wrapper.findAll('input[type="checkbox"]')
-    expect(checks).toHaveLength(3)
+    // OpenLibrary, Amazon, Audible, RejectClearlyMusicReleases, in template order.
+    expect(checks).toHaveLength(4)
 
     await checks[1].setValue(false)
     let last =
@@ -99,5 +100,21 @@ describe('SearchSettingsSection', () => {
     last =
       wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.enableAudibleSearch).toBe(false)
+  })
+
+  it('emits update:settings with rejectClearlyMusicReleases when its checkbox toggles', async () => {
+    const { default: SearchSettingsSection } =
+      await import('@/components/settings/SearchSettingsSection.vue')
+    const wrapper = mount(SearchSettingsSection, {
+      props: { settings: { rejectClearlyMusicReleases: false } },
+      global: { components: { Checkbox } },
+    })
+
+    const checks = wrapper.findAll('input[type="checkbox"]')
+    const musicGateCheckbox = checks[3]
+    await musicGateCheckbox.setValue(true)
+    const last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    expect(last.rejectClearlyMusicReleases).toBe(true)
   })
 })
