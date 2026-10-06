@@ -597,6 +597,9 @@ export interface ApplicationSettings {
   authorIdentityRepairIntervalHours?: number
   authorIdentityRepairMaxRowsPerRun?: number
   authorIdentityRepairRecheckAfterDays?: number
+
+  // Opt-in content-type gate: reject releases that are clearly music (default off)
+  rejectClearlyMusicReleases?: boolean
 }
 
 export interface ProwlarrImportConnectionSettings {
