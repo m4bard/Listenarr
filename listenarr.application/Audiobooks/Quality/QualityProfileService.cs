@@ -27,12 +27,38 @@ namespace Listenarr.Application.Audiobooks.Quality
         private readonly ILogger<QualityProfileService> _logger;
         private readonly IQualityProfileRepository _repository;
         private readonly IIndexerRepository? _indexerRepository;
+        private readonly IConfigurationService? _configurationService;
 
-        public QualityProfileService(IQualityProfileRepository repository, ILogger<QualityProfileService> logger, IIndexerRepository? indexerRepository = null)
+        public QualityProfileService(IQualityProfileRepository repository, ILogger<QualityProfileService> logger, IIndexerRepository? indexerRepository = null, IConfigurationService? configurationService = null)
         {
             _logger = logger;
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _indexerRepository = indexerRepository;
+            _configurationService = configurationService;
+        }
+
+        /// <summary>
+        /// Reads ApplicationSettings.RejectClearlyMusicReleases. Fails open (returns false) if no
+        /// configuration service was supplied or settings cannot be loaded, so a missing dependency
+        /// never turns into an unexpected rejection.
+        /// </summary>
+        private async Task<bool> GetRejectMusicReleasesSettingAsync()
+        {
+            if (_configurationService == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var settings = await _configurationService.GetApplicationSettingsAsync();
+                return settings?.RejectClearlyMusicReleases ?? false;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Failed to load ApplicationSettings while checking RejectClearlyMusicReleases; failing open (not rejecting)");
+                return false;
+            }
         }
 
         public async Task<List<QualityProfile>> GetAllAsync()
@@ -192,17 +218,21 @@ namespace Listenarr.Application.Audiobooks.Quality
             }
         }
 
-        public Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile, bool targetIsBundle = false) =>
-            ScoreSearchResult(searchResult, profile, resolvedIndexers: null, targetIsBundle);
+        public async Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile, bool targetIsBundle = false)
+        {
+            var rejectMusicReleases = await GetRejectMusicReleasesSettingAsync();
+            return await ScoreSearchResult(searchResult, profile, resolvedIndexers: null, rejectMusicReleases, targetIsBundle);
+        }
 
         private async Task<QualityScore> ScoreSearchResult(
             SearchResult searchResult,
             QualityProfile profile,
             IReadOnlyDictionary<int, Indexer>? resolvedIndexers,
+            bool rejectMusicReleases,
             bool targetIsBundle = false)
         {
             var scorer = new SearchResultScorer(_indexerRepository, _logger, resolvedIndexers);
-            var score = await scorer.Score(searchResult, profile, targetIsBundle);
+            var score = await scorer.Score(searchResult, profile, targetIsBundle, rejectMusicReleases);
 
             // Also calculate the Prowlarr-style composite (Smart) score so the UI
             // can display the same composite ranking details used for Smart sorting.
@@ -253,9 +283,11 @@ namespace Listenarr.Application.Audiobooks.Quality
             // rejects the overlap, the scorer catches it and logs at Debug, and the result keeps
             // a retention of 0 with Usenet detection skipped. The scores come out quietly wrong
             // rather than the request failing.
+            // The setting is read once for the same reason: it is one value for the whole batch.
             var resolvedIndexers = await ResolveIndexersAsync(searchResults);
+            var rejectMusicReleases = await GetRejectMusicReleasesSettingAsync();
             var scores = await Task.WhenAll(
-                searchResults.Select(result => ScoreSearchResult(result, profile, resolvedIndexers, targetIsBundle)));
+                searchResults.Select(result => ScoreSearchResult(result, profile, resolvedIndexers, rejectMusicReleases, targetIsBundle)));
 
             // Rejected results last, then the operator's own quality ordering, then the score,
             // then ScoredReleaseTiebreaker so the ranking does not depend on the order the
