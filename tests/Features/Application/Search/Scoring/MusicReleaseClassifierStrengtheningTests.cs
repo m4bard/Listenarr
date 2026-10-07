@@ -643,6 +643,56 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         }
 
         // ---------------------------------------------------------------------------------
+        // Round 4 of independent review found a narrower but real gap after round 3's token
+        // tightening: an audiobook ABOUT audio technology, where "FLAC" or a kbps figure is the
+        // book's own subject matter, embedded in ordinary prose, not a release tag. Fixed
+        // structurally rather than lexically -- BitrateTagPattern now requires the token to sit
+        // in a release-tag-SHAPED position (the end of the title, and a bracketed FLAC contains
+        // nothing else), since a real release tag is conventionally the last thing in a title and
+        // nothing else. Permanent negative controls for all four of round 4's fixtures.
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void NegativeControl_ReviewRound4_FlacAsBookSubjectMidTitle_IsAccepted()
+        {
+            var result = Result(category: null, title: "Jordan Pierce - The Vinyl Revival (FLAC Format Explained)");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound4_KbpsAsBookSubjectNotAtEnd_IsAccepted()
+        {
+            var result = Result(category: null, title: "Jordan Pierce - Engineering Sound: 128kbps and Beyond");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound4_AlbumVocabPlusKbpsAsBookSubjectNotAtEnd_IsAccepted()
+        {
+            var result = Result(category: null, title: "The Remastered History of 128kbps Streaming");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound4_FlacAsFictionalAcronymMidTitle_IsAccepted()
+        {
+            var result = Result(category: null, title: "Senator Avery Lin - The Silent Vote (FLAC Resistance)");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        // ---------------------------------------------------------------------------------
         // Domain-scoping, both directions (independent review verified this by direct test
         // rather than by reading alone -- QualityProfileMusicCategoryGateTests' shared fixture
         // title always carries "(Unabridged)", which only exercises the title-overrides-category
