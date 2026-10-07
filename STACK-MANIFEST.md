@@ -4,8 +4,122 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        a630572e983614a52ea409a23da52a99e3b8b91b
     base short:  a630572e9
-    patches:     608
-    version:     1.3.4+m4bard.608
+    patches:     620
+    version:     1.3.4+m4bard.620
+
+## Composition note (2026-10-07, fourth incremental bake, hand-composed)
+
+Base confirmed by fresh `git fetch` + `git rev-parse origin/canary-m4bard` at session start
+(`e336954e7ed83f62d884e630bba2552c07d4bdcf`, the third bake's own published tip), re-confirmed
+by a second fresh fetch immediately before pushing. Six tracker items folded in, each as a
+narrow cherry-picked range resolved against the item's own declared dependency, never a full
+branch merge, applied one commit at a time (not as multi-commit `git cherry-pick` ranges) after
+an earlier attempt at chaining several range cherry-picks in one shell invocation silently
+mis-queued the sequencer across two unrelated items (recovered from a dangling commit via
+`git reflog`; no work was actually lost, but every item after that point was re-applied one
+commit at a time with a status check between each, and that is the discipline this note is
+flagging for next time):
+
+| item | branch | range applied | result |
+|---|---|---|---|
+| #356 | `fix/356-series-position-fractional-tolerance` on `fix/310-grab-time-series-position` | `fix/310..fix/356` (2 commits) | clean |
+| #357-v2 | `fix/357-nzbget-history-limit-v2` on `fix/136-nzbget-history-warn-once` | `7abbc8ff3..fix/357-v2` (1 commit) | 1 real conflict (detail below) |
+| #277, follow-up half | two specific commits `4d81d562a`/`602ec1c50` (NOT their branch's full 10-commit range -- the other 8 are already present in canary-m4bard under recomposed SHAs, per the tracker's own corrected 2026-10-07 annotation) | clean, both |
+| #277, frontend half | `fix/277-bulk-remove-defaults-client-removal`, rooted directly on canary-m4bard's own current tip (verified: `git merge-base` of the branch and canary-m4bard equals canary-m4bard's exact pre-bake tip) | 1 commit | clean |
+| #340 | `fix/340-removal-workflow-history-row` on `fix/325-orphan-cleanup-history-row` | `4fe8a3e42..fix/340` (1 commit) | 1 real conflict (detail below) |
+| #353 | `feat/335-blocklist-remove-confirm` on `feat/918-blocklist-frontend` | `58ffe7c7b..feat/335-confirm` (1 commit) | clean |
+| #269 | `fix/269-silent-drop-companion-log` on `local/21-companion-tests-on-269` | `da0a0809..fix/269-log` (2 commits) | clean |
+
+All five dependency branches (`fix/310-grab-time-series-position`, `fix/136-nzbget-history-warn-once`,
+`fix/325-orphan-cleanup-history-row`, `feat/918-blocklist-frontend`, `local/21-companion-tests-on-269`)
+were confirmed present in canary-m4bard's actual content before touching anything: none are literal
+SHA ancestors of canary-m4bard (expected -- this stack is composed by cherry-pick, not merge, so a
+declared branch's own tip is never a literal ancestor of the composed branch), so presence was
+confirmed by content instead -- `fix/325`'s own tip commit is named verbatim in the composed tree's
+own cherry-pick trailer (`439daa62d`, "(cherry picked from commit 4fe8a3e42...)"), and the other four
+are named in `STACK-MANIFEST.md`'s own prior "Patches, oldest first" section with nonzero patch
+counts. The `#277` follow-up half specifically needed a fresh `git patch-id` check (not just reading
+the tracker's own prior note) before applying: confirmed absent from all 608 patches between
+`a630572e9` and the pre-bake tip, matching the tracker's own 2026-10-07 correction exactly.
+
+### Real conflicts, each resolved by a different agent than whoever drove the cherry-pick
+
+- **Item #357-v2, three files** (`fe/src/types/index.ts`, `listenarr.domain/Configuration/
+  ApplicationSettings.cs`, `tests/Features/Infrastructure/Persistence/SqliteMigrationSchemaTests.cs`):
+  trivial, additive -- item 357's branch was rooted on `fix/136`, an older base missing several
+  already-landed later items' own settings/constants/fields at the same insertion points. Resolved
+  by keeping every already-present item untouched and appending 357's own new
+  `DownloadClientHistoryLimit` property/const/field after it, in each file. Independently verified
+  (different agent): the new EF migration's `AddColumn` call correctly carries `defaultValue: 60`
+  (not the scaffolder's CLR-default 0, the same trap `BackupRetentionDays` hit once already), and
+  the EF model snapshot's own handling of the unmapped `Indexers.Tags` column is unaffected (checked
+  against `MigrationDesignerChainTests`'s own documented exception for that column, not assumed).
+- **Item #340, one file** (`tests/Features/Application/Downloads/Cleanup/
+  DownloadRemovalWorkflowTests.cs`): an add/add conflict -- the already-composed stack and the
+  incoming commit independently created a test file at the identical path/class name for two
+  completely unrelated reasons (a pre-existing identifier-resolution fix for the same production
+  class already on the stack, versus item #340's own three new History-row-assertion tests). Not a
+  converging edit to a shared ancestor; confirmed by `git show <incoming>^` erroring that the path
+  does not exist at the incoming commit's own parent. Resolved by merging both test sets into one
+  file (10 pre-existing + 3 incoming = 13), reusing the already-present DI/mock wiring rather than
+  introducing a second parallel setup, and lightly adapting one of the incoming tests (originally
+  written against the default DI wiring's `NotImplementedException` path) to use the already-present
+  gateway mock instead, since merging `InitializeAsync` verbatim would have left its own comment
+  describing a mechanism it no longer exercised. Independently verified (different agent, after the
+  merge): filtered run of just this test class, 13/13 passing, confirming nothing from either side
+  was silently dropped.
+
+### One composition-only problem found and fixed, not from a merge conflict
+
+- **Stale frontend assertion, `fe/src/__tests__/DownloadSettingsSection.spec.ts`:** item 357-v2's
+  own branch was tested against its older base (`fix/136`), which predates item #81's
+  stalled-download-timeout field, so its spec correctly asserted 7 numeric inputs there. On
+  canary-m4bard, which already carries item #81, the real count is 8 (357's own new
+  `downloadClientHistoryLimit` input at index 6, the pre-existing stalled-download-timeout input at
+  index 7). Found by running the full frontend suite after composing (1 failure, `toHaveLength(7)`
+  expected 7 got 8); fixed directly -- mechanical, single assertion, no judgment call, same class of
+  fix bake 3's `SearchSettingsSection.spec.ts` checkbox-index correction was.
+
+Independently reviewed by a third agent, different from both the implementer and the two
+conflict-resolution agents: read both sides of each real conflict directly from `git show` (not
+from commit messages or the first agents' prose), confirmed the migration default-value trap and
+the merged test file's coverage count independently, counted the component's rendered inputs
+directly from its template rather than trusting the fix commit's claim, and re-ran both full suites
+from scratch in its own clean worktree after deleting all build output and `node_modules`.
+
+### Full suite, native (no podman), run twice
+
+Implementer's run: backend `~/.dotnet/dotnet test tests/Listenarr.Tests.csproj` -- Failed: 0,
+Passed: 6055, Skipped: 133, Total: 6188. Frontend `npx vitest run` -- 159 files, 1294 passed, 0
+failed. `npx vue-tsc --build tsconfig.app.json --force` -- clean.
+Reviewer's independent from-scratch run: see the reviewer's own verdict recorded in
+`EXCHANGE/listenarr/ROUNDS.md`'s matching entry for the exact counts and any discrepancy found.
+Third bake's own published baseline was 6022 backend / 1292 frontend (159 files); the +33 backend /
++2 frontend deltas are explained by the six folded-in items' own new tests (356's two
+whole-vs-fractional regression tests plus its retargeted 17-row population, 357's three
+truncation/default-value tests, #277's new `MovedDownloadCleanupQbittorrentTests.cs` file, #340's
+three History-row tests, #269's companion-discovery and hostile-tree-guard tests on the backend;
+#353's confirm-true/confirm-false tests on the frontend) -- confirmed by reading which test classes
+and files actually grew, not assumed from the totals alone.
+
+### Not folded in
+
+Item #361 (`fix/336-strengthen-classifier-v2`, strengthening item #336's `MusicReleaseClassifier`)
+is explicitly held back per the Director's own standing instruction: three independent review
+rounds have found real false positives in it, and it rides the next bake once a review round comes
+back clean, not this one.
+
+### A caveat on the sections below
+
+`tools/stack_items.py manifest` was re-run fresh for this bake (exit 0) and its output is appended
+below in full, replacing the stale copy bake 3 deliberately left in place. It still could not stamp
+any of this bake's own six new items' commits to their declared tracker item (`#-`), the same
+tool limitation bake 3's own note about this file already flagged for its own two items in an
+earlier form -- every item ALREADY landed in a prior bake (325, 333, 335, 336, 1005, 1008, 136, 310,
+etc.) stamps correctly; only commits added in the bake that generates the manifest fail to. Worth
+investigating in `stack_items.py` itself at some point; not blocking, since the header above is
+what `stack-image.yml`'s CI step actually verifies (base SHA, patch count, version), not this
+narrative section.
 
 ## Composition note (2026-10-06, third incremental bake tonight, hand-composed)
 
@@ -78,6 +192,7 @@ for this build), so the 21 new patches below were applied and stamped by hand ra
 through the normal tool. Not reproducible from `tools/stack.items` alone this time; this file is
 the record of what actually went in. See the exchange-root composition note for the full story.
 
+
 ## Patches, oldest first
 
     e8313a84f  #105  fix(naming): don't lose a series position that isn't a plain number
@@ -149,12 +264,12 @@ the record of what actually went in. See the exchange-root composition note for 
     eb6aa6f9f  #33   test(audible): cover the other ways the catalog lookup fails, and the 503 itself
     951664a54  #33   test(audible): give the new controller class the repository's test conventions
     54a55640b  #33   fix(audible): declare the search endpoint's responses, including the new 503
-    6df8c0fae  #25   feat(import): embed cover art into imported files, behind a setting
-    38184a7d8  #25   docs: attach the new doc comments to the members they describe
-    35c3b3b99  #25   tests: pin that cover art replaces the existing artwork rather than appending
-    ac7b37f68  #25   fix(import): embed cover art for a book that has artwork but no ASIN
-    40049aea6  #25   tests: keep this branch's migration out of the shared expected list
-    91e74d62c  #25   refactor: keep the cover art code clear of PR 843's edits to the same file
+    6df8c0fae  #-    feat(import): embed cover art into imported files, behind a setting
+    38184a7d8  #-    docs: attach the new doc comments to the members they describe
+    35c3b3b99  #-    tests: pin that cover art replaces the existing artwork rather than appending
+    ac7b37f68  #-    fix(import): embed cover art for a book that has artwork but no ASIN
+    40049aea6  #-    tests: keep this branch's migration out of the shared expected list
+    91e74d62c  #-    refactor: keep the cover art code clear of PR 843's edits to the same file
     269b10d49  #60   fix(filesystem): record why a file mutation failed, not only that it did
     f73fa53e6  #60   test(downloads): name the no-inner-cause case for what it now does
     e440aad5c  #60   refactor(downloads): format the failure cause where both writers can reach it
@@ -647,16 +762,16 @@ the record of what actually went in. See the exchange-root composition note for 
     bdaa3a980  #309  fix: default FailedDownloadAutoSearch to true, matching the *arr family
     c70facd59  #298  test(redaction): reproduce ffprobe JSON corruption from RedactText fallback
     39c5089dd  #298  fix(redaction): drop generic fallback that corrupted unrelated text
-    3c0a11b8b  #299  fix(library): reject an unrecognized refresh-metadata field instead of silently upgrading to whole-library
+    3c0a11b8b  #299  fix(library): reject an unrecognized refresh-metadata field instead of silently upgrading to whole-library (#299)
     22afb09e4  #299  fix(library): catch the deserialize JsonException so a wrong-typed field 400s, not 500s
     a15b6c6f2  #24   fix(import): do not write the ASIN tag through a hardlink to the source
-    d17b41895  #25   tests: pin that the hardlink case really shares the source's inode
+    d17b41895  #24   tests: pin that the hardlink case really shares the source's inode
     3b4883f0b  #25   fix(import): extend the hardlink guard to cover-art embedding, with its test
-    d81ded411  #24   fix(import): rename duplicate test method after merging item 24/25 hardlink-guard resolution (m4bard merge fixup)
+    d81ded411  #-    fix(import): rename duplicate test method after merging item 24/25 hardlink-guard resolution
     5c998ffeb  #69   test(downloads): extend the seed-limit removal gate tests to the full matrix
     474171322  #69   fix(downloads): make CanRemove reach the seed-limit evaluator on the queue-poll path
     675a66cc1  #69   test(downloads): cover the exact ratio == limit boundary for both clients
-    db2b8bee6  #69   test(downloads): fix TransmissionSeedLimitRemovalGateTests after the Settings-dict removal (m4bard merge fixup)
+    db2b8bee6  #-    test(downloads): fix TransmissionSeedLimitRemovalGateTests after the Settings-dict removal
     260a510c5  #310  test(search): series-entry cases for a release honestly titled for a different volume
     f0d6a216b  #310  search: reject a release whose own series position disagrees with the catalog's
     3e42463ce  #310  test(search): a release honestly for a fractional series entry, caught in review
@@ -664,6 +779,42 @@ the record of what actually went in. See the exchange-root composition note for 
     94fe4666e  #310  test(search): pin the thousands-separator exclusion on the series-position parse
     9af32691d  #293  fix(activity): virtual row stride must not be shorter than the rendered row
     d7739410d  #293  fix(activity,wanted): measure the virtual row stride from a rendered row
+    8ebb403a4  #-    stack: manifest for a630572e9 plus 584 patches
+    254930a4b  #326  test(qbittorrent): add numeric-tolerance coverage for the response mapper helpers (#1008)
+    cd987d22d  #326  fix(qbittorrent): tolerate every numeric JSON shape in the response mapper (#1008)
+    f75174493  #326  test(qbittorrent): malform state instead of downloaded in the unreadable-torrent fixtures (#1008)
+    618eb2dd4  #328  test(downloads): cover qBittorrent priority-0 (do not download) files
+    84a28eada  #328  fix(downloads): exclude priority-0 files from qBittorrent source list
+    9fe539c85  #328  docs(downloads): note qBittorrent's Mixed priority is per-torrent only
+    3f9485dc1  #324  fix(downloads): isolate OnDownloadFailed's blocklist/removal/search steps so one exception doesn't abort the rest
+    2cb8e03c4  #333  fix(nzbget): classify DeleteStatus-family history entries as Failed, not Ignored
+    4d081962f  #333  fix(nzbget): correct Sonarr/Readarr citation line numbers in comments
+    d82f9ffc0  #218  fix(scan): log per-file MetadataContradictsPath diagnostics on CompletedNoFilesAccepted
+    439daa62d  #325  fix(downloads): record History entry when orphan cleanup removes a download
+    c6ddd452d  #-    test(nzbget): set DeleteStatus/MarkStatus in the shared HistoryEntry test helper
+    7196554b0  #-    downloads: split DownloadMonitorService's failure handling into a partial
+    cf1c621fc  #336  settings: add RejectClearlyMusicReleases to ApplicationSettings
+    b5a9bdbe7  #336  search: gate clearly-music releases in SearchResultScorer when enabled
+    238934e3c  #336  fe: add "Reject releases that are clearly music" search setting toggle
+    cb610753e  #336  test: extend the post-canary migration allow-list for the new migration
+    7d44a4cb5  #336  fix: Audiobooks id must override even alongside another Audio-range id
+    4b87d40a4  #335  feat(blocklist): add a list-everything endpoint for the frontend page
+    56b02fdc8  #335  feat(blocklist): build the Blocklist page (list, remove, nav entry)
+    f90d2c051  #-    migrations: regenerate item 336's Designer snapshot against the composed stack
+    17764d3b7  #-    stack-image: fail the build if the version stamp is stale, not just missing
+    bc4d421c4  #-    stack-image: anchor the version/patches grep to the manifest header
+    e336954e7  #-    stack: manifest for a630572e9 plus 608 patches
+    b379fe005  #-    test(search): pin item 356's whole-number-only series-position tolerance
+    183890940  #-    search: fail open on series-position comparison when either side is fractional
+    f910f66aa  #-    fix(nzbget): bound the unbounded history fetch, item 357
+    4d47b22bb  #-    qbittorrent: treat a torrent confirmed absent from the client as removed
+    a82f1aeb8  #-    tests: give the qBittorrent cleanup composition tests their Name and Category traits
+    a77f44244  #-    fe(activity): the bulk remove path also defaulted to removing from the client
+    d6a7530a0  #-    fix(downloads): record History entry when DownloadRemovalWorkflow removes a download
+    9a32b28a9  #-    fix(blocklist): require confirmation before removing a blocklist entry
+    f214b0244  #-    fix(manual-import): log the companion files TopDirectoryOnly drops silently
+    72fe0719f  #-    fix(manual-import): guard the nested-companion scan against a hostile tree
+    66c15e1e5  #-    test(settings): fix item 357's stale numeric-input count for this base
 
 ## Items, in application order
 
@@ -673,6 +824,7 @@ the record of what actually went in. See the exchange-root composition note for 
     23   fix/bug24-queue-guard                        3 patches
     21   local/21-boundary-only                       6 patches
     24   fix/bug11-taglib-writestream                 3 patches
+    24   fix/843-hardlink-guard                       2 patches
     22   fix/bug4-n-of-m-chapter-stem                 3 patches
     17   fix/bug5-library-import-series-memberships   3 patches
     11   fix/818-descriptor-path-leaks                3 patches
@@ -689,7 +841,7 @@ the record of what actually went in. See the exchange-root composition note for 
     160  fix/startupconfig-merge                      2 patches
     64   local/980-with-urlbase-validation            5 patches
     33   fix/audible-timeout-not-zero-match           4 patches
-    25   prreview/914-on-843                          6 patches
+    25   prreview/914-on-843-r2                       1 patch
     60   fix/surface-file-mutation-cause              3 patches
     61   fix/retry-import-requeues                    2 patches
     51   feat/release-blocklist                       13 patches
@@ -824,6 +976,7 @@ the record of what actually went in. See the exchange-root composition note for 
     268  fix/companion-relative-path-escape           2 patches
     269  fix/manual-companion-relative-path           4 patches
     21   local/21-companion-tests-on-269              1 patch
+    269  fix/269-silent-drop-companion-log            0 patches
     258  fix/deletion-intent-does-not-brick-startup   1 patch
     273  local/273-on-shim                            6 patches
     275  local/rb-strip-role-suffix-from-credits-base 0 patches
@@ -833,6 +986,7 @@ the record of what actually went in. See the exchange-root composition note for 
     270  fix/hardlink-falls-back-to-copy              2 patches
     277  local/rb-delete-removes-from-client-0924-base 0 patches
     277  local/rb-delete-removes-from-client-0924     10 patches
+    277  fix/277-bulk-remove-defaults-client-removal  0 patches
     276  local/rb-276-ui-on-shim-0924-base            0 patches
     276  local/rb-276-ui-on-shim-0924                 3 patches
     278  local/rb-custom-script-settings-ui-0924-base 0 patches
@@ -882,6 +1036,7 @@ the record of what actually went in. See the exchange-root composition note for 
     237  local/rb-designer-chain-0924-base            0 patches
     237  local/rb-designer-chain-0924                 1 patch
     293  fix/grid-container-height-shrinks-to-content 1 patch
+    293  fix/grid-container-height-row-stride         2 patches
     213  fix/996-trace-log-level                      3 patches
     279  local/rb-279-metadata-refresh-manual-trigger-base 0 patches
     279  local/rb-279-metadata-refresh-manual-trigger 1 patch
@@ -893,6 +1048,8 @@ the record of what actually went in. See the exchange-root composition note for 
     236  local/rb-901-proc-fd-file-size               4 patches
     292  local/rb-292-release-matches-requested-book-base 0 patches
     292  local/rb-292-release-matches-requested-book  5 patches
+    310  fix/310-grab-time-series-position            5 patches
+    356  fix/356-series-position-fractional-tolerance 0 patches
     139  local/rb-953-series-identity-not-display-name-base 0 patches
     139  local/rb-953-series-identity-not-display-name 3 patches
     291  local/rb-291-indexer-backoff-own-dbcontext-base 0 patches
@@ -909,33 +1066,21 @@ the record of what actually went in. See the exchange-root composition note for 
     218  fix/822-scan-no-files-accepted               12 patches
     3    local/rb-3-791-option-d-nuget-ffprobe-base   0 patches
     3    local/rb-3-791-option-d-nuget-ffprobe        1 patch
-    -    fb3772cbe (prior publish's own manifest commit)  1 patch
-    309  fix/failed-download-autosearch-default-true 2 patches
+    309  fix/failed-download-autosearch-default-true  2 patches
     298  fix/298-redaction-fallback                   2 patches
     299  fix/299-metadata-refresh-unknown-scope-key   2 patches
-    24   fix/843-hardlink-guard                       1 patch, + 1 m4bard merge fixup
-    25   prreview/914-on-843-r2 (unique commit only)  2 patches
-    69   fix/69-canremove-seed-gate                   3 patches, + 1 m4bard merge fixup
-    310  fix/310-grab-time-series-position            5 patches
-    293  fix/grid-container-height-row-stride         2 patches
+    69   fix/69-canremove-seed-gate                   3 patches
+    317  bundle/download-pipeline                     0 patches
+    328  fix/1005-qbit-skipped-files                  3 patches
+    324  fix/324-download-failure-step-isolation      1 patch
+    326  fix/1008-qbit-numeric-tolerance-stacked      3 patches
+    218  fix/218-scanjobprocessor-diagnostic-logging  1 patch
+    325  fix/325-orphan-cleanup-history-row           1 patch
+    340  fix/340-removal-workflow-history-row         0 patches
+    333  fix/333-nzbget-history-delete-status         2 patches
+    335  feat/918-blocklist-frontend                  2 patches
+    336  fix/336-music-category-gate                  5 patches
+    353  feat/335-blocklist-remove-confirm            0 patches
+    361  fix/336-strengthen-classifier-v2             0 patches
+    357  fix/357-nzbget-history-limit-v2              0 patches
 
-Not applied tonight, by deliberate decision, not oversight:
-
-    277  local/rb-delete-removes-from-client-0924(-base): both the original 8-commit ask and
-         the 2-commit presence-check follow-up are already present in fb3772cbe's content under
-         recomposed SHAs (confirmed: QbittorrentRemovalWorkflow.cs already has the presence-check
-         guard; DownloadsController.cs already has RemoveDownloadsAsync's removedIds/keptIds
-         accounting, from commit 4596e9285 "Route the downloads delete endpoints through the
-         client removal workflow", itself part of the already-stacked 51/81/72 download-failure
-         chain). Reapplying the old branch would have reverted shipped code to a stale duplicate.
-         items/277/ask.md already records state on-stack from round 2026-10-01-23; no change
-         needed there.
-
-    144/33 (feat/metadata-refresh-scheduled chain, fix/audible-timeout-not-zero-match): item 299
-         is declared `on` this chain in tools/stack.items, but its content (MetadataRefreshContracts.cs
-         and the rest of the feature) is likewise already present in fb3772cbe under recomposed
-         SHAs. Only item 299's own 2-commit delta needed applying, confirmed by a clean
-         cherry-pick with no missing-file errors.
-
-Regenerate with tools/local_stack.sh in the tracker repo. (This section hand-extended; see the
-composition note above the patch list.)
