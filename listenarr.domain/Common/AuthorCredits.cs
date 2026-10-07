@@ -62,10 +62,15 @@ namespace Listenarr.Domain.Common
         // "(Adapted)" sit on a large share of public-domain classics. Reading one of those as a
         // contributor credit removes the actual author, which is the failure this class exists
         // to prevent, arrived at from the other direction.
+        // tracker#341 Fix 2 added traducător, traduttrice, director, "cover designer" and
+        // "cover graphic designer" below, plus "Tradutorre" -- a real typo for "tradutor"
+        // observed in Audible's own data, kept in the vocabulary rather than corrected because
+        // this class matches what providers actually send, not what they should have sent.
         private const string AgentRoleWords =
-            "translator|traducteur|traductrice|traduttore|tradutor|tradutora|traductor|" +
-            "traductora|ubersetzer|übersetzer|editor|editora|editeur|éditeur|illustrator|" +
-            "adapter|adaptateur|annotator|compiler|contributor";
+            "translator|traducteur|traductrice|traduttore|traduttrice|tradutor|tradutora|" +
+            "tradutorre|traductor|traductora|traducător|ubersetzer|übersetzer|editor|editora|" +
+            "editeur|éditeur|illustrator|adapter|adaptateur|annotator|compiler|contributor|" +
+            "director|cover graphic designer|cover designer";
 
         // "editora" is deliberately in the list above and is the weakest member of it: in
         // Portuguese it usually means a publishing house, and Listenarr has a Publisher field of
@@ -73,11 +78,38 @@ namespace Listenarr.Domain.Common
         // person, and dropped credits are cheaper to notice than missing ones. Noted so the next
         // reader knows the ambiguity was seen rather than missed.
 
-        private const string WorkRoleWords =
+        // Work words that double as edition descriptors: Audible and Amazon market a classic as
+        // "(Illustrated)", "(Annotated)" or "(Adapted)" without naming who did it, and
+        // tracker#341 Fix 2 adds "dramatization" to that same shape -- "a dramatization of
+        // [book]" describes a format, not a credited role, every bit as much as "(Illustrated)"
+        // does. A bare parenthetical naming one of these is not a credit on its own; see
+        // ParenStrictBody, which only accepts these with a trailing "by".
+        private const string EditionDescriptorWorkWords =
             "translated|translation|traducao|tradução|traduccion|traducción|edited|adapted|" +
-            "adaptado|adaptation|illustrated|annotated|annotation|introduction|introductions|introduccion|" +
-            "introducción|foreword|afterword|preface|préface|prefacio|postface|avant-propos|" +
-            "prologue|prologo|prólogo|essay|notes";
+            "adaptado|adaptation|illustrated|annotated|annotation|dramatization";
+
+        // Work words that are never used to describe an edition -- nobody markets a classic as
+        // "(Introduction)" or "(Foreword)" the way they market one as "(Illustrated)". A bare
+        // parenthetical naming one of these is unambiguously a role, so ParenStrictBody accepts
+        // it without requiring "by".
+        //
+        // This is also the fix for the inconsistency tracker#341 recorded: StripRole already
+        // removed a bare "(Introduction)" through the loose form, while IsRoleCredit returned
+        // false for the same string because the strict form demanded "by" here too. The finding
+        // states the inconsistency exists but does not say which side should move to close it;
+        // the direction here -- making IsRoleCredit recognise what StripRole already stripped,
+        // rather than making StripRole stop stripping it -- is forced by the Illustrated
+        // regression test this file already carries (Primary(["Lewis Carroll (Illustrated)",
+        // "John Tenniel"]) must keep returning "Lewis Carroll"): that regression is specifically
+        // about edition-descriptor words, which is why they stay in the bucket above rather than
+        // moving here with "Introduction". tracker#341 Fix 2 adds Vorwort, prefazione and
+        // "cover design" to this unambiguous bucket.
+        private const string UnambiguousWorkRoleWords =
+            "introduction|introductions|introduccion|introducción|foreword|afterword|preface|" +
+            "préface|prefacio|postface|avant-propos|prologue|prologo|prólogo|essay|notes|" +
+            "vorwort|prefazione|cover design";
+
+        private const string WorkRoleWords = EditionDescriptorWorkWords + "|" + UnambiguousWorkRoleWords;
 
         // Words that may sit inside a role tail without being the role themselves: joiners, and
         // the post-nominals Audible leaves stranded after one ("editor Jr."). On their own they
@@ -118,8 +150,13 @@ namespace Listenarr.Domain.Common
         //
         // An earlier revision used the loose form for both and a review caught it:
         // Primary(["Lewis Carroll (Illustrated)", "John Tenniel"]) returned John Tenniel.
+        //
+        // The work-word half is itself split in two (see UnambiguousWorkRoleWords above): a
+        // word that is never used as an edition descriptor is accepted bare, same as an agent
+        // noun; a word that doubles as one (illustrated, annotated, adapted, dramatization)
+        // still needs "by" before it counts.
         private const string ParenStrictBody =
-            TailLead + "(?:" + AgentAny + "|(?:" + WorkRoleWords + ")\\s+by)" + TailRest;
+            TailLead + "(?:" + AgentAny + "|(?:" + UnambiguousWorkRoleWords + ")|(?:" + EditionDescriptorWorkWords + ")\\s+by)" + TailRest;
 
         private const string ParenLooseBody = DashTailBody;
 
