@@ -60,12 +60,16 @@ namespace Listenarr.Application.Downloads.Submission
 
         /// <summary>
         /// Whether the catalog record's own series position and a position parsed from the
-        /// release's title are both known and name different entries. Reads
-        /// <see cref="Audiobook.SeriesNumber"/>, the structured field, instead of the catalog
-        /// <c>Title</c> string, so a bare title such as "Barsoom" (no "Book N" or "Vol N" of its
-        /// own) still gets this protection. Fails open whenever either side has no usable
-        /// position: a record with no series number set, or a release whose title carries
-        /// nothing that parses as one.
+        /// release's title are both known, both whole numbers, and name different entries.
+        /// Reads <see cref="Audiobook.SeriesNumber"/>, the structured field, instead of the
+        /// catalog <c>Title</c> string, so a bare title such as "Barsoom" (no "Book N" or
+        /// "Vol N" of its own) still gets this protection. Fails open whenever either side has
+        /// no usable position (a record with no series number set, or a release whose title
+        /// carries nothing that parses as one) or either side is fractional: a fractional
+        /// position is a catalog-vs-publisher numbering disagreement as often as a real
+        /// mismatch -- a novella the catalog source counts as entry 0.5 is routinely entry 1 in
+        /// a publisher's own release numbering -- so comparing across that boundary is not
+        /// reliable enough to reject on. Only a whole-number-vs-whole-number disagreement is.
         /// </summary>
         private static bool NamesADifferentSeriesEntry(
             Audiobook audiobook, string? releaseTitle, List<TitleForm> matchedForms)
@@ -87,12 +91,25 @@ namespace Listenarr.Application.Downloads.Submission
                 var releasePosition = ParseReleasePosition(releaseTokens, form.Words);
                 if (releasePosition is decimal position)
                 {
+                    if (HasFractionalPart(catalogPosition.Value) || HasFractionalPart(position))
+                    {
+                        return false;
+                    }
+
                     return position != catalogPosition;
                 }
             }
 
             return false;
         }
+
+        /// <summary>
+        /// Whether a position carries a fractional part (a novella/interstitial slot such as
+        /// "0.5" or "2.5") rather than a whole-number entry. Whole-number-vs-whole-number is the
+        /// only comparison this filter trusts enough to reject on; see
+        /// <see cref="NamesADifferentSeriesEntry"/>.
+        /// </summary>
+        private static bool HasFractionalPart(decimal value) => value != Math.Truncate(value);
 
         /// <summary>
         /// The number that follows one of the book's own title words, or a volume marker, in the
