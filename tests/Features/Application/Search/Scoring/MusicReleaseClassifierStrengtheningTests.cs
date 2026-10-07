@@ -175,12 +175,19 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         // ---------------------------------------------------------------------------------
 
         [Theory]
-        [InlineData("Nightfall Sessions EP [FLAC]")]
-        [InlineData("Harmonic Drift LP [FLAC]")]
-        [InlineData("The Lowland Tapes Anthology [FLAC]")]
-        [InlineData("Carved In Static Soundtrack [FLAC]")]
-        public void AlbumVocabularyPlusBitrateTag_IsCaught(string title)
+        [InlineData("Mira Delgado - Nightfall Sessions EP [FLAC]")]
+        [InlineData("Soraya Quint - Harmonic Drift LP [FLAC]")]
+        [InlineData("Jonas Harrow - The Lowland Tapes Anthology [FLAC]")]
+        [InlineData("Nadia Brecht - Carved In Static Soundtrack [FLAC]")]
+        public void AlbumVocabularyPlusDashPlusBitrateTag_IsCaught(string title)
         {
+            // Round 7 of independent review (tracker #361) proved album vocabulary alone cannot
+            // gate FLAC/kbps either (same category error as round 6's Artist/Album finding --
+            // "The Classic Readings (Remastered Edition) [FLAC]" is a plausible archival lossless
+            // reissue, structurally identical to these fixtures without the dash). These now
+            // require a second independent title corroborator (a bare dash shape) to cross; see
+            // the round-7 regression tests below for the vocab-only/genre-only shapes that must
+            // NOT catch.
             var result = Result(category: null, title: title);
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
@@ -208,13 +215,13 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         }
 
         [Fact]
-        public void ParentheticalGenreMarker_PlusBitrateTag_CrossesThreshold()
+        public void ParentheticalGenreMarker_PlusDashPlusBitrateTag_CrossesThreshold()
         {
-            // Genre marker alone is not enough (see above), and neither is genre marker plus one
-            // more ordinary/ambiguous title word -- round 2 of independent review measured that
-            // GenreMarker+AlbumVocab together still must NOT cross (see the regression test
-            // below). It takes a genuinely scene-specific bitrate tag to corroborate.
-            var result = Result(category: null, title: "Driftwood Station (Pop) [FLAC]");
+            // Genre marker alone is not enough (see above). Round 7 of independent review
+            // (tracker #361) proved genre marker alone cannot gate FLAC either -- it requires a
+            // second independent title corroborator (here, a bare dash shape) alongside the FLAC
+            // tag.
+            var result = Result(category: null, title: "Nova Fenn - Driftwood Station (Pop) [FLAC]");
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
 
@@ -800,6 +807,41 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
                 title: "Jordan Pierce - The Dial-Up Years: Life at 56kbps",
                 artist: "Jordan Pierce",
                 album: "The Dial-Up Years: Life at 56kbps");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        // ---------------------------------------------------------------------------------
+        // Round 7 of independent review disproved the remaining two single-signal corroborators
+        // round 6 left standing: album vocabulary alone cannot gate FLAC, and a genre marker
+        // alone cannot gate kbps, for the same reason Artist/Album consistency couldn't -- both
+        // were explicitly designed (their own code comments say so) to also describe real
+        // audiobook content, not just music. Fixed by requiring genuine multi-signal convergence
+        // (at least two of {album vocabulary, genre marker, bare dash}, excluding Artist/Album
+        // entirely) or an actual music category signal, rather than any one title-derived signal
+        // alone. Permanent negative controls for both of round 7's fixtures.
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void NegativeControl_ReviewRound7_AlbumVocabAloneCannotGateFlac_IsAccepted()
+        {
+            // A plausible archival-quality lossless reissue of a public-domain audiobook --
+            // "Remastered" used accurately, no second title corroborator present.
+            var result = Result(category: null, title: "The Classic Readings (Remastered Edition) [FLAC]");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound7_GenreMarkerAloneCannotGateKbps_IsAccepted()
+        {
+            // A punk-scene memoir whose subtitle legitimately references the archival bitrate of
+            // its own source recordings -- no second title corroborator present.
+            var result = Result(category: null, title: "Growing Up Loud (Punk): Recorded and Archived at 56kbps");
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
 
