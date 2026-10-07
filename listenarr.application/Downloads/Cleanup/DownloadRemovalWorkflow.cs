@@ -18,6 +18,7 @@ namespace Listenarr.Application.Downloads.Cleanup
         IDownloadRepository _downloadRepository,
         IDownloadClientGateway _clientGateway,
         IDownloadQueueService _downloadQueueService,
+        IDownloadHistoryService _downloadHistoryService,
         ILogger<DownloadRemovalWorkflow> _logger)
     {
         public async Task<bool> RemoveAsync(string downloadId, string? downloadClientId = null, bool force = false)
@@ -169,6 +170,21 @@ namespace Listenarr.Application.Downloads.Cleanup
                 // If successfully removed from client (or force=true), also remove from database
                 if (removedFromClient && downloadRecord != null)
                 {
+                    // Record the removal in History before the row disappears so the audit trail
+                    // carries the download's identity and audiobook link, same as the orphan-cleanup
+                    // path (see DownloadOrphanCleanupService.RemoveOrphansAsync and its own comment).
+                    // "force" is the one signal this method has for distinguishing a plain operator/API
+                    // removal from one that gave up on the client side and removed the DB row anyway.
+                    var removalReason = force
+                        ? "Removed: force=true, database record removed without confirming client removal"
+                        : "Removed from queue by operator or API request";
+                    await _downloadHistoryService.RecordRemovedAsync(
+                        downloadRecord.Id,
+                        downloadRecord.DownloadClientId,
+                        downloadRecord.Title ?? "Unknown",
+                        downloadRecord.AudiobookId,
+                        reason: removalReason);
+
                     await _downloadRepository.RemoveAsync(downloadRecord.Id);
                     _logger.LogInformation("Removed download record from database: {DownloadId} (Title: {Title})",
                         downloadRecord.Id, downloadRecord.Title);
