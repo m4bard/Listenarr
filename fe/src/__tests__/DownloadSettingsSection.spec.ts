@@ -35,6 +35,7 @@ describe('DownloadSettingsSection', () => {
           downloadCompletionStabilitySeconds: 5,
           missingSourceRetryInitialDelaySeconds: 2,
           missingSourceMaxRetries: 3,
+          downloadClientHistoryLimit: 60,
         },
       },
     })
@@ -77,6 +78,12 @@ describe('DownloadSettingsSection', () => {
     last =
       wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.missingSourceMaxRetries).toBe(5)
+
+    // Download client history limit (item 357)
+    await inputs[6].setValue('120')
+    last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    expect(last.downloadClientHistoryLimit).toBe(120)
   })
 
   async function mountStallSection(settings: Record<string, unknown>) {
