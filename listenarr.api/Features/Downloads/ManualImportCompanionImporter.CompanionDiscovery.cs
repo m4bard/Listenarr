@@ -27,6 +27,12 @@ public sealed partial class ManualImportCompanionImporter
     /// re-walks the same directories recursively purely to find what that scope left out, and
     /// logs a warning identifying the file and the selected directory it is nested under, so the
     /// loss is observable instead of silent. It does not change what gets imported.
+    ///
+    /// This is diagnostics only, so a directory it cannot walk -- a circular symlink defeating
+    /// <c>SearchOption.AllDirectories</c>, an overlong path, a permission error -- is caught and
+    /// logged rather than left to propagate. <c>TopDirectoryOnly</c> above never recurses and so
+    /// never had this exposure; adding a log line for what it misses should not be able to abort
+    /// the import it is trying to make observable.
     /// </summary>
     private void LogNestedCompanionCandidatesSkipped(
         IReadOnlyCollection<string?> selectedDirectories,
@@ -47,13 +53,27 @@ public sealed partial class ManualImportCompanionImporter
                 continue;
             }
 
-            var nestedCandidates = _fileSystem
-                .EnumerateFiles(directory, "*", SearchOption.AllDirectories)
-                .Where(file => !FileUtils.IsBlacklistedFile(file, importBlacklist))
-                .Select(Path.GetFullPath)
-                .Where(file => !selectedSourceFileSet.Contains(file)
-                    && !companionFileSet.Contains(file))
-                .Distinct(sourceSemantics.Comparer);
+            List<string> nestedCandidates;
+            try
+            {
+                nestedCandidates = _fileSystem
+                    .EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+                    .Where(file => !FileUtils.IsBlacklistedFile(file, importBlacklist))
+                    .Select(Path.GetFullPath)
+                    .Where(file => !selectedSourceFileSet.Contains(file)
+                        && !companionFileSet.Contains(file))
+                    .Distinct(sourceSemantics.Comparer)
+                    .ToList();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(
+                    ex,
+                    "Could not walk {SelectedDirectory} to check for nested companion files left " +
+                    "out by the flat scan; the import itself is unaffected",
+                    directory);
+                continue;
+            }
 
             foreach (var nestedFile in nestedCandidates)
             {
