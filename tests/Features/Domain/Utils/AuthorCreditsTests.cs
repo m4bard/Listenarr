@@ -378,6 +378,60 @@ namespace Listenarr.Tests.Features.Domain.Utils
         }
 
         [Fact]
+        public void WithoutRoleSuffixes_BareAnywhereWinsRegardlessOfOrder()
+        {
+            // tracker#341 Fix 1: "a name appearing bare anywhere in the record is an author;
+            // suffix evidence only reclassifies names whose every occurrence is suffixed."
+            // Suffixed-first, with a genuine other author present, is the case that exposes
+            // order dependence: a rule that classified per-occurrence as it scanned would read
+            // the first "Jane Doe" sighting as a contributor and never revisit that decision
+            // once the bare sighting turned up later.
+            Assert.Equal(
+                new[] { "Jane Doe", "Fyodor Dostoevsky" },
+                AuthorCredits.WithoutRoleSuffixes(new List<string>
+                {
+                    "Jane Doe - introduction",
+                    "Fyodor Dostoevsky",
+                    "Jane Doe",
+                }));
+
+            // The control: bare first, suffixed second. Already correct before this fix, by
+            // accident per the finding; must stay correct after it.
+            Assert.Equal(
+                new[] { "Jane Doe" },
+                AuthorCredits.WithoutRoleSuffixes(new List<string> { "Jane Doe", "Jane Doe - introduction" }));
+
+            // A second control: when EVERY occurrence of a name is suffixed, it still goes to
+            // the contributor group. Bare-anywhere-wins must not turn every suffixed credit
+            // into an author.
+            Assert.Equal(
+                new[] { "Fyodor Dostoevsky", "Constance Garnett" },
+                AuthorCredits.WithoutRoleSuffixes(new List<string>
+                {
+                    "Constance Garnett - translator",
+                    "Fyodor Dostoevsky",
+                }));
+        }
+
+        [Fact]
+        public void WithoutRoleSuffixes_BareAnywhereWinsAcrossThreeOrMoreOccurrences()
+        {
+            // Same person shows up bare once and suffixed twice, suffixed-first. One real
+            // catalogue shape this protects: a name credited as both author and the writer of
+            // their own introduction on a multi-volume work, where the provider lists the
+            // contributor credit before the bare author credit.
+            Assert.Equal(
+                new[] { "Jane Doe", "Someone Else" },
+                AuthorCredits.WithoutRoleSuffixes(new List<string>
+                {
+                    "Jane Doe - introduction",
+                    "Someone Else",
+                    "Jane Doe - editor",
+                    "Jane Doe",
+                }));
+        }
+
+        [Fact]
         public void WithoutRoleSuffixes_HandlesNothingToClean()
         {
             Assert.Empty(AuthorCredits.WithoutRoleSuffixes(new List<string>()));
