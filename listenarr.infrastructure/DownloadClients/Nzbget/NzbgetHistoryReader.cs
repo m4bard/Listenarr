@@ -44,11 +44,24 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
     internal sealed class NzbgetHistoryReader
     {
         private const decimal BytesPerMegabyte = 1_048_576m;
-        private readonly NzbgetXmlRpcClient _xmlRpcClient;
 
-        public NzbgetHistoryReader(NzbgetXmlRpcClient xmlRpcClient)
+        // Only reachable when a caller constructs this class directly without an
+        // IConfigurationService (test-only convenience constructors on NzbgetAdapter; the
+        // production DI registration -- services.AddScoped<NzbgetHistoryReader>() in
+        // DownloadClientRegistrationExtensions.cs -- always resolves a real
+        // IConfigurationService, which is registered application-wide). Matches
+        // ApplicationSettings.DownloadClientHistoryLimit's own default.
+        private const int DefaultHistoryLimitWithNoConfigurationService = 60;
+
+        private readonly NzbgetXmlRpcClient _xmlRpcClient;
+        private readonly IConfigurationService? _configurationService;
+
+        public NzbgetHistoryReader(
+            NzbgetXmlRpcClient xmlRpcClient,
+            IConfigurationService? configurationService = null)
         {
             _xmlRpcClient = xmlRpcClient;
+            _configurationService = configurationService;
         }
 
         public async Task<IReadOnlyList<NzbgetHistoryEntry>> ReadAsync(
@@ -65,7 +78,20 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                 cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
-            return ParseEntries(result, cancellationToken);
+            var entries = ParseEntries(result, cancellationToken);
+
+            // Mirrors Sonarr/Readarr's own precedent exactly, including the ordering: the
+            // "history" RPC has no count/age parameter to pass in the family either, so every
+            // entry is still fetched and deserialized; only the returned slice is bounded.
+            // Sonarr Nzbget.cs:111-113 @ 76c684e09, Readarr Nzbget.cs:110-112 (the .Take(...)
+            // line itself @ 13bfb73ee9f): GetHistory(Settings).Take(_configService
+            // .DownloadClientHistoryLimit).ToList().
+            var limit = _configurationService != null
+                ? (await _configurationService.GetApplicationSettingsAsync())
+                    .DownloadClientHistoryLimit
+                : DefaultHistoryLimitWithNoConfigurationService;
+
+            return entries.Take(limit).ToList();
         }
 
         internal static IReadOnlyList<NzbgetHistoryEntry> ParseEntries(
