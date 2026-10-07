@@ -97,18 +97,30 @@ namespace Listenarr.Application.Search.Scoring
 
         private const int CategoryMusicIdDecisiveWeight = 1000;
         private const int CategoryTextMusicWeight = 1000;
-        private const int CategoryAudiobooksIdWeight = -90;    // (c): weighted, not absolute
-        private const int CategoryMusicIdWeakWeight = 40;      // music id co-occurring with 3030
+        private const int CategoryAudiobooksIdWeight = -30;    // (c): weighted, not absolute
+        private const int CategoryMusicIdWeakWeight = 20;      // music id co-occurring with 3030
 
         private const int TitleStrictScenePatternWeight = 1000;
         private const int TitleDiscographyKeywordWeight = 1000;
-        private const int TitleGenreMarkerWeight = 110;        // near-twin "(Pop)" case, (b)
-        private const int TitleAlbumVocabWeight = 30;          // (b): weak, ambiguous alone
-        private const int TitleBitrateTagWeight = 30;          // (b): weak, ambiguous alone
-        private const int TitleBareArtistAlbumDashWeight = 20; // (b): weak, ambiguous alone
+        // Everything below is deliberately kept too small to decide on a two-signal, title-only
+        // combination. Independent review on tracker #361 measured 6 false positives out of 11
+        // adversarial fixtures under an earlier tuning, where AlbumVocab + BareDash alone reached
+        // RejectThreshold on ordinary "Author - Title"-shaped audiobook titles that happened to
+        // contain one common English word (e.g. "Anthology", "Soundtrack"), and where GenreMarker
+        // alone decided outright on a plausible non-music subtitle like "(Punk)" for a memoir
+        // about punk culture. None of these may decide alone, and no two of them may cross the
+        // threshold together without either a bitrate/format tag (TitleBitrateTagWeight, kept
+        // deliberately stronger -- a real FLAC/MP3/320kbps-style tag is a scene-release
+        // convention with essentially no legitimate audiobook use, unlike an ordinary word or a
+        // bare dash) or genuine cross-domain corroboration (category, Artist/Album, Size) added
+        // in.
+        private const int TitleGenreMarkerWeight = 35;         // near-twin "(Pop)" case, (b)
+        private const int TitleAlbumVocabWeight = 18;          // (b): weak, ambiguous alone
+        private const int TitleBitrateTagWeight = 35;          // (b): stronger -- see note above
+        private const int TitleBareArtistAlbumDashWeight = 10; // (b): weak, ambiguous alone
 
-        private const int ArtistAlbumCorroborationWeight = 20; // (a): weak corroboration only
-        private const int SizeWeakWeight = 20;                 // (d): weak nudge only
+        private const int ArtistAlbumCorroborationWeight = 10; // (a): weak corroboration only
+        private const int SizeWeakWeight = 10;                 // (d): weak nudge only
         private const long SmallSizeThresholdBytes = 300L * 1024 * 1024;
         private const long LargeSizeThresholdBytes = 600L * 1024 * 1024;
 
