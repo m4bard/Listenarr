@@ -200,6 +200,10 @@ public sealed partial class ManualImportCompanionImporter
             .Distinct(sourceSemantics.Comparer)
             .ToList();
 
+        // TopDirectoryOnly above drops a nested file with no trace; see the method's doc comment.
+        LogNestedCompanionCandidatesSkipped(
+            selectedDirectories, selectedSourceFiles, companionFiles, sourceSemantics, importBlacklist);
+
         if (!FileSystemPathIdentity.IsSameOrInside(
                 destinationRoot,
                 destinationResolution.BoundaryPath,
