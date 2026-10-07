@@ -62,6 +62,66 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
     }
 
     /// <summary>
+    /// Wraps a real <see cref="IFileSystem"/> but throws on a recursive enumeration, standing in
+    /// for whatever a hostile or merely unlucky directory tree could do to one in practice (a
+    /// circular symlink defeating <c>SearchOption.AllDirectories</c>, an overlong path, a
+    /// permission error) without this test depending on actually constructing one. Everything
+    /// else is delegated untouched, so the rest of the pass behaves exactly as it would on real
+    /// disk.
+    /// </summary>
+    private sealed class FileSystemThatThrowsOnRecursiveEnumeration(IFileSystem inner) : IFileSystem
+    {
+        public string CurrentDirectory => inner.CurrentDirectory;
+        public bool FileExists(string path) => inner.FileExists(path);
+        public bool DirectoryExists(string path) => inner.DirectoryExists(path);
+        public string? GetParentDirectory(string path) => inner.GetParentDirectory(path);
+        public DateTime GetLastWriteTimeUtc(string path) => inner.GetLastWriteTimeUtc(path);
+        public long GetFileLength(string path) => inner.GetFileLength(path);
+        public bool IsReparsePoint(string path) => inner.IsReparsePoint(path);
+        public string ReadAllText(string path) => inner.ReadAllText(path);
+        public byte[] ReadAllBytes(string path) => inner.ReadAllBytes(path);
+        public void WriteAllText(string path, string contents) => inner.WriteAllText(path, contents);
+        public void DeleteFile(string path) => inner.DeleteFile(path);
+        public void CreateDirectory(string path) => inner.CreateDirectory(path);
+        public void DeleteDirectory(string path, bool recursive) => inner.DeleteDirectory(path, recursive);
+        public IEnumerable<string> EnumerateFiles(string path) => inner.EnumerateFiles(path);
+
+        public IEnumerable<string> EnumerateFiles(
+            string path, string searchPattern, SearchOption searchOption) =>
+            searchOption == SearchOption.AllDirectories
+                ? throw new IOException(
+                    "simulated: a circular symlink or similarly hostile tree defeated recursive " +
+                    "enumeration")
+                : inner.EnumerateFiles(path, searchPattern, searchOption);
+
+        public IEnumerable<string> EnumerateDirectories(string path) => inner.EnumerateDirectories(path);
+
+        public IEnumerable<string> EnumerateFileSystemEntries(string path) =>
+            inner.EnumerateFileSystemEntries(path);
+
+        public IEnumerable<FileSystemEntrySnapshot> EnumerateEntries(string path) =>
+            inner.EnumerateEntries(path);
+
+        public IEnumerable<FileSystemRootSnapshot> EnumerateRoots() => inner.EnumerateRoots();
+
+        public string[] GetFiles(string path, string searchPattern, SearchOption searchOption) =>
+            inner.GetFiles(path, searchPattern, searchOption);
+
+        public Task<bool> FilesHaveSameContentAsync(
+            string firstPath, string secondPath, CancellationToken cancellationToken = default) =>
+            inner.FilesHaveSameContentAsync(firstPath, secondPath, cancellationToken);
+
+        public bool TryValidateMutationTarget(
+            string targetPath,
+            IEnumerable<string?> allowedRoots,
+            out string normalizedPath,
+            out string reason) =>
+            inner.TryValidateMutationTarget(targetPath, allowedRoots, out normalizedPath, out reason);
+
+        public void DeleteEmptyDirectories(string rootPath) => inner.DeleteEmptyDirectories(rootPath);
+    }
+
+    /// <summary>
     /// Drives one companion pass over real files on disk, with the publication and ownership
     /// collaborators stubbed out, and reports the destination paths the pass asked the mover to
     /// publish to. Nothing is moved: the destination path is the claim under test.
@@ -69,7 +129,8 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
     private static async Task<CompanionOutcome> RunPassAsync(
         string requestPath,
         IReadOnlyList<(string Source, string Destination, bool Success)> selected,
-        string audiobookBasePath)
+        string audiobookBasePath,
+        IFileSystem? fileSystem = null)
     {
         var destinations = new List<string>();
         var audiobook = new Audiobook { Id = 77, BasePath = audiobookBasePath };
@@ -140,7 +201,7 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
             Mock.Of<IMetadataService>(),
             mover.Object,
             sourceCapability.Object,
-            new LocalFileSystem(),
+            fileSystem ?? new LocalFileSystem(),
             ownershipStore.Object,
             logger,
             fileService.Object);
@@ -493,6 +554,47 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
             var warning = Assert.Single(outcome.Warnings);
             Assert.Contains(nestedCompanion, warning, StringComparison.Ordinal);
             Assert.Contains("nested", warning, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Cleanup(testRoot);
+        }
+    }
+
+    /// <summary>
+    /// The nested-companion scan above is diagnostics layered onto a directory tree this importer
+    /// does not otherwise walk recursively, and a hostile or merely unlucky tree (a circular
+    /// symlink defeating <c>AllDirectories</c>, an overlong path, a permission error) can make
+    /// that walk throw. This pins that such a failure is caught where it happens and does not
+    /// propagate out of the pass: the real import -- the thing the diagnostic exists to make
+    /// observable -- still completes normally. <see cref="FileSystemThatThrowsOnRecursiveEnumeration"/>
+    /// stands in for the hostile tree so the test is deterministic rather than depending on
+    /// constructing a real symlink loop or hitting a platform-specific path-length ceiling.
+    /// </summary>
+    [Fact]
+    public async Task ImportAsync_NestedCompanionScanThrows_StillCompletesTheRealImport()
+    {
+        var testRoot = NewTestRoot("nested-scan-throws");
+        var requestPath = Path.Join(testRoot, "src", "The.Release");
+        var bookFolder = Path.Join(testRoot, "library", "The Valley of Fear");
+        try
+        {
+            var audioSource = Path.Join(requestPath, "book.m4b");
+            var flatCompanion = Path.Join(requestPath, "book.nfo");
+            await WriteAsync(audioSource, "audio");
+            await WriteAsync(flatCompanion, "sidecar");
+            Directory.CreateDirectory(bookFolder);
+
+            var outcome = await RunPassAsync(
+                requestPath,
+                [(audioSource, Path.Join(bookFolder, "The Valley of Fear.m4b"), true)],
+                bookFolder,
+                fileSystem: new FileSystemThatThrowsOnRecursiveEnumeration(new LocalFileSystem()));
+
+            // The diagnostic scan failing must not stop the real import: the ordinary flat
+            // companion still lands, same as it would with no diagnostic layered on top at all.
+            Assert.Equal(1, outcome.Imported);
+            AssertPlacedAt(bookFolder, outcome.Destinations, "book.nfo");
         }
         finally
         {
