@@ -28,6 +28,11 @@ namespace Listenarr.Tests.Features.Application.Downloads.Cleanup
     /// client queue to see whether the item really is gone. That queue comes straight from the
     /// gateway, so it is keyed by the client's identifier and never by the Listenarr download id.
     /// These tests pin that the check is made against the identifier that was actually sent.
+    ///
+    /// They also cover the History side of removal: a History row is recorded for every path that
+    /// actually removes the record (force=true, the DDL short-circuit, a successful client removal)
+    /// and never recorded when removal fails, same as the orphan-cleanup path (see
+    /// DownloadOrphanCleanupService.RemoveOrphansAsync and its own tests).
     /// </summary>
     [Trait("Area", "Downloads")]
     [Trait("Name", "DownloadRemovalWorkflowTests")]
@@ -48,7 +53,14 @@ namespace Listenarr.Tests.Features.Application.Downloads.Cleanup
             await base.InitializeAsync();
 
             _services.AddSingleton<IDownloadClientGateway>(_gateway);
-            Init();
+
+            // The default test DI setup registers IDownloadHistoryService as a bare
+            // Mock<IDownloadHistoryService>() (see ServiceCollectionBuilder), which silently
+            // no-ops any Record*Async call. The History-asserting tests below need real persisted
+            // rows, so they need the real implementation wired to the same (in-memory) DbContext as
+            // _historyRepository. Same swap item #325 made for DownloadOrphanCleanupServiceTests.
+            Init(services => services
+                .WithScoped<IDownloadHistoryService, DownloadHistoryService>());
 
             _client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
                 .WithId("client-qbit")
@@ -265,6 +277,81 @@ namespace Listenarr.Tests.Features.Application.Downloads.Cleanup
             Assert.Empty(_gateway.RemovedIds);
         }
 
+        [Fact]
+        [Trait("Method", "RemoveAsync")]
+        [Trait("Scenario", "ForceRemovalRecordsHistory")]
+        public async Task RemoveAsync_RecordsHistoryEntry_WhenForceRemovingDownload()
+        {
+            var download = await AddDownloadAsync(
+                id: "force-removed-download",
+                clientId: "some-client",
+                audiobookId: 42);
+
+            var removed = await ResolveWorkflow().RemoveAsync(download.Id, downloadClientId: null, force: true);
+
+            Assert.True(removed);
+            Assert.Null(await _downloadRepository.GetByIdAsync(download.Id));
+
+            var historyEntries = await GetHistoryForDownloadAsync(download.Id);
+            var removedEntry = Assert.Single(historyEntries);
+            Assert.Equal(HistoryEvents.Removed, removedEntry.EventType);
+            Assert.Equal(42, removedEntry.AudiobookId);
+            Assert.False(string.IsNullOrWhiteSpace(removedEntry.Message));
+        }
+
+        [Fact]
+        [Trait("Method", "RemoveAsync")]
+        [Trait("Scenario", "DdlShortCircuitRecordsHistory")]
+        public async Task RemoveAsync_RecordsHistoryEntry_WhenRemovingDdlDownloadWithoutForce()
+        {
+            // Mirrors the real DELETE api/v{version}/download/queue/{downloadId}?downloadClientId=DDL
+            // call for a direct-download item: no external client to contact, force is not set,
+            // and removal still succeeds via the DDL short-circuit in RemoveAsync.
+            var download = await AddDownloadAsync(
+                id: "ddl-removed-download",
+                clientId: DirectDownloadMetadataKeys.ClientId,
+                audiobookId: 7);
+
+            var removed = await ResolveWorkflow().RemoveAsync(
+                download.Id,
+                downloadClientId: DirectDownloadMetadataKeys.ClientId,
+                force: false);
+
+            Assert.True(removed);
+            Assert.Null(await _downloadRepository.GetByIdAsync(download.Id));
+
+            var historyEntries = await GetHistoryForDownloadAsync(download.Id);
+            var removedEntry = Assert.Single(historyEntries);
+            Assert.Equal(HistoryEvents.Removed, removedEntry.EventType);
+            Assert.Equal(7, removedEntry.AudiobookId);
+            Assert.False(string.IsNullOrWhiteSpace(removedEntry.Message));
+        }
+
+        [Fact]
+        [Trait("Method", "RemoveAsync")]
+        [Trait("Scenario", "FailedClientRemovalNeverRecordsHistory")]
+        public async Task RemoveAsync_DoesNotRecordHistory_WhenClientRemovalFails()
+        {
+            // Control: the write in RemoveAsync must stay conditioned on an actual removal, not fire
+            // unconditionally up front. Reuses the same shared gateway mock the identifier tests above
+            // use (RemoveResult = false, and the download carries no TorrentHash/ClientDownloadId, so
+            // the "no client item id is recorded" branch reports failure without contacting anything
+            // further) -- same failure shape as RemoveAsync_ClientRefuses_AndNoClientItemIdIsRecorded_
+            // FailsAndKeepsRecord above, but asserting on History instead of the client call.
+            var download = await AddDownloadAsync(
+                id: "removal-failed-download",
+                clientId: _client.Id,
+                audiobookId: 99);
+
+            _gateway.RemoveResult = false;
+
+            var removed = await ResolveWorkflow().RemoveAsync(download.Id, downloadClientId: _client.Id, force: false);
+
+            Assert.False(removed);
+            Assert.NotNull(await _downloadRepository.GetByIdAsync(download.Id));
+            Assert.Empty(await GetHistoryForDownloadAsync(download.Id));
+        }
+
         private DownloadRemovalWorkflow ResolveWorkflow()
         {
             return _provider.GetRequiredService<DownloadRemovalWorkflow>();
@@ -295,6 +382,27 @@ namespace Listenarr.Tests.Features.Application.Downloads.Cleanup
             return await _downloadRepository.AddAsync(builder.Build());
         }
 
+        private async Task<Download> AddDownloadAsync(
+            string id,
+            string clientId,
+            int? audiobookId = null)
+        {
+            var builder = new DownloadBuilder()
+                .WithId(id)
+                .WithStatus(DownloadStatus.Downloading)
+                .WithTitle(id);
+
+            if (audiobookId.HasValue)
+            {
+                builder.WithAudiobookId(audiobookId.Value);
+            }
+
+            var download = builder.Build();
+            download.DownloadClientId = clientId;
+
+            return await _downloadRepository.AddAsync(download);
+        }
+
         private QueueItem BuildClientQueueItem(string clientItemId)
         {
             // Shaped like a gateway queue read, where Id is the client's own identifier. The
@@ -310,5 +418,12 @@ namespace Listenarr.Tests.Features.Application.Downloads.Cleanup
                 DownloadClientType = _client.Type
             };
         }
+
+        private async Task<List<History>> GetHistoryForDownloadAsync(string downloadId) =>
+            (await _historyRepository.QueryAsync(new HistoryQuery
+            {
+                DownloadId = downloadId.ToUpperInvariant(),
+                Limit = 50
+            })).Records;
     }
 }
