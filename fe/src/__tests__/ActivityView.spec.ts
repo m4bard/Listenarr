@@ -1150,8 +1150,11 @@ describe('ActivityView', () => {
     await vm.removeSelected()
     await flushPromises()
 
+    // A DDL row has no external client to ask, same as confirmRemove's modal path for this
+    // case (ActivityView.vue:880) - the call must say so explicitly rather than falling back
+    // to cancelDownload's own default, which means "also remove from the download client".
     expect(api.cancelDownload).toHaveBeenCalledTimes(1)
-    expect((api.cancelDownload as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe('ddl-1')
+    expect(api.cancelDownload).toHaveBeenCalledWith('ddl-1', false)
     expect(api.removeFromQueue).not.toHaveBeenCalled()
   })
 
@@ -1185,8 +1188,10 @@ describe('ActivityView', () => {
     await vm.removeSelected()
     await flushPromises()
 
+    // Same reasoning as the DDL case above: the client's own queue does not carry this row,
+    // so nothing should be asked of a download client that was never holding it.
     expect(api.cancelDownload).toHaveBeenCalledTimes(1)
-    expect((api.cancelDownload as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe('ext-1')
+    expect(api.cancelDownload).toHaveBeenCalledWith('ext-1', false)
     expect(api.removeFromQueue).not.toHaveBeenCalled()
   })
 

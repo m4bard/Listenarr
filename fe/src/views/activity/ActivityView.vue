@@ -961,7 +961,11 @@ const removeOne = async (item: QueueItem) => {
     isDirectDownload(item.downloadClientId) ||
     (item.downloadClientType || '').toString().toUpperCase() === 'DDL'
   if (isDdl || !queue.value.some((q) => q.id === item.id)) {
-    await apiService.cancelDownload(item.id)
+    // A direct download has no external client, and the other branch is a record the
+    // client's own queue no longer carries. Both mean the record only, same as the
+    // single-row path (confirmRemove) above - say so explicitly rather than relying on
+    // cancelDownload's own default, which means "also remove from the download client".
+    await apiService.cancelDownload(item.id, false)
     return
   }
   await apiService.removeFromQueue(item.id, item.downloadClientId)
