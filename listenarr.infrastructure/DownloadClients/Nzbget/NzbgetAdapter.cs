@@ -60,7 +60,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             INzbUrlResolver nzbUrlResolver,
             ILogger<NzbgetAdapter> logger,
             TimeProvider timeProvider,
-            NzbgetFailedHistoryWarningTracker? failedHistoryWarningTracker = null)
+            NzbgetFailedHistoryWarningTracker? failedHistoryWarningTracker = null,
+            IConfigurationService? configurationService = null)
         {
             ArgumentNullException.ThrowIfNull(httpClientFactory);
             ArgumentNullException.ThrowIfNull(nzbUrlResolver);
@@ -68,7 +69,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             ArgumentNullException.ThrowIfNull(timeProvider);
 
             var xmlRpcClient = new NzbgetXmlRpcClient(httpClientFactory, ClientType);
-            var historyReader = new NzbgetHistoryReader(xmlRpcClient);
+            var historyReader = new NzbgetHistoryReader(xmlRpcClient, configurationService);
 
             // This constructor builds a self-contained adapter for callers that have no
             // container. Production resolves the adapter from DI, where the tracker is a

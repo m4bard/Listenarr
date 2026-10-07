@@ -35,12 +35,13 @@ describe('DownloadSettingsSection', () => {
           downloadCompletionStabilitySeconds: 5,
           missingSourceRetryInitialDelaySeconds: 2,
           missingSourceMaxRetries: 3,
+          downloadClientHistoryLimit: 60,
         },
       },
     })
 
     const inputs = wrapper.findAll('input[type="number"]')
-    expect(inputs).toHaveLength(6)
+    expect(inputs).toHaveLength(7)
 
     // Max concurrent
     await inputs[0].setValue('4')
@@ -77,5 +78,11 @@ describe('DownloadSettingsSection', () => {
     last =
       wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.missingSourceMaxRetries).toBe(5)
+
+    // Download client history limit (item 357)
+    await inputs[6].setValue('120')
+    last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    expect(last.downloadClientHistoryLimit).toBe(120)
   })
 })

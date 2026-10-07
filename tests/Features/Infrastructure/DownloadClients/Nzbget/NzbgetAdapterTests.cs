@@ -242,7 +242,10 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 "history",
                 NzbgetApiMock.CreateHistoryResponse(string.Concat(entries)));
             using var http = new HttpClient(apiMock);
-            var reader = CreateHistoryReader(http);
+            // Item 357 added a default 60-entry cap (DownloadClientHistoryLimit) downstream of
+            // this parse step; pin a limit above this test's 102 entries so it keeps exercising
+            // full-response parsing/ordering, which is what it is actually for.
+            var reader = CreateHistoryReader(http, ConfigurationServiceWithHistoryLimit(102));
 
             var result = await reader.ReadAsync(CreateClient(), CancellationToken.None);
 
@@ -398,14 +401,111 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             Assert.Equal(cancellationTokenSource.Token, exception.CancellationToken);
         }
 
+        // Item 357, side effect of #333: NzbgetHistoryReader.ReadAsync called NZBGet's own
+        // unbounded "history" RPC with no count/age limit (there is no such parameter to pass
+        // in the family either) and returned every entry. Once #333 reclassified most
+        // DeleteStatus-family entries from Ignored to Failed, the number of tracked client
+        // items on a real NZBGet install grew from roughly 3 to 1000+ and kept growing, because
+        // nothing on our side ever trimmed what NZBGet's own history keeps.
+        // Fix matches Sonarr/Readarr exactly: GetHistory(Settings)
+        // .Take(_configService.DownloadClientHistoryLimit).ToList() -- client-side truncation
+        // after the full unbounded fetch. Sonarr Nzbget.cs:111-113 @ 76c684e09, Readarr
+        // Nzbget.cs:110-112 (the .Take(...) line itself @ 13bfb73ee9f).
+        [Fact]
+        public async Task HistoryReader_MoreEntriesThanConfiguredLimit_TruncatesToConfiguredLimit()
+        {
+            using var apiMock = new NzbgetApiMock();
+            var entries = Enumerable.Range(0, 5)
+                .Select(index => HistoryEntryValue(
+                    nzbId: (index + 1).ToString(),
+                    title: $"Book {index + 1}",
+                    status: "SUCCESS/UNPACK"))
+                .ToArray();
+            apiMock.QueueXmlRpcResponse(
+                "history",
+                NzbgetApiMock.CreateHistoryResponse(string.Concat(entries)));
+            using var http = new HttpClient(apiMock);
+            var reader = CreateHistoryReader(http, ConfigurationServiceWithHistoryLimit(3));
+
+            var result = await reader.ReadAsync(CreateClient(), CancellationToken.None);
+
+            // Server order is preserved, matching Take(limit)'s own semantics -- the lowest
+            // three NZBIDs, not the three most recent or any re-sorted subset.
+            Assert.Equal(3, result.Count);
+            Assert.Equal("1", result[0].CanonicalNzbId);
+            Assert.Equal("2", result[1].CanonicalNzbId);
+            Assert.Equal("3", result[2].CanonicalNzbId);
+        }
+
+        // Control: a response smaller than the configured limit must come back whole. Guards
+        // against an off-by-one or an inverted comparison in the Take(limit) call above.
+        [Fact]
+        public async Task HistoryReader_FewerEntriesThanConfiguredLimit_ReturnsAllEntriesUntruncated()
+        {
+            using var apiMock = new NzbgetApiMock();
+            var entries = Enumerable.Range(0, 5)
+                .Select(index => HistoryEntryValue(
+                    nzbId: (index + 1).ToString(),
+                    title: $"Book {index + 1}",
+                    status: "SUCCESS/UNPACK"))
+                .ToArray();
+            apiMock.QueueXmlRpcResponse(
+                "history",
+                NzbgetApiMock.CreateHistoryResponse(string.Concat(entries)));
+            using var http = new HttpClient(apiMock);
+            var reader = CreateHistoryReader(http, ConfigurationServiceWithHistoryLimit(60));
+
+            var result = await reader.ReadAsync(CreateClient(), CancellationToken.None);
+
+            Assert.Equal(5, result.Count);
+        }
+
+        // Default-value test: with no explicit DownloadClientHistoryLimit override (the
+        // IConfigurationService mock returns a plain `new ApplicationSettings()`), 60 is the
+        // limit actually applied end to end, matching Sonarr ConfigService.cs:187-191
+        // @ 76c684e09 and Readarr ConfigService.cs:181-185 (default-60 line @ 319089b90f):
+        // both GetValueInt("DownloadClientHistoryLimit", 60).
+        [Fact]
+        public async Task HistoryReader_NoLimitOverride_DefaultsToSixtyMatchingFamily()
+        {
+            using var apiMock = new NzbgetApiMock();
+            var entries = Enumerable.Range(0, 65)
+                .Select(index => HistoryEntryValue(
+                    nzbId: (index + 1).ToString(),
+                    title: $"Book {index + 1}",
+                    status: "SUCCESS/UNPACK"))
+                .ToArray();
+            apiMock.QueueXmlRpcResponse(
+                "history",
+                NzbgetApiMock.CreateHistoryResponse(string.Concat(entries)));
+            using var http = new HttpClient(apiMock);
+            var reader = CreateHistoryReader(http, ConfigurationServiceWithHistoryLimit());
+
+            var result = await reader.ReadAsync(CreateClient(), CancellationToken.None);
+
+            Assert.Equal(60, result.Count);
+        }
+
         [Fact]
         public async Task NzbgetHistory_QueuePath_OneThousandVisibleEntries_WithinGuardrails()
         {
+            // Item 357 added a default 60-entry history cap. This test's own purpose is an
+            // allocation/timing guardrail at high volume (1000 history entries), not the cap
+            // itself -- that is covered separately above -- so it pins a limit at the full
+            // entry count to keep measuring what it was built to measure. Without this, the
+            // index-based assertions below (which predate item 357 and depend on history
+            // entries deep past index 60 being processed) would start failing for the same
+            // reason this item exists: an unbounded fetch no longer being unbounded.
+            var highLimitConfigurationService = ConfigurationServiceWithHistoryLimit(PerformanceHistoryEntryCount);
+
             using (var warmApiMock = new NzbgetApiMock())
             {
                 QueuePerformanceResponses(warmApiMock);
                 using var warmHttp = new HttpClient(warmApiMock);
-                var warmAdapter = CreateAdapter(warmHttp);
+                var warmAdapter = CreateAdapter(
+                    warmHttp,
+                    NullLogger<NzbgetAdapter>.Instance,
+                    configurationService: highLimitConfigurationService);
                 await FetchDownloadsThroughQueuePathAsync(
                     warmAdapter,
                     CreateClient(),
@@ -416,7 +516,10 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             using var apiMock = new NzbgetApiMock();
             QueuePerformanceResponses(apiMock);
             using var http = new HttpClient(apiMock);
-            var adapter = CreateAdapter(http);
+            var adapter = CreateAdapter(
+                http,
+                NullLogger<NzbgetAdapter>.Instance,
+                configurationService: highLimitConfigurationService);
             var downloads = CreatePerformanceDownloads();
 
             GC.Collect();
@@ -3534,19 +3637,41 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         private static NzbgetAdapter CreateAdapter(
             HttpClient http,
             ILogger<NzbgetAdapter> logger,
-            TimeProvider? timeProvider = null)
+            TimeProvider? timeProvider = null,
+            IConfigurationService? configurationService = null)
         {
             return new NzbgetAdapter(
                 new TestHttpClientFactory(http),
                 Mock.Of<INzbUrlResolver>(),
                 logger,
-                timeProvider ?? TimeProvider.System);
+                timeProvider ?? TimeProvider.System,
+                failedHistoryWarningTracker: null,
+                configurationService: configurationService);
         }
 
-        private static NzbgetHistoryReader CreateHistoryReader(HttpClient http)
+        private static NzbgetHistoryReader CreateHistoryReader(
+            HttpClient http,
+            IConfigurationService? configurationService = null)
         {
             return new NzbgetHistoryReader(
-                new NzbgetXmlRpcClient(new TestHttpClientFactory(http), "nzbget"));
+                new NzbgetXmlRpcClient(new TestHttpClientFactory(http), "nzbget"),
+                configurationService);
+        }
+
+        // Item 357: Sonarr/Readarr default DownloadClientHistoryLimit to 60
+        // (ConfigService.cs:187-191 @ 76c684e09 / :181-185 @ 319089b90f). A mock with no
+        // DownloadClientHistoryLimit override picks up ApplicationSettings's own class-level
+        // default, so this exercises the real default end to end rather than asserting the POCO
+        // default in isolation.
+        private static IConfigurationService ConfigurationServiceWithHistoryLimit(int? limit = null)
+        {
+            var configurationService = new Mock<IConfigurationService>();
+            configurationService
+                .Setup(service => service.GetApplicationSettingsAsync())
+                .ReturnsAsync(limit.HasValue
+                    ? new ApplicationSettings { DownloadClientHistoryLimit = limit.Value }
+                    : new ApplicationSettings());
+            return configurationService.Object;
         }
 
         private static async Task<List<Download>> FetchDownloadsThroughQueuePathAsync(

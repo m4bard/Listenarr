@@ -42,6 +42,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260821141235_AddCompatibilityFilePublication";
     private const string WeakStorageVerifiedCleanupMigrationId =
         "20260825021432_AddWeakStorageVerifiedCleanup";
+    private const string DownloadClientHistoryLimitMigrationId =
+        "20261007102434_AddDownloadClientHistoryLimitToApplicationSettings";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -191,6 +193,10 @@ public class SqliteMigrationSchemaTests : BaseTests
         var postCanary = applied
             .Where(id => string.CompareOrdinal(id, CanaryMigrationFrontierId) > 0)
             .ToArray();
+
+        // Item 357's NZBGet history-fetch limit, pinned apart for the same reason.
+        Assert.Contains(DownloadClientHistoryLimitMigrationId, postCanary);
+        postCanary = [.. postCanary.Except([DownloadClientHistoryLimitMigrationId])];
 
         Assert.Equal(
             [
