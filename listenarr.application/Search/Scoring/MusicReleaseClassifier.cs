@@ -71,9 +71,15 @@ namespace Listenarr.Application.Search.Scoring
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         // A bitrate/audio-format tag in brackets or parens, without SceneAlbumPattern's strict
-        // year-prefix requirement. Weak on its own -- plenty of nothing wears a bracket.
+        // year-prefix requirement. Deliberately narrower than SceneAlbumPattern's token list:
+        // independent review (tracker #361, round 2) measured that MP3/WEB/CD/128/192/256 are
+        // poor discriminators -- MP3 is the single most common real-world audiobook distribution
+        // format, "CD" means nothing more specific than "compact disc" and matched an innocuous
+        // "[CD Companion Edition]" note, and low/mid bitrates are if anything more typical of
+        // spoken-word compression than of music. Only FLAC and the scene-specific VBR/CBR labels
+        // (320, V0, V1, V2) are kept -- conventions with essentially no legitimate audiobook use.
         private static readonly Regex BitrateTagPattern = new(
-            @"[\[\(](FLAC|MP3|WEB|CD|V0|V1|V2|320|256|192|128)\b",
+            @"[\[\(](FLAC|V0|V1|V2|320)\b",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         // A parenthetical that is ENTIRELY one or two slash-joined music genre names, e.g. "(Pop)",
@@ -97,30 +103,32 @@ namespace Listenarr.Application.Search.Scoring
 
         private const int CategoryMusicIdDecisiveWeight = 1000;
         private const int CategoryTextMusicWeight = 1000;
-        private const int CategoryAudiobooksIdWeight = -30;    // (c): weighted, not absolute
-        private const int CategoryMusicIdWeakWeight = 20;      // music id co-occurring with 3030
+        private const int CategoryAudiobooksIdWeight = -25;    // (c): weighted, not absolute
+        private const int CategoryMusicIdWeakWeight = 15;      // music id co-occurring with 3030
 
         private const int TitleStrictScenePatternWeight = 1000;
         private const int TitleDiscographyKeywordWeight = 1000;
-        // Everything below is deliberately kept too small to decide on a two-signal, title-only
-        // combination. Independent review on tracker #361 measured 6 false positives out of 11
-        // adversarial fixtures under an earlier tuning, where AlbumVocab + BareDash alone reached
-        // RejectThreshold on ordinary "Author - Title"-shaped audiobook titles that happened to
-        // contain one common English word (e.g. "Anthology", "Soundtrack"), and where GenreMarker
-        // alone decided outright on a plausible non-music subtitle like "(Punk)" for a memoir
-        // about punk culture. None of these may decide alone, and no two of them may cross the
-        // threshold together without either a bitrate/format tag (TitleBitrateTagWeight, kept
-        // deliberately stronger -- a real FLAC/MP3/320kbps-style tag is a scene-release
-        // convention with essentially no legitimate audiobook use, unlike an ordinary word or a
-        // bare dash) or genuine cross-domain corroboration (category, Artist/Album, Size) added
-        // in.
-        private const int TitleGenreMarkerWeight = 35;         // near-twin "(Pop)" case, (b)
-        private const int TitleAlbumVocabWeight = 18;          // (b): weak, ambiguous alone
-        private const int TitleBitrateTagWeight = 35;          // (b): stronger -- see note above
-        private const int TitleBareArtistAlbumDashWeight = 10; // (b): weak, ambiguous alone
+        // Everything below is deliberately kept small enough that NO COMBINATION of two, three,
+        // or even all four of the ordinary/ambiguous signals (GenreMarker, AlbumVocab, BareDash,
+        // ArtistAlbumCorroboration) can cross RejectThreshold by itself -- verified by brute-force
+        // enumeration of every pair/triple/quad, not by hand, after two rounds of independent
+        // review (tracker #361) each found a combination that crossed under an earlier tuning:
+        // round 1 found AlbumVocab+BareDash reaching threshold on an ordinary "Author - Title"
+        // audiobook title containing one common English word; round 2 found GenreMarker+AlbumVocab
+        // crossing the same way (an arithmetic oversight against this very invariant), plus a
+        // Size nudge tipping a GenreMarker+BareDash pair that was sitting too close to the
+        // threshold to begin with. Only a genuinely scene-specific bitrate/format tag
+        // (TitleBitrateTagWeight -- see its narrowed token list above) or the combination of ALL
+        // FOUR ambiguous signals plus a Size nudge can now cross. The margin from any single pair
+        // or triple of the four ambiguous signals to RejectThreshold is always at least 12, well
+        // above SizeWeakWeight, so Size can only ever tip the one maximally-corroborated case.
+        private const int TitleGenreMarkerWeight = 18;         // near-twin "(Pop)" case, (b)
+        private const int TitleAlbumVocabWeight = 12;          // (b): weak, ambiguous alone
+        private const int TitleBitrateTagWeight = 48;          // (b): stronger -- see note above
+        private const int TitleBareArtistAlbumDashWeight = 8;  // (b): weak, ambiguous alone
 
-        private const int ArtistAlbumCorroborationWeight = 10; // (a): weak corroboration only
-        private const int SizeWeakWeight = 10;                 // (d): weak nudge only
+        private const int ArtistAlbumCorroborationWeight = 8;  // (a): weak corroboration only
+        private const int SizeWeakWeight = 8;                  // (d): weak nudge only
         private const long SmallSizeThresholdBytes = 300L * 1024 * 1024;
         private const long LargeSizeThresholdBytes = 600L * 1024 * 1024;
 

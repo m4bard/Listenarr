@@ -186,12 +186,13 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         }
 
         [Fact]
-        public void ParentheticalGenreMarker_PlusAlbumVocabWord_CrossesThreshold()
+        public void ParentheticalGenreMarker_PlusBitrateTag_CrossesThreshold()
         {
-            // Genre marker alone is not enough (see above), but combined with one more weak
-            // signal -- ordinary album vocabulary -- it corroborates enough to catch a real
-            // mislabeled release.
-            var result = Result(category: null, title: "Driftwood Station EP (Pop)");
+            // Genre marker alone is not enough (see above), and neither is genre marker plus one
+            // more ordinary/ambiguous title word -- round 2 of independent review measured that
+            // GenreMarker+AlbumVocab together still must NOT cross (see the regression test
+            // below). It takes a genuinely scene-specific bitrate tag to corroborate.
+            var result = Result(category: null, title: "Driftwood Station (Pop) [FLAC]");
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
 
@@ -202,9 +203,11 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         [Fact]
         public void ParentheticalGenreMarker_PlusBareDashShape_StillBelowThreshold()
         {
-            // Genre marker + a bare dash shape alone is STILL not enough on its own -- it is this
-            // exact combination, with a small Size nudge added, that
-            // SmallSize_NudgesABorderlineCaseAcrossTheThreshold below demonstrates crossing.
+            // Genre marker + a bare dash shape alone is still not enough -- and, unlike an
+            // earlier tuning, not even a small Size nudge can tip this specific pair (margin to
+            // RejectThreshold is kept well above SizeWeakWeight for every pair of the four
+            // ambiguous signals; see SmallSize_NudgesABorderlineCaseAcrossTheThreshold below for
+            // the one combination -- all four ambiguous signals together -- that Size can tip).
             var result = Result(category: null, title: "Nova Fenn - Driftwood Station (Pop)");
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
@@ -237,7 +240,7 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             // genre marker and a dash-shaped title very often also carries a format tag.)
             var result = Result(
                 category: "3030",
-                title: "Nadia Brecht - Low Tide (Rock) [MP3]",
+                title: "Nadia Brecht - Low Tide (Rock) [320]",
                 artist: "Nadia Brecht",
                 album: "Low Tide (Rock)");
 
@@ -305,12 +308,21 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         [Fact]
         public void SmallSize_NudgesABorderlineCaseAcrossTheThreshold()
         {
-            // Genre marker + dash shape alone sits below threshold (neither decides alone, and
-            // together they are still short -- see ParentheticalGenreMarker_PlusDashShape_...
-            // which adds a size push below); a small, music-typical size is the nudge that tips
-            // this otherwise-borderline case over.
-            var withoutSizeNudge = Result(category: null, title: "Nova Fenn - Driftwood Station (Pop)", size: 0);
-            var withSizeNudge = Result(category: null, title: "Nova Fenn - Driftwood Station (Pop)", size: 40_000_000);
+            // Independent review (tracker #361, round 2) found that a 2-signal pair sitting too
+            // close to RejectThreshold let a small Size nudge tip a plausible real audiobook
+            // ("Jonas Harrow - Low Tide (Rock)", genre marker + dash alone) into a false
+            // positive. Every pair and triple of the four ambiguous signals now sits with a
+            // margin well above SizeWeakWeight (see the constants' own comment), so Size can
+            // only tip the ONE case with all four ambiguous signals corroborating at once: a
+            // dash-shaped title, one album-vocabulary word, a genre marker, AND Artist/Album
+            // fields consistent with that same dash shape, all at once -- already a great deal
+            // of independent corroboration before Size adds anything.
+            const string title = "Nova Fenn - Midnight Static (Pop) EP";
+            const string artist = "Nova Fenn";
+            const string album = "Midnight Static (Pop) EP";
+
+            var withoutSizeNudge = Result(category: null, title: title, artist: artist, album: album, size: 0);
+            var withSizeNudge = Result(category: null, title: title, artist: artist, album: album, size: 40_000_000);
 
             var withoutNudgeResult = MusicReleaseClassifier.LooksLikeMusicRelease(withoutSizeNudge, out _);
             var withNudgeResult = MusicReleaseClassifier.LooksLikeMusicRelease(withSizeNudge, out var reason);
@@ -488,6 +500,85 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             // genre (a punk-scene memoir, a jazz biography, ...) rather than evidence the release
             // itself is music.
             var result = Result(category: null, title: "Static and Silence (Punk)");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        // ---------------------------------------------------------------------------------
+        // Round 2 of independent review found a second batch of false positives after round 1's
+        // fix, under the tuning that preceded this one: GenreMarker+AlbumVocab crossing together
+        // (an oversight against the invariant round 1's own fix stated), Size nudging a
+        // GenreMarker+BareDash pair that sat too close to the threshold, and the then-wider
+        // bitrate-tag pattern matching MP3/CD -- common, non-discriminating tokens, not the
+        // scene-specific ones. Permanent negative controls for all six of round 2's fixtures.
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void NegativeControl_ReviewRound2_GenreMarkerPlusAlbumVocab_NoOtherSignal_IsAccepted()
+        {
+            var result = Result(category: null, title: "Life After the Scene (Punk): An Anthology of Essays");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound2_GenreMarkerPlusAlbumVocab_IrrelevantCategory_IsAccepted()
+        {
+            var result = Result(category: "7020", title: "Life After the Scene (Punk): An Anthology of Essays");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound2_AlbumVocabPlusGenericEditionBracket_IsAccepted()
+        {
+            // "[CD Companion Edition]" must not be confused with a bitrate/format tag -- "CD"
+            // alone means nothing more specific than "compact disc".
+            var result = Result(category: null, title: "The Remastered Letters [CD Companion Edition]");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound2_DashPlusGenreMarker_PlusSmallSize_IsAccepted()
+        {
+            // The exact combination round 2 found crossing under the preceding tuning: a small,
+            // plausible real audiobook with a dash-shaped title and a genre-word subtitle.
+            var result = Result(category: null, title: "Jonas Harrow - Low Tide (Rock)", size: 40_000_000);
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound2_DashPlusArtistAlbumPlusMp3Tag_IsAccepted()
+        {
+            // MP3 is the single most common real-world audiobook distribution format -- it must
+            // never corroborate a music signal the way a genuinely scene-specific tag does.
+            var result = Result(
+                category: null,
+                title: "Elena Voss - The Clockmaker Chronicles [MP3]",
+                artist: "Elena Voss",
+                album: "The Clockmaker Chronicles");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound2_DashPlusAlbumVocabPlusGenreMarker_IsAccepted()
+        {
+            var result = Result(category: null, title: "Priya Nandakumar - Echoes (Jazz): An Anthology");
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
 
