@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 using static Listenarr.Application.Audiobooks.Catalog.AuthorCatalogMapping;
 
@@ -55,7 +56,13 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 return null;
             }
 
-            var normalizedName = name.Trim();
+            // tracker#341 Fix 4 / §5: a role-suffixed byline reaching here from search (no
+            // classifier applied on that path before this change) would otherwise be looked up,
+            // fetched and cached under its own suffixed name instead of being folded into the
+            // real author's existing entry. Every use of normalizedName below -- the author
+            // lookup, the direct-catalog fetch and the persisted AuthorCacheEntry's name and
+            // key -- flows from this one strip.
+            var normalizedName = AuthorCredits.StripRole(name).Trim();
             var normalizedRegion = NormalizeRegion(region);
             var normalizedLanguage = NormalizeLanguage(language);
             var cachedEntry = await ResolvePersistedCacheAsync(normalizedName, normalizedRegion);

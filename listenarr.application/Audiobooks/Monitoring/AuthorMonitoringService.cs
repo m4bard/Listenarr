@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Audiobooks.Monitoring
@@ -105,7 +106,11 @@ namespace Listenarr.Application.Audiobooks.Monitoring
             string language,
             CancellationToken cancellationToken = default)
         {
-            var normalizedName = NormalizeAuthorName(name);
+            // tracker#341 Fix 4 / §5, "author cache keys": strip a role suffix before building
+            // the lookup key, or a byline such as "Jane Doe - introduction" reaching this call
+            // (e.g. from a search result's raw name) looks up a different key than the one
+            // MonitorAuthorAsync stores below for the same person.
+            var normalizedName = NormalizeAuthorName(AuthorCredits.StripRole(name));
             if (string.IsNullOrWhiteSpace(normalizedName))
             {
                 return null;
@@ -123,7 +128,13 @@ namespace Listenarr.Application.Audiobooks.Monitoring
         {
             ArgumentNullException.ThrowIfNull(request);
 
-            var normalizedName = NormalizeAuthorName(request.Name);
+            // tracker#341 Fix 4 / §5: the finding's own example of this gap is a "Monitor this
+            // author" action taken straight off a search result chip, which had not been
+            // classified on the way in. Stripping here, before both the display name and the
+            // normalized key are derived, keeps a suffixed byline from creating its own
+            // MonitoredAuthors row instead of being folded into the real author's.
+            var strippedName = AuthorCredits.StripRole(request.Name).Trim();
+            var normalizedName = NormalizeAuthorName(strippedName);
             if (string.IsNullOrWhiteSpace(normalizedName))
             {
                 throw new ArgumentException("Author name is required.", nameof(request));
@@ -131,7 +142,7 @@ namespace Listenarr.Application.Audiobooks.Monitoring
 
             var normalizedRegion = NormalizeRegion(request.Region);
             var normalizedLanguage = NormalizeLanguage(request.Language, fallbackToEnglish: true);
-            var displayName = request.Name.Trim();
+            var displayName = strippedName;
 
             var monitoredAuthor = await _authors.GetByNameRegionLanguageAsync(normalizedName, normalizedRegion, normalizedLanguage, cancellationToken);
 

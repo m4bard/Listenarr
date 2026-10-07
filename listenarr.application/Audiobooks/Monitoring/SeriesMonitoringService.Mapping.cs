@@ -4,6 +4,7 @@
  */
 using System.Globalization;
 using System.Text;
+using Listenarr.Domain.Common;
 
 namespace Listenarr.Application.Audiobooks.Monitoring
 {
@@ -20,11 +21,10 @@ namespace Listenarr.Application.Audiobooks.Monitoring
                 Asin = book.Asin,
                 Title = book.Title,
                 Subtitle = book.Subtitle,
-                Authors = (book.Authors ?? new List<AudibleAuthor>())
-                    .Select(author => author.Name)
-                    .Where(author => !string.IsNullOrWhiteSpace(author))
-                    .Cast<string>()
-                    .ToList(),
+                // tracker#341 Fix 4 / §5: same gap as AuthorMonitoringService.Mapping.cs, on
+                // the series-monitoring side of the identical pipeline.
+                Authors = AuthorCredits.WithoutRoleSuffixes(
+                    ExtractAuthorNames(book.Authors)).ToList(),
                 ImageUrl = book.ImageUrl,
                 Runtime = runtime,
                 Language = book.Language,
@@ -75,13 +75,12 @@ namespace Listenarr.Application.Audiobooks.Monitoring
                 }
             }
 
+            // Stripped the same way MapToMetadata strips them above: a library row's Authors
+            // were already stripped by ToAudiobook(), so matching against the raw byline here
+            // could fail on a book that is genuinely already in the library and re-add it.
             var titleAuthorKey = BuildTitleAuthorKey(
                 book.Title,
-                (book.Authors ?? new List<AudibleAuthor>())
-                    .Select(author => author.Name)
-                    .Where(author => !string.IsNullOrWhiteSpace(author))
-                    .Cast<string>()
-                    .ToList());
+                AuthorCredits.WithoutRoleSuffixes(ExtractAuthorNames(book.Authors)));
 
             if (string.IsNullOrWhiteSpace(titleAuthorKey))
             {
@@ -91,6 +90,13 @@ namespace Listenarr.Application.Audiobooks.Monitoring
             return libraryBooks.FirstOrDefault(candidate =>
                 BuildTitleAuthorKey(candidate.Title, candidate.Authors) == titleAuthorKey);
         }
+
+        private static List<string> ExtractAuthorNames(List<AudibleAuthor>? authors) =>
+            (authors ?? new List<AudibleAuthor>())
+                .Select(author => author.Name)
+                .Where(author => !string.IsNullOrWhiteSpace(author))
+                .Cast<string>()
+                .ToList();
 
         private static bool ShouldIncludeBookForLanguage(AudibleSearchResult book, string preferredLanguage)
         {

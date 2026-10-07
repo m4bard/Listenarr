@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Listenarr.Application.Common;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Search.Metadata;
@@ -193,7 +194,10 @@ public class MetadataConverters
             title = "Unknown Title";
         }
 
-        var author = metadata.Authors?.FirstOrDefault();
+        // tracker#341 Fix 4 / §5: apply the same classifier ToAudiobook() already
+        // applies, so a suffixed contributor who happens to be listed first does not
+        // surface here as the search result's author.
+        var author = AuthorCredits.Primary(metadata.Authors);
         if (SearchValidation.IsAuthorNoise(author))
         {
             author = fallbackAuthor;
@@ -340,7 +344,10 @@ public class MetadataConverters
             title = "Unknown Title";
         }
 
-        var author = metadata.Authors?.FirstOrDefault();
+        // tracker#341 Fix 4 / §5: apply the same classifier ToAudiobook() already
+        // applies, so a suffixed contributor who happens to be listed first does not
+        // surface here as the search result's author.
+        var author = AuthorCredits.Primary(metadata.Authors);
         if (SearchValidation.IsAuthorNoise(author))
         {
             author = fallbackAuthor;
