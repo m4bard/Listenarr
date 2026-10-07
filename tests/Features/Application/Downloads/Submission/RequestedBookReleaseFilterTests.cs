@@ -589,17 +589,27 @@ public sealed class RequestedBookReleaseFilterTests : BaseTests
     [Fact]
     [Trait("Method", "Evaluate")]
     [Trait("Scenario", "SeriesEntryPosition")]
-    public void Evaluate_ReleaseForAFractionalEntryDifferentFromTheCatalogsWholeNumber_IsRejectedAsSeriesEntryMismatch()
+    public void Evaluate_ReleaseForAFractionalEntryAgainstACatalogWholeNumber_FailsOpenAndIsAccepted()
     {
-        // Given: the catalog record is entry 2, the release is honestly titled for the
-        // interstitial novella entry 2.5 of the same series by the same author. Tokenizing "2.5"
-        // the way ordinary title words are tokenized splits it into "2" and "5" and drops the
-        // fraction, which would make the release's parsed position come back as the catalog's
-        // own "2" and silently pass -- this is the gap a reviewer caught.
+        // Given: the catalog record is entry 3, the release is honestly titled for the
+        // interstitial novella entry 2.5 of the same series by the same author. Item 356:
+        // a catalog-vs-publisher numbering disagreement (either side fractional) must now fail
+        // open rather than reject -- this is AudiobookId 1354's own shape, found live in round
+        // 2026-10-06-25's validation of item 310 (exchange items/310/result.md section 4),
+        // where the catalog counts a novella slot as 0.5 and the release's publisher-numbered
+        // title counts the same book as entry 1.
+        //
+        // The catalog number is deliberately 3, not 2: that still exercises the tokenizer
+        // regression this test originally existed to pin. Tokenizing "2.5" the way ordinary
+        // title words are tokenized splits it into "2" and "5" and drops the fraction; if that
+        // regressed, the release's parsed position would silently come back as the whole
+        // number 2, which still differs from the catalog's 3 and would be rejected under the
+        // whole-number comparison below -- so a tokenizer regression here still flips this
+        // test's outcome, even though the new rule's own headline case is "accept".
         var book = new AudiobookBuilder()
             .WithTitle("Barsoom")
             .WithAuthor("Edgar Rice Burroughs")
-            .WithSeriesNumber("2")
+            .WithSeriesNumber("3")
             .Build();
         var releaseForAFractionalEntry = TorznabRelease(
             "Barsoom 2.5 - Edgar Rice Burroughs - 2024 (miok) [Audiobook] (Sci-Fi)");
@@ -608,7 +618,7 @@ public sealed class RequestedBookReleaseFilterTests : BaseTests
         var verdict = RequestedBookReleaseFilter.Evaluate(book, releaseForAFractionalEntry);
 
         // Then
-        Assert.Equal(RequestedBookMatch.SeriesEntryMismatch, verdict);
+        Assert.Equal(RequestedBookMatch.Accepted, verdict);
     }
 
     [Fact]
@@ -617,8 +627,9 @@ public sealed class RequestedBookReleaseFilterTests : BaseTests
     public void Evaluate_CatalogAndReleaseFractionalPositionsMatch_IsAccepted()
     {
         // Given: the sanity check for the case above -- both sides honestly name the same
-        // interstitial entry, so a fractional position must not falsely reject just for being
-        // fractional.
+        // interstitial entry. Accepted either way under item 356's rule (a fractional side
+        // alone fails open regardless of whether the numbers agree), but a fractional position
+        // must not falsely reject just for being fractional.
         var book = new AudiobookBuilder()
             .WithTitle("Barsoom")
             .WithAuthor("Edgar Rice Burroughs")
@@ -679,6 +690,87 @@ public sealed class RequestedBookReleaseFilterTests : BaseTests
         Assert.Equal(
             RequestedBookMatch.Accepted,
             RequestedBookReleaseFilter.Evaluate(book, releaseForEntryOne));
+    }
+
+    // ------------------------------------------------------------------
+    // Item 356: the whole-number-only tolerance, synthetic equivalents of the 17-row
+    // population highside pre-registered and re-confirmed live, 17/17, in round 2026-10-06-25's
+    // validation of item 310 (exchange items/310/result.md section 2). Re-keyed here by the
+    // same AudiobookId so the shape stays traceable without carrying any real title; the series
+    // and author are this file's own existing Barsoom/Edgar Rice Burroughs public-domain
+    // fixture, not the real catalog's.
+    //
+    // Rule: reject only when BOTH the catalog position and the release-parsed position are
+    // whole numbers AND they differ. Either side fractional, or no release position at all,
+    // fails open.
+    // ------------------------------------------------------------------
+
+    [Theory]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "SeriesEntryPosition")]
+    [Trait("Area", "FractionalTolerance")]
+    // MUST REJECT: both sides whole numbers, and they differ.
+    [InlineData(1007, "1", "05", RequestedBookMatch.SeriesEntryMismatch)]
+    [InlineData(2178, "1", "2", RequestedBookMatch.SeriesEntryMismatch)]
+    [InlineData(3237, "1", "07", RequestedBookMatch.SeriesEntryMismatch)]
+    [InlineData(3248, "4", "07", RequestedBookMatch.SeriesEntryMismatch)]
+    // MUST ACCEPT: both sides whole numbers, and they agree.
+    [InlineData(782, "2", "02", RequestedBookMatch.Accepted)]
+    [InlineData(785, "3", "03", RequestedBookMatch.Accepted)]
+    [InlineData(1009, "3", "03", RequestedBookMatch.Accepted)]
+    [InlineData(1010, "2", "02", RequestedBookMatch.Accepted)]
+    [InlineData(1011, "4", "04", RequestedBookMatch.Accepted)]
+    [InlineData(1635, "3", "03", RequestedBookMatch.Accepted)]
+    [InlineData(2250, "3", "3", RequestedBookMatch.Accepted)]
+    [InlineData(2579, "4", "04", RequestedBookMatch.Accepted)]
+    [InlineData(3145, "6", "06", RequestedBookMatch.Accepted)]
+    // MUST FAIL OPEN: one side fractional, a catalog-vs-publisher numbering disagreement.
+    // AudiobookId 1354 is the live false positive that drove this item.
+    [InlineData(1354, "0.5", "1", RequestedBookMatch.Accepted)]
+    public void Evaluate_PreRegisteredSeriesPositionPopulation_MatchesRegisteredDisposition(
+        int audiobookId, string catalogSeriesNumber, string releasePosition, RequestedBookMatch expected)
+    {
+        // Given
+        var book = new AudiobookBuilder()
+            .WithId(audiobookId)
+            .WithTitle("Barsoom")
+            .WithAuthor("Edgar Rice Burroughs")
+            .WithSeriesNumber(catalogSeriesNumber)
+            .Build();
+        var release = TorznabRelease(
+            $"Barsoom {releasePosition} - Edgar Rice Burroughs - 2024 (miok) [Audiobook] (Sci-Fi)");
+
+        // When / Then
+        Assert.Equal(expected, RequestedBookReleaseFilter.Evaluate(book, release));
+    }
+
+    [Theory]
+    [Trait("Method", "Evaluate")]
+    [Trait("Scenario", "SeriesEntryPosition")]
+    [Trait("Area", "FractionalTolerance")]
+    // MUST FAIL OPEN: a catalog position exists, but the release's title carries no parseable
+    // position at all. Completes the 17-row pre-registered population; this bucket's fallback
+    // behaviour is pre-existing (unrelated to item 356's fix) and is verified here, not added.
+    [InlineData(1808, "5")]
+    [InlineData(1814, "3")]
+    [InlineData(2639, "1")]
+    public void Evaluate_PreRegisteredSeriesPositionPopulation_ReleaseHasNoParseablePosition_FailsOpenAndIsAccepted(
+        int audiobookId, string catalogSeriesNumber)
+    {
+        // Given
+        var book = new AudiobookBuilder()
+            .WithId(audiobookId)
+            .WithTitle("Barsoom")
+            .WithAuthor("Edgar Rice Burroughs")
+            .WithSeriesNumber(catalogSeriesNumber)
+            .Build();
+        var releaseWithNoParsablePosition = TorznabRelease(
+            "Barsoom - Edgar Rice Burroughs - 2024 (miok) [Audiobook] (Sci-Fi)");
+
+        // When / Then
+        Assert.Equal(
+            RequestedBookMatch.Accepted,
+            RequestedBookReleaseFilter.Evaluate(book, releaseWithNoParsablePosition));
     }
 
     // ------------------------------------------------------------------
