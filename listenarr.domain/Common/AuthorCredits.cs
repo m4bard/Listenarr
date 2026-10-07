@@ -256,18 +256,32 @@ namespace Listenarr.Domain.Common
         /// The credited names with their roles removed, in order, without duplicates.
         /// </summary>
         /// <remarks>
-        /// Two things happen here beyond the obvious, and both are forced.
+        /// Three things happen here beyond the obvious, and all three are forced.
         ///
-        /// Credits that name a role are moved after the ones that do not, keeping the relative
-        /// order within each group. That is not tidiness. Once the role is removed nothing
-        /// downstream can tell a translator from an author, and four separate code paths pick an
-        /// author by taking <c>Authors[0]</c> off the stored row: the library path planner, the
-        /// rename service, the manual import planner and the search result classifier. If a
-        /// reversed byline were stored in the order it arrived, those four would all name the
-        /// folder after the translator while the add path, which still sees the provider's
-        /// original strings, named it after the author. They would disagree about the same book
-        /// and rename would keep proposing to move it. Putting the author first makes
-        /// <c>Authors[0]</c> and <see cref="Primary"/> agree by construction.
+        /// Bare-anywhere-wins (tracker#341 Fix 1, ordered ahead of the vocabulary closure in
+        /// that finding because it is what makes any Authors/Contributors split safe at all): a
+        /// name that appears without a role anywhere in this list is an author, even if some
+        /// other occurrence of the same name in the SAME list names a role. Suffix evidence only
+        /// reclassifies a name whose every occurrence names one. Without this, classification
+        /// depended on which occurrence happened to be scanned first: a name credited bare once
+        /// and suffixed once came out right only when the bare credit was listed first, "by
+        /// accident" per the finding, and wrong when the suffixed one was. This is the
+        /// single-source form of that rule. The finding's own wording is "in either source",
+        /// which needs the cross-source structured-credit model proposed as Fix 0; that model
+        /// does not exist yet (tracker#341 itself records Fix 0 as a prerequisite, pending a
+        /// maintainer call), so this only sees bare-vs-suffixed occurrences within one call's
+        /// input list, not across Audible-direct and Audnexus.
+        ///
+        /// Credits that name a role (after the rule above is applied) are moved after the ones
+        /// that do not, keeping the relative order within each group. That is not tidiness. Once
+        /// the role is removed nothing downstream can tell a translator from an author, and four
+        /// separate code paths pick an author by taking <c>Authors[0]</c> off the stored row: the
+        /// library path planner, the rename service, the manual import planner and the search
+        /// result classifier. If a reversed byline were stored in the order it arrived, those
+        /// four would all name the folder after the translator while the add path, which still
+        /// sees the provider's original strings, named it after the author. They would disagree
+        /// about the same book and rename would keep proposing to move it. Putting the author
+        /// first makes <c>Authors[0]</c> and <see cref="Primary"/> agree by construction.
         ///
         /// Removing a role can also make two credits identical, which is the one problem this
         /// rule creates that dropping the credit did not: somebody credited as both author and
@@ -281,6 +295,18 @@ namespace Listenarr.Domain.Common
                 return credits ?? Array.Empty<string>();
             }
 
+            // First pass, read-only: which stripped names have at least one bare occurrence
+            // anywhere in this list. This has to be known before the classifying pass below,
+            // not discovered during it, or the result depends on scan order again.
+            var bareSomewhere = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var credit in credits)
+            {
+                if (!string.IsNullOrWhiteSpace(credit) && !IsRoleCredit(credit))
+                {
+                    bareSomewhere.Add(StripRole(credit));
+                }
+            }
+
             var authors = new List<string>(credits.Count);
             var contributors = new List<string>(credits.Count);
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -292,7 +318,7 @@ namespace Listenarr.Domain.Common
                     continue;
                 }
 
-                if (IsRoleCredit(credit))
+                if (IsRoleCredit(credit) && !bareSomewhere.Contains(stripped))
                 {
                     contributors.Add(stripped);
                 }
