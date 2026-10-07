@@ -99,7 +99,7 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         {
             // A single-track release, not an album: no year, no "Discography", nothing the
             // original strict scene-album regex or the discography keyword could ever match.
-            var result = Result(category: null, title: "Mira Delgado - Nightfall (Single) [320kbps]");
+            var result = Result(category: null, title: "Mira Delgado - Nightfall (Single) [FLAC]");
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
 
@@ -148,14 +148,33 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             Assert.False(string.IsNullOrWhiteSpace(reason));
         }
 
+        [Fact]
+        public void ArtistAlbumFields_PlusKbpsTag_CrossesThreshold_ButVocabAloneCannotGateKbps()
+        {
+            // Directly exercises the kbps gate's positive path (tracker #361, round 5): the
+            // numeric kbps signal is deliberately gated more strictly than FLAC -- ordinary album
+            // vocabulary is NOT accepted as its corroborator (see the round-5 regression tests
+            // below for why), but Artist/Album corroboration is.
+            var result = Result(
+                category: null,
+                title: "Soraya Quint - Midnight Transit [320kbps]",
+                artist: "Soraya Quint",
+                album: "Midnight Transit");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
+
+            Assert.True(looksLikeMusic);
+            Assert.False(string.IsNullOrWhiteSpace(reason));
+        }
+
         // ---------------------------------------------------------------------------------
         // (b) Widened title-pattern matching
         // ---------------------------------------------------------------------------------
 
         [Theory]
-        [InlineData("Nightfall Sessions EP [320kbps]")]
+        [InlineData("Nightfall Sessions EP [FLAC]")]
         [InlineData("Harmonic Drift LP [FLAC]")]
-        [InlineData("The Lowland Tapes Anthology [320kbps]")]
+        [InlineData("The Lowland Tapes Anthology [FLAC]")]
         [InlineData("Carved In Static Soundtrack [FLAC]")]
         public void AlbumVocabularyPlusBitrateTag_IsCaught(string title)
         {
@@ -686,6 +705,57 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         public void NegativeControl_ReviewRound4_FlacAsFictionalAcronymMidTitle_IsAccepted()
         {
             var result = Result(category: null, title: "Senator Avery Lin - The Silent Vote (FLAC Resistance)");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        // ---------------------------------------------------------------------------------
+        // Round 5 of independent review found that "kbps" is a general digital data-rate unit,
+        // not an audio-specific one -- a telecom/networking nonfiction subtitle ending in a
+        // bitrate figure ("...Life at 56kbps") sits in the exact same end-of-title position a
+        // real release tag would, so round 4's positional fix alone couldn't tell them apart.
+        // Fixed by gating the signal on a genuinely music-specific corroborator (Artist/Album
+        // corroboration, or an actual music category signal) rather than narrowing the regex a
+        // third time -- and deliberately NOT accepting ordinary album vocabulary as a
+        // corroborator for the kbps path specifically, because a vocabulary word plus a trailing
+        // kbps figure is exactly the shape that is ambiguous between a real mislabeled release
+        // and an ordinary nonfiction title (vocabulary alone WAS carved out as a sufficient
+        // corroborator for FLAC, which has no comparable ambiguity). Permanent negative controls
+        // for all three of round 5's fixtures.
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void NegativeControl_ReviewRound5_DashPlusKbpsAsBookSubjectAtTitleEnd_NoCorroborator_IsAccepted()
+        {
+            var result = Result(category: null, title: "Jordan Pierce - The Streaming Wars: Why Everyone Settled on 128kbps");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound5_DashPlusKbpsAsTelecomHistorySubject_NoCorroborator_IsAccepted()
+        {
+            // The sharpest case: not even about audio. "kbps" is a general data-rate unit
+            // (modem speeds, telecom history), with zero connection to music.
+            var result = Result(category: null, title: "Jordan Pierce - The Dial-Up Years: Life at 56kbps");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound5_AlbumVocabPlusKbps_VocabIsNotASufficientKbpsCorroborator_IsAccepted()
+        {
+            // The case that proves vocabulary cannot be accepted as a kbps corroborator: this is
+            // structurally identical (one album-vocabulary word + a trailing kbps figure, nothing
+            // else) to a real mislabeled release this gate is supposed to catch, and the two
+            // cannot be told apart by vocabulary alone.
+            var result = Result(category: null, title: "The Remastered Story of Life at 56kbps");
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
 
