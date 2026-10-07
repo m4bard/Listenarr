@@ -41,6 +41,16 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
         internal const string StallProgressChangedAtKey = "StallProgressChangedAt";
         internal const string StallLastObservedAtKey = "StallLastObservedAt";
 
+        // The floor's own window, tracked apart from the four keys above. Those four reset on
+        // ANY observed byte or progress movement, which is the gap the floor exists to close: a
+        // download trickling a few bytes a poll resets them every time and never reaches a
+        // standstill long enough to fail by that check alone. The floor's window survives that
+        // per-poll reset and only restarts for the same "fresh start" reasons the 8-signal check
+        // itself restarts for (no prior observation, a gap in observation, clock skew) -- never
+        // for movement on its own.
+        internal const string StallWindowStartedAtKey = "StallWindowStartedAt";
+        internal const string StallWindowStartedSizeKey = "StallWindowStartedSize";
+
         private const string ClientStateKey = "ClientState";
 
         // Only time actually watched counts towards a stall. A longer gap between two observations
@@ -156,25 +166,51 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
 
             download.SetMetadata(StallLastObservedAtKey, FormatStallTime(now));
 
-            // A first observation starts the clock now rather than at StartedAt: a torrent queued
-            // or paused since it was grabbed would otherwise be failed the moment it started. It
-            // also means an upgrade starts every clock fresh. Any movement in either direction (a
-            // recheck can take bytes away) counts as activity, and so does a gap in observation.
-            if (lastObservedAt is null
+            // The 8-signal check, kept exactly as it was: a first observation starts the clock
+            // now rather than at StartedAt (a torrent queued or paused since it was grabbed would
+            // otherwise be failed the moment it started), a gap in observation restarts it, and
+            // so does any movement in either direction (a recheck can take bytes away).
+            //
+            // Split into "fresh start" (nothing trustworthy to compare against yet) and
+            // "activity" (a real per-poll change) only so the floor below can tell them apart --
+            // the combined condition and what it does when true are unchanged.
+            var isFreshStart = lastObservedAt is null
                 || progressChangedAt is null
                 || now < lastObservedAt
                 || now - lastObservedAt.Value > StallObservationGapCapFor(client)
                 || !hasLastDownloadedSize
-                || !hasLastProgress
-                || lastDownloadedSize != download.DownloadedSize
-                || lastProgress != download.Progress)
+                || !hasLastProgress;
+            var hasActivity = !isFreshStart
+                && (lastDownloadedSize != download.DownloadedSize || lastProgress != download.Progress);
+
+            if (isFreshStart || hasActivity)
             {
+                // The floor: a second, independent trigger. The 8-signal check above is about to
+                // reset its own clock because it saw per-poll activity -- exactly the case a
+                // byte-only trickle hits on every single poll, so the 8-signal check alone would
+                // never fail it no matter how long it ran. Only reachable on real activity, never
+                // on a fresh start (there is no prior window yet to judge).
+                var floorPercent = Math.Min(settings.StalledDownloadFloorPercent, ApplicationSettings.MaxStalledDownloadFloorPercent);
+                if (hasActivity && floorPercent > 0 && download.TotalSize > 0
+                    && TryFailBelowFloor(download, now, timeoutHours, floorPercent))
+                {
+                    return;
+                }
+
+                if (isFreshStart && floorPercent > 0 && download.TotalSize > 0)
+                {
+                    StartFloorWindow(download, now);
+                }
+
                 download.SetMetadata(StallLastDownloadedSizeKey, download.DownloadedSize.ToString(CultureInfo.InvariantCulture));
                 download.SetMetadata(StallLastProgressKey, download.Progress.ToString(CultureInfo.InvariantCulture));
                 download.SetMetadata(StallProgressChangedAtKey, FormatStallTime(now));
                 return;
             }
 
+            // Neither a fresh start nor any per-poll activity: a genuine standstill, judged by
+            // the 8-signal check alone, unaffected by the floor above (which is never reached
+            // from here).
             if (now - progressChangedAt.Value < TimeSpan.FromHours(timeoutHours))
             {
                 return;
@@ -187,6 +223,59 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 "Download {DownloadId} has made no progress for {Hours}h; failing it as stalled",
                 LogRedaction.SanitizeText(download.Id),
                 timeoutHours);
+        }
+
+        /// <summary>
+        /// The floor itself: has this download moved at least <paramref name="floorPercent"/> of
+        /// its TotalSize since its tracking window started? If the window has not yet run for a
+        /// full <paramref name="timeoutHours"/>, there is nothing to judge yet. If it has and the
+        /// movement cleared the floor, the window slides forward from now rather than letting one
+        /// good burst of bytes buy unlimited future trickling. If it has not, the download is
+        /// failed the same way the 8-signal check fails a standstill, with its own message.
+        /// </summary>
+        private bool TryFailBelowFloor(Download download, DateTimeOffset now, int timeoutHours, decimal floorPercent)
+        {
+            var windowStartedAt = ReadStallTime(download, StallWindowStartedAtKey);
+            var hasWindowStartedSize = long.TryParse(
+                download.GetMetadataString(StallWindowStartedSizeKey),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var windowStartedSize);
+
+            if (windowStartedAt is null || !hasWindowStartedSize || now < windowStartedAt.Value)
+            {
+                StartFloorWindow(download, now);
+                return false;
+            }
+
+            if (now - windowStartedAt.Value < TimeSpan.FromHours(timeoutHours))
+            {
+                return false;
+            }
+
+            var moved = download.DownloadedSize - windowStartedSize;
+            var movedPercent = moved <= 0 ? 0m : (decimal)moved / download.TotalSize * 100m;
+            if (movedPercent >= floorPercent)
+            {
+                StartFloorWindow(download, now);
+                return false;
+            }
+
+            ClearStallMarkers(download);
+            download.Failed(
+                $"Less than {floorPercent}% of its size moved in {timeoutHours} hour{(timeoutHours == 1 ? string.Empty : "s")}; treated as a failed download (stalled download handling)");
+            logger.LogInformation(
+                "Download {DownloadId} moved less than {FloorPercent}% of its total size in {Hours}h; failing it as stalled (floor)",
+                LogRedaction.SanitizeText(download.Id),
+                floorPercent,
+                timeoutHours);
+            return true;
+        }
+
+        private static void StartFloorWindow(Download download, DateTimeOffset now)
+        {
+            download.SetMetadata(StallWindowStartedAtKey, FormatStallTime(now));
+            download.SetMetadata(StallWindowStartedSizeKey, download.DownloadedSize.ToString(CultureInfo.InvariantCulture));
         }
 
         /// <summary>
@@ -230,6 +319,8 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
             download.Metadata.Remove(StallLastProgressKey);
             download.Metadata.Remove(StallProgressChangedAtKey);
             download.Metadata.Remove(StallLastObservedAtKey);
+            download.Metadata.Remove(StallWindowStartedAtKey);
+            download.Metadata.Remove(StallWindowStartedSizeKey);
         }
 
         private static string FormatStallTime(DateTimeOffset value) =>

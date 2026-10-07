@@ -124,7 +124,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
         }
 
         [Theory]
-        [Trait("Scenario", "A slow download that keeps moving is never a stall")]
+        [Trait("Scenario", "A slow download that keeps moving is never a stall, by the 8-signal check alone")]
         [InlineData(true)]
         [InlineData(false)]
         public async Task SlowButProgressing_IsNeverFailed_HoweverLongItRuns(bool bytesMove)
@@ -132,7 +132,12 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             // Twenty hours against a two hour timeout, moving by the smallest step each poll: one
             // byte, or (for a torrent whose size is not known yet, so bytes are never trusted) a
             // sliver of progress.
-            await SaveSettingsAsync(handlingEnabled: true, hours: TimeoutHours);
+            //
+            // The floor is forced OFF here: this test is about the pre-existing 8-signal check in
+            // isolation. Without that, the bytesMove=true case is exactly the gap the floor
+            // closes -- see StalledDownloadFloorTests for the same shape with the floor at its
+            // default, where it now fails well before 20 hours.
+            await SaveSettingsAsync(handlingEnabled: true, hours: TimeoutHours, floorPercent: 0);
             var download = await AddTorrentDownloadAsync();
             var size = bytesMove ? 1_000_000L : 0L;
 
@@ -428,11 +433,16 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             Assert.Equal(DownloadStatus.Failed, (await _downloadRepository.GetByIdAsync(download.Id))!.Status);
         }
 
-        private async Task SaveSettingsAsync(bool handlingEnabled, int hours)
+        private async Task SaveSettingsAsync(bool handlingEnabled, int hours, decimal? floorPercent = null)
         {
             var builder = new ApplicationSettingsBuilder()
                 .WithoutCompletionStabilityWindow()
                 .WithStalledDownloadTimeoutHours(hours);
+            if (floorPercent is not null)
+            {
+                builder = builder.WithStalledDownloadFloorPercent(floorPercent.Value);
+            }
+
             builder = handlingEnabled ? builder.WithFailedDownloadHandling() : builder.WithoutFailedDownloadHandling();
             await _applicationSettingsRepository.SaveAsync(builder.Build());
         }

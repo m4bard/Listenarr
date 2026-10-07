@@ -202,6 +202,25 @@ namespace Listenarr.Domain.Configuration
 
         // Thirty days. Past that the setting stops meaning "stalled" in any useful sense.
         public const int MaxStalledDownloadTimeoutHours = 720;
+
+        // The 8-signal check above resets its clock on ANY observed change, including a byte
+        // count that moves by a handful of bytes every poll without ever moving a whole piece
+        // (so Progress never changes either). That torrent clears every one of the 8 conditions
+        // forever and is never flagged, no matter how long it trickles. This is a second,
+        // independent trigger: over one stall window (StalledDownloadTimeoutHours), a download
+        // must move at least this share of TotalSize or it is treated as stalled too, regardless
+        // of whether the 8-signal check saw per-poll activity. Only evaluated while the 8-signal
+        // check would otherwise let the clock reset on activity; a genuine standstill (no bytes,
+        // no progress, ever) is still caught by the 8-signal check alone, unchanged.
+        // Percent of TotalSize, 0 to MaxStalledDownloadFloorPercent. Zero turns this floor off
+        // and restores exactly the pre-floor behaviour: no window is tracked, no extra check
+        // runs, the 8-signal check decides alone as it always has.
+        // Default 1% is the FORK'S OWN CHOICE, not a family default: neither Sonarr
+        // (QBittorrent.cs:319-322) nor Readarr (QBittorrent.cs:273-275) has any stall-timeout
+        // mechanism at all, so there is no family precedent to match here.
+        public decimal StalledDownloadFloorPercent { get; set; } = 1m;
+
+        public const decimal MaxStalledDownloadFloorPercent = 100m;
         public List<string> ImportBlacklistExtensions
         {
             get

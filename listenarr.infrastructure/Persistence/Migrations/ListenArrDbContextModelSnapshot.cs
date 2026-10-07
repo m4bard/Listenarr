@@ -1997,6 +1997,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<bool>("SkipFreeSpaceCheckWhenImporting")
                         .HasColumnType("INTEGER");
 
+                    b.Property<decimal>("StalledDownloadFloorPercent")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("StalledDownloadTimeoutHours")
                         .HasColumnType("INTEGER");
 

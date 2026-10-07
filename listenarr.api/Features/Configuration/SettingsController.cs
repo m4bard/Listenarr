@@ -112,6 +112,15 @@ namespace Listenarr.Api.Features.Configuration
                     });
                 }
 
+                if (settings.StalledDownloadFloorPercent is < 0 or > ApplicationSettings.MaxStalledDownloadFloorPercent)
+                {
+                    return BadRequest(new
+                    {
+                        code = "invalid_stalled_download_floor_percent",
+                        message = $"Stalled download floor must be between 0 (off) and {ApplicationSettings.MaxStalledDownloadFloorPercent} percent."
+                    });
+                }
+
                 await _configurationService.SaveApplicationSettingsAsync(settings);
                 _cache?.Remove("default-search-region");
 
