@@ -67,9 +67,11 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             // the mislabeled music release: near-identical wording, a mislabeling indexer's
             // category-3030 tag, and a parenthetical genre marker plus Artist/Album fields that
             // are internally consistent with the title's own "Artist - Album" shape.
+            // Realistic too: a mislabeled music upload carrying a genre marker and a dash-shaped
+            // title very often also carries a format tag.
             var result = Result(
                 category: "3030",
-                title: "Jonas Harrow - Harbor Lights (Pop)",
+                title: "Jonas Harrow - Harbor Lights (Pop) [FLAC]",
                 artist: "Jonas Harrow",
                 album: "Harbor Lights (Pop)");
 
@@ -169,16 +171,45 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         [InlineData("(Pop)")]
         [InlineData("(Pop/Rock)")]
         [InlineData("(Hip-Hop)")]
-        public void ParentheticalGenreMarker_Alone_IsDecisive(string marker)
+        public void ParentheticalGenreMarker_Alone_RequiresCorroboration_IsNotDecisive(string marker)
         {
-            // A standalone parenthetical genre marker is unambiguous enough on its own -- real
-            // audiobook titles essentially never carry one.
+            // Independent review (tracker #361) found a plausible counterexample -- a memoir or
+            // nonfiction audiobook subtitled with a bare genre word, e.g. "(Punk)" for a book
+            // about punk culture -- so a standalone parenthetical genre marker must NOT decide
+            // alone. It still needs at least one more weak signal to corroborate (see the
+            // combination test below).
             var result = Result(category: null, title: $"Driftwood Station {marker}");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void ParentheticalGenreMarker_PlusAlbumVocabWord_CrossesThreshold()
+        {
+            // Genre marker alone is not enough (see above), but combined with one more weak
+            // signal -- ordinary album vocabulary -- it corroborates enough to catch a real
+            // mislabeled release.
+            var result = Result(category: null, title: "Driftwood Station EP (Pop)");
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
 
             Assert.True(looksLikeMusic);
             Assert.False(string.IsNullOrWhiteSpace(reason));
+        }
+
+        [Fact]
+        public void ParentheticalGenreMarker_PlusBareDashShape_StillBelowThreshold()
+        {
+            // Genre marker + a bare dash shape alone is STILL not enough on its own -- it is this
+            // exact combination, with a small Size nudge added, that
+            // SmallSize_NudgesABorderlineCaseAcrossTheThreshold below demonstrates crossing.
+            var result = Result(category: null, title: "Nova Fenn - Driftwood Station (Pop)");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
         }
 
         [Fact]
@@ -201,11 +232,12 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         public void Category3030_WithStrongContraryTitleAndFieldSignals_IsOverridden()
         {
             // Restates PopNearTwin_MislabeledMusicWithGenreMarker_IsCaught as a direct (c) test:
-            // 3030 is present, but genre marker + dash + Artist/Album corroboration together
-            // outweigh it.
+            // 3030 is present, but genre marker + dash + Artist/Album corroboration + a bitrate
+            // tag together outweigh it. (Realistic too: a mislabeled music upload that carries a
+            // genre marker and a dash-shaped title very often also carries a format tag.)
             var result = Result(
                 category: "3030",
-                title: "Nadia Brecht - Low Tide (Rock)",
+                title: "Nadia Brecht - Low Tide (Rock) [MP3]",
                 artist: "Nadia Brecht",
                 album: "Low Tide (Rock)");
 
@@ -273,12 +305,12 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         [Fact]
         public void SmallSize_NudgesABorderlineCaseAcrossTheThreshold()
         {
-            // A single weak vocabulary word alone is below threshold (see
-            // Category3030_WithOnlyWeakContraryTitleSignal_StillFailsOpen's unweighted sibling
-            // below); a small, music-typical size is the nudge that tips an otherwise-borderline
-            // case over.
-            var withoutSizeNudge = Result(category: null, title: "Nightfall Sessions EP", size: 0);
-            var withSizeNudge = Result(category: null, title: "Nightfall Sessions EP", size: 40_000_000);
+            // Genre marker + dash shape alone sits below threshold (neither decides alone, and
+            // together they are still short -- see ParentheticalGenreMarker_PlusDashShape_...
+            // which adds a size push below); a small, music-typical size is the nudge that tips
+            // this otherwise-borderline case over.
+            var withoutSizeNudge = Result(category: null, title: "Nova Fenn - Driftwood Station (Pop)", size: 0);
+            var withSizeNudge = Result(category: null, title: "Nova Fenn - Driftwood Station (Pop)", size: 40_000_000);
 
             var withoutNudgeResult = MusicReleaseClassifier.LooksLikeMusicRelease(withoutSizeNudge, out _);
             var withNudgeResult = MusicReleaseClassifier.LooksLikeMusicRelease(withSizeNudge, out var reason);
@@ -406,6 +438,82 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
 
             Assert.False(looksLikeMusic);
+        }
+
+        // ---------------------------------------------------------------------------------
+        // Regression fixtures from independent review (tracker #361): six false positives
+        // measured against an earlier tuning of these same weights, where a bare "Artist -
+        // Album" dash shape plus ONE ordinary album-vocabulary word (no other corroboration at
+        // all) reached RejectThreshold on ordinary dash-formatted audiobook/memoir/self-help
+        // titles. Permanent negative controls so this exact gap cannot silently reopen if the
+        // weights are retuned later.
+        // ---------------------------------------------------------------------------------
+
+        [Theory]
+        [InlineData("Teodor Fenwick - Soundtrack of My Years")]
+        [InlineData("Dr. Marguerite Olin - Single and Unapologetic")]
+        [InlineData("Rosalind Pike - Winter Tales Anthology")]
+        [InlineData("Preston Ivy - The Lantern Chronicles - Remastered Edition Book Three")]
+        public void NegativeControl_ReviewRegression_DashShapePlusOneVocabWord_NoOtherSignal_IsAccepted(string title)
+        {
+            var result = Result(category: null, title: title);
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRegression_DashShapePlusVocabPlusArtistAlbum_NonMusicCategory_IsAccepted()
+        {
+            // Artist/Album fields are consistent with the title's dash shape AND there is one
+            // ordinary vocabulary word, but the category is a real, non-music, non-3030 id (e.g.
+            // a general-fiction category) -- still not enough without a bitrate tag or genre
+            // marker to corroborate.
+            var result = Result(
+                category: "7020",
+                title: "Jonas Whitfield - The River Anthology",
+                artist: "Jonas Whitfield",
+                album: "The River Anthology");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRegression_BareGenreMarkerAsNovelSubtitle_IsAccepted()
+        {
+            // A music-genre word in parens can legitimately be a subtitle on a book ABOUT that
+            // genre (a punk-scene memoir, a jazz biography, ...) rather than evidence the release
+            // itself is music.
+            var result = Result(category: null, title: "Static and Silence (Punk)");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        // ---------------------------------------------------------------------------------
+        // Domain-scoping, both directions (independent review verified this by direct test
+        // rather than by reading alone -- QualityProfileMusicCategoryGateTests' shared fixture
+        // title always carries "(Unabridged)", which only exercises the title-overrides-category
+        // direction trivially since its category is never itself decisive there).
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void DecisiveMusicCategory_TitleAudiobookOverride_DoesNotRescue()
+        {
+            // A category-decisive music id must reject even when the title independently carries
+            // an explicit audiobook signal word -- the title override protects only the title
+            // domain's own contribution, it does not reach across and cancel a category-decided
+            // outcome.
+            var result = Result(category: "3010", title: "Some Invented Title, narrated by Someone");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
+
+            Assert.True(looksLikeMusic);
+            Assert.False(string.IsNullOrWhiteSpace(reason));
         }
     }
 }
