@@ -81,6 +81,16 @@ namespace Listenarr.Api.Features.Configuration
             try
             {
                 _logger.LogDebug("Saving application settings");
+
+                if (settings.DownloadClientHistoryLimit < ApplicationSettings.MinDownloadClientHistoryLimit)
+                {
+                    return BadRequest(new
+                    {
+                        code = "invalid_download_client_history_limit",
+                        message = $"Download client history limit must be at least {ApplicationSettings.MinDownloadClientHistoryLimit}."
+                    });
+                }
+
                 await _configurationService.SaveApplicationSettingsAsync(settings);
                 _cache?.Remove("default-search-region");
 

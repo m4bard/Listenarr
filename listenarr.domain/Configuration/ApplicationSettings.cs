@@ -109,6 +109,15 @@ namespace Listenarr.Domain.Configuration
         // @ 319089b90f), both `GetValueInt("DownloadClientHistoryLimit", 60)`. Without this, a
         // download client whose own history keeps growing (e.g. NZBGet, which never trims its
         // own history automatically) hands back everything it has ever recorded on every poll.
+        //
+        // Floor, which the family does not give us: DownloadClientHistoryLimit is never exposed
+        // through any API Resource class in either family repo (read: grepped every
+        // src/*.Api.*/Config/*Resource.cs in both), so neither Sonarr nor Readarr has a
+        // settings-save path to validate it on -- it is settable only by hand-editing config.xml.
+        // Listenarr exposes it on the settings page, so unlike the family it needs its own floor.
+        // 1 is chosen by construction, not copied: a "keep at most N" limit is meaningless at
+        // N <= 0, and MinDownloadClientHistoryLimit below is enforced in SettingsController.
+        public const int MinDownloadClientHistoryLimit = 1;
         public int DownloadClientHistoryLimit { get; set; } = 60;
 
         // Failed download handling settings
