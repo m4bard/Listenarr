@@ -121,7 +121,7 @@ describe('BlocklistView', () => {
     expect(wrapper.find('.blocklist-release-title').exists()).toBe(true)
   })
 
-  it('removes the row and calls DELETE with that entry\'s id when Remove is clicked', async () => {
+  it('does not call DELETE until the user confirms removal', async () => {
     const entry = makeEntry({ id: 42, audiobookId: 101 })
     const apiService = mockApi({
       getBlocklist: vi.fn(async () => [entry]),
@@ -129,6 +129,33 @@ describe('BlocklistView', () => {
     mockLibraryStore([{ id: 101, title: 'Synthetic Audiobook A' }])
     mockToast()
     mockErrorTracking()
+
+    // Confirmation is pending (never resolved) for this test, so if Remove fired the DELETE
+    // synchronously -- the bug this test guards against -- the assertion below would already
+    // see it called before we ever decide whether to confirm.
+    const confirmModule = await import('@/composables/useConfirm')
+    const showConfirm = vi.spyOn(confirmModule, 'showConfirm').mockReturnValue(new Promise(() => {}))
+
+    const wrapper = await mountBlocklistView()
+    await wrapper.find('.action-button.remove').trigger('click')
+    await flushPromises()
+
+    expect(showConfirm).toHaveBeenCalledTimes(1)
+    expect(apiService.deleteBlocklistEntry).not.toHaveBeenCalled()
+    expect(wrapper.findAll('.blocklist-card')).toHaveLength(1)
+  })
+
+  it('removes the row and calls DELETE with that entry\'s id once the user confirms', async () => {
+    const entry = makeEntry({ id: 42, audiobookId: 101 })
+    const apiService = mockApi({
+      getBlocklist: vi.fn(async () => [entry]),
+    })
+    mockLibraryStore([{ id: 101, title: 'Synthetic Audiobook A' }])
+    mockToast()
+    mockErrorTracking()
+
+    const confirmModule = await import('@/composables/useConfirm')
+    vi.spyOn(confirmModule, 'showConfirm').mockResolvedValue(true as unknown as Promise<boolean>)
 
     const wrapper = await mountBlocklistView()
     expect(wrapper.findAll('.blocklist-card')).toHaveLength(1)
@@ -139,6 +166,28 @@ describe('BlocklistView', () => {
     expect(apiService.deleteBlocklistEntry).toHaveBeenCalledWith(42)
     expect(apiService.deleteBlocklistEntry).toHaveBeenCalledTimes(1)
     expect(wrapper.findAll('.blocklist-card')).toHaveLength(0)
+  })
+
+  it('leaves the entry in place and never calls DELETE when the user cancels', async () => {
+    const entry = makeEntry({ id: 42, audiobookId: 101 })
+    const apiService = mockApi({
+      getBlocklist: vi.fn(async () => [entry]),
+    })
+    mockLibraryStore([{ id: 101, title: 'Synthetic Audiobook A' }])
+    mockToast()
+    mockErrorTracking()
+
+    const confirmModule = await import('@/composables/useConfirm')
+    vi.spyOn(confirmModule, 'showConfirm').mockResolvedValue(false as unknown as Promise<boolean>)
+
+    const wrapper = await mountBlocklistView()
+    expect(wrapper.findAll('.blocklist-card')).toHaveLength(1)
+
+    await wrapper.find('.action-button.remove').trigger('click')
+    await flushPromises()
+
+    expect(apiService.deleteBlocklistEntry).not.toHaveBeenCalled()
+    expect(wrapper.findAll('.blocklist-card')).toHaveLength(1)
   })
 
   it('shows a non-blank empty state when nothing is blocked', async () => {
@@ -171,6 +220,9 @@ describe('BlocklistView', () => {
       useToast: () => ({ success: vi.fn(), error: toastError, info: vi.fn() }),
     }))
     mockErrorTracking()
+
+    const confirmModule = await import('@/composables/useConfirm')
+    vi.spyOn(confirmModule, 'showConfirm').mockResolvedValue(true as unknown as Promise<boolean>)
 
     const wrapper = await mountBlocklistView()
     await wrapper.findAll('.action-button.remove')[0].trigger('click')
