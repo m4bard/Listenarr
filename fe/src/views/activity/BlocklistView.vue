@@ -76,6 +76,7 @@ import { useLibraryStore } from '@/stores/library'
 import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
+import { showConfirm } from '@/composables/useConfirm'
 import { PhProhibit } from '@phosphor-icons/vue'
 import { EmptyState } from '@/components/base'
 import type { BlockedRelease } from '@/types'
@@ -119,6 +120,13 @@ const refreshBlocklist = async () => {
 }
 
 const removeEntry = async (entry: BlockedRelease) => {
+  const ok = await showConfirm(
+    `Remove "${entry.title}" from the blocklist? Listenarr will be able to grab this release again.`,
+    'Confirm Removal',
+    { danger: true, confirmText: 'Remove', cancelText: 'Cancel' },
+  )
+  if (!ok) return
+
   removingId.value = entry.id
   try {
     await apiService.deleteBlocklistEntry(entry.id)
