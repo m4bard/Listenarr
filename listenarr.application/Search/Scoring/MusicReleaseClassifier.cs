@@ -71,25 +71,29 @@ namespace Listenarr.Application.Search.Scoring
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         // A bitrate/audio-format tag, without SceneAlbumPattern's strict year-prefix requirement.
-        // Independent review (tracker #361) found this token list reintroducing the same class of
-        // bug twice: round 2 measured that MP3/WEB/CD/128/192/256 are poor discriminators (MP3 is
-        // the single most common real-world audiobook distribution format; "CD" means nothing
-        // more specific than "compact disc"), and round 3 found that the fix for that -- keeping
-        // bare V0/V1/V2/320 -- had the SAME problem from a different direction: "V1"/"V2" are the
-        // standard book-series volume abbreviation ("Chronicles of the North (V1)" = Volume 1),
-        // and a bare "320" is an ordinary page count ("A Long Walk (320 Pages)"). A weight
-        // retune cannot fix a token-specificity problem, so this is fixed at the pattern level
-        // instead: only two shapes are kept, each chosen because NEITHER has any plausible
-        // collision with ordinary book metadata --
-        //   - the literal word "FLAC" in a bracket/paren (not an abbreviation anything else uses)
-        //   - a number followed by the literal unit "kbps" (no book field -- page count, price,
-        //     volume number, year, chapter count -- is ever expressed in kbps)
-        // V0/V1/V2 and bare numeric bitrates are deliberately NOT matched any more: there is no
-        // regex-visible context that reliably tells a VBR quality label or a scene bitrate shorthand
-        // apart from a volume number or page count, so rather than retune weights a third time
-        // against the same class of real-world collision, the ambiguous shapes are dropped.
+        // Independent review (tracker #361) found this reintroducing the same class of bug three
+        // times running, each time on a different axis:
+        //   - round 2: MP3/WEB/CD/128/192/256 are poor discriminators (MP3 is the single most
+        //     common real-world audiobook distribution format; "CD" means nothing more specific
+        //     than "compact disc").
+        //   - round 3: the fix for that -- keeping bare V0/V1/V2/320 -- had the SAME problem from
+        //     a different direction: "V1"/"V2" are the standard book-series volume abbreviation
+        //     ("Chronicles of the North (V1)" = Volume 1), and a bare "320" is an ordinary page
+        //     count ("A Long Walk (320 Pages)").
+        //   - round 4: narrowing the tokens to just FLAC/kbps (unambiguous words in isolation)
+        //     still matched a narrow but real nonfiction case -- an audiobook ABOUT audio
+        //     technology, where "FLAC" or a kbps figure is the book's subject matter, embedded in
+        //     ordinary prose ("The Vinyl Revival (FLAC Format Explained)", "128kbps and Beyond"),
+        //     not a release tag.
+        // Round 4's fix is structural rather than lexical: a real release tag is conventionally
+        // the LAST thing in a title, and a bracketed one contains nothing but the tag itself.
+        // Prose mentioning the same word mid-title, or inside a bracket with other words, no
+        // longer matches -- regardless of what the token list contains. This is deliberately a
+        // different kind of fix than rounds 2-3 (which only ever narrowed the token list): three
+        // rounds of token-list narrowing kept finding a new collision, so this closes the whole
+        // class by requiring release-tag SHAPE, not just spelling.
         private static readonly Regex BitrateTagPattern = new(
-            @"[\[\(]FLAC\b|\b\d{2,3}\s*kbps\b",
+            @"[\[\(]\s*FLAC\s*[\]\)]\s*$|\b\d{2,3}\s*kbps\b\s*[\]\)]?\s*$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         // A parenthetical that is ENTIRELY one or two slash-joined music genre names, e.g. "(Pop)",
