@@ -515,6 +515,10 @@ export interface ApplicationSettings {
   // Number of days to retain activity history. A background job prunes entries
   // older than this window daily. Zero keeps history indefinitely.
   historyRetentionDays?: number
+  // Maximum number of history entries read from a download client per poll, applied
+  // client-side after the (unbounded) fetch. Matches Sonarr/Readarr's
+  // DownloadClientHistoryLimit, default 60.
+  downloadClientHistoryLimit?: number
   // Failed download handling
   failedDownloadHandlingEnabled?: boolean
   failedDownloadAutoSearch?: boolean
