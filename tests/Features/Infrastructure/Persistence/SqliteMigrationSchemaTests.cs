@@ -99,6 +99,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20261002210137_AddOperationEvidencePublications";
     private const string RejectClearlyMusicReleasesMigrationId =
         "20261006202151_AddRejectClearlyMusicReleasesToApplicationSettings";
+    private const string DownloadClientHistoryLimitMigrationId =
+        "20261007102434_AddDownloadClientHistoryLimitToApplicationSettings";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -540,6 +542,10 @@ public class SqliteMigrationSchemaTests : BaseTests
         const string stalledDownloadTimeoutMigrationId = "20261001150702_AddStalledDownloadTimeoutSetting";
         Assert.Contains(stalledDownloadTimeoutMigrationId, postCanary);
         postCanary = [.. postCanary.Except([stalledDownloadTimeoutMigrationId])];
+
+        // Item 357's NZBGet history-fetch limit, pinned apart for the same reason.
+        Assert.Contains(DownloadClientHistoryLimitMigrationId, postCanary);
+        postCanary = [.. postCanary.Except([DownloadClientHistoryLimitMigrationId])];
 
         Assert.Equal(
             [

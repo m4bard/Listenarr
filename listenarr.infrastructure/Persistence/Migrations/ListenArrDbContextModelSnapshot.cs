@@ -1864,6 +1864,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<string>("DiscordGuildId")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("DownloadClientHistoryLimit")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("DownloadCompletionStabilitySeconds")
                         .HasColumnType("INTEGER");
 
