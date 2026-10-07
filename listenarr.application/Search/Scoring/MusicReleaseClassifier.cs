@@ -154,8 +154,9 @@ namespace Listenarr.Application.Search.Scoring
         // which is just as common in ordinary book titles as in music ones -- it crossed
         // RejectThreshold on its own. The Director's and the reviewer's shared conclusion: gate
         // it on a genuinely music-specific corroborator rather than letting a bare dash unlock
-        // it. See GatesBitrateSignal below for exactly which corroborators qualify, and why FLAC
-        // and the numeric kbps match are gated differently.
+        // it. See LooksLikeMusicRelease's own gating comment below for exactly which
+        // corroborators qualify (round 6 removed Artist/Album consistency from that list; it was
+        // never music-specific), and why FLAC and the numeric kbps match are gated differently.
         private const int TitleBitrateTagWeight = 48;          // (b): stronger, but now GATED
         private const int TitleBareArtistAlbumDashWeight = 8;  // (b): weak, ambiguous alone
 
@@ -176,24 +177,35 @@ namespace Listenarr.Application.Search.Scoring
 
             var categoryHasMusicSignal = CollectCategorySignals(result.Category, signals);
             CollectTitleSignals(result.Title, signals, out var hasAlbumVocab, out var hasGenreMarker, out var hasFlacTag, out var hasKbpsTag);
-            var artistAlbumCorroborates = CollectArtistAlbumSignal(result, signals);
+            // CollectArtistAlbumSignal's own weight still contributes to the sum below; its
+            // return value is deliberately NOT used to gate the bitrate signal -- see why not.
+            CollectArtistAlbumSignal(result, signals);
             CollectSizeSignal(result.Size, signals);
 
-            // Bitrate/FLAC gating (round 5, tracker #361): a bitrate tag counts only alongside a
-            // genuinely music-specific corroborator, never on the strength of a bare dash alone.
-            // FLAC has no plausible non-music use, so album vocabulary, a genre marker, Artist/
-            // Album corroboration, or an actual music category signal all qualify. The numeric
-            // "kbps" match is gated more strictly -- vocabulary words like "Remastered"/
-            // "Anthology" (and genre markers) are NOT accepted for it, because a telecom/
-            // networking nonfiction subtitle ending in a data-rate figure plus one of those
-            // ordinary words is structurally identical to a real mislabeled release and cannot be
-            // told apart by vocabulary alone; only Artist/Album corroboration or an actual music
-            // category signal qualify.
-            if (hasFlacTag && (hasAlbumVocab || hasGenreMarker || artistAlbumCorroborates || categoryHasMusicSignal))
+            // Bitrate/FLAC gating (tracker #361). Round 5 gated this on "a genuinely music-
+            // specific corroborator" and included Artist/Album field consistency as one; round 6
+            // found that was never actually music-specific at all. CollectArtistAlbumSignal
+            // checks whether the fields are INTERNALLY CONSISTENT with the title's dash shape --
+            // that is exactly what a real audiobook with narrator-as-Artist/title-as-Album
+            // metadata also has (it is the literal subject of round 1's own hardest negative
+            // control). A signal built from day one to tolerate a real audiobook cannot then be
+            // used to prove a release is music; Artist/Album consistency is dropped from this
+            // gate entirely, for both FLAC and kbps, as a result.
+            // What remains is music-positive BY CONSTRUCTION rather than merely consistent:
+            // album vocabulary and a genre marker are both signals this strengthening introduced
+            // specifically because ordinary music terminology showing up at all is itself a
+            // (weak) signal, and an actual music category id/text is decisive independent of
+            // anything else. FLAC (no plausible non-music use) accepts any of the three. The
+            // numeric kbps match stays the most conservative: round 5 showed vocabulary cannot
+            // gate it (a vocabulary word plus a trailing data-rate figure is structurally
+            // identical to real nonfiction), so only a genre marker -- narrow enough, by
+            // construction, to carry real signal on its own -- or an actual music category
+            // qualify.
+            if (hasFlacTag && (hasAlbumVocab || hasGenreMarker || categoryHasMusicSignal))
             {
                 signals.Add((TitleBitrateTagWeight, "Title carries a FLAC release tag"));
             }
-            else if (hasKbpsTag && (artistAlbumCorroborates || categoryHasMusicSignal))
+            else if (hasKbpsTag && (hasGenreMarker || categoryHasMusicSignal))
             {
                 signals.Add((TitleBitrateTagWeight, "Title carries a bitrate (kbps) release tag"));
             }
@@ -339,8 +351,10 @@ namespace Listenarr.Application.Search.Scoring
             }
         }
 
-        /// <returns>True when the Artist/Album corroboration signal fired -- also used to gate
-        /// the bitrate/FLAC signal above.</returns>
+        /// <returns>True when the Artist/Album corroboration signal fired. Deliberately NOT used
+        /// to gate the bitrate/FLAC signal (see LooksLikeMusicRelease's gating comment, round 6):
+        /// this checks field/title CONSISTENCY, which a real audiobook with narrator-as-Artist/
+        /// title-as-Album metadata has just as much as a real mislabeled release does.</returns>
         private static bool CollectArtistAlbumSignal(SearchResult result, List<(int, string)> signals)
         {
             var artist = (result.Artist ?? string.Empty).Trim();
