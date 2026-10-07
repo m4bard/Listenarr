@@ -133,6 +133,25 @@
         />
       </FormRow>
 
+      <FormRow
+        label="Download Client History Limit"
+        help="Maximum number of history entries read from a download client on each poll (1-1000). Download clients can accumulate history well beyond what Listenarr needs to track; this keeps each poll bounded regardless of how much history the client itself is holding."
+      >
+        <input
+          :value="settings.downloadClientHistoryLimit"
+          @input="
+            (e) =>
+              updateField(
+                'downloadClientHistoryLimit',
+                Number((e.target as HTMLInputElement).value || 60),
+              )
+          "
+          type="number"
+          min="1"
+          max="1000"
+        />
+      </FormRow>
+
       <CheckboxCard
         :modelValue="settings.failedDownloadHandlingEnabled"
         @update:modelValue="updateFailedDownloadHandlingEnabled"
