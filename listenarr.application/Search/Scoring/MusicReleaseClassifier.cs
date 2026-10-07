@@ -70,16 +70,26 @@ namespace Listenarr.Application.Search.Scoring
             @"\b(EP|LP|Remastered|Anthology|Soundtrack|Single)\b",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        // A bitrate/audio-format tag in brackets or parens, without SceneAlbumPattern's strict
-        // year-prefix requirement. Deliberately narrower than SceneAlbumPattern's token list:
-        // independent review (tracker #361, round 2) measured that MP3/WEB/CD/128/192/256 are
-        // poor discriminators -- MP3 is the single most common real-world audiobook distribution
-        // format, "CD" means nothing more specific than "compact disc" and matched an innocuous
-        // "[CD Companion Edition]" note, and low/mid bitrates are if anything more typical of
-        // spoken-word compression than of music. Only FLAC and the scene-specific VBR/CBR labels
-        // (320, V0, V1, V2) are kept -- conventions with essentially no legitimate audiobook use.
+        // A bitrate/audio-format tag, without SceneAlbumPattern's strict year-prefix requirement.
+        // Independent review (tracker #361) found this token list reintroducing the same class of
+        // bug twice: round 2 measured that MP3/WEB/CD/128/192/256 are poor discriminators (MP3 is
+        // the single most common real-world audiobook distribution format; "CD" means nothing
+        // more specific than "compact disc"), and round 3 found that the fix for that -- keeping
+        // bare V0/V1/V2/320 -- had the SAME problem from a different direction: "V1"/"V2" are the
+        // standard book-series volume abbreviation ("Chronicles of the North (V1)" = Volume 1),
+        // and a bare "320" is an ordinary page count ("A Long Walk (320 Pages)"). A weight
+        // retune cannot fix a token-specificity problem, so this is fixed at the pattern level
+        // instead: only two shapes are kept, each chosen because NEITHER has any plausible
+        // collision with ordinary book metadata --
+        //   - the literal word "FLAC" in a bracket/paren (not an abbreviation anything else uses)
+        //   - a number followed by the literal unit "kbps" (no book field -- page count, price,
+        //     volume number, year, chapter count -- is ever expressed in kbps)
+        // V0/V1/V2 and bare numeric bitrates are deliberately NOT matched any more: there is no
+        // regex-visible context that reliably tells a VBR quality label or a scene bitrate shorthand
+        // apart from a volume number or page count, so rather than retune weights a third time
+        // against the same class of real-world collision, the ambiguous shapes are dropped.
         private static readonly Regex BitrateTagPattern = new(
-            @"[\[\(](FLAC|V0|V1|V2|320)\b",
+            @"[\[\(]FLAC\b|\b\d{2,3}\s*kbps\b",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         // A parenthetical that is ENTIRELY one or two slash-joined music genre names, e.g. "(Pop)",
