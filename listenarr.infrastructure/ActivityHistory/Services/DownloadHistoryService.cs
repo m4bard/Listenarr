@@ -333,6 +333,9 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
         private async Task AddUnifiedAsync(DownloadHistory history, int? audiobookId = null)
         {
             var normalizedId = history.DownloadId.ToUpperInvariant();
+            var outcome = history.EventType is DownloadHistoryEventType.DownloadFailed or DownloadHistoryEventType.ImportFailed
+                ? HistoryOutcome.Failed
+                : HistoryOutcome.Succeeded;
             _context.History.Add(new History
             {
                 DownloadId = normalizedId,
@@ -342,13 +345,17 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
                 SourceTitle = history.Title,
                 AudiobookTitle = history.Title,
                 EventType = HistoryEvents.FromDownloadEvent(history.EventType),
-                Outcome = history.EventType is DownloadHistoryEventType.DownloadFailed or DownloadHistoryEventType.ImportFailed
-                    ? HistoryOutcome.Failed
-                    : HistoryOutcome.Succeeded,
+                Outcome = outcome,
                 Timestamp = history.EventDate,
                 Source = string.IsNullOrWhiteSpace(history.DownloadClient) ? "Download" : history.DownloadClient,
                 Message = history.ErrorMessage,
-                Error = history.ErrorMessage,
+                // Error is "failure detail retained separately from the display message"
+                // (History.cs's own doc comment) -- it must stay null on a successful event,
+                // matching MovedDownloadCleanupService.AddCleanupHistoryAsync's convention.
+                // ErrorMessage doubles as the free-text "reason" on a successful Removed row
+                // (RecordRemovedAsync), so copying it into Error unconditionally mislabels
+                // every successful removal as a failure.
+                Error = outcome == HistoryOutcome.Failed ? history.ErrorMessage : null,
                 Data = history.Data == null ? null : System.Text.Json.JsonSerializer.Serialize(history.Data),
                 CorrelationId = normalizedId
             });

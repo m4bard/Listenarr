@@ -66,6 +66,41 @@ namespace Listenarr.Tests.Features.Infrastructure.ActivityHistory.Services
         }
 
         [Fact]
+        public async Task RecordRemovedAsync_SuccessfulRemoval_LeavesErrorNullButKeepsMessage()
+        {
+            // A removal is, by construction, always a successful outcome: RecordRemovedAsync has
+            // no failure path, and both production callers (DownloadOrphanCleanupService,
+            // DownloadRemovalWorkflow) only call it once the download has actually been removed.
+            await _service.RecordRemovedAsync(
+                "abc123",
+                "client-1",
+                "Test Book",
+                audiobookId: 42,
+                reason: "operator requested removal (force=true)");
+
+            var entry = Assert.Single(_context.History);
+            Assert.Equal(HistoryEvents.Removed, entry.EventType);
+            Assert.Equal(HistoryOutcome.Succeeded, entry.Outcome);
+            Assert.Null(entry.Error);
+            Assert.Equal("operator requested removal (force=true)", entry.Message);
+        }
+
+        [Fact]
+        public async Task RecordFailure_StillSetsErrorOnFailedOutcome_ControlForTheSuccessFix()
+        {
+            // Control: confirms the fix for the success path above does not regress the
+            // failure path. A failed outcome must still carry its Error for anything filtering
+            // on Outcome == Failed to pair with a visible failure reason.
+            await _service.RecordDownloadFailedAsync("abc123", "client-1", "Test Book", "disk full");
+
+            var entry = Assert.Single(_context.History);
+            Assert.Equal(HistoryEvents.DownloadFailed, entry.EventType);
+            Assert.Equal(HistoryOutcome.Failed, entry.Outcome);
+            Assert.Equal("disk full", entry.Error);
+            Assert.Equal("disk full", entry.Message);
+        }
+
+        [Fact]
         public async Task GetHistoryAsync_ReturnsEventsInChronologicalOrder()
         {
             await _service.RecordGrabbedAsync("abc123", "client-1", "Test Book", DownloadProtocol.Torrent);
