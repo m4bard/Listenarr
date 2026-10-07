@@ -99,7 +99,7 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         {
             // A single-track release, not an album: no year, no "Discography", nothing the
             // original strict scene-album regex or the discography keyword could ever match.
-            var result = Result(category: null, title: "Mira Delgado - Nightfall (Single) [320]");
+            var result = Result(category: null, title: "Mira Delgado - Nightfall (Single) [320kbps]");
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
 
@@ -153,9 +153,9 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         // ---------------------------------------------------------------------------------
 
         [Theory]
-        [InlineData("Nightfall Sessions EP [320]")]
+        [InlineData("Nightfall Sessions EP [320kbps]")]
         [InlineData("Harmonic Drift LP [FLAC]")]
-        [InlineData("The Lowland Tapes Anthology [320]")]
+        [InlineData("The Lowland Tapes Anthology [320kbps]")]
         [InlineData("Carved In Static Soundtrack [FLAC]")]
         public void AlbumVocabularyPlusBitrateTag_IsCaught(string title)
         {
@@ -240,7 +240,7 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             // genre marker and a dash-shaped title very often also carries a format tag.)
             var result = Result(
                 category: "3030",
-                title: "Nadia Brecht - Low Tide (Rock) [320]",
+                title: "Nadia Brecht - Low Tide (Rock) [320kbps]",
                 artist: "Nadia Brecht",
                 album: "Low Tide (Rock)");
 
@@ -579,6 +579,63 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         public void NegativeControl_ReviewRound2_DashPlusAlbumVocabPlusGenreMarker_IsAccepted()
         {
             var result = Result(category: null, title: "Priya Nandakumar - Echoes (Jazz): An Anthology");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        // ---------------------------------------------------------------------------------
+        // Round 3 of independent review found the fix for round 2's token problem (dropping
+        // MP3/WEB/CD/128/192/256) had the same problem on a different axis: the surviving
+        // V0/V1/V2/320 tokens are not scene-specific either. "V1"/"V2" are the standard
+        // book-series volume abbreviation, and a bare "320" is an ordinary page count. Fixed by
+        // tightening BitrateTagPattern itself (FLAC, or a number with the literal "kbps" unit)
+        // rather than retuning weights a third time. Permanent negative controls for all four of
+        // round 3's fixtures.
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void NegativeControl_ReviewRound3_DashPlusPageCountInParens_IsAccepted()
+        {
+            var result = Result(category: null, title: "Teodor Fenwick - A Long Walk (320 Pages)");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound3_DashPlusVolumeAbbreviation_IsAccepted()
+        {
+            var result = Result(category: null, title: "Priya Nandakumar - Chronicles of the North (V1)");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound3_AlbumVocabPlusVolumeAbbreviation_NoDash_IsAccepted()
+        {
+            var result = Result(category: null, title: "The Second Anthology (V2)");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound3_DashPlusArtistAlbumPlusVolumeAbbreviation_PlausibleSeriesAudiobook_IsAccepted()
+        {
+            // The most concrete case: a plausible real series-audiobook upload with a dash-shaped
+            // title, matching Artist/Album fields (narrator/series), and a volume marker -- no
+            // category at all to help.
+            var result = Result(
+                category: null,
+                title: "Priya Nandakumar - Chronicles of the North (V1)",
+                artist: "Priya Nandakumar",
+                album: "Chronicles of the North (V1)");
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
 
