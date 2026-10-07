@@ -92,8 +92,19 @@ namespace Listenarr.Application.Search.Scoring
         // different kind of fix than rounds 2-3 (which only ever narrowed the token list): three
         // rounds of token-list narrowing kept finding a new collision, so this closes the whole
         // class by requiring release-tag SHAPE, not just spelling.
-        private static readonly Regex BitrateTagPattern = new(
-            @"[\[\(]\s*FLAC\s*[\]\)]\s*$|\b\d{2,3}\s*kbps\b\s*[\]\)]?\s*$",
+        //   - FLAC in a bracket/paren containing nothing else, anchored at the end of the title.
+        private static readonly Regex FlacTagPattern = new(
+            @"[\[\(]\s*FLAC\s*[\]\)]\s*$",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        //   - a number immediately followed by the literal unit "kbps", anchored at the end.
+        // Kept separate from FlacTagPattern because round 5 found "kbps" is a general digital
+        // data-rate unit, not an audio-specific one -- a telecom/networking nonfiction subtitle
+        // ("...Life at 56kbps") sits in the exact same end-of-title position a real release tag
+        // would. FLAC has no comparable ambiguity (nothing else uses it), so only the kbps match
+        // is gated more strictly below.
+        private static readonly Regex KbpsTagPattern = new(
+            @"\b\d{2,3}\s*kbps\b\s*[\]\)]?\s*$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         // A parenthetical that is ENTIRELY one or two slash-joined music genre names, e.g. "(Pop)",
@@ -138,7 +149,14 @@ namespace Listenarr.Application.Search.Scoring
         // above SizeWeakWeight, so Size can only ever tip the one maximally-corroborated case.
         private const int TitleGenreMarkerWeight = 18;         // near-twin "(Pop)" case, (b)
         private const int TitleAlbumVocabWeight = 12;          // (b): weak, ambiguous alone
-        private const int TitleBitrateTagWeight = 48;          // (b): stronger -- see note above
+        // (b): a bitrate/FLAC tag is "stronger" than the other widened signals, but round 5
+        // found that strength itself is the problem: paired with only a generic dash shape --
+        // which is just as common in ordinary book titles as in music ones -- it crossed
+        // RejectThreshold on its own. The Director's and the reviewer's shared conclusion: gate
+        // it on a genuinely music-specific corroborator rather than letting a bare dash unlock
+        // it. See GatesBitrateSignal below for exactly which corroborators qualify, and why FLAC
+        // and the numeric kbps match are gated differently.
+        private const int TitleBitrateTagWeight = 48;          // (b): stronger, but now GATED
         private const int TitleBareArtistAlbumDashWeight = 8;  // (b): weak, ambiguous alone
 
         private const int ArtistAlbumCorroborationWeight = 8;  // (a): weak corroboration only
@@ -156,10 +174,29 @@ namespace Listenarr.Application.Search.Scoring
 
             var signals = new List<(int Weight, string Reason)>();
 
-            CollectCategorySignals(result.Category, signals);
-            CollectTitleSignals(result.Title, signals);
-            CollectArtistAlbumSignal(result, signals);
+            var categoryHasMusicSignal = CollectCategorySignals(result.Category, signals);
+            CollectTitleSignals(result.Title, signals, out var hasAlbumVocab, out var hasGenreMarker, out var hasFlacTag, out var hasKbpsTag);
+            var artistAlbumCorroborates = CollectArtistAlbumSignal(result, signals);
             CollectSizeSignal(result.Size, signals);
+
+            // Bitrate/FLAC gating (round 5, tracker #361): a bitrate tag counts only alongside a
+            // genuinely music-specific corroborator, never on the strength of a bare dash alone.
+            // FLAC has no plausible non-music use, so album vocabulary, a genre marker, Artist/
+            // Album corroboration, or an actual music category signal all qualify. The numeric
+            // "kbps" match is gated more strictly -- vocabulary words like "Remastered"/
+            // "Anthology" (and genre markers) are NOT accepted for it, because a telecom/
+            // networking nonfiction subtitle ending in a data-rate figure plus one of those
+            // ordinary words is structurally identical to a real mislabeled release and cannot be
+            // told apart by vocabulary alone; only Artist/Album corroboration or an actual music
+            // category signal qualify.
+            if (hasFlacTag && (hasAlbumVocab || hasGenreMarker || artistAlbumCorroborates || categoryHasMusicSignal))
+            {
+                signals.Add((TitleBitrateTagWeight, "Title carries a FLAC release tag"));
+            }
+            else if (hasKbpsTag && (artistAlbumCorroborates || categoryHasMusicSignal))
+            {
+                signals.Add((TitleBitrateTagWeight, "Title carries a bitrate (kbps) release tag"));
+            }
 
             var total = signals.Sum(s => s.Weight);
             if (total < RejectThreshold)
@@ -175,11 +212,17 @@ namespace Listenarr.Application.Search.Scoring
             return true;
         }
 
-        private static void CollectCategorySignals(string? category, List<(int, string)> signals)
+        /// <returns>
+        /// True when the category contributed a genuinely music-POSITIVE signal (a decisive
+        /// numeric id, a decisive textual match, or a weak id co-occurring with 3030) -- used to
+        /// gate the bitrate/FLAC signal below, never true for the Audiobooks-id-alone case, which
+        /// pulls toward "not music".
+        /// </returns>
+        private static bool CollectCategorySignals(string? category, List<(int, string)> signals)
         {
             if (string.IsNullOrWhiteSpace(category))
             {
-                return;
+                return false;
             }
 
             var categoryLower = category.ToLowerInvariant();
@@ -187,7 +230,7 @@ namespace Listenarr.Application.Search.Scoring
             {
                 // Explicit audiobook category text always protects the category domain outright;
                 // it never contributes a music signal regardless of any numeric id riding along.
-                return;
+                return false;
             }
 
             // Numeric Newznab/Torznab category ids can appear standalone ("3010") or embedded in a
@@ -213,14 +256,15 @@ namespace Listenarr.Application.Search.Scoring
                     if (musicIds.Count > 0)
                     {
                         signals.Add((CategoryMusicIdWeakWeight, $"Category also carries music-range id {musicIds[0]} alongside Audiobooks"));
+                        return true;
                     }
-                    return;
+                    return false;
                 }
 
                 if (musicIds.Count > 0)
                 {
                     signals.Add((CategoryMusicIdDecisiveWeight, $"Category id {musicIds[0]} is a Newznab/Torznab music category ({AudioCategoryMin}-{AudioCategoryMax} excluding {AudiobooksCategoryId}/Audiobooks)"));
-                    return;
+                    return true;
                 }
 
                 // Numeric ids present but none in the music range and no Audiobooks id either:
@@ -230,11 +274,28 @@ namespace Listenarr.Application.Search.Scoring
             if (MusicCategoryWord.IsMatch(category))
             {
                 signals.Add((CategoryTextMusicWeight, $"Category '{category}' is a torrent-indexer music category"));
+                return true;
             }
+
+            return false;
         }
 
-        private static void CollectTitleSignals(string? title, List<(int, string)> signals)
+        /// <param name="title">The release title to inspect.</param>
+        /// <param name="signals">The running signal list to append decisive/weighted matches to.</param>
+        /// <param name="hasAlbumVocab">True when ordinary album vocabulary matched -- a valid
+        /// corroborator for gating the FLAC signal, but deliberately NOT for the kbps signal
+        /// (see LooksLikeMusicRelease's gating comment).</param>
+        /// <param name="hasGenreMarker">True when a parenthetical genre marker matched -- also a
+        /// valid FLAC corroborator, also deliberately NOT a kbps corroborator.</param>
+        /// <param name="hasFlacTag">True when a FLAC release tag (isolated, trailing) matched.</param>
+        /// <param name="hasKbpsTag">True when a trailing numeric kbps tag matched.</param>
+        private static void CollectTitleSignals(string? title, List<(int, string)> signals, out bool hasAlbumVocab, out bool hasGenreMarker, out bool hasFlacTag, out bool hasKbpsTag)
         {
+            hasAlbumVocab = false;
+            hasGenreMarker = false;
+            hasFlacTag = false;
+            hasKbpsTag = false;
+
             if (string.IsNullOrWhiteSpace(title))
             {
                 return;
@@ -257,20 +318,20 @@ namespace Listenarr.Application.Search.Scoring
                 signals.Add((TitleDiscographyKeywordWeight, "Title contains a music-discography marker"));
             }
 
-            if (GenreMarkerPattern.IsMatch(title))
+            hasGenreMarker = GenreMarkerPattern.IsMatch(title);
+            if (hasGenreMarker)
             {
                 signals.Add((TitleGenreMarkerWeight, "Title carries a parenthetical music-genre marker"));
             }
 
-            if (AlbumVocabPattern.IsMatch(title))
+            hasAlbumVocab = AlbumVocabPattern.IsMatch(title);
+            if (hasAlbumVocab)
             {
                 signals.Add((TitleAlbumVocabWeight, "Title contains ordinary album vocabulary (EP/LP/Remastered/Anthology/Soundtrack/Single)"));
             }
 
-            if (BitrateTagPattern.IsMatch(title))
-            {
-                signals.Add((TitleBitrateTagWeight, "Title carries a bitrate/audio-format tag"));
-            }
+            hasFlacTag = FlacTagPattern.IsMatch(title);
+            hasKbpsTag = !hasFlacTag && KbpsTagPattern.IsMatch(title);
 
             if (TrySplitArtistAlbumDash(title, out _, out _))
             {
@@ -278,25 +339,27 @@ namespace Listenarr.Application.Search.Scoring
             }
         }
 
-        private static void CollectArtistAlbumSignal(SearchResult result, List<(int, string)> signals)
+        /// <returns>True when the Artist/Album corroboration signal fired -- also used to gate
+        /// the bitrate/FLAC signal above.</returns>
+        private static bool CollectArtistAlbumSignal(SearchResult result, List<(int, string)> signals)
         {
             var artist = (result.Artist ?? string.Empty).Trim();
             var album = (result.Album ?? string.Empty).Trim();
             if (artist.Length == 0 || album.Length == 0)
             {
-                return;
+                return false;
             }
 
             var artistLower = artist.ToLowerInvariant();
             var albumLower = album.ToLowerInvariant();
             if (AudiobookSignalWords.Any(artistLower.Contains) || AudiobookSignalWords.Any(albumLower.Contains))
             {
-                return;
+                return false;
             }
 
             if (!TrySplitArtistAlbumDash(result.Title, out var left, out var right))
             {
-                return;
+                return false;
             }
 
             if (string.Equals(left, artist, StringComparison.OrdinalIgnoreCase) &&
@@ -307,7 +370,10 @@ namespace Listenarr.Application.Search.Scoring
                 // both fields being non-empty. An audiobook with a narrator/series name sitting in
                 // these fields, but no matching title shape, must never trip this.
                 signals.Add((ArtistAlbumCorroborationWeight, "Artist/Album fields match the title's \"Artist - Album\" shape"));
+                return true;
             }
+
+            return false;
         }
 
         private static void CollectSizeSignal(long size, List<(int, string)> signals)
