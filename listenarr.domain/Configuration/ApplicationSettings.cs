@@ -101,6 +101,16 @@ namespace Listenarr.Domain.Configuration
         // Number of days to retain action history. Zero keeps history indefinitely.
         public int HistoryRetentionDays { get; set; } = 0;
 
+        // Maximum number of entries read from a download client's history on each poll, applied
+        // client-side after the (unbounded) fetch -- there is no server-side limit parameter to
+        // pass either, in this codebase or in the family. Matches Sonarr/Readarr's
+        // DownloadClientHistoryLimit exactly, including the default: Sonarr
+        // ConfigService.cs:187-191 @ 76c684e09, Readarr ConfigService.cs:181-185 (default-60 line
+        // @ 319089b90f), both `GetValueInt("DownloadClientHistoryLimit", 60)`. Without this, a
+        // download client whose own history keeps growing (e.g. NZBGet, which never trims its
+        // own history automatically) hands back everything it has ever recorded on every poll.
+        public int DownloadClientHistoryLimit { get; set; } = 60;
+
         // Failed download handling settings
         public bool FailedDownloadHandlingEnabled { get; set; } = true;
         public bool FailedDownloadAutoSearch { get; set; } = false;

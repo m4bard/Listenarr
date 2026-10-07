@@ -443,6 +443,10 @@ export interface ApplicationSettings {
   completedFileAction?: 'none' | 'move' | 'copy' | 'hardlink/copy'
   // Show completed external downloads (torrents/NZBs) in the Activity view
   showCompletedExternalDownloads?: boolean
+  // Maximum number of history entries read from a download client per poll, applied
+  // client-side after the (unbounded) fetch. Matches Sonarr/Readarr's
+  // DownloadClientHistoryLimit, default 60.
+  downloadClientHistoryLimit?: number
   // Failed download handling
   failedDownloadHandlingEnabled?: boolean
   failedDownloadAutoSearch?: boolean
