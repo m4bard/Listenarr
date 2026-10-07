@@ -25,6 +25,12 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public ApplicationSettingsBuilder WithStalledDownloadFloorPercent(decimal value)
+        {
+            _applicationSettings.StalledDownloadFloorPercent = value;
+            return this;
+        }
+
         public ApplicationSettingsBuilder WithCompletionStabilitySeconds(int value)
         {
             _applicationSettings.DownloadCompletionStabilitySeconds = value;

@@ -99,6 +99,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20261006202151_AddRejectClearlyMusicReleasesToApplicationSettings";
     private const string DownloadClientHistoryLimitMigrationId =
         "20261007102434_AddDownloadClientHistoryLimitToApplicationSettings";
+    private const string StalledDownloadFloorMigrationId =
+        "20261007162737_AddStalledDownloadFloorSetting";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -549,6 +551,11 @@ public class SqliteMigrationSchemaTests : BaseTests
         // Item 357's NZBGet history-fetch limit, pinned apart for the same reason.
         Assert.Contains(DownloadClientHistoryLimitMigrationId, postCanary);
         postCanary = [.. postCanary.Except([DownloadClientHistoryLimitMigrationId])];
+
+        // Item 81's stalled-download floor (the byte-trickle gap fix), pinned apart for the
+        // same reason.
+        Assert.Contains(StalledDownloadFloorMigrationId, postCanary);
+        postCanary = [.. postCanary.Except([StalledDownloadFloorMigrationId])];
 
         Assert.Equal(
             [
