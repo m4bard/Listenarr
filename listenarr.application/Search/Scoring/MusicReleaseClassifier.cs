@@ -176,36 +176,52 @@ namespace Listenarr.Application.Search.Scoring
             var signals = new List<(int Weight, string Reason)>();
 
             var categoryHasMusicSignal = CollectCategorySignals(result.Category, signals);
-            CollectTitleSignals(result.Title, signals, out var hasAlbumVocab, out var hasGenreMarker, out var hasFlacTag, out var hasKbpsTag);
+            CollectTitleSignals(result.Title, signals, out var hasAlbumVocab, out var hasGenreMarker, out var hasBareDash, out var hasFlacTag, out var hasKbpsTag);
             // CollectArtistAlbumSignal's own weight still contributes to the sum below; its
-            // return value is deliberately NOT used to gate the bitrate signal -- see why not.
+            // return value is deliberately NOT used to gate the bitrate signal at all (see why
+            // not in the gating comment below) -- not even counted toward the multi-signal tally,
+            // because it cannot fire without hasBareDash also being true, so counting both would
+            // let one real signal (a consistent dash-shaped title) masquerade as two.
             CollectArtistAlbumSignal(result, signals);
             CollectSizeSignal(result.Size, signals);
 
-            // Bitrate/FLAC gating (tracker #361). Round 5 gated this on "a genuinely music-
-            // specific corroborator" and included Artist/Album field consistency as one; round 6
-            // found that was never actually music-specific at all. CollectArtistAlbumSignal
-            // checks whether the fields are INTERNALLY CONSISTENT with the title's dash shape --
-            // that is exactly what a real audiobook with narrator-as-Artist/title-as-Album
-            // metadata also has (it is the literal subject of round 1's own hardest negative
-            // control). A signal built from day one to tolerate a real audiobook cannot then be
-            // used to prove a release is music; Artist/Album consistency is dropped from this
-            // gate entirely, for both FLAC and kbps, as a result.
-            // What remains is music-positive BY CONSTRUCTION rather than merely consistent:
-            // album vocabulary and a genre marker are both signals this strengthening introduced
-            // specifically because ordinary music terminology showing up at all is itself a
-            // (weak) signal, and an actual music category id/text is decisive independent of
-            // anything else. FLAC (no plausible non-music use) accepts any of the three. The
-            // numeric kbps match stays the most conservative: round 5 showed vocabulary cannot
-            // gate it (a vocabulary word plus a trailing data-rate figure is structurally
-            // identical to real nonfiction), so only a genre marker -- narrow enough, by
-            // construction, to carry real signal on its own -- or an actual music category
-            // qualify.
-            if (hasFlacTag && (hasAlbumVocab || hasGenreMarker || categoryHasMusicSignal))
+            // Bitrate/FLAC gating (tracker #361) -- round 7 of three rounds of independent
+            // review (5, 6, 7) each disproving the previous round's choice of "music-specific"
+            // corroborator with a concrete, plausible real audiobook: Artist/Album consistency
+            // (round 6 -- it is exactly as true of a real audiobook's narrator/title metadata as
+            // of a real mislabeled release), album vocabulary alone (round 7 -- "The Classic
+            // Readings (Remastered Edition) [FLAC]", a plausible archival lossless reissue), and
+            // a genre marker alone for kbps (round 7 -- "Growing Up Loud (Punk): Recorded and
+            // Archived at 56kbps", a plausible punk-scene memoir subtitle). Every title-derived
+            // signal this strengthening introduced was deliberately built to also fire for
+            // genuine audiobook content (the code comments for AlbumVocabPattern and
+            // GenreMarkerPattern say so explicitly) -- none of them can single-handedly prove a
+            // release is music, because each was designed from the start to also describe one
+            // that is not.
+            // The fix is not to gate on an actual music category alone: that would make FLAC/kbps
+            // essentially never fire without one, which many indexers never supply, undoing most
+            // of what (b)'s widening is for. Instead, this requires genuine MULTI-signal
+            // convergence: at least two independently-matched title signals from {album
+            // vocabulary, genre marker, bare dash shape}, or an actual music category signal
+            // (which remains sufficient alone, being unambiguous by construction). Two
+            // independent "this merely resembles music terminology" signals, plus an explicit
+            // format tag, is a materially rarer coincidence on a genuine audiobook than any one
+            // of them alone -- the same discipline already used for the quad-ambiguous-signal
+            // case elsewhere in this classifier. Artist/Album consistency is excluded from the
+            // count entirely, not just from being sufficient alone: it cannot fire without
+            // hasBareDash also being true, so it would let one real signal count as two.
+            // kbps keeps the extra restriction round 5 established: album vocabulary never
+            // participates in its count, only genre marker and bare dash, because a vocabulary
+            // word plus a trailing data-rate figure was already shown (round 5) to be
+            // structurally identical to ordinary nonfiction.
+            var flacCorroboratorCount = (hasAlbumVocab ? 1 : 0) + (hasGenreMarker ? 1 : 0) + (hasBareDash ? 1 : 0);
+            var kbpsCorroboratorCount = (hasGenreMarker ? 1 : 0) + (hasBareDash ? 1 : 0);
+
+            if (hasFlacTag && (categoryHasMusicSignal || flacCorroboratorCount >= 2))
             {
                 signals.Add((TitleBitrateTagWeight, "Title carries a FLAC release tag"));
             }
-            else if (hasKbpsTag && (hasGenreMarker || categoryHasMusicSignal))
+            else if (hasKbpsTag && (categoryHasMusicSignal || kbpsCorroboratorCount >= 2))
             {
                 signals.Add((TitleBitrateTagWeight, "Title carries a bitrate (kbps) release tag"));
             }
@@ -299,12 +315,16 @@ namespace Listenarr.Application.Search.Scoring
         /// (see LooksLikeMusicRelease's gating comment).</param>
         /// <param name="hasGenreMarker">True when a parenthetical genre marker matched -- also a
         /// valid FLAC corroborator, also deliberately NOT a kbps corroborator.</param>
+        /// <param name="hasBareDash">True when the title has a bare "Artist - Album" dash shape --
+        /// a valid corroborator, but only toward the multi-signal count described in
+        /// LooksLikeMusicRelease's gating comment, never sufficient on its own.</param>
         /// <param name="hasFlacTag">True when a FLAC release tag (isolated, trailing) matched.</param>
         /// <param name="hasKbpsTag">True when a trailing numeric kbps tag matched.</param>
-        private static void CollectTitleSignals(string? title, List<(int, string)> signals, out bool hasAlbumVocab, out bool hasGenreMarker, out bool hasFlacTag, out bool hasKbpsTag)
+        private static void CollectTitleSignals(string? title, List<(int, string)> signals, out bool hasAlbumVocab, out bool hasGenreMarker, out bool hasBareDash, out bool hasFlacTag, out bool hasKbpsTag)
         {
             hasAlbumVocab = false;
             hasGenreMarker = false;
+            hasBareDash = false;
             hasFlacTag = false;
             hasKbpsTag = false;
 
@@ -345,7 +365,8 @@ namespace Listenarr.Application.Search.Scoring
             hasFlacTag = FlacTagPattern.IsMatch(title);
             hasKbpsTag = !hasFlacTag && KbpsTagPattern.IsMatch(title);
 
-            if (TrySplitArtistAlbumDash(title, out _, out _))
+            hasBareDash = TrySplitArtistAlbumDash(title, out _, out _);
+            if (hasBareDash)
             {
                 signals.Add((TitleBareArtistAlbumDashWeight, "Title has a bare \"Artist - Album\" shape"));
             }
