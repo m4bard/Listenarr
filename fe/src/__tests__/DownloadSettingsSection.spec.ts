@@ -41,7 +41,10 @@ describe('DownloadSettingsSection', () => {
     })
 
     const inputs = wrapper.findAll('input[type="number"]')
-    expect(inputs).toHaveLength(7)
+    // 8, not 7: this base (canary-m4bard) already carries item 81's stalled-download-timeout
+    // field (index 7, exercised separately below by mountStallSection), which item 357's own
+    // branch predates. item 357's own new downloadClientHistoryLimit field is index 6.
+    expect(inputs).toHaveLength(8)
 
     // Max concurrent
     await inputs[0].setValue('4')
