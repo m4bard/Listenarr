@@ -30,7 +30,36 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
 {
     private sealed record CompanionOutcome(
         int Imported,
-        IReadOnlyList<string> Destinations);
+        IReadOnlyList<string> Destinations,
+        IReadOnlyList<string> Warnings);
+
+    /// <summary>
+    /// A minimal <see cref="ILogger{TCategoryName}"/> that records every entry's level and
+    /// formatted message, so a test can assert on what the companion pass actually logged
+    /// rather than on <see cref="NullLogger{T}"/> swallowing it.
+    /// </summary>
+    private sealed class RecordingLogger : ILogger<ManualImportCompanionImporter>
+    {
+        private readonly List<(LogLevel Level, string Message)> _entries = [];
+
+        public IReadOnlyList<string> MessagesAt(LogLevel level) =>
+            [.. _entries.Where(entry => entry.Level == level).Select(entry => entry.Message)];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            ArgumentNullException.ThrowIfNull(formatter);
+            _entries.Add((logLevel, formatter(state, exception)));
+        }
+    }
 
     /// <summary>
     /// Drives one companion pass over real files on disk, with the publication and ownership
@@ -106,13 +135,14 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
+        var logger = new RecordingLogger();
         var importer = new ManualImportCompanionImporter(
             Mock.Of<IMetadataService>(),
             mover.Object,
             sourceCapability.Object,
             new LocalFileSystem(),
             ownershipStore.Object,
-            NullLogger<ManualImportCompanionImporter>.Instance,
+            logger,
             fileService.Object);
 
         var semanticsResolver = new FileSystemSemanticsResolver();
@@ -167,7 +197,7 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
                 }
             ]);
 
-        return new CompanionOutcome(imported, destinations);
+        return new CompanionOutcome(imported, destinations, logger.MessagesAt(LogLevel.Warning));
     }
 
     private static string NewTestRoot(string name) => Path.Join(
@@ -417,6 +447,52 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
             Assert.Equal(1, outcome.Imported);
             AssertPlacedAt(bookFolder, outcome.Destinations, "book.nfo");
             AssertNoDirectoriesUnder(bookFolder);
+        }
+        finally
+        {
+            Cleanup(testRoot);
+        }
+    }
+
+    /// <summary>
+    /// A companion nested under a subdirectory of the selected file's directory cannot be swept
+    /// up flat: this pass only looks directly beside the selected file
+    /// (<c>SearchOption.TopDirectoryOnly</c>), never into subdirectories, so a nested companion
+    /// is invisible to it and never reaches any of this pass's per-file log lines. Before the fix
+    /// that silence was total: nothing named the file or said why it got no destination, and the
+    /// only trace left in the log was an aggregate imported-count that read as correct on its own.
+    /// This pins that the pass now says so, identifying the file and the reason, instead of
+    /// losing it without a trace.
+    /// </summary>
+    [Fact]
+    public async Task ImportAsync_CompanionNestedUnderASubdirectory_LogsWhyItWasSkipped()
+    {
+        var testRoot = NewTestRoot("nested-silent-drop");
+        var requestPath = Path.Join(testRoot, "src", "The.Release");
+        var bookFolder = Path.Join(testRoot, "library", "The Valley of Fear");
+        try
+        {
+            var audioSource = Path.Join(requestPath, "book.m4b");
+            var flatCompanion = Path.Join(requestPath, "book.nfo");
+            var nestedCompanion = Path.Join(requestPath, "deep", "one", "nested-companion.nfo");
+            await WriteAsync(audioSource, "audio");
+            await WriteAsync(flatCompanion, "sidecar");
+            await WriteAsync(nestedCompanion, "nested sidecar");
+            Directory.CreateDirectory(bookFolder);
+
+            var outcome = await RunPassAsync(
+                requestPath,
+                [(audioSource, Path.Join(bookFolder, "The Valley of Fear.m4b"), true)],
+                bookFolder);
+
+            // The flat companion still lands beside the audio; the nested one is never imported.
+            Assert.Equal(1, outcome.Imported);
+            AssertPlacedAt(bookFolder, outcome.Destinations, "book.nfo");
+
+            // The drop is not silent: exactly one warning names the nested file and the reason.
+            var warning = Assert.Single(outcome.Warnings);
+            Assert.Contains(nestedCompanion, warning, StringComparison.Ordinal);
+            Assert.Contains("nested", warning, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
