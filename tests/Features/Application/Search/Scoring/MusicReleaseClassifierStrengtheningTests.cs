@@ -24,12 +24,23 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
     /// Tracker #361: strengthens #336's MusicReleaseClassifier against measured weaknesses --
     /// category 3030 (Audiobooks) unconditionally exonerating a release regardless of
     /// trustworthiness, and the strict scene-release title regex missing most real-world
-    /// mislabeled music uploads. Covers all four approved strengthenings:
+    /// mislabeled music uploads. Covers the four approved strengthenings as they stand after
+    /// nine rounds of independent review:
     ///   (a) Artist/Album fields as a corroborating signal
-    ///   (b) widened title-pattern matching (bare "Artist - Album", album vocabulary, bitrate
-    ///       tags without a year prefix, parenthetical genre markers)
+    ///   (b) widened title-pattern matching (bare "Artist - Album", album vocabulary,
+    ///       parenthetical genre markers)
     ///   (c) category 3030 as a weighted signal, not an absolute override
     ///   (d) Size as a weak corroborating nudge only
+    ///
+    /// A fifth signal, a bitrate/FLAC/kbps release-tag match, was part of (b)'s original scope
+    /// and was REMOVED after rounds 2-9 of independent review (operator decision): no
+    /// title-derived corroborator could gate it without becoming a false-positive source, and
+    /// the one category-side corroborator narrow enough to be safe (an actual decisive music
+    /// category signal) made it structurally unreachable -- a release whose category is already
+    /// decisive rejects on that alone, with or without the bitrate tag. Fixtures that
+    /// demonstrated the removed signal are gone; fixtures that disprove the specific corroborator
+    /// choices tried along the way remain as permanent regressions, since those prove the
+    /// classifier doesn't quietly reintroduce the behavior removal fixed.
     ///
     /// All fixtures are synthetic: invented titles and artists, never a real title or author.
     /// </summary>
@@ -56,76 +67,35 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
 
         // ---------------------------------------------------------------------------------
         // Measured-but-missed shapes (RED against the current #336 classifier, GREEN after
-        // the strengthening). These are invented equivalents of the two shapes measured on
-        // the high side, not the real near-twin.
+        // the strengthening). Originally two fixtures here: an invented "Pop near-twin" (a
+        // legitimate audiobook and a mislabeled music release sharing near-identical wording)
+        // and an invented mislabeled music single. Both relied on the bitrate/FLAC/kbps signal
+        // removed after round 9 (operator decision; see the class doc comment and the removal
+        // commit for the full nine-round history) -- category-only gating made that signal
+        // structurally unreachable alongside anything weaker than an already-decisive category
+        // signal, which these fixtures were specifically designed NOT to need. Both are
+        // REMOVED, not rewritten: the pattern they tested (mislabeled music distinguishable from
+        // a real near-twin, or a single distinguishable from an album, using ONLY title
+        // signals plus a non-decisive category) is exactly the pattern nine rounds of review
+        // showed is not safely distinguishable with the signals available. The RED-before-GREEN
+        // discipline that motivated them is preserved in TDD practice for any future signal;
+        // it does not require keeping a test for a mechanism that no longer exists.
+        // PopNearTwin_LegitimateAudiobookCounterpart_IsNotRejected is kept below as a plain
+        // negative control (it never depended on the removed signal).
         // ---------------------------------------------------------------------------------
-
-        [Fact]
-        public void PopNearTwin_MislabeledMusicWithGenreMarker_IsCaught()
-        {
-            // The legitimate audiobook is "Harbor Lights" (see the sibling test below). This is
-            // the mislabeled music release: near-identical wording, a mislabeling indexer tagging
-            // it 3030 (Audiobooks) alongside a co-occurring music-range id -- the same
-            // multi-category shape #336's own tests already cover, still too weak to decide
-            // anything by itself (see Category3030_WithOnlyWeakContraryTitleSignal_StillFailsOpen
-            // below for that) -- and a parenthetical genre marker plus Artist/Album fields that
-            // are internally consistent with the title's own "Artist - Album" shape.
-            // Operator decision after round 8 of independent review: Bitrate/FLAC now gates on an
-            // actual music category signal only (see LooksLikeMusicRelease's gating comment for
-            // the full history), so this fixture needs the co-occurring id for its FLAC tag to
-            // count at all; a bare, unaccompanied 3030 would not activate it.
-            var result = Result(
-                category: "3030,3010",
-                title: "Jonas Harrow - Harbor Lights (Pop) [FLAC]",
-                artist: "Jonas Harrow",
-                album: "Harbor Lights (Pop)");
-
-            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
-
-            Assert.True(looksLikeMusic);
-            Assert.False(string.IsNullOrWhiteSpace(reason));
-        }
 
         [Fact]
         public void PopNearTwin_LegitimateAudiobookCounterpart_IsNotRejected()
         {
-            // Same title family, correctly tagged, no genre marker, no Artist/Album fields -- the
-            // near-twin this strengthening must not catch as collateral damage.
+            // A correctly-tagged, ordinary audiobook title -- no genre marker, no Artist/Album
+            // fields, nothing ambiguous. Must stay accepted regardless of how (b)'s title
+            // signals evolve.
             var result = Result(category: "3030", title: "Harbor Lights");
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
 
             Assert.False(looksLikeMusic);
             Assert.Null(reason);
-        }
-
-        [Fact]
-        public void MusicSingle_NotAlbum_IsCaught_WithCategorySignal()
-        {
-            // RETIREMENT NOTE (tracker #361, operator decision after round 8 of independent
-            // review): the original version of this test caught a single-track release
-            // (dash-shaped title, "Single" vocabulary, a FLAC tag, NO category at all) purely
-            // from title signals. Four consecutive review rounds (5, 6, 7, 8) proved that every
-            // title-derived signal this strengthening introduced -- Artist/Album consistency,
-            // album vocabulary, a genre marker, a bare dash shape, alone or in every combination
-            // up to two at once -- is also ordinary, common real-audiobook content (round 8's
-            // closing finding: a bare "Author - Title" dash shape is one of the dominant REAL
-            // audiobook naming conventions, not a rare coincidence). The operator's decision,
-            // consistent with this whole strengthening's fail-open mandate ("never reject on
-            // uncertain evidence"): once title-derived evidence is shown ambiguous, it must not
-            // be used to gate a weight-48 signal. Bitrate/FLAC/kbps now requires an actual music
-            // category signal to fire at all -- see LooksLikeMusicRelease's gating comment.
-            // Consequence, accepted explicitly: a bare bitrate/format tag with NO category
-            // present is no longer, by itself, a reachable catch. This replacement keeps the
-            // same title shape and adds the weak co-occurring-category-id shape #336's own tests
-            // already establish as too weak to decide anything alone, to demonstrate the tag
-            // still works as a real corroborator once an actual category signal is present.
-            var result = Result(category: "3030,3010", title: "Mira Delgado - Nightfall (Single) [FLAC]");
-
-            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
-
-            Assert.True(looksLikeMusic);
-            Assert.False(string.IsNullOrWhiteSpace(reason));
         }
 
         // ---------------------------------------------------------------------------------
@@ -135,11 +105,12 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         [Fact]
         public void ArtistAlbumConsistentWithDashTitle_CorroboratesAlongsideOtherSignals()
         {
-            // Covered end-to-end by PopNearTwin_MislabeledMusicWithGenreMarker_IsCaught above;
-            // this isolates the Artist/Album contribution by removing the genre marker and
-            // category signal -- bare dash + consistent fields alone must NOT be enough (this is
-            // the same shape a "Narrator - Series" audiobook title can legitimately have; the
-            // negative controls below exercise that directly).
+            // Bare dash + consistent Artist/Album fields alone must NOT be enough (this is the
+            // same shape a "Narrator - Series" audiobook title can legitimately have; the
+            // negative controls below exercise that directly). Round 6 of independent review
+            // (tracker #361) went further and proved this signal can never safely gate anything
+            // stronger either -- see the class doc comment and the removal commit for why the
+            // bitrate/FLAC/kbps signal this test once combined with no longer exists.
             var result = Result(
                 category: null,
                 title: "Soraya Quint - Midnight Transit",
@@ -151,75 +122,9 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             Assert.False(looksLikeMusic);
         }
 
-        [Fact]
-        public void ArtistAlbumFields_PlusBitrateTagAlone_StillFailsOpen()
-        {
-            // Round 6 of independent review (tracker #361): Artist/Album consistency is NOT a
-            // music-specific corroborator -- it was built in round 1 to tolerate a real audiobook
-            // with narrator-as-Artist/title-as-Album metadata just as much as a real mislabeled
-            // release, so it can never safely unlock the bitrate/FLAC signal. Dash + consistent
-            // Artist/Album fields + a FLAC tag, with nothing else, is exactly what an ordinary,
-            // correctly-tagged lossless audiobook release looks like -- this must stay accepted.
-            // (This replaces an earlier version of this test, which asserted the opposite before
-            // round 6 found the bug it exists to catch; see the round-6 regression tests below for
-            // the reviewer's own two fixtures.)
-            var result = Result(
-                category: null,
-                title: "Soraya Quint - Midnight Transit [FLAC]",
-                artist: "Soraya Quint",
-                album: "Midnight Transit");
-
-            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
-
-            Assert.False(looksLikeMusic);
-        }
-
-        [Fact]
-        public void DashPlusAlbumVocabPlusKbps_GatedViaActualMusicCategorySignal_CrossesThreshold()
-        {
-            // Directly exercises the kbps gate's surviving positive path (tracker #361, round 6):
-            // neither vocabulary nor Artist/Album consistency may gate it, but an actual music
-            // category signal -- here, a music-range id co-occurring with the Audiobooks id,
-            // itself too weak to decide anything alone -- does.
-            var result = Result(
-                category: "3030,3010",
-                title: "Midnight Transit - Volume One EP [320kbps]");
-
-            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
-
-            Assert.True(looksLikeMusic);
-            Assert.False(string.IsNullOrWhiteSpace(reason));
-        }
-
         // ---------------------------------------------------------------------------------
         // (b) Widened title-pattern matching
         // ---------------------------------------------------------------------------------
-
-        [Theory]
-        [InlineData("Mira Delgado - Nightfall Sessions EP [FLAC]")]
-        [InlineData("Soraya Quint - Harmonic Drift LP [FLAC]")]
-        [InlineData("Jonas Harrow - The Lowland Tapes Anthology [FLAC]")]
-        [InlineData("Nadia Brecht - Carved In Static Soundtrack [FLAC]")]
-        public void AlbumVocabularyPlusDashPlusBitrateTag_WithCategorySignal_IsCaught(string title)
-        {
-            // Round 8 of independent review (tracker #361) proved these exact shapes (vocab +
-            // dash + FLAC, no category) are themselves false positives -- "Teodor Fenwick -
-            // Winter Tales Anthology [FLAC]" is a plausible real audiobook, because a bare
-            // "Author - Title" dash shape is one of the dominant REAL audiobook naming
-            // conventions, not a rare coincidence (see the round-8 regression tests below for the
-            // reviewer's own fixtures). Operator decision: Bitrate/FLAC/kbps now requires an
-            // actual music category signal to fire at all, title-derived signals no longer gate
-            // it at all. These fixtures keep the same title shapes, now paired with the
-            // weak-co-occurring-category-id shape #336's own tests already establish as too weak
-            // to decide alone, to demonstrate the tag still works as a corroborator once an
-            // actual category signal is present.
-            var result = Result(category: "3030,3010", title: title);
-
-            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
-
-            Assert.True(looksLikeMusic);
-            Assert.False(string.IsNullOrWhiteSpace(reason));
-        }
 
         [Theory]
         [InlineData("(Pop)")]
@@ -237,23 +142,6 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
 
             Assert.False(looksLikeMusic);
-        }
-
-        [Fact]
-        public void ParentheticalGenreMarker_PlusDashPlusBitrateTag_WithCategorySignal_CrossesThreshold()
-        {
-            // Genre marker alone is not enough (see above), and neither is genre marker + dash
-            // without a category signal -- round 8 of independent review (tracker #361) proved
-            // that exact combination is itself a false positive ("Teodor Fenwick - Growing Up
-            // Loud (Punk) [FLAC]" is a plausible real audiobook). Operator decision: Bitrate/FLAC
-            // now requires an actual music category signal, title-derived signals no longer gate
-            // it at all -- see the round-8 regression tests below for the disproof.
-            var result = Result(category: "3030,3010", title: "Nova Fenn - Driftwood Station (Pop) [FLAC]");
-
-            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
-
-            Assert.True(looksLikeMusic);
-            Assert.False(string.IsNullOrWhiteSpace(reason));
         }
 
         [Fact]
@@ -285,28 +173,17 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
 
         // ---------------------------------------------------------------------------------
         // (c) Category 3030 as a weighted signal, not an absolute override
+        //
+        // The architecture here is unchanged -- CategoryAudiobooksIdWeight (line declaration in
+        // MusicReleaseClassifier.cs) is still a weighted pull, not an absolute return, so a
+        // future signal strong enough to combine with it could still override it. But the one
+        // demonstration of an actual override in this file relied on the removed bitrate/FLAC/
+        // kbps signal (confirmed by brute-force enumeration: even the maximally-corroborated
+        // combination of all four remaining ambiguous title signals plus a Size nudge, alongside
+        // a weak co-occurring category id, totals 44 -- short of RejectThreshold). No override
+        // is currently constructible with the signals that remain, so only the fail-open side of
+        // (c) has a live test below.
         // ---------------------------------------------------------------------------------
-
-        [Fact]
-        public void Category3030_WithStrongContraryTitleAndFieldSignals_IsOverridden()
-        {
-            // Restates PopNearTwin_MislabeledMusicWithGenreMarker_IsCaught as a direct (c) test:
-            // 3030 is present (alongside a co-occurring music id, needed since the operator's
-            // round-8 decision made Bitrate/kbps require an actual category signal to fire at
-            // all), but genre marker + dash + Artist/Album corroboration + a bitrate tag together
-            // outweigh the Audiobooks-id pull. (Realistic too: a mislabeled music upload that
-            // carries a genre marker and a dash-shaped title very often also carries a format tag.)
-            var result = Result(
-                category: "3030,3010",
-                title: "Nadia Brecht - Low Tide (Rock) [320kbps]",
-                artist: "Nadia Brecht",
-                album: "Low Tide (Rock)");
-
-            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
-
-            Assert.True(looksLikeMusic);
-            Assert.False(string.IsNullOrWhiteSpace(reason));
-        }
 
         [Fact]
         public void Category3030_WithOnlyWeakContraryTitleSignal_StillFailsOpen()
