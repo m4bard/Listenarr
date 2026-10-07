@@ -572,5 +572,100 @@ namespace Listenarr.Tests.Features.Domain.Utils
             Assert.Null(AuthorCredits.Primary(new List<string>()));
             Assert.Null(AuthorCredits.Primary(null));
         }
+
+        // tracker#341 Fix 2: the ten role strings the finding measured as missing from the
+        // vocabulary, 29 forms across 7 languages observed and only 19 recognised. These are
+        // Audible's own role vocabulary (confirmed fine to quote verbatim: tracker#341 itself
+        // treats role strings as vocabulary, not library-identifying data), exercised on
+        // invented names rather than catalogue ones since the point is the word, not the person.
+        [Theory]
+        [InlineData("Alguem - traducător")]
+        [InlineData("Alguem - traduttrice")]
+        [InlineData("Alguem - Tradutorre")] // the real typo for "tradutor" that tracker#341 names
+        [InlineData("Alguem - director")]
+        [InlineData("Alguem - cover designer")]
+        [InlineData("Alguem - cover graphic designer")]
+        [InlineData("Jane Doe - Vorwort")]
+        [InlineData("Jane Doe - prefazione")]
+        [InlineData("Jane Doe - dramatization")]
+        [InlineData("Jane Doe - cover design")]
+        public void IsRoleCredit_RecognisesTheTenStringsTheFindingMeasuredAsMissing(string credit)
+        {
+            Assert.True(AuthorCredits.IsRoleCredit(credit));
+            Assert.NotEqual(credit, AuthorCredits.StripRole(credit));
+        }
+
+        [Theory]
+        [InlineData("Alguem (traducător)")]
+        [InlineData("Alguem (traduttrice)")]
+        [InlineData("Alguem (Tradutorre)")]
+        [InlineData("Alguem (director)")]
+        [InlineData("Alguem (cover designer)")]
+        [InlineData("Alguem (cover graphic designer)")]
+        public void IsRoleCredit_RecognisesTheNewAgentWordsBareInBrackets(string credit)
+        {
+            // Agent nouns name a person and can only be a credit, so none of the new agent-noun
+            // additions need a "by" to count -- same rule as the existing "(Illustrator)" case.
+            Assert.True(AuthorCredits.IsRoleCredit(credit));
+        }
+
+        [Fact]
+        public void IsRoleCredit_ClosesTheBareIntroductionInconsistency()
+        {
+            // tracker#341 observed this exact inconsistency: StripRole already removes a bare
+            // "(Introduction)" through the loose form, while IsRoleCredit returned false for the
+            // same string because the strict form demanded "by" here too. The finding did not
+            // say which side should move; the direction chosen here is forced by the existing
+            // Illustrated regression test below, which this must not reopen. "Introduction" is
+            // never used to describe an edition the way "Illustrated" is, so it moves to the
+            // unambiguous bucket and IsRoleCredit now accepts it bare.
+            Assert.True(AuthorCredits.IsRoleCredit("Jane Doe (Introduction)"));
+            Assert.Equal("Jane Doe", AuthorCredits.StripRole("Jane Doe (Introduction)"));
+            Assert.Equal(
+                "Someone Else",
+                AuthorCredits.Primary(new List<string> { "Jane Doe (Introduction)", "Someone Else" }));
+
+            // The equivalent shape for the finding's other new work-descriptor words that are
+            // never used as edition descriptors either.
+            Assert.True(AuthorCredits.IsRoleCredit("Jane Doe (Vorwort)"));
+            Assert.True(AuthorCredits.IsRoleCredit("Jane Doe (prefazione)"));
+            Assert.True(AuthorCredits.IsRoleCredit("Jane Doe (cover design)"));
+
+            // The control this change must not break: "Dramatization" is new in this change too,
+            // but it is an edition descriptor in exactly the way "Illustrated" is (a radio
+            // dramatization of a classic is a format, not a role), so it keeps the stricter
+            // requirement bare in brackets and still needs "by" to count.
+            Assert.False(AuthorCredits.IsRoleCredit("Jane Doe (Dramatization)"));
+            Assert.True(AuthorCredits.IsRoleCredit("Jane Doe (Dramatization by)"));
+            Assert.Equal("Jane Doe", AuthorCredits.StripRole("Jane Doe (Dramatization)"));
+        }
+
+        [Fact]
+        public void Primary_StillDoesNotLetTheNewEditionDescriptorDemoteTheAuthor()
+        {
+            // The same regression the existing Illustrated test protects, repeated for the one
+            // new word added to this change that is itself an edition descriptor rather than an
+            // unambiguous role.
+            Assert.Equal(
+                "Jane Doe",
+                AuthorCredits.Primary(new List<string> { "Jane Doe (Dramatization)", "Someone Else" }));
+        }
+
+        [Fact]
+        public void IsRoleCredit_TheNewVocabularyDoesNotMatchAHyphenatedSurname()
+        {
+            // tracker#341 Fix 2, stated directly: "Add known-bad regression cases next to the
+            // known-good ones: hyphenated surnames must not match." A role word only counts in
+            // the trailing tail, and the existing "Eleanor Marx-Aveling" control already proves
+            // the dash-tail detector does not key on punctuation alone; this repeats that check
+            // against names that happen to collide with the new agent-noun strings.
+            Assert.False(AuthorCredits.IsRoleCredit("Maria Director-Alves"));
+            Assert.False(AuthorCredits.IsRoleCredit("Jose Editor-Mendes"));
+            Assert.False(AuthorCredits.IsRoleCredit("Ana Vorwort-Silva"));
+
+            // And the same name with a real role tail must still be caught, same shape as the
+            // existing Marx-Aveling control.
+            Assert.True(AuthorCredits.IsRoleCredit("Maria Director-Alves - director"));
+        }
     }
 }
