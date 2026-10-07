@@ -131,35 +131,38 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         }
 
         [Fact]
-        public void ArtistAlbumFields_PlusOneWeakTitleSignal_CrossesThreshold()
+        public void ArtistAlbumFields_PlusBitrateTagAlone_StillFailsOpen()
         {
-            // Dash + consistent Artist/Album fields alone is not enough (see above), but combined
-            // with one more weak signal (a bitrate tag) it corroborates enough to catch a real
-            // mislabeled release.
+            // Round 6 of independent review (tracker #361): Artist/Album consistency is NOT a
+            // music-specific corroborator -- it was built in round 1 to tolerate a real audiobook
+            // with narrator-as-Artist/title-as-Album metadata just as much as a real mislabeled
+            // release, so it can never safely unlock the bitrate/FLAC signal. Dash + consistent
+            // Artist/Album fields + a FLAC tag, with nothing else, is exactly what an ordinary,
+            // correctly-tagged lossless audiobook release looks like -- this must stay accepted.
+            // (This replaces an earlier version of this test, which asserted the opposite before
+            // round 6 found the bug it exists to catch; see the round-6 regression tests below for
+            // the reviewer's own two fixtures.)
             var result = Result(
                 category: null,
                 title: "Soraya Quint - Midnight Transit [FLAC]",
                 artist: "Soraya Quint",
                 album: "Midnight Transit");
 
-            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
 
-            Assert.True(looksLikeMusic);
-            Assert.False(string.IsNullOrWhiteSpace(reason));
+            Assert.False(looksLikeMusic);
         }
 
         [Fact]
-        public void ArtistAlbumFields_PlusKbpsTag_CrossesThreshold_ButVocabAloneCannotGateKbps()
+        public void DashPlusAlbumVocabPlusKbps_GatedViaActualMusicCategorySignal_CrossesThreshold()
         {
-            // Directly exercises the kbps gate's positive path (tracker #361, round 5): the
-            // numeric kbps signal is deliberately gated more strictly than FLAC -- ordinary album
-            // vocabulary is NOT accepted as its corroborator (see the round-5 regression tests
-            // below for why), but Artist/Album corroboration is.
+            // Directly exercises the kbps gate's surviving positive path (tracker #361, round 6):
+            // neither vocabulary nor Artist/Album consistency may gate it, but an actual music
+            // category signal -- here, a music-range id co-occurring with the Audiobooks id,
+            // itself too weak to decide anything alone -- does.
             var result = Result(
-                category: null,
-                title: "Soraya Quint - Midnight Transit [320kbps]",
-                artist: "Soraya Quint",
-                album: "Midnight Transit");
+                category: "3030,3010",
+                title: "Midnight Transit - Volume One EP [320kbps]");
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out var reason);
 
@@ -756,6 +759,47 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             // else) to a real mislabeled release this gate is supposed to catch, and the two
             // cannot be told apart by vocabulary alone.
             var result = Result(category: null, title: "The Remastered Story of Life at 56kbps");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        // ---------------------------------------------------------------------------------
+        // Round 6 of independent review found that Artist/Album consistency (CollectArtistAlbum-
+        // Signal) was never a music-specific corroborator at all -- it checks whether the fields
+        // are internally consistent with the title's dash shape, and a real audiobook with
+        // narrator-as-Artist/title-as-Album metadata is exactly as consistent as a real
+        // mislabeled release. Round 1 built this signal specifically to tolerate that case (see
+        // its own hardest negative control); using it to gate the bitrate/FLAC signal
+        // contradicted what it was built to do from day one. Fixed by dropping Artist/Album
+        // consistency from the gate entirely -- it still contributes its own weight to the sum,
+        // it just can no longer unlock the bitrate signal's weight. Permanent negative controls
+        // for both of round 6's fixtures.
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void NegativeControl_ReviewRound6_RealAudiobookWithConsistentFieldsAndFlacRelease_IsAccepted()
+        {
+            var result = Result(
+                category: null,
+                title: "Elena Voss - The Clockmaker Chronicles [FLAC]",
+                artist: "Elena Voss",
+                album: "The Clockmaker Chronicles");
+
+            var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
+
+            Assert.False(looksLikeMusic);
+        }
+
+        [Fact]
+        public void NegativeControl_ReviewRound6_RealAudiobookWithConsistentFieldsAndKbpsSubtitle_IsAccepted()
+        {
+            var result = Result(
+                category: null,
+                title: "Jordan Pierce - The Dial-Up Years: Life at 56kbps",
+                artist: "Jordan Pierce",
+                album: "The Dial-Up Years: Life at 56kbps");
 
             var looksLikeMusic = MusicReleaseClassifier.LooksLikeMusicRelease(result, out _);
 
