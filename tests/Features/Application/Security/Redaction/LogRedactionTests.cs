@@ -17,6 +17,7 @@
  */
 namespace Listenarr.Tests.Features.Application.Security.Redaction
 {
+    [Collection(ProcessEnvironmentCollection.Name)]
     public class LogRedactionTests
     {
         [Fact]
@@ -180,6 +181,30 @@ namespace Listenarr.Tests.Features.Application.Security.Redaction
 
                 Assert.DoesNotContain(token, sanitized, StringComparison.OrdinalIgnoreCase);
                 Assert.Equal("https://example.com/hooks/<redacted>", sanitized);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("TOKEN", previous);
+            }
+        }
+
+        [Theory]
+        [InlineData("tok\\en", "https://example.com/hooks/tok\\en")]
+        [InlineData("tok%7Een", "https://example.com/hooks/tok%7Een")]
+        [InlineData("a/../secretpart", "https://example.com/hooks/a/../secretpart")]
+        public void SanitizeWebhookUrl_SecretRewrittenByUriCanonicalization_FailsClosed(string token, string url)
+        {
+            var previous = Environment.GetEnvironmentVariable("TOKEN");
+            try
+            {
+                Environment.SetEnvironmentVariable("TOKEN", token);
+
+                var sanitized = LogRedaction.SanitizeWebhookUrl(url);
+
+                Assert.DoesNotContain("secretpart", sanitized, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("tok/en", sanitized, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("tok~en", sanitized, StringComparison.OrdinalIgnoreCase);
+                Assert.Contains("redacted", sanitized);
             }
             finally
             {

@@ -134,10 +134,27 @@ namespace Listenarr.Application.Security.Redaction
         public static string SanitizeWebhookUrl(string? url)
         {
             var sanitized = SanitizeWebhookUrlStructure(url);
+            var rawBase = url ?? string.Empty;
+            var queryStart = rawBase.IndexOfAny(['?', '#']);
+            if (queryStart >= 0) rawBase = rawBase[..queryStart];
+            var hiddenByCanonicalization = false;
 
             foreach (var secret in GetSensitiveValuesFromEnvironment())
             {
+                // Uri canonicalization can rewrite a secret (backslash, %7E, dot segments) so it no
+                // longer matches the sanitized form; note it so the result can fail closed below.
+                if (rawBase.Contains(secret, StringComparison.OrdinalIgnoreCase)
+                    && !sanitized.Contains(secret, StringComparison.OrdinalIgnoreCase))
+                {
+                    hiddenByCanonicalization = true;
+                }
+
                 sanitized = Regex.Replace(sanitized, Regex.Escape(secret), "<redacted>", RegexOptions.IgnoreCase);
+            }
+
+            if (hiddenByCanonicalization && !sanitized.Contains("<redacted>", StringComparison.Ordinal))
+            {
+                return "[redacted-url]";
             }
 
             return sanitized;
