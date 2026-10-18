@@ -2369,6 +2369,121 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 It.IsAny<string>()), Times.Never);
         }
 
+        [Theory]
+        [InlineData(FileAction.Copy, 1)]
+        [InlineData(FileAction.HardlinkCopy, 0)]
+        public async Task InteractiveManualImport_AsinTag_IsNotWrittenThroughAHardlinkToTheSource(
+            FileAction fileAction,
+            int expectedTagWrites)
+        {
+            // A hardlinked destination is the source's own inode, which a download client may
+            // still be seeding, so rewriting its tags would rewrite the source as well. The Copy
+            // case is the control: the same import with an independent destination is tagged.
+            // The markerless publication lease never authorizes metadata writes, so both cases
+            // are given a lease that does; the publication itself stays real, which keeps the
+            // hardlink a hardlink.
+            var destinationRoot = CreateTempDirectory(
+                $"listenarr-manual-asin-link-dest-{fileAction}");
+            var sourceDir = CreateTempDirectory(
+                $"listenarr-manual-asin-link-src-{fileAction}");
+            var source = Path.Join(sourceDir, "book.mp3");
+            await File.WriteAllTextAsync(source, "audio");
+            var book = new Audiobook
+            {
+                Id = 336,
+                Title = "Linked Book",
+                Asin = "B000TEST",
+                BasePath = destinationRoot
+            };
+            var metadata = new Mock<IMetadataService>();
+            metadata.Setup(service => service.ExtractFileMetadataAsync(source))
+                .ReturnsAsync(new AudioMetadata
+                {
+                    Title = book.Title,
+                    Format = "mp3",
+                    BitRate = 128000
+                });
+            var actualMover = CreateMarkerlessFileMover();
+            var mover = new Mock<IFileMover>(MockBehavior.Strict);
+            mover.Setup(candidate => candidate.PrepareActionForRegistrationAsync(
+                    fileAction,
+                    source,
+                    It.IsAny<string>(),
+                    It.IsAny<Guid>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<FilePublicationSourceProof>()))
+                .Returns<FileAction, string, string, Guid, string?, FilePublicationSourceProof>(async (
+                    action,
+                    sourcePath,
+                    destination,
+                    operationId,
+                    expectedRegisteredIdentity,
+                    expectedSourceProof) =>
+                {
+                    var inner = await actualMover
+                        .PrepareActionForRegistrationAsync(
+                            action,
+                            sourcePath,
+                            destination,
+                            operationId,
+                            expectedRegisteredIdentity,
+                            expectedSourceProof);
+                    return inner == null
+                        ? null
+                        : new ControllableRegistrationLease(inner)
+                        {
+                            SupportsMetadataWrite = true
+                        };
+                });
+            var controller = GetController(
+                book,
+                new ApplicationSettings
+                {
+                    OutputPath = destinationRoot,
+                    FolderNamingPattern = "",
+                    FileNamingPattern = "{Title}"
+                },
+                fileMover: mover.Object,
+                filePublicationSourceCapability: actualMover,
+                metadataMock: metadata);
+            var request = new ManualImportRequestDto
+            {
+                Path = sourceDir,
+                Mode = "interactive",
+                Action = fileAction,
+                Items =
+                [
+                    new ManualImportItemDto
+                    {
+                        FullPath = source,
+                        MatchedAudiobookId = book.Id
+                    }
+                ]
+            };
+
+            var action = await controller.Start(request);
+
+            var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(
+                action.Result);
+            var results = Assert.IsAssignableFrom<IEnumerable<ManualImportResultDto>>(
+                ok.Value!.GetType().GetProperty("results")!.GetValue(ok.Value));
+            Assert.True(Assert.Single(results).Success);
+            Assert.True(File.Exists(source));
+            var destination = Path.Join(destinationRoot, "Linked Book.mp3");
+            Assert.Equal("audio", await File.ReadAllTextAsync(destination));
+            metadata.Verify(service => service.WriteAsinTagAsync(
+                It.IsAny<IAudiobookFileRegistrationLease>(),
+                book.Asin), Times.Exactly(expectedTagWrites));
+
+            // The call count above is the gate; this pins its premise rather than assuming it.
+            // A write through the destination reaches the source exactly when the import
+            // produced a hardlink.
+            await File.AppendAllTextAsync(destination, "+");
+            Assert.Equal(
+                fileAction == FileAction.HardlinkCopy ? "audio+" : "audio",
+                await File.ReadAllTextAsync(source));
+        }
+
         [Fact]
         public async Task InteractiveManualImport_CompanionPass_SkipsDifferentAudiobookAudioInSameFolder()
         {
@@ -3323,6 +3438,7 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             IAudiobookFileRegistrationLease
         {
             public bool IsCurrent { get; set; } = true;
+            public bool SupportsMetadataWrite { get; init; }
             public string PublicPath => inner.PublicPath;
             public string MetadataPath => inner.MetadataPath;
             public string PhysicalObjectIdentity =>
