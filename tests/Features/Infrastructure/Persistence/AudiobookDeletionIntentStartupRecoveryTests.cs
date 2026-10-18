@@ -153,6 +153,8 @@ public sealed class AudiobookDeletionIntentStartupRecoveryTests : BaseTests
                 && service.ReconcileAsync(It.IsAny<CancellationToken>()) == Task.CompletedTask))
             .AddScoped<ICompatibilityFilePublicationRecoveryService>(
                 _ => new NoOpCompatibilityRecoveryService())
+            .AddScoped<IVerifiedFileRenameRecoveryService>(
+                _ => new NoOpVerifiedRenameRecoveryService())
             .AddScoped(_ => Mock.Of<IFileRenameRecoveryReconciler>(service =>
                 service.ReconcileAsync(It.IsAny<CancellationToken>()) == Task.CompletedTask))
             .AddScoped(_ => Mock.Of<IAudiobookFileIdentityReconciler>(service =>
@@ -166,6 +168,16 @@ public sealed class AudiobookDeletionIntentStartupRecoveryTests : BaseTests
 
     private sealed class NoOpCompatibilityRecoveryService
         : ICompatibilityFilePublicationRecoveryService
+    {
+        public Task ReconcileAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class NoOpVerifiedRenameRecoveryService
+        : IVerifiedFileRenameRecoveryService
     {
         public Task ReconcileAsync(CancellationToken cancellationToken = default)
         {
