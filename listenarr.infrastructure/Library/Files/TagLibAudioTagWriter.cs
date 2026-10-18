@@ -88,7 +88,7 @@ namespace Listenarr.Infrastructure.Library.Files
             return Task.CompletedTask;
         }
 
-        private static void ApplyAsinTag(TagLib.File file, string asin)
+        internal static void ApplyAsinTag(TagLib.File file, string asin)
         {
             if (file.Tag is TagLib.Mpeg4.AppleTag appleTag)
                 appleTag.SetDashBox("com.apple.iTunes", "ASIN", asin);
