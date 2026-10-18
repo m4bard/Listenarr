@@ -1853,6 +1853,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("DownloadCompletionStabilitySeconds")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("EmbedCoverArtInAudioFiles")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("EnableAmazonSearch")
                         .HasColumnType("INTEGER");
 
