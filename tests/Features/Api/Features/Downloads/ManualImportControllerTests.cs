@@ -129,6 +129,42 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             };
         }
 
+        // The markerless mover prepares a lease that withholds metadata-write authority, so tag
+        // enrichment is unreachable through it. This hands the controller the same lease with
+        // that authority granted, for tests of the enrichment decision itself.
+        private static Mock<IFileMover> CreateMetadataWriteAuthorizingFileMover(
+            FileMover actualMover)
+        {
+            var fileMover = new Mock<IFileMover>();
+            fileMover.Setup(mover => mover.PrepareActionForRegistrationAsync(
+                    It.IsAny<FileAction>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<Guid>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<FilePublicationSourceProof>()))
+                .Returns<FileAction, string, string, Guid, string?, FilePublicationSourceProof>(async (
+                    action,
+                    sourcePath,
+                    destination,
+                    operationId,
+                    expectedRegisteredIdentity,
+                    expectedSourceProof) =>
+                {
+                    var lease = await actualMover.PrepareActionForRegistrationAsync(
+                        action,
+                        sourcePath,
+                        destination,
+                        operationId,
+                        expectedRegisteredIdentity,
+                        expectedSourceProof);
+                    return lease == null
+                        ? null
+                        : new Listenarr.Tests.Mocks.MetadataWriteAuthorizedRegistrationLease(lease);
+                });
+            return fileMover;
+        }
+
         private sealed class ManualImportDbContextFactory(
             DbContextOptions<ListenArrDbContext> options) :
             IDbContextFactory<ListenArrDbContext>
@@ -2371,11 +2407,17 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 It.IsAny<string>()), Times.Never);
         }
 
-        [Fact]
-        public async Task InteractiveManualImport_BookWithArtworkAndNoAsin_StillWritesImportTags()
+        [Theory]
+        [InlineData(true, 1)]
+        [InlineData(false, 0)]
+        public async Task InteractiveManualImport_BookWithArtworkAndNoAsin_WritesImportTagsUnderMetadataWriteAuthority(
+            bool leaseAuthorizesMetadataWrite,
+            int expectedTagWrites)
         {
             // Anything matched outside Audible has no ASIN. The tag write used to be gated on
-            // the ASIN alone, so cover art embedding was silently inert for all of those.
+            // the ASIN alone, so cover art embedding was silently inert for all of those. The
+            // lease without metadata-write authority is the control: artwork alone does not
+            // override that gate.
             var destinationRoot = CreateTempDirectory(
                 "listenarr-manual-cover-no-asin-dest");
             var sourceDir = CreateTempDirectory(
@@ -2406,6 +2448,7 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 .Returns<IAudiobookFileRegistrationLease, string?, string?>(
                     (lease, asin, coverArtUrl) =>
                         recorder.WriteImportTagsAsync(lease, asin, coverArtUrl));
+            var actualMover = CreateMarkerlessFileMover();
             var controller = GetController(
                 book,
                 new ApplicationSettings
@@ -2414,6 +2457,10 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                     FolderNamingPattern = "",
                     FileNamingPattern = "{Title}"
                 },
+                fileMover: leaseAuthorizesMetadataWrite
+                    ? CreateMetadataWriteAuthorizingFileMover(actualMover).Object
+                    : actualMover,
+                filePublicationSourceCapability: actualMover,
                 metadataMock: metadata);
             var request = new ManualImportRequestDto
             {
@@ -2433,14 +2480,19 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             var action = await controller.Start(request);
 
             Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
-            var write = Assert.Single(recorder.ImportTagWrites);
-            Assert.Null(write.Asin);
-            Assert.Equal("https://example.invalid/cover.jpg", write.CoverArtUrl);
+            Assert.Equal(expectedTagWrites, recorder.ImportTagWrites.Count);
+            Assert.All(recorder.ImportTagWrites, write =>
+            {
+                Assert.Null(write.Asin);
+                Assert.Equal("https://example.invalid/cover.jpg", write.CoverArtUrl);
+            });
         }
 
         [Fact]
         public async Task InteractiveManualImport_BookWithNeitherAsinNorArtwork_WritesNoImportTags()
         {
+            // Under a lease that withholds metadata-write authority nothing is written for any
+            // book, so the lease here grants it: the empty result has to come from the book.
             var destinationRoot = CreateTempDirectory(
                 "listenarr-manual-no-tags-dest");
             var sourceDir = CreateTempDirectory(
@@ -2471,6 +2523,7 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 .Returns<IAudiobookFileRegistrationLease, string?, string?>(
                     (lease, asin, coverArtUrl) =>
                         recorder.WriteImportTagsAsync(lease, asin, coverArtUrl));
+            var actualMover = CreateMarkerlessFileMover();
             var controller = GetController(
                 book,
                 new ApplicationSettings
@@ -2479,6 +2532,8 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                     FolderNamingPattern = "",
                     FileNamingPattern = "{Title}"
                 },
+                fileMover: CreateMetadataWriteAuthorizingFileMover(actualMover).Object,
+                filePublicationSourceCapability: actualMover,
                 metadataMock: metadata);
             var request = new ManualImportRequestDto
             {
@@ -2511,7 +2566,8 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             // A hardlinked destination is the source's own inode, which a download client may
             // still be seeding, so writing tags or artwork through it would rewrite the source as
             // well. The Copy case is the control: the same import with an independent
-            // destination is tagged.
+            // destination is tagged. Both run under a lease that authorizes metadata writes, so
+            // the hardlink alone is what withholds the write.
             var destinationRoot = CreateTempDirectory(
                 $"listenarr-manual-tags-link-dest-{fileAction}");
             var sourceDir = CreateTempDirectory(
@@ -2534,6 +2590,7 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                     Format = "mp3",
                     BitRate = 128000
                 });
+            var actualMover = CreateMarkerlessFileMover();
             var controller = GetController(
                 book,
                 new ApplicationSettings
@@ -2542,6 +2599,8 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                     FolderNamingPattern = "",
                     FileNamingPattern = "{Title}"
                 },
+                fileMover: CreateMetadataWriteAuthorizingFileMover(actualMover).Object,
+                filePublicationSourceCapability: actualMover,
                 metadataMock: metadata);
             var request = new ManualImportRequestDto
             {
