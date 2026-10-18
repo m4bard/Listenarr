@@ -192,7 +192,7 @@ namespace Listenarr.Tests.Features.Application.Security.Redaction
         [InlineData("tok\\en", "https://example.com/hooks/tok\\en")]
         [InlineData("tok%7Een", "https://example.com/hooks/tok%7Een")]
         [InlineData("a/../secretpart", "https://example.com/hooks/a/../secretpart")]
-        public void SanitizeWebhookUrl_SecretRewrittenByUriCanonicalization_FailsClosed(string token, string url)
+        public void SanitizeWebhookUrl_SecretRewrittenByUriCanonicalization_IsMasked(string token, string url)
         {
             var previous = Environment.GetEnvironmentVariable("TOKEN");
             try
@@ -201,10 +201,7 @@ namespace Listenarr.Tests.Features.Application.Security.Redaction
 
                 var sanitized = LogRedaction.SanitizeWebhookUrl(url);
 
-                Assert.DoesNotContain("secretpart", sanitized, StringComparison.OrdinalIgnoreCase);
-                Assert.DoesNotContain("tok/en", sanitized, StringComparison.OrdinalIgnoreCase);
-                Assert.DoesNotContain("tok~en", sanitized, StringComparison.OrdinalIgnoreCase);
-                Assert.Contains("redacted", sanitized);
+                Assert.Equal("https://example.com/hooks/<redacted>", sanitized);
             }
             finally
             {

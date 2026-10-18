@@ -32,6 +32,10 @@ namespace Listenarr.Application.Security.Redaction
             "TOKEN"
         ];
 
+        // Stands in for a known environment secret while a webhook URL is parsed. Letters only
+        // (unreserved in every URL part), so Uri keeps it intact wherever the secret was.
+        private const string MaskedSecretSentinel = "LISTENARRMASKEDENVIRONMENTSECRET";
+
         // Redact occurrences of known secret values in a freeform text block.
         public static string RedactText(string? text, IEnumerable<string?>? secretValues = null)
         {
@@ -133,31 +137,28 @@ namespace Listenarr.Application.Security.Redaction
         // (e.g. a token in a generic URL's path) is masked as well.
         public static string SanitizeWebhookUrl(string? url)
         {
-            var sanitized = SanitizeWebhookUrlStructure(url);
-            var rawBase = url ?? string.Empty;
-            var queryStart = rawBase.IndexOfAny(['?', '#']);
-            if (queryStart >= 0) rawBase = rawBase[..queryStart];
-            var hiddenByCanonicalization = false;
-
-            foreach (var secret in GetSensitiveValuesFromEnvironment())
+            // Longest first, so a secret that contains a shorter one is masked whole.
+            var secrets = GetSensitiveValuesFromEnvironment()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(secret => secret.Length)
+                .Select(Regex.Escape)
+                .ToList();
+            if (secrets.Count == 0)
             {
-                // Uri canonicalization can rewrite a secret (backslash, %7E, dot segments) so it no
-                // longer matches the sanitized form; note it so the result can fail closed below.
-                if (rawBase.Contains(secret, StringComparison.OrdinalIgnoreCase)
-                    && !sanitized.Contains(secret, StringComparison.OrdinalIgnoreCase))
-                {
-                    hiddenByCanonicalization = true;
-                }
-
-                sanitized = Regex.Replace(sanitized, Regex.Escape(secret), "<redacted>", RegexOptions.IgnoreCase);
+                return SanitizeWebhookUrlStructure(url);
             }
 
-            if (hiddenByCanonicalization && !sanitized.Contains("<redacted>", StringComparison.Ordinal))
-            {
-                return "[redacted-url]";
-            }
+            var secretPattern = new Regex(string.Join('|', secrets), RegexOptions.IgnoreCase);
 
-            return sanitized;
+            // Mask secrets in the raw URL before Uri parses it: canonicalization (backslash, %7E,
+            // dot segments) can rewrite a secret so it no longer matches once parsed.
+            var premasked = url is null ? null : secretPattern.Replace(url, MaskedSecretSentinel);
+            var sanitized = SanitizeWebhookUrlStructure(premasked);
+
+            // Mask again between the sentinels: Uri decoding can also turn an encoded form in
+            // the raw URL into the secret itself (e.g. %7E into ~).
+            var pieces = Regex.Split(sanitized, MaskedSecretSentinel, RegexOptions.IgnoreCase);
+            return string.Join("<redacted>", pieces.Select(piece => secretPattern.Replace(piece, "<redacted>")));
         }
 
         private static string SanitizeWebhookUrlStructure(string? url)
