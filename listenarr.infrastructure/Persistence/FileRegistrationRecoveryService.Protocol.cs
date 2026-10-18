@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Persistence;
 
@@ -102,5 +103,12 @@ public sealed partial class FileRegistrationRecoveryService
 
         // Protocol ambiguity is operation-scoped. Startup recovery records
         // NeedsAttention for those rows and continues reconciling unrelated work.
+        foreach (var journal in unsupported)
+        {
+            logger.LogWarning(
+                "File publication {OperationId} uses an unsupported operation-evidence protocol; it reached {ReachedState} and now needs attention",
+                journal.OperationId,
+                journal.State);
+        }
     }
 }
