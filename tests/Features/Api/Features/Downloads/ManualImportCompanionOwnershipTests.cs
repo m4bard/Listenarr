@@ -280,7 +280,7 @@ public sealed class ManualImportCompanionOwnershipTests : BaseTests
             sourceResolution.Semantics,
             new Dictionary<int, FileSystemSemanticsResolution>
             {
-                [targetAudiobook.Id] = destinationResolution
+                [targetAudiobook.Id] = destinationResolution with { BoundaryPath = libraryRoot }
             },
             importBlacklist: [],
             compatibilityBatchId: Guid.NewGuid());

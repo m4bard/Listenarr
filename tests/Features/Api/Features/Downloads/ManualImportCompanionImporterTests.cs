@@ -746,7 +746,7 @@ public sealed class ManualImportCompanionImporterTests : BaseTests
                 sourceResolution.Semantics,
                 new Dictionary<int, FileSystemSemanticsResolution>
                 {
-                    [audiobook.Id] = destinationResolution
+                    [audiobook.Id] = destinationResolution with { BoundaryPath = libraryRoot }
                 },
                 importBlacklist: []);
 
