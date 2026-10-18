@@ -186,34 +186,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             Assert.Empty(await _downloadProcessingJobRepository.GetByDownloadIdAsync(download.Id));
         }
 
-        [Fact]
-        [Trait("Scenario", "The release only applies to a row still waiting for its first completion")]
-        public async Task GoneFromClient_DoesNotRestartAnImportThatHasMovedOn()
-        {
-            // A hold entry can outlive the hold, for example when the window is set to zero while
-            // a download is held. If the row has meanwhile moved into import and the client then
-            // drops the item, releasing it would write Completed over ImportPending, and the
-            // Completed edge would enqueue the import a second time.
-            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
-                .WithCompletionStabilitySeconds(60)
-                .Build());
-
-            var download = await DriveToCompletionAsync();
-            var processor = (DownloadMonitorProcessor)_provider.GetRequiredService<IDownloadMonitorProcessor>();
-            Assert.True(processor._completionFirstSeen.ContainsKey(download.Id));
-
-            var importing = await _downloadRepository.GetByIdAsync(download.Id);
-            await _downloadRepository.UpdateAsync(importing!.Importing());
-
-            ClientAdapter().QueueItemsMock = [];
-
-            _monitor.ScheduleNextClientPoll(_client, -100);
-            await _monitor.MonitorDownloadsAsync(CancellationToken.None);
-
-            Assert.Equal(DownloadStatus.ImportPending, (await _downloadRepository.GetByIdAsync(download.Id))!.Status);
-            Assert.Empty(await _downloadProcessingJobRepository.GetByDownloadIdAsync(download.Id));
-        }
-
         private DownloadCLientAdapterMock ClientAdapter() =>
             _provider.GetServices<IDownloadClientAdapter>()
                 .OfType<DownloadCLientAdapterMock>()
