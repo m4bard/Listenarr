@@ -210,14 +210,15 @@ namespace Listenarr.Tests.Features.Application.Security.Redaction
         }
 
         // A secret Uri would rewrite must stay masked even when something else in the same URL
-        // is already <redacted> (a second secret, or a provider's own token segments).
+        // is already <redacted> (a second secret, or a provider's own token segments). Where it
+        // sits before a provider's anchor segment, the whole path is dropped.
         [Theory]
         [InlineData("plainsecret1234", "tok\\en", "https://example.com/hooks/plainsecret1234/tok\\en", "https://example.com/hooks/<redacted>/<redacted>")]
         [InlineData("plainsecret1234", "tok%7Een", "https://example.com/hooks/plainsecret1234/tok%7Een", "https://example.com/hooks/<redacted>/<redacted>")]
-        [InlineData("tok\\en", null, "https://discord.com/tok\\en/api/webhooks/123/abc", "https://discord.com/<redacted>/api/webhooks/<redacted>/<redacted>")]
-        [InlineData("x/../secretpart", null, "https://discord.com/api/x/../secretpart/webhooks/123/abc", "https://discord.com/api/<redacted>/webhooks/<redacted>/<redacted>")]
+        [InlineData("tok\\en", null, "https://discord.com/tok\\en/api/webhooks/123/abc", "https://discord.com/<redacted>")]
+        [InlineData("x/../secretpart", null, "https://discord.com/api/x/../secretpart/webhooks/123/abc", "https://discord.com/<redacted>")]
         [InlineData("tok%7Een", null, "https://api.telegram.org/bot123:abc/tok%7Een", "https://api.telegram.org/bot<redacted>/<redacted>")]
-        [InlineData("tok\\en", null, "https://hooks.slack.com/tok\\en/services/T/B/X", "https://hooks.slack.com/<redacted>/services/<redacted>/<redacted>/<redacted>")]
+        [InlineData("tok\\en", null, "https://hooks.slack.com/tok\\en/services/T/B/X", "https://hooks.slack.com/<redacted>")]
         [InlineData("pathpart?querypart", null, "https://example.com/hooks/pathpart?querypart", "https://example.com/hooks/<redacted>")]
         public void SanitizeWebhookUrl_SecretRewrittenByUri_IsMaskedAlongsideOtherRedactions(string token, string? secret, string url, string expected)
         {
@@ -243,6 +244,32 @@ namespace Listenarr.Tests.Features.Application.Security.Redaction
         [InlineData("userinfo-pass-value", "https://user:userinfo-pass-value@example.com/hooks", "https://example.com/hooks")]
         [InlineData("rawsecret77", "not a url rawsecret77", "[invalid-url]")]
         public void SanitizeWebhookUrl_SecretDroppedByStructure_KeepsUsualOutput(string token, string url, string expected)
+        {
+            var previous = Environment.GetEnvironmentVariable("TOKEN");
+            try
+            {
+                Environment.SetEnvironmentVariable("TOKEN", token);
+
+                Assert.Equal(expected, LogRedaction.SanitizeWebhookUrl(url));
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("TOKEN", previous);
+            }
+        }
+
+        // An env secret that overlaps a provider's host, scheme or anchor segment must not push
+        // the URL into the generic branch, which would log the provider token in full.
+        [Theory]
+        [InlineData("e", "https://hooks.slack.com/services/T0001/B0002/slacktokenvalue", "https://hooks.slack.com/<redacted>")]
+        [InlineData("services", "https://hooks.slack.com/services/T0001/B0002/slacktokenvalue", "https://hooks.slack.com/<redacted>")]
+        [InlineData("hooks", "https://discord.com/api/webhooks/123456/discordtokenvalue", "https://discord.com/<redacted>")]
+        [InlineData("discord.com", "https://discord.com/api/webhooks/123456/discordtokenvalue", "https://<redacted>/api/webhooks/<redacted>/<redacted>")]
+        [InlineData("bot", "https://api.telegram.org/bot123456:telegramtokenvalue/sendMessage", "https://api.telegram.org/<redacted>")]
+        [InlineData("api", "https://api.telegram.org/bot123456:telegramtokenvalue/sendMessage", "https://<redacted>.telegram.org/bot<redacted>/sendMessage")]
+        [InlineData("telegram", "https://api.telegram.org/bot123456:telegramtokenvalue/sendMessage", "https://api.<redacted>.org/bot<redacted>/sendMessage")]
+        [InlineData("pushbullet", "pushbullet://pbtokenvalue", "<redacted>://<redacted>")]
+        public void SanitizeWebhookUrl_SecretOverlapsProviderAnchor_ProviderTokenStaysMasked(string token, string url, string expected)
         {
             var previous = Environment.GetEnvironmentVariable("TOKEN");
             try

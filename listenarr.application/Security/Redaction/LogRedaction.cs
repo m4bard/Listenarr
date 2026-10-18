@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Listenarr.Application.Security.Redaction
@@ -133,51 +134,83 @@ namespace Listenarr.Application.Security.Redaction
         // Sanitize a notification webhook URL for logging. Keeps scheme, host and port; drops
         // userinfo and the whole query string (same as SanitizeUrl); and for providers whose
         // credential lives in the path rather than the query, masks the segments that carry it
-        // instead of dropping the whole path. Any known environment secret left in the result
-        // (e.g. a token in a generic URL's path) is masked as well.
+        // instead of dropping the whole path. Known environment secrets (e.g. a token in a
+        // generic URL's path) are masked in the raw URL before it is parsed, and again in the
+        // result, so Uri canonicalization cannot rewrite one past the masking.
         public static string SanitizeWebhookUrl(string? url)
         {
-            // Longest first, so a secret that contains a shorter one is masked whole.
-            var secrets = GetSensitiveValuesFromEnvironment()
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderByDescending(secret => secret.Length)
-                .Select(Regex.Escape)
-                .ToList();
-            if (secrets.Count == 0)
+            var secrets = GetSensitiveValuesFromEnvironment().ToList();
+            if (secrets.Count == 0 || url is null)
             {
-                return SanitizeWebhookUrlStructure(url);
+                return SanitizeWebhookUrlStructure(url, url);
             }
-
-            var secretPattern = new Regex(string.Join('|', secrets), RegexOptions.IgnoreCase);
 
             // Mask secrets in the raw URL before Uri parses it: canonicalization (backslash, %7E,
             // dot segments) can rewrite a secret so it no longer matches once parsed.
-            var premasked = url is null ? null : secretPattern.Replace(url, MaskedSecretSentinel);
-            var sanitized = SanitizeWebhookUrlStructure(premasked);
+            var premasked = MaskSecretSpans(url, secrets, MaskedSecretSentinel);
+            var sanitized = SanitizeWebhookUrlStructure(url, premasked);
 
             // Mask again between the sentinels: Uri decoding can also turn an encoded form in
-            // the raw URL into the secret itself (e.g. %7E into ~).
-            var pieces = Regex.Split(sanitized, MaskedSecretSentinel, RegexOptions.IgnoreCase);
-            return string.Join("<redacted>", pieces.Select(piece => secretPattern.Replace(piece, "<redacted>")));
+            // the raw URL into the secret itself (e.g. %7E into ~). Existing <redacted> markers
+            // are split out too, so a short secret such as "e" cannot mangle them.
+            var pieces = Regex.Split(sanitized, $"{MaskedSecretSentinel}|<redacted>", RegexOptions.IgnoreCase);
+            return string.Join("<redacted>", pieces.Select(piece => MaskSecretSpans(piece, secrets, "<redacted>")));
         }
 
-        private static string SanitizeWebhookUrlStructure(string? url)
+        // Replace each run of characters covered by any secret (case-insensitive) with a single
+        // replacement. Matches of all secrets are merged first, so overlapping or nested secrets
+        // cannot leave part of one behind.
+        private static string MaskSecretSpans(string text, IEnumerable<string> secrets, string replacement)
         {
-            if (string.IsNullOrWhiteSpace(url))
+            var covered = new bool[text.Length];
+            foreach (var secret in secrets)
+            {
+                // A lookahead, so overlapping occurrences of the same secret are all found.
+                foreach (Match match in Regex.Matches(text, $"(?=({Regex.Escape(secret)}))", RegexOptions.IgnoreCase))
+                {
+                    Array.Fill(covered, true, match.Index, match.Groups[1].Length);
+                }
+            }
+
+            var masked = new StringBuilder(text.Length);
+            for (var i = 0; i < text.Length; i++)
+            {
+                if (!covered[i])
+                    masked.Append(text[i]);
+                else if (i == 0 || !covered[i - 1])
+                    masked.Append(replacement);
+            }
+
+            return masked.ToString();
+        }
+
+        // The provider is picked from the raw URL and the output is built from the premasked
+        // one, so a secret masked out of the host, scheme or an anchor segment cannot push a
+        // provider URL into the generic branch. Where masking changed the path up to the
+        // provider's anchor, the whole path is dropped instead (fail closed).
+        private static string SanitizeWebhookUrlStructure(string? url, string? premaskedUrl)
+        {
+            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(premaskedUrl))
                 return "[empty-url]";
 
             try
             {
-                var uri = new Uri(url);
+                var raw = new Uri(url);
+                var uri = new Uri(premaskedUrl);
                 var portSuffix = uri.IsDefaultPort ? string.Empty : $":{uri.Port}";
                 var authority = $"{uri.Scheme}://{uri.Host}{portSuffix}";
+                var pathDropped = $"{authority}/<redacted>";
+                var rawSegments = raw.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
                 var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
 
                 // Telegram: /bot<token>/<method> - mask the token segment, keep the method.
-                if (uri.Host.Equals("api.telegram.org", StringComparison.OrdinalIgnoreCase))
+                if (raw.Host.Equals("api.telegram.org", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (segments.Length > 0 && segments[0].StartsWith("bot", StringComparison.OrdinalIgnoreCase))
+                    if (rawSegments.Length > 0 && rawSegments[0].StartsWith("bot", StringComparison.OrdinalIgnoreCase))
                     {
+                        if (segments.Length == 0 || !segments[0].StartsWith("bot", StringComparison.OrdinalIgnoreCase))
+                            return pathDropped;
+
                         segments[0] = "bot<redacted>";
                     }
 
@@ -187,42 +220,28 @@ namespace Listenarr.Application.Security.Redaction
                 // Discord: /api/webhooks/<id>/<token> - keep the "webhooks" segment, mask what follows.
                 // discordapp.com is the legacy webhook domain; Discord still accepts it, and a
                 // webhook URL saved before the rename to discord.com would still use it.
-                if (uri.Host.Equals("discord.com", StringComparison.OrdinalIgnoreCase)
-                    || uri.Host.EndsWith(".discord.com", StringComparison.OrdinalIgnoreCase)
-                    || uri.Host.Equals("discordapp.com", StringComparison.OrdinalIgnoreCase)
-                    || uri.Host.EndsWith(".discordapp.com", StringComparison.OrdinalIgnoreCase))
+                if (raw.Host.Equals("discord.com", StringComparison.OrdinalIgnoreCase)
+                    || raw.Host.EndsWith(".discord.com", StringComparison.OrdinalIgnoreCase)
+                    || raw.Host.Equals("discordapp.com", StringComparison.OrdinalIgnoreCase)
+                    || raw.Host.EndsWith(".discordapp.com", StringComparison.OrdinalIgnoreCase))
                 {
-                    var webhooksIndex = Array.FindIndex(segments, s => s.Equals("webhooks", StringComparison.OrdinalIgnoreCase));
-                    if (webhooksIndex >= 0)
-                    {
-                        for (var i = webhooksIndex + 1; i < segments.Length; i++)
-                        {
-                            segments[i] = "<redacted>";
-                        }
-                    }
-
-                    return $"{authority}/{string.Join('/', segments)}";
+                    return MaskSegmentsAfterAnchor(rawSegments, segments, "webhooks")
+                        ? $"{authority}/{string.Join('/', segments)}"
+                        : pathDropped;
                 }
 
                 // Slack: /services/<team>/<bot>/<token> - mask everything after "services".
-                if (uri.Host.Equals("hooks.slack.com", StringComparison.OrdinalIgnoreCase))
+                if (raw.Host.Equals("hooks.slack.com", StringComparison.OrdinalIgnoreCase))
                 {
-                    var servicesIndex = Array.FindIndex(segments, s => s.Equals("services", StringComparison.OrdinalIgnoreCase));
-                    if (servicesIndex >= 0)
-                    {
-                        for (var i = servicesIndex + 1; i < segments.Length; i++)
-                        {
-                            segments[i] = "<redacted>";
-                        }
-                    }
-
-                    return $"{authority}/{string.Join('/', segments)}";
+                    return MaskSegmentsAfterAnchor(rawSegments, segments, "services")
+                        ? $"{authority}/{string.Join('/', segments)}"
+                        : pathDropped;
                 }
 
                 // Pushbullet's legacy pushbullet://TOKEN format (NotificationService.Webhooks.cs)
                 // puts the access token where a URI's host would be, so it is already sitting in
                 // `authority` built above. Drop the whole authority rather than keep it.
-                if (uri.Scheme.Equals("pushbullet", StringComparison.OrdinalIgnoreCase))
+                if (raw.Scheme.Equals("pushbullet", StringComparison.OrdinalIgnoreCase))
                 {
                     return "pushbullet://<redacted>";
                 }
@@ -235,6 +254,26 @@ namespace Listenarr.Application.Security.Redaction
             {
                 return "[invalid-url]";
             }
+        }
+
+        // Mask every segment after the raw URL's first `anchor` segment. Returns false when
+        // premasking changed any segment up to and including the anchor, as the masked
+        // segments can then no longer be lined up with the raw ones.
+        private static bool MaskSegmentsAfterAnchor(string[] rawSegments, string[] segments, string anchor)
+        {
+            var anchorIndex = Array.FindIndex(rawSegments, s => s.Equals(anchor, StringComparison.OrdinalIgnoreCase));
+            if (anchorIndex < 0)
+                return true;
+
+            if (segments.Length <= anchorIndex || !rawSegments.Take(anchorIndex + 1).SequenceEqual(segments.Take(anchorIndex + 1)))
+                return false;
+
+            for (var i = anchorIndex + 1; i < segments.Length; i++)
+            {
+                segments[i] = "<redacted>";
+            }
+
+            return true;
         }
 
         // Sanitize user-provided text for logging (prevent log injection)
