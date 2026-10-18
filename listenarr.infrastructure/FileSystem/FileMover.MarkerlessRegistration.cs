@@ -302,7 +302,8 @@ public partial class FileMover
                                         requirePhysicalIdentity: false),
                                 // The journal verifies immutable published bytes.
                                 // Optional enrichment needs its own durable target proof.
-                                supportsMetadataWrite: true);
+                                // PROBE V3: never through a hardlink, whose inode is the source's.
+                                supportsMetadataWrite: action != FileAction.HardlinkCopy);
                         targetEntry = null!;
 
                         if (liveMoveSourceEntry != null)
