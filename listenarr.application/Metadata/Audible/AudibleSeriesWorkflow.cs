@@ -337,7 +337,7 @@ namespace Listenarr.Application.Metadata.Audible
             return GetString(product, "cover_art_url");
         }
 
-        private static decimal ParseSeriesPosition(string? rawPosition)
+        internal static decimal ParseSeriesPosition(string? rawPosition)
         {
             return decimal.TryParse(rawPosition, out var parsed) ? parsed : decimal.MaxValue;
         }
