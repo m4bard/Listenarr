@@ -51,7 +51,7 @@ namespace Listenarr.Tests.Features.Infrastructure.ActivityHistory.Services
                 "client-1",
                 "Test Book",
                 DownloadProtocol.Torrent,
-                audiobookId: 42);
+                audiobookId: Guid.NewGuid());
 
             var entry = Assert.Single(_context.History);
             Assert.Equal(42, entry.AudiobookId);
@@ -65,7 +65,7 @@ namespace Listenarr.Tests.Features.Infrastructure.ActivityHistory.Services
                 "client-1",
                 "Test Book",
                 DownloadProtocol.Torrent,
-                audiobookId: 42);
+                audiobookId: Guid.NewGuid());
 
             var repository = new EfHistoryRepository(_context);
             var forBook = await repository.GetByAudiobookIdAsync(42);
@@ -78,8 +78,8 @@ namespace Listenarr.Tests.Features.Infrastructure.ActivityHistory.Services
         [Fact]
         public async Task RecordImportedAsync_IsVisibleToThePerBookHistoryQueryOfThatBookOnly()
         {
-            await _service.RecordImportedAsync("abc123", "client-1", "Test Book", audiobookId: 42);
-            await _service.RecordImportedAsync("def456", "client-1", "Other Book", audiobookId: 43);
+            await _service.RecordImportedAsync("abc123", "client-1", "Test Book", audiobookId: Guid.NewGuid());
+            await _service.RecordImportedAsync("def456", "client-1", "Other Book", audiobookId: Guid.NewGuid());
 
             var repository = new EfHistoryRepository(_context);
 
