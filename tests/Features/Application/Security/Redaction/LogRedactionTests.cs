@@ -283,5 +283,31 @@ namespace Listenarr.Tests.Features.Application.Security.Redaction
                 Environment.SetEnvironmentVariable("TOKEN", previous);
             }
         }
+
+        // One case per masking step: a secret only Uri decoding reveals (%7E), a secret in the
+        // host or scheme (which Uri lowercases), and overlapping or nested secrets.
+        [Theory]
+        [InlineData("tok~en", null, "https://example.com/hooks/tok%7Een", "https://example.com/hooks/<redacted>")]
+        [InlineData("secrethost", null, "https://secrethost.example.com/hooks", "https://<redacted>.example.com/hooks")]
+        [InlineData("https", null, "https://example.com/hooks", "<redacted>://example.com/hooks")]
+        [InlineData("ab", "bcdefghijk", "https://example.com/hooks/abcdefghijk", "https://example.com/hooks/<redacted>")]
+        [InlineData("secretvalue", "value", "https://example.com/hooks/secretvalue", "https://example.com/hooks/<redacted>")]
+        public void SanitizeWebhookUrl_SecretInDecodedFormHostSchemeOrOverlap_IsMaskedWhole(string token, string? secret, string url, string expected)
+        {
+            var previousToken = Environment.GetEnvironmentVariable("TOKEN");
+            var previousSecret = Environment.GetEnvironmentVariable("SECRET");
+            try
+            {
+                Environment.SetEnvironmentVariable("TOKEN", token);
+                Environment.SetEnvironmentVariable("SECRET", secret);
+
+                Assert.Equal(expected, LogRedaction.SanitizeWebhookUrl(url));
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("TOKEN", previousToken);
+                Environment.SetEnvironmentVariable("SECRET", previousSecret);
+            }
+        }
     }
 }
