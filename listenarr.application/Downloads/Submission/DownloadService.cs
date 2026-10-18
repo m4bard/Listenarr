@@ -34,6 +34,7 @@ namespace Listenarr.Application.Downloads.Submission
         IHubBroadcaster hubBroadcaster,
         IDownloadHistoryService downloadHistoryService,
         DownloadClientSelector downloadClientSelector,
+        IBlocklistService blocklistService,
         DownloadCachedTorrentStore cachedTorrentStore,
         IDownloadSubmissionPreparer submissionPreparer,
         DirectDownloadWorkflow directDownloadWorkflow,
@@ -181,7 +182,7 @@ namespace Listenarr.Application.Downloads.Submission
                 }
             }
 
-            // Only consider non-rejected, score > 0 results
+            // Only consider non-rejected, score > 0 results that are not already blocked
             var topResult = scoredResults
                 .Where(s => !s.IsRejected && s.TotalScore > 0)
                 .OrderByDescending(s => s.TotalScore)
@@ -274,7 +275,7 @@ namespace Listenarr.Application.Downloads.Submission
             if (prepared is PreparedDirectDownloadSubmission directDownload)
             {
                 logger.LogInformation("Processing trusted direct download for: {Title}", candidate.Title);
-                return await directDownloadWorkflow.CreateTrackedDownloadAsync(directDownload, audiobookId);
+                return await directDownloadWorkflow.CreateTrackedDownloadAsync(directDownload, audiobookId, candidate.ReleaseIdentifier);
             }
 
             var isTorrent = prepared.Protocol == DownloadProtocol.Torrent;

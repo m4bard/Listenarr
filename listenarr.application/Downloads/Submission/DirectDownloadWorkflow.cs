@@ -20,7 +20,8 @@ namespace Listenarr.Application.Downloads.Submission
     {
         public async Task<string> CreateTrackedDownloadAsync(
             PreparedDirectDownloadSubmission submission,
-            int? audiobookId)
+            int? audiobookId,
+            string? releaseIdentifier = null)
         {
             if (submission.Artifacts.Count == 0)
             {
