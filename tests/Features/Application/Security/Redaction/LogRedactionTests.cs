@@ -208,5 +208,53 @@ namespace Listenarr.Tests.Features.Application.Security.Redaction
                 Environment.SetEnvironmentVariable("TOKEN", previous);
             }
         }
+
+        // A secret Uri would rewrite must stay masked even when something else in the same URL
+        // is already <redacted> (a second secret, or a provider's own token segments).
+        [Theory]
+        [InlineData("plainsecret1234", "tok\\en", "https://example.com/hooks/plainsecret1234/tok\\en", "https://example.com/hooks/<redacted>/<redacted>")]
+        [InlineData("plainsecret1234", "tok%7Een", "https://example.com/hooks/plainsecret1234/tok%7Een", "https://example.com/hooks/<redacted>/<redacted>")]
+        [InlineData("tok\\en", null, "https://discord.com/tok\\en/api/webhooks/123/abc", "https://discord.com/<redacted>/api/webhooks/<redacted>/<redacted>")]
+        [InlineData("x/../secretpart", null, "https://discord.com/api/x/../secretpart/webhooks/123/abc", "https://discord.com/api/<redacted>/webhooks/<redacted>/<redacted>")]
+        [InlineData("tok%7Een", null, "https://api.telegram.org/bot123:abc/tok%7Een", "https://api.telegram.org/bot<redacted>/<redacted>")]
+        [InlineData("tok\\en", null, "https://hooks.slack.com/tok\\en/services/T/B/X", "https://hooks.slack.com/<redacted>/services/<redacted>/<redacted>/<redacted>")]
+        [InlineData("pathpart?querypart", null, "https://example.com/hooks/pathpart?querypart", "https://example.com/hooks/<redacted>")]
+        public void SanitizeWebhookUrl_SecretRewrittenByUri_IsMaskedAlongsideOtherRedactions(string token, string? secret, string url, string expected)
+        {
+            var previousToken = Environment.GetEnvironmentVariable("TOKEN");
+            var previousSecret = Environment.GetEnvironmentVariable("SECRET");
+            try
+            {
+                Environment.SetEnvironmentVariable("TOKEN", token);
+                Environment.SetEnvironmentVariable("SECRET", secret);
+
+                Assert.Equal(expected, LogRedaction.SanitizeWebhookUrl(url));
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("TOKEN", previousToken);
+                Environment.SetEnvironmentVariable("SECRET", previousSecret);
+            }
+        }
+
+        // A secret the structural step already removes (userinfo, or an unparseable URL) needs
+        // no extra masking, so the host or the usual placeholder is still logged.
+        [Theory]
+        [InlineData("userinfo-pass-value", "https://user:userinfo-pass-value@example.com/hooks", "https://example.com/hooks")]
+        [InlineData("rawsecret77", "not a url rawsecret77", "[invalid-url]")]
+        public void SanitizeWebhookUrl_SecretDroppedByStructure_KeepsUsualOutput(string token, string url, string expected)
+        {
+            var previous = Environment.GetEnvironmentVariable("TOKEN");
+            try
+            {
+                Environment.SetEnvironmentVariable("TOKEN", token);
+
+                Assert.Equal(expected, LogRedaction.SanitizeWebhookUrl(url));
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("TOKEN", previous);
+            }
+        }
     }
 }
