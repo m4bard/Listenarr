@@ -308,15 +308,6 @@ public sealed class AudiobookDeletionIntentReconcilerTests : BaseTests
         await db.SaveChangesAsync();
     }
 
-    private async Task<AudiobookDeletionIntent> GetIntentAsync(Guid intentId)
-    {
-        var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
-        await using var db = await factory.CreateDbContextAsync();
-        return await db.AudiobookDeletionIntents
-            .AsNoTracking()
-            .SingleAsync(candidate => candidate.Id == intentId);
-    }
-
     private sealed record OrphanedIntent(Guid IntentId, int AudiobookId);
 
     private sealed record CapturedLog(
