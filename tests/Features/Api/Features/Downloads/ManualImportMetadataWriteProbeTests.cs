@@ -40,10 +40,11 @@ public sealed class ManualImportMetadataWriteProbeTests : BaseTests
     }
 
     [Theory]
-    [InlineData(FileAction.Move)]
-    [InlineData(FileAction.Copy)]
-    [InlineData(FileAction.HardlinkCopy)]
-    public async Task Probe_ManualImportAsinEmbedAndRetry(FileAction action)
+    [InlineData(FileAction.Move, false)]
+    [InlineData(FileAction.Copy, false)]
+    [InlineData(FileAction.HardlinkCopy, false)]
+    [InlineData(FileAction.Move, true)]
+    public async Task Probe_ManualImportAsinEmbedAndRetry(FileAction action, bool sourceHasSecondLink)
     {
         var fixture = Environment.GetEnvironmentVariable("PROBE_M4B");
         var output = Environment.GetEnvironmentVariable("PROBE_OUT");
@@ -58,6 +59,13 @@ public sealed class ManualImportMetadataWriteProbeTests : BaseTests
         var source = Path.Join(sourceRoot, "incoming.m4b");
         File.Copy(fixture, source);
         var sourceSha = Sha(source);
+        // A seeding client's copy of the same inode, outside every Listenarr root.
+        var secondLink = Path.Join(FileService.GetTempDirectory("probe-asin-seed"), "seed.m4b");
+        if (sourceHasSecondLink)
+        {
+            using var ln = System.Diagnostics.Process.Start("ln", [source, secondLink])!;
+            await ln.WaitForExitAsync();
+        }
         await AddAuthorizedRootAsync(outputRoot);
         var settings = await _applicationSettingsRepository.GetAsync() ?? new ApplicationSettings();
         settings.OutputPath = outputRoot;
@@ -82,6 +90,9 @@ public sealed class ManualImportMetadataWriteProbeTests : BaseTests
         {
             ["variant"] = variant,
             ["action"] = action.ToString(),
+            ["sourceHasSecondLink"] = sourceHasSecondLink,
+            ["secondLinkAsin"] = sourceHasSecondLink ? ReadAsin(secondLink) : null,
+            ["secondLinkChanged"] = sourceHasSecondLink ? Sha(secondLink) != sourceSha : null,
             ["first"] = first,
             ["writerCalls"] = _metadata.Invocations.Count(invocation =>
                 invocation.Method.Name == nameof(IMetadataService.WriteAsinTagAsync)),
