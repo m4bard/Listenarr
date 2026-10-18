@@ -30,7 +30,7 @@ public class SqliteMigrationSchemaTests : BaseTests
     // asserted apart from it. Two branches that each add a migration would otherwise rewrite
     // the same two lines of this file and conflict on merge in either order.
     private const string EmbedCoverArtSettingMigrationId =
-        "20260828190320_AddEmbedCoverArtInAudioFilesSetting";
+        "20261018213018_AddEmbedCoverArtInAudioFilesSetting";
 
     private static readonly string[] BranchMigrationIds =
         [EmbedCoverArtSettingMigrationId];
@@ -232,7 +232,7 @@ public class SqliteMigrationSchemaTests : BaseTests
         Assert.All(
             BranchMigrationIds,
             id => Assert.True(
-                string.CompareOrdinal(id, WeakStorageVerifiedCleanupMigrationId) > 0,
+                string.CompareOrdinal(id, OperationEvidencePublicationsMigrationId) > 0,
                 "A migration this branch adds has to sort after the consolidated history."));
         var postCanary = allPostCanary
             .Where(id => !BranchMigrationIds.Contains(id, StringComparer.Ordinal))
