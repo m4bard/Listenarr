@@ -8,7 +8,7 @@ namespace Listenarr.Application.Search.Indexers.Torznab
 {
     internal sealed partial class TorznabResponseParser
     {
-        private long ParseSizeString(string sizeStr)
+        internal long ParseSizeString(string sizeStr)
         {
             if (string.IsNullOrEmpty(sizeStr))
                 return 0;
