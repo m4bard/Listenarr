@@ -303,3 +303,32 @@ public sealed class LinuxDirectoryAndFileLinkFactAttribute : FactAttribute
         }
     }
 }
+
+public sealed class CrossFilesystemDirectoryLinkTheoryAttribute : TheoryAttribute
+{
+    public const string PathEnvironmentVariable =
+        "LISTENARR_CROSS_FILESYSTEM_TEST_PATH";
+
+    public CrossFilesystemDirectoryLinkTheoryAttribute()
+    {
+        var decision = NativeTestCapabilityPolicy.GetExecutionDecision(
+            NativeTestCapability.DirectorySymbolicLinks);
+        if (!decision.ShouldRun)
+        {
+            Skip = decision.SkipReason;
+            return;
+        }
+
+        if (!OperatingSystem.IsLinux())
+        {
+            Skip = "This test requires native Linux behavior.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(
+                PathEnvironmentVariable)))
+        {
+            Skip = "The native test runner did not provide a directory on a second filesystem.";
+        }
+    }
+}
