@@ -13,6 +13,7 @@ public partial class FileMover : IFilePublicationSourceCapability
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
 
+        SourceProofParent? proofParent = null;
         try
         {
             var fullPath = Path.GetFullPath(sourcePath);
@@ -25,13 +26,9 @@ public partial class FileMover : IFilePublicationSourceCapability
                     "The source path does not identify a file beneath a directory.");
             }
 
-            // Resolved for the purpose of opening the file, and for nothing else. The caller
-            // still receives the path it passed in, so root containment, retirement policy and
-            // every other decision downstream see exactly what they saw before. The managed
-            // boundary walk applies to where the file really is: a link that lands inside a
-            // configured root is opened through that root's authorized walk like any other path.
+            proofParent = await SelectSourceProofParentAsync(parent);
             using var anchor = await OpenSourceProofParentAsync(
-                ResolveSymlinkedAncestors(parent),
+                proofParent.Value.Path,
                 cancellationToken);
             var openOutcome = anchor.TryOpenExistingFileWithOutcome(
                 fileName,
@@ -99,7 +96,7 @@ public partial class FileMover : IFilePublicationSourceCapability
             // none of them. A locked file, a permissions problem and an unreadable mount were
             // indistinguishable afterwards, and this is the gate that refuses the import, so the
             // one line an operator gets is the only thing they have to go on.
-            var reason = ComposeUnsupportedReason(exception, FindSymlinkedAncestor(sourcePath));
+            var reason = ComposeUnsupportedReason(exception, FindRefusingLink(sourcePath, proofParent));
 
             _logger.LogWarning(
                 exception,
@@ -115,6 +112,38 @@ public partial class FileMover : IFilePublicationSourceCapability
                 FilePublicationSourceCapabilityFailureKind.Unavailable);
         }
     }
+
+    /// <summary>
+    /// The directory the source proof is opened from: the parent as given when it names a place
+    /// inside a configured root, otherwise the parent with its symlinked ancestors resolved.
+    /// </summary>
+    /// <remarks>
+    /// Inside a configured root the managed boundary walk stays exactly as it is, so a link
+    /// planted inside a root still cannot carry a source out of it: the walk opens every segment
+    /// below the root with O_NOFOLLOW and refuses the first link it meets. Outside every root
+    /// there is no boundary to escape, and the walk that would otherwise run is a plain
+    /// O_NOFOLLOW open from the filesystem root, which refuses any linked ancestor at all, such
+    /// as a download directory reached through a symlinked mount. Only that case resolves.
+    ///
+    /// The resolved path is used to open the file and for nothing else. The caller still
+    /// receives the path it passed in, so root containment, retirement policy and every other
+    /// decision downstream see exactly what they saw before. If the resolved path lands inside a
+    /// configured root, it is opened through that root's authorized walk like any other path.
+    /// A parent whose root containment cannot be decided is left unresolved, so the managed walk
+    /// refuses it as it would have anyway.
+    /// </remarks>
+    private async Task<SourceProofParent> SelectSourceProofParentAsync(string parent)
+    {
+        var managed = await ResolveManagedRootPathAsync(parent);
+        return managed.Root != null || managed.HasUnavailableOverlap
+            ? new SourceProofParent(parent, managed)
+            : new SourceProofParent(ResolveSymlinkedAncestors(parent), managed);
+    }
+
+    /// <summary>
+    /// The directory the source proof is opened from, and the root containment that chose it.
+    /// </summary>
+    private readonly record struct SourceProofParent(string Path, ManagedRootPathResolution Managed);
 
     private async Task<PinnedDirectoryCreation.PinnedDirectoryAnchor> OpenSourceProofParentAsync(
         string parent, CancellationToken cancellationToken)
@@ -184,13 +213,67 @@ public partial class FileMover : IFilePublicationSourceCapability
     }
 
     /// <summary>
+    /// The link a refusal is reported against, or null if no link is to blame.
+    /// </summary>
+    /// <remarks>
+    /// Which link that is depends on which walk refused. Inside a configured root the parent was
+    /// not resolved, so the managed walk met the first link below the root and stopped there,
+    /// whether or not that link would have resolved. Anywhere else the parent was resolved, and
+    /// only a link that resolution could not remove is to blame. A failure before the parent was
+    /// chosen at all is reported the second way.
+    /// </remarks>
+    private static string? FindRefusingLink(string sourcePath, SourceProofParent? proofParent) =>
+        proofParent is { Managed: { Root: { } root, Semantics: { } semantics } } managedParent
+            ? FindFirstLinkBelowRoot(root.Path, managedParent.Path, semantics)
+            : FindSymlinkedAncestor(sourcePath);
+
+    /// <summary>
+    /// The first symbolic link the managed walk would open below <paramref name="rootPath"/> on
+    /// its way down to <paramref name="parent"/>, or null if there is none.
+    /// </summary>
+    private static string? FindFirstLinkBelowRoot(
+        string rootPath,
+        string parent,
+        FileSystemPathSemantics semantics)
+    {
+        try
+        {
+            if (!FileSystemPathIdentity.TryGetRelativePathWithinBase(
+                    rootPath, parent, semantics, out var relative))
+            {
+                return null;
+            }
+
+            var current = rootPath;
+            foreach (var segment in relative.Split(
+                [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                StringSplitOptions.RemoveEmptyEntries).Where(segment => segment != "."))
+            {
+                current = Path.Join(current, segment);
+                if (Directory.ResolveLinkTarget(current, returnFinalTarget: false) != null)
+                {
+                    return current;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is
+            IOException or UnauthorizedAccessException or NotSupportedException
+                or System.Security.SecurityException)
+        {
+            // Best effort only. The caller still reports the original failure.
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// The link that actually blocked resolution, or null if none did.
     /// </summary>
     /// <remarks>
     /// This does not change the answer. It only says which link caused a refusal, because the
-    /// raw failure is an ENOTDIR from openat and gives an operator nothing to act on. Since
-    /// ResolveSymlinkedAncestors, a linked source ancestor normally resolves and is published, so
-    /// this names a link only when that resolution could not remove it from the walk: a cycle, a
+    /// raw failure is an ENOTDIR from openat and gives an operator nothing to act on. Outside every
+    /// configured root a linked source ancestor normally resolves and is published, so this
+    /// names a link only when that resolution could not remove it from the walk: a cycle, a
     /// dangling target, or the hop cap. It walks the same chain ResolveSymlinkedAncestors does,
     /// because a chain of two or more links is not necessarily an ancestor of the original path at
     /// all; the second link only appears once the first has been substituted for its target.
