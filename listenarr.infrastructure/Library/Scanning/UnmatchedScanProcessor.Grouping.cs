@@ -417,8 +417,8 @@ namespace Listenarr.Infrastructure.Library.Scanning
             //
             // Unlike a bare "(N)", this form carries its own total, so it usually says the
             // file is one part of a set rather than one entry among separate works. A series
-            // word in front of it says the opposite: "A Map of Quiet Rivers Book 1 of 14" is one work
-            // out of fourteen in a boxed set, and collapsing that folder also denies it the
+            // word in front of it says the opposite: "Barsoom Book 1 of 6" is one work
+            // out of six in a boxed set, and collapsing that folder also denies it the
             // embedded-tag pass, which only runs when filename grouping produced more than one
             // group. So the index is left alone when Book, Bk, Vol or Volume introduces it.
             name = Regex.Replace(name, @"(?<!\b(?:book|bk|vol|volume)[\s\-_]{0,3})[\s\-_]*\d+\s*of\s*\d+$", "", RegexOptions.IgnoreCase);
