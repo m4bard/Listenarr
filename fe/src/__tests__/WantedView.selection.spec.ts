@@ -53,8 +53,8 @@ type WantedVm = {
   selectAll: () => void
   clearSelection: () => void
   searchSelected: () => Promise<void>
-  requestSearchMissing: () => void
-  confirmSearchMissing: () => Promise<void>
+  openConfirmSearchAll: () => void
+  searchMissing: () => Promise<void>
   activeWanted: Audiobook[]
 }
 
@@ -169,12 +169,12 @@ describe('WantedView multi-select', () => {
     vm.filterText = 'Alpha'
     await flushPromises()
 
-    vm.requestSearchMissing()
-    await runSearch(vm.confirmSearchMissing())
+    vm.openConfirmSearchAll()
+    await runSearch(vm.searchMissing())
 
-    // Search All acts on searchTargets, which is derived from filteredWanted.
-    // Before 169 it read the unfiltered bucket instead, so a filtered-down
-    // page still queued every missing book on screen or not.
+    // Search All acts on actionableMissingWanted, which is derived from
+    // filteredWanted. Read from the unfiltered bucket instead, a filtered-down
+    // page would still queue every missing book on screen or not.
     expect(searchedIds()).toEqual([1])
   })
 
@@ -182,14 +182,14 @@ describe('WantedView multi-select', () => {
     const { vm } = await mountWanted()
 
     // Tick fewer books than exist. If Search All read the selection instead
-    // of searchTargets, it would only touch these two.
+    // of actionableMissingWanted, it would only touch these two.
     vm.toggleSelection(1)
     vm.toggleSelection(2)
     await flushPromises()
     expect(vm.selectedCount).toBe(2)
 
-    vm.requestSearchMissing()
-    await runSearch(vm.confirmSearchMissing())
+    vm.openConfirmSearchAll()
+    await runSearch(vm.searchMissing())
 
     expect(searchedIds()).toEqual([1, 2, 3, 4])
   })
