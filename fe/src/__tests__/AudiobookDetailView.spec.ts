@@ -23,6 +23,7 @@ import { useLibraryStore } from '@/stores/library'
 import { useScanNotificationsStore } from '@/stores/scanNotifications'
 import { useFilesystemReadinessStore } from '@/stores/filesystemReadiness'
 import { apiService, ensureImageCached } from '@/services/api'
+import { signalRService } from '@/services/signalr'
 import AudiobookDetailViewCmp from '@/views/library/AudiobookDetailView.vue'
 const routerPushMock = vi.fn()
 const routeParams = vi.hoisted(() => ({ id: '5' }))
