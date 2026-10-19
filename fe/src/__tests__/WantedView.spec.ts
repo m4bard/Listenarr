@@ -307,7 +307,6 @@ describe('WantedView image recache behavior', () => {
       rectSpy.mockRestore()
     }
   })
-
 })
 
 describe('WantedView - Search All (Issue #936)', () => {
