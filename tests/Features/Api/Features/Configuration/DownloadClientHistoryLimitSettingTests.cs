@@ -89,7 +89,8 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
             return new SettingsController(
                 configurationService,
                 NullLogger<SettingsController>.Instance,
-                broadcaster);
+                broadcaster,
+                Mock.Of<IFileNamingService>());
         }
     }
 }
