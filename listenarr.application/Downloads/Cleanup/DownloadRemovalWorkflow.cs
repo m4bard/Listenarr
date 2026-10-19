@@ -88,6 +88,7 @@ namespace Listenarr.Application.Downloads.Cleanup
                     if (client != null && !client.IsEnabled)
                     {
                         _logger.LogInformation("Skipping removal of {DownloadId} from disabled client {ClientName}", downloadId, client.Name);
+                        removedFromClient = true; // Treat as success so DB record is cleaned up
                     }
                     else if (client != null)
                     {
@@ -193,6 +194,13 @@ namespace Listenarr.Application.Downloads.Cleanup
                 // The download record's Metadata dictionary stores the mapping set during AddAsync.
                 // Without this, Transmission/qBittorrent receive the Listenarr UUID which they don't recognise.
                 var clientItemId = downloadId;
+
+                // Whether the line above was actually replaced by the client's own identifier. If it
+                // was not, clientItemId is still the Listenarr download id and nothing in the client's
+                // queue can ever equal it, so the queue reads below cannot answer the question they
+                // are asked. They have to say so rather than read "no match" as "already gone".
+                var resolvedClientItemId = false;
+
                 if (downloadRecord?.Metadata != null)
                 {
                     if ((string.Equals(client.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase) ||
@@ -203,6 +211,7 @@ namespace Listenarr.Application.Downloads.Cleanup
                         if (!string.IsNullOrEmpty(hash))
                         {
                             clientItemId = hash;
+                            resolvedClientItemId = true;
                             _logger.LogDebug("RemoveFromClientAsync: Using torrent hash {Hash} instead of download ID for {ClientType} removal",
                                 hash, client.Type);
                         }
@@ -213,6 +222,7 @@ namespace Listenarr.Application.Downloads.Cleanup
                         if (!string.IsNullOrEmpty(resolvedId))
                         {
                             clientItemId = resolvedId;
+                            resolvedClientItemId = true;
                             _logger.LogDebug("RemoveFromClientAsync: Using client-specific ID {ClientId} for {ClientType} removal",
                                 resolvedId, client.Type);
                         }
@@ -232,19 +242,38 @@ namespace Listenarr.Application.Downloads.Cleanup
 
                         // If removal returned false, verify if the item is still in the client's queue
                         // If it's not in the queue, consider removal successful (item already gone)
-                        _logger.LogWarning("Client reported removal failed for {DownloadId}, checking if item still exists in queue", downloadId);
+                        //
+                        // The comparison has to use clientItemId, the value we actually sent to the
+                        // client. This queue comes straight from the gateway, so its items carry raw
+                        // client identifiers: a torrent hash for qBittorrent and Transmission, an NZB id
+                        // for the usenet clients. It does not carry the Listenarr download id that
+                        // DownloadQueueService writes onto matched items. A Listenarr id can never equal
+                        // a torrent hash, so comparing downloadId here reported every genuine removal
+                        // failure as a success and deleted the database row while the item kept running.
+                        //
+                        // Which is also why an unresolved identifier cannot be checked at all. The
+                        // comparison would be the same mismatched one, always finding nothing and
+                        // always reading that as "already gone". Report the failure instead: keeping a
+                        // row whose item may still be running is recoverable, deleting it is not.
+                        if (!resolvedClientItemId)
+                        {
+                            _logger.LogWarning("Client reported removal failed for {DownloadId} on {ClientName} and no client item id is recorded for it, so the queue cannot confirm whether it is gone. Reporting failure.", downloadId, client.Name ?? client.Id);
+                            return false;
+                        }
+
+                        _logger.LogWarning("Client reported removal failed for {DownloadId}, checking if client item {ClientItemId} still exists in queue", downloadId, clientItemId);
                         try
                         {
                             var queue = await _clientGateway.GetQueueAsync(client);
-                            var stillExists = queue.Any(q => q.Id.Equals(downloadId, StringComparison.OrdinalIgnoreCase));
+                            var stillExists = queue.Any(q => q.Id.Equals(clientItemId, StringComparison.OrdinalIgnoreCase));
 
                             if (!stillExists)
                             {
-                                _logger.LogInformation("Item {DownloadId} no longer in {ClientName} queue, treating removal as successful", downloadId, client.Name ?? client.Id);
+                                _logger.LogInformation("Client item {ClientItemId} for {DownloadId} no longer in {ClientName} queue, treating removal as successful", clientItemId, downloadId, client.Name ?? client.Id);
                                 return true;
                             }
 
-                            _logger.LogWarning("Item {DownloadId} still exists in {ClientName} queue after removal attempt", downloadId, client.Name ?? client.Id);
+                            _logger.LogWarning("Client item {ClientItemId} for {DownloadId} still exists in {ClientName} queue after removal attempt", clientItemId, downloadId, client.Name ?? client.Id);
                             return false;
                         }
                         catch (Exception queueEx) when (queueEx is not OperationCanceledException && queueEx is not OutOfMemoryException && queueEx is not StackOverflowException)
@@ -258,16 +287,26 @@ namespace Listenarr.Application.Downloads.Cleanup
                         _logger.LogWarning(ex, "RemoveFromClientAsync: Exception removing {DownloadId} from {Client}: {Message}",
                             LogRedaction.SanitizeText(downloadId), LogRedaction.SanitizeText(client.Name ?? client.Id), ex.Message);
 
-                        // Check if item still exists in queue - if not, consider removal successful
+                        // Check if item still exists in queue - if not, consider removal successful.
+                        // Same identifier rule as the branch above: the gateway queue is keyed by the
+                        // client's own identifier, so clientItemId is the only value that can match,
+                        // and without one there is no question the queue can answer.
+                        if (!resolvedClientItemId)
+                        {
+                            _logger.LogWarning("Removal of {DownloadId} from {ClientName} errored and no client item id is recorded for it, so the queue cannot confirm whether it is gone. Reporting failure.",
+                                LogRedaction.SanitizeText(downloadId), LogRedaction.SanitizeText(client.Name ?? client.Id));
+                            return false;
+                        }
+
                         try
                         {
                             var queue = await _clientGateway.GetQueueAsync(client);
-                            var stillExists = queue.Any(q => q.Id.Equals(downloadId, StringComparison.OrdinalIgnoreCase));
+                            var stillExists = queue.Any(q => q.Id.Equals(clientItemId, StringComparison.OrdinalIgnoreCase));
 
                             if (!stillExists)
                             {
-                                _logger.LogInformation("After exception, item {DownloadId} not found in {ClientName} queue, treating as successfully removed",
-                                    downloadId, client.Name ?? client.Id);
+                                _logger.LogInformation("After exception, client item {ClientItemId} for {DownloadId} not found in {ClientName} queue, treating as successfully removed",
+                                    clientItemId, downloadId, client.Name ?? client.Id);
                                 return true;
                             }
                         }
