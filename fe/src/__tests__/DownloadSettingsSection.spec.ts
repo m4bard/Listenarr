@@ -36,12 +36,14 @@ describe('DownloadSettingsSection', () => {
           missingSourceRetryInitialDelaySeconds: 2,
           missingSourceMaxRetries: 3,
           downloadClientHistoryLimit: 60,
+          failedDownloadHandlingEnabled: true,
+          stalledDownloadTimeoutHours: 0,
         },
       },
     })
 
     const inputs = wrapper.findAll('input[type="number"]')
-    expect(inputs).toHaveLength(7)
+    expect(inputs).toHaveLength(8)
 
     // Max concurrent
     await inputs[0].setValue('4')
@@ -84,6 +86,12 @@ describe('DownloadSettingsSection', () => {
     last =
       wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.downloadClientHistoryLimit).toBe(120)
+
+    // Stalled download timeout
+    await inputs[7].setValue('24')
+    last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    expect(last.stalledDownloadTimeoutHours).toBe(24)
   })
 
   async function mountStallSection(settings: Record<string, unknown>) {
