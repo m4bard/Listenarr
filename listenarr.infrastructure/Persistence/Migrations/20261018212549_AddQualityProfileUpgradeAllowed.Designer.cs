@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20260920025621_AddQualityProfileUpgradeAllowed")]
+    [Migration("20261018212549_AddQualityProfileUpgradeAllowed")]
     partial class AddQualityProfileUpgradeAllowed
     {
         /// <inheritdoc />

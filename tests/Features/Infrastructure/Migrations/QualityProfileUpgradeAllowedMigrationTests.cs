@@ -32,7 +32,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Migrations;
 public sealed class QualityProfileUpgradeAllowedMigrationTests : BaseTests
 {
     /// <summary>The migration immediately before the one under test.</summary>
-    private const string PreviousMigrationId = "20260825021432_AddWeakStorageVerifiedCleanup";
+    private const string PreviousMigrationId = "20261007102434_AddDownloadClientHistoryLimitToApplicationSettings";
 
     /// <summary>
     /// Every cutoff the engine reads as blank has to be backfilled as blank. The cases past the

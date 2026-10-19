@@ -30,7 +30,7 @@ public class SqliteMigrationSchemaTests : BaseTests
     // asserted apart from it. Two branches that each add a migration would otherwise rewrite
     // the same two lines of this file and conflict on merge in either order.
     private const string EmbedCoverArtSettingMigrationId =
-        "20260828190320_AddEmbedCoverArtInAudioFilesSetting";
+        "20261018213018_AddEmbedCoverArtInAudioFilesSetting";
 
     private const string AuthorIdentityRepairMigrationId =
         "20260921202317_AddAuthorIdentityRepair";
@@ -40,9 +40,9 @@ public class SqliteMigrationSchemaTests : BaseTests
 
     private static readonly string[] BranchMigrationIds =
     [
-        EmbedCoverArtSettingMigrationId,
         AuthorIdentityRepairMigrationId,
-        AuthorIdentityRecheckWindowMigrationId
+        AuthorIdentityRecheckWindowMigrationId,
+        EmbedCoverArtSettingMigrationId
     ];
 
     private const string CanaryMigrationFrontierId =
@@ -62,7 +62,7 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string WeakStorageVerifiedCleanupMigrationId =
         "20260825021432_AddWeakStorageVerifiedCleanup";
     private const string ReleaseBlocklistMigrationId =
-        "20260828191810_AddReleaseBlocklist";
+        "20261018214323_AddReleaseBlocklist";
     private const string HistoryProtocolMigrationId =
         "20260911172407_AddHistoryProtocol";
     private const string IndexerFailureBackoffMigrationId =
@@ -74,7 +74,7 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string CustomScriptNotificationsMigrationId =
         "20260916112317_AddCustomScriptNotifications";
     private const string QualityProfileUpgradeAllowedMigrationId =
-        "20260920025621_AddQualityProfileUpgradeAllowed";
+        "20261018212549_AddQualityProfileUpgradeAllowed";
     private const string BackupRetentionDaysMigrationId =
         "20260922212752_AddBackupRetentionDaysToApplicationSettings";
     private const string DownloadClientPriorityMigrationId =
@@ -553,13 +553,11 @@ public class SqliteMigrationSchemaTests : BaseTests
                 FileMutationParentGenerationProofsMigrationId,
                 CompatibilityFilePublicationMigrationId,
                 WeakStorageVerifiedCleanupMigrationId,
-                ReleaseBlocklistMigrationId,
                 HistoryProtocolMigrationId,
                 IndexerFailureBackoffMigrationId,
                 PreferredReleaseShapeMigrationId,
                 HistoryReleaseMetadataMigrationId,
                 CustomScriptNotificationsMigrationId,
-                QualityProfileUpgradeAllowedMigrationId,
                 BackupRetentionDaysMigrationId,
                 DownloadClientPriorityMigrationId,
                 FreeSpaceImportSettingsMigrationId,
@@ -570,7 +568,9 @@ public class SqliteMigrationSchemaTests : BaseTests
                 IndexerDownloadClientBindingMigrationId,
                 DownloadClientStatusMigrationId,
                 OperationEvidencePublicationsMigrationId,
-                RejectClearlyMusicReleasesMigrationId
+                RejectClearlyMusicReleasesMigrationId,
+                QualityProfileUpgradeAllowedMigrationId,
+                ReleaseBlocklistMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
