@@ -785,12 +785,12 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
             var service = CreateSearchService();
 
             var year = await service.ParseTorznabResponseAsync(
-                TorznabFeed("Mercury Rising 1964 Unabridged", "Narrated edition", null),
+                TorznabFeed("Tarzan of the Apes 1964 Unabridged", "Narrated edition", null),
                 TestIndexer());
 
             // Control: the same title once it really does declare a bitrate.
             var yearAndBitrate = await service.ParseTorznabResponseAsync(
-                TorznabFeed("Mercury Rising 1964 Unabridged 128kbps", "Narrated edition", null),
+                TorznabFeed("Tarzan of the Apes 1964 Unabridged 128kbps", "Narrated edition", null),
                 TestIndexer());
 
             Assert.Equal("Unknown", Assert.Single(year).Quality);
