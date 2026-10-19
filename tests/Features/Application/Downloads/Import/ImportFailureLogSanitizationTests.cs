@@ -140,7 +140,6 @@ namespace Listenarr.Tests.Features.Application.Downloads.Import
         {
             const string leakCanary = "companion-log-leak-canary";
             var capturingLogger = new CapturingLogger<DownloadImportService>();
-            var realCapability = _provider.GetRequiredService<IFilePublicationSourceCapability>();
 
             var outputDirectory = FileService.GetTempDirectory("companion-log-output");
             var sourceDirectory = FileService.GetTempDirectory(leakCanary);
@@ -151,8 +150,13 @@ namespace Listenarr.Tests.Features.Application.Downloads.Import
                 $"Could not find a part of the path '{companionFile}'.");
 
             Init(builder => builder
-                .WithSingleton<IFilePublicationSourceCapability>(
-                    new SelectiveThrowingCapability(realCapability, companionFile, thrownException))
+                // The real capability comes from the provider this Init builds. One resolved
+                // from the provider it replaces would be bound to a disposed container.
+                .WithSingleton<IFilePublicationSourceCapability>(provider =>
+                    new SelectiveThrowingCapability(
+                        provider.GetRequiredService<FileMover>(),
+                        companionFile,
+                        thrownException))
                 .WithSingleton<ILogger<DownloadImportService>>(capturingLogger));
             await AddAuthorizedRootAsync(FileService.GetTempPath());
 
