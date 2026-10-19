@@ -34,6 +34,7 @@ namespace Listenarr.Application.Downloads.Submission
         IHubBroadcaster hubBroadcaster,
         IDownloadHistoryService downloadHistoryService,
         DownloadClientSelector downloadClientSelector,
+        IBlocklistService blocklistService,
         DownloadCachedTorrentStore cachedTorrentStore,
         IDownloadSubmissionPreparer submissionPreparer,
         DirectDownloadWorkflow directDownloadWorkflow,
@@ -181,8 +182,8 @@ namespace Listenarr.Application.Downloads.Submission
                 }
             }
 
-            // Only consider non-rejected, score > 0 results
-            var topResult = scoredResults
+            // Only consider non-rejected, score > 0 results that are not already blocked
+            var topResult = (await BlockedReleaseFilter.ExcludeAsync(blocklistService, audiobookId, scoredResults, logger))
                 .Where(s => !s.IsRejected && s.TotalScore > 0)
                 .OrderByDescending(s => s.TotalScore)
                 .FirstOrDefault();
@@ -274,7 +275,7 @@ namespace Listenarr.Application.Downloads.Submission
             if (prepared is PreparedDirectDownloadSubmission directDownload)
             {
                 logger.LogInformation("Processing trusted direct download for: {Title}", candidate.Title);
-                return await directDownloadWorkflow.CreateTrackedDownloadAsync(directDownload, audiobookId);
+                return await directDownloadWorkflow.CreateTrackedDownloadAsync(directDownload, audiobookId, candidate.ReleaseIdentifier);
             }
 
             var isTorrent = prepared.Protocol == DownloadProtocol.Torrent;
@@ -342,12 +343,14 @@ namespace Listenarr.Application.Downloads.Submission
             }
             catch (OperationCanceledException)
             {
-                await RemoveProvisionalDownloadAsync(downloadId);
+                await DownloadSubmissionFailureHandler.RemoveProvisionalDownloadAsync(downloadId, downloadRepository, logger);
                 throw;
             }
             catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
             {
-                await RemoveProvisionalDownloadAsync(downloadId);
+                await DownloadSubmissionFailureHandler.RecordRejectedSubmissionAsync(
+                    downloadId, downloadClientIdForModel, candidate.Title, exception, downloadHistoryService, logger);
+                await DownloadSubmissionFailureHandler.RemoveProvisionalDownloadAsync(downloadId, downloadRepository, logger);
 
                 if (exception is DownloadClientSubmissionException)
                 {
@@ -384,7 +387,6 @@ namespace Listenarr.Application.Downloads.Submission
                 }
             }
 
-            var settings = await configurationService.GetApplicationSettingsAsync();
             var notificationData = await DownloadNotificationPayloadBuilder.BuildBookDownloadingPayloadAsync(
                 audiobookRepository,
                 audiobookId,
@@ -392,7 +394,7 @@ namespace Listenarr.Application.Downloads.Submission
                 ToSearchResult(candidate, prepared),
                 downloadClient);
 
-            await notificationService.SendNotificationAsync("book-downloading", notificationData, settings.WebhookUrl, settings.EnabledNotificationTriggers);
+            await notificationService.SendNotificationAsync(NotificationTriggers.BookDownloading, notificationData);
 
             // Trigger an immediate realtime queue update so the UI shows the new download right away
             // Add a small delay to allow the download client to process and index the new download
@@ -412,19 +414,6 @@ namespace Listenarr.Application.Downloads.Submission
             }
 
             return downloadId;
-        }
-
-        private async Task RemoveProvisionalDownloadAsync(string downloadId)
-        {
-            try
-            {
-                await downloadRepository.RemoveAsync(downloadId);
-                logger.LogInformation("Removed provisional download {DownloadId} after client submission failed", downloadId);
-            }
-            catch (Exception cleanupException) when (cleanupException is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
-            {
-                logger.LogError(cleanupException, "Failed to remove provisional download {DownloadId} after client submission failure", downloadId);
-            }
         }
 
         public async Task<bool> RemoveFromQueueAsync(string downloadId, string? downloadClientId = null, bool force = false)
