@@ -80,8 +80,8 @@ public sealed class FileMoverSymlinkedSourcePathTests : BaseTests
             $"a source reached through a symlinked directory should be publishable: {result.Reason}");
 
         // The proof still describes the object, which is the point: resolving the route does not
-        // weaken an inode plus content digest.
-        Assert.False(string.IsNullOrWhiteSpace(result.PhysicalObjectIdentity));
+        // weaken it.
+        AssertProofDescribesFile(result, "audio");
     }
 
     [DirectoryLinkFact]
@@ -114,7 +114,24 @@ public sealed class FileMoverSymlinkedSourcePathTests : BaseTests
         Assert.True(
             result.IsSupported,
             $"a source reached through a two-hop symlink chain should be publishable: {result.Reason}");
-        Assert.False(string.IsNullOrWhiteSpace(result.PhysicalObjectIdentity));
+        AssertProofDescribesFile(result, "audio");
+    }
+
+    // Source capability exports content evidence only: the pinned entry's kernel identity is
+    // deliberately kept out of the proof, so OperationLocalPhysicalObjectIdentity is absent for
+    // every source. "The proof describes the object" is therefore checked on the content: the
+    // length and digest of the file the links lead to.
+    private static void AssertProofDescribesFile(
+        FilePublicationSourceCapabilityResult result,
+        string content)
+    {
+        var proof = Assert.NotNull(result.SourceProof);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+        Assert.Equal(bytes.LongLength, proof.Length);
+        Assert.Equal(
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)),
+            proof.Sha256,
+            ignoreCase: true);
     }
 
     [DirectoryLinkFact]
