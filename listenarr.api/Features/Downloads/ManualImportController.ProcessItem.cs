@@ -63,6 +63,39 @@ public partial class ManualImportController
                     item.FullPath);
             }
 
+            // An ambiguous container cannot be admitted on its extension, because the same
+            // extension carries audiobooks and films. Probe the content once, here, before any
+            // filesystem mutation is planned, so a film is refused with a reason the user can act
+            // on rather than failing late with a generic registration error. One probe per
+            // user-selected item is affordable; the library scanner, which walks every file,
+            // stays extension-only and never reaches this.
+            if (FileUtils.IsAmbiguousAudioContainer(item.FullPath)
+                && !FileUtils.IsAudioFile(item.FullPath))
+            {
+                var probedContent = await _metadataService.ExtractFileMetadataAsync(
+                    item.FullPath);
+                if (probedContent == null)
+                {
+                    return ManualImportResultDto.FailureResult(
+                        "Failed to extract metadata from file",
+                        item.FullPath);
+                }
+
+                if (!FileUtils.IsProbedAudioContent(probedContent))
+                {
+                    _logger.LogInformation(
+                        "Refused manual import of ambiguous container {Path}: audio stream {HasAudio}, video stream {HasVideo}",
+                        LogRedaction.SanitizeFilePath(item.FullPath),
+                        probedContent.HasAudioStream,
+                        probedContent.HasVideoStream);
+                    return ManualImportResultDto.FailureResult(
+                        probedContent.HasVideoStream
+                            ? "The file carries video, so it was not imported as an audiobook."
+                            : "The file carries no audio stream.",
+                        item.FullPath);
+                }
+            }
+
             if (action == FileAction.None)
             {
                 if (string.IsNullOrWhiteSpace(audiobook.BasePath))
@@ -368,21 +401,38 @@ public partial class ManualImportController
                     };
                 }
 
-                if (registrationLease.SupportsMetadataWrite
-                    && !string.IsNullOrWhiteSpace(audiobook.Asin))
+                // Artwork is worth writing for a book that has no ASIN. Anything matched
+                // outside Audible is in that state, and gating the whole call on the ASIN
+                // made the cover art setting silently inert for all of them.
+                var hasImportTags = !string.IsNullOrWhiteSpace(audiobook.Asin)
+                    || !string.IsNullOrWhiteSpace(audiobook.ImageUrl);
+
+                // A hardlinked destination is the source's own inode, which a download client
+                // may still be seeding, so writing tags through it would rewrite the source too.
+                if (publicationPlan.EffectiveAction == FileAction.HardlinkCopy
+                    && hasImportTags)
+                {
+                    _logger.LogDebug(
+                        "Skipped tag enrichment for audiobook {AudiobookId} because {Path} was imported as a hardlink of its source",
+                        audiobook.Id,
+                        LogRedaction.SanitizeFilePath(destinationPath));
+                }
+                else if (registrationLease.SupportsMetadataWrite
+                    && hasImportTags)
                 {
                     try
                     {
-                        await _metadataService.WriteAsinTagAsync(
+                        await _metadataService.WriteImportTagsAsync(
                             registrationLease,
-                            audiobook.Asin);
+                            audiobook.Asin,
+                            audiobook.ImageUrl);
                     }
                     catch (Exception exception) when (exception is not (
                         OutOfMemoryException or StackOverflowException))
                     {
                         _logger.LogWarning(
                             exception,
-                            "Manual import completed, but generation-bound ASIN tag enrichment failed for audiobook {AudiobookId} at {Path}",
+                            "Manual import completed, but generation-bound tag enrichment failed for audiobook {AudiobookId} at {Path}",
                             audiobook.Id,
                             LogRedaction.SanitizeFilePath(destinationPath));
                     }
