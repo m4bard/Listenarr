@@ -73,8 +73,6 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260916112317_AddCustomScriptNotifications";
     private const string QualityProfileUpgradeAllowedMigrationId =
         "20260920025621_AddQualityProfileUpgradeAllowed";
-    private const string RecycleBinMigrationId =
-        "20260922212616_AddRecycleBinToApplicationSettings";
     private const string BackupRetentionDaysMigrationId =
         "20260922212752_AddBackupRetentionDaysToApplicationSettings";
     private const string DownloadClientPriorityMigrationId =
@@ -563,7 +561,6 @@ public class SqliteMigrationSchemaTests : BaseTests
                 HistoryReleaseMetadataMigrationId,
                 CustomScriptNotificationsMigrationId,
                 QualityProfileUpgradeAllowedMigrationId,
-                RecycleBinMigrationId,
                 BackupRetentionDaysMigrationId,
                 DownloadClientPriorityMigrationId,
                 FreeSpaceImportSettingsMigrationId,
