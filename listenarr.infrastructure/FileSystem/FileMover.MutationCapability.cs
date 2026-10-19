@@ -57,13 +57,27 @@ public partial class FileMover
             return true;
         }
 
-        return action == FileAction.Move
-            && await IsManagedRootMutationBlockedAsync(
+        if (action != FileAction.Move)
+        {
+            return false;
+        }
+
+        // A source reported through a link outside every root can physically sit in a root, and
+        // that root's storage decides whether it may be mutated, exactly as when it is reported there.
+        var physicalSource = SymlinkedAncestors.ResolveFileParent(source);
+        return await IsManagedRootMutationBlockedAsync(
                 source,
                 action,
                 source,
                 destination,
-                "source");
+                "source")
+            || (physicalSource != Path.GetFullPath(source)
+                && await IsManagedRootMutationBlockedAsync(
+                    physicalSource,
+                    action,
+                    source,
+                    destination,
+                    "source"));
     }
 
     private async Task<bool> IsManagedRootMutationBlockedAsync(

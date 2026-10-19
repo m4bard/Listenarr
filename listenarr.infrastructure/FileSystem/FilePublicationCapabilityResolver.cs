@@ -60,7 +60,11 @@ internal sealed class FilePublicationCapabilityResolver(
         var sourceCanBeRetiredAfterVerifiedCopy = true;
         if (requestedAction == FileAction.Move)
         {
-            sourceRoot = FindContainingRoot(source, roots);
+            // A source reported through a link outside every root can physically be a file a root
+            // holds. Its retirement is that root's decision, exactly as when it is reported there.
+            var physicalSource = SymlinkedAncestors.ResolveFileParent(source);
+            sourceRoot = FindContainingRoot(source, roots)
+                ?? FindContainingRoot(physicalSource, roots);
             if (sourceRoot != null)
             {
                 var sourceHealth = await storageHealthResolver.ResolveAsync(
@@ -70,7 +74,8 @@ internal sealed class FilePublicationCapabilityResolver(
                 sourceCanBeRetiredAfterVerifiedCopy =
                     sourceHealth.CanRetireVerifiedSource;
             }
-            else if (MayOverlapUnresolvedRoot(source, roots))
+            else if (MayOverlapUnresolvedRoot(source, roots)
+                || MayOverlapUnresolvedRoot(physicalSource, roots))
             {
                 // A configured root whose persisted semantics are unavailable must not be
                 // reclassified as an unmanaged external source. Retain until its boundary
