@@ -356,6 +356,36 @@ public sealed class FilePublicationCapabilityResolverTests : BaseTests
         Assert.Equal(CompatibilityCleanupOwner.None, plan.CleanupOwner);
     }
 
+    [DirectoryLinkFact]
+    public async Task ResolveAsync_MoveSourceLinkedIntoARoot_IsRetiredOnlyAsThatRootAllows()
+    {
+        var destinationRoot = BuildRoot();
+        var holdingRoot = BuildRoot();
+        holdingRoot.Id = 94;
+        holdingRoot.Path = FileService.GetTempDirectory("publication-holding-root");
+        var held = Directory.CreateDirectory(Path.Join(holdingRoot.Path, "Other", "Book")).FullName;
+        var downloads = FileService.GetTempDirectory("publication-linked-source");
+        Directory.CreateSymbolicLink(Path.Join(downloads, "incoming"), held);
+        var repository = new Mock<IRootFolderRepository>(MockBehavior.Strict);
+        repository.Setup(candidate => candidate.GetAllAsync()).ReturnsAsync([destinationRoot, holdingRoot]);
+        var health = new Mock<IRootFolderStorageHealthResolver>(MockBehavior.Strict);
+        health.Setup(candidate => candidate.ResolveAsync(destinationRoot, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(StrongWritableObservation());
+        health.Setup(candidate => candidate.ResolveAsync(holdingRoot, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(WeakWritableObservation());
+        var resolver = new FilePublicationCapabilityResolver(repository.Object, health.Object);
+
+        var plan = await resolver.ResolveAsync(FileAction.Move,
+            Path.Join(downloads, "incoming", "source.m4b"),
+            Path.Join(destinationRoot.Path, "target.m4b"), ContentOnlyProof());
+
+        // Reported outside every root, the source is physically a file the holding root keeps,
+        // and that root cannot retire it, so the Move must not be planned as one that deletes it.
+        Assert.Equal(FilePublicationExecutionMode.AdditiveCopyRetainSource, plan.Mode);
+        Assert.Equal(FilePublicationSourceDisposition.Retained, plan.SourceDisposition);
+        health.VerifyAll();
+    }
+
     [Theory]
     [InlineData(0xff534d42u, false)]
     [InlineData(0xfe534d42u, false)]
