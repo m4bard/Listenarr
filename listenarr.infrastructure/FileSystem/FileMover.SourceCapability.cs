@@ -25,13 +25,8 @@ public partial class FileMover : IFilePublicationSourceCapability
                     "The source path does not identify a file beneath a directory.");
             }
 
-            // Resolved for the purpose of opening the file, and for nothing else. The caller
-            // still receives the path it passed in, so root containment, retirement policy and
-            // every other decision downstream see exactly what they saw before. The managed
-            // boundary walk applies to where the file really is: a link that lands inside a
-            // configured root is opened through that root's authorized walk like any other path.
             using var anchor = await OpenSourceProofParentAsync(
-                ResolveSymlinkedAncestors(parent),
+                await SelectSourceProofParentAsync(parent),
                 cancellationToken);
             var openOutcome = anchor.TryOpenExistingFileWithOutcome(
                 fileName,
@@ -114,6 +109,33 @@ public partial class FileMover : IFilePublicationSourceCapability
                 reason,
                 FilePublicationSourceCapabilityFailureKind.Unavailable);
         }
+    }
+
+    /// <summary>
+    /// The directory the source proof is opened from: the parent as given when it names a place
+    /// inside a configured root, otherwise the parent with its symlinked ancestors resolved.
+    /// </summary>
+    /// <remarks>
+    /// Inside a configured root the managed boundary walk stays exactly as it is, so a link
+    /// planted inside a root still cannot carry a source out of it: the walk opens every segment
+    /// below the root with O_NOFOLLOW and refuses the first link it meets. Outside every root
+    /// there is no boundary to escape, and the walk that would otherwise run is a plain
+    /// O_NOFOLLOW open from the filesystem root, which refuses any linked ancestor at all, such
+    /// as a download directory reached through a symlinked mount. Only that case resolves.
+    ///
+    /// The resolved path is used to open the file and for nothing else. The caller still
+    /// receives the path it passed in, so root containment, retirement policy and every other
+    /// decision downstream see exactly what they saw before. If the resolved path lands inside a
+    /// configured root, it is opened through that root's authorized walk like any other path.
+    /// A parent whose root containment cannot be decided is left unresolved, so the managed walk
+    /// refuses it as it would have anyway.
+    /// </remarks>
+    private async Task<string> SelectSourceProofParentAsync(string parent)
+    {
+        var managed = await ResolveManagedRootPathAsync(parent);
+        return managed.Root != null || managed.HasUnavailableOverlap
+            ? parent
+            : ResolveSymlinkedAncestors(parent);
     }
 
     private async Task<PinnedDirectoryCreation.PinnedDirectoryAnchor> OpenSourceProofParentAsync(
