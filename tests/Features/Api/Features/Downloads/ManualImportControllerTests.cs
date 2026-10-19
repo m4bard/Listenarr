@@ -2381,6 +2381,9 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             // A hardlinked destination is the source's own inode, which a download client may
             // still be seeding, so rewriting its tags would rewrite the source as well. The Copy
             // case is the control: the same import with an independent destination is tagged.
+            // The markerless publication lease never authorizes metadata writes, so both cases
+            // are given a lease that does; the publication itself stays real, which keeps the
+            // hardlink a hardlink.
             var destinationRoot = CreateTempDirectory(
                 $"listenarr-manual-asin-link-dest-{fileAction}");
             var sourceDir = CreateTempDirectory(
@@ -2402,6 +2405,38 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                     Format = "mp3",
                     BitRate = 128000
                 });
+            var actualMover = CreateMarkerlessFileMover();
+            var mover = new Mock<IFileMover>(MockBehavior.Strict);
+            mover.Setup(candidate => candidate.PrepareActionForRegistrationAsync(
+                    fileAction,
+                    source,
+                    It.IsAny<string>(),
+                    It.IsAny<Guid>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<FilePublicationSourceProof>()))
+                .Returns<FileAction, string, string, Guid, string?, FilePublicationSourceProof>(async (
+                    action,
+                    sourcePath,
+                    destination,
+                    operationId,
+                    expectedRegisteredIdentity,
+                    expectedSourceProof) =>
+                {
+                    var inner = await actualMover
+                        .PrepareActionForRegistrationAsync(
+                            action,
+                            sourcePath,
+                            destination,
+                            operationId,
+                            expectedRegisteredIdentity,
+                            expectedSourceProof);
+                    return inner == null
+                        ? null
+                        : new ControllableRegistrationLease(inner)
+                        {
+                            SupportsMetadataWrite = true
+                        };
+                });
             var controller = GetController(
                 book,
                 new ApplicationSettings
@@ -2410,6 +2445,8 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                     FolderNamingPattern = "",
                     FileNamingPattern = "{Title}"
                 },
+                fileMover: mover.Object,
+                filePublicationSourceCapability: actualMover,
                 metadataMock: metadata);
             var request = new ManualImportRequestDto
             {
@@ -3613,6 +3650,7 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             IAudiobookFileRegistrationLease
         {
             public bool IsCurrent { get; set; } = true;
+            public bool SupportsMetadataWrite { get; init; }
             public string PublicPath => inner.PublicPath;
             public string MetadataPath => inner.MetadataPath;
             public string PhysicalObjectIdentity =>
