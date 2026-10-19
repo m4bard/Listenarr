@@ -694,22 +694,6 @@ public sealed class ManualImportCompanionImporterTests : BaseTests
                         capturedBoundary = boundary;
                     })
                 .ReturnsAsync([]);
-            // Since #864 the companion pass picks between two store calls on the publication plan,
-            // and with no capability resolver injected a non-durable source takes the additive one.
-            // Capture from both, so this test pins the boundary argument whichever path runs.
-            directoryOwnershipStore
-                .Setup(store => store.EnsureAdditiveHierarchyAsync(
-                    It.IsAny<string>(),
-                    It.IsAny<string>(),
-                    It.IsAny<FileSystemPathSemantics>(),
-                    It.IsAny<CancellationToken>()))
-                .Callback<string, string, FileSystemPathSemantics, CancellationToken>(
-                    (directory, boundary, _, _) =>
-                    {
-                        capturedDirectory = directory;
-                        capturedBoundary = boundary;
-                    })
-                .Returns(Task.CompletedTask);
             var importer = new ManualImportCompanionImporter(
                 Mock.Of<IMetadataService>(),
                 mover.Object,
@@ -759,14 +743,7 @@ public sealed class ManualImportCompanionImporterTests : BaseTests
                     new RootFolder { Id = 1, Name = "library", Path = libraryRoot }
                 ]);
 
-            // The boundary handed to the ownership store is what this test exists to pin, and it is
-            // captured before publication is attempted. Since #864 the publication step that follows
-            // goes through IFileMover.PrepareActionForRegistrationDetailedAsync and a registration
-            // lease, which this test deliberately does not stand up, so the companion does not
-            // complete here and `imported` stays 0. Asserting the count would be asserting the mock
-            // graph rather than the boundary. ManualImportCompanionOwnershipTests covers the
-            // end-to-end path.
-            Assert.NotNull(capturedBoundary);
+            Assert.Equal(1, imported);
             Assert.Equal(destinationDirectory, capturedDirectory);
             Assert.Equal(libraryRoot, capturedBoundary);
             Assert.NotEqual(destinationDirectory, capturedBoundary);
