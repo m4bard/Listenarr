@@ -104,8 +104,7 @@ public sealed class AudiobookScanServiceMetadataBoundaryTests : BaseTests
             .ScanAsync(new AudiobookScanCommand(
                 audiobook.Id,
                 root,
-                Assert.IsType<PathIdentitySnapshot>(authorization.Identity),
-                Assert.IsType<ScanPathPhysicalIdentity>(authorization.PhysicalIdentity)));
+                Assert.IsType<PathIdentitySnapshot>(authorization.Identity)));
 
         Assert.Empty(result.AttributedFiles);
         Assert.Equal(1, result.DiscoveredCandidateCount);
@@ -260,9 +259,6 @@ public sealed class AudiobookScanServiceMetadataBoundaryTests : BaseTests
         audiobookToAdd.Asin = "B012345678";
         var audiobook = await _audiobookRepository.AddAsync(audiobookToAdd);
         var command = await AuthorizedCommandAsync(audiobook.Id, bookDirectory);
-        // Control: metadata enrichment is not skipped for limited storage here, so a pass
-        // cannot come from the enrichment gate rather than the content check.
-        Assert.True(command.ScanPhysicalIdentity.HasDurableGenerationProof);
 
         var result = await _provider
             .GetRequiredService<IAudiobookScanService>()
@@ -725,8 +721,7 @@ public sealed class AudiobookScanServiceMetadataBoundaryTests : BaseTests
             .ScanAsync(new AudiobookScanCommand(
                 audiobook.Id,
                 bookDirectory,
-                pathIdentity,
-                physicalIdentity));
+                pathIdentity));
 
         Assert.Equal(untaggedFile, Assert.Single(result.AttributedFiles));
         Assert.Equal(1, result.CreatedCount);
@@ -835,8 +830,7 @@ public sealed class AudiobookScanServiceMetadataBoundaryTests : BaseTests
         return new AudiobookScanCommand(
             audiobookId,
             scanRoot,
-            Assert.IsType<PathIdentitySnapshot>(authorization.Identity),
-            Assert.IsType<ScanPathPhysicalIdentity>(authorization.PhysicalIdentity));
+            Assert.IsType<PathIdentitySnapshot>(authorization.Identity));
     }
 
     private static AudioMetadata MatchingMetadata() => new()

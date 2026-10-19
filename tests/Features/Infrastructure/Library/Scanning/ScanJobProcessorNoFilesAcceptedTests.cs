@@ -184,7 +184,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
                 other,
                 sharedPath,
                 authorization.Identity,
-                authorization.PhysicalIdentity,
                 AuthorizationMode: ScanAuthorizationMode.PreauthorizedPath));
             Assert.True(queue.Reader.TryRead(out var job));
             Assert.Equal(jobId, job.Id);
