@@ -583,7 +583,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
                     It.IsAny<List<string>?>(),
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>()))
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchQueryPlan?>()))
                 .ReturnsAsync(() =>
                 {
                     // Simulate duplicate download initiated concurrently during indexer search
@@ -630,7 +631,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
                     It.IsAny<List<string>?>(),
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>()),
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchQueryPlan?>()),
                 Times.Once);
             Assert.False(result.Success);
             Assert.True(string.IsNullOrEmpty(result.DownloadId));
