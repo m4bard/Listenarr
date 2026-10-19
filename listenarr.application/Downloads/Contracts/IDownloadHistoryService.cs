@@ -54,28 +54,42 @@ namespace Listenarr.Application.Downloads.Contracts
         /// <summary>
         /// Record that a download was grabbed from a source.
         /// Called when we first detect a download in the client.
+        /// The audiobook id is the integer library key, so the resulting history row can be
+        /// found by the per-book history query.
+        /// The indexer, quality and size describe the release that was grabbed; the submission
+        /// path holds all three on the search result it is submitting, and a grab row without
+        /// them cannot say where a file came from or what was expected of it.
         /// </summary>
         Task RecordGrabbedAsync(string downloadId, string clientId, string title,
-            DownloadProtocol protocol, Guid? audiobookId = null);
+            DownloadProtocol protocol, int? audiobookId = null,
+            string? indexer = null, string? quality = null, long? size = null);
 
         /// <summary>
         /// Record that a download completed successfully.
+        /// Leave <c>protocol</c> null and the implementation resolves it from the download client
+        /// configuration, which is what a caller holding only a client id should do.
         /// </summary>
         Task RecordDownloadCompleteAsync(string downloadId, string clientId, string title,
-            string? outputPath = null);
+            string? outputPath = null, DownloadProtocol? protocol = null);
 
         /// <summary>
         /// Record that a download failed.
+        /// Leave <c>protocol</c> null and the implementation resolves it from the download client
+        /// configuration.
         /// </summary>
         Task RecordDownloadFailedAsync(string downloadId, string clientId, string title,
-            string? errorMessage = null);
+            string? errorMessage = null, DownloadProtocol? protocol = null);
 
         /// <summary>
         /// Record that a download was imported successfully.
         /// Sets the WasImported flag for idempotency checking.
+        /// The audiobook id is the integer library key, so the resulting history row can be
+        /// found by the per-book history query.
+        /// Leave <c>protocol</c> null and the implementation resolves it from the download client
+        /// configuration.
         /// </summary>
         Task RecordImportedAsync(string downloadId, string clientId, string title,
-            Guid? audiobookId = null);
+            int? audiobookId = null, DownloadProtocol? protocol = null);
 
         /// <summary>
         /// Record that an import failed and why.

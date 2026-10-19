@@ -30,13 +30,84 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
     {
         private readonly ListenArrDbContext _context;
         private readonly ILogger<DownloadHistoryService> _logger;
+        private readonly IDownloadClientAdapterFactory _adapterFactory;
 
         public DownloadHistoryService(
             ListenArrDbContext context,
-            ILogger<DownloadHistoryService> logger)
+            ILogger<DownloadHistoryService> logger,
+            IDownloadClientAdapterFactory adapterFactory)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _adapterFactory = adapterFactory ?? throw new ArgumentNullException(nameof(adapterFactory));
+        }
+
+        /// <summary>
+        /// What a history row can say about the download client behind an event: the client's
+        /// configured name, and the protocol it speaks.
+        /// </summary>
+        /// <param name="Name">
+        /// The configured name, or null when the client no longer exists. Null rather than a
+        /// placeholder, because <see cref="AddUnifiedAsync"/> already has a fallback for a name
+        /// it cannot get and a literal would defeat it.
+        /// </param>
+        /// <param name="Protocol">The protocol, or Unknown when it cannot be resolved.</param>
+        private sealed record DownloadClientFacts(string? Name, DownloadProtocol Protocol);
+
+        /// <summary>
+        /// Read what the download client configuration can tell us about an event. The protocol
+        /// comes from the caller when it has one, and RecordGrabbedAsync always does because the
+        /// submission carries it; otherwise the adapter registered for the client's type is
+        /// asked, which is the same answer the queue and the submission path use. The name is
+        /// only ever the configured one. Both fall back to unknown rather than to a guess.
+        /// </summary>
+        private async Task<DownloadClientFacts> ResolveClientAsync(
+            string clientId,
+            DownloadProtocol? declaredProtocol)
+        {
+            if (string.IsNullOrWhiteSpace(clientId))
+            {
+                return new DownloadClientFacts(null, declaredProtocol ?? DownloadProtocol.Unknown);
+            }
+
+            var configuration = await _context.DownloadClientConfigurations
+                .AsNoTracking()
+                .Where(candidate => candidate.Id == clientId)
+                .Select(candidate => new { candidate.Name, candidate.Type })
+                .FirstOrDefaultAsync();
+
+            if (configuration == null)
+            {
+                _logger.LogDebug(
+                    "No download client {ClientId} to name a history row after", clientId);
+                return new DownloadClientFacts(null, declaredProtocol ?? DownloadProtocol.Unknown);
+            }
+
+            var name = string.IsNullOrWhiteSpace(configuration.Name) ? null : configuration.Name;
+
+            if (declaredProtocol.HasValue)
+            {
+                return new DownloadClientFacts(name, declaredProtocol.Value);
+            }
+
+            if (string.IsNullOrWhiteSpace(configuration.Type))
+            {
+                _logger.LogDebug(
+                    "Download client {ClientId} has no type to resolve a history protocol from", clientId);
+                return new DownloadClientFacts(name, DownloadProtocol.Unknown);
+            }
+
+            try
+            {
+                return new DownloadClientFacts(name, _adapterFactory.GetByType(configuration.Type).Protocol);
+            }
+            catch (InvalidOperationException)
+            {
+                _logger.LogDebug(
+                    "No adapter registered for download client type {ClientType}, recording the history protocol as unknown",
+                    configuration.Type);
+                return new DownloadClientFacts(name, DownloadProtocol.Unknown);
+            }
         }
 
         /// <summary>
@@ -88,23 +159,32 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
         }
 
         public async Task RecordGrabbedAsync(string downloadId, string clientId, string title,
-            DownloadProtocol protocol, Guid? audiobookId = null)
+            DownloadProtocol protocol, int? audiobookId = null,
+            string? indexer = null, string? quality = null, long? size = null)
         {
+            var client = await ResolveClientAsync(clientId, protocol);
             var history = new DownloadHistory
             {
                 DownloadId = downloadId.ToUpperInvariant(),
                 EventType = DownloadHistoryEventType.Grabbed,
                 Status = DownloadItemStatus.Queued,
                 EventDate = DateTime.UtcNow,
-                AudiobookId = audiobookId,
-                DownloadClient = "Unknown",
+                DownloadClient = client.Name ?? string.Empty,
                 DownloadClientId = clientId,
-                Protocol = protocol,
+                Protocol = client.Protocol,
                 Title = title,
                 WasImported = false
             };
 
-            await AddUnifiedAsync(history);
+            // A size of zero is what an indexer that reported nothing looks like, and storing it
+            // would render as an empty release rather than as an unknown one.
+            await AddUnifiedAsync(
+                history,
+                audiobookId,
+                new GrabbedRelease(
+                    string.IsNullOrWhiteSpace(indexer) ? null : indexer.Trim(),
+                    string.IsNullOrWhiteSpace(quality) ? null : quality.Trim(),
+                    size is > 0 ? size : null));
 
             _logger.LogInformation(
                 "Recorded Grabbed event for {DownloadId} ({Title}) from client {ClientId}",
@@ -112,17 +192,18 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
         }
 
         public async Task RecordDownloadCompleteAsync(string downloadId, string clientId, string title,
-            string? outputPath = null)
+            string? outputPath = null, DownloadProtocol? protocol = null)
         {
+            var client = await ResolveClientAsync(clientId, protocol);
             var history = new DownloadHistory
             {
                 DownloadId = downloadId.ToUpperInvariant(),
                 EventType = DownloadHistoryEventType.DownloadCompleted,
                 Status = DownloadItemStatus.Completed,
                 EventDate = DateTime.UtcNow,
-                DownloadClient = "Unknown",
+                DownloadClient = client.Name ?? string.Empty,
                 DownloadClientId = clientId,
-                Protocol = DownloadProtocol.Torrent,
+                Protocol = client.Protocol,
                 Title = title,
                 OutputPath = outputPath,
                 WasImported = false
@@ -136,17 +217,18 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
         }
 
         public async Task RecordDownloadFailedAsync(string downloadId, string clientId, string title,
-            string? errorMessage = null)
+            string? errorMessage = null, DownloadProtocol? protocol = null)
         {
+            var client = await ResolveClientAsync(clientId, protocol);
             var history = new DownloadHistory
             {
                 DownloadId = downloadId.ToUpperInvariant(),
                 EventType = DownloadHistoryEventType.DownloadFailed,
                 Status = DownloadItemStatus.Failed,
                 EventDate = DateTime.UtcNow,
-                DownloadClient = "Unknown",
+                DownloadClient = client.Name ?? string.Empty,
                 DownloadClientId = clientId,
-                Protocol = DownloadProtocol.Torrent,
+                Protocol = client.Protocol,
                 Title = title,
                 ErrorMessage = errorMessage,
                 WasImported = false
@@ -160,42 +242,43 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
         }
 
         public async Task RecordImportedAsync(string downloadId, string clientId, string title,
-            Guid? audiobookId = null)
+            int? audiobookId = null, DownloadProtocol? protocol = null)
         {
+            var client = await ResolveClientAsync(clientId, protocol);
             var history = new DownloadHistory
             {
                 DownloadId = downloadId.ToUpperInvariant(),
                 EventType = DownloadHistoryEventType.Imported,
                 Status = DownloadItemStatus.Imported,
                 EventDate = DateTime.UtcNow,
-                AudiobookId = audiobookId,
-                DownloadClient = "Unknown",
+                DownloadClient = client.Name ?? string.Empty,
                 DownloadClientId = clientId,
-                Protocol = DownloadProtocol.Torrent,
+                Protocol = client.Protocol,
                 Title = title,
                 WasImported = true,
                 ImportedAt = DateTime.UtcNow
             };
 
-            await AddUnifiedAsync(history);
+            await AddUnifiedAsync(history, audiobookId);
 
             _logger.LogInformation(
                 "Recorded Imported event for {DownloadId} ({Title}) audiobook {AudiobookId}",
-                downloadId, title, audiobookId ?? Guid.Empty);
+                downloadId, title, audiobookId);
         }
 
         public async Task RecordImportFailedAsync(string downloadId, string clientId, string title,
             string? errorMessage = null)
         {
+            var client = await ResolveClientAsync(clientId, null);
             var history = new DownloadHistory
             {
                 DownloadId = downloadId.ToUpperInvariant(),
                 EventType = DownloadHistoryEventType.ImportFailed,
                 Status = DownloadItemStatus.ImportFailed,
                 EventDate = DateTime.UtcNow,
-                DownloadClient = "Unknown",
+                DownloadClient = client.Name ?? string.Empty,
                 DownloadClientId = clientId,
-                Protocol = DownloadProtocol.Torrent,
+                Protocol = client.Protocol,
                 Title = title,
                 ErrorMessage = errorMessage,
                 WasImported = false
@@ -210,15 +293,16 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
 
         public async Task RecordPausedAsync(string downloadId, string clientId, string title)
         {
+            var client = await ResolveClientAsync(clientId, null);
             var history = new DownloadHistory
             {
                 DownloadId = downloadId.ToUpperInvariant(),
                 EventType = DownloadHistoryEventType.Paused,
                 Status = DownloadItemStatus.Paused,
                 EventDate = DateTime.UtcNow,
-                DownloadClient = "Unknown",
+                DownloadClient = client.Name ?? string.Empty,
                 DownloadClientId = clientId,
-                Protocol = DownloadProtocol.Torrent,
+                Protocol = client.Protocol,
                 Title = title,
                 WasImported = false
             };
@@ -230,15 +314,16 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
 
         public async Task RecordResumedAsync(string downloadId, string clientId, string title)
         {
+            var client = await ResolveClientAsync(clientId, null);
             var history = new DownloadHistory
             {
                 DownloadId = downloadId.ToUpperInvariant(),
                 EventType = DownloadHistoryEventType.Resumed,
                 Status = DownloadItemStatus.Downloading,
                 EventDate = DateTime.UtcNow,
-                DownloadClient = "Unknown",
+                DownloadClient = client.Name ?? string.Empty,
                 DownloadClientId = clientId,
-                Protocol = DownloadProtocol.Torrent,
+                Protocol = client.Protocol,
                 Title = title,
                 WasImported = false
             };
@@ -250,15 +335,16 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
 
         public async Task RecordRemovedAsync(string downloadId, string clientId, string title)
         {
+            var client = await ResolveClientAsync(clientId, null);
             var history = new DownloadHistory
             {
                 DownloadId = downloadId.ToUpperInvariant(),
                 EventType = DownloadHistoryEventType.Removed,
                 Status = DownloadItemStatus.Removed,
                 EventDate = DateTime.UtcNow,
-                DownloadClient = "Unknown",
+                DownloadClient = client.Name ?? string.Empty,
                 DownloadClientId = clientId,
-                Protocol = DownloadProtocol.Torrent,
+                Protocol = client.Protocol,
                 Title = title,
                 WasImported = false
             };
@@ -326,13 +412,30 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
             return oldEntries.Count;
         }
 
-        private async Task AddUnifiedAsync(DownloadHistory history)
+        /// <summary>
+        /// What the search result behind a grab knew about the release. Carried separately from
+        /// <see cref="DownloadHistory"/> because that type maps to the frozen DownloadHistories
+        /// table, which takes no new writes and so has nowhere to put these.
+        /// </summary>
+        private sealed record GrabbedRelease(string? Indexer, string? Quality, long? Size);
+
+        /// <summary>
+        /// Writes the canonical history row for a download event. The audiobook key is passed
+        /// separately because <see cref="History.AudiobookId"/> is the integer library key that
+        /// per-book history queries filter on, while <see cref="DownloadHistory.AudiobookId"/> is
+        /// the legacy compatibility identifier and cannot carry it.
+        /// </summary>
+        private async Task AddUnifiedAsync(
+            DownloadHistory history,
+            int? audiobookId = null,
+            GrabbedRelease? release = null)
         {
             var normalizedId = history.DownloadId.ToUpperInvariant();
             _context.History.Add(new History
             {
                 DownloadId = normalizedId,
                 DownloadClientId = history.DownloadClientId,
+                AudiobookId = audiobookId,
                 AudiobookExternalId = history.AudiobookId?.ToString(),
                 SourceTitle = history.Title,
                 AudiobookTitle = history.Title,
@@ -345,7 +448,16 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
                 Message = history.ErrorMessage,
                 Error = history.ErrorMessage,
                 Data = history.Data == null ? null : System.Text.Json.JsonSerializer.Serialize(history.Data),
-                CorrelationId = normalizedId
+                CorrelationId = normalizedId,
+                // Without this the protocol each Record method works out is discarded on the way
+                // to the table, and every row read back through ToLegacy reports the first member
+                // of the enum, which is Torrent.
+                Protocol = history.Protocol,
+                // Only a grab has a release behind it, so these stay null for every other event
+                // rather than being filled in with something the event did not know.
+                Indexer = release?.Indexer,
+                Quality = release?.Quality,
+                Size = release?.Size
             });
             await _context.SaveChangesAsync();
         }
@@ -356,6 +468,7 @@ namespace Listenarr.Infrastructure.ActivityHistory.Services
             DownloadId = history.DownloadId ?? string.Empty,
             DownloadClientId = history.DownloadClientId ?? string.Empty,
             DownloadClient = history.Source ?? "Unknown",
+            Protocol = history.Protocol ?? DownloadProtocol.Unknown,
             EventType = HistoryEvents.ToDownloadEvent(history.EventType),
             Status = history.EventType == HistoryEvents.Imported
                 ? DownloadItemStatus.Imported
