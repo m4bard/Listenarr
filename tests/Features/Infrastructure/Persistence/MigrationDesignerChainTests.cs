@@ -7,7 +7,6 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
-using Listenarr.Domain.Configuration;
 using Listenarr.Tests.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -179,7 +178,7 @@ public class MigrationDesignerChainTests : BaseTests
         context.ApplicationSettings.Add(new ApplicationSettings
         {
             EmbedCoverArtInAudioFiles = true,
-            RecycleBinPath = "sentinel-recycle-bin",
+            StalledDownloadTimeoutHours = 37,
             BackupRetentionDays = 91,
         });
         await context.SaveChangesAsync();
@@ -215,7 +214,7 @@ public class MigrationDesignerChainTests : BaseTests
                 $"Down of {step.Id} added columns [{string.Join(", ", gainedColumns)}]");
 
             await AssertSentinelIfPresentAsync(connection, after, "EmbedCoverArtInAudioFiles", 1L, step.Id);
-            await AssertSentinelIfPresentAsync(connection, after, "RecycleBinPath", "sentinel-recycle-bin", step.Id);
+            await AssertSentinelIfPresentAsync(connection, after, "StalledDownloadTimeoutHours", 37L, step.Id);
             await AssertSentinelIfPresentAsync(connection, after, "BackupRetentionDays", 91L, step.Id);
             schema = after;
         }
