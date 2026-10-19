@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Tests.Common;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -23,7 +22,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Configuration.Paths;
 
 [Trait("Name", "RemotePathMappingCacheTests")]
 [Trait("Category", "Unit")]
-public sealed class RemotePathMappingCacheTests : BaseTests
+public sealed class RemotePathMappingCacheTests : IDisposable
 {
     // The download queue poller polls several clients at once from one scope, so every client's
     // mapping lookup lands on the same scoped DbContext. Counting the queries is the way to say
@@ -134,9 +133,6 @@ public sealed class RemotePathMappingCacheTests : BaseTests
         }
     }
 
-    // Built by hand rather than resolved from the provider: the point of these tests is to count
-    // the repository calls the cache does or does not make, which needs a repository that records
-    // them and a cache instance this test owns.
     private readonly CountingRepository _repository = new();
     private readonly MemoryCache _cache = new(new MemoryCacheOptions());
     private readonly RemotePathMappingService _service;
@@ -149,11 +145,7 @@ public sealed class RemotePathMappingCacheTests : BaseTests
             _cache);
     }
 
-    public override async Task DisposeAsync()
-    {
-        _cache.Dispose();
-        await base.DisposeAsync();
-    }
+    public void Dispose() => _cache.Dispose();
 
     private static DownloadClientConfiguration Client(string id) => new()
     {
