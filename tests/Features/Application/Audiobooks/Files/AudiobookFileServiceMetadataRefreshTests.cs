@@ -159,7 +159,7 @@ public sealed class AudiobookFileServiceMetadataRefreshTests : BaseTests
             var reloaded = await context.AudiobookFiles.SingleAsync();
             if (physicalIdentity != null)
             {
-                Assert.Equal(DateTimeKind.Unspecified, reloaded.PhysicalIdentityObservedAtUtc!.Value.Kind);
+                Assert.Equal(DateTimeKind.Utc, reloaded.PhysicalIdentityObservedAtUtc!.Value.Kind);
             }
             var repository = new EfAudiobookFileRepository(context);
             var service = ActivatorUtilities.CreateInstance<AudiobookFileService>(_provider, repository);
