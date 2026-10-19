@@ -291,7 +291,7 @@ namespace Listenarr.Application.Downloads.Common
                 List<string> sourceFiles = [];
                 foreach (string file in item.SourceFiles)
                 {
-                    var sourceFile = remotePathMappingService.TranslatePath(mappings, client, file);
+                    var sourceFile = await remotePathMappingService.TranslatePathAsync(client, file);
                     EnsureNativePath(sourceFile, client.Name);
                     sourceFiles.Add(sourceFile);
                 }
