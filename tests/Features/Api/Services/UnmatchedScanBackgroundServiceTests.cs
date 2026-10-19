@@ -23,7 +23,7 @@ namespace Listenarr.Tests.Features.Api.Services
         [Fact]
         public void BuildGroupedFilesForFolder_MergesForewordIntoSingleBookGroup()
         {
-            var folder = @"D:\test\Jack of Shadows - Roger Zelazny (narrated by Eric Jason Martin)";
+            var folder = @"D:\test\Jack of Shadows - Edgar Rice Burroughs (narrated by Eric Jason Martin)";
             var files = new[]
             {
                 Path.Join(folder, "(Foreword by Joe Haldeman).mp3"),
@@ -46,7 +46,7 @@ namespace Listenarr.Tests.Features.Api.Services
         [Fact]
         public void BuildGroupedFilesForFolder_KeepsDistinctTitlesSeparated()
         {
-            var folder = @"D:\test\Roger Zelazny";
+            var folder = @"D:\test\Edgar Rice Burroughs";
             var files = new[]
             {
                 Path.Join(folder, "Jack of Shadows.mp3"),
@@ -79,8 +79,8 @@ namespace Listenarr.Tests.Features.Api.Services
 
             var embeddedTags = new Dictionary<string, PathParsedMetadata>(StringComparer.OrdinalIgnoreCase)
             {
-                [foreword] = new() { Title = "Jack of Shadows", Author = "Roger Zelazny" },
-                [chapter1] = new() { Title = "Jack of Shadows", Author = "Roger Zelazny" },
+                [foreword] = new() { Title = "Jack of Shadows", Author = "Edgar Rice Burroughs" },
+                [chapter1] = new() { Title = "Jack of Shadows", Author = "Edgar Rice Burroughs" },
                 [alchemised] = new() { Title = "Alchemised (Spanish Edition)", Author = "SenLinYu" }
             };
 
@@ -105,7 +105,7 @@ namespace Listenarr.Tests.Features.Api.Services
 
             var embeddedTags = new Dictionary<string, PathParsedMetadata>(StringComparer.OrdinalIgnoreCase)
             {
-                [fileA] = new() { Title = "Shared Title", Author = "Roger Zelazny" },
+                [fileA] = new() { Title = "Shared Title", Author = "Edgar Rice Burroughs" },
                 [fileB] = new() { Title = "Shared Title", Author = "SenLinYu" }
             };
 
@@ -171,9 +171,9 @@ namespace Listenarr.Tests.Features.Api.Services
         {
             // "of" between two words is not an index, and a trailing number is not a total.
             // Two separate works in one author folder must stay separate.
-            var folder = @"D:\test\Roger Zelazny";
+            var folder = @"D:\test\Edgar Rice Burroughs";
             var jack = Path.Join(folder, "Jack of Shadows.mp3");
-            var nine = Path.Join(folder, "Nine Princes in Amber 2.mp3");
+            var nine = Path.Join(folder, "The Gods of Mars 2.mp3");
 
             var groups = UnmatchedScanBackgroundService.BuildGroupedFilesForFolder(
                 new[] { jack, nine },
@@ -192,9 +192,9 @@ namespace Listenarr.Tests.Features.Api.Services
             // the folder must stay at one item per book. Stripping the index here would also
             // cost them the embedded-tag rescue, which only runs when filename grouping
             // produced more than one group.
-            var folder = @"D:\test\Wheel of Time";
+            var folder = @"D:\test\Barsoom";
             var files = Enumerable.Range(1, 3)
-                .Select(n => Path.Join(folder, $"Wheel of Time Book {n} of 14.m4b"))
+                .Select(n => Path.Join(folder, $"Barsoom Book {n} of 6.m4b"))
                 .ToArray();
 
             var groups = UnmatchedScanBackgroundService.BuildGroupedFilesForFolder(
