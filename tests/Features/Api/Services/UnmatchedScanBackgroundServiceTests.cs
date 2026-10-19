@@ -126,9 +126,9 @@ namespace Listenarr.Tests.Features.Api.Services
             // A chapter-per-file rip that numbers its parts "N of M". The index carries its
             // own total, so it describes a set rather than distinct works, and every file
             // belongs to the one book the folder names.
-            var folder = @"D:\test\Jack of Shadows";
+            var folder = @"D:\test\Harbor of Small Lights";
             var files = Enumerable.Range(1, 4)
-                .Select(n => Path.Join(folder, $"Jack of Shadows {n:000} of 004.mp3"))
+                .Select(n => Path.Join(folder, $"Harbor of Small Lights {n:000} of 004.mp3"))
                 .ToArray();
 
             var groups = UnmatchedScanBackgroundService.BuildGroupedFilesForFolder(
@@ -152,7 +152,7 @@ namespace Listenarr.Tests.Features.Api.Services
             // M, stripping the leading number first leaves the identical remainder "of 003"
             // in all of them, so they group by accident whether or not this fix is present
             // and the test proves nothing.
-            var folder = @"D:\test\Jack of Shadows";
+            var folder = @"D:\test\Harbor of Small Lights";
             var files = Enumerable.Range(1, 3)
                 .Select(n => Path.Join(folder, $"{n:000} of {497 + n:000}.mp3"))
                 .ToArray();
@@ -172,8 +172,8 @@ namespace Listenarr.Tests.Features.Api.Services
             // "of" between two words is not an index, and a trailing number is not a total.
             // Two separate works in one author folder must stay separate.
             var folder = @"D:\test\Roger Zelazny";
-            var jack = Path.Join(folder, "Jack of Shadows.mp3");
-            var nine = Path.Join(folder, "Nine Princes in Amber 2.mp3");
+            var jack = Path.Join(folder, "Harbor of Small Lights.mp3");
+            var nine = Path.Join(folder, "The Ninth Lantern 2.mp3");
 
             var groups = UnmatchedScanBackgroundService.BuildGroupedFilesForFolder(
                 new[] { jack, nine },
@@ -192,9 +192,9 @@ namespace Listenarr.Tests.Features.Api.Services
             // the folder must stay at one item per book. Stripping the index here would also
             // cost them the embedded-tag rescue, which only runs when filename grouping
             // produced more than one group.
-            var folder = @"D:\test\Wheel of Time";
+            var folder = @"D:\test\A Map of Quiet Rivers";
             var files = Enumerable.Range(1, 3)
-                .Select(n => Path.Join(folder, $"Wheel of Time Book {n} of 14.m4b"))
+                .Select(n => Path.Join(folder, $"A Map of Quiet Rivers Book {n} of 14.m4b"))
                 .ToArray();
 
             var groups = UnmatchedScanBackgroundService.BuildGroupedFilesForFolder(
@@ -210,10 +210,10 @@ namespace Listenarr.Tests.Features.Api.Services
         public void BuildGroupedFilesForFolder_KeepsSeriesFilesSpelledVolumeNumberOfTotalSeparate()
         {
             // The other spelling of the same convention, and the abbreviation beside it.
-            var folder = @"D:\test\Decline and Fall";
-            var volumeOne = Path.Join(folder, "Decline and Fall Volume 1 of 6.m4b");
-            var volumeTwo = Path.Join(folder, "Decline and Fall Volume 2 of 6.m4b");
-            var volumeThree = Path.Join(folder, "Decline and Fall Vol 3 of 6.m4b");
+            var folder = @"D:\test\The Salt Road";
+            var volumeOne = Path.Join(folder, "The Salt Road Volume 1 of 6.m4b");
+            var volumeTwo = Path.Join(folder, "The Salt Road Volume 2 of 6.m4b");
+            var volumeThree = Path.Join(folder, "The Salt Road Vol 3 of 6.m4b");
 
             var groups = UnmatchedScanBackgroundService.BuildGroupedFilesForFolder(
                 new[] { volumeOne, volumeTwo, volumeThree },
@@ -233,7 +233,7 @@ namespace Listenarr.Tests.Features.Api.Services
             // that carries no series word, whether the filename is bare or titled. Both shapes
             // are seeded here so a narrowing that over-reaches fails this rather than only the
             // older cases.
-            var bareFolder = @"D:\test\Jack of Shadows";
+            var bareFolder = @"D:\test\Harbor of Small Lights";
             var bare = Enumerable.Range(1, 3)
                 .Select(n => Path.Join(bareFolder, $"{n:000} of {497 + n:000}.mp3"))
                 .ToArray();
@@ -245,9 +245,9 @@ namespace Listenarr.Tests.Features.Api.Services
 
             Assert.Equal(3, Assert.Single(bareGroups).Count);
 
-            var titledFolder = @"D:\test\Lord of Light";
+            var titledFolder = @"D:\test\Garden of Pale Glass";
             var titled = Enumerable.Range(1, 4)
-                .Select(n => Path.Join(titledFolder, $"Lord of Light {n:000} of 004.mp3"))
+                .Select(n => Path.Join(titledFolder, $"Garden of Pale Glass {n:000} of 004.mp3"))
                 .ToArray();
 
             var titledGroups = UnmatchedScanBackgroundService.BuildGroupedFilesForFolder(
