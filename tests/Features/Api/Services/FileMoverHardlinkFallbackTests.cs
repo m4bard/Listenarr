@@ -115,8 +115,8 @@ public sealed class FileMoverHardlinkFallbackTests : BaseTests
     /// The other direction, and the one that must NOT become a copy. When the link is created and
     /// the destination name is then replaced, CreateHardLinkTo raises InvalidOperationException
     /// and deliberately leaves the entry alone, because it cannot prove the entry is its own. A
-    /// copy there would be reported as a success it did not achieve, so the publication fails and
-    /// the replacement survives untouched.
+    /// copy there would be reported as a success it did not achieve, so the publication fails,
+    /// the journal is left for repair, and the replacement survives untouched.
     /// </summary>
     [LinuxFact]
     [SupportedOSPlatform("linux")]
@@ -133,22 +133,28 @@ public sealed class FileMoverHardlinkFallbackTests : BaseTests
             File.WriteAllText(destination, "a replacement that is not our link");
         });
 
-        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            mover.PerformActionOn(
-                FileAction.HardlinkCopy,
-                source,
-                destination,
-                operationId));
+        Assert.False(await mover.PerformActionOn(
+            FileAction.HardlinkCopy,
+            source,
+            destination,
+            operationId));
 
-        // The reported cause has to be the race itself. Letting this shape reach the copy
-        // fallback produces the same visible outcome, because creating the final name
-        // exclusively then fails on the replacement, so asserting only "it threw and the
-        // replacement survived" would pass either way. The inner exception is what separates
-        // them, and with it the wasted source rehash and the untrue fallback log line.
-        var inner = Assert.IsType<InvalidOperationException>(failure.InnerException);
-        Assert.Equal(
-            "The created hardlink does not identify the pinned source generation.",
-            inner.Message);
+        // The recorded cause has to be the unverifiable link itself. Letting this shape reach
+        // the copy fallback produces the same visible outcome, because creating the final name
+        // exclusively then fails on the replacement, so asserting only "it failed and the
+        // replacement survived" would pass either way. The journal's state and error are what
+        // separate them, and with them the wasted source rehash and the untrue fallback log line.
+        var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
+        await using (var db = await factory.CreateDbContextAsync())
+        {
+            var journal = await db.FileMutationJournals
+                .AsNoTracking()
+                .SingleAsync(candidate => candidate.OperationId == operationId);
+            Assert.Equal(FileMutationJournalState.NeedsAttention, journal.State);
+            Assert.Equal(
+                "Hardlink publication could not verify the created destination; source and destination were preserved for repair.",
+                journal.Error);
+        }
         Assert.Equal(
             "a replacement that is not our link",
             await File.ReadAllTextAsync(destination));
@@ -156,32 +162,37 @@ public sealed class FileMoverHardlinkFallbackTests : BaseTests
     }
 
     /// <summary>
-    /// The widened fallback is scoped to HardlinkCopy. A Unix move reaching the same
-    /// publication step must still fail closed rather than quietly copying and then retiring
-    /// the source, so the move contract is unchanged.
+    /// The widened fallback is scoped to HardlinkCopy. A move publishes verified bytes and
+    /// retires the source only after that, so it never reaches the link step: a link failure
+    /// injected there is never consulted, and preparing the move leaves the source in place.
     /// </summary>
     [LinuxFact]
     [SupportedOSPlatform("linux")]
-    public async Task PrepareActionForRegistration_Move_HardlinkFailureStillFailsClosed()
+    public async Task PrepareActionForRegistration_Move_NeverReachesTheHardlinkStep()
     {
         var root = FileService.GetTempDirectory(
             $"hardlink-fallback-move-closed-{Guid.NewGuid():N}");
         var source = await FileService.GetFileAsync(root, "source.mp3", "audio content");
         var destination = Path.Join(root, "destination.mp3");
-        var mover = CreateMover(() => Task.FromException(
-            new InvalidOperationException(
-                "A pinned hardlink endpoint changed before link creation.")));
+        var linkStepReached = false;
+        var mover = CreateMover(() =>
+        {
+            linkStepReached = true;
+            return Task.FromException(
+                new InvalidOperationException(
+                    "A pinned hardlink endpoint changed before link creation."));
+        });
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            mover.PrepareActionForRegistrationAsync(
-                FileAction.Move,
-                source,
-                destination,
-                Guid.NewGuid()));
+        using var lease = await mover.PrepareActionForRegistrationAsync(
+            FileAction.Move,
+            source,
+            destination,
+            Guid.NewGuid());
 
+        Assert.NotNull(lease);
+        Assert.False(linkStepReached);
         Assert.True(File.Exists(source));
         Assert.Equal("audio content", await File.ReadAllTextAsync(source));
-        Assert.False(File.Exists(destination));
     }
 
     /// <summary>
