@@ -1125,12 +1125,14 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Files
         [Fact]
         public async Task RefreshPhysicalGenerationAsync_SqlitePersistedFile_SnapshotsPredecessorWithoutUtcKindViolation()
         {
-            // Regression: ClonePhysicalGeneration re-applies the persisted
-            // PhysicalIdentityObservedAtUtc of the database-loaded current file.
-            // SQLite materializes DateTime as Unspecified, so without the
-            // materialization conversion this refresh threw
-            // "Physical identity observation time must be UTC". EF InMemory
-            // preserves DateTimeKind and cannot reproduce this, hence the
+            // Regression: the predecessor snapshot used to re-apply the persisted
+            // PhysicalIdentityObservedAtUtc of the database-loaded current file through
+            // the UTC-guarded domain method. SQLite materializes DateTime as
+            // Unspecified, so that refresh threw "Physical identity observation time
+            // must be UTC". The snapshot now captures the persisted values verbatim
+            // (CapturePhysicalGeneration), so this pins the end-to-end refresh of a
+            // SQLite-loaded file rather than one particular fix. EF InMemory preserves
+            // DateTimeKind and cannot reproduce the original failure, hence the
             // SQLite-backed provider and the separate registration/refresh
             // resolutions (a shared tracked entity would also hide the defect).
             await using var connection =
