@@ -16,7 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Text.Json;
-using Listenarr.Application.Library.RecycleBin;
 using Listenarr.Tests.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -110,18 +109,10 @@ namespace Listenarr.Tests.Features.Api.Features.Configuration
             IConfigurationService configurationService,
             IHubBroadcaster broadcaster)
         {
-            var recycleBinService = new Mock<IRecycleBinService>();
-            recycleBinService
-                .Setup(service => service.ValidatePathAsync(
-                    It.IsAny<string?>(),
-                    It.IsAny<CancellationToken>()))
-                .ReturnsAsync(RecycleBinPathValidation.Valid);
-
             return new SettingsController(
                 configurationService,
                 NullLogger<SettingsController>.Instance,
                 broadcaster,
-                recycleBinService.Object,
                 Mock.Of<IFileNamingService>());
         }
     }
