@@ -77,10 +77,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Configuration.Paths
             var inFlight = _service.GetPathMappingByClientAsync(_a);
             await _repo.ReadDone.Task;
 
-            await _service.CreateAsync(Mapping(_a));
+            // Not awaited before release: a fix that serialises writers behind the fill would
+            // otherwise deadlock here. The 1 s window gives an unserialised writer time to finish.
+            var create = _service.CreateAsync(Mapping(_a));
+            await Task.WhenAny(create, Task.Delay(TimeSpan.FromSeconds(1)));
             _repo.GateClientId = null;
             _repo.Release.TrySetResult();
             Assert.Empty(await inFlight);
+            await create;
 
             Assert.Single(await _service.GetPathMappingByClientAsync(_a));
         }
