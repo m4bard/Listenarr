@@ -2,6 +2,7 @@ using System.Collections.Specialized;
 using System.Net;
 using System.Web;
 using Listenarr.Tests.Common;
+using Polly.CircuitBreaker;
 
 namespace Listenarr.Tests.Mocks.Api
 {
@@ -37,6 +38,14 @@ namespace Listenarr.Tests.Mocks.Api
         /// at all, so the success body is a variable and not a constant.
         /// </summary>
         public string? AddSuccessResponseBody { get; set; }
+
+        /// <summary>
+        /// Let this many per-torrent files requests through, then reject the rest the way the
+        /// HTTP client's circuit breaker does once it has opened partway through a poll.
+        /// </summary>
+        public int? FilesRequestsBeforeBreakerOpens { get; set; }
+
+        private int _filesRequestCount;
 
         public QbittorrentApiMock()
         {
@@ -126,6 +135,11 @@ namespace Listenarr.Tests.Mocks.Api
             if (FilesRequestFailsAtTransport)
             {
                 throw new HttpRequestException("Connection refused");
+            }
+
+            if (FilesRequestsBeforeBreakerOpens is { } allowed && Interlocked.Increment(ref _filesRequestCount) > allowed)
+            {
+                throw new BrokenCircuitException("The circuit is now open and is not allowing calls.");
             }
 
             return MockUtils.GetCannedResponse("[]");
