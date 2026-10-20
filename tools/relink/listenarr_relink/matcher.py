@@ -9,7 +9,9 @@ Rules (each one exists because guessing here can later let a delete hit the wron
   unchanged file name; part numbers and track tags are never trusted (a renamer may have rewritten both in
   any order). A same-size file that cannot be read makes the row ambiguous (it might be this row's file).
   Anything else is ambiguous and left out. Such links are "shape-and-name": no content hash was ever
-  stored, so they are listed for review, and ``--identity-only`` withholds them.
+  stored, and adversarial review forced wrong ones repeatedly, so PLAN proposes them only with
+  ``--include-shape-matches``. By default a book is proposed only when every one of its links is by
+  physical identity.
 * A link also needs path evidence (same folder as the old path, or a folder/file name or album/title tag
   that names exactly this title, see ``paths.names_title``). Title evidence alone never selects a file; it
   only confirms one. A title with no distinctive token (``1``, ``It``) is never evidence or a veto key.
@@ -28,15 +30,14 @@ from __future__ import annotations
 
 import logging
 import os
-import stat
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from listenarr_relink import identity, media
-from listenarr_relink.inventory import BookRow, DiskFile, FileRow, Library, lstat_or_none
-from listenarr_relink.paths import PathMap, is_distinctive, is_within, name_parts, names_title, resolve_host, tokens
+from listenarr_relink.inventory import BookRow, DiskFile, FileRow, Library
+from listenarr_relink.paths import PathMap, is_distinctive, is_within, name_parts, names_title, resolve_service, tokens
 
 log = logging.getLogger("relink.match")
 
@@ -147,6 +148,13 @@ def _consistency(row: FileRow, probe: media.Probe, other_titles: dict[frozenset[
     return None
 
 
+def _resolves(db_path: str, path_map: PathMap) -> bool:
+    try:
+        return resolve_service(db_path, path_map) is not None
+    except OSError:
+        return False
+
+
 def _root_of(path: str, roots: list[str]) -> str | None:
     matching = [root for root in roots if is_within(path, root)]
     return max(matching, key=len) if matching else None
@@ -176,24 +184,20 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             continue
         host = path_map.to_host(row.path)
         try:
-            info = lstat_or_none(host)
+            resolved = resolve_service(row.path, path_map)
+            info = os.stat(resolved) if resolved is not None else None
         except OSError as error:
             flags.append(Flag("unreadable", row.id, row.audiobook_id, f"{row.path}: {error.strerror}"))
+            library.walk_errors.append(f"{row.path}: cannot resolve the row's path: {error.strerror}")
             continue
-        if info is None:
+        if info is None or resolved is None:
             stale.append(row)
             continue
-        if stat.S_ISLNK(info.st_mode):
-            flags.append(Flag("live-symlink", row.id, row.audiobook_id, row.path))
+        if resolved != host:
+            # Reached through a symlink (the file itself or a folder above it): the object is held all the same.
+            flags.append(Flag("live-symlink", row.id, row.audiobook_id, f"{row.path} -> {resolved}"))
             symlink_books.add(row.audiobook_id)
-            try:
-                target_path = resolve_host(host, path_map)
-                target = os.stat(target_path) if target_path else None
-            except OSError as error:
-                library.walk_errors.append(f"{row.path}: cannot resolve the row's symlink: {error.strerror}")
-                continue
-            if target is not None:
-                claimed.add((target.st_dev, target.st_ino))
+            claimed.add((info.st_dev, info.st_ino))
             continue
         live_rows += 1
         claimed.add((info.st_dev, info.st_ino))
@@ -356,10 +360,11 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
         shape_books = {d.row.audiobook_id for d in decisions if d.chosen and d.confidence != "identity"}
         for decision in decisions:
             if decision.chosen is not None and decision.row.audiobook_id in shape_books:
-                decision.leave_out("withheld by --identity-only: this book has a link without physical identity")
+                decision.leave_out("withheld (identity-only, the default): this book has a link without "
+                                   "physical identity")
     stale_ids = {d.row.id for d in decisions}
     books_with_live_row = {r.audiobook_id for r in library.files if r.id not in stale_ids
-                           and r.path and lstat_or_none(path_map.to_host(r.path)) is not None}
+                           and r.path and _resolves(r.path, path_map)}
     unresolved = {d.row.audiobook_id: d.row.id for d in decisions if d.chosen is None}
     for decision in decisions:
         book_id = decision.row.audiobook_id

@@ -8,6 +8,7 @@
 #   fixture-dir  has ROOT-A/, prod-state.db, and expected.json (adversarial) or layout.json (FF)
 #   tag          names this rehearsal; output goes to <fixture-dir>/rehearsal-<tag> (must not exist)
 #   RH_MODE=tool-only skips the own-mechanisms stage (everything through the tool)
+#   RH_PLAN_ARGS extra arguments for every PLAN (e.g. --include-shape-matches)
 # exit: 0 rehearsal ran and every gate passed, 1 a gate failed (see summary.txt), 2 usage
 unset TMOUT
 set -euo pipefail
@@ -27,10 +28,11 @@ fail=0
 log() { printf '%s %s [rehearse %s] %s\n' "$(date -u +%FT%TZ)" "$1" "$tag" "$2" | tee -a "$out/summary.txt"; }
 gate() { if eval "$2"; then log INFO "PASS $1"; else log ERROR "FAIL $1"; fail=1; fi; }
 relink() { (cd "$tool" && "$py" -m listenarr_relink "$@"); }
+plan_args=(${RH_PLAN_ARGS:-})
 db_of() { echo "$fx/runs/$1/config/database/listenarr.db"; }
 
 cp "$fx/prod-state.db" "$out/start.db"
-relink plan --db "$out/start.db" --out "$out/plan1" > "$out/plan1.sha" 2> "$out/plan1.log"
+relink plan --db "$out/start.db" --out "$out/plan1" "${plan_args[@]}" > "$out/plan1.sha" 2> "$out/plan1.log"
 log INFO "plan1 $(sed -n 3,4p "$out/plan1/plan-summary.txt" | tr '\n' ' ')"
 
 if [ "${RH_MODE:-}" = tool-only ]; then
@@ -45,7 +47,7 @@ else
   gate "own-mechanism API calls all 2xx (scan answers 202 enqueued)" "! grep -vE ' -> 2[0-9][0-9] ' '$fx/runs/rh-$tag-own/api.log' | grep -q ."
 fi
 
-relink plan --db "$out/after-own.db" --out "$out/plan2" > "$out/plan2.sha" 2> "$out/plan2.log"
+relink plan --db "$out/after-own.db" --out "$out/plan2" "${plan_args[@]}" > "$out/plan2.sha" 2> "$out/plan2.log"
 log INFO "plan2 $(sed -n 3,6p "$out/plan2/plan-summary.txt" | tr '\n' ' ')"
 "$py" -I "$here/score.py" "$out/plan2/plan.json" "$truth" "$out/after-own.db" > "$out/score-plan2.txt" || true
 log INFO "plan2 score $(head -1 "$out/score-plan2.txt")"
@@ -85,7 +87,7 @@ log INFO "verify: $("$py" -I -c 'import json,sys; r=json.load(open(sys.argv[1]))
 "$py" -I "$here/score_db.py" "$out/started.db" "$truth" > "$out/score-end.txt" && rc=0 || rc=$?
 log INFO "end-state score $(head -1 "$out/score-end.txt")"
 gate "end state has no wrong rows" "[ $rc = 0 ]"
-relink plan --db "$out/started.db" --out "$out/plan3" > /dev/null 2> "$out/plan3.log"
+relink plan --db "$out/started.db" --out "$out/plan3" "${plan_args[@]}" > /dev/null 2> "$out/plan3.log"
 n3=$("$py" -I -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["relinks"]))' "$out/plan3/plan.json")
 gate "plan3 (idempotence) proposes 0 relinks" "[ $n3 = 0 ]"
 

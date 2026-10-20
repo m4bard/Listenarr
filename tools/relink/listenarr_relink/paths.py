@@ -45,6 +45,11 @@ class PathMap:
         """Translate a stored path to the path this host sees."""
         return _swap(db_path, self.pairs, 0)
 
+    def is_mount_ancestor(self, db_path: str) -> bool:
+        """True for a service directory strictly above a mapped DB prefix (``/data`` for ``/data/lib``)."""
+        return any(prefix.startswith(db_path.rstrip("/") + "/") and not is_within(db_path, prefix)
+                   for prefix, _ in self.pairs)
+
     def to_db(self, host_path: str) -> str:
         """Translate a host path back to the spelling the service stores."""
         return _swap(host_path, tuple(sorted(self.pairs, key=lambda p: len(p[1]), reverse=True)), 1)
@@ -108,39 +113,48 @@ def name_parts(path: str, root: str) -> list[str]:
     return [*relative.parent.parts, relative.stem]
 
 
-def resolve_host(host_path: str, path_map: PathMap) -> str | None:
-    """Follow symlinks in ``host_path`` as the service would, returning the host path of the final object.
+def resolve_service(db_path: str, path_map: PathMap) -> str | None:
+    """Resolve a stored path the way the service does, returning the host path of the final object.
 
-    Absolute link text is in the service's namespace and goes through the path map. Returns None when a
-    component does not exist (a dangling link); raises OSError for anything else (permission, loops).
+    Every component is resolved in the service's namespace (the spelling the DB stores): absolute link text
+    restarts there, relative link text and ``..`` apply there, and each step is mapped to this host through
+    the path map before it is examined. Returns None when the path names no object, as the kernel would
+    (ENOENT/ENOTDIR: a dangling link, a stale path, a file used as a directory); raises OSError for anything
+    else (permission, loops).
     """
     resolved = "/"
-    pending = list(PurePosixPath(host_path).parts[1:])
+    resolved_is_dir = True
+    pending = db_path.split("/")[1:]  # str.split keeps "." and "" that PurePosixPath would normalise away
     hops = 0
     while pending:
         name = pending.pop(0)
+        if not resolved_is_dir:
+            return None  # a file used as a directory (the kernel says ENOTDIR: no such object)
         if name in ("", "."):
             continue
         if name == "..":
             resolved = os.path.dirname(resolved) or "/"
             continue
         candidate = os.path.join(resolved, name)
+        if path_map.is_mount_ancestor(candidate):
+            resolved = candidate  # exists only in the service's namespace, above a mapped prefix
+            continue
         try:
-            info = os.lstat(candidate)
+            info = os.lstat(path_map.to_host(candidate))
         except OSError as error:
             if error.errno in (errno.ENOENT, errno.ENOTDIR):
                 return None
             raise
-        if not stat.S_ISLNK(info.st_mode):
-            resolved = candidate
+        if stat.S_ISLNK(info.st_mode):
+            hops += 1
+            if hops > MAX_SYMLINK_HOPS:
+                raise OSError(errno.ELOOP, "too many symlinks", db_path)
+            target = os.readlink(path_map.to_host(candidate))
+            if target.startswith("/"):
+                resolved, resolved_is_dir = "/", True
+                pending = [*target.split("/")[1:], *pending]
+            else:
+                pending = [*target.split("/"), *pending]
             continue
-        hops += 1
-        if hops > MAX_SYMLINK_HOPS:
-            raise OSError(errno.ELOOP, "too many symlinks", host_path)
-        target = os.readlink(candidate)
-        if target.startswith("/"):
-            resolved = "/"
-            pending = [*PurePosixPath(path_map.to_host(target)).parts[1:], *pending]
-        else:
-            pending = [*PurePosixPath(target).parts, *pending]
-    return resolved
+        resolved, resolved_is_dir = candidate, stat.S_ISDIR(info.st_mode)
+    return path_map.to_host(resolved)

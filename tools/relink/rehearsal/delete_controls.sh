@@ -8,7 +8,7 @@
 #   ff-v2           FF mixed book 5 with book 42's file moved into a subfolder (add_foreign_file.sh)
 # The result is meaningful only if its control comes out differently (the foreign file goes).
 # usage: delete_controls.sh <ctl-bin> <cand-bin> <prod-like.db> <corpus.json> <top-dir>
-# env:   FF_RENAME_SQL (required)
+# env:   FF_RENAME_SQL (required); RH_PLAN_ARGS passed to every PLAN of the result rehearsals
 # exit:  0 every pair ran (read pairs.txt for the outcome), 1 a step failed, 2 usage
 unset TMOUT
 set -euo pipefail

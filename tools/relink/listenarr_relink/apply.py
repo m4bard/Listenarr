@@ -14,7 +14,7 @@ from typing import Any
 
 from listenarr_relink import PLAN_FORMAT_VERSION, TOOL_NAME, identity
 from listenarr_relink.inventory import BOOK_COLUMNS, FILE_COLUMNS, lstat_or_none, row_digest
-from listenarr_relink.paths import PathMap, resolve_host
+from listenarr_relink.paths import PathMap, resolve_service
 
 log = logging.getLogger("relink.apply")
 
@@ -78,7 +78,7 @@ def _held_objects(connection: sqlite3.Connection, path_map: PathMap) -> dict[tup
     held: dict[tuple[int, int], set[int]] = {}
     for row_id, path in connection.execute("SELECT Id, Path FROM AudiobookFiles WHERE Path IS NOT NULL AND Path <> ''"):
         try:
-            resolved = resolve_host(path_map.to_host(str(path)), path_map)
+            resolved = resolve_service(str(path), path_map)
             if resolved is None:
                 continue
             info = os.stat(resolved)
@@ -95,7 +95,11 @@ def _check_relink(connection: sqlite3.Connection, entry: dict[str, Any], path_ma
         return "row no longer exists"
     if row_digest(current) != entry["precondition"]["row_sha256"]:
         return "row changed since the plan"
-    if lstat_or_none(path_map.to_host(str(entry["old_path"]))) is not None:
+    try:
+        old_resolves = resolve_service(str(entry["old_path"]), path_map) is not None
+    except OSError:
+        old_resolves = True
+    if old_resolves or lstat_or_none(path_map.to_host(str(entry["old_path"]))) is not None:
         return "old path exists again"
     host_new = path_map.to_host(str(entry["new_path"]))
     info = lstat_or_none(host_new)

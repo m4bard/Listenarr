@@ -149,7 +149,8 @@ def _reason_class(reason: str) -> str:
                           ("no usable stored size", "no-size"), ("hard links", "hard-link"),
                           ("size changed", "identity-content-changed"), ("same physical identity", "identity-dup"),
                           ("physical identity matches but", "identity-inconsistent"),
-                          ("could not be read", "unreadable-candidate"), ("identity-only", "withheld-shape-only"),
+                          ("could not be read", "unreadable-candidate"),
+                          ("identity-only, the default", "withheld-shape-only"),
                           ("partly linked", "withheld-book-atomic")):
         if marker in reason:
             return label

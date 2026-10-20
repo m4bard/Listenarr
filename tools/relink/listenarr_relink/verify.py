@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import os
-import stat
 from collections import Counter, defaultdict
 from typing import Any
 
 from listenarr_relink import identity
-from listenarr_relink.inventory import lstat_or_none, open_read_only
-from listenarr_relink.paths import PathMap, resolve_host
+from listenarr_relink.inventory import open_read_only
+from listenarr_relink.paths import PathMap, resolve_service
 
 
 def verify(db_file: str, path_map: PathMap, plan: dict[str, Any] | None) -> dict[str, Any]:
@@ -34,24 +33,18 @@ def verify(db_file: str, path_map: PathMap, plan: dict[str, Any] | None) -> dict
             continue
         by_path[path].append(int(row["Id"]))
         try:
-            info = lstat_or_none(path_map.to_host(path))
+            resolved = resolve_service(path, path_map)
+            info = os.stat(resolved) if resolved is not None else None
         except OSError:
             status["unreadable"] += 1
             continue
-        if info is None:
+        if info is None or resolved is None:
             status["stale"] += 1
             stale_ids.append(int(row["Id"]))
             continue
-        if stat.S_ISLNK(info.st_mode):
+        if resolved != path_map.to_host(path):
             status["live-symlink"] += 1
-            try:
-                resolved = resolve_host(path_map.to_host(path), path_map)
-                target = os.stat(resolved) if resolved else None
-            except OSError:
-                status["live-symlink-unresolvable"] += 1
-                continue
-            if target is not None:
-                by_object[(target.st_dev, target.st_ino)].append(int(row["Id"]))
+            by_object[(info.st_dev, info.st_ino)].append(int(row["Id"]))
             continue
         status["live"] += 1
         by_object[(info.st_dev, info.st_ino)].append(int(row["Id"]))
