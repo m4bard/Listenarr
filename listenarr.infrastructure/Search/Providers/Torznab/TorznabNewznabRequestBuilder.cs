@@ -38,7 +38,7 @@ internal static class TorznabNewznabRequestBuilder
         var queryParams = new List<string>
         {
             $"t=search",
-            $"q={Uri.EscapeDataString(query)}"
+            $"q={Uri.EscapeDataString(SplitHyphenatedTerms(query))}"
         };
 
         // Add API key if provided
@@ -67,5 +67,13 @@ internal static class TorznabNewznabRequestBuilder
         }
 
         return $"{url}{apiPath}?{string.Join("&", queryParams)}";
+    }
+
+    // Newznab-style indexers may read a hyphen at the start of a term as "exclude this word", so a
+    // hyphen never reaches q=: each one becomes a term break.
+    private static string SplitHyphenatedTerms(string query)
+    {
+        var terms = query.Replace('-', ' ').Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(' ', terms);
     }
 }
