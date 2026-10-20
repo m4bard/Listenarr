@@ -49,10 +49,18 @@ jobs:
             echo "::error::STACK-MANIFEST.md is missing; publish with tools/local_stack.sh"
             exit 1
           }
-          value=$(grep -oP '(?<=version:)\s*\S+' STACK-MANIFEST.md | tr -d '[:space:]')
+          # Anchored to the leading 4-space header indent, same as base_sha below. An
+          # earlier version of this check used an unanchored `grep -oP '(?<=version:)...'`
+          # for `value` and `patches`, which also matches the word "patches:" or
+          # "version:" appearing in this file's own prose sections (this file has both,
+          # including a sentence about this very check) and silently concatenated two
+          # matches into garbage like "607607,". Caught by an independent review before
+          # this reached CI; anchoring to the header's fixed 4-space indent is what the
+          # existing base_sha line already did correctly.
+          value=$(grep -oP '(?<=^\s{4}version:)\s*\S+' STACK-MANIFEST.md | tr -d '[:space:]')
           test -n "$value" || { echo "::error::no version in STACK-MANIFEST.md"; exit 1; }
 
-          declared_patches=$(grep -oP '(?<=patches:)\s*\S+' STACK-MANIFEST.md | tr -d '[:space:]')
+          declared_patches=$(grep -oP '(?<=^\s{4}patches:)\s*\S+' STACK-MANIFEST.md | tr -d '[:space:]')
           base_sha=$(grep -oP '(?<=^\s{4}base:)\s*\S+' STACK-MANIFEST.md | tr -d '[:space:]')
           test -n "$declared_patches" || { echo "::error::no patch count in STACK-MANIFEST.md"; exit 1; }
           test -n "$base_sha" || { echo "::error::no base sha in STACK-MANIFEST.md"; exit 1; }
