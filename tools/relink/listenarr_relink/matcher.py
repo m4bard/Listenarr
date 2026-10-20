@@ -17,6 +17,9 @@ Rules (each one exists because guessing here can later let a delete hit the wron
 * A file (one object, whatever its names) is never linked to two rows, never to a file a live row already
   holds (also through a symlink row), and never to a file that was also a candidate of a row left
   unresolved (it might be that row's file).
+* A book with no live row is re-linked whole or not at all. Linking some of its rows while others stay
+  stale would turn an all-stale book (round 27 refuses or skips its file deletes) into a mixed one (round
+  27 recursively deletes its folder, FF report section 5).
 * .620's own scan/move lists are empty when any folder could not be read: the service may see files PLAN
   could not.
 """
@@ -354,6 +357,15 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
         for decision in decisions:
             if decision.chosen is not None and decision.row.audiobook_id in shape_books:
                 decision.leave_out("withheld by --identity-only: this book has a link without physical identity")
+    stale_ids = {d.row.id for d in decisions}
+    books_with_live_row = {r.audiobook_id for r in library.files if r.id not in stale_ids
+                           and r.path and lstat_or_none(path_map.to_host(r.path)) is not None}
+    unresolved = {d.row.audiobook_id: d.row.id for d in decisions if d.chosen is None}
+    for decision in decisions:
+        book_id = decision.row.audiobook_id
+        if decision.chosen is not None and book_id in unresolved and book_id not in books_with_live_row:
+            decision.leave_out(f"withheld so the book is not left partly linked: its row {unresolved[book_id]} "
+                               "stays stale (an all-stale book is safer under round 27 than a mixed one)")
 
     for decision in decisions:
         if decision.chosen is None:
