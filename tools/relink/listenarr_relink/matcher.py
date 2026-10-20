@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
@@ -149,8 +150,10 @@ def _consistency(row: FileRow, probe: media.Probe, other_titles: dict[frozenset[
 
 
 def _resolves(db_path: str, path_map: PathMap) -> bool:
+    """True when the stored path reaches a regular file as the service sees it."""
     try:
-        return resolve_service(db_path, path_map) is not None
+        resolved = resolve_service(db_path, path_map)
+        return resolved is not None and stat.S_ISREG(os.stat(resolved).st_mode)
     except OSError:
         return False
 
@@ -191,6 +194,11 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             library.walk_errors.append(f"{row.path}: cannot resolve the row's path: {error.strerror}")
             continue
         if info is None or resolved is None:
+            stale.append(row)
+            continue
+        if not stat.S_ISREG(info.st_mode):
+            # A folder (or other non-file) at a file row's path holds no file: stale for every purpose here.
+            flags.append(Flag("path-not-a-file", row.id, row.audiobook_id, f"{row.path} is not a regular file"))
             stale.append(row)
             continue
         if resolved != host:
@@ -366,6 +374,9 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
     books_with_live_row = {r.audiobook_id for r in library.files if r.id not in stale_ids
                            and r.path and _resolves(r.path, path_map)}
     unresolved = {d.row.audiobook_id: d.row.id for d in decisions if d.chosen is None}
+    for row in library.files:
+        if not row.path:
+            unresolved.setdefault(row.audiobook_id, row.id)  # an empty Path is not a live file either
     for decision in decisions:
         book_id = decision.row.audiobook_id
         if decision.chosen is not None and book_id in unresolved and book_id not in books_with_live_row:

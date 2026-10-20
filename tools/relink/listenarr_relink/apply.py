@@ -88,6 +88,31 @@ def _held_objects(connection: sqlite3.Connection, path_map: PathMap) -> dict[tup
     return held
 
 
+def _reaches_file(db_path: str, path_map: PathMap) -> bool:
+    """True when the stored path reaches a regular file as the service sees it."""
+    try:
+        resolved = resolve_service(db_path, path_map)
+        return resolved is not None and stat.S_ISREG(os.stat(resolved).st_mode)
+    except OSError:
+        return False
+
+
+def _would_leave_mixed(connection: sqlite3.Connection, book_id: int, applied: set[int],
+                       path_map: PathMap) -> str | None:
+    """Refuse when the book would end with some rows stale and none of its other rows live.
+
+    PLAN allows a partial re-link only for a book that already has a live row (an all-stale book is linked
+    whole or not at all). That live row may have gone stale since: checked again here, on the live DB.
+    """
+    others = [(int(i), str(p or "")) for i, p in connection.execute(
+        "SELECT Id, Path FROM AudiobookFiles WHERE AudiobookId = ?", (book_id,)) if int(i) not in applied]
+    stale = [i for i, p in others if not p or not _reaches_file(p, path_map)]
+    if stale and len(stale) == len(others):
+        return (f"re-linking would leave the book partly linked: its row(s) {stale} stay stale and no other "
+                "row is live any more (re-plan)")
+    return None
+
+
 def _check_relink(connection: sqlite3.Connection, entry: dict[str, Any], path_map: PathMap,
                   held: dict[tuple[int, int], set[int]]) -> str | None:
     current = _current(connection, "AudiobookFiles", FILE_COLUMNS, int(entry["row_id"]))
@@ -175,6 +200,11 @@ def apply_plan(db_file: str, plan_path: Path, plan: dict[str, Any], out_dir: Pat
             outcome.undo.append(f"UPDATE AudiobookFiles SET {restore} "
                                 f"WHERE Id = {int(entry['row_id'])} AND Path = {_sql_literal(entry['new_path'])};")
             outcome.applied_rows.append(int(entry["row_id"]))
+        for book_id in sorted({int(e["audiobook_id"]) for e in plan["relinks"]} - refused_books):
+            reason = _would_leave_mixed(connection, book_id, set(outcome.applied_rows), path_map)
+            if reason is not None:
+                outcome.refused.append({"audiobook_id": book_id, "reason": reason})
+                refused_books.add(book_id)
         for update in plan["book_updates"]:
             book_id = int(update["audiobook_id"])
             if book_id in refused_books:

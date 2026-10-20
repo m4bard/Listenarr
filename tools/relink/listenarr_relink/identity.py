@@ -20,6 +20,10 @@ _AT_EMPTY_PATH = 0x1000
 _AT_HANDLE_FID = 0x0200
 _MAX_HANDLE_BYTES = 128
 _FS_IOC_GETVERSION = 0x80087601
+# The generic AT_HANDLE_FID handle type: on filesystems without export operations (CIFS, 9p, ramfs) and on
+# FUSE it carries only the inode/node id, which is reused after a delete. .620 itself classes it as known-weak
+# (PhysicalObjectIdentitySafety), so it is never identity evidence here.
+WEAK_HANDLE_TYPES = frozenset({"00000081"})
 
 _libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6", use_errno=True)
 _name_to_handle_at = _libc.name_to_handle_at
@@ -66,13 +70,14 @@ def _is_hex(text: str, width: int | None = None) -> bool:
 def _generation_suffix(parts: list[str]) -> str | None:
     if len(parts) == 2 and parts[0] == "gen" and _is_hex(parts[1], 8):
         return f"gen:{parts[1]}"
-    if len(parts) == 3 and parts[0] == "fh" and _is_hex(parts[1], 8) and _is_hex(parts[2]) and len(parts[2]) % 2 == 0:
+    if (len(parts) == 3 and parts[0] == "fh" and _is_hex(parts[1], 8) and parts[1].lower() not in WEAK_HANDLE_TYPES
+            and _is_hex(parts[2]) and len(parts[2]) % 2 == 0):
         return f"fh:{parts[1]}:{parts[2].lower()}"
     return None
 
 
 def parse_stored(identity: str | None) -> StoredIdentity | None:
-    """Parse either persisted Linux spelling; None for anything else (including NULL)."""
+    """Parse either persisted Linux spelling; None for anything else (NULL, or only a known-weak handle)."""
     if not identity:
         return None
     parts = identity.split(":")
@@ -128,7 +133,8 @@ def read_live(path: str) -> LiveIdentity | None:
         return None
     try:
         info = os.fstat(fd)
-        generations = {g for g in (_file_handle(fd), _inode_generation(fd)) if g}
+        generations = {g for g in (_file_handle(fd), _inode_generation(fd))
+                       if g and not any(g.startswith(f"fh:{weak}:") for weak in WEAK_HANDLE_TYPES)}
         return LiveIdentity(os.major(info.st_dev), os.minor(info.st_dev), info.st_ino, frozenset(generations))
     finally:
         os.close(fd)

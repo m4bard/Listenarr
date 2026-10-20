@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from listenarr_relink import PLAN_FORMAT_VERSION, TOOL_NAME
+from listenarr_relink import PLAN_FORMAT_VERSION, TOOL_NAME, identity
 from listenarr_relink.inventory import Library
 from listenarr_relink.matcher import Candidate, MatchResult, RowDecision
 from listenarr_relink.paths import PathMap
@@ -130,6 +130,9 @@ def build_plan(library: Library, result: MatchResult, path_map: PathMap, db_copy
             "unclaimed_audio_files_not_considered": len(result.orphans),
             "symlinks_skipped": len(library.symlinks),
             "walk_errors": len(library.walk_errors),
+            "stored_identity_unusable": sum(1 for r in library.files if r.values.get("PhysicalObjectIdentity")
+                                            and identity.parse_stored(str(r.values["PhysicalObjectIdentity"]))
+                                            is None),
         },
         "relinks": relinks,
         "book_updates": book_updates,
@@ -179,7 +182,8 @@ def write_outputs(plan: dict[str, Any], out_dir: Path, orphans: list[str]) -> tu
         f"unclaimed audio files never a candidate "
         f"{summary['unclaimed_audio_files_not_considered']}; symlinks skipped {summary['symlinks_skipped']}; "
         f"walk errors {summary['walk_errors']}",
-        f"identity only: {plan['identity_only']}",
+        f"identity only: {plan['identity_only']}; stored identities unusable (unparsed or known-weak handle only): "
+        f"{summary['stored_identity_unusable']}",
         "",
         "RELINKS (every one). shape-and-name links first: size, duration, codec, sample rate and channels plus a",
         "folder/name/tag naming this title. NO content hash was compared (none was ever stored); review them.",
