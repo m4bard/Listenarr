@@ -37,7 +37,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from listenarr_relink import identity, media
-from listenarr_relink.inventory import BookRow, DiskFile, FileRow, Library
+from listenarr_relink.inventory import BookRow, DiskFile, FileRow, Library, lstat_or_none
 from listenarr_relink.paths import PathMap, is_distinctive, is_within, name_parts, names_title, resolve_service, tokens
 
 log = logging.getLogger("relink.match")
@@ -179,6 +179,7 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
     stale: list[FileRow] = []
     claimed: set[tuple[int, int]] = set()
     symlink_books: set[int] = set()
+    occupied: dict[int, int] = {}  # book -> a row whose stored path holds something other than its file
     row_paths = {row.path for row in library.files if row.path}
     live_rows = 0
     for row in library.files:
@@ -194,12 +195,17 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             library.walk_errors.append(f"{row.path}: cannot resolve the row's path: {error.strerror}")
             continue
         if info is None or resolved is None:
-            stale.append(row)
+            if lstat_or_none(host) is None:
+                stale.append(row)
+                continue
+            occupied[row.audiobook_id] = row.id  # a dangling symlink sits at the stored path
+            flags.append(Flag("path-occupied", row.id, row.audiobook_id, f"{row.path} is a dangling symlink"))
             continue
         if not stat.S_ISREG(info.st_mode):
-            # A folder (or other non-file) at a file row's path holds no file: stale for every purpose here.
-            flags.append(Flag("path-not-a-file", row.id, row.audiobook_id, f"{row.path} is not a regular file"))
-            stale.append(row)
+            # Something that is not a file sits at the stored path: no file is held, but APPLY could not
+            # re-link the row either ("old path exists again"). Left out; it counts as unresolved for its book.
+            occupied[row.audiobook_id] = row.id
+            flags.append(Flag("path-occupied", row.id, row.audiobook_id, f"{row.path} is not a regular file"))
             continue
         if resolved != host:
             # Reached through a symlink (the file itself or a folder above it): the object is held all the same.
@@ -377,6 +383,8 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
     for row in library.files:
         if not row.path:
             unresolved.setdefault(row.audiobook_id, row.id)  # an empty Path is not a live file either
+    for book_id, row_id in occupied.items():
+        unresolved.setdefault(book_id, row_id)
     for decision in decisions:
         book_id = decision.row.audiobook_id
         if decision.chosen is not None and book_id in unresolved and book_id not in books_with_live_row:
