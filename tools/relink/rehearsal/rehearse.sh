@@ -61,11 +61,15 @@ relink apply --db "$out/live.db" --plan "$out/plan2/plan.json" --plan-sha256 "$s
 gate "dry run exit 0 and DB byte-identical to before it" "[ $rc = 0 ] && cmp -s '$out/live.db' '$out/pre-dry.db'"
 relink apply --db "$out/live.db" --plan "$out/plan2/plan.json" --plan-sha256 "$sha" --backup "$out/backup.db" \
   --confirm-service-stopped 2> "$out/apply.log" && rc=0 || rc=$?
-gate "apply exit 0 and DB changed" "[ $rc = 0 ] && ! cmp -s '$out/live.db' '$out/pre-dry.db'"
+relinks=$("$py" -I -c 'import json,sys; p=json.load(open(sys.argv[1])); print(len(p["relinks"]) + len(p["book_updates"]))' "$out/plan2/plan.json")
+if [ "$relinks" -gt 0 ]; then
+  gate "apply exit 0 and DB changed" "[ $rc = 0 ] && ! cmp -s '$out/live.db' '$out/pre-dry.db'"
+else
+  gate "apply of an empty plan exits 0 and leaves the DB byte-identical" "[ $rc = 0 ] && cmp -s '$out/live.db' '$out/pre-dry.db'"
+fi
 cp "$out/live.db" "$out/applied.db"
 relink apply --db "$out/live.db" --plan "$out/plan2/plan.json" --plan-sha256 "$sha" --backup "$out/backup.db" \
   --confirm-service-stopped --out "$out/reapply" 2> "$out/reapply.log" && rc=0 || rc=$?
-relinks=$("$py" -I -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["relinks"]))' "$out/plan2/plan.json")
 if [ "$relinks" -gt 0 ]; then
   gate "re-apply refuses every entry (exit 3) and writes nothing" "[ $rc = 3 ] && cmp -s '$out/live.db' '$out/applied.db'"
 else
