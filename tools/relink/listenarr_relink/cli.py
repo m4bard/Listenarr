@@ -1,8 +1,9 @@
 """Command line: ``plan``, ``apply`` and ``verify``.
 
 Exit codes: 0 success; 2 usage or refused precondition (nothing written); 3 APPLY refused at least one
-entry and rolled everything back (nothing written; refusals listed in the report, re-plan); 4 APPLY aborted
-(nothing written).
+entry and rolled everything back (nothing written; refusals listed in the report, re-plan), or PLAN wrote a
+plan but some folders could not be read (incomplete evidence: re-run as a user that can read them);
+4 APPLY aborted (nothing written).
 """
 
 from __future__ import annotations
@@ -61,8 +62,12 @@ def _plan(args: argparse.Namespace) -> int:
     finally:
         connection.close()
     library = inventory.Library(roots, books, files)
-    for root in roots:
-        inventory.walk_root(root, path_map, library)
+    try:
+        for root in roots:
+            inventory.walk_root(root, path_map, library)
+    except inventory.PathMapError as error:
+        log.error("%s", error)
+        return 2
     result = matcher.match(library, path_map, args.workers, not args.no_hash_chosen)
     plan = build_plan(library, result, path_map, db_copy, args.db)
     plan_path, plan_sha = write_outputs(plan, out_dir, [o.db_path for o in result.orphans])
@@ -70,6 +75,10 @@ def _plan(args: argparse.Namespace) -> int:
     log.info("plan=%s sha256=%s relinks=%d left_out=%d book_updates=%d scan_safe_books=%d", plan_path, plan_sha,
              summary["relinks"], summary["left_out"], summary["book_updates"], summary["scan_safe_books"])
     print(plan_sha)
+    if library.walk_errors:
+        log.error("%d walk errors: the plan is written but incomplete (see WALK ERRORS in plan-summary.txt)",
+                  len(library.walk_errors))
+        return 3
     return 0
 
 

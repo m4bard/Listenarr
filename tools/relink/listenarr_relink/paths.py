@@ -14,7 +14,7 @@ AUDIO_EXTENSIONS = frozenset({
     ".wv", ".wma", ".ape", ".alac", ".aif", ".aiff", ".mp4", ".mka", ".webm",
 })
 
-_TOKEN_SPLIT = re.compile(r"[^0-9a-z]+")
+_TOKEN = re.compile(r"[^\W_]+")
 _LAST_NUMBER = re.compile(r"(\d+)(?!.*\d)")
 
 
@@ -67,9 +67,19 @@ def is_audio(path: str) -> bool:
 
 
 def tokens(text: str) -> list[str]:
-    """Accent-folded, case-folded alphanumeric tokens."""
-    folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").casefold()
-    return [token for token in _TOKEN_SPLIT.split(folded) if token]
+    """Accent-folded, case-folded word tokens in any script (combining marks dropped, letters kept)."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    folded = "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
+    return _TOKEN.findall(folded)
+
+
+def is_distinctive(title: str) -> bool:
+    """True when a title has a token that can identify it: 3+ letters, or 2+ non-ASCII letters (CJK).
+
+    A title that folds to digits or short words (``1``, ``It``) is never evidence and never a veto key.
+    """
+    return any(not token.isdigit() and (len(token) >= 3 or (len(token) >= 2 and not token.isascii()))
+               for token in tokens(title))
 
 
 def coverage(needle: str, haystack_tokens: set[str]) -> float:

@@ -6,11 +6,17 @@ Rules (each one exists because guessing here can later let a delete hit the wron
 * A candidate must agree with the row's stored duration, codec, sample rate and channels.
 * Physical identity (device + inode + file handle/generation) decides on its own when it matches.
 * Otherwise exactly one consistent candidate must remain; equal-size siblings are separated only by
-  file-name part number AND track tag agreeing. Anything else is ambiguous and left out.
+  file-name part number AND track tag agreeing, and only when the old and the new names sort the same
+  lexically and numerically (else a renamer that sorted ``1, 10, 11, 2`` would make the numbers lie).
+  Anything else is ambiguous and left out.
 * A link also needs path evidence (same folder as the old path, or the book title in the folder/file
-  names or in the tags). Title evidence alone never selects a file; it only confirms one.
-* A file is never linked to two rows, never to a file a live row already holds, and never to a file
-  that was also a candidate of a row left unresolved (it might be that row's file).
+  names or in the tags). Title evidence alone never selects a file; it only confirms one. A title with
+  no distinctive token (``1``, ``It``) is never evidence and never a veto key.
+* A file (one object, whatever its names) is never linked to two rows, never to a file a live row already
+  holds (also through a symlink row), and never to a file that was also a candidate of a row left
+  unresolved (it might be that row's file).
+* .620's own scan/move lists are empty when any folder could not be read: the service may see files PLAN
+  could not.
 """
 
 from __future__ import annotations
@@ -25,7 +31,7 @@ from dataclasses import dataclass, field
 
 from listenarr_relink import identity, media
 from listenarr_relink.inventory import BookRow, DiskFile, FileRow, Library, lstat_or_none
-from listenarr_relink.paths import PathMap, coverage, is_within, part_number, path_tokens, tokens
+from listenarr_relink.paths import PathMap, coverage, is_distinctive, is_within, part_number, path_tokens, tokens
 
 log = logging.getLogger("relink.match")
 
@@ -130,7 +136,7 @@ def _consistency(row: FileRow, probe: media.Probe, other_titles: dict[frozenset[
             return f"{column} {value} != stored {stored}"
     tag_text = " ".join(probe.tags.get(k, "") for k in ("album", "title"))
     tag_tokens = frozenset(tokens(tag_text))
-    if tag_tokens and coverage(own_title, set(tag_tokens)) < 0.5:
+    if tag_tokens and (not is_distinctive(own_title) or coverage(own_title, set(tag_tokens)) < 0.5):
         for title_tokens, book_id in other_titles.items():
             if title_tokens and title_tokens <= tag_tokens:
                 return f"tags name another library book (audiobook {book_id})"
@@ -157,6 +163,7 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
 
     stale: list[FileRow] = []
     claimed: set[tuple[int, int]] = set()
+    symlink_books: set[int] = set()
     row_paths = {row.path for row in library.files if row.path}
     live_rows = 0
     for row in library.files:
@@ -174,6 +181,12 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
             continue
         if stat.S_ISLNK(info.st_mode):
             flags.append(Flag("live-symlink", row.id, row.audiobook_id, row.path))
+            symlink_books.add(row.audiobook_id)
+            try:
+                target = os.stat(host)
+            except OSError:
+                continue
+            claimed.add((target.st_dev, target.st_ino))
             continue
         live_rows += 1
         claimed.add((info.st_dev, info.st_ino))
@@ -198,10 +211,13 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
     other_titles: dict[frozenset[str], int] = {}
     for book in library.books.values():
         key = frozenset(tokens(book.title))
-        if key:
+        if is_distinctive(book.title):
             other_titles.setdefault(key, book.id)
 
     decisions = [RowDecision(row) for row in stale]
+    siblings: dict[tuple[int, int | None], list[FileRow]] = defaultdict(list)
+    for row in stale:
+        siblings[(row.audiobook_id, row.size)].append(row)
     keep_identity: dict[int, bool] = {}
 
     # Pass 1: physical identity decides on its own.
@@ -260,8 +276,9 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
             names = path_tokens(candidate.file.db_path, root)
             tag_tokens = set(tokens(" ".join(probe.tags.get(k, "") for k in ("album", "title"))))
             candidate.same_dir = os.path.dirname(candidate.file.host_path) == old_parent
-            candidate.title_in_path = coverage(title, names) >= TITLE_COVERAGE
-            candidate.title_in_tags = bool(tag_tokens) and coverage(title, tag_tokens) >= TITLE_COVERAGE
+            distinctive = is_distinctive(title)
+            candidate.title_in_path = distinctive and coverage(title, names) >= TITLE_COVERAGE
+            candidate.title_in_tags = distinctive and bool(tag_tokens) and coverage(title, tag_tokens) >= TITLE_COVERAGE
             candidate.author_in_path = any(coverage(a, names) >= TITLE_COVERAGE for a in authors)
 
     # Pass 2: choose.
@@ -288,6 +305,11 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
                 decision.leave_out(f"{len(consistent)} equally consistent candidates and no part number/track "
                                    "tags to separate them")
                 continue
+            old_names = [r.path for r in siblings[(decision.row.audiobook_id, decision.row.size)]]
+            if _order_ambiguous(old_names) or _order_ambiguous([c.file.db_path for c in consistent]):
+                decision.leave_out(f"{len(consistent)} equally consistent candidates; part numbers cannot be "
+                                   "trusted because the names sort differently lexically and numerically")
+                continue
             by_track = [c for c in consistent if c.probe and c.probe.track == wanted]
             by_both = [c for c in by_track if part_number(c.file.db_path) == wanted]
             if len(by_track) != 1 or len(by_both) != 1:
@@ -305,23 +327,25 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
     # Pass 3: one file, one row; and a file that an unresolved row could own is not given away.
     while True:
         changed = False
-        chosen_by: dict[str, list[RowDecision]] = defaultdict(list)
+        chosen_by: dict[tuple[int, int], list[RowDecision]] = defaultdict(list)
         for decision in decisions:
             if decision.chosen is not None:
-                chosen_by[decision.chosen.file.db_path].append(decision)
-        for path, owners in chosen_by.items():
+                chosen_by[(decision.chosen.file.dev, decision.chosen.file.ino)].append(decision)
+        for owners in chosen_by.values():
             if len(owners) > 1:
+                object_names = sorted({o.chosen.file.db_path for o in owners if o.chosen})
                 for contender in owners:
-                    contender.leave_out(f"{path} was chosen by {len(owners)} rows")
+                    contender.leave_out(f"{', '.join(object_names)} (one file object) was chosen by {len(owners)} rows")
                 changed = True
         for decision in decisions:
             if decision.chosen is None or decision.confidence == "identity":
                 continue
             path = decision.chosen.file.db_path
+            obj = (decision.chosen.file.dev, decision.chosen.file.ino)
             contenders = [d for d in decisions if d is not decision
                           and d.confidence != "identity"
-                          and any(c.file.db_path == path and c.rejected is None for c in d.candidates)
-                          and (d.chosen is None or d.chosen.file.db_path == path)]
+                          and any((c.file.dev, c.file.ino) == obj and c.rejected is None for c in d.candidates)
+                          and (d.chosen is None or (d.chosen.file.dev, d.chosen.file.ino) == obj)]
             if contenders:
                 decision.leave_out(f"{path} is also a consistent candidate of unresolved row(s) "
                                    f"{', '.join(str(d.row.id) for d in contenders)}")
@@ -338,12 +362,29 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
             decision.audio_hashes[decision.chosen.file.host_path] = media.audio_hash(decision.chosen.file.host_path)
 
     book_updates = _book_updates(library, path_map, decisions, files_by_book, flags)
-    scan_safe = _scan_safe_books(library, path_map, decisions, files_by_book, stale)
-    move_safe = _move_safe_books(library, decisions, files_by_book, book_updates)
+    if library.walk_errors:
+        flags.append(Flag("walk-errors", None, None, f"{len(library.walk_errors)} folder(s)/file(s) could not be "
+                          "read; .620's own scan/move lists are withheld and the plan may miss candidates"))
+        scan_safe: list[int] = []
+        move_safe: dict[int, str] = {}
+    else:
+        scan_safe = [b for b in _scan_safe_books(library, path_map, decisions, files_by_book, stale)
+                     if b not in symlink_books]
+        move_safe = {b: p for b, p in _move_safe_books(library, decisions, files_by_book, book_updates).items()
+                     if b not in symlink_books}
     chosen_paths = {d.chosen.file.db_path for d in decisions if d.chosen}
     candidate_paths = {c.file.db_path for d in decisions for c in d.candidates}
     orphans = [f for f in pool if f.db_path not in chosen_paths and f.db_path not in candidate_paths]
     return MatchResult(decisions, live_rows, book_updates, flags, scan_safe, move_safe, orphans, keep_identity)
+
+
+def _order_ambiguous(paths: list[str]) -> bool:
+    """True when file names sort differently by text and by their part number (``1, 10, 2`` vs ``1, 2, 10``)."""
+    if len(paths) < 2:
+        return False
+    by_text = sorted(paths, key=lambda p: os.path.basename(p).casefold())
+    by_number = sorted(paths, key=lambda p: (part_number(p) or 0, os.path.basename(p).casefold()))
+    return by_text != by_number
 
 
 def _final_paths(rows: list[FileRow], links: dict[int, str], stale_ids: set[int]) -> list[str] | None:
@@ -396,6 +437,11 @@ def _book_updates(library: Library, path_map: PathMap, decisions: list[RowDecisi
                             other.base_path and is_within(other.base_path, new_base)):
                         reason = f"the new folder {new_base} also holds audiobook {other_id}"
                         break
+            if reason is None and new_base is not None:
+                own = set(final or [])
+                foreign = [f.db_path for f in library.disk if is_within(f.db_path, new_base) and f.db_path not in own]
+                if foreign:
+                    reason = f"the new folder {new_base} also holds {len(foreign)} audio file(s) not of this book"
             if reason is None and new_base is not None:
                 set_values["BasePath"] = new_base
             else:

@@ -73,7 +73,20 @@ def _current(connection: sqlite3.Connection, table: str, columns: tuple[str, ...
     return dict(row) if row is not None else None
 
 
-def _check_relink(connection: sqlite3.Connection, entry: dict[str, Any], path_map: PathMap) -> str | None:
+def _held_objects(connection: sqlite3.Connection, path_map: PathMap) -> dict[tuple[int, int], set[int]]:
+    """(device, inode) of every file a row's path reaches (following symlinks) -> the row ids reaching it."""
+    held: dict[tuple[int, int], set[int]] = {}
+    for row_id, path in connection.execute("SELECT Id, Path FROM AudiobookFiles WHERE Path IS NOT NULL AND Path <> ''"):
+        try:
+            info = os.stat(path_map.to_host(str(path)))
+        except OSError:
+            continue
+        held.setdefault((info.st_dev, info.st_ino), set()).add(int(row_id))
+    return held
+
+
+def _check_relink(connection: sqlite3.Connection, entry: dict[str, Any], path_map: PathMap,
+                  held: dict[tuple[int, int], set[int]]) -> str | None:
     current = _current(connection, "AudiobookFiles", FILE_COLUMNS, int(entry["row_id"]))
     if current is None:
         return "row no longer exists"
@@ -86,13 +99,17 @@ def _check_relink(connection: sqlite3.Connection, entry: dict[str, Any], path_ma
     expected = entry["precondition"]["file"]
     if info is None or not stat.S_ISREG(info.st_mode):
         return "target is gone or no longer a regular file"
-    if (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns) != (
-            expected["dev"], expected["ino"], expected["size"], expected["mtime_ns"]):
-        return "target file changed since the plan (device/inode/size/mtime)"
+    if (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_nlink) != (
+            expected["dev"], expected["ino"], expected["size"], expected["mtime_ns"], expected["ctime_ns"],
+            expected["nlink"]):
+        return "target file changed since the plan (device/inode/size/mtime/ctime/link count)"
     holder = connection.execute("SELECT Id FROM AudiobookFiles WHERE Path = ? AND Id <> ?",
                                 (entry["new_path"], entry["row_id"])).fetchone()
     if holder is not None:
         return f"target path is now held by row {holder[0]}"
+    holders = held.get((info.st_dev, info.st_ino), set()) - {int(entry["row_id"])}
+    if holders:
+        return f"target file is now reached by row(s) {sorted(holders)} under another name"
     if entry["keep_physical_identity"]:
         stored = identity.parse_stored(str(current.get("PhysicalObjectIdentity") or ""))
         live = identity.read_live(host_new)
@@ -107,7 +124,8 @@ def apply_plan(db_file: str, plan_path: Path, plan: dict[str, Any], out_dir: Pat
         raise ApplyAborted(f"{plan_path} is not a {TOOL_NAME} format {PLAN_FORMAT_VERSION} plan")
     path_map = PathMap.parse(list(plan.get("path_map", [])))
     targets = [str(e["new_path"]) for e in plan["relinks"]]
-    if len(targets) != len(set(targets)):
+    objects = [(e["precondition"]["file"]["dev"], e["precondition"]["file"]["ino"]) for e in plan["relinks"]]
+    if len(targets) != len(set(targets)) or len(objects) != len(set(objects)):
         raise ApplyAborted("plan links two rows to one file")
     outcome = ApplyOutcome()
     connection = sqlite3.connect(db_file, timeout=0, isolation_level=None)
@@ -119,8 +137,9 @@ def apply_plan(db_file: str, plan_path: Path, plan: dict[str, Any], out_dir: Pat
         except sqlite3.OperationalError as error:
             raise ApplyAborted(f"database is locked by another writer: {error}") from error
         refused_books: set[int] = set()
+        held = _held_objects(connection, path_map)
         for entry in plan["relinks"]:
-            reason = _check_relink(connection, entry, path_map)
+            reason = _check_relink(connection, entry, path_map, held)
             if reason is not None:
                 outcome.refused.append({"row_id": entry["row_id"], "audiobook_id": entry["audiobook_id"],
                                         "reason": reason})
@@ -160,11 +179,13 @@ def apply_plan(db_file: str, plan_path: Path, plan: dict[str, Any], out_dir: Pat
                 outcome.refused.append({"audiobook_id": book_id, "reason": "new BasePath folder is gone"})
                 continue
             columns = sorted(update["set"])
+            new_values = update["set"]
             connection.execute(f"UPDATE Audiobooks SET {', '.join(f'{c} = ?' for c in columns)} WHERE Id = ?",
                                [*(update["set"][c] for c in columns), book_id])
             outcome.undo.append(f"UPDATE Audiobooks SET "
                                 f"{', '.join(f'{c} = {_sql_literal(current[c])}' for c in columns)} "
-                                f"WHERE Id = {book_id};")
+                                f"WHERE Id = {book_id} AND "
+                                f"{' AND '.join(f'{c} IS {_sql_literal(new_values[c])}' for c in columns)};")
             outcome.applied_books.append(book_id)
         duplicates = connection.execute(
             "SELECT Path, count(*) FROM AudiobookFiles WHERE Path IS NOT NULL GROUP BY Path HAVING count(*) > 1"

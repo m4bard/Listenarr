@@ -6,4 +6,4 @@ service is stopped, and never touches library files in either mode.
 """
 
 TOOL_NAME = "listenarr-relink"
-PLAN_FORMAT_VERSION = 1
+PLAN_FORMAT_VERSION = 2

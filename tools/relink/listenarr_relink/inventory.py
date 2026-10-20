@@ -106,6 +106,7 @@ class DiskFile:
     ino: int
     nlink: int
     mtime_ns: int
+    ctime_ns: int
 
 
 @dataclass
@@ -168,8 +169,15 @@ def lstat_or_none(host_path: str) -> os.stat_result | None:
         raise
 
 
+class PathMapError(ValueError):
+    """The path map does not translate a walked file back to the same host path."""
+
+
 def walk_root(db_root: str, path_map: PathMap, library: Library) -> None:
-    """Collect regular audio files under one root without following links."""
+    """Collect regular audio files under one root without following links.
+
+    Raises PathMapError when a file's DB spelling would not translate back to the file itself.
+    """
     host_root = path_map.to_host(db_root)
     count = 0
 
@@ -192,7 +200,11 @@ def walk_root(db_root: str, path_map: PathMap, library: Library) -> None:
                 continue
             if not stat.S_ISREG(info.st_mode) or not is_audio(name):
                 continue
-            library.disk.append(DiskFile(path_map.to_db(host_path), host_path, info.st_size, info.st_dev,
-                                         info.st_ino, info.st_nlink, info.st_mtime_ns))
+            db_path = path_map.to_db(host_path)
+            if path_map.to_host(db_path) != host_path:
+                raise PathMapError(f"path map sends {host_path} to {db_path}, which maps back to "
+                                   f"{path_map.to_host(db_path)}; fix overlapping --path-map prefixes")
+            library.disk.append(DiskFile(db_path, host_path, info.st_size, info.st_dev, info.st_ino,
+                                         info.st_nlink, info.st_mtime_ns, info.st_ctime_ns))
             count += 1
     log.info("walked root=%s audio_files=%d", db_root, count)

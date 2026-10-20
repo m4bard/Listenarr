@@ -76,7 +76,7 @@ def _relink(decision: RowDecision, keep_identity: bool, book_title: str) -> dict
         "precondition": {
             "row_sha256": decision.row.digest(),
             "file": {"dev": chosen.file.dev, "ino": chosen.file.ino, "size": chosen.file.size,
-                     "mtime_ns": chosen.file.mtime_ns},
+                     "mtime_ns": chosen.file.mtime_ns, "ctime_ns": chosen.file.ctime_ns, "nlink": chosen.file.nlink},
         },
     }
 
@@ -185,5 +185,23 @@ def write_outputs(plan: dict[str, Any], out_dir: Path, orphans: list[str]) -> tu
     lines.append("")
     lines.append("FLAGS:")
     lines.extend(f"  {f['kind']} row {f['row_id']} book {f['audiobook_id']}: {f['detail']}" for f in plan["flags"])
+    lines.append("")
+    lines.append("RELINKS (every one; content-evidence links first, physical-identity links last):")
+    for item in sorted(plan["relinks"], key=lambda r: (r["confidence"] == "identity", r["audiobook_id"], r["row_id"])):
+        evidence = item["evidence"]
+        marks = ",".join(k for k in ("same_dir", "title_in_path", "title_in_tags", "author_in_path") if evidence[k])
+        lines.append(f"  row {item['row_id']} book {item['audiobook_id']} [{item['confidence']}: {item['via']}; "
+                     f"{marks or 'no path evidence'}; candidates {evidence['candidates_considered']}]")
+        lines.append(f"      old {item['old_path']}")
+        lines.append(f"      new {item['new_path']}")
+    lines.append("")
+    lines.append("BOOK UPDATES:")
+    for update in plan["book_updates"]:
+        for column, value in sorted(update["set"].items()):
+            lines.append(f"  book {update['audiobook_id']} {column}: {update['was'].get(column)} -> {value}")
+    if plan["walk_errors"]:
+        lines.append("")
+        lines.append("WALK ERRORS (the plan may be missing candidates; re-run PLAN as a user that can read these):")
+        lines.extend(f"  {error}" for error in plan["walk_errors"])
     (out_dir / "plan-summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return plan_path, plan_sha
