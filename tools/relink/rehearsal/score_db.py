@@ -5,7 +5,10 @@ Works whichever mechanism wrote the row (scan rows get new ids), so it scores pe
 every live row must hold a path from that book's truth set (its own files, whatever the fixture
 expected the tool to do with them); every truth path expected to be linked should be held. A book
 holding its own file where the fixture conservatively expected a leave-out is right content and is
-reported separately (held-own-file-where-leave-out-expected), never as a wrong row.
+reported separately (held-own-file-where-leave-out-expected), never as a wrong row. A live row the
+tool leaves untouched by design but whose stored path now holds other content (C7: the old path was
+reused by another book) is reported as PREEXISTING-WRONG-LIVE-ROW: not created by the re-link, but a
+delete hazard the plan must flag.
 
 usage: score_db.py <db> <expected.json | layout.json>
 exit: 0 no wrong rows, 1 wrong rows found, 2 usage
@@ -32,10 +35,14 @@ def main() -> int:
     truth: dict[int, set[str]] = defaultdict(set)   # book -> its own files (acceptable live paths)
     wanted: dict[int, set[str]] = defaultdict(set)  # book -> paths that should be held
     leave_out: dict[int, set[str]] = defaultdict(set)  # book -> own files the fixture expected left out
+    preexisting: dict[int, set[str]] = defaultdict(set)  # book -> live stored paths holding other content
     if raw and "row_id" in raw[0]:
         for entry in raw:
             book = int(entry["audiobook_id"])
-            if entry["expect"] == "untouched":
+            if entry["expect"] == "untouched" and entry["truth_path"] not in (None, entry["stored_path"]):
+                preexisting[book].add(entry["stored_path"])
+                truth[book].add(entry["truth_path"])
+            elif entry["expect"] == "untouched":
                 truth[book].add(entry["stored_path"])
                 wanted[book].add(entry["stored_path"])
             elif entry["truth_path"]:
@@ -66,7 +73,10 @@ def main() -> int:
         if not os.path.lexists(str(path)):
             tally["stale-row"] += 1
             continue
-        if str(path) in truth[int(book_id)]:
+        if str(path) in preexisting[int(book_id)]:
+            tally["PREEXISTING-WRONG-LIVE-ROW"] += 1
+            lines.append(f"PREEXISTING-WRONG-LIVE-ROW row {row_id} book {book_id} -> {path} (untouched by design)")
+        elif str(path) in truth[int(book_id)]:
             tally["right-row"] += 1
             tally["right-row-with-identity" if physical else "right-row-identity-null"] += 1
         else:
