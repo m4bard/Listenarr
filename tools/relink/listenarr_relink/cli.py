@@ -1,7 +1,8 @@
 """Command line: ``plan``, ``apply`` and ``verify``.
 
-Exit codes: 0 success; 2 usage or refused precondition (nothing written); 3 APPLY wrote the accepted
-entries but refused some (listed in the report); 4 APPLY aborted (nothing written).
+Exit codes: 0 success; 2 usage or refused precondition (nothing written); 3 APPLY refused at least one
+entry and rolled everything back (nothing written; refusals listed in the report, re-plan); 4 APPLY aborted
+(nothing written).
 """
 
 from __future__ import annotations

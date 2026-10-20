@@ -2,8 +2,10 @@
 """End-state score of a fixture DB after re-linking: which rows point at the right file.
 
 Works whichever mechanism wrote the row (scan rows get new ids), so it scores per audiobook:
-every live row must hold a path from that book's truth set; every truth path expected to be
-linked should be held; a truth path expected to be left out must not be held by its book.
+every live row must hold a path from that book's truth set (its own files, whatever the fixture
+expected the tool to do with them); every truth path expected to be linked should be held. A book
+holding its own file where the fixture conservatively expected a leave-out is right content and is
+reported separately (held-own-file-where-leave-out-expected), never as a wrong row.
 
 usage: score_db.py <db> <expected.json | layout.json>
 exit: 0 no wrong rows, 1 wrong rows found, 2 usage
@@ -24,11 +26,12 @@ def main() -> int:
         print(__doc__, file=sys.stderr)
         return 2
     db, truth_file = sys.argv[1], sys.argv[2]
-    raw = json.load(open(truth_file, encoding="utf-8"))
+    with open(truth_file, encoding="utf-8") as handle:
+        raw = json.load(handle)
     connection = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    truth: dict[int, set[str]] = defaultdict(set)   # book -> acceptable live paths
+    truth: dict[int, set[str]] = defaultdict(set)   # book -> its own files (acceptable live paths)
     wanted: dict[int, set[str]] = defaultdict(set)  # book -> paths that should be held
-    forbidden: dict[int, set[str]] = defaultdict(set)
+    leave_out: dict[int, set[str]] = defaultdict(set)  # book -> own files the fixture expected left out
     if raw and "row_id" in raw[0]:
         for entry in raw:
             book = int(entry["audiobook_id"])
@@ -37,12 +40,11 @@ def main() -> int:
                 wanted[book].add(entry["stored_path"])
             elif entry["truth_path"]:
                 acceptable = set(entry.get("acceptable") or [entry["expect"]])
-                if "link" in acceptable:
-                    truth[book].add(entry["truth_path"])
+                truth[book].add(entry["truth_path"])
                 if entry["expect"] == "link":
                     wanted[book].add(entry["truth_path"])
                 elif "link" not in acceptable:
-                    forbidden[book].add(entry["truth_path"])
+                    leave_out[book].add(entry["truth_path"])
     else:
         book_by_title = {str(t): int(i) for i, t in connection.execute("SELECT Id, Title FROM Audiobooks")}
         asin_to_id = {str(a): int(i) for i, a in connection.execute("SELECT Id, Asin FROM Audiobooks")}
@@ -74,10 +76,10 @@ def main() -> int:
         for path in paths - held[book_id]:
             tally["not-held"] += 1
             lines.append(f"not held: book {book_id} {path}")
-    for book_id, paths in forbidden.items():
+    for book_id, paths in leave_out.items():
         for path in paths & held[book_id]:
-            tally["held-but-expected-left-out"] += 1
-            lines.append(f"held though leave-out expected: book {book_id} {path}")
+            tally["held-own-file-where-leave-out-expected"] += 1
+            lines.append(f"held own file though leave-out expected (right content): book {book_id} {path}")
     print(json.dumps(dict(sorted(tally.items()))))
     print("\n".join(lines))
     return 1 if tally["WRONG-ROW"] else 0

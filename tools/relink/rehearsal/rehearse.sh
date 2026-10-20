@@ -41,7 +41,8 @@ else
   gate "own mechanisms left the tree unchanged" "[ ! -s '$fx/runs/rh-$tag-own/fs-diff.txt' ]"
   relink verify --db "$out/after-own.db" --plan "$out/plan1/plan.json" --out "$out/verify-own.json" > /dev/null
   log INFO "own mechanisms vs plan1: $("$py" -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["plan_check"]["outcome"])' "$out/verify-own.json")"
-  log INFO "api: $(grep -c ' -> 200 ' "$fx/runs/rh-$tag-own/api.log") x200, $(grep -vc ' -> 200 ' "$fx/runs/rh-$tag-own/api.log") other"
+  log INFO "api: $(grep -cE ' -> 2[0-9][0-9] ' "$fx/runs/rh-$tag-own/api.log") x2xx, $(grep -vcE ' -> 2[0-9][0-9] ' "$fx/runs/rh-$tag-own/api.log" || true) other"
+  gate "own-mechanism API calls all 2xx (scan answers 202 enqueued)" "! grep -vE ' -> 2[0-9][0-9] ' '$fx/runs/rh-$tag-own/api.log' | grep -q ."
 fi
 
 relink plan --db "$out/after-own.db" --out "$out/plan2" > "$out/plan2.sha" 2> "$out/plan2.log"
@@ -52,12 +53,13 @@ log INFO "plan2 score $(head -1 "$out/score-plan2.txt")"
 cp "$out/after-own.db" "$out/live.db"
 sqlite3 "$out/live.db" ".backup '$out/backup.db'"
 sha=$(cat "$out/plan2.sha")
+cp "$out/live.db" "$out/pre-dry.db"  # a .backup copy never byte-equals its source (header change counter)
 relink apply --db "$out/live.db" --plan "$out/plan2/plan.json" --plan-sha256 "$sha" --backup "$out/backup.db" \
   --confirm-service-stopped --dry-run 2> "$out/apply-dry.log" && rc=0 || rc=$?
-gate "dry run exit 0 and DB unchanged" "[ $rc = 0 ] && cmp -s '$out/live.db' '$out/backup.db'"
+gate "dry run exit 0 and DB byte-identical to before it" "[ $rc = 0 ] && cmp -s '$out/live.db' '$out/pre-dry.db'"
 relink apply --db "$out/live.db" --plan "$out/plan2/plan.json" --plan-sha256 "$sha" --backup "$out/backup.db" \
   --confirm-service-stopped 2> "$out/apply.log" && rc=0 || rc=$?
-gate "apply exit 0" "[ $rc = 0 ]"
+gate "apply exit 0 and DB changed" "[ $rc = 0 ] && ! cmp -s '$out/live.db' '$out/pre-dry.db'"
 cp "$out/live.db" "$out/applied.db"
 relink apply --db "$out/live.db" --plan "$out/plan2/plan.json" --plan-sha256 "$sha" --backup "$out/backup.db" \
   --confirm-service-stopped --out "$out/reapply" 2> "$out/reapply.log" && rc=0 || rc=$?
@@ -91,9 +93,11 @@ if [ -n "$cand" ]; then
   cp "$out/started.db" "$out/cand-input.db"
   sqlite3 "$out/cand-input.db" < "$rename_sql" > /dev/null
   RH_DELETE_BOOK=$del_book "$ff/run.sh" "rh-$tag-cand-delete" "$cand" "$out/cand-input.db" "$here/actions/cand_delete.sh" 10
-  log INFO "candidate delete of book $del_book: $(tail -1 "$fx/runs/rh-$tag-cand-delete/api.log" | cut -c1-200)"
-  log INFO "tree diff: $(grep -c '^<' "$fx/runs/rh-$tag-cand-delete/fs-diff.txt" || true) entries gone"
-  grep '^<' "$fx/runs/rh-$tag-cand-delete/fs-diff.txt" > "$out/cand-delete-removed.txt" || true
+  log INFO "candidate delete of book $del_book: $(grep ' DELETE ' "$fx/runs/rh-$tag-cand-delete/api.log" | cut -c1-300)"
+  rh_removed=$(LC_ALL=C comm -23 <(grep '^< f ' "$fx/runs/rh-$tag-cand-delete/fs-diff.txt" | cut -d' ' -f7- | LC_ALL=C sort) \
+    <(grep '^> f ' "$fx/runs/rh-$tag-cand-delete/fs-diff.txt" | cut -d' ' -f7- | LC_ALL=C sort) || true)
+  printf '%s\n' "$rh_removed" > "$out/cand-delete-removed.txt"
+  log INFO "tree diff: $(grep -c . "$out/cand-delete-removed.txt" || true) files gone (paths in cand-delete-removed.txt)"
 fi
 log INFO "done fail=$fail"
 exit $fail

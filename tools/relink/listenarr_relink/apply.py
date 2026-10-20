@@ -102,7 +102,7 @@ def _check_relink(connection: sqlite3.Connection, entry: dict[str, Any], path_ma
 
 
 def apply_plan(db_file: str, plan_path: Path, plan: dict[str, Any], out_dir: Path, dry_run: bool) -> ApplyOutcome:
-    """Validate every entry against the live DB and disk, then write all accepted entries atomically."""
+    """Validate every entry against the live DB and disk; write all of them in one transaction, or none."""
     if plan.get("tool") != TOOL_NAME or plan.get("format") != PLAN_FORMAT_VERSION:
         raise ApplyAborted(f"{plan_path} is not a {TOOL_NAME} format {PLAN_FORMAT_VERSION} plan")
     path_map = PathMap.parse(list(plan.get("path_map", [])))
@@ -174,14 +174,21 @@ def apply_plan(db_file: str, plan_path: Path, plan: dict[str, Any], out_dir: Pat
         if clashes:
             connection.execute("ROLLBACK")
             raise ApplyAborted(f"would leave {len(clashes)} paths held by two rows, e.g. {clashes[0]}")
-        if dry_run:
+        if outcome.refused:
+            # All or nothing: a partial write could leave a multi-file book half re-linked (part live,
+            # part stale), the population a recursive book-folder delete is most dangerous on. Re-plan.
             connection.execute("ROLLBACK")
-            log.info("dry run: rolled back applied_rows=%d applied_books=%d refused=%d",
-                     len(outcome.applied_rows), len(outcome.applied_books), len(outcome.refused))
+            log.warning("refused %d entries; rolled back, nothing written (would have applied rows=%d books=%d)",
+                        len(outcome.refused), len(outcome.applied_rows), len(outcome.applied_books))
+            outcome.undo.clear()
+        elif dry_run:
+            connection.execute("ROLLBACK")
+            log.info("dry run: rolled back applied_rows=%d applied_books=%d refused=0",
+                     len(outcome.applied_rows), len(outcome.applied_books))
         else:
             connection.execute("COMMIT")
-            log.info("committed applied_rows=%d applied_books=%d refused=%d",
-                     len(outcome.applied_rows), len(outcome.applied_books), len(outcome.refused))
+            log.info("committed applied_rows=%d applied_books=%d",
+                     len(outcome.applied_rows), len(outcome.applied_books))
     except BaseException:
         if connection.in_transaction:
             connection.execute("ROLLBACK")
@@ -191,7 +198,8 @@ def apply_plan(db_file: str, plan_path: Path, plan: dict[str, Any], out_dir: Pat
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     kind = "dry-run" if dry_run else "apply"
     (out_dir / f"{kind}-report-{stamp}.json").write_text(json.dumps({
-        "plan": str(plan_path), "db": db_file, "dry_run": dry_run, "applied_rows": outcome.applied_rows,
+        "plan": str(plan_path), "db": db_file, "dry_run": dry_run, "committed": not dry_run and not outcome.refused,
+        "applied_rows": outcome.applied_rows,
         "applied_books": outcome.applied_books, "refused": outcome.refused}, indent=1) + "\n", encoding="utf-8")
     if not dry_run and outcome.undo:
         (out_dir / f"undo-{stamp}.sql").write_text(

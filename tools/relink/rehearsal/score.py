@@ -18,7 +18,8 @@ from typing import Any
 
 def truth_from_layout(layout: list[dict[str, Any]], db: str) -> dict[int, dict[str, Any]]:
     """Map row id -> {expect, truth_path} from an FF layout and the plan's DB."""
-    real_by_stored = {s: r for book in layout if book["library"] for s, r in zip(book["stored"], book["real"], strict=True)}
+    real_by_stored = {stored: real for book in layout if book["library"]
+                      for stored, real in zip(book["stored"], book["real"], strict=True)}
     connection = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     truth: dict[int, dict[str, Any]] = {}
     for row_id, path in connection.execute("SELECT Id, Path FROM AudiobookFiles"):
@@ -32,12 +33,11 @@ def main() -> int:
     if len(sys.argv) != 4:
         print(__doc__, file=sys.stderr)
         return 2
-    plan = json.load(open(sys.argv[1], encoding="utf-8"))
-    raw = json.load(open(sys.argv[2], encoding="utf-8"))
-    if raw and "row_id" in raw[0]:
-        truth = {e["row_id"]: e for e in raw}
-    else:
-        truth = truth_from_layout(raw, sys.argv[3])
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        plan = json.load(handle)
+    with open(sys.argv[2], encoding="utf-8") as handle:
+        raw = json.load(handle)
+    truth = {e["row_id"]: e for e in raw} if raw and "row_id" in raw[0] else truth_from_layout(raw, sys.argv[3])
     linked = {e["row_id"]: e for e in plan["relinks"]}
     left = {e["row_id"]: e for e in plan["left_out"]}
     tally: Counter[str] = Counter()
