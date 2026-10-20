@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import re
+import stat
 import unicodedata
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -15,7 +17,10 @@ AUDIO_EXTENSIONS = frozenset({
 })
 
 _TOKEN = re.compile(r"[^\W_]+")
-_LAST_NUMBER = re.compile(r"(\d+)(?!.*\d)")
+# Words a file or folder name may add to a title without naming another work (dropped unless in the title).
+NOISE_TOKENS = frozenset({"part", "pt", "disc", "disk", "cd", "track", "chapter", "unabridged", "abridged",
+                          "audiobook", "audio", "mp3", "m4b"})
+MAX_SYMLINK_HOPS = 40
 
 
 @dataclass(frozen=True)
@@ -82,22 +87,60 @@ def is_distinctive(title: str) -> bool:
                for token in tokens(title))
 
 
-def coverage(needle: str, haystack_tokens: set[str]) -> float:
-    """Fraction of ``needle``'s distinct tokens present in ``haystack_tokens`` (0 when needle has none)."""
-    needle_tokens = set(tokens(needle))
-    if not needle_tokens:
-        return 0.0
-    return len(needle_tokens & haystack_tokens) / len(needle_tokens)
+def names_title(text: str, title: str, authors: list[str]) -> bool:
+    """True when ``text`` names exactly this title and nothing more.
+
+    Its word tokens, minus numbers, the authors' names and noise words (``part``, ``disc``...), must equal
+    the title's tokens minus numbers. A sibling or containing title (``The Voyages of Doctor Dolittle`` for
+    ``The Story of Doctor Dolittle``, ``Tanar of Pellucidar`` for ``Pellucidar``) is not this title.
+    """
+    if not is_distinctive(title):
+        return False
+    title_tokens = {t for t in tokens(title) if not t.isdigit()}
+    author_tokens = {t for author in authors for t in tokens(author)} - title_tokens
+    rest = {t for t in tokens(text) if not t.isdigit()} - author_tokens - (NOISE_TOKENS - title_tokens)
+    return rest == title_tokens
 
 
-def part_number(path: str) -> int | None:
-    """Last run of digits in the file stem, e.g. ``Title-02.mp3`` -> 2."""
-    match = _LAST_NUMBER.search(PurePosixPath(path).stem)
-    return int(match.group(1)) if match else None
-
-
-def path_tokens(path: str, root: str) -> set[str]:
-    """Tokens of the directories below ``root`` and the file stem."""
+def name_parts(path: str, root: str) -> list[str]:
+    """The directory names below ``root`` and the file stem."""
     relative = PurePosixPath(path).relative_to(root) if is_within(path, root) else PurePosixPath(path)
-    parts = [*relative.parent.parts, relative.stem]
-    return {token for part in parts for token in tokens(part)}
+    return [*relative.parent.parts, relative.stem]
+
+
+def resolve_host(host_path: str, path_map: PathMap) -> str | None:
+    """Follow symlinks in ``host_path`` as the service would, returning the host path of the final object.
+
+    Absolute link text is in the service's namespace and goes through the path map. Returns None when a
+    component does not exist (a dangling link); raises OSError for anything else (permission, loops).
+    """
+    resolved = "/"
+    pending = list(PurePosixPath(host_path).parts[1:])
+    hops = 0
+    while pending:
+        name = pending.pop(0)
+        if name in ("", "."):
+            continue
+        if name == "..":
+            resolved = os.path.dirname(resolved) or "/"
+            continue
+        candidate = os.path.join(resolved, name)
+        try:
+            info = os.lstat(candidate)
+        except OSError as error:
+            if error.errno in (errno.ENOENT, errno.ENOTDIR):
+                return None
+            raise
+        if not stat.S_ISLNK(info.st_mode):
+            resolved = candidate
+            continue
+        hops += 1
+        if hops > MAX_SYMLINK_HOPS:
+            raise OSError(errno.ELOOP, "too many symlinks", host_path)
+        target = os.readlink(candidate)
+        if target.startswith("/"):
+            resolved = "/"
+            pending = [*PurePosixPath(path_map.to_host(target)).parts[1:], *pending]
+        else:
+            pending = [*PurePosixPath(target).parts, *pending]
+    return resolved

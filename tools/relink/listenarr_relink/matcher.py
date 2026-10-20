@@ -5,13 +5,15 @@ Rules (each one exists because guessing here can later let a delete hit the wron
 * Size is the content anchor. A row without a usable stored size is only linked by physical identity.
 * A candidate must agree with the row's stored duration, codec, sample rate and channels.
 * Physical identity (device + inode + file handle/generation) decides on its own when it matches.
-* Otherwise exactly one consistent candidate must remain; equal-size siblings are separated only by
-  file-name part number AND track tag agreeing, and only when the old and the new names sort the same
-  lexically and numerically (else a renamer that sorted ``1, 10, 11, 2`` would make the numbers lie).
-  Anything else is ambiguous and left out.
-* A link also needs path evidence (same folder as the old path, or the book title in the folder/file
-  names or in the tags). Title evidence alone never selects a file; it only confirms one. A title with
-  no distinctive token (``1``, ``It``) is never evidence and never a veto key.
+* Otherwise exactly one consistent candidate must remain. Equal-size siblings are separated only by an
+  unchanged file name; part numbers and track tags are never trusted (a renamer may have rewritten both in
+  any order). A same-size file that cannot be read makes the row ambiguous (it might be this row's file).
+  Anything else is ambiguous and left out. Such links are "shape-and-name": no content hash was ever
+  stored, so they are listed for review, and ``--identity-only`` withholds them.
+* A link also needs path evidence (same folder as the old path, or a folder/file name or album/title tag
+  that names exactly this title, see ``paths.names_title``). Title evidence alone never selects a file; it
+  only confirms one. A title with no distinctive token (``1``, ``It``) is never evidence or a veto key.
+* Tags that fully name another library book reject a candidate unless that title is part of this one.
 * A file (one object, whatever its names) is never linked to two rows, never to a file a live row already
   holds (also through a symlink row), and never to a file that was also a candidate of a row left
   unresolved (it might be that row's file).
@@ -31,14 +33,14 @@ from dataclasses import dataclass, field
 
 from listenarr_relink import identity, media
 from listenarr_relink.inventory import BookRow, DiskFile, FileRow, Library, lstat_or_none
-from listenarr_relink.paths import PathMap, coverage, is_distinctive, is_within, part_number, path_tokens, tokens
+from listenarr_relink.paths import PathMap, is_distinctive, is_within, name_parts, names_title, resolve_host, tokens
 
 log = logging.getLogger("relink.match")
 
 # Listenarr's proc-fd lstat sentinel (#901): a stored size of 64 is not a real size.
 UNUSABLE_SIZES = frozenset({0, 64})
-TITLE_COVERAGE = 0.8
 DURATION_ABS_TOLERANCE = 1.0
+SHAPE = "shape-and-name"
 DURATION_REL_TOLERANCE = 0.005
 
 
@@ -134,12 +136,11 @@ def _consistency(row: FileRow, probe: media.Probe, other_titles: dict[frozenset[
         stored = row.values.get(column)
         if stored is not None and value is not None and int(str(stored)) != value:
             return f"{column} {value} != stored {stored}"
-    tag_text = " ".join(probe.tags.get(k, "") for k in ("album", "title"))
-    tag_tokens = frozenset(tokens(tag_text))
-    if tag_tokens and (not is_distinctive(own_title) or coverage(own_title, set(tag_tokens)) < 0.5):
-        for title_tokens, book_id in other_titles.items():
-            if title_tokens and title_tokens <= tag_tokens:
-                return f"tags name another library book (audiobook {book_id})"
+    tag_tokens = frozenset(tokens(" ".join(probe.tags.get(k, "") for k in ("album", "title"))))
+    own_tokens = frozenset(tokens(own_title))
+    for title_tokens, book_id in other_titles.items():
+        if title_tokens <= tag_tokens and not title_tokens <= own_tokens:
+            return f"tags name another library book (audiobook {book_id})"
     return None
 
 
@@ -154,7 +155,7 @@ def _parallel(items: Iterable[str], work: Callable[[str], object], workers: int)
         return dict(zip(unique, pool.map(work, unique), strict=True))
 
 
-def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) -> MatchResult:
+def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, identity_only: bool) -> MatchResult:
     """Classify rows, choose links, derive book updates and the scan-safe list."""
     flags: list[Flag] = []
     files_by_book: dict[int, list[FileRow]] = defaultdict(list)
@@ -183,10 +184,13 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
             flags.append(Flag("live-symlink", row.id, row.audiobook_id, row.path))
             symlink_books.add(row.audiobook_id)
             try:
-                target = os.stat(host)
-            except OSError:
+                target_path = resolve_host(host, path_map)
+                target = os.stat(target_path) if target_path else None
+            except OSError as error:
+                library.walk_errors.append(f"{row.path}: cannot resolve the row's symlink: {error.strerror}")
                 continue
-            claimed.add((target.st_dev, target.st_ino))
+            if target is not None:
+                claimed.add((target.st_dev, target.st_ino))
             continue
         live_rows += 1
         claimed.add((info.st_dev, info.st_ino))
@@ -215,9 +219,6 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
             other_titles.setdefault(key, book.id)
 
     decisions = [RowDecision(row) for row in stale]
-    siblings: dict[tuple[int, int | None], list[FileRow]] = defaultdict(list)
-    for row in stale:
-        siblings[(row.audiobook_id, row.size)].append(row)
     keep_identity: dict[int, bool] = {}
 
     # Pass 1: physical identity decides on its own.
@@ -273,13 +274,13 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
             others = {k: v for k, v in other_titles.items() if v != decision.row.audiobook_id}
             candidate.rejected = _consistency(decision.row, probe, others, title)
             root = _root_of(candidate.file.db_path, library.roots) or "/"
-            names = path_tokens(candidate.file.db_path, root)
-            tag_tokens = set(tokens(" ".join(probe.tags.get(k, "") for k in ("album", "title"))))
+            parts = name_parts(candidate.file.db_path, root)
             candidate.same_dir = os.path.dirname(candidate.file.host_path) == old_parent
-            distinctive = is_distinctive(title)
-            candidate.title_in_path = distinctive and coverage(title, names) >= TITLE_COVERAGE
-            candidate.title_in_tags = distinctive and bool(tag_tokens) and coverage(title, tag_tokens) >= TITLE_COVERAGE
-            candidate.author_in_path = any(coverage(a, names) >= TITLE_COVERAGE for a in authors)
+            candidate.title_in_path = any(names_title(part, title, authors) for part in parts)
+            candidate.title_in_tags = any(names_title(probe.tags[k], title, authors)
+                                          for k in ("album", "title") if probe.tags.get(k))
+            author_tokens = [set(tokens(a)) for a in authors if tokens(a)]
+            candidate.author_in_path = any(a <= {t for part in parts for t in tokens(part)} for a in author_tokens)
 
     # Pass 2: choose.
     for decision in pending:
@@ -290,6 +291,12 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
                 continue
             decision.chosen, decision.confidence, decision.via = consistent[0], "identity", "physical identity"
             continue
+        unreadable = [c for c in decision.candidates if c.probe is not None and c.probe.error]
+        if unreadable:
+            decision.leave_out(f"same-size candidate {unreadable[0].file.db_path} could not be read "
+                               f"({unreadable[0].probe.error if unreadable[0].probe else ''}); it might be this "
+                               "row's file (review)")
+            continue
         if not consistent:
             decision.leave_out("no same-size file agrees with the stored audio facts" if decision.candidates
                                else "no unclaimed file of the stored size")
@@ -299,30 +306,19 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
         else:
             hashes = _parallel((c.file.host_path for c in consistent), media.audio_hash, workers)
             decision.audio_hashes = {k: v if isinstance(v, str) else None for k, v in hashes.items()}
-            wanted = part_number(decision.row.path)
-            tracks = [c.probe.track if c.probe else None for c in consistent]
-            if wanted is None or any(t is None for t in tracks):
-                decision.leave_out(f"{len(consistent)} equally consistent candidates and no part number/track "
-                                   "tags to separate them")
+            old_name = os.path.basename(decision.row.path)
+            by_name = [c for c in consistent if os.path.basename(c.file.db_path) == old_name]
+            if len(by_name) != 1:
+                decision.leave_out(f"{len(consistent)} equally consistent candidates; only an unchanged file name "
+                                   f"may separate equal-size files and {len(by_name)} carry it")
                 continue
-            old_names = [r.path for r in siblings[(decision.row.audiobook_id, decision.row.size)]]
-            if _order_ambiguous(old_names) or _order_ambiguous([c.file.db_path for c in consistent]):
-                decision.leave_out(f"{len(consistent)} equally consistent candidates; part numbers cannot be "
-                                   "trusted because the names sort differently lexically and numerically")
-                continue
-            by_track = [c for c in consistent if c.probe and c.probe.track == wanted]
-            by_both = [c for c in by_track if part_number(c.file.db_path) == wanted]
-            if len(by_track) != 1 or len(by_both) != 1:
-                decision.leave_out(f"{len(consistent)} equally consistent candidates; part {wanted} is not "
-                                   "matched by exactly one file whose name number and track tag both agree")
-                continue
-            chosen, via = by_both[0], "part number and track tag"
+            chosen, via = by_name[0], "unchanged file name among equal-size files"
         if not chosen.path_evidence:
             decision.leave_out(f"only candidate {chosen.file.db_path} has no folder/title/tag evidence "
                                "linking it to this book (review)")
             decision.candidates = [chosen, *[c for c in decision.candidates if c is not chosen]]
             continue
-        decision.chosen, decision.confidence, decision.via = chosen, "high", via
+        decision.chosen, decision.confidence, decision.via = chosen, SHAPE, via
 
     # Pass 3: one file, one row; and a file that an unresolved row could own is not given away.
     while True:
@@ -353,6 +349,12 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
         if not changed:
             break
 
+    if identity_only:
+        shape_books = {d.row.audiobook_id for d in decisions if d.chosen and d.confidence != "identity"}
+        for decision in decisions:
+            if decision.chosen is not None and decision.row.audiobook_id in shape_books:
+                decision.leave_out("withheld by --identity-only: this book has a link without physical identity")
+
     for decision in decisions:
         if decision.chosen is None:
             continue
@@ -376,15 +378,6 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool) 
     candidate_paths = {c.file.db_path for d in decisions for c in d.candidates}
     orphans = [f for f in pool if f.db_path not in chosen_paths and f.db_path not in candidate_paths]
     return MatchResult(decisions, live_rows, book_updates, flags, scan_safe, move_safe, orphans, keep_identity)
-
-
-def _order_ambiguous(paths: list[str]) -> bool:
-    """True when file names sort differently by text and by their part number (``1, 10, 2`` vs ``1, 2, 10``)."""
-    if len(paths) < 2:
-        return False
-    by_text = sorted(paths, key=lambda p: os.path.basename(p).casefold())
-    by_number = sorted(paths, key=lambda p: (part_number(p) or 0, os.path.basename(p).casefold()))
-    return by_text != by_number
 
 
 def _final_paths(rows: list[FileRow], links: dict[int, str], stale_ids: set[int]) -> list[str] | None:

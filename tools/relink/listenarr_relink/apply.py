@@ -14,7 +14,7 @@ from typing import Any
 
 from listenarr_relink import PLAN_FORMAT_VERSION, TOOL_NAME, identity
 from listenarr_relink.inventory import BOOK_COLUMNS, FILE_COLUMNS, lstat_or_none, row_digest
-from listenarr_relink.paths import PathMap
+from listenarr_relink.paths import PathMap, resolve_host
 
 log = logging.getLogger("relink.apply")
 
@@ -78,9 +78,12 @@ def _held_objects(connection: sqlite3.Connection, path_map: PathMap) -> dict[tup
     held: dict[tuple[int, int], set[int]] = {}
     for row_id, path in connection.execute("SELECT Id, Path FROM AudiobookFiles WHERE Path IS NOT NULL AND Path <> ''"):
         try:
-            info = os.stat(path_map.to_host(str(path)))
-        except OSError:
-            continue
+            resolved = resolve_host(path_map.to_host(str(path)), path_map)
+            if resolved is None:
+                continue
+            info = os.stat(resolved)
+        except OSError as error:
+            raise ApplyAborted(f"cannot resolve row {row_id}'s path {path}: {error.strerror}") from error
         held.setdefault((info.st_dev, info.st_ino), set()).add(int(row_id))
     return held
 
@@ -122,6 +125,9 @@ def apply_plan(db_file: str, plan_path: Path, plan: dict[str, Any], out_dir: Pat
     """Validate every entry against the live DB and disk; write all of them in one transaction, or none."""
     if plan.get("tool") != TOOL_NAME or plan.get("format") != PLAN_FORMAT_VERSION:
         raise ApplyAborted(f"{plan_path} is not a {TOOL_NAME} format {PLAN_FORMAT_VERSION} plan")
+    if plan.get("walk_errors"):
+        raise ApplyAborted(f"the plan was made with {len(plan['walk_errors'])} walk errors (incomplete evidence); "
+                           "fix them and re-plan")
     path_map = PathMap.parse(list(plan.get("path_map", [])))
     targets = [str(e["new_path"]) for e in plan["relinks"]]
     objects = [(e["precondition"]["file"]["dev"], e["precondition"]["file"]["ino"]) for e in plan["relinks"]]

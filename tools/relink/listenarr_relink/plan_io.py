@@ -82,7 +82,7 @@ def _relink(decision: RowDecision, keep_identity: bool, book_title: str) -> dict
 
 
 def build_plan(library: Library, result: MatchResult, path_map: PathMap, db_copy: Path,
-               live_db: str) -> dict[str, Any]:
+               live_db: str, identity_only: bool) -> dict[str, Any]:
     """Assemble the plan document."""
     titles = {book_id: book.title for book_id, book in library.books.items()}
     relinks = [_relink(d, result.keep_identity.get(d.row.id, False), titles.get(d.row.audiobook_id, ""))
@@ -114,6 +114,7 @@ def build_plan(library: Library, result: MatchResult, path_map: PathMap, db_copy
         "db_copy": {"path": str(db_copy), "sha256": file_sha256(db_copy)},
         "roots": library.roots,
         "path_map": [f"{a}={b}" for a, b in path_map.pairs],
+        "identity_only": identity_only,
         "summary": {
             "file_rows": len(library.files),
             "live_rows": result.live_rows,
@@ -147,7 +148,8 @@ def _reason_class(reason: str) -> str:
                           ("no unclaimed file", "no-candidate"), ("agrees with the stored", "no-consistent-candidate"),
                           ("no usable stored size", "no-size"), ("hard links", "hard-link"),
                           ("size changed", "identity-content-changed"), ("same physical identity", "identity-dup"),
-                          ("physical identity matches but", "identity-inconsistent")):
+                          ("physical identity matches but", "identity-inconsistent"),
+                          ("could not be read", "unreadable-candidate"), ("identity-only", "withheld-shape-only")):
         if marker in reason:
             return label
     return "other"
@@ -175,18 +177,12 @@ def write_outputs(plan: dict[str, Any], out_dir: Path, orphans: list[str]) -> tu
         f"unclaimed audio files never a candidate "
         f"{summary['unclaimed_audio_files_not_considered']}; symlinks skipped {summary['symlinks_skipped']}; "
         f"walk errors {summary['walk_errors']}",
+        f"identity only: {plan['identity_only']}",
         "",
-        f"LEFT OUT (first {LEFT_OUT_PREVIEW}; full list in plan.json):",
+        "RELINKS (every one). shape-and-name links first: size, duration, codec, sample rate and channels plus a",
+        "folder/name/tag naming this title. NO content hash was compared (none was ever stored); review them.",
+        "Physical-identity links (.620's own record of the file object) last:",
     ]
-    for item in plan["left_out"][:LEFT_OUT_PREVIEW]:
-        lines.append(f"  row {item['row_id']} book {item['audiobook_id']}: {item['reason']}")
-        lines.extend(f"      candidate {c['path']}" + (f" (rejected: {c['rejected']})" if c["rejected"] else "")
-                     for c in item["candidates"][:5])
-    lines.append("")
-    lines.append("FLAGS:")
-    lines.extend(f"  {f['kind']} row {f['row_id']} book {f['audiobook_id']}: {f['detail']}" for f in plan["flags"])
-    lines.append("")
-    lines.append("RELINKS (every one; content-evidence links first, physical-identity links last):")
     for item in sorted(plan["relinks"], key=lambda r: (r["confidence"] == "identity", r["audiobook_id"], r["row_id"])):
         evidence = item["evidence"]
         marks = ",".join(k for k in ("same_dir", "title_in_path", "title_in_tags", "author_in_path") if evidence[k])
@@ -199,6 +195,15 @@ def write_outputs(plan: dict[str, Any], out_dir: Path, orphans: list[str]) -> tu
     for update in plan["book_updates"]:
         for column, value in sorted(update["set"].items()):
             lines.append(f"  book {update['audiobook_id']} {column}: {update['was'].get(column)} -> {value}")
+    lines.append("")
+    lines.append(f"LEFT OUT (first {LEFT_OUT_PREVIEW}; full list in plan.json):")
+    for item in plan["left_out"][:LEFT_OUT_PREVIEW]:
+        lines.append(f"  row {item['row_id']} book {item['audiobook_id']}: {item['reason']}")
+        lines.extend(f"      candidate {c['path']}" + (f" (rejected: {c['rejected']})" if c["rejected"] else "")
+                     for c in item["candidates"][:5])
+    lines.append("")
+    lines.append("FLAGS:")
+    lines.extend(f"  {f['kind']} row {f['row_id']} book {f['audiobook_id']}: {f['detail']}" for f in plan["flags"])
     if plan["walk_errors"]:
         lines.append("")
         lines.append("WALK ERRORS (the plan may be missing candidates; re-run PLAN as a user that can read these):")

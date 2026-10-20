@@ -64,12 +64,15 @@ def _plan(args: argparse.Namespace) -> int:
     library = inventory.Library(roots, books, files)
     try:
         for root in roots:
+            if any(other != root and is_within(root, other) for other in roots):
+                log.info("root %s lies inside another root; walked once as part of it", root)
+                continue
             inventory.walk_root(root, path_map, library)
     except inventory.PathMapError as error:
         log.error("%s", error)
         return 2
-    result = matcher.match(library, path_map, args.workers, not args.no_hash_chosen)
-    plan = build_plan(library, result, path_map, db_copy, args.db)
+    result = matcher.match(library, path_map, args.workers, not args.no_hash_chosen, args.identity_only)
+    plan = build_plan(library, result, path_map, db_copy, args.db, args.identity_only)
     plan_path, plan_sha = write_outputs(plan, out_dir, [o.db_path for o in result.orphans])
     summary = plan["summary"]
     log.info("plan=%s sha256=%s relinks=%d left_out=%d book_updates=%d scan_safe_books=%d", plan_path, plan_sha,
@@ -152,6 +155,9 @@ def main(argv: list[str] | None = None) -> int:
     plan.add_argument("--workers", type=int, default=4, help="parallel ffprobe/ffmpeg processes (default 4)")
     plan.add_argument("--no-hash-chosen", action="store_true",
                       help="skip the audio-stream hash of each chosen file (faster; hashes of ambiguous sets stay)")
+    plan.add_argument("--identity-only", action="store_true",
+                      help="propose only books whose every link is by .620 physical identity; shape-and-name "
+                           "links are left out and listed")
     plan.set_defaults(handler=_plan)
 
     apply = sub.add_parser("apply", help="write a reviewed plan into the stopped service's DB, one transaction")
