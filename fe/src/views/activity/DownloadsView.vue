@@ -19,13 +19,23 @@
   <div class="downloads-page">
     <div class="downloads-header">
       <h2>Downloads</h2>
-      <button
-        @click="refreshDownloads"
-        :disabled="downloadsStore.isLoading"
-        class="refresh-button btn"
-      >
-        {{ downloadsStore.isLoading ? 'Refreshing...' : 'Refresh' }}
-      </button>
+      <div class="downloads-header-actions">
+        <button
+          v-if="bulkClearLabel"
+          @click="clearCurrentTab"
+          :disabled="isClearing || downloadsStore.isLoading"
+          class="clear-button btn"
+        >
+          {{ isClearing ? 'Clearing...' : bulkClearLabel }}
+        </button>
+        <button
+          @click="refreshDownloads"
+          :disabled="downloadsStore.isLoading"
+          class="refresh-button btn"
+        >
+          {{ downloadsStore.isLoading ? 'Refreshing...' : 'Refresh' }}
+        </button>
+      </div>
     </div>
 
     <div class="downloads-tabs">
@@ -92,7 +102,7 @@
             <div
               v-for="download in visibleDownloads"
               :key="download.id"
-              v-memo="[download.id, download.status, download.progress]"
+              v-memo="[download.id, download.status, download.progress, isRemoving(download.id)]"
               class="download-card"
             >
               <div class="download-info">
@@ -138,12 +148,20 @@
                   Cancel
                 </button>
 
-                <button
-                  v-if="download.status === 'Failed'"
-                  @click="retryDownload()"
+                <QueueRetryButton
                   class="action-button retry btn"
+                  :downloadId="download.id"
+                  :status="download.status"
+                  @retried="refreshDownloads"
+                />
+
+                <button
+                  v-if="isTerminalFailure(download.status)"
+                  @click="removeDownload(download.id)"
+                  :disabled="isRemoving(download.id)"
+                  class="action-button remove btn"
                 >
-                  Retry
+                  {{ isRemoving(download.id) ? 'Removing...' : 'Remove' }}
                 </button>
 
                 <button
@@ -186,8 +204,10 @@ import { errorTracking } from '@/services/errorTracking'
 import { logger } from '@/utils/logger'
 import { PhDownloadSimple, PhCheckCircle, PhXCircle } from '@phosphor-icons/vue'
 import InspectTorrentModal from '@/components/domain/download/InspectTorrentModal.vue'
+import QueueRetryButton from '@/components/domain/download/QueueRetryButton.vue'
 import { apiService } from '@/services/api'
 import { EmptyState, ProgressBar } from '@/components/base'
+import { showConfirm } from '@/composables/confirmService'
 
 const downloadsStore = useDownloadsStore()
 const toast = useToast()
@@ -335,11 +355,73 @@ const closeInspect = () => {
   inspectState.value.loading = false
 }
 
-const retryDownload = async () => {
-  // For now, just show a message. In a real implementation,
-  // you would restart the download
-  // useToast expects (title, message)
-  toast.info('Coming Soon', 'Retry functionality will be implemented soon')
+// Failed and ImportBlocked are the states nothing polls, retries or sweeps. They are the
+// only rows a user has to clear by hand, so they are the only ones offered a Remove action.
+const TERMINAL_FAILURE_STATUSES = ['Failed', 'ImportBlocked']
+
+const removingIds = ref<string[]>([])
+const isClearing = ref(false)
+
+const isTerminalFailure = (status: string) => TERMINAL_FAILURE_STATUSES.includes(status)
+
+const isRemoving = (downloadId: string) => removingIds.value.includes(downloadId)
+
+const removeDownload = async (downloadId: string) => {
+  if (isRemoving(downloadId)) return
+
+  removingIds.value = [...removingIds.value, downloadId]
+  try {
+    await downloadsStore.removeDownload(downloadId)
+    // useToast expects (title, message)
+    toast.success('Removed', 'Download removed from the queue')
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'DownloadsView',
+      operation: 'removeDownload',
+      metadata: { downloadId },
+    })
+    toast.error('Error', 'Failed to remove download')
+  } finally {
+    removingIds.value = removingIds.value.filter((id) => id !== downloadId)
+  }
+}
+
+const bulkClearLabel = computed(() => {
+  if (activeTab.value === 'completed' && downloadsStore.completedDownloads.length > 0) {
+    return 'Clear Completed'
+  }
+  if (activeTab.value === 'failed' && downloadsStore.failedDownloads.length > 0) {
+    return 'Clear Failed'
+  }
+  return ''
+})
+
+const clearCurrentTab = async () => {
+  const clearingFailed = activeTab.value === 'failed'
+  const subject = clearingFailed ? 'failed and blocked' : 'completed'
+  const confirmed = await showConfirm(
+    `Remove every ${subject} download from the queue? This deletes the download records only, and leaves any files already on disk alone.`,
+    clearingFailed ? 'Clear Failed' : 'Clear Completed',
+    { danger: true, confirmText: 'Clear', cancelText: 'Cancel' },
+  )
+  if (!confirmed) return
+
+  isClearing.value = true
+  try {
+    const count = clearingFailed
+      ? await downloadsStore.clearFailedDownloads()
+      : await downloadsStore.clearCompletedDownloads()
+    toast.success('Cleared', `Removed ${count} download${count === 1 ? '' : 's'} from the queue`)
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'DownloadsView',
+      operation: 'clearCurrentTab',
+      metadata: { tab: activeTab.value },
+    })
+    toast.error('Error', 'Failed to clear downloads')
+  } finally {
+    isClearing.value = false
+  }
 }
 
 const openFolder = (path: string) => {
@@ -448,6 +530,31 @@ onBeforeUnmount(() => {
 .downloads-header h2 {
   margin: 0;
   color: #2c3e50;
+}
+
+.downloads-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.clear-button {
+  padding: 0.5rem 1rem;
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.clear-button:hover:not(:disabled) {
+  background-color: #c0392b;
+}
+
+.clear-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .refresh-button {
@@ -646,6 +753,20 @@ onBeforeUnmount(() => {
 
 .action-button.retry:hover {
   background-color: #d68910;
+}
+
+.action-button.remove {
+  background-color: #7f8c8d;
+  color: white;
+}
+
+.action-button.remove:hover:not(:disabled) {
+  background-color: #616a6b;
+}
+
+.action-button.remove:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .action-button.open {
