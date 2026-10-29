@@ -20,7 +20,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Search.Indexers.Common;
 
-public class IndexerSearchWorkflow
+public partial class IndexerSearchWorkflow
 {
     private readonly HttpClient _httpClient;
     private readonly IConfigurationService _configurationService;
@@ -422,64 +422,6 @@ public class IndexerSearchWorkflow
                 IndexerQueryFailureClassifier.Describe(ex),
                 tier);
         }
-    }
-
-    /// <summary>
-    /// Feeds one indexer's answer to the failure backoff. A status write must never be able to fail
-    /// a search that otherwise worked, so a persistence error is logged and swallowed here.
-    /// </summary>
-    private async Task RecordOutcomeAsync(Indexer indexer, IndexerQueryObservation observation, CancellationToken ct = default)
-    {
-        if (_indexerStatusService == null)
-        {
-            return;
-        }
-
-        try
-        {
-            await _indexerStatusService.RecordAsync(indexer, observation, ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-        {
-            _logger.LogWarning(ex, "Failed to record failure backoff state for indexer {Name}", indexer.Name);
-        }
-    }
-
-    /// <summary>
-    /// One line per indexer per search, naming how the indexer answered. Without it, a 500 and a
-    /// genuine zero-match are indistinguishable in the log stream as well as in the return value.
-    /// </summary>
-    private void LogIndexerQueryOutcome(Indexer indexer, IndexerQueryObservation observation)
-    {
-        const string template =
-            "Indexer {Name} query outcome {Outcome} ({Reason}) at tier {Tier} with {Count} results{Detail}";
-        var detail = string.IsNullOrWhiteSpace(observation.Detail)
-            ? string.Empty
-            : $": {observation.Detail}";
-
-        if (observation.Outcome is IndexerQueryOutcome.Unavailable
-            or IndexerQueryOutcome.Unreadable
-            or IndexerQueryOutcome.NotConfigured)
-        {
-            _logger.LogWarning(
-                template,
-                indexer.Name,
-                observation.Outcome,
-                observation.Reason,
-                observation.Tier,
-                observation.Results.Count,
-                detail);
-            return;
-        }
-
-        _logger.LogInformation(
-            template,
-            indexer.Name,
-            observation.Outcome,
-            observation.Reason,
-            observation.Tier,
-            observation.Results.Count,
-            detail);
     }
 
     private static string GetFallbackIndexerName(Indexer indexer)
