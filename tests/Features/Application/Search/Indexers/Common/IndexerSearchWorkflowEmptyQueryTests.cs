@@ -55,11 +55,14 @@ namespace Listenarr.Tests.Features.Application.Search.Indexers.Common
                     It.IsAny<Indexer>(),
                     It.IsAny<string>(),
                     It.IsAny<string?>(),
-                    It.IsAny<SearchRequest?>()))
-                .ReturnsAsync(new List<IndexerSearchResult>
-                {
-                    new IndexerSearchResult { Title = "Unrelated Release" }
-                });
+                    It.IsAny<SearchRequest?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(IndexerQueryObservation.FromResults(
+                    new List<IndexerSearchResult>
+                    {
+                        new IndexerSearchResult { Title = "Unrelated Release" }
+                    },
+                    "browse"));
 
             using var httpClient = new HttpClient();
             var workflow = new IndexerSearchWorkflow(
