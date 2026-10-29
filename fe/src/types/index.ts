@@ -263,9 +263,6 @@ export interface DownloadClientSettings {
   category?: string
   tags?: string
   recentPriority?: string
-  olderPriority?: string
-  removeCompleted?: boolean
-  removeFailed?: boolean
   initialState?: string
   sequentialOrder?: boolean
   firstAndLastFirst?: boolean
@@ -429,7 +426,7 @@ export interface ApplicationSettings {
   fileNamingPattern: string
   multiFileNamingPattern: string
   enableMetadataProcessing: boolean
-  enableCoverArtDownload: boolean
+  embedCoverArtInAudioFiles: boolean
   audnexusApiUrl: string
   maxConcurrentDownloads: number
   unmatchedScanConcurrency?: number
@@ -486,6 +483,13 @@ export interface ApplicationSettings {
   enableOpenLibrarySearch?: boolean
   defaultSearchRegion?: string
   defaultSearchLanguage?: string
+
+  // Scheduled provider-metadata refresh
+  metadataRefreshEnabled?: boolean
+  metadataRefreshIntervalHours?: number
+  metadataRefreshStaleAfterDays?: number
+  metadataRefreshRequestsPerHour?: number
+  metadataRefreshMinimumSpacingMs?: number
 }
 
 export interface ProwlarrImportConnectionSettings {
@@ -501,6 +505,7 @@ export interface StartupConfig {
   port?: number
   sslPort?: number
   urlBase?: string
+  applicationUrl?: string
   bindAddress?: string
   apiKey?: string
   authenticationMethod?: string
