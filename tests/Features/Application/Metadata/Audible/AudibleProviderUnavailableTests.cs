@@ -59,8 +59,9 @@ public sealed class AudibleProviderUnavailableTests : BaseTests
         var workflow = BuildWorkflow(handler);
 
         var fault = await Record.ExceptionAsync(() => workflow.SearchProductsDirectAsync(
-            query: null, title: "Les Mis\u00e9rables", author: null,
-            narrator: null, publisher: null,
+            query: null,
+            title: "The Extraordinary Adventures of Ars\u00e8ne Lupin, Gentleman-Burglar",
+            author: null, narrator: null, publisher: null,
             page: 1, limit: 10, region: "us", language: null, sortBy: "Relevance"));
 
         Assert.NotNull(fault);
