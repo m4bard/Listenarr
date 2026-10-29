@@ -54,7 +54,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         [Trait("Method", "MonitorDownloadsAsync")]
         public async Task MonitorCycle_WhenOneTorrentIsUnreadable_KeepsItsTrackingRecord()
         {
-            Api.InfoResponseOverride = QueueWithMiddleTorrentDownloaded("\"600\"");
+            Api.InfoResponseOverride = QueueWithMiddleTorrentState("123");
             await TrackDownloadsAsync("aaaa1111", "bbbb2222", "cccc3333");
 
             await RunCycleAsync();
@@ -68,7 +68,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         [Trait("Method", "MonitorDownloadsAsync")]
         public async Task MonitorCycle_WhenEveryTorrentIsReadable_RemovesAGenuineOrphan()
         {
-            Api.InfoResponseOverride = QueueWithMiddleTorrentDownloaded("600");
+            Api.InfoResponseOverride = QueueWithMiddleTorrentState("\"downloading\"");
             await TrackDownloadsAsync("aaaa1111", "bbbb2222", "cccc3333", "dddd4444");
 
             await RunCycleAsync();
@@ -85,7 +85,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         [Trait("Method", "MonitorDownloadsAsync")]
         public async Task MonitorCycle_WhenTheBreakerOpensMidPoll_BacksOffFurtherEachCycle()
         {
-            Api.InfoResponseOverride = QueueWithMiddleTorrentDownloaded("600");
+            Api.InfoResponseOverride = QueueWithMiddleTorrentState("\"downloading\"");
             Api.FilesRequestsBeforeBreakerOpens = 1;
             await TrackDownloadsAsync("aaaa1111", "bbbb2222", "cccc3333");
 
@@ -105,7 +105,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         [Trait("Method", "MonitorDownloadsAsync")]
         public async Task MonitorCycle_WhenEveryPollSucceeds_KeepsTheNormalInterval()
         {
-            Api.InfoResponseOverride = QueueWithMiddleTorrentDownloaded("600");
+            Api.InfoResponseOverride = QueueWithMiddleTorrentState("\"downloading\"");
             await TrackDownloadsAsync("aaaa1111", "bbbb2222", "cccc3333");
 
             await RunCycleAsync();
@@ -131,8 +131,10 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         private static string SavePathJson(string folder) =>
             JsonSerializer.Serialize(FileUtils.GetAbsolutePath("downloads", folder));
 
-        // Three torrents; the middle one carries `downloaded` in the given JSON token form.
-        private static string QueueWithMiddleTorrentDownloaded(string downloaded) => $$"""
+        // Three torrents; the middle one carries `state` in the given JSON token form. A number
+        // there makes the torrent unreadable; `downloaded` cannot, since #1008 reads every numeric
+        // shape of it.
+        private static string QueueWithMiddleTorrentState(string state) => $$"""
         [
             {
                 "hash": "aaaa1111", "name": "First", "progress": 0.5, "size": 1000,
@@ -140,7 +142,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             },
             {
                 "hash": "bbbb2222", "name": "Second", "progress": 0.5, "size": 1000,
-                "downloaded": {{downloaded}}, "state": "downloading", "save_path": {{SavePathJson("b")}}
+                "downloaded": 600, "state": {{state}}, "save_path": {{SavePathJson("b")}}
             },
             {
                 "hash": "cccc3333", "name": "Third", "progress": 0.5, "size": 1000,
