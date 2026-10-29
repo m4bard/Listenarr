@@ -71,11 +71,13 @@
             <span>No download clients configured</span>
           </div>
           <div v-else>
-            <div v-for="client in downloadClients" :key="client.name" class="client-status">
-              <component
-                :is="client.status === 'connected' ? PhCheckCircle : PhXCircle"
-                :class="client.status === 'connected' ? 'success' : 'error'"
-              />
+            <div
+              v-for="client in downloadClients"
+              :key="client.name"
+              class="client-status"
+              :title="client.failureReason || undefined"
+            >
+              <component :is="clientStatusIcon(client.status)" :class="clientStatusIconClass(client.status)" />
               <span class="client-name">{{ client.name }}</span>
               <span :class="['client-indicator', client.status]">{{ client.status }}</span>
             </div>
@@ -129,6 +131,8 @@
     </div>
 
     <div class="system-sections">
+      <ScheduledTasksSection />
+
       <div class="section">
         <div class="section-header">
           <h2>
@@ -194,7 +198,11 @@
           </div>
         </div>
         <div class="logs-container">
-          <div v-for="log in recentLogs" :key="log.id" :class="['log-entry', log.level]">
+          <div
+            v-for="log in recentLogs"
+            :key="log.id"
+            :class="['log-entry', log.level.toLowerCase()]"
+          >
             <component :is="getLogIconComponent(log.level)" class="log-icon" />
             <span class="log-time">{{ formatLogTime(log.timestamp) }}</span>
             <span class="log-level">{{ log.level.toUpperCase() }}</span>
@@ -236,6 +244,7 @@ import { useSystemLogs } from '@/composables/useSystemLogs'
 import { useRouter } from 'vue-router'
 import { LoadingState, StatusCard, InfoCard } from '@/components/base'
 import StorageDisksList from '@/components/system/StorageDisksList.vue'
+import ScheduledTasksSection from '@/components/system/ScheduledTasksSection.vue'
 import {
   getSystemInfo,
   getStorageInfo,
@@ -267,7 +276,9 @@ const downloadClientsStatus = ref({
   total: 0,
 })
 
-const downloadClients = ref<Array<{ name: string; status: string }>>([])
+const downloadClients = ref<
+  Array<{ name: string; status: string; failureReason?: string | null }>
+>([])
 
 const externalApis = ref({
   status: 'unknown' as string,
@@ -317,6 +328,7 @@ const loadSystemData = async () => {
     downloadClients.value = health.downloadClients.clients.map((client) => ({
       name: client.name,
       status: client.status,
+      failureReason: client.failureReason,
     }))
 
     // Update external APIs status
@@ -340,6 +352,31 @@ const loadSystemData = async () => {
 const formatLogTime = (timestamp: string): string => {
   const date = new Date(timestamp)
   return date.toLocaleTimeString()
+}
+
+const clientStatusIcon = (status: string) => {
+  switch (status) {
+    case 'connected':
+      return PhCheckCircle
+    case 'disconnected':
+      return PhXCircle
+    default:
+      // "unknown": the background poller hasn't covered this client yet -
+      // distinct from a confirmed failure, so it gets its own icon rather
+      // than reading as "down".
+      return PhWarning
+  }
+}
+
+const clientStatusIconClass = (status: string) => {
+  switch (status) {
+    case 'connected':
+      return 'success'
+    case 'disconnected':
+      return 'error'
+    default:
+      return 'warning'
+  }
 }
 
 const getLogIconComponent = (level: string) => {
@@ -618,6 +655,10 @@ onMounted(() => {
   color: #e74c3c;
 }
 
+.client-status i.warning {
+  color: #f39c12;
+}
+
 .client-name {
   flex: 1;
   color: #fff;
@@ -638,11 +679,16 @@ onMounted(() => {
   border: 1px solid rgba(39, 174, 96, 0.3);
 }
 
-.client-indicator.disconnected,
-.client-indicator.unknown {
+.client-indicator.disconnected {
   background: rgba(231, 76, 60, 0.15);
   color: #e74c3c;
   border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+.client-indicator.unknown {
+  background: rgba(243, 156, 18, 0.15);
+  color: #f39c12;
+  border: 1px solid rgba(243, 156, 18, 0.3);
 }
 
 /* Empty Message */
@@ -814,6 +860,10 @@ onMounted(() => {
   border-left: 3px solid #27ae60;
 }
 
+.log-entry.debug {
+  border-left: 3px solid #9b59b6;
+}
+
 .log-entry > i {
   font-size: 1.1rem;
 }
@@ -856,6 +906,14 @@ onMounted(() => {
   color: #27ae60;
 }
 
+.log-entry.debug > i {
+  color: #9b59b6;
+}
+
+.log-entry.debug .log-icon svg {
+  color: #9b59b6;
+}
+
 .log-time {
   color: #666;
   font-size: 0.8rem;
@@ -887,6 +945,11 @@ onMounted(() => {
 .log-entry.success .log-level {
   background: rgba(39, 174, 96, 0.15);
   color: #27ae60;
+}
+
+.log-entry.debug .log-level {
+  background: rgba(155, 89, 182, 0.15);
+  color: #9b59b6;
 }
 
 .log-message {
