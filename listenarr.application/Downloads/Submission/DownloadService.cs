@@ -51,9 +51,9 @@ namespace Listenarr.Application.Downloads.Submission
 
         // Track qBittorrent torrent cache for merging incremental updates (clientId -> (torrentHash -> QueueItem))
         private readonly Dictionary<string, Dictionary<string, QueueItem>> _qbittorrentTorrentCache = new();
-        public async Task<string> StartDownloadAsync(SearchResult searchResult, string downloadClientId, int? audiobookId = null)
+        public async Task<string> StartDownloadAsync(SearchResult searchResult, string downloadClientId, int? audiobookId = null, CancellationToken ct = default)
         {
-            return await SendToDownloadClientAsync(searchResult, downloadClientId, audiobookId);
+            return await SendToDownloadClientAsync(searchResult, downloadClientId, audiobookId, ct);
         }
 
         /// <summary>
@@ -125,21 +125,24 @@ namespace Listenarr.Application.Downloads.Submission
             }
 
             // Build search query from audiobook metadata
-            var searchQuery = DownloadSearchQueryBuilder.Build(audiobook);
-            logger.LogInformation("Searching for audiobook '{Title}' with query: {Query}", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeText(searchQuery));
+            var searchPlan = DownloadSearchQueryBuilder.BuildPlan(audiobook);
+            var searchQuery = searchPlan.PrimaryQuery;
+            logger.LogInformation("Searching for audiobook '{Title}' with query: {Query} ({Tiers} query forms available)", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeText(searchQuery), searchPlan.Forms.Count);
 
             // Search using the working search service. This is an automatic search (triggered
             // by the background/manual 'search-and-download' endpoint), so set isAutomaticSearch
             // to true to ensure only indexers are queried (no Amazon/Audible scraping).
-            var searchResults = await searchService.SearchAsync(searchQuery, isAutomaticSearch: true);
+            var searchResults = await searchService.SearchAsync(searchQuery, isAutomaticSearch: true, plan: searchPlan);
 
             if (searchResults == null || !searchResults.Any())
             {
                 return new SearchAndDownloadResult { Success = false, Message = "No search results found" };
             }
 
-            // Score results against quality profile
-            var scoredResults = await qualityProfileService.ScoreSearchResults(searchResults, audiobook.QualityProfile);
+            // Score results against quality profile. See AutomaticSearchService for why the
+            // bundle flag is read off the library record rather than the candidate release.
+            var targetIsBundle = ReleaseShapeDetector.IsBundleSeriesNumber(audiobook.SeriesNumber);
+            var scoredResults = await qualityProfileService.ScoreSearchResults(searchResults, audiobook.QualityProfile, targetIsBundle);
 
             // Log all scored results for debugging
             logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", scoredResults.Count, LogRedaction.SanitizeText(audiobook.Title));
@@ -203,18 +206,17 @@ namespace Listenarr.Application.Downloads.Submission
             };
         }
 
-        public async Task<string> SendToDownloadClientAsync(SearchResult searchResult, string? downloadClientId = null, int? audiobookId = null)
+        public async Task<string> SendToDownloadClientAsync(SearchResult searchResult, string? downloadClientId = null, int? audiobookId = null, CancellationToken ct = default)
         {
             return await SendToDownloadClientAsync(
-                TrustedDownloadCandidateFactory.Create(searchResult),
-                downloadClientId,
-                audiobookId);
+                TrustedDownloadCandidateFactory.Create(searchResult), downloadClientId, audiobookId, ct);
         }
 
         public async Task<string> SendToDownloadClientAsync(
             TrustedDownloadCandidate candidate,
             string? downloadClientId = null,
-            int? audiobookId = null)
+            int? audiobookId = null,
+            CancellationToken ct = default)
         {
             logger.LogInformation(
                 "Preparing trusted download '{Title}' using protocol {Protocol}, AudiobookId: {AudiobookId}",
@@ -308,18 +310,19 @@ namespace Listenarr.Application.Downloads.Submission
             DownloadClientSubmissionResult submissionResult;
             try
             {
-                submissionResult = await clientGateway.AddAsync(downloadClient, prepared);
+                submissionResult = await clientGateway.AddAsync(downloadClient, prepared, ct);
                 if (submissionResult == null || string.IsNullOrWhiteSpace(submissionResult.ExternalId))
                 {
                     throw new DownloadClientSubmissionException("The download client did not return a verified download identifier.");
                 }
             }
-            catch (OperationCanceledException)
+            // A request timeout surfaces as TaskCanceledException too, so only our own cancellation is quiet.
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 await DownloadSubmissionFailureHandler.RemoveProvisionalDownloadAsync(downloadId, downloadRepository, logger);
                 throw;
             }
-            catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+            catch (Exception exception) when (exception is not (OutOfMemoryException or StackOverflowException))
             {
                 await DownloadSubmissionFailureHandler.RecordRejectedSubmissionAsync(
                     downloadId, downloadClientIdForModel, candidate.Title, exception, downloadHistoryService, logger);
