@@ -60,7 +60,28 @@ namespace Listenarr.Domain.Configuration
         public string MultiFileNamingPattern { get; set; } = "{Title}-{DiskNumber:00}-{ChapterNumber:00}";
 
         public bool EnableMetadataProcessing { get; set; } = true;
+        /// <summary>
+        /// Dead flag, kept only so this change stays a single additive migration.
+        ///
+        /// Persisted since the Settings page was added and never read by anything. Its
+        /// stored value is true on every existing instance because that was the property
+        /// initialiser, not because an operator chose it, which is why the embedding
+        /// behaviour below is governed by a new column instead of this one. Dropping it is
+        /// a separate mechanical change.
+        /// </summary>
         public bool EnableCoverArtDownload { get; set; } = true;
+
+        /// <summary>
+        /// Embed cover artwork into audio files as they are imported.
+        ///
+        /// This replaces EnableCoverArtDownload, which was persisted from the day the
+        /// Settings page was added and never read by anything. Reusing that column would
+        /// have inherited a stored true on every existing instance, since the value came
+        /// from a property initialiser rather than from anyone choosing it, and embedding
+        /// rewrites the audio file. A new column starts false for everyone, so the
+        /// behaviour is opt-in on upgrade rather than something an operator discovers.
+        /// </summary>
+        public bool EmbedCoverArtInAudioFiles { get; set; } = false;
         public string AudnexusApiUrl { get; set; } = "https://api.audnex.us";
         public int MaxConcurrentDownloads { get; set; } = 3;
         public int PollingIntervalSeconds { get; set; } = 30;
@@ -257,5 +278,21 @@ namespace Listenarr.Domain.Configuration
         /// unaffected. Clamped to [0, 300].
         /// </summary>
         public int AutomaticSearchBookDelaySeconds { get; set; } = 5;
+
+        // Scheduled provider-metadata refresh. The interval says how often the walk wakes up;
+        // the staleness age is what actually governs how often a given book is touched.
+        //
+        // On, which is only safe because an upgraded row does not arrive due. Startup gives
+        // every row that has no refresh timestamp the time of that backfill, so an upgraded
+        // library gets a full staleness window before any of it is due, and then ages into the
+        // queue oldest first the way books added after the upgrade do.
+        public bool MetadataRefreshEnabled { get; set; } = true;
+        public int MetadataRefreshIntervalHours { get; set; } = 24;
+        public int MetadataRefreshStaleAfterDays { get; set; } = 30;
+
+        // Deliberately timid. The provider publishes no rate limit, so the shipped budget stays
+        // well under any plausible ceiling; pushback narrows it further at runtime.
+        public int MetadataRefreshRequestsPerHour { get; set; } = 60;
+        public int MetadataRefreshMinimumSpacingMs { get; set; } = 1000;
     }
 }
