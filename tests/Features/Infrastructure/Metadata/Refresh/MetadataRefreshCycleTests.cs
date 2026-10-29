@@ -95,12 +95,12 @@ public class MetadataRefreshCycleTests : BaseTests, IDisposable
     private ListenArrDbContext NewContext() => new(
         new DbContextOptionsBuilder<ListenArrDbContext>().UseSqlite(_connection).Options);
 
-    private static AudiobookExternalIdentifier Asin(string value) => new()
+    private static AudiobookExternalIdentifier Asin(string value, string? region = "us") => new()
     {
         Type = AudiobookExternalIdentifierType.Asin,
         ValueRaw = value,
         ValueNormalized = value,
-        Region = "us",
+        Region = region,
         IsPrimary = true,
         Source = AudiobookExternalIdentifierSource.Manual
     };
@@ -138,7 +138,9 @@ public class MetadataRefreshCycleTests : BaseTests, IDisposable
         {
             Title = "The Book The Provider Forgot",
             Authors = ["Other Author"],
-            ExternalIdentifiers = [Asin(SilentAsin)]
+            // No recorded region, so the walk asks us and then uk; an ASIN that records a region is
+            // only ever asked in that one (#1043).
+            ExternalIdentifiers = [Asin(SilentAsin, region: null)]
         };
 
         db.Audiobooks.AddRange(answered, withoutIdentifiers, forgotten);
