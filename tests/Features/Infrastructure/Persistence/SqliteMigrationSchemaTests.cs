@@ -62,7 +62,7 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string WeakStorageVerifiedCleanupMigrationId =
         "20260825021432_AddWeakStorageVerifiedCleanup";
     private const string ReleaseBlocklistMigrationId =
-        "20261018214323_AddReleaseBlocklist";
+        "20261029020400_AddReleaseBlocklist";
     private const string HistoryProtocolMigrationId =
         "20260911172407_AddHistoryProtocol";
     private const string IndexerFailureBackoffMigrationId =
@@ -74,7 +74,7 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string CustomScriptNotificationsMigrationId =
         "20260916112317_AddCustomScriptNotifications";
     private const string QualityProfileUpgradeAllowedMigrationId =
-        "20261018212549_AddQualityProfileUpgradeAllowed";
+        "20261029020317_AddQualityProfileUpgradeAllowed";
     private const string BackupRetentionDaysMigrationId =
         "20260922212752_AddBackupRetentionDaysToApplicationSettings";
     private const string DownloadClientPriorityMigrationId =
