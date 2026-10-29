@@ -27,13 +27,14 @@ Rules (each one exists because guessing here can later let a delete hit the wron
   27 recursively deletes its folder, FF report section 5).
 * .620's own scan/move lists are empty when any folder could not be read: the service may see files PLAN
   could not.
-* Rows the operator excludes (``--exclude-file-ids``) are never linked. They count as unresolved, so their
-  book is withheld whole and no other row takes a file they could own.
+* Rows the operator excludes (``--exclude-file-ids``) are never linked, and neither is any other row of a book
+  holding one, live rows or not. They count as unresolved, so no other row takes a file they could own.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 import os
 import stat
 from collections import defaultdict
@@ -136,8 +137,10 @@ class MatchResult:
 def size_is_placeholder(row: FileRow) -> bool:
     """True when the row's stored size is .620's proc-fd placeholder rather than a measurement."""
     duration = row.values.get("DurationSeconds")
-    return (row.size == PLACEHOLDER_SIZE and duration is not None
-            and float(str(duration)) >= PLACEHOLDER_MIN_DURATION_SECONDS)
+    if row.size != PLACEHOLDER_SIZE or duration is None:
+        return False
+    seconds = float(str(duration))
+    return math.isfinite(seconds) and seconds >= PLACEHOLDER_MIN_DURATION_SECONDS
 
 
 def _consistency(row: FileRow, probe: media.Probe, other_titles: dict[frozenset[str], int],
@@ -145,6 +148,8 @@ def _consistency(row: FileRow, probe: media.Probe, other_titles: dict[frozenset[
     if probe.error:
         return f"not readable as audio: {probe.error}"
     stored_duration = row.values.get("DurationSeconds")
+    if stored_duration is not None and not math.isfinite(float(str(stored_duration))):
+        return f"stored duration {stored_duration} is not a finite number"
     if stored_duration is not None and probe.duration is not None:
         expected = float(str(stored_duration))
         tolerance = max(DURATION_ABS_TOLERANCE, DURATION_REL_TOLERANCE * expected)
@@ -329,12 +334,12 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             if not consistent:
                 decision.leave_out(f"physical identity matches but {decision.candidates[0].rejected}")
                 continue
-            size_waived = decision.row.size != consistent[0].file.size  # only a placeholder gets this far
-            if size_waived and (consistent[0].probe is None or consistent[0].probe.duration is None):
+            placeholder = size_is_placeholder(decision.row)
+            if placeholder and (consistent[0].probe is None or consistent[0].probe.duration is None):
                 decision.leave_out("physical identity matches but the stored size is the placeholder and the "
                                    "file's duration, which stands in for it, could not be read")
                 continue
-            via = "physical identity" + (" (stored size is the 64-byte placeholder)" if size_waived else "")
+            via = "physical identity" + (" (stored size is the 64-byte placeholder)" if placeholder else "")
             decision.chosen, decision.confidence, decision.via = consistent[0], "identity", via
             continue
         unreadable = [c for c in decision.candidates if c.probe is not None and c.probe.error]
@@ -420,6 +425,12 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
         if decision.chosen is not None and book_id in unresolved and book_id not in books_with_live_row:
             decision.leave_out(f"withheld so the book is not left partly linked: its row {unresolved[book_id]} "
                                "stays stale (an all-stale book is safer under round 27 than a mixed one)")
+    excluded_in_book = {row.audiobook_id: row.id for row in library.files if row.id in excluded}
+    for decision in decisions:
+        book_id = decision.row.audiobook_id
+        if decision.chosen is not None and book_id in excluded_in_book:
+            decision.leave_out(f"withheld: its book holds row {excluded_in_book[book_id]}, which is listed in "
+                               "--exclude-file-ids")
 
     for decision in decisions:
         if decision.chosen is None:

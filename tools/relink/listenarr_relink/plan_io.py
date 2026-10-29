@@ -153,8 +153,8 @@ def build_plan(library: Library, result: MatchResult, path_map: PathMap, db_copy
 
 
 def _reason_class(reason: str) -> str:
-    for marker, label in (("--exclude-file-ids", "excluded"), ("equally consistent", "ambiguous"),
-                          ("chosen by", "contended"),
+    for marker, label in (("its book holds row", "withheld-excluded-book"), ("--exclude-file-ids", "excluded"),
+                          ("equally consistent", "ambiguous"), ("chosen by", "contended"),
                           ("also a consistent candidate", "contested"), ("no folder/title/tag", "weak-evidence"),
                           ("no unclaimed file", "no-candidate"), ("agrees with the stored", "no-consistent-candidate"),
                           ("no usable stored size", "no-size"), ("hard links", "hard-link"),

@@ -34,7 +34,11 @@ def _setup_logging() -> None:
 
 
 def _read_exclude_file(path: Path) -> frozenset[int]:
-    """AudiobookFiles ids, one per line; blank lines and ``#`` comments are ignored. ValueError otherwise."""
+    """AudiobookFiles ids, one per line; blank lines and ``#`` comments are ignored. ValueError otherwise.
+
+    A list naming no id is refused too: it is what a failed export leaves, and accepting it would plan as if
+    nothing were excluded.
+    """
     ids: set[int] = set()
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         text = line.strip()
@@ -43,6 +47,8 @@ def _read_exclude_file(path: Path) -> frozenset[int]:
         if not text.isdecimal():
             raise ValueError(f"{path}:{number}: not a file row id: {text!r}")
         ids.add(int(text))
+    if not ids:
+        raise ValueError(f"{path} names no file row id")
     return frozenset(ids)
 
 
@@ -185,8 +191,9 @@ def main(argv: list[str] | None = None) -> int:
                            "naming the title, no content hash). Three adversarial reviews forced wrong links in "
                            "this mode. Default: only books whose every link is by .620 physical identity")
     plan.add_argument("--exclude-file-ids", metavar="FILE",
-                      help="AudiobookFiles ids (one per line, # comments) never to re-link; their books are "
-                           "withheld whole. An id that is no file row refuses the run")
+                      help="AudiobookFiles ids (one per line, # comments) never to re-link; every book holding "
+                           "one is withheld whole, live rows or not. A list naming no id, or an id that is no "
+                           "file row, refuses the run")
     plan.set_defaults(handler=_plan)
 
     apply = sub.add_parser("apply", help="write a reviewed plan into the stopped service's DB, one transaction")

@@ -7,6 +7,7 @@ authors are corpus values.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import shutil
@@ -18,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from listenarr_relink import cli, identity
+from listenarr_relink import cli, identity, media
 
 PRINCESS = ("A Princess of Mars", "Edgar Rice Burroughs")
 JUNGLE = ("The Jungle Book", "Rudyard Kipling")
@@ -216,6 +217,32 @@ def test_placeholder_size_does_not_waive_the_stored_duration(library: Library) -
     assert "physical identity matches but duration" in left_out(plan)[row]
 
 
+def test_placeholder_size_needs_a_readable_file_duration(library: Library, monkeypatch: pytest.MonkeyPatch) -> None:
+    (row,) = library.add_book(1, PRINCESS, 1, Size=PLACEHOLDER)
+    library.move(row)
+    real_probe = media.probe
+    monkeypatch.setattr(media, "probe", lambda path: dataclasses.replace(real_probe(path), duration=None))
+    _, plan = library.plan("plan")
+    assert plan is not None and relinked(plan) == {}
+    assert "duration, which stands in for it, could not be read" in left_out(plan)[row]
+
+
+def test_infinite_duration_is_no_placeholder(library: Library) -> None:
+    (row,) = library.add_book(1, PRINCESS, 1, Size=PLACEHOLDER, DurationSeconds=float("inf"))
+    library.move(row)
+    _, plan = library.plan("plan")
+    assert plan is not None and relinked(plan) == {}
+    assert "size changed (64 ->" in left_out(plan)[row]
+
+
+def test_non_finite_stored_duration_never_agrees(library: Library) -> None:
+    (row,) = library.add_book(1, PRINCESS, 1, DurationSeconds=float("inf"))
+    library.move(row)
+    _, plan = library.plan("plan")
+    assert plan is not None and relinked(plan) == {}
+    assert "is not a finite number" in left_out(plan)[row]
+
+
 def test_inode_reuse_with_another_generation_is_refused(library: Library) -> None:
     (row,) = library.add_book(1, PRINCESS, 1, Size=PLACEHOLDER)
     with sqlite3.connect(library.db) as connection:
@@ -261,6 +288,32 @@ def test_excluded_rows_are_withheld_with_their_whole_book(library: Library) -> N
     after = library.paths()
     assert {r: after[r] for r in princess} == {r: before[r] for r in princess}
     assert after[jungle] != before[jungle]
+
+
+def test_excluded_row_withholds_its_book_despite_a_live_sibling(library: Library) -> None:
+    rows = library.add_book(1, PRINCESS, 3, Size=PLACEHOLDER)
+    before = library.paths()
+    library.move(rows[0])
+    library.move(rows[1])
+    exclude = library.top / "exclude.txt"
+    exclude.write_text(f"{rows[0]}\n")
+    rc, plan = library.plan("plan", "--exclude-file-ids", str(exclude))
+    assert rc == 0 and plan is not None
+    assert relinked(plan) == {}
+    assert "its book holds row" in left_out(plan)[rows[1]]
+    assert plan["summary"]["left_out_by_reason"] == {"excluded": 1, "withheld-excluded-book": 1}
+    assert library.apply("plan") == 0
+    assert library.paths() == before
+
+
+@pytest.mark.parametrize("content", ["", "# only a comment\n\n"])
+def test_exclude_list_naming_no_id_is_refused(library: Library, content: str) -> None:
+    (row,) = library.add_book(1, PRINCESS, 1, Size=PLACEHOLDER)
+    library.move(row)
+    exclude = library.top / "exclude.txt"
+    exclude.write_text(content)
+    rc, plan = library.plan("plan", "--exclude-file-ids", str(exclude))
+    assert rc == 2 and plan is None
 
 
 def test_exclude_list_naming_no_file_row_is_refused(library: Library) -> None:
