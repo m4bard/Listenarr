@@ -125,6 +125,7 @@ export interface SearchResult extends BaseSearchResult {
   productUrl?: string // Direct link to Amazon/Audible product page
   isEnriched?: boolean
   metadataSource?: string // Which metadata API enriched this result
+  region?: string // Audible region the result was found in (e.g. 'fr', 'us')
   // Audible-style fields
   authors?: AudibleAuthor[]
   narrators?: AudibleNarrator[]
@@ -262,9 +263,6 @@ export interface DownloadClientSettings {
   category?: string
   tags?: string
   recentPriority?: string
-  olderPriority?: string
-  removeCompleted?: boolean
-  removeFailed?: boolean
   initialState?: string
   sequentialOrder?: boolean
   firstAndLastFirst?: boolean
@@ -330,9 +328,11 @@ export interface RootFolder {
   canScanFilesystem?: boolean
   canPublishNewFiles?: boolean
   canMutateFilesystem?: boolean
-  canRetireWithDurableIdentity?: boolean
+  canRetireSource?: boolean
   canRetireAfterVerifiedCopy?: boolean
+  /** @deprecated Compatibility value only; use current storage capability fields. */
   weakStorageSourceCleanupPolicy?: 'RetainSource' | 'DeleteSourceAfterVerifiedCopy'
+  /** @deprecated Revision of the legacy setting; does not authorize source deletion. */
   weakStoragePolicyRevision?: number
   confirmationToken?: string | null
   activeRelocation?: RootFolderPathChangeResult | null
@@ -426,7 +426,7 @@ export interface ApplicationSettings {
   fileNamingPattern: string
   multiFileNamingPattern: string
   enableMetadataProcessing: boolean
-  enableCoverArtDownload: boolean
+  embedCoverArtInAudioFiles: boolean
   audnexusApiUrl: string
   maxConcurrentDownloads: number
   unmatchedScanConcurrency?: number
@@ -498,6 +498,7 @@ export interface StartupConfig {
   port?: number
   sslPort?: number
   urlBase?: string
+  applicationUrl?: string
   bindAddress?: string
   apiKey?: string
   authenticationMethod?: string
@@ -1214,11 +1215,13 @@ export interface UnmatchedFilesResponse {
   jobId: string
   status: 'Queued' | 'Processing' | 'Completed' | 'Failed'
   error?: string
+  warnings?: string[]
   items: UnmatchedFileItem[]
 }
 
 export interface SavedUnmatchedResponse {
   lastScannedAt?: string
+  warnings?: string[]
   items: UnmatchedFileItem[]
 }
 
@@ -1277,6 +1280,7 @@ export interface FileRenameResultItem {
   newPath?: string
   success: boolean
   rolledBack: boolean
+  sourceRetained?: boolean
   error?: string
 }
 
