@@ -990,7 +990,9 @@ namespace Listenarr.Tests.Features.Api
                 });
             });
 
-            var audiobookId = await SeedBookWithAsinAsync(factory, "Falls Through To UK", asin);
+            // Only an identifier with no recorded region walks more than one catalogue; one that
+            // records a region stays in it (#1043).
+            var audiobookId = await SeedBookWithAsinAsync(factory, "Falls Through To UK", asin, region: null);
 
             using var client = factory.CreateClient();
             var response = await PostRescanAsync(client, audiobookId);
@@ -1445,7 +1447,8 @@ namespace Listenarr.Tests.Features.Api
         private static async Task<int> SeedBookWithAsinAsync(
             Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory,
             string title,
-            string asin)
+            string asin,
+            string? region = "us")
         {
             using var scope = factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
@@ -1464,7 +1467,7 @@ namespace Listenarr.Tests.Features.Api
                         Type = AudiobookExternalIdentifierType.Asin,
                         ValueRaw = asin,
                         ValueNormalized = asin,
-                        Region = "us",
+                        Region = region,
                         IsPrimary = true,
                         Source = AudiobookExternalIdentifierSource.Manual
                     }

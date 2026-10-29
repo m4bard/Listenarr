@@ -58,8 +58,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             // scoring): accept the constrained result with a positive, non-rejected score.
             var quality = new Mock<IQualityProfileService>();
             quality.Setup(q => q.ScoreSearchResults(
-                    It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>()))
-                .ReturnsAsync((List<SearchResult> results, QualityProfile _) =>
+                    It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>(), It.IsAny<bool>()))
+                .ReturnsAsync((List<SearchResult> results, QualityProfile _, bool _) =>
                     results.Select(r => new QualityScore { SearchResult = r, TotalScore = 100 }).ToList());
             Init(builder =>
             {
@@ -119,7 +119,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<List<string>?>(),
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>()))
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchQueryPlan?>()))
                 .ReturnsAsync(new List<SearchResult>());
             search.Setup(s => s.SearchAsync(
                     fallbackQuery,
@@ -127,7 +128,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<List<string>?>(),
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>()))
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchQueryPlan?>()))
                 .ReturnsAsync(fallbackResults);
         }
 
