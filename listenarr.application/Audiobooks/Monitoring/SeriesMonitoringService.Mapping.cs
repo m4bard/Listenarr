@@ -4,6 +4,7 @@
  */
 using System.Globalization;
 using System.Text;
+using Listenarr.Domain.Common;
 
 namespace Listenarr.Application.Audiobooks.Monitoring
 {
@@ -11,10 +12,9 @@ namespace Listenarr.Application.Audiobooks.Monitoring
     {
         private static AudibleBookMetadata MapToMetadata(AudibleSearchResult book)
         {
-            var primarySeries = book.Series?.FirstOrDefault();
             var runtime = book.LengthMinutes ?? book.RuntimeLengthMin ?? book.RuntimeMinutes;
 
-            return new AudibleBookMetadata
+            var metadata = new AudibleBookMetadata
             {
                 Asin = book.Asin,
                 Title = book.Title,
@@ -38,13 +38,18 @@ namespace Listenarr.Application.Audiobooks.Monitoring
                     .Where(genre => !string.IsNullOrWhiteSpace(genre))
                     .Cast<string>()
                     .ToList(),
-                Series = primarySeries?.Name,
-                SeriesNumber = primarySeries?.Position,
                 PublishedDate = book.ReleaseDate,
                 PublishYear = TryExtractPublishYear(book.ReleaseDate),
                 Isbn = string.IsNullOrWhiteSpace(book.Isbn) ? new List<string>() : new List<string> { book.Isbn },
                 Source = "Audible"
             };
+
+            // Preserve the series ASIN (not just name/position) so books added via series
+            // monitoring get the same identified series membership as the Add-New search path.
+            metadata.SeriesMemberships = MetadataConverters.BuildSeriesMemberships(book.Series);
+            MetadataConverters.ApplyPrimarySeriesFields(metadata);
+
+            return metadata;
         }
 
         private static Audiobook? FindExistingLibraryMatch(
@@ -101,6 +106,12 @@ namespace Listenarr.Application.Audiobooks.Monitoring
             return string.Equals(normalizedBookLanguage, preferredLanguage, StringComparison.OrdinalIgnoreCase);
         }
 
+        // Series names only. The add-versus-skip key in BuildTitleAuthorKey used to come through
+        // here as well, which left monitored-series sync matching author names by a normalizer
+        // that does not merge spaced-out initials while monitored-author sync matched the same
+        // names by one that does. This stays as the key for MonitoredSeries rows, where changing
+        // it would change a stored uniqueness key for series titles -- a separate concern with a
+        // re-derivation of its own.
         private static string NormalizeSeriesName(string? name)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -173,13 +184,16 @@ namespace Listenarr.Application.Audiobooks.Monitoring
                 : new string(value.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
         }
 
+        // Same normalizer as AuthorMonitoringService.BuildTitleAuthorKey. Both services decide
+        // "add or skip?" against the same library, so a book must not be new to one and known to
+        // the other.
         private static string BuildTitleAuthorKey(string? title, IEnumerable<string>? authors)
         {
-            var normalizedTitle = NormalizeSeriesName(title);
+            var normalizedTitle = StringUtils.NormalizeAuthorName(title);
             var normalizedAuthors = string.Join(
                 "|",
                 (authors ?? Enumerable.Empty<string>())
-                    .Select(NormalizeSeriesName)
+                    .Select(StringUtils.NormalizeAuthorName)
                     .Where(author => !string.IsNullOrWhiteSpace(author))
                     .OrderBy(author => author));
 

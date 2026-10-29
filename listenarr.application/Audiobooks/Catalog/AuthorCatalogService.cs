@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 using static Listenarr.Application.Audiobooks.Catalog.AuthorCatalogMapping;
 
@@ -62,7 +63,8 @@ namespace Listenarr.Application.Audiobooks.Catalog
 
             if (!forceRefresh &&
                 cachedEntry?.CatalogBooks != null &&
-                cachedEntry.CatalogBooks.Count > 0)
+                cachedEntry.CatalogBooks.Count > 0 &&
+                !HasLegacySeriesShape(cachedEntry.CatalogBooks))
             {
                 return new AuthorCatalogFetchResult
                 {
@@ -155,22 +157,14 @@ namespace Listenarr.Application.Audiobooks.Catalog
 
             try
             {
-                var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(normalizedName);
-                if (!string.IsNullOrWhiteSpace(authorAsin))
+                // A scanned ASIN is a pointer to a cache row, never an identity in its own right.
+                // The row it reaches is accepted only if that row is this author's; an identity
+                // used to be fabricated here out of the scanned ASIN alone when no row existed,
+                // and nothing on that path verified anything.
+                var cachedByAsin = await ResolveCacheRowByScannedAsinAsync(normalizedName, region);
+                if (cachedByAsin != null)
                 {
-                    var cachedByAsin = await _audiobookRepository.GetCachedAuthorByAsinAsync(authorAsin, region);
-                    if (cachedByAsin != null)
-                    {
-                        return MapCachedAuthor(cachedByAsin, normalizedName, region);
-                    }
-
-                    return new AuthorLookupItem
-                    {
-                        Asin = authorAsin,
-                        Name = author?.Name ?? normalizedName,
-                        Image = author?.Image,
-                        Region = region
-                    };
+                    return MapCachedAuthor(cachedByAsin, normalizedName, region);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -181,10 +175,19 @@ namespace Listenarr.Application.Audiobooks.Catalog
             try
             {
                 var audnexResults = await _audnexusService.SearchAuthorsAsync(normalizedName, region);
-                var audnexAuthor = audnexResults?.FirstOrDefault(a =>
-                    !string.IsNullOrWhiteSpace(a.Name) &&
-                    a.Name.Equals(normalizedName, StringComparison.OrdinalIgnoreCase))
-                    ?? audnexResults?.FirstOrDefault();
+
+                // Same rule as the metadata lookup, and this site matters more: what it returns
+                // is written straight into the author cache. There is no identifier held here to
+                // fall back on, so naming the author is the only way in.
+                var audnexAuthor = AudnexusAuthorIdentity.Select(audnexResults, normalizedName);
+
+                if (audnexAuthor == null && audnexResults is { Count: > 0 })
+                {
+                    _logger.LogDebug(
+                        "Audnexus returned {Count} candidates for '{Author}' and none of them is that author; leaving the ASIN unresolved",
+                        audnexResults.Count,
+                        normalizedName);
+                }
 
                 if (audnexAuthor != null)
                 {
@@ -215,11 +218,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     return cachedByName;
                 }
 
-                var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(normalizedName);
-                if (!string.IsNullOrWhiteSpace(authorAsin))
-                {
-                    return await _audiobookRepository.GetCachedAuthorByAsinAsync(authorAsin, region);
-                }
+                return await ResolveCacheRowByScannedAsinAsync(normalizedName, region);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -227,6 +226,34 @@ namespace Listenarr.Application.Audiobooks.Catalog
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Follows an ASIN scanned out of stored library data to a cached author row, and keeps
+        /// the row only when it is this author's. Without the name check this is the rename
+        /// hazard one call earlier: the row comes back under somebody else's name and the caller
+        /// then writes this author's name onto it.
+        /// </summary>
+        private async Task<AuthorCacheEntry?> ResolveCacheRowByScannedAsinAsync(string normalizedName, string region)
+        {
+            var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(normalizedName);
+            if (string.IsNullOrWhiteSpace(authorAsin))
+            {
+                return null;
+            }
+
+            var cachedByAsin = await _audiobookRepository.GetCachedAuthorByAsinAsync(authorAsin, region);
+            if (cachedByAsin == null)
+            {
+                return null;
+            }
+
+            return StringUtils.MatchesAuthorKey(
+                cachedByAsin.AuthorNameNormalized,
+                cachedByAsin.AuthorName,
+                StringUtils.NormalizeAuthorName(normalizedName))
+                ? cachedByAsin
+                : null;
         }
 
         private async Task SupplementWithSearchFallbackAsync(
@@ -300,11 +327,22 @@ namespace Listenarr.Application.Audiobooks.Catalog
 
             try
             {
-                var entry = cachedEntry ?? new AuthorCacheEntry();
+                // Never rename the resolved row in place. It may have been resolved by an ASIN,
+                // and the mutation would reach the database through the upsert even though the
+                // row came back untracked. A fresh entry lets the upsert decide which row this
+                // write lands on; the resolved row is still worth reading for fallback values.
+                var normalizedName = StringUtils.NormalizeAuthorName(authorName);
+                var writable = cachedEntry != null && StringUtils.MatchesAuthorKey(
+                    cachedEntry.AuthorNameNormalized, cachedEntry.AuthorName, normalizedName);
+
+                var entry = writable ? cachedEntry! : new AuthorCacheEntry();
                 entry.AuthorName = string.IsNullOrWhiteSpace(author.Name) ? authorName : author.Name;
-                entry.AuthorNameNormalized = NormalizeAuthorCacheKey(authorName);
+                entry.AuthorNameNormalized = normalizedName;
                 entry.AuthorAsin = author.Asin;
                 entry.Region = region;
+                // Fallbacks come off the row only where that row is this author's, which after the
+                // check above means entry is that row. A row named for somebody else contributes
+                // nothing -- not its name, not its photo, not its biography.
                 entry.ImageUrl = author.Image ?? entry.ImageUrl;
                 entry.Description ??= author.Description;
                 entry.CatalogBooks = books.Select(MapCachedCatalogBook).ToList();
