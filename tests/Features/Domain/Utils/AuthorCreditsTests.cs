@@ -399,9 +399,10 @@ namespace Listenarr.Tests.Features.Domain.Utils
             // Suffixed-first, with a genuine other author present, is the case that exposes
             // order dependence: a rule that classified per-occurrence as it scanned would read
             // the first "Jane Doe" sighting as a contributor and never revisit that decision
-            // once the bare sighting turned up later.
+            // once the bare sighting turned up later. Both names are authors; they are ordered by
+            // their bare credits, so Authors[0] is the name Primary picks off the raw list.
             Assert.Equal(
-                new[] { "Jane Doe", "Fyodor Dostoevsky" },
+                new[] { "Fyodor Dostoevsky", "Jane Doe" },
                 AuthorCredits.WithoutRoleSuffixes(new List<string>
                 {
                     "Jane Doe - introduction",
@@ -433,9 +434,9 @@ namespace Listenarr.Tests.Features.Domain.Utils
             // Same person shows up bare once and suffixed twice, suffixed-first. One real
             // catalogue shape this protects: a name credited as both author and the writer of
             // their own introduction on a multi-volume work, where the provider lists the
-            // contributor credit before the bare author credit.
+            // contributor credit before the bare author credit. Ordered by bare credit, as above.
             Assert.Equal(
-                new[] { "Jane Doe", "Someone Else" },
+                new[] { "Someone Else", "Jane Doe" },
                 AuthorCredits.WithoutRoleSuffixes(new List<string>
                 {
                     "Jane Doe - introduction",
