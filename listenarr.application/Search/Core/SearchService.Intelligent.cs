@@ -27,58 +27,86 @@ namespace Listenarr.Application.Search.Core
                 try { _logger.LogInformation("Parsed prefixes: ASIN={Asin}, ISBN={Isbn}, AUTHOR={Author}, TITLE={Title}", asinVal, isbnVal, authorVal, titleVal); }
                 catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
                 {
-                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    // Nothing is logged here: the call that failed is the logging call itself.
                 }
 
                 try { _logger.LogInformation("[DBG] Determined searchType='{SearchType}'", searchType); }
                 catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
                 {
-                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    // Nothing is logged here: the call that failed is the logging call itself.
+                }
+
+                // Flags controlling provider calls (enabled by default) - declare at outer scope.
+                // Loaded up front so both the Audible-first attempt and the ASIN handler below
+                // can honor EnableAudibleSearch/EnableAmazonSearch.
+                var skipOpenLibrary = false;
+                var enableAmazonSearch = true;
+                var enableAudibleSearch = true;
+                try
+                {
+                    var appSettings = await _configurationService.GetApplicationSettingsAsync();
+                    if (appSettings != null)
+                    {
+                        skipOpenLibrary = !appSettings.EnableOpenLibrarySearch;
+                        enableAmazonSearch = appSettings.EnableAmazonSearch;
+                        enableAudibleSearch = appSettings.EnableAudibleSearch;
+                    }
+                }
+                catch (Exception exAppSettings) when (exAppSettings is not OperationCanceledException && exAppSettings is not OutOfMemoryException && exAppSettings is not StackOverflowException)
+                {
+                    _logger.LogDebug(exAppSettings, "Failed to load application search settings, falling back to defaults");
                 }
 
                 // Try Audible-first for various search types. If Audible returns results,
                 // convert them to SearchResult and return immediately to avoid scraping.
-                try
+                if (enableAudibleSearch)
                 {
-                    // ASIN case is handled separately above via ASIN handler
-
-                    var simpleAudibleResults = await _audibleSimpleLookupWorkflow.TrySearchAsync(
-                        searchType,
-                        isbnVal,
-                        titleVal,
-                        actualQuery,
-                        region,
-                        language);
-                    if (simpleAudibleResults?.Any() == true)
+                    try
                     {
-                        return simpleAudibleResults;
-                    }
+                        // ASIN case is handled separately above via ASIN handler
 
-                    var authorAudibleResults = await _audibleAuthorSearchWorkflow.TrySearchAsync(
-                        searchType,
-                        authorVal,
-                        titleVal,
-                        isbnVal,
-                        candidateLimit,
-                        region,
-                        language);
-                    if (authorAudibleResults?.Any() == true)
+                        var simpleAudibleResults = await _audibleSimpleLookupWorkflow.TrySearchAsync(
+                            searchType,
+                            isbnVal,
+                            titleVal,
+                            actualQuery,
+                            region,
+                            language);
+                        if (simpleAudibleResults?.Any() == true)
+                        {
+                            return simpleAudibleResults;
+                        }
+
+                        var authorAudibleResults = await _audibleAuthorSearchWorkflow.TrySearchAsync(
+                            searchType,
+                            authorVal,
+                            titleVal,
+                            isbnVal,
+                            candidateLimit,
+                            region,
+                            language);
+                        if (authorAudibleResults?.Any() == true)
+                        {
+                            return authorAudibleResults;
+                        }
+
+                    }
+                    catch (Exception exAudibleFirst) when (exAudibleFirst is not OperationCanceledException && exAudibleFirst is not OutOfMemoryException && exAudibleFirst is not StackOverflowException)
                     {
-                        return authorAudibleResults;
+                        _logger.LogWarning(exAudibleFirst, "Audible-first attempt failed; falling back to provider searches for query: {Query}", query);
                     }
-
-                }
-                catch (Exception exAudibleFirst) when (exAudibleFirst is not OperationCanceledException && exAudibleFirst is not OutOfMemoryException && exAudibleFirst is not StackOverflowException)
-                {
-                    _logger.LogWarning(exAudibleFirst, "Audible-first attempt failed; falling back to provider searches for query: {Query}", query);
                 }
 
-                // Flags controlling provider calls (enabled by default) - declare at outer scope
-                var skipOpenLibrary = false;
-
-                // Handle ASIN queries immediately with metadata-first approach
+                // Handle ASIN queries immediately with metadata-first approach. An ASIN is an
+                // Amazon-assigned identifier, so this direct lookup is gated by EnableAmazonSearch.
                 if (searchType == "ASIN" && !string.IsNullOrEmpty(asinVal))
                 {
+                    if (!enableAmazonSearch)
+                    {
+                        _logger.LogInformation("Amazon search disabled; skipping direct ASIN metadata lookup for {Asin}", asinVal);
+                        return new List<MetadataSearchResult>();
+                    }
+
                     var asinMetadataSources = await GetEnabledMetadataSourcesAsync();
                     var asinSearchResults = await _asinSearchHandler.SearchByAsinAsync(
                         asinVal,
@@ -92,20 +120,6 @@ namespace Listenarr.Application.Search.Core
                 // Regular search flow for non-ASIN queries (ISBN, AUTHOR, TITLE, or normal text)
                 _logger.LogInformation("Searching for: {Query}", actualQuery);
                 await _searchProgressReporter.BroadcastAsync($"Searching for {actualQuery}", null);
-
-                // Apply application-level search settings (if configured)
-                try
-                {
-                    var appSettings = await _configurationService.GetApplicationSettingsAsync();
-                    if (appSettings != null)
-                    {
-                        skipOpenLibrary = !appSettings.EnableOpenLibrarySearch;
-                    }
-                }
-                catch (Exception exAppSettings) when (exAppSettings is not OperationCanceledException && exAppSettings is not OutOfMemoryException && exAppSettings is not StackOverflowException)
-                {
-                    _logger.LogDebug(exAppSettings, "Failed to load application search settings, falling back to defaults");
-                }
 
                 // Step 2: Collect candidates from OpenLibrary (and other non-scraping sources)
                 var candidateCollection = await _asinCandidateCollector.CollectCandidatesAsync(
@@ -190,7 +204,7 @@ namespace Listenarr.Application.Search.Core
                                 try { candidateDropReasons[(!string.IsNullOrWhiteSpace(ol.Asin) ? ol.Asin : ol.Id)] = "enriched_from_openlibrary"; }
                                 catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException)
                                 {
-                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    _logger.LogDebug(caughtEx_7, "Could not record the OpenLibrary enrichment reason; the result is still added");
                                 }
                                 _logger.LogInformation("Added OpenLibrary-derived enriched result: Title='{Title}', Artist='{Artist}'", ol.Title, ol.Artist);
                             }
@@ -236,7 +250,7 @@ namespace Listenarr.Application.Search.Core
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
-                        _logger.LogDebug(ex, "Failed to compute containment/fuzzy scores for ASIN {Asin}", r.Asin);
+                        _logger.LogDebug(ex, "Failed to compute containment/fuzzy scores for ASIN {Asin}", LogRedaction.SanitizeText(r.Asin));
                     }
 
                     // Use the scorer to compute comprehensive relevance score
@@ -246,7 +260,7 @@ namespace Listenarr.Application.Search.Core
                     try { r.Score = (int)Math.Round(scoredResult.Score * 100.0); }
                     catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException)
                     {
-                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                        _logger.LogDebug(caughtEx_8, "Could not attach a score to result {Asin}; it keeps whatever score it already had", r.Asin);
                     }
 
                     scored.Add(scoredResult);
@@ -262,7 +276,7 @@ namespace Listenarr.Application.Search.Core
                     // Author/publisher requirement
                     if (requireAuthorAndPublisher && (string.IsNullOrWhiteSpace(r.Artist) || string.IsNullOrWhiteSpace(r.Publisher)))
                     {
-                        _logger.LogInformation("Dropping ASIN {Asin} because missing author or publisher", r.Asin);
+                        _logger.LogInformation("Dropping ASIN {Asin} because missing author or publisher", LogRedaction.SanitizeText(r.Asin));
                         continue;
                     }
 
@@ -277,7 +291,7 @@ namespace Listenarr.Application.Search.Core
                             if (string.IsNullOrEmpty(hay) || hay.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
                             {
                                 keep = false;
-                                _logger.LogInformation("Dropping ASIN {Asin} (Strict containment failed). containmentScore={Score}, fuzzy={Fuzzy}", r.Asin, s.ContainmentScore, s.FuzzyScore);
+                                _logger.LogInformation("Dropping ASIN {Asin} (Strict containment failed). containmentScore={Score}, fuzzy={Fuzzy}", LogRedaction.SanitizeText(r.Asin), s.ContainmentScore, s.FuzzyScore);
                             }
                         }
                         else // Relaxed
@@ -302,7 +316,7 @@ namespace Listenarr.Application.Search.Core
                                 else
                                 {
                                     keep = false;
-                                    _logger.LogInformation("Dropping ASIN {Asin} (Relaxed containment failed). containmentScore={Score}, fuzzy={Fuzzy}", r.Asin, s.ContainmentScore, s.FuzzyScore);
+                                    _logger.LogInformation("Dropping ASIN {Asin} (Relaxed containment failed). containmentScore={Score}, fuzzy={Fuzzy}", LogRedaction.SanitizeText(r.Asin), s.ContainmentScore, s.FuzzyScore);
                                 }
                             }
                         }
