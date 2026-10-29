@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20260828190320_AddEmbedCoverArtInAudioFilesSetting")]
-    partial class AddEmbedCoverArtInAudioFilesSetting
+    [Migration("20261029020317_AddQualityProfileUpgradeAllowed")]
+    partial class AddQualityProfileUpgradeAllowed
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -608,9 +608,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime?>("AuthorIdentityCheckedAt")
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("AuthorName")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -875,9 +872,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("AuthorAsin")
                         .HasMaxLength(32)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("AuthorIdentityCheckedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("AuthorName")
@@ -1842,21 +1836,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<string>("AudnexusApiUrl")
                         .IsRequired()
                         .HasColumnType("TEXT");
-
-                    b.Property<bool>("AuthorIdentityRepairDryRun")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("AuthorIdentityRepairEnabled")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("AuthorIdentityRepairIntervalHours")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("AuthorIdentityRepairMaxRowsPerRun")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("AuthorIdentityRepairRecheckAfterDays")
-                        .HasColumnType("INTEGER");
 
                     b.Property<int>("CompletedFileAction")
                         .HasColumnType("INTEGER");
