@@ -246,9 +246,12 @@ public sealed class FileMoverSymlinkedSourcePathTests : BaseTests
     }
 
     [DirectoryLinkFact]
-    [Trait("Scenario", "With nested links the outer one, where the walk stops, is named")]
-    public async Task CheckAsync_NestedSymlinks_NamesTheOuterLink()
+    [Trait("Scenario", "Nested links that all sit outside every configured root resolve and are publishable")]
+    public async Task CheckAsync_NestedSymlinksOutsideEveryRoot_IsSupported()
     {
+        // The stack follows a chain of links when none of them sits inside a configured root, so
+        // the nested chain that upstream refuses (and names the outer link of) is publishable here.
+        // A configured root elsewhere is present so that the managed path is the one under test.
         var directory = FileService.GetTempDirectory("symlink-nested-links");
         var inner = Directory.CreateDirectory(Path.Join(directory, "inner-target", "completed")).FullName;
         var source = Path.Join(inner, "book.m4b");
@@ -259,10 +262,36 @@ public sealed class FileMoverSymlinkedSourcePathTests : BaseTests
         Directory.CreateSymbolicLink(outerLink, directory);
         var viaBoth = Path.Join(outerLink, "inner-link", "completed", "book.m4b");
         Assert.True(File.Exists(viaBoth), "the file must be reachable through both links");
-        var capability = Assert.IsAssignableFrom<IFilePublicationSourceCapability>(
-            _provider.GetRequiredService<IFileMover>());
+        var unrelatedRoot = Directory.CreateDirectory(Path.Join(directory, "unrelated-library")).FullName;
+        await AddAuthorizedRootAsync(unrelatedRoot, "Unrelated library root");
 
-        var result = await capability.CheckAsync(viaBoth);
+        var result = await CreateManagedMover().CheckAsync(viaBoth);
+
+        Assert.True(
+            result.IsSupported,
+            $"a source reached through nested links outside every root should be publishable: {result.Reason}");
+        AssertProofDescribesFile(result, "audio");
+    }
+
+    [DirectoryLinkFact]
+    [Trait("Scenario", "With nested links below a configured root the outer one, where the walk stops, is named")]
+    public async Task CheckAsync_NestedSymlinksBelowAConfiguredRoot_NamesTheOuterLink()
+    {
+        // Below a configured root every segment is opened without following links, so the
+        // first link the walk meets is the cause and the one behind it is never reached.
+        var directory = FileService.GetTempDirectory("symlink-nested-links-below-root");
+        var root = Directory.CreateDirectory(Path.Join(directory, "library")).FullName;
+        await AddAuthorizedRootAsync(root, "Library root");
+        var inner = Directory.CreateDirectory(Path.Join(directory, "inner-target", "completed")).FullName;
+        await File.WriteAllTextAsync(Path.Join(inner, "book.m4b"), "audio");
+        var middle = Directory.CreateDirectory(Path.Join(directory, "middle")).FullName;
+        Directory.CreateSymbolicLink(Path.Join(middle, "inner-link"), Path.Join(directory, "inner-target"));
+        var outerLink = Path.Join(root, "outer-link");
+        Directory.CreateSymbolicLink(outerLink, middle);
+        var viaBoth = Path.Join(outerLink, "inner-link", "completed", "book.m4b");
+        Assert.True(File.Exists(viaBoth), "the file must be reachable through both links");
+
+        var result = await CreateManagedMover().CheckAsync(viaBoth);
 
         Assert.False(result.IsSupported);
         Assert.Contains("'" + outerLink + "'", result.Reason, StringComparison.Ordinal);
