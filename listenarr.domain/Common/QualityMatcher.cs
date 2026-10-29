@@ -135,7 +135,7 @@ namespace Listenarr.Domain.Common
 
             if (fileKbps is int kbps)
             {
-                var eligible = withBitrate.Where(r => r.BitrateKbps <= kbps).ToList();
+                var eligible = withBitrate.Where(r => MeetsRung(kbps, r.BitrateKbps!.Value)).ToList();
                 if (eligible.Count > 0)
                 {
                     return ToAllowedMatch(Best(eligible).Source);
@@ -258,6 +258,58 @@ namespace Listenarr.Domain.Common
             return cand.Priority < exist.Priority;
         }
 
+        /// <summary>The profile's cutoff rung, or null when CutoffQuality names nothing the profile
+        /// allows: absent, present but not Allowed, or differing only in case. A true
+        /// <paramref name="cutoffBlank"/> instead means no cutoff is configured, which is satisfied.</summary>
+        public static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
+        {
+            cutoffBlank = false;
+            if (profile?.Qualities == null || profile.Qualities.Count == 0
+                || string.IsNullOrWhiteSpace(profile.CutoffQuality))
+            {
+                cutoffBlank = true;
+                return null;
+            }
+
+            return FindAllowedRung(profile, profile.CutoffQuality);
+        }
+
+        /// <summary>
+        /// The codec group a free-text quality label belongs to ("FLAC", "AAC", "MP3", "OPUS", ...),
+        /// or null when the label names no codec at all. A bare bitrate such as "320kbps" comes
+        /// back null because it says nothing about the codec, and so does any label this method
+        /// does not recognise.
+        ///
+        /// Recognition is <see cref="ParseQualityLabel"/>'s, and it is kept in step with
+        /// <see cref="MapCodec"/> on containers: "M4B", "M4A", "MP4", "AAX" and "AAXC" all resolve
+        /// to AAC in both. They used to disagree, so an Audible AAX rip came back null here and a
+        /// caller asking whether the profile had an opinion was told it had none.
+        ///
+        /// Null still means what it has always meant: this method cannot name a codec for the
+        /// label. It is not a verdict, and callers should not read it as permission. What one
+        /// caller does with it: <see cref="QualityGate"/> treats null as a refusal. Another caller
+        /// is free to differ, so do not rely on that here.
+        /// </summary>
+        public static string? CodecGroupOfLabel(string? qualityLabel)
+            => string.IsNullOrWhiteSpace(qualityLabel) ? null : ParseQualityLabel(qualityLabel).Codec;
+
+        /// <summary>
+        /// The codec group a profile rung belongs to, preferring its structured
+        /// <see cref="QualityDefinition.Codec"/> and parsing its label otherwise, since seed and
+        /// legacy rungs carry only Quality and Priority.
+        /// </summary>
+        public static string? CodecGroupOfRung(QualityDefinition? rung)
+        {
+            if (rung is null)
+            {
+                return null;
+            }
+
+            return string.IsNullOrWhiteSpace(rung.Codec)
+                ? CodecGroupOfLabel(rung.Quality)
+                : CanonicalCodec(rung.Codec!);
+        }
+
         // ---- internals --------------------------------------------------------------------
 
         private readonly record struct EffectiveRungInfo(QualityDefinition Source, string? Codec, int? BitrateKbps, bool IsLossless)
@@ -270,19 +322,6 @@ namespace Listenarr.Domain.Common
 
         private static EffectiveRungInfo Worst(IEnumerable<EffectiveRungInfo> rungs)
             => rungs.OrderByDescending(r => r.Priority).First();
-
-        private static QualityDefinition? ResolveCutoff(QualityProfile? profile, out bool cutoffBlank)
-        {
-            cutoffBlank = false;
-            if (profile?.Qualities == null || profile.Qualities.Count == 0
-                || string.IsNullOrWhiteSpace(profile.CutoffQuality))
-            {
-                cutoffBlank = true;
-                return null;
-            }
-
-            return FindAllowedRung(profile, profile.CutoffQuality);
-        }
 
         private static IEnumerable<QualityDefinition> AllowedQualities(QualityProfile profile)
             => profile.Qualities
@@ -325,7 +364,13 @@ namespace Listenarr.Domain.Common
 
             if (Contains(lower, "flac")) return ("FLAC", bitrate, true);
             if (Contains(lower, "alac")) return ("ALAC", bitrate, true);
-            if (Contains(lower, "aac") || Contains(lower, "m4b") || Contains(lower, "m4a")) return ("AAC", bitrate, false);
+            // Every MPEG-4 container carries AAC, so they all resolve to the AAC group: "M4B" and
+            // "M4A" as before, "MP4" because MapCodec has always accepted it here and the two
+            // diverging left a label this method could not place, and "AAX"/"AAXC" because those
+            // are Audible's MPEG-4 containers and the scorer ranks AAX second only to FLAC.
+            // "aaxc" is covered by the "aax" test.
+            if (Contains(lower, "aac") || Contains(lower, "m4b") || Contains(lower, "m4a")
+                || Contains(lower, "mp4") || Contains(lower, "aax")) return ("AAC", bitrate, false);
             if (Contains(lower, "mp3")) return ("MP3", bitrate, false);
             if (Contains(lower, "opus")) return ("OPUS", bitrate, false);
             if (Contains(lower, "vorbis") || Contains(lower, "ogg")) return ("OGG Vorbis", bitrate, false);
@@ -363,8 +408,14 @@ namespace Listenarr.Domain.Common
             if (Any("mp3")) groups.Add("MP3");
             if (Any("opus")) groups.Add("OPUS");
             if (Any("vorbis") || Any("ogg")) groups.Add("OGG Vorbis");
-            // AAC commonly lives in M4B/M4A/MP4 containers; cover the legacy "M4B" codec group too.
-            if (Any("aac") || Any("m4b") || Any("m4a") || Any("mp4"))
+            // AAC commonly lives in M4B/M4A/MP4/AAX containers; cover the legacy "M4B" codec group
+            // too. This family is deliberately kept in step across ParseQualityLabel, MapCodec and
+            // CanonicalCodec, because when they disagree a label the gate can place maps to a codec
+            // group the matcher cannot, or the reverse. The three do NOT agree outside it:
+            // CanonicalCodec handles no aiff, ape, dsd, wav/wv or lossless and returns the raw
+            // string for them, which mostly hides behind the gate's OrdinalIgnoreCase comparison.
+            // That predates this change; do not read the MPEG-4 agreement as a general property.
+            if (Any("aac") || Any("m4b") || Any("m4a") || Any("mp4") || Any("aax"))
             {
                 groups.Add("AAC");
                 groups.Add("M4B");
@@ -386,6 +437,39 @@ namespace Listenarr.Domain.Common
             return MapCodec(file).Overlaps(LosslessGroups);
         }
 
+        /// <summary>
+        /// How far below a rung a file may report and still count as that rung, as a fraction.
+        ///
+        /// A file encoded at a nominal bitrate almost never reports exactly that figure. A "128kbps"
+        /// AAC file commonly reports something like 127241 bps, which rounds to 127 kbps, and a
+        /// strict `rung &lt;= file` comparison then excludes the 128 rung and drops the file a whole
+        /// tier. Applied to a real library that misclassifies most lossy files, because the failure
+        /// is systematic rather than occasional.
+        ///
+        /// Five percent is far smaller than the gap between adjacent rungs in any ordinary profile.
+        /// Across 64, 96, 128, 192, 256 and 320 the narrowest gap is 256 to 320, a fifth of the
+        /// higher rung and four times this tolerance, so a constant-bitrate file cannot be promoted
+        /// across a real tier boundary. It only absorbs encoder variance.
+        /// </summary>
+        private const double RungBitrateTolerance = 0.05;
+
+        /// <summary>
+        /// Whether a file's bitrate reaches a rung, allowing for the difference between a nominal
+        /// bitrate and what an encoder actually reports.
+        /// </summary>
+        private static bool MeetsRung(int fileKbps, int rungKbps)
+        {
+            if (fileKbps >= rungKbps)
+            {
+                return true;
+            }
+
+            // At least one whole kbps of slack, so the smallest rungs are not left with a tolerance
+            // that rounds away to nothing.
+            var slack = Math.Max(1d, rungKbps * RungBitrateTolerance);
+            return rungKbps - fileKbps <= slack;
+        }
+
         /// <summary>Convert a bitrate to kbps, guarding values already expressed in kbps.</summary>
         private static int? NormalizeKbps(int? bitsPerSecond)
         {
@@ -402,7 +486,8 @@ namespace Listenarr.Domain.Common
             var lower = codec.Trim().ToLowerInvariant();
             if (Contains(lower, "flac")) return "FLAC";
             if (Contains(lower, "alac")) return "ALAC";
-            if (Contains(lower, "aac") || Contains(lower, "m4b") || Contains(lower, "m4a")) return "AAC";
+            if (Contains(lower, "aac") || Contains(lower, "m4b") || Contains(lower, "m4a")
+                || Contains(lower, "mp4") || Contains(lower, "aax")) return "AAC";
             if (Contains(lower, "mp3")) return "MP3";
             if (Contains(lower, "opus")) return "OPUS";
             if (Contains(lower, "vorbis") || Contains(lower, "ogg")) return "OGG Vorbis";

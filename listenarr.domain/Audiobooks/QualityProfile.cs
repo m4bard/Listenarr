@@ -69,12 +69,14 @@ namespace Listenarr.Domain.Audiobooks
         public List<string> PreferredWords { get; set; } = new();
 
         /// <summary>
-        /// Words/phrases that must NOT be in the title (e.g., "abridged", "sample")
+        /// Words/phrases that must NOT be in the title (e.g., "abridged", "sample").
+        /// Matched as whole words, so "abridged" does not reject a title reading "Unabridged".
         /// </summary>
         public List<string> MustNotContain { get; set; } = new();
 
         /// <summary>
-        /// Words/phrases that must be in the title
+        /// Words/phrases the title must match at least one of (e.g., "unabridged", "retail").
+        /// Matched as whole words. An empty list places no requirement on the title.
         /// </summary>
         public List<string> MustContain { get; set; } = new();
 
@@ -108,6 +110,13 @@ namespace Listenarr.Domain.Audiobooks
         /// Maximum age in days for releases (0 = no limit)
         /// </summary>
         public int MaximumAge { get; set; } = 0;
+
+        /// <summary>
+        /// How this profile treats bundle/omnibus releases relative to single-book releases.
+        /// Scored, not filtered: the losing shape is penalised and still eligible, so a book
+        /// whose only available release is on the wrong side of the preference still fills.
+        /// </summary>
+        public ReleaseShapePreference PreferredReleaseShape { get; set; } = ReleaseShapePreference.NoPreference;
 
         /// <summary>
         /// Custom names for quality groups (codec -> custom name)
@@ -177,6 +186,14 @@ namespace Listenarr.Domain.Audiobooks
         public int TotalScore { get; set; }
         public Dictionary<string, int> ScoreBreakdown { get; set; } = new();
         public List<string> RejectionReasons { get; set; } = new();
+
+        /// <summary>
+        /// The originating indexer's Priority (lower = higher priority), when resolvable.
+        /// Used only as a last-resort tie-break between otherwise-equal results; it must never
+        /// be folded into TotalScore as an additive term, since that would let indexer choice
+        /// override actual release quality.
+        /// </summary>
+        public int? IndexerPriority { get; set; }
 
         // Prowlarr-style composite smart scoring (optional)
         public double SmartScore { get; set; }
