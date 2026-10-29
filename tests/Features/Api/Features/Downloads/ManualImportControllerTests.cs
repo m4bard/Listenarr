@@ -2312,9 +2312,10 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                     Format = "mp3",
                     BitRate = 128000
                 });
-            metadata.Setup(service => service.WriteAsinTagAsync(
+            metadata.Setup(service => service.WriteImportTagsAsync(
                     It.IsAny<IAudiobookFileRegistrationLease>(),
-                    book.Asin))
+                    book.Asin,
+                    It.IsAny<string?>()))
                 .ThrowsAsync(new IOException("simulated tag failure"));
             var controller = GetController(
                 book,
@@ -2361,12 +2362,338 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 "audio",
                 await File.ReadAllTextAsync(
                     Path.Join(destinationRoot, "Tagged Book.mp3")));
-            metadata.Verify(service => service.WriteAsinTagAsync(
+            metadata.Verify(service => service.WriteImportTagsAsync(
                 It.IsAny<IAudiobookFileRegistrationLease>(),
-                book.Asin), Times.Never);
+                book.Asin,
+                It.IsAny<string?>()), Times.Never);
             metadata.Verify(service => service.WriteAsinTagAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>()), Times.Never);
+        }
+
+        [Theory]
+        [InlineData(FileAction.Copy, 1)]
+        [InlineData(FileAction.HardlinkCopy, 0)]
+        public async Task InteractiveManualImport_AsinTag_IsNotWrittenThroughAHardlinkToTheSource(
+            FileAction fileAction,
+            int expectedTagWrites)
+        {
+            // A hardlinked destination is the source's own inode, which a download client may
+            // still be seeding, so rewriting its tags would rewrite the source as well. The Copy
+            // case is the control: the same import with an independent destination is tagged.
+            // The markerless publication lease never authorizes metadata writes, so both cases
+            // are given a lease that does; the publication itself stays real, which keeps the
+            // hardlink a hardlink.
+            var destinationRoot = CreateTempDirectory(
+                $"listenarr-manual-asin-link-dest-{fileAction}");
+            var sourceDir = CreateTempDirectory(
+                $"listenarr-manual-asin-link-src-{fileAction}");
+            var source = Path.Join(sourceDir, "book.mp3");
+            await File.WriteAllTextAsync(source, "audio");
+            var book = new Audiobook
+            {
+                Id = 336,
+                Title = "Linked Book",
+                Asin = "B000TEST",
+                BasePath = destinationRoot
+            };
+            var metadata = new Mock<IMetadataService>();
+            metadata.Setup(service => service.ExtractFileMetadataAsync(source))
+                .ReturnsAsync(new AudioMetadata
+                {
+                    Title = book.Title,
+                    Format = "mp3",
+                    BitRate = 128000
+                });
+            var actualMover = CreateMarkerlessFileMover();
+            var mover = new Mock<IFileMover>(MockBehavior.Strict);
+            mover.Setup(candidate => candidate.PrepareActionForRegistrationAsync(
+                    fileAction,
+                    source,
+                    It.IsAny<string>(),
+                    It.IsAny<Guid>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<FilePublicationSourceProof>()))
+                .Returns<FileAction, string, string, Guid, string?, FilePublicationSourceProof>(async (
+                    action,
+                    sourcePath,
+                    destination,
+                    operationId,
+                    expectedRegisteredIdentity,
+                    expectedSourceProof) =>
+                {
+                    var inner = await actualMover
+                        .PrepareActionForRegistrationAsync(
+                            action,
+                            sourcePath,
+                            destination,
+                            operationId,
+                            expectedRegisteredIdentity,
+                            expectedSourceProof);
+                    return inner == null
+                        ? null
+                        : new ControllableRegistrationLease(inner)
+                        {
+                            SupportsMetadataWrite = true
+                        };
+                });
+            var controller = GetController(
+                book,
+                new ApplicationSettings
+                {
+                    OutputPath = destinationRoot,
+                    FolderNamingPattern = "",
+                    FileNamingPattern = "{Title}"
+                },
+                fileMover: mover.Object,
+                filePublicationSourceCapability: actualMover,
+                metadataMock: metadata);
+            var request = new ManualImportRequestDto
+            {
+                Path = sourceDir,
+                Mode = "interactive",
+                Action = fileAction,
+                Items =
+                [
+                    new ManualImportItemDto
+                    {
+                        FullPath = source,
+                        MatchedAudiobookId = book.Id
+                    }
+                ]
+            };
+
+            var action = await controller.Start(request);
+
+            var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(
+                action.Result);
+            var results = Assert.IsAssignableFrom<IEnumerable<ManualImportResultDto>>(
+                ok.Value!.GetType().GetProperty("results")!.GetValue(ok.Value));
+            Assert.True(Assert.Single(results).Success);
+            Assert.True(File.Exists(source));
+            var destination = Path.Join(destinationRoot, "Linked Book.mp3");
+            Assert.Equal("audio", await File.ReadAllTextAsync(destination));
+            metadata.Verify(service => service.WriteImportTagsAsync(
+                It.IsAny<IAudiobookFileRegistrationLease>(),
+                book.Asin,
+                It.IsAny<string?>()), Times.Exactly(expectedTagWrites));
+
+            // The call count above is the gate; this pins its premise rather than assuming it.
+            // A write through the destination reaches the source exactly when the import
+            // produced a hardlink.
+            await File.AppendAllTextAsync(destination, "+");
+            Assert.Equal(
+                fileAction == FileAction.HardlinkCopy ? "audio+" : "audio",
+                await File.ReadAllTextAsync(source));
+        }
+
+        [Fact]
+        public async Task InteractiveManualImport_BookWithArtworkAndNoAsin_StillWritesImportTags()
+        {
+            // Anything matched outside Audible has no ASIN. The tag write used to be gated on
+            // the ASIN alone, so cover art embedding was silently inert for all of those.
+            var destinationRoot = CreateTempDirectory(
+                "listenarr-manual-cover-no-asin-dest");
+            var sourceDir = CreateTempDirectory(
+                "listenarr-manual-cover-no-asin-src");
+            var source = Path.Join(sourceDir, "book.mp3");
+            await File.WriteAllTextAsync(source, "audio");
+            var book = new Audiobook
+            {
+                Id = 336,
+                Title = "Artwork Only",
+                Asin = null,
+                ImageUrl = "https://example.invalid/cover.jpg",
+                BasePath = destinationRoot
+            };
+            var recorder = new Listenarr.Tests.Mocks.MetadataServiceMock();
+            var metadata = new Mock<IMetadataService>();
+            metadata.Setup(service => service.ExtractFileMetadataAsync(source))
+                .ReturnsAsync(new AudioMetadata
+                {
+                    Title = book.Title,
+                    Format = "mp3",
+                    BitRate = 128000
+                });
+            metadata.Setup(service => service.WriteImportTagsAsync(
+                    It.IsAny<IAudiobookFileRegistrationLease>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<string?>()))
+                .Returns<IAudiobookFileRegistrationLease, string?, string?>(
+                    (lease, asin, coverArtUrl) =>
+                        recorder.WriteImportTagsAsync(lease, asin, coverArtUrl));
+            var controller = GetController(
+                book,
+                new ApplicationSettings
+                {
+                    OutputPath = destinationRoot,
+                    FolderNamingPattern = "",
+                    FileNamingPattern = "{Title}"
+                },
+                metadataMock: metadata);
+            var request = new ManualImportRequestDto
+            {
+                Path = sourceDir,
+                Mode = "interactive",
+                Action = FileAction.Copy,
+                Items =
+                [
+                    new ManualImportItemDto
+                    {
+                        FullPath = source,
+                        MatchedAudiobookId = book.Id
+                    }
+                ]
+            };
+
+            var action = await controller.Start(request);
+
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+            var write = Assert.Single(recorder.ImportTagWrites);
+            Assert.Null(write.Asin);
+            Assert.Equal("https://example.invalid/cover.jpg", write.CoverArtUrl);
+        }
+
+        [Fact]
+        public async Task InteractiveManualImport_BookWithNeitherAsinNorArtwork_WritesNoImportTags()
+        {
+            var destinationRoot = CreateTempDirectory(
+                "listenarr-manual-no-tags-dest");
+            var sourceDir = CreateTempDirectory(
+                "listenarr-manual-no-tags-src");
+            var source = Path.Join(sourceDir, "book.mp3");
+            await File.WriteAllTextAsync(source, "audio");
+            var book = new Audiobook
+            {
+                Id = 337,
+                Title = "Nothing To Write",
+                Asin = null,
+                ImageUrl = null,
+                BasePath = destinationRoot
+            };
+            var recorder = new Listenarr.Tests.Mocks.MetadataServiceMock();
+            var metadata = new Mock<IMetadataService>();
+            metadata.Setup(service => service.ExtractFileMetadataAsync(source))
+                .ReturnsAsync(new AudioMetadata
+                {
+                    Title = book.Title,
+                    Format = "mp3",
+                    BitRate = 128000
+                });
+            metadata.Setup(service => service.WriteImportTagsAsync(
+                    It.IsAny<IAudiobookFileRegistrationLease>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<string?>()))
+                .Returns<IAudiobookFileRegistrationLease, string?, string?>(
+                    (lease, asin, coverArtUrl) =>
+                        recorder.WriteImportTagsAsync(lease, asin, coverArtUrl));
+            var controller = GetController(
+                book,
+                new ApplicationSettings
+                {
+                    OutputPath = destinationRoot,
+                    FolderNamingPattern = "",
+                    FileNamingPattern = "{Title}"
+                },
+                metadataMock: metadata);
+            var request = new ManualImportRequestDto
+            {
+                Path = sourceDir,
+                Mode = "interactive",
+                Action = FileAction.Copy,
+                Items =
+                [
+                    new ManualImportItemDto
+                    {
+                        FullPath = source,
+                        MatchedAudiobookId = book.Id
+                    }
+                ]
+            };
+
+            var action = await controller.Start(request);
+
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+            Assert.Empty(recorder.ImportTagWrites);
+        }
+
+        [Theory]
+        [InlineData(FileAction.Copy, 1)]
+        [InlineData(FileAction.HardlinkCopy, 0)]
+        public async Task InteractiveManualImport_ImportTags_AreNotWrittenThroughAHardlinkToTheSource(
+            FileAction fileAction,
+            int expectedTagWrites)
+        {
+            // A hardlinked destination is the source's own inode, which a download client may
+            // still be seeding, so writing tags or artwork through it would rewrite the source as
+            // well. The Copy case is the control: the same import with an independent
+            // destination is tagged.
+            var destinationRoot = CreateTempDirectory(
+                $"listenarr-manual-tags-link-dest-{fileAction}");
+            var sourceDir = CreateTempDirectory(
+                $"listenarr-manual-tags-link-src-{fileAction}");
+            var source = Path.Join(sourceDir, "book.mp3");
+            await File.WriteAllTextAsync(source, "audio");
+            var book = new Audiobook
+            {
+                Id = 337,
+                Title = "Linked Cover Book",
+                Asin = "B000TEST",
+                ImageUrl = "https://images.example.com/cover.jpg",
+                BasePath = destinationRoot
+            };
+            var metadata = new Mock<IMetadataService>();
+            metadata.Setup(service => service.ExtractFileMetadataAsync(source))
+                .ReturnsAsync(new AudioMetadata
+                {
+                    Title = book.Title,
+                    Format = "mp3",
+                    BitRate = 128000
+                });
+            var controller = GetController(
+                book,
+                new ApplicationSettings
+                {
+                    OutputPath = destinationRoot,
+                    FolderNamingPattern = "",
+                    FileNamingPattern = "{Title}"
+                },
+                metadataMock: metadata);
+            var request = new ManualImportRequestDto
+            {
+                Path = sourceDir,
+                Mode = "interactive",
+                Action = fileAction,
+                Items =
+                [
+                    new ManualImportItemDto
+                    {
+                        FullPath = source,
+                        MatchedAudiobookId = book.Id
+                    }
+                ]
+            };
+
+            var action = await controller.Start(request);
+
+            var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(
+                action.Result);
+            var results = Assert.IsAssignableFrom<IEnumerable<ManualImportResultDto>>(
+                ok.Value!.GetType().GetProperty("results")!.GetValue(ok.Value));
+            Assert.True(Assert.Single(results).Success);
+            var destination = Path.Join(destinationRoot, "Linked Cover Book.mp3");
+            Assert.Equal("audio", await File.ReadAllTextAsync(destination));
+            metadata.Verify(service => service.WriteImportTagsAsync(
+                It.IsAny<IAudiobookFileRegistrationLease>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()), Times.Exactly(expectedTagWrites));
+
+            // Pin the premise rather than assume it: a write through the destination reaches
+            // the source exactly when the import produced a hardlink.
+            await File.AppendAllTextAsync(destination, "+");
+            Assert.Equal(
+                fileAction == FileAction.HardlinkCopy ? "audio+" : "audio",
+                await File.ReadAllTextAsync(source));
         }
 
         [Fact]
@@ -3323,6 +3650,7 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             IAudiobookFileRegistrationLease
         {
             public bool IsCurrent { get; set; } = true;
+            public bool SupportsMetadataWrite { get; init; }
             public string PublicPath => inner.PublicPath;
             public string MetadataPath => inner.MetadataPath;
             public string PhysicalObjectIdentity =>
@@ -3394,5 +3722,288 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 return inner.ResolveAsync(fullPath, mode, cancellationToken);
             }
         }
+
+        // Listenarr#890 / #995. A bare .mp4 is an ambiguous container: the same extension carries
+        // audiobooks and films, so the extension alone cannot decide and the library scanner,
+        // which cannot afford a probe per file, deliberately still refuses it. Manual import can
+        // afford one probe per user-selected item, so it probes and admits audio-only content.
+        // Every test below is paired with a control that differs in exactly one input and has to
+        // come out the other way, because "the import succeeded" on its own would also be the
+        // observable if the gate had been removed entirely.
+        private sealed record AmbiguousContainerImport(
+            Microsoft.AspNetCore.Mvc.OkObjectResult Ok,
+            ManualImportResultDto Result,
+            string SourceFile,
+            string BasePath,
+            int ProbeCalls);
+
+        private async Task<AmbiguousContainerImport> ImportSingleFileAsync(
+            string fileName,
+            AudioMetadata probedMetadata,
+            int audiobookId)
+        {
+            var basePath = CreateTempDirectory("listenarr-ambiguous-destination");
+            var sourceDirectory = CreateTempDirectory("listenarr-ambiguous-source");
+            var sourceFile = Path.Join(sourceDirectory, fileName);
+            await File.WriteAllTextAsync(sourceFile, "container bytes");
+            var book = new Audiobook
+            {
+                Id = audiobookId,
+                Title = "Ambiguous Container Book",
+                BasePath = basePath
+            };
+            var metadataMock = new Mock<IMetadataService>();
+            var controller = GetController(
+                book,
+                new ApplicationSettings
+                {
+                    OutputPath = basePath,
+                    FolderNamingPattern = "",
+                    FileNamingPattern = "{Title}"
+                },
+                rootFolders:
+                [
+                    new RootFolder
+                    {
+                        Id = 1,
+                        Name = "Destination",
+                        Path = basePath,
+                        CaseSensitivityMode = FileSystemCaseSensitivityMode.Auto
+                    }
+                ],
+                metadataMock: metadataMock);
+
+            // Registered last on purpose. GetController installs a catch-all ExtractFileMetadataAsync
+            // setup, and Moq resolves a call against the most recently registered matching setup.
+            // The call is counted because the count is the observable that says the admission gate
+            // ran: path planning extracts metadata for every import, so one call is what happened
+            // before this change, and a second call on the same path is the gate consulting the
+            // probe ahead of planning.
+            var probeCalls = 0;
+            metadataMock
+                .Setup(service => service.ExtractFileMetadataAsync(sourceFile))
+                .ReturnsAsync(() =>
+                {
+                    probeCalls++;
+                    return probedMetadata;
+                });
+
+            var action = await controller.Start(new ManualImportRequestDto
+            {
+                Path = sourceDirectory,
+                Mode = "interactive",
+                Action = FileAction.Move,
+                Items =
+                [
+                    new ManualImportItemDto
+                    {
+                        FullPath = sourceFile,
+                        MatchedAudiobookId = book.Id
+                    }
+                ]
+            });
+
+            var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+            var results = Assert.IsAssignableFrom<IEnumerable<ManualImportResultDto>>(
+                ok.Value!.GetType().GetProperty("results")!.GetValue(ok.Value));
+            return new AmbiguousContainerImport(
+                ok,
+                Assert.Single(results),
+                sourceFile,
+                basePath,
+                probeCalls);
+        }
+
+        private static int ImportedCount(Microsoft.AspNetCore.Mvc.OkObjectResult ok) =>
+            Assert.IsType<int>(ok.Value!.GetType()
+                .GetProperty("importedCount")!
+                .GetValue(ok.Value));
+
+        private static AudioMetadata MapFfprobe(string ffprobeJson, string publicPath)
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(ffprobeJson);
+            return Listenarr.Infrastructure.Ffmpeg.Metadata.FfprobeMetadataMapper.Map(
+                document.RootElement.Clone(),
+                publicPath);
+        }
+
+        [Fact]
+        [Trait("Scenario", "AmbiguousContainerManualImport")]
+        public async Task Start_AudioOnlyMp4_MovesAndRegistersTheFile()
+        {
+            Assert.False(FileUtils.IsAudioFile("Target Book.mp4"));
+
+            var import = await ImportSingleFileAsync(
+                "Target Book.mp4",
+                new AudioMetadata
+                {
+                    Title = "Ambiguous Container Book",
+                    Format = "aac",
+                    HasAudioStream = true,
+                    HasVideoStream = false
+                },
+                audiobookId: 8901);
+
+            Assert.True(import.Result.Success, import.Result.Error);
+            Assert.Equal(1, ImportedCount(import.Ok));
+            Assert.False(File.Exists(import.SourceFile));
+            Assert.NotNull(import.Result.DestinationPath);
+            Assert.True(File.Exists(import.Result.DestinationPath));
+            // The destination keeps the source container extension rather than being renamed to
+            // an accepted one, because nothing was transcoded.
+            Assert.Equal(".mp4", Path.GetExtension(import.Result.DestinationPath));
+            // The gate consulted the probe and then planning consulted it again. One call would
+            // mean the container was admitted on its extension, which is the behaviour this
+            // change exists to avoid.
+            Assert.Equal(2, import.ProbeCalls);
+        }
+
+        // The control for the case above. One input differs, a playable video stream, and the
+        // verdict has to flip. It also pins that the refusal happens before any filesystem
+        // mutation: the source is still where the user left it and nothing was written to the
+        // library folder, which is what separates this gate from failing late at registration.
+        [Fact]
+        [Trait("Scenario", "AmbiguousContainerManualImport")]
+        public async Task Start_VideoBearingMp4_IsRefusedBeforeAnyFilesystemMutation()
+        {
+            var import = await ImportSingleFileAsync(
+                "Target Film.mp4",
+                new AudioMetadata
+                {
+                    Title = "Ambiguous Container Book",
+                    Format = "aac",
+                    HasAudioStream = true,
+                    HasVideoStream = true
+                },
+                audiobookId: 8902);
+
+            Assert.False(import.Result.Success);
+            Assert.Equal(0, ImportedCount(import.Ok));
+            Assert.Equal(
+                "The file carries video, so it was not imported as an audiobook.",
+                import.Result.Error);
+            Assert.True(File.Exists(import.SourceFile));
+            Assert.Empty(Directory.GetFiles(import.BasePath, "*", SearchOption.AllDirectories));
+            // Exactly one probe: the gate's. Planning never ran, which is why nothing was written.
+            Assert.Equal(1, import.ProbeCalls);
+        }
+
+        // The second control. An .mp4 with no audio stream at all is refused too, and with a
+        // different reason, so the two refusals are distinguishable in the UI. #890's
+        // characterization tests pin that an empty .mp4 fixture blocks import; this is the same
+        // outcome reached through the new gate rather than through the extension check.
+        [Fact]
+        [Trait("Scenario", "AmbiguousContainerManualImport")]
+        public async Task Start_Mp4WithNoAudioStream_IsRefused()
+        {
+            var import = await ImportSingleFileAsync(
+                "Target Silence.mp4",
+                new AudioMetadata
+                {
+                    Title = "Ambiguous Container Book",
+                    Format = "mov,mp4,m4a,3gp,3g2,mj2",
+                    HasAudioStream = false,
+                    HasVideoStream = false
+                },
+                audiobookId: 8903);
+
+            Assert.False(import.Result.Success);
+            Assert.Equal(0, ImportedCount(import.Ok));
+            Assert.Equal("The file carries no audio stream.", import.Result.Error);
+            Assert.True(File.Exists(import.SourceFile));
+        }
+
+        // Cover art, run through the real ffprobe mapper rather than a hand-built AudioMetadata,
+        // because the whole risk in this design is that ffprobe reports embedded artwork as a
+        // codec_type=video stream. If attached_pic were ignored anywhere in the chain this would
+        // refuse, and so would most real audiobooks. The control is the test below, which is the
+        // identical JSON with attached_pic flipped to 0.
+        [Fact]
+        [Trait("Scenario", "AmbiguousContainerManualImport")]
+        public async Task Start_Mp4WithCoverArtOnly_MovesAndRegistersTheFile()
+        {
+            const string coverArtJson = """
+                {
+                  "format": { "format_name": "mov,mp4,m4a,3gp,3g2,mj2", "duration": "3600.0" },
+                  "streams": [
+                    { "codec_type": "audio", "codec_name": "aac", "channels": 2, "sample_rate": "44100" },
+                    { "codec_type": "video", "codec_name": "mjpeg", "disposition": { "attached_pic": 1 } }
+                  ]
+                }
+                """;
+            var probed = MapFfprobe(coverArtJson, "Target Book With Cover.mp4");
+            Assert.True(probed.HasAudioStream);
+            Assert.False(probed.HasVideoStream);
+
+            var import = await ImportSingleFileAsync(
+                "Target Book With Cover.mp4",
+                probed,
+                audiobookId: 8904);
+
+            Assert.True(import.Result.Success, import.Result.Error);
+            Assert.Equal(1, ImportedCount(import.Ok));
+            Assert.False(File.Exists(import.SourceFile));
+            Assert.True(File.Exists(import.Result.DestinationPath));
+            Assert.Equal(2, import.ProbeCalls);
+        }
+
+        [Fact]
+        [Trait("Scenario", "AmbiguousContainerManualImport")]
+        public async Task Start_Mp4WithRealVideoStreamFromProbe_IsRefused()
+        {
+            const string playableVideoJson = """
+                {
+                  "format": { "format_name": "mov,mp4,m4a,3gp,3g2,mj2", "duration": "3600.0" },
+                  "streams": [
+                    { "codec_type": "audio", "codec_name": "aac", "channels": 2, "sample_rate": "44100" },
+                    { "codec_type": "video", "codec_name": "mjpeg", "disposition": { "attached_pic": 0 } }
+                  ]
+                }
+                """;
+            var probed = MapFfprobe(playableVideoJson, "Target Film From Probe.mp4");
+            Assert.True(probed.HasAudioStream);
+            Assert.True(probed.HasVideoStream);
+
+            var import = await ImportSingleFileAsync(
+                "Target Film From Probe.mp4",
+                probed,
+                audiobookId: 8905);
+
+            Assert.False(import.Result.Success);
+            Assert.Equal(0, ImportedCount(import.Ok));
+            Assert.True(File.Exists(import.SourceFile));
+        }
+
+        // The regression control for the fourteen accepted extensions. The probe result here is
+        // the one that refuses an .mp4 two tests up, no audio stream and no video stream, and an
+        // .m4b still imports on it, because an always-audio extension never reaches the content
+        // gate. This is what pins that the change is additive: it cannot make an extension that
+        // imports today stop importing, whatever a probe says or fails to say about it.
+        [Fact]
+        [Trait("Scenario", "AmbiguousContainerManualImport")]
+        public async Task Start_AcceptedExtensionWithNoProbedStreams_StillImports()
+        {
+            Assert.True(FileUtils.IsAudioFile("Target Book.m4b"));
+
+            var import = await ImportSingleFileAsync(
+                "Target Book.m4b",
+                new AudioMetadata
+                {
+                    Title = "Ambiguous Container Book",
+                    Format = "m4b",
+                    HasAudioStream = false,
+                    HasVideoStream = false
+                },
+                audiobookId: 8906);
+
+            Assert.True(import.Result.Success, import.Result.Error);
+            Assert.Equal(1, ImportedCount(import.Ok));
+            Assert.False(File.Exists(import.SourceFile));
+            Assert.Equal(".m4b", Path.GetExtension(import.Result.DestinationPath));
+            // One probe, planning's. An accepted extension never reaches the gate, so the import
+            // does not pay for a second extraction and cannot be refused by a probe result.
+            Assert.Equal(1, import.ProbeCalls);
+        }
+
     }
 }

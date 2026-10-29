@@ -242,7 +242,10 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 "history",
                 NzbgetApiMock.CreateHistoryResponse(string.Concat(entries)));
             using var http = new HttpClient(apiMock);
-            var reader = CreateHistoryReader(http);
+            // Item 357 added a default 60-entry cap (DownloadClientHistoryLimit) downstream of
+            // this parse step; pin a limit above this test's 102 entries so it keeps exercising
+            // full-response parsing/ordering, which is what it is actually for.
+            var reader = CreateHistoryReader(http, ConfigurationServiceWithHistoryLimit(102));
 
             var result = await reader.ReadAsync(CreateClient(), CancellationToken.None);
 
@@ -292,6 +295,71 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
 
             Assert.Equal(status.Trim(), entry.RawStatus);
             Assert.Equal((NzbgetHistoryOutcome)expectedOutcome, entry.Outcome);
+        }
+
+        // AC: tracker#333. NZBGet's own client-side duplicate/health detection (and a
+        // user's manual bad-mark) deletes a download without ever putting a FAILURE/
+        // prefix on Status. DeleteStatus/MarkStatus are the only fields that carry that
+        // signal (e.g. Status="DELETED/COPY", DeleteStatus="COPY"). Mirrors Sonarr's
+        // _deleteFailedStatus array and MANUAL/BAD short-circuit (Nzbget.cs:24 and
+        // :141-148 @ 76c684e09; same shape in Readarr's Nzbget.cs @ 14f14e5da).
+        [Theory]
+        [InlineData("COPY", "", 2)]
+        [InlineData("DUPE", "", 2)]
+        [InlineData("HEALTH", "", 2)]
+        [InlineData("SCAN", "", 2)]
+        [InlineData("BAD", "", 2)]
+        [InlineData("MANUAL", "", 0)]
+        [InlineData("MANUAL", "NONE", 0)]
+        [InlineData("MANUAL", "BAD", 2)]
+        [InlineData("", "", 0)]
+        public async Task HistoryReader_DeleteStatusFamily_ClassifiesFailedOrIgnoredLikeSonarrReadarr(
+            string deleteStatus,
+            string markStatus,
+            int expectedOutcome)
+        {
+            using var apiMock = new NzbgetApiMock();
+            apiMock.QueueXmlRpcResponse(
+                "history",
+                NzbgetApiMock.CreateHistoryResponse(
+                    HistoryEntryValue(
+                        nzbId: "801",
+                        title: "Audiobook 801",
+                        status: string.IsNullOrEmpty(deleteStatus) ? "" : $"DELETED/{deleteStatus}",
+                        deleteStatus: deleteStatus,
+                        markStatus: markStatus)));
+            using var http = new HttpClient(apiMock);
+            var reader = CreateHistoryReader(http);
+
+            var entry = Assert.Single(await reader.ReadAsync(CreateClient(), CancellationToken.None));
+
+            Assert.Equal(deleteStatus, entry.DeleteStatus);
+            Assert.Equal(markStatus, entry.MarkStatus);
+            Assert.Equal((NzbgetHistoryOutcome)expectedOutcome, entry.Outcome);
+        }
+
+        // A FAILURE/-prefixed Status must stay Failed regardless of what DeleteStatus
+        // says; the new delete-status classification only runs for the "else" case the
+        // existing SUCCESS/FAILURE prefix checks did not already resolve.
+        [Fact]
+        public async Task HistoryReader_FailurePrefixTakesPriorityOverDeleteStatus()
+        {
+            using var apiMock = new NzbgetApiMock();
+            apiMock.QueueXmlRpcResponse(
+                "history",
+                NzbgetApiMock.CreateHistoryResponse(
+                    HistoryEntryValue(
+                        nzbId: "802",
+                        title: "Audiobook 802",
+                        status: "FAILURE/UNPACK",
+                        deleteStatus: "NONE",
+                        markStatus: "GOOD")));
+            using var http = new HttpClient(apiMock);
+            var reader = CreateHistoryReader(http);
+
+            var entry = Assert.Single(await reader.ReadAsync(CreateClient(), CancellationToken.None));
+
+            Assert.Equal(NzbgetHistoryOutcome.Failed, entry.Outcome);
         }
 
         [Fact]
@@ -398,14 +466,111 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             Assert.Equal(cancellationTokenSource.Token, exception.CancellationToken);
         }
 
+        // Item 357, side effect of #333: NzbgetHistoryReader.ReadAsync called NZBGet's own
+        // unbounded "history" RPC with no count/age limit (there is no such parameter to pass
+        // in the family either) and returned every entry. Once #333 reclassified most
+        // DeleteStatus-family entries from Ignored to Failed, the number of tracked client
+        // items on a real NZBGet install grew from roughly 3 to 1000+ and kept growing, because
+        // nothing on our side ever trimmed what NZBGet's own history keeps.
+        // Fix matches Sonarr/Readarr exactly: GetHistory(Settings)
+        // .Take(_configService.DownloadClientHistoryLimit).ToList() -- client-side truncation
+        // after the full unbounded fetch. Sonarr Nzbget.cs:111-113 @ 76c684e09, Readarr
+        // Nzbget.cs:110-112 (the .Take(...) line itself @ 13bfb73ee9f).
+        [Fact]
+        public async Task HistoryReader_MoreEntriesThanConfiguredLimit_TruncatesToConfiguredLimit()
+        {
+            using var apiMock = new NzbgetApiMock();
+            var entries = Enumerable.Range(0, 5)
+                .Select(index => HistoryEntryValue(
+                    nzbId: (index + 1).ToString(),
+                    title: $"Book {index + 1}",
+                    status: "SUCCESS/UNPACK"))
+                .ToArray();
+            apiMock.QueueXmlRpcResponse(
+                "history",
+                NzbgetApiMock.CreateHistoryResponse(string.Concat(entries)));
+            using var http = new HttpClient(apiMock);
+            var reader = CreateHistoryReader(http, ConfigurationServiceWithHistoryLimit(3));
+
+            var result = await reader.ReadAsync(CreateClient(), CancellationToken.None);
+
+            // Server order is preserved, matching Take(limit)'s own semantics -- the lowest
+            // three NZBIDs, not the three most recent or any re-sorted subset.
+            Assert.Equal(3, result.Count);
+            Assert.Equal("1", result[0].CanonicalNzbId);
+            Assert.Equal("2", result[1].CanonicalNzbId);
+            Assert.Equal("3", result[2].CanonicalNzbId);
+        }
+
+        // Control: a response smaller than the configured limit must come back whole. Guards
+        // against an off-by-one or an inverted comparison in the Take(limit) call above.
+        [Fact]
+        public async Task HistoryReader_FewerEntriesThanConfiguredLimit_ReturnsAllEntriesUntruncated()
+        {
+            using var apiMock = new NzbgetApiMock();
+            var entries = Enumerable.Range(0, 5)
+                .Select(index => HistoryEntryValue(
+                    nzbId: (index + 1).ToString(),
+                    title: $"Book {index + 1}",
+                    status: "SUCCESS/UNPACK"))
+                .ToArray();
+            apiMock.QueueXmlRpcResponse(
+                "history",
+                NzbgetApiMock.CreateHistoryResponse(string.Concat(entries)));
+            using var http = new HttpClient(apiMock);
+            var reader = CreateHistoryReader(http, ConfigurationServiceWithHistoryLimit(60));
+
+            var result = await reader.ReadAsync(CreateClient(), CancellationToken.None);
+
+            Assert.Equal(5, result.Count);
+        }
+
+        // Default-value test: with no explicit DownloadClientHistoryLimit override (the
+        // IConfigurationService mock returns a plain `new ApplicationSettings()`), 60 is the
+        // limit actually applied end to end, matching Sonarr ConfigService.cs:187-191
+        // @ 76c684e09 and Readarr ConfigService.cs:181-185 (default-60 line @ 319089b90f):
+        // both GetValueInt("DownloadClientHistoryLimit", 60).
+        [Fact]
+        public async Task HistoryReader_NoLimitOverride_DefaultsToSixtyMatchingFamily()
+        {
+            using var apiMock = new NzbgetApiMock();
+            var entries = Enumerable.Range(0, 65)
+                .Select(index => HistoryEntryValue(
+                    nzbId: (index + 1).ToString(),
+                    title: $"Book {index + 1}",
+                    status: "SUCCESS/UNPACK"))
+                .ToArray();
+            apiMock.QueueXmlRpcResponse(
+                "history",
+                NzbgetApiMock.CreateHistoryResponse(string.Concat(entries)));
+            using var http = new HttpClient(apiMock);
+            var reader = CreateHistoryReader(http, ConfigurationServiceWithHistoryLimit());
+
+            var result = await reader.ReadAsync(CreateClient(), CancellationToken.None);
+
+            Assert.Equal(60, result.Count);
+        }
+
         [Fact]
         public async Task NzbgetHistory_QueuePath_OneThousandVisibleEntries_WithinGuardrails()
         {
+            // Item 357 added a default 60-entry history cap. This test's own purpose is an
+            // allocation/timing guardrail at high volume (1000 history entries), not the cap
+            // itself -- that is covered separately above -- so it pins a limit at the full
+            // entry count to keep measuring what it was built to measure. Without this, the
+            // index-based assertions below (which predate item 357 and depend on history
+            // entries deep past index 60 being processed) would start failing for the same
+            // reason this item exists: an unbounded fetch no longer being unbounded.
+            var highLimitConfigurationService = ConfigurationServiceWithHistoryLimit(PerformanceHistoryEntryCount);
+
             using (var warmApiMock = new NzbgetApiMock())
             {
                 QueuePerformanceResponses(warmApiMock);
                 using var warmHttp = new HttpClient(warmApiMock);
-                var warmAdapter = CreateAdapter(warmHttp);
+                var warmAdapter = CreateAdapter(
+                    warmHttp,
+                    NullLogger<NzbgetAdapter>.Instance,
+                    configurationService: highLimitConfigurationService);
                 await FetchDownloadsThroughQueuePathAsync(
                     warmAdapter,
                     CreateClient(),
@@ -416,7 +581,10 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             using var apiMock = new NzbgetApiMock();
             QueuePerformanceResponses(apiMock);
             using var http = new HttpClient(apiMock);
-            var adapter = CreateAdapter(http);
+            var adapter = CreateAdapter(
+                http,
+                NullLogger<NzbgetAdapter>.Instance,
+                configurationService: highLimitConfigurationService);
             var downloads = CreatePerformanceDownloads();
 
             GC.Collect();
@@ -592,6 +760,286 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 download.ErrorMessage);
             Assert.Equal("FAILURE/UNPACK", download.Metadata["ClientFailureReason"]);
             Assert.Equal("/existing/path", download.DownloadPath);
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_RepeatedFailedHistoryEntry_WarnsOnceAndStillReturnsTheItem()
+        {
+            // AC: A failed entry NZBGet never purges must not be warned about on every poll.
+            // Behavior: Same failed history entry on two consecutive polls -> one warning, both results carry the item.
+            // @category: edge-case
+            // @lane: integration
+            // @dependency: NZBGet history enrichment and the failed-history warning tracker
+            // @complexity: medium
+            using var apiMock = new NzbgetApiMock();
+            var failedEntry = HistoryEntryValue(
+                nzbId: "601",
+                title: "Repeated Failure Book",
+                status: "FAILURE/UNPACK",
+                fileSizeMb: "100",
+                downloadedSizeMb: "40");
+            QueuePollingResponses(apiMock, [], [failedEntry]);
+            QueuePollingResponses(apiMock, [], [failedEntry]);
+            using var http = new HttpClient(apiMock);
+            var logger = new CapturingLogger<NzbgetAdapter>();
+            var adapter = CreateAdapter(http, logger);
+            var client = CreateClient();
+
+            var firstPoll = await adapter.GetQueueAsync(client, CancellationToken.None);
+            var secondPoll = await adapter.GetQueueAsync(client, CancellationToken.None);
+
+            Assert.Equal("601", Assert.Single(firstPoll).Id);
+            Assert.Equal("failed", firstPoll[0].Status);
+            Assert.Equal("601", Assert.Single(secondPoll).Id);
+            Assert.Equal("failed", secondPoll[0].Status);
+            var warning = Assert.Single(FailedHistoryWarnings(logger));
+            Assert.Equal("601", GetLogValue(warning, "NzbId"));
+            Assert.Equal("GetQueueAsync", GetLogValue(warning, "Surface"));
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_FailedHistoryEntryLeavesAndReturns_WarnsAgain()
+        {
+            // AC: Tracking must evict entries that leave NZBGet history so a genuine second failure is reported.
+            // Behavior: Failed entry present twice, absent, present again -> two warnings for the same NZBID.
+            // @category: edge-case
+            // @lane: integration
+            // @dependency: NZBGet history enrichment and the failed-history warning tracker
+            // @complexity: medium
+            using var apiMock = new NzbgetApiMock();
+            var failedEntry = HistoryEntryValue(
+                nzbId: "602",
+                title: "Returning Failure Book",
+                status: "FAILURE/HEALTH");
+            QueuePollingResponses(apiMock, [], [failedEntry]);
+            QueuePollingResponses(apiMock, [], [failedEntry]);
+            QueuePollingResponses(apiMock, [], []);
+            QueuePollingResponses(apiMock, [], [failedEntry]);
+            using var http = new HttpClient(apiMock);
+            var logger = new CapturingLogger<NzbgetAdapter>();
+            var adapter = CreateAdapter(http, logger);
+            var client = CreateClient();
+
+            await adapter.GetQueueAsync(client, CancellationToken.None);
+            await adapter.GetQueueAsync(client, CancellationToken.None);
+            var withoutEntry = await adapter.GetQueueAsync(client, CancellationToken.None);
+            await adapter.GetQueueAsync(client, CancellationToken.None);
+
+            Assert.Empty(withoutEntry);
+            Assert.Equal(
+                ["602", "602"],
+                FailedHistoryWarnings(logger).Select(warning => GetLogValue(warning, "NzbId")));
+        }
+
+        [Fact]
+        public void FailedHistoryWarningTracker_ReplacesStoredKeysPerClientAndReportsFirstSightings()
+        {
+            // AC: Warn-once needs per-client, per-surface state that replaces rather than accumulates.
+            // Behavior: Repeated, changed and emptied reads -> only first sightings are returned.
+            // @category: core-functionality
+            // @lane: unit
+            // @dependency: NzbgetFailedHistoryWarningTracker
+            // @complexity: low
+            var tracker = new NzbgetFailedHistoryWarningTracker();
+
+            Assert.Equal(
+                ["123", "456"],
+                FullRead(tracker, "client-a", ["123", "456"]).Order(StringComparer.Ordinal));
+            Assert.Empty(FullRead(tracker, "client-a", ["123", "456"]));
+            Assert.Equal(["789"], FullRead(tracker, "client-a", ["123", "789"]));
+            Assert.Equal(["456"], FullRead(tracker, "client-a", ["123", "456"]));
+            Assert.Equal(["123"], FullRead(tracker, "client-b", ["123"]));
+            Assert.Empty(FullRead(tracker, "client-a", []));
+            Assert.Equal(["123"], FullRead(tracker, "client-a", ["123"]));
+
+            // A read on the other surface neither inherits nor evicts what this one stored.
+            Assert.Equal(
+                ["123"],
+                tracker.MarkFailed("client-a", "GetItemsAsync", ["123"], isScopedRead: false));
+            Assert.Empty(FullRead(tracker, "client-a", ["123"]));
+            Assert.Empty(tracker.MarkFailed("client-a", "GetItemsAsync", ["123"], isScopedRead: false));
+
+            // A scoped read adds without evicting, so what it could not see survives it.
+            Assert.Equal(["456"], FullRead(tracker, "client-c", ["456"]));
+            Assert.Equal(["123"], ScopedRead(tracker, "client-c", ["123"]));
+            Assert.Empty(FullRead(tracker, "client-c", ["123", "456"]));
+
+            // An empty key is never tracked, so an entry that has one warns on every read.
+            Assert.Empty(FullRead(tracker, "client-d", [string.Empty]));
+            Assert.Empty(FullRead(tracker, "client-d", [string.Empty]));
+
+            Assert.Equal(
+                ["901", "Titled Failure"],
+                NzbgetFailedHistoryWarningTracker.GetFailedEntryKeys(
+                [
+                    HistoryEntry("901", "Keyed Failure", NzbgetHistoryOutcome.Failed),
+                    HistoryEntry(string.Empty, "Titled Failure", NzbgetHistoryOutcome.Failed),
+                    HistoryEntry(string.Empty, string.Empty, NzbgetHistoryOutcome.Failed),
+                    HistoryEntry("902", "Completed Book", NzbgetHistoryOutcome.Completed)
+                ]));
+
+            Assert.Equal("900", NzbgetFailedHistoryWarningTracker.GetEntryKey("900", "Keyed Book"));
+            Assert.Equal(
+                "Keyed Book",
+                NzbgetFailedHistoryWarningTracker.GetEntryKey(string.Empty, "Keyed Book"));
+            Assert.Equal(
+                string.Empty,
+                NzbgetFailedHistoryWarningTracker.GetEntryKey("   ", "  "));
+        }
+
+        [Fact]
+        public void FailedHistoryWarningTracker_AfterAScopedRead_StillComparesKeysCaseInsensitively()
+        {
+            // AC: Every key path in the tracker compares case-insensitively, including the set a
+            // scoped read accumulates into. A title-derived key is the reachable case: NZBGet
+            // supplies no NZBID for some history rows, so the key is the title verbatim.
+            // Behavior: Full read, scoped read, then a full read of the same key in other casing
+            // -> no first sighting, so no second warning for an entry already reported.
+            // @category: edge-case
+            // @lane: unit
+            // @dependency: NzbgetFailedHistoryWarningTracker
+            // @complexity: low
+            var tracker = new NzbgetFailedHistoryWarningTracker();
+
+            Assert.Equal(["Interrupted Book"], FullRead(tracker, "client-e", ["Interrupted Book"]));
+
+            // The scoped branch accumulates into the stored set rather than replacing it. Built
+            // with a collection expression that set would carry the default comparer, and the
+            // re-cased read below would then be reported as new.
+            Assert.Equal(["Another Book"], ScopedRead(tracker, "client-e", ["Another Book"]));
+
+            Assert.Empty(FullRead(tracker, "client-e", ["INTERRUPTED BOOK", "another book"]));
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_MonitorPoll_LogsAndReturnsOnlyMonitoredFailedHistory()
+        {
+            // AC: Monitor polls discard unrequested history afterwards, so it must not be warned about first.
+            // Behavior: History holds two failed entries, only one requested -> one warning and one result.
+            // @category: core-functionality
+            // @lane: integration
+            // @dependency: NZBGet history enrichment scoping and NzbgetQueueFilter.FilterByIds
+            // @complexity: medium
+            using var apiMock = new NzbgetApiMock();
+            QueuePollingResponses(
+                apiMock,
+                [],
+                [
+                    HistoryEntryValue(nzbId: "123", title: "Monitored Failure Book", status: "FAILURE/UNPACK"),
+                    HistoryEntryValue(nzbId: "456", title: "Unmonitored Failure Book", status: "FAILURE/UNPACK")
+                ]);
+            using var http = new HttpClient(apiMock);
+            var logger = new CapturingLogger<NzbgetAdapter>();
+            var adapter = CreateAdapter(http, logger);
+
+            var queue = await adapter.GetQueueAsync(CreateClient(), ["123"], CancellationToken.None);
+
+            Assert.Equal("123", Assert.Single(queue).Id);
+            var warning = Assert.Single(FailedHistoryWarnings(logger));
+            Assert.Equal("123", GetLogValue(warning, "NzbId"));
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_NonMonitorPoll_StillReturnsUnrequestedFailedHistory()
+        {
+            // AC: The queue UI reads the whole configured category, so an unmonitored failure stays visible.
+            // Behavior: Same history without requested IDs -> both failed entries returned and warned about.
+            // @category: core-functionality
+            // @lane: integration
+            // @dependency: NZBGet history enrichment scoping
+            // @complexity: medium
+            using var apiMock = new NzbgetApiMock();
+            QueuePollingResponses(
+                apiMock,
+                [],
+                [
+                    HistoryEntryValue(nzbId: "123", title: "Monitored Failure Book", status: "FAILURE/UNPACK"),
+                    HistoryEntryValue(nzbId: "456", title: "Unmonitored Failure Book", status: "FAILURE/UNPACK")
+                ]);
+            using var http = new HttpClient(apiMock);
+            var logger = new CapturingLogger<NzbgetAdapter>();
+            var adapter = CreateAdapter(http, logger);
+
+            var queue = await adapter.GetQueueAsync(CreateClient(), CancellationToken.None);
+
+            Assert.Equal(["123", "456"], queue.Select(item => item.Id));
+            Assert.Equal(
+                ["123", "456"],
+                FailedHistoryWarnings(logger).Select(warning => GetLogValue(warning, "NzbId")));
+        }
+
+        [Fact]
+        public async Task GetQueueAsync_ScopedPollBetweenFullPolls_DoesNotResurrectUnmonitoredFailureWarnings()
+        {
+            // AC: A monitor poll sees only what it asked about, so it must not evict what a full poll saw.
+            // Behavior: Full poll, monitor poll, full poll over the same history -> each entry warns once.
+            // @category: edge-case
+            // @lane: integration
+            // @dependency: NZBGet history enrichment scoping and the failed-history warning tracker
+            // @complexity: high
+            using var apiMock = new NzbgetApiMock();
+            var failedEntries = new[]
+            {
+                HistoryEntryValue(nzbId: "123", title: "Monitored Failure Book", status: "FAILURE/UNPACK"),
+                HistoryEntryValue(nzbId: "456", title: "Unmonitored Failure Book", status: "FAILURE/UNPACK")
+            };
+            for (var read = 0; read < 3; read++)
+            {
+                QueuePollingResponses(apiMock, [], failedEntries);
+            }
+
+            using var http = new HttpClient(apiMock);
+            var logger = new CapturingLogger<NzbgetAdapter>();
+            var adapter = CreateAdapter(http, logger);
+            var client = CreateClient();
+
+            await adapter.GetQueueAsync(client, CancellationToken.None);
+            await adapter.GetQueueAsync(client, ["123"], CancellationToken.None);
+            await adapter.GetQueueAsync(client, CancellationToken.None);
+
+            Assert.Equal(
+                ["123", "456"],
+                FailedHistoryWarnings(logger).Select(warning => GetLogValue(warning, "NzbId")));
+        }
+
+        [Fact]
+        public async Task GetQueueAndItemsAsync_AlternatingReads_DoNotRepeatEachOthersFailureWarnings()
+        {
+            // AC: The two surfaces read different slices of history and must not evict each other.
+            // Behavior: Monitor poll, items read, monitor poll, items read -> each surface warns once per entry.
+            // @category: edge-case
+            // @lane: integration
+            // @dependency: NZBGet history enrichment scoping and the failed-history warning tracker
+            // @complexity: high
+            using var apiMock = new NzbgetApiMock();
+            var failedEntries = new[]
+            {
+                HistoryEntryValue(nzbId: "123", title: "Monitored Failure Book", status: "FAILURE/UNPACK"),
+                HistoryEntryValue(nzbId: "456", title: "Unmonitored Failure Book", status: "FAILURE/UNPACK")
+            };
+            for (var read = 0; read < 4; read++)
+            {
+                QueuePollingResponses(apiMock, [], failedEntries);
+            }
+
+            using var http = new HttpClient(apiMock);
+            var logger = new CapturingLogger<NzbgetAdapter>();
+            var adapter = CreateAdapter(http, logger);
+            var client = CreateClient();
+
+            await adapter.GetQueueAsync(client, ["123"], CancellationToken.None);
+            await adapter.GetItemsAsync(client, CancellationToken.None);
+            await adapter.GetQueueAsync(client, ["123"], CancellationToken.None);
+            await adapter.GetItemsAsync(client, CancellationToken.None);
+
+            Assert.Equal(
+                [
+                    "GetQueueAsync/123",
+                    "GetItemsAsync/123",
+                    "GetItemsAsync/456"
+                ],
+                FailedHistoryWarnings(logger).Select(warning =>
+                    $"{GetLogValue(warning, "Surface")}/{GetLogValue(warning, "NzbId")}"));
         }
 
         [Fact]
@@ -3123,6 +3571,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 CanonicalNzbId = "501",
                 Title = "Book Folder",
                 RawStatus = "SUCCESS/UNPACK",
+                DeleteStatus = string.Empty,
+                MarkStatus = string.Empty,
                 Outcome = NzbgetHistoryOutcome.Completed,
                 Category = "audiobooks",
                 FinalDir = "/downloads/completed/Book Folder",
@@ -3149,6 +3599,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 CanonicalNzbId = "502",
                 Title = "Failed Book Folder",
                 RawStatus = "FAILURE/MOVE",
+                DeleteStatus = string.Empty,
+                MarkStatus = string.Empty,
                 Outcome = NzbgetHistoryOutcome.Failed,
                 Category = "audiobooks",
                 FinalDir = "/downloads/completed/Failed Book Folder",
@@ -3186,6 +3638,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 CanonicalNzbId = "503",
                 Title = "Failed Book",
                 RawStatus = status,
+                DeleteStatus = string.Empty,
+                MarkStatus = string.Empty,
                 Outcome = NzbgetHistoryOutcome.Failed,
                 Category = "audiobooks",
                 FinalDir = string.Empty,
@@ -3254,19 +3708,41 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         private static NzbgetAdapter CreateAdapter(
             HttpClient http,
             ILogger<NzbgetAdapter> logger,
-            TimeProvider? timeProvider = null)
+            TimeProvider? timeProvider = null,
+            IConfigurationService? configurationService = null)
         {
             return new NzbgetAdapter(
                 new TestHttpClientFactory(http),
                 Mock.Of<INzbUrlResolver>(),
                 logger,
-                timeProvider ?? TimeProvider.System);
+                timeProvider ?? TimeProvider.System,
+                failedHistoryWarningTracker: null,
+                configurationService: configurationService);
         }
 
-        private static NzbgetHistoryReader CreateHistoryReader(HttpClient http)
+        private static NzbgetHistoryReader CreateHistoryReader(
+            HttpClient http,
+            IConfigurationService? configurationService = null)
         {
             return new NzbgetHistoryReader(
-                new NzbgetXmlRpcClient(new TestHttpClientFactory(http), "nzbget"));
+                new NzbgetXmlRpcClient(new TestHttpClientFactory(http), "nzbget"),
+                configurationService);
+        }
+
+        // Item 357: Sonarr/Readarr default DownloadClientHistoryLimit to 60
+        // (ConfigService.cs:187-191 @ 76c684e09 / :181-185 @ 319089b90f). A mock with no
+        // DownloadClientHistoryLimit override picks up ApplicationSettings's own class-level
+        // default, so this exercises the real default end to end rather than asserting the POCO
+        // default in isolation.
+        private static IConfigurationService ConfigurationServiceWithHistoryLimit(int? limit = null)
+        {
+            var configurationService = new Mock<IConfigurationService>();
+            configurationService
+                .Setup(service => service.GetApplicationSettingsAsync())
+                .ReturnsAsync(limit.HasValue
+                    ? new ApplicationSettings { DownloadClientHistoryLimit = limit.Value }
+                    : new ApplicationSettings());
+            return configurationService.Object;
         }
 
         private static async Task<List<Download>> FetchDownloadsThroughQueuePathAsync(
@@ -3438,6 +3914,50 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 NzbgetApiMock.CreateHistoryResponse(string.Concat(historyEntries)));
         }
 
+        private static IReadOnlySet<string> FullRead(
+            NzbgetFailedHistoryWarningTracker tracker,
+            string clientKey,
+            IReadOnlyCollection<string> failedKeys)
+        {
+            return tracker.MarkFailed(clientKey, "GetQueueAsync", failedKeys, isScopedRead: false);
+        }
+
+        private static IReadOnlySet<string> ScopedRead(
+            NzbgetFailedHistoryWarningTracker tracker,
+            string clientKey,
+            IReadOnlyCollection<string> failedKeys)
+        {
+            return tracker.MarkFailed(clientKey, "GetQueueAsync", failedKeys, isScopedRead: true);
+        }
+
+        private static NzbgetHistoryEntry HistoryEntry(
+            string canonicalNzbId,
+            string title,
+            NzbgetHistoryOutcome outcome)
+        {
+            return new NzbgetHistoryEntry
+            {
+                CanonicalNzbId = canonicalNzbId,
+                Title = title,
+                Category = "audiobooks",
+                RawStatus = outcome == NzbgetHistoryOutcome.Failed ? "FAILURE/UNPACK" : "SUCCESS/ALL",
+                Outcome = outcome,
+                DestDir = string.Empty,
+                FinalDir = string.Empty,
+                TotalSizeBytes = 0,
+                DownloadedSizeBytes = 0,
+                HistoryTimeUtc = null
+            };
+        }
+
+        private static List<CapturedLog> FailedHistoryWarnings(CapturingLogger<NzbgetAdapter> logger)
+        {
+            return logger.Entries
+                .Where(entry => entry.Level == LogLevel.Warning &&
+                    entry.Message.StartsWith("NZBGet history reported failure", StringComparison.Ordinal))
+                .ToList();
+        }
+
         private static string GetLogValue(CapturedLog entry, string key)
         {
             return entry.State.TryGetValue(key, out var value)
@@ -3544,7 +4064,9 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             string? fileSizeMb = null,
             string? downloadedSizeMb = null,
             string? historyTime = null,
-            string? legacyId = null)
+            string? legacyId = null,
+            string? deleteStatus = null,
+            string? markStatus = null)
         {
             var members = new[]
             {
@@ -3553,6 +4075,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 HistoryMember("NZBName", title),
                 HistoryMember("Category", category),
                 HistoryMember("Status", status),
+                HistoryMember("DeleteStatus", deleteStatus),
+                HistoryMember("MarkStatus", markStatus),
                 HistoryMember("FinalDir", finalDir),
                 HistoryMember("DestDir", destDir),
                 HistoryMember("FileSizeMB", fileSizeMb),

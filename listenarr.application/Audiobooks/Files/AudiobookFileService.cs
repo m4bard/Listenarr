@@ -177,7 +177,7 @@ namespace Listenarr.Application.Audiobooks.Files
                     return false;
                 }
 
-                if (!FileUtils.IsAudioFile(filePath))
+                if (!FileUtils.MayBeAudioPendingProbe(filePath))
                 {
                     logger.LogInformation("Skipping non-audio audiobook file registration for audiobook {AudiobookId}: {Path}", audiobook.Id, LogRedaction.SanitizeFilePath(filePath));
                     return false;
@@ -327,6 +327,10 @@ namespace Listenarr.Application.Audiobooks.Files
                     cacheIdentity,
                     filePath);
 
+                if (!QualifiesAsAudioContent(filePath, meta, audiobook.Id))
+                {
+                    return false;
+                }
                 var fileRecord = AudiobookFile.CreateUnresolved(filePath);
                 fileRecord.AudiobookId = audiobook.Id;
                 fileRecord.Size = TryGetRegisteredFileLength(metadataPath);
