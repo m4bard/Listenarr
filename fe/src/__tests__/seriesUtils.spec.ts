@@ -48,12 +48,9 @@ describe('looksLikeAsin', () => {
 
   // Placeholder series names, not identifiers, each exactly ten alphanumeric characters. A
   // length-only check lets both through and the wizard then posts them as a seriesAsin.
-  it.each(['SeriesName', 'SeriesTest'])(
-    'rejects the ten-character series name %s',
-    (name) => {
-      expect(looksLikeAsin(name)).toBe(false)
-    },
-  )
+  it.each(['SeriesName', 'SeriesTest'])('rejects the ten-character series name %s', (name) => {
+    expect(looksLikeAsin(name)).toBe(false)
+  })
 
   it('rejects values that are the wrong length or the wrong prefix', () => {
     expect(looksLikeAsin('B01E633FQ')).toBe(false)
