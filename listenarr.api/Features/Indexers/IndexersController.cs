@@ -220,6 +220,13 @@ namespace Listenarr.Api.Features.Indexers
             indexer.CreatedAt = DateTime.UtcNow;
             indexer.UpdatedAt = DateTime.UtcNow;
 
+            // A request that never mentioned categories gets the audiobook default rather than an
+            // unconstrained search, the way the family's provider schema supplies one.
+            if (indexer.Categories == null && IndexerCategorySelection.RequiresCategories(indexer.Implementation))
+            {
+                indexer.Categories = IndexerCategorySelection.AudiobookDefault;
+            }
+
             indexer = await _indexerRepository.AddAsync(indexer);
 
             _logger.LogInformation("Created indexer '{Name}' (ID: {Id}, Type: {Type})",
@@ -276,15 +283,30 @@ namespace Listenarr.Api.Features.Indexers
                 return NotFound(new { message = "Indexer not found" });
             }
 
+            var previousImplementation = existing.Implementation;
+
             // Update properties
             existing.Name = indexer.Name;
             existing.Type = indexer.Type;
             existing.Implementation = indexer.Implementation;
             existing.Url = indexer.Url;
             existing.ApiKey = indexer.ApiKey == ApiResponseRedactor.RedactedValue ? existing.ApiKey : indexer.ApiKey;
-            existing.Categories = indexer.Categories;
+            // An omitted category list means the request did not mention them, so the stored list
+            // stands. Assigning unconditionally used to blank it, and would now quietly narrow it
+            // to whatever default the binder supplied.
+            existing.Categories = indexer.Categories ?? existing.Categories;
+            // Validation judged the request; this judges what the merge produced. Moving an
+            // indexer onto an implementation that searches by category must not carry a
+            // category-less list across. A row already on such an implementation is left alone:
+            // it predates the rule and this request did not touch its categories.
+            if (!IndexerCategorySelection.RequiresCategories(previousImplementation)
+                && IndexerCategorySelection.RequiresCategories(existing.Implementation)
+                && !IndexerCategorySelection.HasUsableCategory(existing.Categories))
+            {
+                existing.Categories = IndexerCategorySelection.AudiobookDefault;
+            }
+
             existing.AnimeCategories = indexer.AnimeCategories;
-            existing.Tags = indexer.Tags;
             existing.EnableRss = indexer.EnableRss;
             existing.EnableAutomaticSearch = indexer.EnableAutomaticSearch;
             existing.EnableInteractiveSearch = indexer.EnableInteractiveSearch;
