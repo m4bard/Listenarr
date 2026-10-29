@@ -36,10 +36,10 @@ namespace Listenarr.Domain.Common
         }
 
         /// <summary>
-        /// Audio file extensions recognized by the import and scan pipelines.
-        /// Centralized here so that the scan service, import service, and completed download
-        /// processor all use the same set – preventing non-audio files (cover images, NFOs, etc.)
-        /// from being registered as AudiobookFile records only to be removed on the next scan.
+        /// Default audio file extensions recognized by the import and scan pipelines.
+        /// This is the fallback used by <see cref="IsAudioFile"/> when a caller does not supply
+        /// the configured allowlist (<c>ApplicationSettings.AllowedFileExtensions</c>) – callers
+        /// that resolve settings should pass them through so the setting is the live source.
         /// </summary>
         public static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -50,10 +50,24 @@ namespace Listenarr.Domain.Common
         /// <summary>
         /// Returns true when the file path has a recognized audio extension.
         /// </summary>
-        public static bool IsAudioFile(string filePath)
+        /// <param name="filePath">The path to check.</param>
+        /// <param name="allowedExtensions">
+        /// The configured allowlist (<c>ApplicationSettings.AllowedFileExtensions</c>) to check
+        /// against. When null, falls back to <see cref="AudioExtensions"/> so callers that have
+        /// not been wired to a settings source keep today's behavior unchanged.
+        /// </param>
+        public static bool IsAudioFile(string filePath, IEnumerable<string>? allowedExtensions = null)
         {
             var ext = Path.GetExtension(filePath);
-            return !string.IsNullOrEmpty(ext) && AudioExtensions.Contains(ext);
+            if (string.IsNullOrEmpty(ext))
+            {
+                return false;
+            }
+
+            var extensions = allowedExtensions == null
+                ? AudioExtensions
+                : NormalizeExtensions(allowedExtensions);
+            return extensions.Contains(ext);
         }
 
         public static bool IsPathInvalidForCurrentOs(string? path)
@@ -152,10 +166,16 @@ namespace Listenarr.Domain.Common
                 return false;
             }
 
-            blacklistExtensions ??= [];
-            blacklistExtensions = blacklistExtensions.Append(".tmp");
+            // NormalizeExtensions builds an OrdinalIgnoreCase set. That matters here: the
+            // extension comes off disk with whatever casing the filesystem holds, while the
+            // blacklist values are user-typed, and callers hand this method a plain
+            // List<string> (ApplicationSettings spreads the normalized set into one, which
+            // drops the comparer). Comparing through a bare ToHashSet() was ordinal, so a
+            // blacklisted ".TXT" let "notes.txt" through.
+            var blacklist = NormalizeExtensions(blacklistExtensions);
+            blacklist.Add(".tmp");
 
-            return blacklistExtensions != null && blacklistExtensions.ToHashSet().Contains(extension);
+            return blacklist.Contains(extension);
         }
 
         /// <summary>
