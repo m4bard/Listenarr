@@ -22,6 +22,28 @@
         <PhHeart />
         Wanted
       </h1>
+      <div class="wanted-tabs" role="tablist">
+        <button
+          class="wanted-tab"
+          :class="{ active: wantedMode === 'missing' }"
+          role="tab"
+          :aria-selected="wantedMode === 'missing'"
+          @click="wantedMode = 'missing'"
+        >
+          Missing
+          <span class="wanted-tab-count">{{ wantedAudiobooks.length }}</span>
+        </button>
+        <button
+          class="wanted-tab"
+          :class="{ active: wantedMode === 'cutoff' }"
+          role="tab"
+          :aria-selected="wantedMode === 'cutoff'"
+          @click="wantedMode = 'cutoff'"
+        >
+          Cutoff Unmet
+          <span class="wanted-tab-count">{{ cutoffUnmetAudiobooks.length }}</span>
+        </button>
+      </div>
       <div class="wanted-actions">
         <div class="filter-input-wrapper">
           <PhMagnifyingGlass class="filter-icon" />
@@ -36,18 +58,70 @@
           </button>
         </div>
         <button
+          v-if="selectedCount > 0"
+          class="btn btn-secondary"
+          @click="clearSelection"
+          :disabled="searchRunning"
+        >
+          <PhX />
+          Clear Selection
+        </button>
+        <button
           class="btn btn-primary"
-          @click="searchMissing"
-          :disabled="categorizedWanted.missing.length === 0"
+          @click="requestSearchSelected"
+          :disabled="selectedCount === 0 || searchRunning"
         >
           <PhRobot />
-          Search All
+          Search Selected ({{ selectedCount }})
+        </button>
+        <button
+          class="btn btn-primary"
+          @click="openConfirmSearchAll"
+          :disabled="actionableMissingWanted.length === 0 || searchRunning"
+        >
+          <PhSpinner v-if="isSearchingAll" class="ph-spin" />
+          <PhRobot v-else />
+          {{ wantedMode === 'cutoff' ? 'Search All (cutoff unmet)' : 'Search All (missing)' }}
         </button>
         <button class="btn btn-secondary" @click="openManualImport">
           <PhFolderPlus />
           Manual Import
         </button>
       </div>
+    </div>
+
+    <!-- Quality profile recovery: automatic search skips books without a valid profile -->
+    <div
+      v-if="!loading && wantedNeedingProfile.length > 0"
+      class="profile-warning"
+      data-testid="profile-warning"
+    >
+      <PhWarning :size="20" />
+      <div class="profile-warning-text">
+        <strong>
+          {{ wantedNeedingProfile.length }} wanted
+          {{ wantedNeedingProfile.length === 1 ? 'audiobook has' : 'audiobooks have' }} no quality
+          profile.
+        </strong>
+        Automatic search skips a book until it has one, so these will never be searched or
+        downloaded automatically.
+        <template v-if="configurationStore.qualityProfiles.length === 0">
+          No quality profiles exist yet — create one in
+          <RouterLink to="/settings#quality-profiles" class="profile-warning-link"
+            >Settings → Quality Profiles</RouterLink
+          >
+          and come back to assign it.
+        </template>
+      </div>
+      <button
+        v-if="configurationStore.qualityProfiles.length > 0"
+        class="btn btn-secondary"
+        data-testid="assign-profile-open"
+        @click="openAssignProfile"
+      >
+        <PhStar />
+        Assign profile…
+      </button>
     </div>
 
     <!-- Loading State -->
@@ -61,6 +135,17 @@
       @scroll="updateVisibleRange"
     >
       <div class="wanted-header">
+        <div class="col-select">
+          <div class="selection-checkbox">
+            <input
+              type="checkbox"
+              aria-label="Select all wanted audiobooks"
+              :checked="allWantedSelected"
+              :disabled="selectableWanted.length === 0 || searchRunning"
+              @change="onSelectAllChange"
+            />
+          </div>
+        </div>
         <div class="col-poster"></div>
         <div class="col-title">Title</div>
         <div class="col-author">Author</div>
@@ -77,7 +162,26 @@
           :class="['wanted-body', { 'is-static': !useVirtualWantedList }]"
           :style="useVirtualWantedList ? { transform: `translateY(${topPadding}px)` } : undefined"
         >
-          <div v-for="item in visibleWanted" :key="item.id" class="wanted-row">
+          <div
+            v-for="item in visibleWanted"
+            :key="item.id"
+            class="wanted-row"
+            :class="{ selected: isSelected(item.id) }"
+          >
+            <div class="col-select">
+              <div class="selection-checkbox">
+                <input
+                  type="checkbox"
+                  :aria-label="`Select ${safeText(item.title)}`"
+                  :checked="isSelected(item.id)"
+                  :disabled="hasActiveDownload(item) || searchRunning"
+                  :title="
+                    hasActiveDownload(item) ? 'Already downloading' : 'Select for Search Selected'
+                  "
+                  @change="onSelectionCheckboxChange(item, $event)"
+                />
+              </div>
+            </div>
             <div class="col-poster">
               <img
                 class="row-poster"
@@ -121,8 +225,15 @@
               <span v-else class="muted">-</span>
             </div>
             <div class="col-quality">
-              <span class="quality-tag">
-                {{ getQualityProfileForAudiobook(item)?.name ?? item.quality ?? 'Unknown' }}
+              <span v-if="getQualityProfileForAudiobook(item)" class="quality-tag">
+                {{ getQualityProfileForAudiobook(item)!.name }}
+              </span>
+              <span
+                v-else
+                class="quality-tag quality-tag-missing"
+                title="Automatic search skips this book until a quality profile is assigned"
+              >
+                No profile
               </span>
             </div>
             <div class="col-status">
@@ -139,7 +250,7 @@
                 <button
                   class="btn-icon"
                   @click="searchAudiobook(item)"
-                  :disabled="searching[item.id]"
+                  :disabled="searching[item.id] || hasActiveDownload(item) || searchRunning"
                   title="Automatic Search"
                 >
                   <PhRobot />
@@ -177,6 +288,26 @@
       </template>
     </EmptyState>
 
+    <!-- Confirm Search All Modal -->
+    <ConfirmModal
+      :visible="showConfirmSearchAll"
+      title="Search Missing Audiobooks"
+      :message="confirmSearchAllMessage"
+      confirmLabel="Search All"
+      :confirming="isSearchingAll"
+      @confirm="searchMissing"
+      @cancel="closeConfirmSearchAll"
+    />
+
+    <!-- Assign Quality Profile Modal -->
+    <AssignQualityProfileModal
+      :visible="showAssignProfileModal"
+      :audiobooks="wantedNeedingProfile"
+      :profiles="configurationStore.qualityProfiles"
+      :after-assign="handleProfilesAssigned"
+      @cancel="closeAssignProfile"
+    />
+
     <!-- Manual Search Modal -->
     <ManualSearchModal
       :is-open="showManualSearchModal"
@@ -191,6 +322,17 @@
       @close="closeManualImport"
       @imported="handleImported"
     />
+
+    <!-- Confirm Search Selected Modal: like Search All, it queries every indexer once per book -->
+    <ConfirmModal
+      :visible="showConfirmSearchSelected"
+      title="Search Selected Audiobooks"
+      :message="confirmSearchSelectedMessage"
+      confirmLabel="Search Selected"
+      :confirming="searchSelectedRunning"
+      @confirm="searchSelected"
+      @cancel="closeConfirmSearchSelected"
+    />
   </div>
 </template>
 
@@ -203,6 +345,11 @@ import { errorTracking } from '@/services/errorTracking'
 import { handleImageError } from '@/utils/imageFallback'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import ManualImportModal from '@/components/feedback/ManualImportModal.vue'
+import AssignQualityProfileModal, {
+  type AssignQualityProfileResult,
+} from '@/components/domain/audiobook/AssignQualityProfileModal.vue'
+import { useToast } from '@/services/toastService'
+import { ConfirmModal } from '@/components/feedback'
 import { EmptyState, LoadingState } from '@/components/base'
 import type { Audiobook, SearchResult, Download } from '@/types'
 import { safeText } from '@/utils/textUtils'
@@ -215,19 +362,24 @@ import {
   PhX,
   PhCheckCircle,
   PhDownloadSimple,
+  PhStar,
+  PhWarning,
 } from '@phosphor-icons/vue'
 import { logger } from '@/utils/logger'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useProtectedImages } from '@/composables/useProtectedImages'
+import { useRowSelection } from '@/composables/useRowSelection'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 
 const downloadsStore = useDownloadsStore()
 const { getProtectedImageSrc } = useProtectedImages()
 const libraryStore = useLibraryStore()
 const configurationStore = useConfigurationStore()
+const toast = useToast()
 
 // Filter
 const filterText = ref('')
+const wantedMode = ref<'missing' | 'cutoff'>('missing')
 
 // Virtual scrolling setup
 const scrollContainer = ref<HTMLElement | null>(null)
@@ -291,6 +443,40 @@ const searchResults = ref<Record<number, string>>({})
 const showManualSearchModal = ref(false)
 const selectedAudiobook = ref<Audiobook | null>(null)
 const showManualImportModal = ref(false)
+const showConfirmSearchAll = ref(false)
+const showAssignProfileModal = ref(false)
+const isSearchingAll = ref(false)
+const isCancelled = ref(false)
+let activeDelayTimer: ReturnType<typeof setTimeout> | null = null
+let delayResolve: (() => void) | null = null
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    delayResolve = resolve
+    activeDelayTimer = setTimeout(() => {
+      activeDelayTimer = null
+      delayResolve = null
+      resolve()
+    }, ms)
+  })
+
+const abortDelay = () => {
+  if (activeDelayTimer !== null) {
+    clearTimeout(activeDelayTimer)
+    activeDelayTimer = null
+  }
+  if (delayResolve !== null) {
+    const res = delayResolve
+    delayResolve = null
+    res()
+  }
+}
+const showConfirmSearchSelected = ref(false)
+const searchSelectedRunning = ref(false)
+
+// The two bulk searches draw on the same indexers and the same per-book state,
+// so only one of them runs at a time.
+const searchRunning = computed(() => isSearchingAll.value || searchSelectedRunning.value)
 
 const syncWantedLayout = async () => {
   await nextTick()
@@ -312,11 +498,15 @@ onMounted(async () => {
     await libraryStore.fetchLibrary()
   }
   await configurationStore.loadQualityProfiles()
+  // Issue #936: Hydrate downloads store on mount so active downloads are excluded on fresh loads
+  await downloadsStore.loadDownloads()
 
   await syncWantedLayout()
 })
 
 onBeforeUnmount(() => {
+  isCancelled.value = true
+  abortDelay()
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', handleViewportResize)
   }
@@ -337,19 +527,55 @@ const wantedAudiobooks = computed(() => {
   })
 })
 
-// Categorize wanted audiobooks by their current search state
-const categorizedWanted = computed(() => {
-  const all = wantedAudiobooks.value
-  const missingItems = all.filter((a) => !searching.value[a.id] && !searchResults.value[a.id])
+// Wanted audiobooks the automatic search will skip: no profile assigned, or one that
+// no longer exists. Not scoped to the text filter — the recovery flow repairs all of them.
+// Books whose profile was just assigned but whose refreshed row has not confirmed it yet. They
+// are kept out of the picker so a retry — or a reopen after a failed refresh — cannot overwrite
+// the profile they already received. The store's fetchLibrary() swallows API failures, so a
+// book only leaves this set once a reloaded row carries a valid profile.
+const profileAssignedPendingRefresh = ref(new Set<number>())
 
-  return {
-    all,
-    missing: missingItems,
+const wantedNeedingProfile = computed(() =>
+  wantedAudiobooks.value.filter(
+    (audiobook) =>
+      !profileAssignedPendingRefresh.value.has(audiobook.id) &&
+      getQualityProfileForAudiobook(audiobook) === null,
+  ),
+)
+
+// Books below their profile cutoff. These can never appear in wantedAudiobooks: the server's
+// `wanted` flag is false for anything that has a file, and a book below cutoff has one. The status
+// this reads is already on the same payload the list is built from, so no extra request is needed.
+const cutoffUnmetAudiobooks = computed(() => {
+  return libraryStore.audiobooks.filter((audiobook) => {
+    if (!audiobook.monitored) return false
+    return audiobook.status === 'quality-mismatch'
+  })
+})
+
+const activeWanted = computed(() =>
+  wantedMode.value === 'cutoff' ? cutoffUnmetAudiobooks.value : wantedAudiobooks.value,
+)
+
+// Actionable wanted audiobooks: scoped to visible filter, excluding active downloads and in-flight searches (Issue #936)
+const actionableMissingWanted = computed(() => {
+  return filteredWanted.value.filter(
+    (item) =>
+      !hasActiveDownload(item) && !searching.value[item.id] && !searchResults.value[item.id],
+  )
+})
+
+const confirmSearchAllMessage = computed(() => {
+  const count = actionableMissingWanted.value.length
+  const bucket = wantedMode.value === 'cutoff' ? 'cutoff-unmet' : 'missing'
+  if (count === 1) {
+    return `Are you sure you want to search for 1 ${bucket} audiobook? This will send search requests to all indexers and download the best matches.`
   }
+  return `Are you sure you want to search for all ${count} ${bucket} audiobooks? This will send search requests to all indexers and download the best matches.`
 })
 
 const filteredWanted = computed(() => {
-  const items = wantedAudiobooks.value
+  const items = activeWanted.value
   if (!filterText.value) return items
 
   const query = filterText.value.toLowerCase()
@@ -359,6 +585,14 @@ const filteredWanted = computed(() => {
     const series = (item.series || '').toLowerCase()
     return title.includes(query) || authors.includes(query) || series.includes(query)
   })
+})
+
+const confirmSearchSelectedMessage = computed(() => {
+  const count = selectedCount.value
+  if (count === 1) {
+    return 'Are you sure you want to search for 1 selected audiobook? This will send search requests to all indexers and download the best matches.'
+  }
+  return `Are you sure you want to search for all ${count} selected audiobooks? This will send search requests to all indexers and download the best matches.`
 })
 
 const visibleWanted = computed(() => {
@@ -408,6 +642,41 @@ function getActiveDownload(item: Audiobook): Download | undefined {
   return activeDownloadsByAudiobook.value.get(item.id)
 }
 
+// Rows the user may tick. A book already downloading is excluded: searching it
+// again would send a second grab for a release that is already in flight, which
+// is the thing a per-row Search is careful not to do. Because this is derived
+// rather than pruned on an event, a book that starts downloading while ticked
+// drops out of the count on its own.
+const selectableWanted = computed(() =>
+  filteredWanted.value.filter((item) => !hasActiveDownload(item)),
+)
+
+const selectableWantedIds = computed(() => selectableWanted.value.map((item) => item.id))
+
+const {
+  selectedIds: selectedWantedIds,
+  selectedCount,
+  isSelected,
+  toggleSelection,
+  selectAll,
+  clearSelection,
+  allSelected: allWantedSelected,
+} = useRowSelection<number>(() => selectableWantedIds.value)
+
+function onSelectionCheckboxChange(item: Audiobook, event: Event) {
+  event.stopPropagation()
+  toggleSelection(item.id)
+}
+
+function onSelectAllChange(event: Event) {
+  event.stopPropagation()
+  if (allWantedSelected.value) {
+    clearSelection()
+  } else {
+    selectAll()
+  }
+}
+
 function getStatusClass(item: Audiobook): string {
   if (hasActiveDownload(item)) {
     return 'downloading'
@@ -438,12 +707,152 @@ function getStatusText(item: Audiobook): string {
   return 'Missing'
 }
 
-const searchMissing = async () => {
-  logger.debug('Automatic search for all missing audiobooks')
+function openConfirmSearchAll() {
+  if (isSearchingAll.value || actionableMissingWanted.value.length === 0) return
+  showConfirmSearchAll.value = true
+}
 
-  for (const audiobook of categorizedWanted.value.missing) {
-    await searchAudiobook(audiobook)
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+function closeConfirmSearchAll() {
+  showConfirmSearchAll.value = false
+}
+
+const searchMissing = async () => {
+  if (isSearchingAll.value || actionableMissingWanted.value.length === 0) return
+
+  showConfirmSearchAll.value = false
+  isSearchingAll.value = true
+  isCancelled.value = false
+  logger.debug('Automatic search for actionable missing audiobooks initiated')
+
+  try {
+    const targetBooks = [...actionableMissingWanted.value]
+    for (let i = 0; i < targetBooks.length; i++) {
+      if (isCancelled.value) break
+
+      const audiobook = targetBooks[i]
+      if (hasActiveDownload(audiobook) || searching.value[audiobook.id]) continue
+
+      await searchAudiobook(audiobook)
+
+      if (i < targetBooks.length - 1 && !isCancelled.value) {
+        await sleep(1000)
+      }
+    }
+  } finally {
+    isSearchingAll.value = false
+    abortDelay()
+  }
+}
+function openAssignProfile() {
+  if (wantedNeedingProfile.value.length === 0) return
+  showAssignProfileModal.value = true
+}
+
+function closeAssignProfile() {
+  showAssignProfileModal.value = false
+}
+
+async function handleProfilesAssigned(result: AssignQualityProfileResult) {
+  // The server has already accepted these assignments: reflect them on the local rows right
+  // away so the books leave the picker whether or not the reload below succeeds.
+  for (const id of result.assignedIds) {
+    profileAssignedPendingRefresh.value.add(id)
+    const row = libraryStore.audiobooks.find((audiobook) => audiobook.id === id)
+    if (row && result.profile.id != null) row.qualityProfileId = result.profile.id
+  }
+
+  // fetchLibrary() never throws — a failed reload leaves the previous rows in place and sets
+  // libraryStore.error — so only a successful reload can confirm the assignments.
+  await libraryStore.fetchLibrary()
+  if (libraryStore.error === null) {
+    for (const id of [...profileAssignedPendingRefresh.value]) {
+      const row = libraryStore.audiobooks.find((audiobook) => audiobook.id === id)
+      if (row && getQualityProfileForAudiobook(row) !== null) {
+        profileAssignedPendingRefresh.value.delete(id)
+      }
+    }
+  }
+  if (result.assignedIds.some((id) => profileAssignedPendingRefresh.value.has(id))) {
+    toast.warning(
+      'Library refresh failed',
+      'The books that were assigned stay hidden from this picker until the list reloads.',
+    )
+  }
+
+  if (result.failures.length === 0) {
+    toast.success(
+      'Quality profile assigned',
+      `Assigned "${result.profile.name}" to ${result.assigned} wanted ${
+        result.assigned === 1 ? 'audiobook' : 'audiobooks'
+      }.`,
+    )
+    closeAssignProfile()
+    return
+  }
+
+  // Keep the modal open so the failed books stay visible.
+  toast.warning(
+    'Assignment incomplete',
+    `Assigned "${result.profile.name}" to ${result.assigned} of ${
+      result.assigned + result.failures.length
+    }; ${result.failures.length} could not be updated.`,
+  )
+}
+
+// Search Selected is a bulk search too. It goes through a confirmation rather than
+// firing on the click, because Select All puts a whole page's worth of indexer
+// queries one button away.
+function requestSearchSelected() {
+  if (selectedCount.value === 0 || searchRunning.value) return
+  showConfirmSearchSelected.value = true
+}
+
+function closeConfirmSearchSelected() {
+  showConfirmSearchSelected.value = false
+}
+
+const searchSelected = async () => {
+  if (searchRunning.value) return
+
+  // Read the ids once. The loop awaits, and the selection is derived from live
+  // data, so re-reading it each pass would let the set change mid-run.
+  const ids = [...selectedWantedIds.value]
+  showConfirmSearchSelected.value = false
+  if (ids.length === 0) return
+
+  // Look the books up in the bucket the tab is showing, not in wantedAudiobooks.
+  // Cutoff Unmet rows are never in wantedAudiobooks (the server clears `wanted`
+  // for anything that has a file), so reading that list would find nothing and
+  // the run would quietly search no books at all on that tab.
+  const byId = new Map(activeWanted.value.map((item) => [item.id, item]))
+
+  logger.debug('Automatic search for selected audiobooks:', ids.length)
+  searchSelectedRunning.value = true
+  isCancelled.value = false
+
+  try {
+    for (let i = 0; i < ids.length; i++) {
+      if (isCancelled.value) return
+
+      const audiobook = byId.get(ids[i]!)
+      if (!audiobook) continue
+
+      // Re-check rather than trusting the snapshot: an earlier pass in this same
+      // run, or a push from the downloads hub, may have started a download for
+      // this book since the ids were read.
+      if (hasActiveDownload(audiobook)) continue
+
+      await searchAudiobook(audiobook)
+
+      if (i < ids.length - 1 && !isCancelled.value) {
+        await sleep(1000)
+      }
+    }
+
+    if (!isCancelled.value) clearSelection()
+  } finally {
+    searchSelectedRunning.value = false
+    abortDelay()
   }
 }
 
@@ -567,10 +976,75 @@ const markAsSkipped = async (item: Audiobook) => {
   height: 32px;
 }
 
+.wanted-tabs {
+  display: flex;
+  gap: 4px;
+  margin-right: auto;
+}
+
+.wanted-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 6px 12px;
+}
+
+.wanted-tab.active {
+  background-color: rgba(var(--brand-rgb), 0.12);
+  border-color: rgba(var(--brand-rgb), 0.35);
+  color: var(--brand-500);
+}
+
+.wanted-tab-count {
+  color: inherit;
+  margin-left: 6px;
+  opacity: 0.75;
+}
+
 .wanted-actions {
   display: flex;
   gap: 0.75rem;
   align-items: center;
+}
+
+/* Quality profile recovery banner */
+.profile-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding: 0.75rem 1rem;
+  background: rgba(250, 176, 5, 0.12);
+  border: 1px solid rgba(250, 176, 5, 0.4);
+  border-radius: 6px;
+  color: #ffd43b;
+}
+
+.profile-warning > svg {
+  flex-shrink: 0;
+}
+
+.profile-warning-text {
+  flex: 1;
+  color: #e9ecef;
+  font-size: 0.9rem;
+}
+
+.profile-warning-text strong {
+  color: #ffd43b;
+}
+
+.profile-warning-link {
+  color: #ffd43b;
+  text-decoration: underline;
+}
+
+.quality-tag-missing {
+  background: rgba(250, 82, 82, 0.15);
+  color: #ffa8a8;
 }
 
 /* Filter input */
@@ -662,9 +1136,36 @@ const markAsSkipped = async (item: Audiobook) => {
 .wanted-row {
   display: grid;
   grid-template-columns:
-    48px minmax(0, 28fr) minmax(0, 20fr) minmax(0, 18fr) minmax(0, 10fr)
+    40px 48px minmax(0, 28fr) minmax(0, 20fr) minmax(0, 18fr) minmax(0, 10fr)
     minmax(0, 12fr) minmax(0, 12fr);
   align-items: center;
+}
+
+/* Selection cell, shared by the header and the rows */
+.col-select {
+  justify-content: center;
+}
+
+.selection-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.selection-checkbox input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #fa5252;
+}
+
+.selection-checkbox input[type='checkbox']:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.wanted-row.selected {
+  background-color: rgba(250, 82, 82, 0.08);
 }
 
 .wanted-header {
@@ -674,6 +1175,10 @@ const markAsSkipped = async (item: Audiobook) => {
   background: #252525;
   padding: 0.65rem 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.wanted-header > .col-select {
+  padding: 0;
 }
 
 .wanted-header > div {
@@ -990,7 +1495,7 @@ const markAsSkipped = async (item: Audiobook) => {
 
   /* Each row becomes a card */
   .wanted-row {
-    grid-template-columns: 40px 1fr auto;
+    grid-template-columns: auto 40px 1fr auto;
     grid-template-rows: auto auto;
     gap: 0.2rem 0.6rem;
     padding: 0.75rem;
@@ -1017,28 +1522,34 @@ const markAsSkipped = async (item: Audiobook) => {
     display: none;
   }
 
-  /* Row 1: Poster (spans 2 rows) | Title | Status */
-  .wanted-row .col-poster {
+  /* Row 1: Select (spans 2 rows) | Poster (spans 2 rows) | Title | Status */
+  .wanted-row .col-select {
     grid-column: 1;
     grid-row: 1 / 3;
     align-self: center;
   }
 
-  .wanted-row .col-title {
+  .wanted-row .col-poster {
     grid-column: 2;
+    grid-row: 1 / 3;
+    align-self: center;
+  }
+
+  .wanted-row .col-title {
+    grid-column: 3;
     grid-row: 1;
     min-width: 0;
   }
 
   .wanted-row .col-status {
-    grid-column: 3;
+    grid-column: 4;
     grid-row: 1;
     white-space: nowrap;
   }
 
   /* Row 2: Author | Actions */
   .wanted-row .col-author {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 2;
     min-width: 0;
   }
@@ -1052,7 +1563,7 @@ const markAsSkipped = async (item: Audiobook) => {
   }
 
   .wanted-row .col-actions {
-    grid-column: 3;
+    grid-column: 4;
     grid-row: 2;
     display: flex;
     justify-content: flex-end;
