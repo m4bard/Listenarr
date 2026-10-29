@@ -60,7 +60,28 @@ namespace Listenarr.Domain.Configuration
         public string MultiFileNamingPattern { get; set; } = "{Title}-{DiskNumber:00}-{ChapterNumber:00}";
 
         public bool EnableMetadataProcessing { get; set; } = true;
+        /// <summary>
+        /// Dead flag, kept only so this change stays a single additive migration.
+        ///
+        /// Persisted since the Settings page was added and never read by anything. Its
+        /// stored value is true on every existing instance because that was the property
+        /// initialiser, not because an operator chose it, which is why the embedding
+        /// behaviour below is governed by a new column instead of this one. Dropping it is
+        /// a separate mechanical change.
+        /// </summary>
         public bool EnableCoverArtDownload { get; set; } = true;
+
+        /// <summary>
+        /// Embed cover artwork into audio files as they are imported.
+        ///
+        /// This replaces EnableCoverArtDownload, which was persisted from the day the
+        /// Settings page was added and never read by anything. Reusing that column would
+        /// have inherited a stored true on every existing instance, since the value came
+        /// from a property initialiser rather than from anyone choosing it, and embedding
+        /// rewrites the audio file. A new column starts false for everyone, so the
+        /// behaviour is opt-in on upgrade rather than something an operator discovers.
+        /// </summary>
+        public bool EmbedCoverArtInAudioFiles { get; set; } = false;
         public string AudnexusApiUrl { get; set; } = "https://api.audnex.us";
         public int MaxConcurrentDownloads { get; set; } = 3;
         public int PollingIntervalSeconds { get; set; } = 30;
@@ -237,5 +258,25 @@ namespace Listenarr.Domain.Configuration
         /// Preferred default language filter for Add New searches.
         /// </summary>
         public string DefaultSearchLanguage { get; set; } = "english";
+
+        /// <summary>
+        /// How often the automatic-search worker sweeps for eligible books, in hours.
+        /// This is only the cadence of the check; which books it picks up is decided by
+        /// <see cref="AutomaticSearchCooldownHours"/>. Read each cycle, clamped to [1, 168].
+        /// </summary>
+        public int AutomaticSearchIntervalHours { get; set; } = 1;
+
+        /// <summary>
+        /// How long a book stays ineligible for automatic search after it was last searched,
+        /// in hours. One shared cooldown for every book. Clamped to [1, 720].
+        /// </summary>
+        public int AutomaticSearchCooldownHours { get; set; } = 24;
+
+        /// <summary>
+        /// Pause between consecutive book searches inside one sweep, in seconds, so a large
+        /// wanted list does not hammer the indexers. 0 disables it. Manual "Search now" is
+        /// unaffected. Clamped to [0, 300].
+        /// </summary>
+        public int AutomaticSearchBookDelaySeconds { get; set; } = 5;
     }
 }
