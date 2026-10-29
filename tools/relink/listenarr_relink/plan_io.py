@@ -11,7 +11,7 @@ from typing import Any
 
 from listenarr_relink import PLAN_FORMAT_VERSION, TOOL_NAME, identity
 from listenarr_relink.inventory import Library
-from listenarr_relink.matcher import Candidate, MatchResult, RowDecision
+from listenarr_relink.matcher import Candidate, MatchResult, RowDecision, size_is_placeholder
 from listenarr_relink.paths import PathMap
 
 LEFT_OUT_PREVIEW = 200
@@ -59,6 +59,7 @@ def _relink(decision: RowDecision, keep_identity: bool, book_title: str) -> dict
         "keep_physical_identity": keep_identity,
         "evidence": {
             "stored_size": decision.row.size,
+            "stored_size_placeholder": size_is_placeholder(decision.row),
             "file_size": chosen.file.size,
             "stored_duration": decision.row.values.get("DurationSeconds"),
             "file_duration": probe.duration if probe else None,
@@ -82,7 +83,8 @@ def _relink(decision: RowDecision, keep_identity: bool, book_title: str) -> dict
 
 
 def build_plan(library: Library, result: MatchResult, path_map: PathMap, db_copy: Path,
-               live_db: str, identity_only: bool) -> dict[str, Any]:
+               live_db: str, identity_only: bool, excluded: frozenset[int],
+               exclude_file: Path | None) -> dict[str, Any]:
     """Assemble the plan document."""
     titles = {book_id: book.title for book_id, book in library.books.items()}
     relinks = [_relink(d, result.keep_identity.get(d.row.id, False), titles.get(d.row.audiobook_id, ""))
@@ -115,12 +117,17 @@ def build_plan(library: Library, result: MatchResult, path_map: PathMap, db_copy
         "roots": library.roots,
         "path_map": [f"{a}={b}" for a, b in path_map.pairs],
         "identity_only": identity_only,
+        "exclude_file": {"path": str(exclude_file), "sha256": file_sha256(exclude_file)} if exclude_file else None,
+        "excluded_file_ids": sorted(excluded),
         "summary": {
             "file_rows": len(library.files),
             "live_rows": result.live_rows,
             "stale_rows": len(result.decisions),
             "relinks": len(relinks),
             "relinks_by_confidence": dict(sorted(confidence.items())),
+            "relinks_over_placeholder_size": sum(1 for r in relinks
+                                                 if r["evidence"]["stored_size"] != r["evidence"]["file_size"]),
+            "excluded_file_ids": len(excluded),
             "left_out": len(left_out),
             "left_out_by_reason": dict(sorted(reasons.items())),
             "book_updates": len(book_updates),
@@ -146,7 +153,8 @@ def build_plan(library: Library, result: MatchResult, path_map: PathMap, db_copy
 
 
 def _reason_class(reason: str) -> str:
-    for marker, label in (("equally consistent", "ambiguous"), ("chosen by", "contended"),
+    for marker, label in (("--exclude-file-ids", "excluded"), ("equally consistent", "ambiguous"),
+                          ("chosen by", "contended"),
                           ("also a consistent candidate", "contested"), ("no folder/title/tag", "weak-evidence"),
                           ("no unclaimed file", "no-candidate"), ("agrees with the stored", "no-consistent-candidate"),
                           ("no usable stored size", "no-size"), ("hard links", "hard-link"),
@@ -174,7 +182,11 @@ def write_outputs(plan: dict[str, Any], out_dir: Path, orphans: list[str]) -> tu
         f"plan {plan_path.name} sha256 {plan_sha}",
         f"created {plan['created_utc']}  db copy sha256 {plan['db_copy']['sha256']}",
         f"file rows {summary['file_rows']}: live {summary['live_rows']}, stale {summary['stale_rows']}",
-        f"relinks {summary['relinks']} by confidence {summary['relinks_by_confidence']}",
+        f"relinks {summary['relinks']} by confidence {summary['relinks_by_confidence']}; over the 64-byte "
+        f"size placeholder {summary['relinks_over_placeholder_size']}",
+        f"excluded file ids {summary['excluded_file_ids']}"
+        + (f" from {plan['exclude_file']['path']} sha256 {plan['exclude_file']['sha256']}" if plan["exclude_file"]
+           else ""),
         f"book updates {summary['book_updates']}",
         f"left out {summary['left_out']} by reason {summary['left_out_by_reason']}",
         f"flags {summary['flags']}",

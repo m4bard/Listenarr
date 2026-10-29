@@ -33,17 +33,41 @@ def _setup_logging() -> None:
     )
 
 
+def _read_exclude_file(path: Path) -> frozenset[int]:
+    """AudiobookFiles ids, one per line; blank lines and ``#`` comments are ignored. ValueError otherwise."""
+    ids: set[int] = set()
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        text = line.strip()
+        if not text or text.startswith("#"):
+            continue
+        if not text.isdecimal():
+            raise ValueError(f"{path}:{number}: not a file row id: {text!r}")
+        ids.add(int(text))
+    return frozenset(ids)
+
+
 def _plan(args: argparse.Namespace) -> int:
     path_map = PathMap.parse(args.path_map)
     out_dir = Path(args.out).resolve()
     if out_dir.exists() and any(out_dir.iterdir()):
         log.error("output directory %s exists and is not empty", out_dir)
         return 2
+    exclude_file = Path(args.exclude_file_ids).resolve() if args.exclude_file_ids else None
+    try:
+        excluded = _read_exclude_file(exclude_file) if exclude_file else frozenset()
+    except (OSError, ValueError) as error:
+        log.error("exclude list unusable: %s", error)
+        return 2
     connection = inventory.open_read_only(args.db)
     try:
-        roots, _, _ = inventory.load_rows(connection)
+        roots, _, files = inventory.load_rows(connection)
     finally:
         connection.close()
+    unknown = sorted(excluded - {row.id for row in files})
+    if unknown:
+        # An id that is no file row means the list was built from the wrong column or another database.
+        log.error("exclude list names %d id(s) that are no AudiobookFiles row, e.g. %s", len(unknown), unknown[:5])
+        return 2
     host_roots = [os.path.realpath(path_map.to_host(r)) for r in roots]
     if any(is_within(str(out_dir), root) for root in host_roots):
         log.error("output directory %s lies inside a library root; PLAN never writes there", out_dir)
@@ -72,8 +96,8 @@ def _plan(args: argparse.Namespace) -> int:
         log.error("%s", error)
         return 2
     identity_only = not args.include_shape_matches
-    result = matcher.match(library, path_map, args.workers, not args.no_hash_chosen, identity_only)
-    plan = build_plan(library, result, path_map, db_copy, args.db, identity_only)
+    result = matcher.match(library, path_map, args.workers, not args.no_hash_chosen, identity_only, excluded)
+    plan = build_plan(library, result, path_map, db_copy, args.db, identity_only, excluded, exclude_file)
     plan_path, plan_sha = write_outputs(plan, out_dir, [o.db_path for o in result.orphans])
     summary = plan["summary"]
     log.info("plan=%s sha256=%s relinks=%d left_out=%d book_updates=%d scan_safe_books=%d", plan_path, plan_sha,
@@ -160,6 +184,9 @@ def main(argv: list[str] | None = None) -> int:
                       help="NOT RECOMMENDED: also propose shape-and-name links (size/duration/codec plus a name "
                            "naming the title, no content hash). Three adversarial reviews forced wrong links in "
                            "this mode. Default: only books whose every link is by .620 physical identity")
+    plan.add_argument("--exclude-file-ids", metavar="FILE",
+                      help="AudiobookFiles ids (one per line, # comments) never to re-link; their books are "
+                           "withheld whole. An id that is no file row refuses the run")
     plan.set_defaults(handler=_plan)
 
     apply = sub.add_parser("apply", help="write a reviewed plan into the stopped service's DB, one transaction")

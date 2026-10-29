@@ -3,6 +3,9 @@
 Rules (each one exists because guessing here can later let a delete hit the wrong file):
 
 * Size is the content anchor. A row without a usable stored size is only linked by physical identity.
+* A stored size of 64 next to a stored duration of at least a second is .620's placeholder, not a size (see
+  ``size_is_placeholder``). Physical identity then decides alone, without the size-changed veto; the
+  candidate must still agree with the stored duration, codec, sample rate and channels.
 * A candidate must agree with the row's stored duration, codec, sample rate and channels.
 * Physical identity (device + inode + file handle/generation) decides on its own when it matches.
 * Otherwise exactly one consistent candidate must remain. Equal-size siblings are separated only by an
@@ -24,6 +27,8 @@ Rules (each one exists because guessing here can later let a delete hit the wron
   27 recursively deletes its folder, FF report section 5).
 * .620's own scan/move lists are empty when any folder could not be read: the service may see files PLAN
   could not.
+* Rows the operator excludes (``--exclude-file-ids``) are never linked. They count as unresolved, so their
+  book is withheld whole and no other row takes a file they could own.
 """
 
 from __future__ import annotations
@@ -44,6 +49,12 @@ log = logging.getLogger("relink.match")
 
 # Listenarr's proc-fd lstat sentinel (#901): a stored size of 64 is not a real size.
 UNUSABLE_SIZES = frozenset({0, 64})
+# Before #901 was fixed, registration stored the length of the /proc/<pid>/fd/<n> link it read the file
+# through (lstat on a proc magic link reports 64), whatever the file. A real 64-byte file cannot hold a
+# second of audio (512 bits), so 64 beside a stored duration of a second or more is that placeholder.
+PLACEHOLDER_SIZE = 64
+PLACEHOLDER_MIN_DURATION_SECONDS = 1.0
+EXCLUDED = "withheld: listed in --exclude-file-ids"
 DURATION_ABS_TOLERANCE = 1.0
 SHAPE = "shape-and-name"
 DURATION_REL_TOLERANCE = 0.005
@@ -122,6 +133,13 @@ class MatchResult:
     keep_identity: dict[int, bool]
 
 
+def size_is_placeholder(row: FileRow) -> bool:
+    """True when the row's stored size is .620's proc-fd placeholder rather than a measurement."""
+    duration = row.values.get("DurationSeconds")
+    return (row.size == PLACEHOLDER_SIZE and duration is not None
+            and float(str(duration)) >= PLACEHOLDER_MIN_DURATION_SECONDS)
+
+
 def _consistency(row: FileRow, probe: media.Probe, other_titles: dict[frozenset[str], int],
                  own_title: str) -> str | None:
     if probe.error:
@@ -169,8 +187,9 @@ def _parallel(items: Iterable[str], work: Callable[[str], object], workers: int)
         return dict(zip(unique, pool.map(work, unique), strict=True))
 
 
-def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, identity_only: bool) -> MatchResult:
-    """Classify rows, choose links, derive book updates and the scan-safe list."""
+def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, identity_only: bool,
+          excluded: frozenset[int] = frozenset()) -> MatchResult:
+    """Classify rows, choose links, derive book updates and the scan-safe list; never link an excluded row."""
     flags: list[Flag] = []
     files_by_book: dict[int, list[FileRow]] = defaultdict(list)
     for row in library.files:
@@ -256,7 +275,7 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             continue
         if len(hits) == 1:
             decision.candidates = [Candidate(hits[0], identity_match=True)]
-            if decision.row.size != hits[0].size:
+            if decision.row.size != hits[0].size and not size_is_placeholder(decision.row):
                 decision.leave_out(f"physical identity matches {hits[0].db_path} but its size changed "
                                    f"({decision.row.size} -> {hits[0].size}); content was rewritten, review")
                 continue
@@ -310,7 +329,13 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             if not consistent:
                 decision.leave_out(f"physical identity matches but {decision.candidates[0].rejected}")
                 continue
-            decision.chosen, decision.confidence, decision.via = consistent[0], "identity", "physical identity"
+            size_waived = decision.row.size != consistent[0].file.size  # only a placeholder gets this far
+            if size_waived and (consistent[0].probe is None or consistent[0].probe.duration is None):
+                decision.leave_out("physical identity matches but the stored size is the placeholder and the "
+                                   "file's duration, which stands in for it, could not be read")
+                continue
+            via = "physical identity" + (" (stored size is the 64-byte placeholder)" if size_waived else "")
+            decision.chosen, decision.confidence, decision.via = consistent[0], "identity", via
             continue
         unreadable = [c for c in decision.candidates if c.probe is not None and c.probe.error]
         if unreadable:
@@ -340,6 +365,11 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             decision.candidates = [chosen, *[c for c in decision.candidates if c is not chosen]]
             continue
         decision.chosen, decision.confidence, decision.via = chosen, SHAPE, via
+
+    # Excluded rows are unresolved from here on: their candidates stay theirs (pass 3) and their book whole.
+    for decision in decisions:
+        if decision.row.id in excluded:
+            decision.leave_out(EXCLUDED + (f" (otherwise left out: {decision.reason})" if decision.reason else ""))
 
     # Pass 3: one file, one row; and a file that an unresolved row could own is not given away.
     while True:
