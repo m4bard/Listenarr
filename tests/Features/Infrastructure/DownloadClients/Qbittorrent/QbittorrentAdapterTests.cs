@@ -156,6 +156,70 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         }
 
         [Fact]
+        public async Task AddAsync_WhenClientAlreadyHoldsTheRelease_ThrowsRejectionNotSubmissionFailure()
+        {
+            // qBittorrent 5.2 answers 409 when the info-hash is already in its download list.
+            // That happens whenever one release satisfies more than one wanted book, and it
+            // means "I have this", not "the client is broken", so it has to be tellable apart
+            // from a genuine submission failure by type.
+            Init();
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.AddStatusCode = HttpStatusCode.Conflict;
+            apiMock.AddResponseBody = "Torrent is already in the download list.";
+
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost")
+                .WithPort(8080)
+                .WithUsername("admin")
+                .WithPassword("admin")
+                .WithType("qbittorrent")
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+            };
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            await Assert.ThrowsAsync<DownloadClientRejectedReleaseException>(
+                () => adapter.AddAsync(client, PreparedSubmissionTestFactory.Torrent(searchResult)));
+        }
+
+        [Fact]
+        public async Task AddAsync_WhenClientFailsForAnotherReason_StaysAPlainSubmissionFailure()
+        {
+            // The control for the test above. If the new branch were widened to any failure
+            // status, this would start reporting a rejection and a genuinely broken client
+            // would be silently skipped instead of surfaced.
+            Init();
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.AddStatusCode = HttpStatusCode.InternalServerError;
+
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost")
+                .WithPort(8080)
+                .WithUsername("admin")
+                .WithPassword("admin")
+                .WithType("qbittorrent")
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+            };
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var exception = await Assert.ThrowsAsync<DownloadClientSubmissionException>(
+                () => adapter.AddAsync(client, PreparedSubmissionTestFactory.Torrent(searchResult)));
+
+            Assert.IsNotType<DownloadClientRejectedReleaseException>(exception);
+        }
+
+        [Fact]
         public async Task AddAsync_WhenMagnetUsesBase32Hash_ReturnsNormalizedHexHash()
         {
             var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
@@ -178,6 +242,109 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
                 PreparedSubmissionTestFactory.Torrent(searchResult));
 
             Assert.Equal("0123456789ABCDEF0123456789ABCDEF01234567", submissionResult.ExternalId);
+        }
+
+        [Fact]
+        public async Task AddAsync_WhenIndexerHasNoSeedCriteria_DoesNotCallSetShareLimits()
+        {
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost")
+                .WithPort(8080)
+                .WithUsername("admin")
+                .WithPassword("admin")
+                .WithType("qbittorrent")
+                .Build());
+
+            var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()
+                .WithName("No Seed Criteria Indexer")
+                .WithType("Torrent")
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                IndexerId = indexer.Id
+            };
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            await adapter.AddAsync(client, PreparedSubmissionTestFactory.Torrent(searchResult));
+
+            var mock = _provider.GetRequiredService<QbittorrentApiMock>();
+            Assert.Equal(0, mock.SetShareLimitsCallCount);
+            Assert.Null(mock.LastShareLimitsForm);
+        }
+
+        [Fact]
+        public async Task AddAsync_WhenIndexerHasSeedRatio_CallsSetShareLimitsWithRatioAndGlobalSeedTime()
+        {
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost")
+                .WithPort(8080)
+                .WithUsername("admin")
+                .WithPassword("admin")
+                .WithType("qbittorrent")
+                .Build());
+
+            var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()
+                .WithName("Hit and Run Tracker")
+                .WithType("Torrent")
+                .WithSeedRatio(2.0)
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                IndexerId = indexer.Id
+            };
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            await adapter.AddAsync(client, PreparedSubmissionTestFactory.Torrent(searchResult));
+
+            var mock = _provider.GetRequiredService<QbittorrentApiMock>();
+            Assert.Equal(1, mock.SetShareLimitsCallCount);
+            var form = mock.LastShareLimitsForm;
+            Assert.NotNull(form);
+            Assert.Equal("2", form!["ratioLimit"]);
+            Assert.Equal("-2", form["seedingTimeLimit"]);
+        }
+
+        [Fact]
+        public async Task AddAsync_WhenIndexerHasSeedTime_SendsSeedingTimeLimitInMinutes()
+        {
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost")
+                .WithPort(8080)
+                .WithUsername("admin")
+                .WithPassword("admin")
+                .WithType("qbittorrent")
+                .Build());
+
+            var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()
+                .WithName("Hit and Run Tracker")
+                .WithType("Torrent")
+                .WithSeedTime(4320)
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                IndexerId = indexer.Id
+            };
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            await adapter.AddAsync(client, PreparedSubmissionTestFactory.Torrent(searchResult));
+
+            var mock = _provider.GetRequiredService<QbittorrentApiMock>();
+            var form = mock.LastShareLimitsForm;
+            Assert.NotNull(form);
+            // Sent as minutes, matching the Indexer.SeedTime unit the operator entered. A
+            // TotalMinutes/TotalSeconds mix-up anywhere in the resolve-to-request path would
+            // surface here as 259200 (seconds) rather than 4320.
+            Assert.Equal("4320", form!["seedingTimeLimit"]);
+            Assert.Equal("-2", form["ratioLimit"]);
         }
 
         [Fact]
@@ -770,6 +937,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         [InlineData(true, "true")]
         public async Task RemoveAsync_PreservesDeleteFilesPolicy(bool deleteFiles, string expected)
         {
+            _provider.GetRequiredService<QbittorrentApiMock>().InfoResponseOverride =
+                """[{"hash":"abcdef123456","name":"Book"}]""";
             var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
 
             var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles);
@@ -782,14 +951,150 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             Assert.Equal(expected, form["deleteFiles"]);
         }
 
+        [Fact]
+        public async Task RemoveAsync_WhenTorrentPresentInClient_ChecksPresenceThenDeletesAndReturnsTrue()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            // qBittorrent reports hashes in lower case; the stored id may be upper case.
+            apiMock.InfoResponseOverride = """[{"hash":"abcdef123456","name":"Book"}]""";
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.True(result, $"Last request: {apiMock.GetLastRequest().RequestUri}; content: {apiMock.GetLastContent()}");
+            Assert.Contains(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/info", StringComparison.Ordinal));
+            Assert.NotNull(apiMock.LastDeleteForm);
+            Assert.Equal("ABCDEF123456", apiMock.LastDeleteForm!["hashes"]);
+        }
+
+        [Fact]
+        public async Task RemoveAsync_WhenTorrentAbsentFromClient_ReturnsTrueWithoutCallingDelete()
+        {
+            // Confirmed absent means the removal goal already holds (a share-limit rule or a
+            // manual delete got there first), so it is reported as removed without a delete call.
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = "[]";
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.True(result);
+            Assert.Contains(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/info", StringComparison.Ordinal));
+            Assert.DoesNotContain(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/delete", StringComparison.Ordinal));
+            Assert.Null(apiMock.LastDeleteForm);
+        }
+
+        [Fact]
+        public async Task RemoveAsync_WhenPresenceCheckListsOnlyOtherTorrents_ReturnsTrueWithoutCallingDelete()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = """[{"hash":"0123456789","name":"Other"}]""";
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.True(result);
+            Assert.DoesNotContain(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/delete", StringComparison.Ordinal));
+            Assert.Null(apiMock.LastDeleteForm);
+        }
+
+        [Fact]
+        public async Task RemoveAsync_WhenPresenceCheckMatchesV2InfoHash_DeletesAndReturnsTrue()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = """[{"hash":"0123456789","infohash_v1":"","infohash_v2":"abcdef123456","name":"Book"}]""";
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.True(result);
+            Assert.NotNull(apiMock.LastDeleteForm);
+            Assert.Equal("ABCDEF123456", apiMock.LastDeleteForm!["hashes"]);
+        }
+
+        [Theory]
+        [InlineData("{}")]
+        [InlineData("""[{"name":"Book"}]""")]
+        [InlineData("[1]")]
+        public async Task RemoveAsync_WhenPresenceCheckBodyIsNotATorrentArray_ReturnsFalseWithoutCallingDelete(string body)
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = body;
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.False(result);
+            Assert.DoesNotContain(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/delete", StringComparison.Ordinal));
+            Assert.Null(apiMock.LastDeleteForm);
+        }
+
+        [Fact]
+        public async Task RemoveAsync_WhenPresenceCheckFails_ReturnsFalseWithoutCallingDelete()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoStatusCode = HttpStatusCode.InternalServerError;
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.False(result);
+            Assert.Contains(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/info", StringComparison.Ordinal));
+            Assert.DoesNotContain(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/delete", StringComparison.Ordinal));
+            Assert.Null(apiMock.LastDeleteForm);
+        }
+
+        [Fact]
+        public async Task RemoveAsync_WhenPresenceCheckReturnsUnparseableBody_ReturnsFalseWithoutCallingDelete()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = "not json";
+            apiMock.ResetRequestHistory();
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.RemoveAsync(_client, "ABCDEF123456", deleteFiles: false);
+
+            Assert.False(result);
+            Assert.Contains(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/info", StringComparison.Ordinal));
+            Assert.DoesNotContain(apiMock.RequestHistory,
+                request => request.RequestUri.AbsolutePath.EndsWith("/api/v2/torrents/delete", StringComparison.Ordinal));
+            Assert.Null(apiMock.LastDeleteForm);
+        }
+
         [Theory]
         [InlineData("uploading")]
         [InlineData("stalledUP")]
         [InlineData("stoppedUP")]
+        [InlineData("pausedUP")] // qBittorrent < 5.0 / rdt-client (#1047)
         public void CompletedTorrentStates_MapToCompleted(string state)
         {
             Assert.Equal(DownloadItemStatus.Completed, QbittorrentResponseMapper.MapDownloadItemStatus(state, 100));
             Assert.Equal("completed", QbittorrentResponseMapper.MapQueueStatus(state, 100));
+        }
+
+        [Theory]
+        [InlineData("pausedDL")]
+        [InlineData("pausedUP")]
+        public void LegacyPausedStates_MapToPaused_WhenIncomplete(string state)
+        {
+            // Before #1047 these pre-5.0 states fell through to Warning/unknown, so an rdt-client
+            // or old-qBittorrent download never progressed to completion or import.
+            Assert.Equal(DownloadItemStatus.Paused, QbittorrentResponseMapper.MapDownloadItemStatus(state, 50));
+            Assert.Equal("paused", QbittorrentResponseMapper.MapQueueStatus(state, 50));
         }
     }
 }

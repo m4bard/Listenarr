@@ -25,7 +25,12 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
         public static QueueItem MapQueueItem(
             Dictionary<string, JsonElement> torrent,
             DownloadClientConfiguration client,
-            List<Dictionary<string, JsonElement>> files)
+            List<Dictionary<string, JsonElement>> files,
+            bool removeCompletedDownloads,
+            bool globalMaxRatioEnabled,
+            float globalMaxRatio,
+            bool globalMaxSeedingTimeEnabled,
+            long globalMaxSeedingTime)
         {
             var name = GetString(torrent, "name");
             var progress = GetDouble(torrent, "progress") * 100;
@@ -39,8 +44,20 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             var numSeeds = GetNullableInt32(torrent, "num_seeds");
             var numLeechs = GetNullableInt32(torrent, "num_leechs");
             var ratio = GetNullableDouble(torrent, "ratio");
+            var ratioLimit = (float)GetDouble(torrent, "ratio_limit", -2);
+            var seedingTimeLimit = GetInt64(torrent, "seeding_time_limit", -2);
+            var seedingTime = GetNullableInt64(torrent, "seeding_time");
             var savePath = GetString(torrent, "save_path");
             var status = MapQueueStatus(state, progress);
+            var seedLimitReached = QbittorrentSeedLimitEvaluator.HasReachedSeedLimit(
+                ratio ?? 0,
+                ratioLimit,
+                seedingTime,
+                seedingTimeLimit,
+                globalMaxRatioEnabled,
+                globalMaxRatio,
+                globalMaxSeedingTimeEnabled,
+                globalMaxSeedingTime);
 
             return new QueueItem
             {
@@ -61,7 +78,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 Leechers = numLeechs,
                 Ratio = ratio,
                 CanPause = status == "downloading" || status == "queued",
-                CanRemove = true,
+                CanRemove = removeCompletedDownloads && seedLimitReached,
                 RemotePath = savePath,
                 LocalPath = savePath,
                 SourceFiles = TorrentClientPathMapper.BuildQbittorrentSourceFiles(savePath, files),
@@ -147,8 +164,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 "forcedMetaDL" => DownloadItemStatus.Downloading,
                 "stalledDL" => DownloadItemStatus.Downloading,
                 "checkingDL" => DownloadItemStatus.Downloading,
-                "stoppedDL" => DownloadItemStatus.Paused,
-                "stoppedUP" => DownloadItemStatus.Paused,
+                // qBittorrent < 5.0 (and compatible APIs like rdt-client) report pausedDL/pausedUP
+                // where 5.x reports stoppedDL/stoppedUP (#1047).
+                "stoppedDL" or "pausedDL" => DownloadItemStatus.Paused,
+                "stoppedUP" or "pausedUP" => DownloadItemStatus.Paused,
                 "queuedDL" => DownloadItemStatus.Queued,
                 "queuedUP" => DownloadItemStatus.Queued,
                 "uploading" => DownloadItemStatus.Downloading,
@@ -162,7 +181,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 _ => DownloadItemStatus.Warning
             };
 
-            if (progress >= 100.0 && (status == DownloadItemStatus.Downloading || state is "uploading" or "stalledUP" or "checkingUP" or "forcedUP" or "stoppedUP"))
+            if (progress >= 100.0 && (status == DownloadItemStatus.Downloading || state is "uploading" or "stalledUP" or "checkingUP" or "forcedUP" or "stoppedUP" or "pausedUP"))
             {
                 return DownloadItemStatus.Completed;
             }
@@ -180,8 +199,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 "forcedMetaDL" => "downloading",
                 "stalledDL" => "downloading",
                 "checkingDL" => "downloading",
-                "stoppedDL" => "paused",
-                "stoppedUP" => "paused",
+                "stoppedDL" or "pausedDL" => "paused",
+                "stoppedUP" or "pausedUP" => "paused",
                 "queuedDL" => "queued",
                 "queuedUP" => "queued",
                 "uploading" => "seeding",
@@ -195,7 +214,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 _ => "unknown"
             };
 
-            return progress >= 100.0 && (status == "seeding" || state is "uploading" or "stalledUP" or "checkingUP" or "forcedUP" or "stoppedUP")
+            return progress >= 100.0 && (status == "seeding" || state is "uploading" or "stalledUP" or "checkingUP" or "forcedUP" or "stoppedUP" or "pausedUP")
                 ? "completed"
                 : status;
         }
