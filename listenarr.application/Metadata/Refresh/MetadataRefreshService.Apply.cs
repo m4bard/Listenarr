@@ -18,6 +18,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Metadata.Refresh;
