@@ -191,10 +191,10 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
         {
             var metadata = await CaptureAddedBookMetadataAsync(new AudibleSearchResultBuilder()
                 .WithAsin("BOOK2")
-                .WithTitle("The Well of Ascension")
-                .WithAuthor("Brandon Sanderson")
+                .WithTitle("The Gods of Mars")
+                .WithAuthor("Edgar Rice Burroughs")
                 .WithLanguage("english")
-                .WithSeries("Mistborn", "2", "SERIESONE")
+                .WithSeries("Barsoom", "2", "SERIESONE")
                 .WithSeries("Tarzan", "4", "SERIESTWO")
                 .Build());
 
@@ -203,7 +203,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                 metadata.SeriesMemberships!,
                 first =>
                 {
-                    Assert.Equal("Mistborn", first.SeriesName);
+                    Assert.Equal("Barsoom", first.SeriesName);
                     Assert.Equal("2", first.SeriesNumber);
                     Assert.Equal("SERIESONE", first.SeriesAsin);
                     Assert.True(first.IsPrimary);
@@ -218,7 +218,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                     Assert.Equal(1, second.SortOrder);
                 });
 
-            Assert.Equal("Mistborn", metadata.Series);
+            Assert.Equal("Barsoom", metadata.Series);
             Assert.Equal("2", metadata.SeriesNumber);
         }
 
@@ -227,8 +227,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
         {
             var metadata = await CaptureAddedBookMetadataAsync(new AudibleSearchResultBuilder()
                 .WithAsin("BOOK2")
-                .WithTitle("The Well of Ascension")
-                .WithAuthor("Brandon Sanderson")
+                .WithTitle("The Gods of Mars")
+                .WithAuthor("Edgar Rice Burroughs")
                 .WithLanguage("english")
                 .Build());
 
@@ -242,18 +242,18 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
         {
             var metadata = await CaptureAddedBookMetadataAsync(new AudibleSearchResultBuilder()
                 .WithAsin("BOOK2")
-                .WithTitle("The Well of Ascension")
-                .WithAuthor("Brandon Sanderson")
+                .WithTitle("The Gods of Mars")
+                .WithAuthor("Edgar Rice Burroughs")
                 .WithLanguage("english")
-                .WithSeries("Mistborn", "2", "   ")
+                .WithSeries("Barsoom", "2", "   ")
                 .Build());
 
             var membership = Assert.Single(metadata.SeriesMemberships!);
-            Assert.Equal("Mistborn", membership.SeriesName);
+            Assert.Equal("Barsoom", membership.SeriesName);
             Assert.Equal("2", membership.SeriesNumber);
             Assert.Null(membership.SeriesAsin);
             Assert.True(membership.IsPrimary);
-            Assert.Equal("Mistborn", metadata.Series);
+            Assert.Equal("Barsoom", metadata.Series);
             Assert.Equal("2", metadata.SeriesNumber);
         }
 
@@ -265,14 +265,14 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
 
             _seriesCatalogService
                 .Setup(service => service.GetCatalogAsync(
-                    "Mistborn",
+                    "Barsoom",
                     "us",
                     500,
                     null,
                     true,
                     It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new SeriesCatalogFetchResultBuilder()
-                    .WithSeries("Mistborn", "SERIES123")
+                    .WithSeries("Barsoom", "SERIES123")
                     .WithBook(catalogBook)
                     .Build());
 
@@ -289,7 +289,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                     Message = "Audiobook added to library successfully",
                     Audiobook = new AudiobookBuilder()
                         .WithTitle(catalogBook.Title!)
-                        .WithAuthor("Brandon Sanderson")
+                        .WithAuthor("Edgar Rice Burroughs")
                         .WithMonitored()
                         .Build()
                 });
@@ -298,7 +298,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
 
             var result = await service.MonitorSeriesAsync(new MonitorSeriesRequest
             {
-                Name = "Mistborn",
+                Name = "Barsoom",
                 Region = "us",
                 Language = "english"
             });
