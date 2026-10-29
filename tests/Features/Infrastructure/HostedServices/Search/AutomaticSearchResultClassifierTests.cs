@@ -38,7 +38,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                 .WithSeries("Standalone")
                 .Build();
 
-            var full = _classifier.BuildSearchQuery(book);
+            var full = _classifier.BuildSearchPlan(book).PrimaryQuery;
             var fallback = _classifier.BuildTitleFallbackSearchQuery(book);
 
             // The full query carries the author; the fallback drops it but keeps title + series.
