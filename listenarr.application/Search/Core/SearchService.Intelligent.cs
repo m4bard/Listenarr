@@ -27,13 +27,13 @@ namespace Listenarr.Application.Search.Core
                 try { _logger.LogInformation("Parsed prefixes: ASIN={Asin}, ISBN={Isbn}, AUTHOR={Author}, TITLE={Title}", asinVal, isbnVal, authorVal, titleVal); }
                 catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
                 {
-                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    // Nothing is logged here: the call that failed is the logging call itself.
                 }
 
                 try { _logger.LogInformation("[DBG] Determined searchType='{SearchType}'", searchType); }
                 catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
                 {
-                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    // Nothing is logged here: the call that failed is the logging call itself.
                 }
 
                 // Try Audible-first for various search types. If Audible returns results,
@@ -190,7 +190,7 @@ namespace Listenarr.Application.Search.Core
                                 try { candidateDropReasons[(!string.IsNullOrWhiteSpace(ol.Asin) ? ol.Asin : ol.Id)] = "enriched_from_openlibrary"; }
                                 catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException)
                                 {
-                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    _logger.LogDebug(caughtEx_7, "Could not record the OpenLibrary enrichment reason; the result is still added");
                                 }
                                 _logger.LogInformation("Added OpenLibrary-derived enriched result: Title='{Title}', Artist='{Artist}'", ol.Title, ol.Artist);
                             }
@@ -236,7 +236,7 @@ namespace Listenarr.Application.Search.Core
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
-                        _logger.LogDebug(ex, "Failed to compute containment/fuzzy scores for ASIN {Asin}", r.Asin);
+                        _logger.LogDebug(ex, "Failed to compute containment/fuzzy scores for ASIN {Asin}", LogRedaction.SanitizeText(r.Asin));
                     }
 
                     // Use the scorer to compute comprehensive relevance score
@@ -246,7 +246,7 @@ namespace Listenarr.Application.Search.Core
                     try { r.Score = (int)Math.Round(scoredResult.Score * 100.0); }
                     catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException)
                     {
-                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                        _logger.LogDebug(caughtEx_8, "Could not attach a score to result {Asin}; it keeps whatever score it already had", r.Asin);
                     }
 
                     scored.Add(scoredResult);
@@ -262,7 +262,7 @@ namespace Listenarr.Application.Search.Core
                     // Author/publisher requirement
                     if (requireAuthorAndPublisher && (string.IsNullOrWhiteSpace(r.Artist) || string.IsNullOrWhiteSpace(r.Publisher)))
                     {
-                        _logger.LogInformation("Dropping ASIN {Asin} because missing author or publisher", r.Asin);
+                        _logger.LogInformation("Dropping ASIN {Asin} because missing author or publisher", LogRedaction.SanitizeText(r.Asin));
                         continue;
                     }
 
@@ -277,7 +277,7 @@ namespace Listenarr.Application.Search.Core
                             if (string.IsNullOrEmpty(hay) || hay.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
                             {
                                 keep = false;
-                                _logger.LogInformation("Dropping ASIN {Asin} (Strict containment failed). containmentScore={Score}, fuzzy={Fuzzy}", r.Asin, s.ContainmentScore, s.FuzzyScore);
+                                _logger.LogInformation("Dropping ASIN {Asin} (Strict containment failed). containmentScore={Score}, fuzzy={Fuzzy}", LogRedaction.SanitizeText(r.Asin), s.ContainmentScore, s.FuzzyScore);
                             }
                         }
                         else // Relaxed
@@ -302,7 +302,7 @@ namespace Listenarr.Application.Search.Core
                                 else
                                 {
                                     keep = false;
-                                    _logger.LogInformation("Dropping ASIN {Asin} (Relaxed containment failed). containmentScore={Score}, fuzzy={Fuzzy}", r.Asin, s.ContainmentScore, s.FuzzyScore);
+                                    _logger.LogInformation("Dropping ASIN {Asin} (Relaxed containment failed). containmentScore={Score}, fuzzy={Fuzzy}", LogRedaction.SanitizeText(r.Asin), s.ContainmentScore, s.FuzzyScore);
                                 }
                             }
                         }
