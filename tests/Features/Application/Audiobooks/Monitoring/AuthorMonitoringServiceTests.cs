@@ -198,7 +198,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                 .WithAuthor("H. Rider Haggard")
                 .WithLanguage("english")
                 .WithSeries("Ayesha", "0", "B01E633FQM")
-                .WithSeries("Allan Quatermain", null, "B01F5TL5K4")
+                .WithSeries("Allan Quatermain", "7", "B01F5TL5K4")
                 .Build());
 
             Assert.NotNull(metadata.SeriesMemberships);
@@ -215,7 +215,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                 second =>
                 {
                     Assert.Equal("Allan Quatermain", second.SeriesName);
-                    Assert.Null(second.SeriesNumber);
+                    Assert.Equal("7", second.SeriesNumber);
                     Assert.Equal("B01F5TL5K4", second.SeriesAsin);
                     Assert.False(second.IsPrimary);
                     Assert.Equal(1, second.SortOrder);
@@ -229,8 +229,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
         public async Task MonitorAuthorAsync_LeavesSeriesFieldsUnsetWhenCatalogBookHasNoSeries()
         {
             var metadata = await CaptureAddedBookMetadataAsync(new AudibleSearchResultBuilder()
-                .WithAsin("B00CQ5WAXW")
-                .WithTitle("She And Allan")
+                .WithAsin("B004YWTD30")
+                .WithTitle("She: A History of Adventure")
                 .WithAuthor("H. Rider Haggard")
                 .WithLanguage("english")
                 .Build());
@@ -244,20 +244,20 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
         public async Task MonitorAuthorAsync_KeepsSeriesMembershipWhenCatalogEntryHasNoAsin()
         {
             var metadata = await CaptureAddedBookMetadataAsync(new AudibleSearchResultBuilder()
-                .WithAsin("B00CQ5WAXW")
-                .WithTitle("She And Allan")
+                .WithAsin("B004YWTD30")
+                .WithTitle("She: A History of Adventure")
                 .WithAuthor("H. Rider Haggard")
                 .WithLanguage("english")
-                .WithSeries("Ayesha", "0", "   ")
+                .WithSeries("Ayesha", "1", "   ")
                 .Build());
 
             var membership = Assert.Single(metadata.SeriesMemberships!);
             Assert.Equal("Ayesha", membership.SeriesName);
-            Assert.Equal("0", membership.SeriesNumber);
+            Assert.Equal("1", membership.SeriesNumber);
             Assert.Null(membership.SeriesAsin);
             Assert.True(membership.IsPrimary);
             Assert.Equal("Ayesha", metadata.Series);
-            Assert.Equal("0", metadata.SeriesNumber);
+            Assert.Equal("1", metadata.SeriesNumber);
         }
 
         private static async Task<AudibleBookMetadata> CaptureAddedBookMetadataAsync(AudibleSearchResult catalogBook)
