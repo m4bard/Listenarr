@@ -44,9 +44,18 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                     return items;
                 }
 
-                // Limit fields returned to reduce memory usage.
-                var fields = "name,progress,size,downloaded,dlspeed,eta,state,hash,added_on,num_seeds,num_leechs,ratio,save_path";
+                // Limit fields returned to reduce memory usage. ratio_limit/seeding_time_limit/
+                // seeding_time are included so CanRemove can be seed-limit-aware (same HTTP
+                // call, no extra round trip for per-torrent data).
+                var fields = "name,progress,size,downloaded,dlspeed,eta,state,hash,added_on,num_seeds,num_leechs,ratio,save_path,ratio_limit,seeding_time_limit,seeding_time";
                 var categoryFilter = QBittorrentHelpers.BuildCategoryParameter(client.Settings, "&");
+
+                // One preferences fetch per poll cycle (not per torrent) so CanRemove can resolve
+                // a per-torrent limit that is set to "inherit global".
+                var (seedPolicyKnown, globalMaxRatioEnabled, globalMaxRatio, globalMaxSeedingTimeEnabled, globalMaxSeedingTime) =
+                    await QbittorrentGlobalSeedPreferences.FetchAsync(httpClient, baseUrl, logger, ct);
+                var removeCompletedDownloads = !string.IsNullOrEmpty(client.RemoveCompletedDownloads) &&
+                    client.RemoveCompletedDownloads != "none";
 
                 var category = client.Settings?.TryGetValue("category", out var categoryObj) is true
                     ? categoryObj?.ToString()
@@ -98,17 +107,63 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
 
                 foreach (var torrent in torrents)
                 {
-                    var hash = torrent.TryGetValue("hash", out var hashEl) ? hashEl.GetString() ?? string.Empty : string.Empty;
+                    var hash = torrent.TryGetValue("hash", out var hashEl) && hashEl.ValueKind == JsonValueKind.String
+                        ? hashEl.GetString() ?? string.Empty
+                        : string.Empty;
 
-                    List<Dictionary<string, JsonElement>> files = [];
-                    using var filesResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/files?hash={hash}", ct);
-                    if (filesResp.IsSuccessStatusCode)
+                    // One torrent that cannot be read must not take the rest of the response with
+                    // it. Without this, an exception raised while mapping torrent N escapes the
+                    // loop and is caught only by the handler below, so torrents N..end are dropped
+                    // while the poll still reports itself as a healthy live snapshot: the queue
+                    // simply appears shorter, with nothing to say a row was lost.
+                    //
+                    // HttpRequestException is excluded on purpose. The per-torrent files request
+                    // sits inside this block, and a transport failure there means the client went
+                    // away mid-poll, not that this torrent is unreadable. Swallowing it would log
+                    // one warning per remaining torrent and hand the caller a short queue that
+                    // still claims to be a healthy live snapshot, which is the failure this guard
+                    // exists to stop. An error status from that request is already handled by the
+                    // IsSuccessStatusCode check and does not reach here.
+                    try
                     {
-                        var filesJson = await filesResp.Content.ReadAsStringAsync(ct);
-                        files = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(filesJson) ?? [];
-                    }
+                        List<Dictionary<string, JsonElement>> files = [];
+                        using var filesResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/files?hash={Uri.EscapeDataString(hash)}", ct);
+                        if (filesResp.IsSuccessStatusCode)
+                        {
+                            var filesJson = await filesResp.Content.ReadAsStringAsync(ct);
+                            files = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(filesJson) ?? [];
+                        }
 
-                    items.Add(QbittorrentResponseMapper.MapQueueItem(torrent, client, files));
+                        var queueItem = QbittorrentResponseMapper.MapQueueItem(
+                            torrent,
+                            client,
+                            files,
+                            removeCompletedDownloads,
+                            globalMaxRatioEnabled,
+                            globalMaxRatio,
+                            globalMaxSeedingTimeEnabled,
+                            globalMaxSeedingTime);
+                        if (!seedPolicyKnown)
+                        {
+                            // An unavailable inherited seed policy is not proof that
+                            // the torrent has no limits and can be removed.
+                            queueItem.CanRemove = false;
+                        }
+                        items.Add(queueItem);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not HttpRequestException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        // Debug rather than Warning. A torrent whose fields the mapper cannot read
+                        // does not heal, so this fires once per torrent on every poll for as long
+                        // as the torrent sits in the client, and the operator has nothing to act
+                        // on. TransmissionQueueFetchWorkflow logs the same condition at Debug for
+                        // the same reason. The torrent's absence from the queue stays observable.
+                        logger.LogDebug(
+                            ex,
+                            "Skipping unreadable qBittorrent torrent {TorrentHash} for client {ClientId}; the rest of the queue is unaffected",
+                            LogRedaction.SanitizeText(hash),
+                            LogRedaction.SanitizeText(client.Id));
+                    }
                 }
             }
             catch (DownloadClientAdapterPollingException)

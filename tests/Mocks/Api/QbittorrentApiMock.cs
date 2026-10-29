@@ -10,8 +10,33 @@ namespace Listenarr.Tests.Mocks.Api
         public bool Authenticated { get; set; } = false;
         public NameValueCollection? LastDeleteForm { get; private set; }
         public NameValueCollection? LastCategoryForm { get; private set; }
+        public NameValueCollection? LastShareLimitsForm { get; private set; }
+        public int SetShareLimitsCallCount { get; private set; }
         public HttpStatusCode InfoStatusCode { get; set; } = HttpStatusCode.OK;
+        public HttpStatusCode AddStatusCode { get; set; } = HttpStatusCode.OK;
+        public string? AddResponseBody { get; set; }
         public string? InfoResponseOverride { get; set; }
+        public NameValueCollection? LastForceStartForm { get; private set; }
+        public HttpStatusCode ForceStartStatusCode { get; set; } = HttpStatusCode.OK;
+
+        /// <summary>
+        /// Make the force start request time out the way HttpClient does, which surfaces as a
+        /// TaskCanceledException with nothing actually cancelled.
+        /// </summary>
+        public bool ForceStartTimesOut { get; set; }
+
+        /// <summary>
+        /// Make the per-torrent files request fail at the transport layer, the way it does when
+        /// the client stops answering between the torrent list and the files calls that follow it.
+        /// </summary>
+        public bool FilesRequestFailsAtTransport { get; set; }
+
+        /// <summary>
+        /// Body returned by a successful /torrents/add. qBittorrent answers 200 with "Fails."
+        /// when it will not take the torrent, and older Web API versions answer 200 with nothing
+        /// at all, so the success body is a variable and not a constant.
+        /// </summary>
+        public string? AddSuccessResponseBody { get; set; }
 
         public QbittorrentApiMock()
         {
@@ -22,6 +47,8 @@ namespace Listenarr.Tests.Mocks.Api
             AddRoute("api/v2/torrents/files", GetFiles, HttpMethod.Get);
             AddRoute("api/v2/torrents/delete", DoDelete, HttpMethod.Post);
             AddRoute("api/v2/torrents/setCategory", SetCategory, HttpMethod.Post);
+            AddRoute("api/v2/torrents/setForceStart", SetForceStart, HttpMethod.Post);
+            AddRoute("api/v2/torrents/setShareLimits", SetShareLimits, HttpMethod.Post);
         }
 
         private async Task<HttpResponseMessage> DoLogin(HttpRequestMessage request, CancellationToken ct)
@@ -51,7 +78,15 @@ namespace Listenarr.Tests.Mocks.Api
                 return new HttpResponseMessage(HttpStatusCode.Forbidden);
             }
 
-            return MockUtils.GetCannedResponse("Ok");
+            if (AddStatusCode != HttpStatusCode.OK)
+            {
+                return new HttpResponseMessage(AddStatusCode)
+                {
+                    Content = new StringContent(AddResponseBody ?? string.Empty)
+                };
+            }
+
+            return MockUtils.GetCannedResponse(AddSuccessResponseBody ?? "Ok");
         }
 
         private async Task<HttpResponseMessage> GetInfo(HttpRequestMessage request, CancellationToken ct)
@@ -88,6 +123,11 @@ namespace Listenarr.Tests.Mocks.Api
                 return new HttpResponseMessage(HttpStatusCode.Forbidden);
             }
 
+            if (FilesRequestFailsAtTransport)
+            {
+                throw new HttpRequestException("Connection refused");
+            }
+
             return MockUtils.GetCannedResponse("[]");
         }
 
@@ -108,10 +148,36 @@ namespace Listenarr.Tests.Mocks.Api
             return MockUtils.GetCannedResponse("Ok");
         }
 
+        private async Task<HttpResponseMessage> SetForceStart(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (!Authenticated) return new HttpResponseMessage(HttpStatusCode.Forbidden);
+            LastForceStartForm = HttpUtility.ParseQueryString(await request.Content!.ReadAsStringAsync(ct));
+
+            if (ForceStartTimesOut)
+            {
+                throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout", new TimeoutException());
+            }
+
+            if (ForceStartStatusCode != HttpStatusCode.OK)
+            {
+                return new HttpResponseMessage(ForceStartStatusCode);
+            }
+
+            return MockUtils.GetCannedResponse("Ok");
+        }
+
         private async Task<HttpResponseMessage> SetCategory(HttpRequestMessage request, CancellationToken ct)
         {
             if (!Authenticated) return new HttpResponseMessage(HttpStatusCode.Forbidden);
             LastCategoryForm = HttpUtility.ParseQueryString(await request.Content!.ReadAsStringAsync(ct));
+            return MockUtils.GetCannedResponse("Ok");
+        }
+
+        private async Task<HttpResponseMessage> SetShareLimits(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (!Authenticated) return new HttpResponseMessage(HttpStatusCode.Forbidden);
+            SetShareLimitsCallCount++;
+            LastShareLimitsForm = HttpUtility.ParseQueryString(await request.Content!.ReadAsStringAsync(ct));
             return MockUtils.GetCannedResponse("Ok");
         }
     }

@@ -48,6 +48,34 @@ namespace Listenarr.Tests.Features.Application.Security.Redaction
         }
 
         [Fact]
+        public void RedactText_LeavesUnrelatedTextUnchanged_WhenNoSecretValueAppears()
+        {
+            // Regression for #298: SystemProcessRunner calls RedactText unconditionally on every
+            // subprocess's stdout/stderr before logging it. A fallback in RedactText appended a
+            // literal " <redacted>" suffix whenever ANY of the known secret env vars was set,
+            // even if its value never appeared in the text. That corrupted ffprobe's JSON stdout
+            // (no longer valid JSON once something was appended after the closing brace) any time
+            // an unrelated .env file set e.g. PASSWORD or API_KEY for a different service entirely,
+            // breaking JsonSerializer.Deserialize for every file with a misleading error.
+            var key = "LISTENARR_API_KEY";
+            var secret = "some-unrelated-secret-value-999";
+            var ffprobeLikeJson = "{\"format\":{\"duration\":\"320.000000\",\"bit_rate\":\"128000\"}}";
+
+            try
+            {
+                Environment.SetEnvironmentVariable(key, secret);
+
+                var redacted = LogRedaction.RedactText(ffprobeLikeJson, LogRedaction.GetSensitiveValuesFromEnvironment());
+
+                Assert.Equal(ffprobeLikeJson, redacted);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(key, null);
+            }
+        }
+
+        [Fact]
         public void GetSensitiveValuesFromEnvironment_ReturnsSetVariables()
         {
             var key = "LISTENARR_API_KEY";
@@ -62,6 +90,77 @@ namespace Listenarr.Tests.Features.Application.Security.Redaction
             {
                 Environment.SetEnvironmentVariable(key, null);
             }
+        }
+
+        [Fact]
+        public void SanitizeWebhookUrl_Telegram_MasksTokenSegment_KeepsMethodAndQueryDropped()
+        {
+            var token = "123456789:AAExampleBotTokenValueNotReal";
+            var url = $"https://api.telegram.org/bot{token}/sendMessage?chat_id=987654321";
+
+            var sanitized = LogRedaction.SanitizeWebhookUrl(url);
+
+            Assert.DoesNotContain(token, sanitized);
+            Assert.DoesNotContain("987654321", sanitized);
+            Assert.Equal("https://api.telegram.org/bot<redacted>/sendMessage", sanitized);
+        }
+
+        [Fact]
+        public void SanitizeWebhookUrl_Discord_MasksIdAndTokenSegments_KeepsApiWebhooksPath()
+        {
+            var id = "111222333444555666";
+            var token = "DiscordWebhookTokenValueNotReal";
+            var url = $"https://discord.com/api/webhooks/{id}/{token}";
+
+            var sanitized = LogRedaction.SanitizeWebhookUrl(url);
+
+            Assert.DoesNotContain(id, sanitized);
+            Assert.DoesNotContain(token, sanitized);
+            Assert.Contains("api/webhooks", sanitized);
+            Assert.Equal("https://discord.com/api/webhooks/<redacted>/<redacted>", sanitized);
+        }
+
+        [Fact]
+        public void SanitizeWebhookUrl_Slack_MasksEverythingAfterServices()
+        {
+            var team = "T00000000";
+            var bot = "B00000000";
+            var secret = "XXXXXXXXXXXXXXXXXXXXXXXX";
+            var url = $"https://hooks.slack.com/services/{team}/{bot}/{secret}";
+
+            var sanitized = LogRedaction.SanitizeWebhookUrl(url);
+
+            Assert.DoesNotContain(team, sanitized);
+            Assert.DoesNotContain(bot, sanitized);
+            Assert.DoesNotContain(secret, sanitized);
+            Assert.StartsWith("https://hooks.slack.com/services/", sanitized);
+        }
+
+        [Fact]
+        public void SanitizeWebhookUrl_Pushover_DropsQueryString_KeepsHostAndPath()
+        {
+            var token = "app-token-abc123";
+            var user = "user-key-xyz789";
+            var url = $"https://api.pushover.net/1/messages.json?token={token}&user={user}";
+
+            var sanitized = LogRedaction.SanitizeWebhookUrl(url);
+
+            Assert.DoesNotContain(token, sanitized);
+            Assert.DoesNotContain(user, sanitized);
+            Assert.DoesNotContain("?", sanitized);
+            Assert.Equal("https://api.pushover.net/1/messages.json", sanitized);
+        }
+
+        [Fact]
+        public void SanitizeWebhookUrl_ControlCase_NonCredentialUrl_PathSurvivesIntact()
+        {
+            // No query string, no known-provider host, no credential-shaped path segments.
+            // A version that just blanks everything would fail this assertion, not just the ones above.
+            var url = "https://example.com/some/harmless/path";
+
+            var sanitized = LogRedaction.SanitizeWebhookUrl(url);
+
+            Assert.Equal("https://example.com/some/harmless/path", sanitized);
         }
     }
 }
