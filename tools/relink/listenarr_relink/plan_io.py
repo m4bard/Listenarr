@@ -185,8 +185,7 @@ def write_outputs(plan: dict[str, Any], out_dir: Path, orphans: list[str]) -> tu
         f"relinks {summary['relinks']} by confidence {summary['relinks_by_confidence']}; over the 64-byte "
         f"size placeholder {summary['relinks_over_placeholder_size']}",
         f"excluded file ids {summary['excluded_file_ids']}"
-        + (f" from {plan['exclude_file']['path']} sha256 {plan['exclude_file']['sha256']}" if plan["exclude_file"]
-           else ""),
+        + (f", list sha256 {plan['exclude_file']['sha256']}" if plan["exclude_file"] else ""),
         f"book updates {summary['book_updates']}",
         f"left out {summary['left_out']} by reason {summary['left_out_by_reason']}",
         f"flags {summary['flags']}",
