@@ -2,6 +2,7 @@ using Listenarr.Application.Search.Filters;
 using Listenarr.Application.Search.Strategies;
 using Listenarr.Infrastructure.DependencyInjection;
 using Listenarr.Infrastructure.DependencyInjection.Downloads;
+using Listenarr.Infrastructure.Downloads.Blocklist;
 using Listenarr.Infrastructure.Downloads.DirectDownload;
 using Listenarr.Infrastructure.HostedServices;
 using Listenarr.Tests.Common;
@@ -24,6 +25,7 @@ namespace Listenarr.Tests.Builders
         private string? _contentRootPath;
         private readonly List<ServiceDescriptor> _serviceDescriptors = new();
         private readonly List<Type> _serviceTypesToRemove = new();
+        private Action<DbContextOptionsBuilder>? _dbContextOptionsAction;
 
         public ServiceCollectionBuilder()
         {
@@ -107,6 +109,23 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        /// <summary>
+        /// Back the provider's DbContext with a migrated SQLite database on the
+        /// given open connection instead of EF InMemory. Use for regression
+        /// coverage that depends on real SQLite materialization semantics
+        /// (e.g. DateTimeKind round-trips), which InMemory cannot reproduce.
+        /// </summary>
+        public ServiceCollectionBuilder WithSqliteDatabase(
+            Microsoft.Data.Sqlite.SqliteConnection connection)
+        {
+            _dbContextOptionsAction = options => options.UseSqlite(
+                connection,
+                sqlite => sqlite.MigrationsAssembly(
+                    typeof(Listenarr.Infrastructure.Persistence.ListenArrDbContext)
+                        .Assembly.GetName().Name));
+            return this;
+        }
+
         public ServiceCollectionBuilder Without<TService>()
         {
             return Without(typeof(TService));
@@ -145,7 +164,8 @@ namespace Listenarr.Tests.Builders
             services.AddListenarrAdapters(configuration);
             services.AddListenarrHttpClients(configuration);
             services.AddListenarrInfrastructure(
-                options => options.UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()),
+                _dbContextOptionsAction
+                    ?? (options => options.UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())),
                 contentRootPath: _contentRootPath);
             var filesystemReadiness = new LibraryFilesystemReadiness();
             filesystemReadiness.MarkReady();
@@ -172,6 +192,9 @@ namespace Listenarr.Tests.Builders
 
             services.AddSingleton(startupConfigServiceMock.Object);
             services.AddSingleton(new Mock<IDownloadHistoryService>().Object);
+            // Real implementation, not a mock: the blocklist is only meaningful when the
+            // search path can actually read back what a failure wrote.
+            services.AddScoped<IBlocklistService, BlocklistService>();
             services.AddSingleton(new Mock<IDiscordBotService>().Object);
             services.AddSingleton<IFfmpegService, FfmpegServiceMock>();
             services.AddSingleton<IConfigurationService, ConfigurationService>();
@@ -198,7 +221,16 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<DownloadTypeResolver>();
             services.AddSingleton<DownloadClientSelector>();
             services.AddSingleton<DownloadCachedTorrentStore>();
-            services.AddSingleton<LibraryMetadataRescanWorkflow>();
+            // Scoped, matching ListenarrWorkflowRegistration. The rescan workflow captures a
+            // scoped IMetadataRefreshService and a scoped repository, so registering it as a
+            // singleton here gave the test container a captive dependency production does not
+            // have, and the shared DbContext that comes with one.
+            services.AddScoped<LibraryMetadataRescanWorkflow>();
+            services.AddScoped<LibraryMetadataRefreshWorkflow>();
+            // The refresh coordinator links every run to ApplicationStopping. The test container
+            // composes no host, so give it a lifetime that never stops; tests that need to
+            // observe shutdown register their own stub before building.
+            services.TryAddSingleton<Microsoft.Extensions.Hosting.IHostApplicationLifetime, TestApplicationLifetime>();
             services.AddSingleton<LibraryScanPathResolver>();
             services.AddSingleton<LibraryScanQueueWorkflow>();
             services.AddSingleton<LibraryAddWorkflow>();
@@ -303,6 +335,23 @@ namespace Listenarr.Tests.Builders
             {
                 services.Add(serviceDescriptor);
             }
+        }
+    }
+
+    /// <summary>
+    /// A host lifetime for the test container: the tokens never fire and StopApplication is a no-op,
+    /// because the test service collection composes no host to stop.
+    /// </summary>
+    internal sealed class TestApplicationLifetime : Microsoft.Extensions.Hosting.IHostApplicationLifetime
+    {
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+
+        public CancellationToken ApplicationStopping => CancellationToken.None;
+
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+
+        public void StopApplication()
+        {
         }
     }
 }
