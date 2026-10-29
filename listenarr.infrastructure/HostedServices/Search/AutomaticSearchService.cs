@@ -18,6 +18,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Listenarr.Application.Search.Scoring;
 
 namespace Listenarr.Infrastructure.HostedServices.Search
 {
@@ -36,7 +37,12 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 initialDelay: TimeSpan.FromMinutes(5),
                 intervalProvider: GetSweepInterval,
                 runCycle: processor.RunCycleAsync,
-                stoppingToken);
+                stoppingToken,
+                // Searching on demand is the whole point of a search button, and the
+                // family exposes the equivalent commands. It does grab releases, so it is
+                // the one entry here with a real side effect; the exclusion gate stops a
+                // second press from overlapping the first.
+                manualTrigger: ScheduledTaskManualTrigger.Allowed);
 
             logger.LogInformation("AutomaticSearchService stopped");
         }
@@ -94,6 +100,11 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             var downloadService = scope.ServiceProvider.GetRequiredService<IDownloadService>();
             var configurationService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
 
+            // Optional so a container assembled without the search services still runs a cycle.
+            // A null one means nothing can be reported as skipped, which is the pre-backoff
+            // behaviour: every processed book gets stamped.
+            var indexerStatusService = scope.ServiceProvider.GetService<IIndexerStatusService>();
+
             var timing = AutomaticSearchTiming.FromSettings(await configurationService.GetApplicationSettingsAsync());
 
             // A book is eligible once per cooldown, however often the sweep itself runs.
@@ -110,6 +121,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
 
             var processedCount = 0;
             var downloadsQueued = 0;
+            var degradedCount = 0;
 
             var isFirstBook = true;
             foreach (var audiobook in monitoredAudiobooks)
@@ -126,18 +138,36 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                     }
                     isFirstBook = false;
 
-                    var downloadsQueuedForBook = await ProcessAudiobookAsync(
-                        audiobook, searchService, qualityProfileService, downloadService, audiobookRepository, downloadRepository, fileRepository, stoppingToken);
+                    var outcome = await ProcessAudiobookAsync(
+                        audiobook, searchService, qualityProfileService, downloadService, audiobookRepository, downloadRepository, fileRepository, indexerStatusService, stoppingToken);
 
-                    downloadsQueued += downloadsQueuedForBook;
+                    downloadsQueued += outcome.DownloadsQueued;
                     processedCount++;
 
-                    // Update last search time
-                    audiobook.LastSearchTime = DateTime.UtcNow;
-                    await audiobookRepository.UpdateAsync(audiobook);
+                    if (outcome.IndexersSkipped)
+                    {
+                        // Do not stamp LastSearchTime. This book was searched against a reduced set
+                        // of indexers, so recording it as searched would exclude it for a whole
+                        // cooldown on the strength of an answer that was never complete. Leaving the
+                        // stamp alone keeps it eligible for the next cycle.
+                        //
+                        // The cost is known and accepted: while an indexer stays blocked, every book
+                        // that hits the skip stays eligible, so the next cycle's eligible set does
+                        // not shrink the way it normally would.
+                        degradedCount++;
+                        _logger.LogInformation(
+                            "Processed audiobook '{Title}' with one or more indexers in failure backoff - queued {QueuedCount} downloads, leaving it eligible for the next cycle",
+                            audiobook.Title, outcome.DownloadsQueued);
+                    }
+                    else
+                    {
+                        // Update last search time
+                        audiobook.LastSearchTime = DateTime.UtcNow;
+                        await audiobookRepository.UpdateAsync(audiobook);
 
-                    _logger.LogInformation("Processed audiobook '{Title}' - queued {QueuedCount} downloads",
-                        audiobook.Title, downloadsQueuedForBook);
+                        _logger.LogInformation("Processed audiobook '{Title}' - queued {QueuedCount} downloads",
+                            audiobook.Title, outcome.DownloadsQueued);
+                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -153,11 +183,25 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 }
             }
 
-            _logger.LogInformation("Automatic search cycle completed. Processed {ProcessedCount} audiobooks, queued {DownloadsQueued} total downloads",
-                processedCount, downloadsQueued);
+            _logger.LogInformation("Automatic search cycle completed. Processed {ProcessedCount} audiobooks, queued {DownloadsQueued} total downloads, {DegradedCount} searched with one or more indexers in failure backoff",
+                processedCount, downloadsQueued, degradedCount);
         }
 
-        private async Task<int> ProcessAudiobookAsync(
+        /// <summary>
+        /// What one book's pass produced, and whether the indexer set behind it was complete.
+        /// </summary>
+        /// <param name="DownloadsQueued">Downloads queued for this book.</param>
+        /// <param name="IndexersSkipped">
+        /// Whether a search actually ran and at least one indexer that would have been asked was in
+        /// failure backoff. False when no search ran at all, so a book skipped for an unrelated
+        /// reason still gets its normal stamp rather than being retried every cycle forever.
+        /// </param>
+        private sealed record AudiobookSearchOutcome(int DownloadsQueued, bool IndexersSkipped)
+        {
+            public static readonly AudiobookSearchOutcome NotSearched = new(0, false);
+        }
+
+        private async Task<AudiobookSearchOutcome> ProcessAudiobookAsync(
             Audiobook audiobook,
             ISearchService searchService,
             IQualityProfileService qualityProfileService,
@@ -165,12 +209,13 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             IAudiobookRepository audiobookRepository,
             IDownloadRepository downloadRepository,
             IAudiobookFileRepository fileRepository,
+            IIndexerStatusService? indexerStatusService,
             CancellationToken stoppingToken)
         {
             if (audiobook.QualityProfile == null)
             {
                 _logger.LogWarning("Audiobook '{Title}' has no quality profile assigned", audiobook.Title);
-                return 0;
+                return AudiobookSearchOutcome.NotSearched;
             }
 
             // Check if there's already an active download for this audiobook
@@ -187,7 +232,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             {
                 _logger.LogInformation("Audiobook '{Title}' already has an active download (ID: {DownloadId}, Status: {Status}), skipping automatic search",
                     audiobook.Title, activeDownload.Id, activeDownload.Status);
-                return 0;
+                return AudiobookSearchOutcome.NotSearched;
             }
 
             // Check existing quality and decide whether to search
@@ -199,15 +244,16 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             if (cutoffMet)
             {
                 _logger.LogInformation("Quality cutoff already met for audiobook '{Title}', skipping automatic search", audiobook.Title);
-                return 0;
+                return AudiobookSearchOutcome.NotSearched;
             }
 
             // Build search query
-            var searchQuery = _resultClassifier.BuildSearchQuery(audiobook);
-            _logger.LogInformation("Searching for audiobook '{Title}' with query: {Query}", audiobook.Title, searchQuery);
+            var searchPlan = _resultClassifier.BuildSearchPlan(audiobook);
+            var searchQuery = searchPlan.PrimaryQuery;
+            _logger.LogInformation("Searching for audiobook '{Title}' with query: {Query} ({Tiers} query forms available)", audiobook.Title, searchQuery, searchPlan.Forms.Count);
 
             // Search for results
-            var searchResults = await searchService.SearchAsync(searchQuery, isAutomaticSearch: true);
+            var searchResults = await searchService.SearchAsync(searchQuery, isAutomaticSearch: true, plan: searchPlan);
             _logger.LogInformation("Found {Count} raw search results for audiobook '{Title}'", searchResults.Count, audiobook.Title);
 
             // Author-free fallback: release names often omit the author, so a full title+author
@@ -228,6 +274,12 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                         audiobook.Title, fallbackResults.Count, searchResults.Count);
                 }
             }
+
+            // Asked after the search rather than before it, so an indexer that entered backoff
+            // during this book's own fan-out counts as well. That book's answer is just as
+            // incomplete as one where the indexer was already blocked when selection ran.
+            var indexersSkipped = indexerStatusService != null
+                && await indexerStatusService.AnyEnabledIndexerBlockedAsync(isAutomaticSearch: true, stoppingToken);
 
             // Broadcast detailed debug info about the raw search results to help diagnose automatic search failures
             try
@@ -257,11 +309,14 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             if (!searchResults.Any())
             {
                 _logger.LogInformation("No search results found for audiobook '{Title}'", audiobook.Title);
-                return 0;
+                return new AudiobookSearchOutcome(0, indexersSkipped);
             }
 
-            // Score results against quality profile
-            var scoredResults = await qualityProfileService.ScoreSearchResults(searchResults, audiobook.QualityProfile);
+            // Score results against quality profile. The bundle flag comes from the library
+            // record, not from the release: indexer results carry no series position at all,
+            // and an omnibus record is the one case where a bundle release is the right one.
+            var targetIsBundle = ReleaseShapeDetector.IsBundleSeriesNumber(audiobook.SeriesNumber);
+            var scoredResults = await qualityProfileService.ScoreSearchResults(searchResults, audiobook.QualityProfile, targetIsBundle);
 
             // Log all scored results for debugging
             _logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", scoredResults.Count, audiobook.Title);
@@ -290,7 +345,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             {
                 _logger.LogDebug(ex, "Failed to broadcast scored search results for audiobook {Id}", audiobook.Id);
             }
-            foreach (var scoredResult in scoredResults.OrderByDescending(s => s.TotalScore))
+            foreach (var scoredResult in scoredResults.OrderByDescending(s => s, QualityScoreComparer.Instance))
             {
                 var status = scoredResult.IsRejected ? "REJECTED" : (scoredResult.TotalScore > 0 ? "ACCEPTABLE" : "LOW SCORE");
                 _logger.LogInformation("  [{Status}] Score: {Score} | Title: {Title} | Source: {Source} | Size: {Size}MB | Seeders: {Seeders} | Quality: {Quality}",
@@ -303,15 +358,30 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 }
             }
 
-            var topResult = scoredResults
+            // Drop releases already blocked for this book before picking a winner.
+            //
+            // This is the path that actually re-grabs. The blocklist filter was wired into
+            // SearchAndDownloadAsync, which covers the manual search endpoint and the retry that
+            // follows a failure, but this service does not go through it: it scores results here and
+            // calls StartDownloadAsync directly. So a release could fail, be blocked, and be grabbed
+            // again by the next automatic pass a minute later, which is what a live install saw.
+            using var blocklistScope = _serviceScopeFactory.CreateScope();
+            var blocklistService = blocklistScope.ServiceProvider.GetRequiredService<IBlocklistService>();
+            var selectableResults = await BlockedReleaseFilter.ExcludeAsync(
+                blocklistService, audiobook.Id, scoredResults, _logger);
+
+            // Rank by TotalScore (quality/format/language/seeders/age); indexer priority only
+            // breaks an exact tie, so it can never make a worse release win. See
+            // QualityScoreComparer.
+            var topResult = selectableResults
                 .Where(s => !s.IsRejected) // Only non-rejected results
-                .OrderByDescending(s => s.TotalScore)
+                .OrderByDescending(s => s, QualityScoreComparer.Instance)
                 .FirstOrDefault(); // Pick only the top scoring result
 
             if (topResult == null)
             {
                 _logger.LogInformation("No acceptable search results found for audiobook '{Title}' after quality filtering", audiobook.Title);
-                return 0;
+                return new AudiobookSearchOutcome(0, indexersSkipped);
             }
 
             _logger.LogInformation("Found top result for audiobook '{Title}': {ResultTitle} (Score: {Score}, Quality: {Quality})",
@@ -325,7 +395,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 {
                     _logger.LogInformation("Top result quality '{ResultQuality}' is not better than existing quality '{ExistingQuality}' for audiobook '{Title}', skipping download",
                         topResult.SearchResult.Quality, bestExistingQuality, audiobook.Title);
-                    return 0;
+                    return new AudiobookSearchOutcome(0, indexersSkipped);
                 }
                 _logger.LogInformation("Top result quality '{ResultQuality}' is better than existing quality '{ExistingQuality}', proceeding with download",
                     topResult.SearchResult.Quality, bestExistingQuality);
@@ -349,10 +419,10 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 if (string.IsNullOrEmpty(downloadClientId))
                 {
                     _logger.LogWarning("No suitable download client found for result type: {Type}", isTorrent ? "torrent" : "NZB");
-                    return 0;
+                    return new AudiobookSearchOutcome(0, indexersSkipped);
                 }
 
-                await downloadService.StartDownloadAsync(topResult.SearchResult, downloadClientId, audiobook.Id);
+                await downloadService.StartDownloadAsync(topResult.SearchResult, downloadClientId, audiobook.Id, stoppingToken);
                 downloadsQueued++;
 
                 _logger.LogInformation("Queued download for audiobook '{Title}': {ResultTitle} (Score: {Score})",
@@ -364,7 +434,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                     audiobook.Title, topResult.SearchResult.Title);
             }
 
-            return downloadsQueued;
+            return new AudiobookSearchOutcome(downloadsQueued, indexersSkipped);
         }
 
     }
