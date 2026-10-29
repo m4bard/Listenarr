@@ -147,12 +147,12 @@ namespace Listenarr.Api.Features.Search
             try { _logger.LogInformation("[DBG] Advanced search request: Author='{Author}', Title='{Title}', Isbn='{Isbn}', Asin='{Asin}', Query='{Query}', Region='{Region}', Language='{Language}'", LogRedaction.SanitizeText(req.Author), LogRedaction.SanitizeText(req.Title), LogRedaction.SanitizeText(req.Isbn), LogRedaction.SanitizeText(req.Asin), LogRedaction.SanitizeText(req.Query), LogRedaction.SanitizeText(region), LogRedaction.SanitizeText(language)); }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                System.Diagnostics.Debug.WriteLine($"SearchController advanced-search info logging failed: {ex.Message}");
+                // Nothing is logged here: the call that failed is the logging call itself.
             }
             try { _logger.LogDebug("[DBG] Advanced params: Title='{Title}', Author='{Author}', Isbn='{Isbn}'", LogRedaction.SanitizeText(req.Title), LogRedaction.SanitizeText(req.Author), LogRedaction.SanitizeText(req.Isbn)); }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                System.Diagnostics.Debug.WriteLine($"SearchController advanced-search debug logging failed: {ex.Message}");
+                // Nothing is logged here: the call that failed is the logging call itself.
             }
         }
 
@@ -210,6 +210,14 @@ namespace Listenarr.Api.Features.Search
             try
             {
                 var audible = await _audibleService.GetBookMetadataAsync(req.Asin, region, true, language);
+                if (audible != null && string.IsNullOrWhiteSpace(audible.Title))
+                {
+                    // Audible answers an ASIN it doesn't sell in this market with an empty record: there is
+                    // no book to offer here, rather than an "Unknown Title" result that could be picked as a match
+                    _logger.LogInformation("No Audible record for ASIN {Asin} in region {Region}", req.Asin, region);
+                    return StructuredSearchWorkflowResult.Ok(new List<SearchResult>());
+                }
+
                 if (audible != null)
                 {
                     var metadata = _metadataConverters.ConvertAudibleToMetadata(audible, req.Asin, source: "Audible");
@@ -345,7 +353,7 @@ namespace Listenarr.Api.Features.Search
             try { _logger.LogInformation("Advanced search request composed parts={Parts} -> query='{Query}'", string.Join("|", queryParts), LogRedaction.SanitizeText(query)); }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                System.Diagnostics.Debug.WriteLine($"SearchController composed-query logging failed: {ex.Message}");
+                // Nothing is logged here: the call that failed is the logging call itself.
             }
 
             return query;

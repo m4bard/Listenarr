@@ -119,7 +119,7 @@ namespace Listenarr.Application.Search.Audible
             try { _logger.LogInformation("Entering AUTHOR_TITLE branch: author='{Author}', title='{Title}', isbn='{Isbn}'", author, title, isbn); }
             catch (Exception caughtEx) when (caughtEx is not OperationCanceledException && caughtEx is not OutOfMemoryException && caughtEx is not StackOverflowException)
             {
-                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                // Nothing is logged here: the call that failed is the logging call itself.
             }
 
             var aggregated = await _authorPageCollector.CollectAsync(
@@ -144,16 +144,14 @@ namespace Listenarr.Application.Search.Audible
             try { _logger.LogInformation("Audible author lookup returned {Count} aggregated results for author '{Author}'", deduplicated.Count, author); }
             catch (Exception caughtEx) when (caughtEx is not OperationCanceledException && caughtEx is not OutOfMemoryException && caughtEx is not StackOverflowException)
             {
-                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                // Nothing is logged here: the call that failed is the logging call itself.
             }
 
             var authorFiltered = ApplyStrictLanguageFilter(deduplicated, language);
 
             if (!string.IsNullOrEmpty(title))
             {
-                authorFiltered = authorFiltered.Where(b =>
-                    (!string.IsNullOrWhiteSpace(b.Title) && b.Title.IndexOf(title, StringComparison.OrdinalIgnoreCase) >= 0) ||
-                    (!string.IsNullOrWhiteSpace(b.Subtitle) && b.Subtitle.IndexOf(title, StringComparison.OrdinalIgnoreCase) >= 0));
+                authorFiltered = authorFiltered.Where(b => AudibleTitleMatcher.Matches(b, title));
             }
 
             var detailedMetaByAsin = new Dictionary<string, AudibleBookResponse>(StringComparer.OrdinalIgnoreCase);
@@ -165,7 +163,7 @@ namespace Listenarr.Application.Search.Audible
             try { _logger.LogInformation("[DBG] authorFiltered count after language/title/isbn filtering: {Count}", authorFiltered.Count()); }
             catch (Exception caughtEx) when (caughtEx is not OperationCanceledException && caughtEx is not OutOfMemoryException && caughtEx is not StackOverflowException)
             {
-                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                // Nothing is logged here: the call that failed is the logging call itself.
             }
 
             var converted = await AudibleSearchResultMapper.ConvertToSearchResultsAsync(
@@ -193,7 +191,7 @@ namespace Listenarr.Application.Search.Audible
             try { _logger.LogInformation("Scanning up to {Limit} author candidates for ISBN {Isbn}", scanCandidates.Count, isbn); }
             catch (Exception caughtEx) when (caughtEx is not OperationCanceledException && caughtEx is not OutOfMemoryException && caughtEx is not StackOverflowException)
             {
-                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                // Nothing is logged here: the call that failed is the logging call itself.
             }
 
             foreach (var candidate in scanCandidates.Where(c => !string.IsNullOrWhiteSpace(c.Asin)))
