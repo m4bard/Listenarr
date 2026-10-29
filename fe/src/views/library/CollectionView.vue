@@ -454,13 +454,16 @@
             </div>
 
             <div class="list-badges">
+              <!--
+                Not interactive, and deliberately not announced as though it were:
+                the badge reports status and its own text is what a screen reader
+                should read. The click swallow is real, though. Without it a click
+                on the badge reaches the row handler and opens the audiobook.
+              -->
               <div
                 class="status-badge"
                 :class="getAudiobookStatus(audiobook)"
-                role="button"
-                tabindex="0"
                 @click.stop="() => {}"
-                :aria-label="`Status for ${audiobook.title}`"
               >
                 {{ statusText(getAudiobookStatus(audiobook)) }}
               </div>
@@ -1023,7 +1026,10 @@ function matchesCurrentCollection(book: Audiobook): boolean {
 function mapLibraryItem(book: Audiobook): CollectionDisplayItem {
   // In a series collection a book may be matched via a non-primary membership, so show the
   // series name/number for THIS collection rather than the book's primary series.
-  const seriesContext = type.value === 'series' ? resolveSeriesForCollection(book) : null
+  // On a series page the membership matching this collection wins. Anywhere else, fall back to the
+  // book's own series, which is still membership-aware rather than the legacy column alone.
+  const seriesContext =
+    type.value === 'series' ? resolveSeriesForCollection(book) : resolveBookSeries(book)
   return {
     ...book,
     ...(seriesContext
@@ -1033,6 +1039,29 @@ function mapLibraryItem(book: Audiobook): CollectionDisplayItem {
     inLibrary: true,
     addMetadata: null,
   }
+}
+
+// The book's own series, preferring the membership table over the legacy single-series column.
+//
+// resolveSeriesForCollection answers a different question: which membership matches THIS
+// collection. That only works on a series page, where the collection name is a series name. On an
+// author page it can never match, so the author page fell back to `book.series`, which holds the
+// primary series only. A book whose membership in a non-primary series is the interesting one
+// therefore sorted under the wrong name, even though the memberships were already loaded on it.
+function resolveBookSeries(book: Audiobook): { seriesName: string; seriesNumber?: string } | null {
+  const memberships = book.seriesMemberships
+  if (memberships && memberships.length > 0) {
+    const ordered = [...memberships].sort((a, b) => {
+      if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1
+      return (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+    })
+    const chosen = ordered[0]
+    if (chosen?.seriesName) {
+      return { seriesName: chosen.seriesName, seriesNumber: chosen.seriesNumber }
+    }
+  }
+
+  return book.series ? { seriesName: book.series, seriesNumber: book.seriesNumber } : null
 }
 
 function resolveSeriesForCollection(
@@ -1134,6 +1163,36 @@ function findLibraryMatch(
   return undefined
 }
 
+/**
+ * Whether a book already in the library belongs on this collection page.
+ *
+ * The page states a language context in its header, from the same preference that filters the
+ * catalog suggestions below it. Library records were never filtered by anything, so a page could
+ * announce English and then list the German editions of the same series underneath.
+ *
+ * Two deliberate differences from the catalog rule, both of which exist to avoid hiding something
+ * the user has.
+ *
+ * A monitored book is always kept. Monitoring is an explicit statement that the user wants this
+ * record, and a language preference should not overrule it.
+ *
+ * A book whose language is unknown is kept. The catalog rule drops those, which is right when
+ * deciding what to suggest and wrong when deciding what to hide: a missing language field is not
+ * evidence that a book the user owns is unwanted.
+ */
+function shouldIncludeLibraryBook(
+  book: CollectionDisplayItem,
+  languageFilter: string | null | undefined,
+): boolean {
+  if (!languageFilter) return true
+  if (book.monitored) return true
+
+  const normalizedBookLanguage = normalizeSearchResultLanguage(book.language)
+  if (!normalizedBookLanguage) return true
+
+  return normalizedBookLanguage === languageFilter
+}
+
 function shouldIncludeRemoteCatalogBook(
   book: RemoteCatalogBook,
   languageFilter: string | null | undefined,
@@ -1226,8 +1285,14 @@ const audiobooks = computed<CollectionDisplayItem[]>(() => {
         if (matchedLibraryIds.has(libraryMatch.id)) {
           return []
         }
+        // Mark the row consumed before deciding, so a match the preference excludes is dropped
+        // outright rather than falling through and being offered again as a catalog suggestion.
         matchedLibraryIds.add(libraryMatch.id)
-        return [mapLibraryItem(libraryMatch)]
+        const libraryItem = mapLibraryItem(libraryMatch)
+        if (!shouldIncludeLibraryBook(libraryItem, languageFilter)) {
+          return []
+        }
+        return [libraryItem]
       }
 
       if (!shouldIncludeRemoteCatalogBook(book, languageFilter)) {
@@ -1246,6 +1311,7 @@ const audiobooks = computed<CollectionDisplayItem[]>(() => {
     const unmatchedLibraryItems = localItems
       .filter((book) => !matchedLibraryIds.has(book.id))
       .map(mapLibraryItem)
+      .filter((book) => shouldIncludeLibraryBook(book, languageFilter))
 
     mergedItems = [...catalogItems, ...unmatchedLibraryItems]
   } else {
@@ -3688,7 +3754,6 @@ defineExpose({
   font-weight: 500;
   color: #cfcfcf;
   margin-top: 0.5rem;
-  cursor: pointer;
   white-space: nowrap;
 }
 
@@ -4191,7 +4256,6 @@ defineExpose({
   font-weight: 500;
   color: #cfcfcf;
   margin-top: 0.5rem;
-  cursor: pointer;
   white-space: nowrap;
 }
 
