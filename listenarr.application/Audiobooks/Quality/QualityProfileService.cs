@@ -18,6 +18,8 @@
 
 using Microsoft.Extensions.Logging;
 
+using Listenarr.Domain.Common;
+
 namespace Listenarr.Application.Audiobooks.Quality
 {
     public class QualityProfileService : IQualityProfileService
@@ -190,16 +192,40 @@ namespace Listenarr.Application.Audiobooks.Quality
             }
         }
 
-        public async Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile)
+        public Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile, bool targetIsBundle = false) =>
+            ScoreSearchResult(searchResult, profile, resolvedIndexers: null, targetIsBundle);
+
+        private async Task<QualityScore> ScoreSearchResult(
+            SearchResult searchResult,
+            QualityProfile profile,
+            IReadOnlyDictionary<int, Indexer>? resolvedIndexers,
+            bool targetIsBundle = false)
         {
-            var scorer = new SearchResultScorer(_indexerRepository, _logger);
-            var score = await scorer.Score(searchResult, profile);
+            var scorer = new SearchResultScorer(_indexerRepository, _logger, resolvedIndexers);
+            var score = await scorer.Score(searchResult, profile, targetIsBundle);
 
             // Also calculate the Prowlarr-style composite (Smart) score so the UI
             // can display the same composite ranking details used for Smart sorting.
             try
             {
-                var composite = CompositeScorer.CalculateProwlarrStyleScore(searchResult, null, _logger);
+                Indexer? indexer = null;
+                if (searchResult.IndexerId.HasValue)
+                {
+                    // Reuse the batch's pre-resolved indexer rather than a second per-result
+                    // query: the scorer above already paid for this lookup once, and the same
+                    // concurrent-DbContext hazard that motivated resolvedIndexers there applies
+                    // here too.
+                    if (resolvedIndexers != null)
+                    {
+                        resolvedIndexers.TryGetValue(searchResult.IndexerId.Value, out indexer);
+                    }
+                    else if (_indexerRepository != null)
+                    {
+                        indexer = await _indexerRepository.GetByIdAsync(searchResult.IndexerId.Value);
+                    }
+                }
+
+                var composite = CompositeScorer.CalculateProwlarrStyleScore(searchResult, indexer, _logger);
                 score.SmartScore = composite.Total;
                 score.SmartScoreBreakdown = composite.Breakdown.ToDictionary(kv => kv.Key, kv => (int)Math.Round(kv.Value));
             }
@@ -219,99 +245,64 @@ namespace Listenarr.Application.Audiobooks.Quality
 
 
 
-        // Manual search scoring logic for quality
-        private int GetQualityScore(string? quality)
+        public async Task<List<QualityScore>> ScoreSearchResults(List<SearchResult> searchResults, QualityProfile profile, bool targetIsBundle = false)
         {
-            if (string.IsNullOrEmpty(quality))
-                return 0;
+            // Resolve every indexer this batch refers to before fanning out, not inside it.
+            // Scoring runs in parallel and the scorer reads indexer retention per result, so a
+            // per-result lookup meant N concurrent queries against one scoped DbContext. EF
+            // rejects the overlap, the scorer catches it and logs at Debug, and the result keeps
+            // a retention of 0 with Usenet detection skipped. The scores come out quietly wrong
+            // rather than the request failing.
+            var resolvedIndexers = await ResolveIndexersAsync(searchResults);
+            var scores = await Task.WhenAll(
+                searchResults.Select(result => ScoreSearchResult(result, profile, resolvedIndexers, targetIsBundle)));
 
-            var lowerQuality = quality.ToLower();
-
-            // Highest quality
-            if (lowerQuality.Contains("flac"))
-                return 100;
-
-            // Audible format (AAX) - high quality
-            if (lowerQuality.Contains("aax"))
-                return 95;
-
-            // Container formats
-            if (lowerQuality.Contains("m4b"))
-                return 90;
-
-            // Modern efficient codecs
-            if (lowerQuality.Contains("opus"))
-                return 85;
-
-            // VBR quality presets (LAME VBR presets like V0/V1/V2)
-            if (ContainsVbrPreset(lowerQuality, "v0"))
-                return 82;
-            if (ContainsVbrPreset(lowerQuality, "v1"))
-                return 76;
-            if (ContainsVbrPreset(lowerQuality, "v2"))
-                return 70;
-
-
-            // AAC / M4A (check before numeric bitrates to prefer codec score for e.g. "AAC 256")
-            if (lowerQuality.Contains("aac") || lowerQuality.Contains("m4a"))
-                return 78;
-
-            // Explicit numeric bitrates
-            if (lowerQuality.Contains("320"))
-                return 80;
-            if (lowerQuality.Contains("256"))
-                return 74;
-            if (lowerQuality.Contains("192"))
-                return 60;
-
-            // VBR / CBR generic tokens (treat as mid-range if no numeric bitrate provided)
-            if (lowerQuality.Contains("vbr") || lowerQuality.Contains("cbr"))
-            {
-                // If there's an explicit numeric bitrate elsewhere, that will have matched above.
-                return 65;
-            }
-
-            // Generic MP3 mention without explicit bitrate -> mid-range
-            if (lowerQuality.Contains("mp3") && !ContainsAnyBitrate(lowerQuality, "64", "128", "192", "256", "320"))
-                return 65;
-
-            if (lowerQuality.Contains("128"))
-                return 50;
-            if (lowerQuality.Contains("64"))
-                return 40;
-
-            return 0;
-        }
-
-
-
-        public async Task<List<QualityScore>> ScoreSearchResults(List<SearchResult> searchResults, QualityProfile profile)
-        {
-            var scores = await Task.WhenAll(searchResults.Select(result => ScoreSearchResult(result, profile)));
-
-            // Ensure rejected results are ordered last regardless of numeric TotalScore
+            // Rejected results last, then the operator's own quality ordering, then the score,
+            // then ScoredReleaseTiebreaker so the ranking does not depend on the order the
+            // indexer returned results in. Sorting on the score alone ranked by the hardcoded
+            // ladder in QualityScoreLadder, which ties every AAC rung and puts MP3 320kbps above
+            // all of them, inverting the ordering the shipped default profile itself sets.
             return scores
-                .OrderBy(s => s.IsRejected) // false (not rejected) first
-                .ThenByDescending(s => s.TotalScore)
+                .InPreferenceOrder(profile)
+                .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow())
                 .ToList();
         }
 
-        /// <summary>
-        /// Checks if a quality string contains VBR preset indicators (v0, v1, v2).
-        /// </summary>
-        private static bool ContainsVbrPreset(string qualityLower, string preset)
+        private async Task<IReadOnlyDictionary<int, Indexer>> ResolveIndexersAsync(
+            List<SearchResult> searchResults)
         {
-            return qualityLower.Contains(preset) ||
-                   qualityLower.Contains($"-{preset}") ||
-                   qualityLower.Contains($" {preset}");
-        }
+            var resolved = new Dictionary<int, Indexer>();
+            if (_indexerRepository == null)
+            {
+                return resolved;
+            }
 
-        /// <summary>
-        /// Checks if a quality string contains any of the specified bitrate indicators.
-        /// </summary>
-        private static bool ContainsAnyBitrate(string qualityLower, params string[] bitrates)
-        {
-            return bitrates.Any(b => qualityLower.Contains(b));
+            // Sequential and de-duplicated: a batch usually refers to a handful of indexers even
+            // when it carries hundreds of results, so this is fewer queries than before as well as
+            // non-overlapping ones.
+            foreach (var indexerId in searchResults
+                .Where(result => result.IndexerId.HasValue)
+                .Select(result => result.IndexerId!.Value)
+                .Distinct())
+            {
+                try
+                {
+                    var indexer = await _indexerRepository.GetByIdAsync(indexerId);
+                    if (indexer != null)
+                    {
+                        resolved[indexerId] = indexer;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Failed to resolve indexer {IndexerId} while scoring a search batch; retention and Usenet detection will be skipped for its results",
+                        indexerId);
+                }
+            }
+
+            return resolved;
         }
 
         /// <summary>
