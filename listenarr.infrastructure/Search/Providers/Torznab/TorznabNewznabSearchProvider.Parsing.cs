@@ -10,7 +10,7 @@ namespace Listenarr.Infrastructure.Search.Providers.Torznab;
 
 public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
 {
-    private async Task<List<IndexerSearchResult>> ParseTorznabResponseAsync(string xmlContent, Indexer indexer)
+    private async Task<IndexerQueryObservation> ParseTorznabResponseAsync(string xmlContent, Indexer indexer, string query)
     {
         var results = new List<IndexerSearchResult>();
 
@@ -39,7 +39,7 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
             if (channel == null)
             {
                 _logger.LogWarning("Invalid Torznab response: no channel element");
-                return results;
+                return IndexerQueryObservation.Unreadable(IndexerQueryReason.MissingChannel, query);
             }
 
             var items = channel.Elements("item");
@@ -72,6 +72,11 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
                     var torznabNs = System.Xml.Linq.XNamespace.Get("http://torznab.com/schemas/2015/feed");
                     var newznabNs = System.Xml.Linq.XNamespace.Get("http://www.newznab.com/DTD/2010/feeds/attributes/");
                     var attributes = item.Elements(torznabNs + "attr").Concat(item.Elements(newznabNs + "attr")).ToList();
+
+                    result.IndexerFlags = TorznabIndexerFlagParser.Parse(attributes.Select(attr =>
+                        new KeyValuePair<string, string>(
+                            attr.Attribute("name")?.Value ?? string.Empty,
+                            attr.Attribute("value")?.Value ?? string.Empty)));
 
                     foreach (var attr in attributes)
                     {
@@ -147,7 +152,7 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                 }
                                 catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
                                 {
-                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    _logger.LogDebug(caughtEx_1, "Could not parse a language from Torznab attribute {Attribute}; leaving the language unset", name);
                                 }
                                 break;
                             case "language":
@@ -166,7 +171,7 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                     }
                                     catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
                                     {
-                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                        _logger.LogDebug(caughtEx_2, "Could not parse a language from the Torznab 'language' attribute; leaving the language unset");
                                     }
                                 }
                                 break;
@@ -189,7 +194,7 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                     }
                                     catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
                                     {
-                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                        _logger.LogDebug(caughtEx_3, "Could not convert the Torznab usenetdate value {Value}; leaving the published date unset", value);
                                     }
                                 }
                                 else if (DateTime.TryParse(value, out var udt))
@@ -376,8 +381,8 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
                             if (!string.IsNullOrEmpty(lang)) result.Language = lang;
                         }
                         catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException)
-                        { /* Non-critical */
-                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                        {
+                            _logger.LogDebug(caughtEx_4, "Could not detect a language from the Torznab title and description; leaving the language unset");
                         }
                     }
 
@@ -447,12 +452,23 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
                     _logger.LogError("XML context around error:\n{Context}", context);
                 }
             }
+
+            return IndexerQueryObservation.Unreadable(
+                IndexerQueryReason.MalformedXml,
+                query,
+                IndexerQueryFailureClassifier.Describe(xmlEx));
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error parsing Torznab XML response from {IndexerName}", indexer.Name);
+            return IndexerQueryObservation.Unreadable(
+                IndexerQueryReason.MalformedXml,
+                query,
+                IndexerQueryFailureClassifier.Describe(ex));
         }
 
-        return results;
+        // A well-formed channel with no items is the indexer answering that it has nothing, which is
+        // a different thing from any of the failures above.
+        return IndexerQueryObservation.FromResults(results, query);
     }
 }
