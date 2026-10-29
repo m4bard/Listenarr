@@ -201,8 +201,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -211,7 +211,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         Status = "downloading",
                         AddedAt = DateTime.UtcNow
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -257,7 +257,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>())).ReturnsAsync(new List<QueueItem>());
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>())).ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>()));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -312,8 +312,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>());
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>()));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -388,8 +388,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -398,7 +398,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         Status = "paused",
                         AddedAt = DateTime.UtcNow
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -462,7 +462,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("client unavailable"));
 
             var metricsMock = new Mock<IAppMetricsService>();
@@ -524,8 +524,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>());
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>()));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -589,8 +589,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.SetupSequence(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.SetupSequence(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -599,9 +599,9 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         Status = "downloading",
                         AddedAt = DateTime.UtcNow
                     }
-                })
+                }))
                 .Returns(Task.Delay(TimeSpan.FromSeconds(5))
-                    .ContinueWith(_ => new List<QueueItem>(), TaskScheduler.Default));
+                    .ContinueWith(_ => DownloadClientQueueSnapshot.Complete(new List<QueueItem>()), TaskScheduler.Default));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -661,9 +661,9 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
                 .Returns(Task.Delay(TimeSpan.FromSeconds(5))
-                    .ContinueWith(_ => new List<QueueItem>(), TaskScheduler.Default));
+                    .ContinueWith(_ => DownloadClientQueueSnapshot.Complete(new List<QueueItem>()), TaskScheduler.Default));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -723,8 +723,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(enabledClient, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>());
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(enabledClient, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>()));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -737,8 +737,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
 
             await service.GetQueueAsync();
 
-            gatewayMock.Verify(g => g.GetQueueAsync(enabledClient, It.IsAny<CancellationToken>()), Times.Once);
-            gatewayMock.Verify(g => g.GetQueueAsync(disabledClient, It.IsAny<CancellationToken>()), Times.Never);
+            gatewayMock.Verify(g => g.GetQueueSnapshotAsync(enabledClient, It.IsAny<CancellationToken>()), Times.Once);
+            gatewayMock.Verify(g => g.GetQueueSnapshotAsync(disabledClient, It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
@@ -780,8 +780,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -790,7 +790,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         Status = "completed",
                         AddedAt = DateTime.UtcNow
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -849,8 +849,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -863,7 +863,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         DownloadClientType = "qbittorrent",
                         AddedAt = DateTime.UtcNow.AddHours(-2)
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -922,8 +922,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -936,7 +936,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         DownloadClientType = "qbittorrent",
                         AddedAt = DateTime.UtcNow.AddHours(-2)
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -1075,8 +1075,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -1088,7 +1088,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         DownloadClientType = "transmission",
                         AddedAt = DateTime.UtcNow
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -1130,8 +1130,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -1143,7 +1143,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         DownloadClientType = "qbittorrent",
                         AddedAt = DateTime.UtcNow
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -1201,14 +1201,92 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
                         Id = "HASH1",
                         Title = "Tracked Transmission Book",
                         Status = "downloading",
+                        DownloadClient = "Transmission",
+                        DownloadClientId = "tr-1",
+                        DownloadClientType = "transmission",
+                        AddedAt = DateTime.UtcNow
+                    }
+                }));
+
+            var metricsMock = new Mock<IAppMetricsService>();
+
+            var service = CreateService(
+                configMock.Object,
+                downloadRepoMock.Object,
+                processingJobRepoMock.Object,
+                gatewayMock.Object,
+                metricsMock.Object);
+
+            var result = await service.GetQueueAsync();
+
+            Assert.Single(result);
+            Assert.Equal("tracked-transmission", result[0].Id);
+            Assert.Equal("Tracked Transmission Book", result[0].Title);
+        }
+
+        [Fact]
+        [Trait("Scenario", "HideUntrackedExternalActivity")]
+        public async Task GetQueueAsync_MatchedTransmissionItem_OverlaysImportBlockedStatus_OverClientReportedCompleted()
+        {
+            // A seeding torrent reports "completed" for as long as it seeds. If the matched Listenarr
+            // download has since been blocked on import, the client's view must not be allowed to win:
+            // that is exactly the bug behind Activity showing a green COMPLETED badge with no Retry
+            // control for a download that is really ImportBlocked.
+            var client = new DownloadClientConfiguration
+            {
+                Id = "tr-1",
+                Name = "Transmission",
+                Type = "transmission",
+                IsEnabled = true
+            };
+
+            var configMock = new Mock<IConfigurationService>();
+            configMock.Setup(c => c.GetDownloadClientConfigurationsAsync())
+                .ReturnsAsync(new List<DownloadClientConfiguration> { client });
+            configMock.Setup(c => c.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings { ShowCompletedExternalDownloads = false });
+
+            var trackedDownload = new Download
+            {
+                Id = "tracked-blocked-transmission",
+                DownloadClientId = "tr-1",
+                Title = "Tracked Blocked Book",
+                Status = DownloadStatus.ImportBlocked,
+                ErrorMessage = "Import blocked: destination already contains a newer file",
+                StartedAt = DateTime.UtcNow.AddHours(-2),
+                Metadata = new Dictionary<string, object>
+                {
+                    ["TorrentHash"] = "HASH-BLOCKED"
+                }
+            };
+
+            var downloadRepoMock = new Mock<IDownloadRepository>();
+            SetupQueueRepository(downloadRepoMock, new List<Download> { trackedDownload });
+            downloadRepoMock
+                .Setup(r => r.UpdateMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object?>()))
+                .Returns(Task.CompletedTask);
+
+            var processingJobRepoMock = new Mock<IDownloadProcessingJobRepository>();
+            processingJobRepoMock.Setup(r => r.GetPendingDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
+            processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
+
+            var gatewayMock = new Mock<IDownloadClientGateway>();
+            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<QueueItem>
+                {
+                    new QueueItem
+                    {
+                        Id = "HASH-BLOCKED",
+                        Title = "Tracked Blocked Book",
+                        Status = "completed",
                         DownloadClient = "Transmission",
                         DownloadClientId = "tr-1",
                         DownloadClientType = "transmission",
@@ -1228,8 +1306,9 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             var result = await service.GetQueueAsync();
 
             Assert.Single(result);
-            Assert.Equal("tracked-transmission", result[0].Id);
-            Assert.Equal("Tracked Transmission Book", result[0].Title);
+            Assert.Equal("tracked-blocked-transmission", result[0].Id);
+            Assert.Equal("importblocked", result[0].Status);
+            Assert.Equal("Import blocked: destination already contains a newer file", result[0].ErrorMessage);
         }
 
         [Fact]
@@ -1268,8 +1347,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -1281,7 +1360,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         DownloadClientType = "transmission",
                         AddedAt = DateTime.UtcNow
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -1335,8 +1414,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -1348,7 +1427,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         DownloadClientType = "transmission",
                         AddedAt = DateTime.UtcNow
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -1413,8 +1492,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -1426,7 +1505,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         DownloadClientType = "transmission",
                         AddedAt = DateTime.UtcNow
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -1486,8 +1565,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -1499,7 +1578,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         DownloadClientType = "transmission",
                         AddedAt = DateTime.UtcNow
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -1560,8 +1639,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -1570,7 +1649,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         Status = "downloading",
                         AddedAt = DateTime.UtcNow
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -1636,8 +1715,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -1646,7 +1725,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         Status = "downloading",
                         AddedAt = DateTime.UtcNow
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
@@ -1718,8 +1797,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
-            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<QueueItem>
+            gatewayMock.Setup(g => g.GetQueueSnapshotAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(DownloadClientQueueSnapshot.Complete(new List<QueueItem>
                 {
                     new QueueItem
                     {
@@ -1735,7 +1814,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
                         Status = "downloading",
                         AddedAt = DateTime.UtcNow
                     }
-                });
+                }));
 
             var metricsMock = new Mock<IAppMetricsService>();
 
