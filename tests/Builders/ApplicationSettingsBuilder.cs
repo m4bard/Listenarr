@@ -6,6 +6,37 @@ namespace Listenarr.Tests.Builders
         private readonly ApplicationSettings _applicationSettings = new();
         private List<string> _importBlacklistExtensions = [];
 
+        /// <summary>
+        /// Finalize a download in the same pass the client first reports it complete.
+        ///
+        /// The production default is 10 seconds. A test that drives a download to completion and
+        /// asserts on the result in the same cycle depends on there being no wait, so it says so
+        /// rather than inheriting whatever the default happens to be.
+        /// </summary>
+        public ApplicationSettingsBuilder WithoutCompletionStabilityWindow()
+        {
+            _applicationSettings.DownloadCompletionStabilitySeconds = 0;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithCompletionStabilitySeconds(int value)
+        {
+            _applicationSettings.DownloadCompletionStabilitySeconds = value;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithMissingSourceMaxRetries(int value)
+        {
+            _applicationSettings.MissingSourceMaxRetries = value;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithMissingSourceRetryInitialDelaySeconds(int value)
+        {
+            _applicationSettings.MissingSourceRetryInitialDelaySeconds = value;
+            return this;
+        }
+
         public ApplicationSettingsBuilder WithMoveFileOnCompleted()
         {
             _applicationSettings.CompletedFileAction = FileAction.Move;
@@ -99,6 +130,42 @@ namespace Listenarr.Tests.Builders
         public ApplicationSettingsBuilder WithDefaultSearchRegion(string value)
         {
             _applicationSettings.DefaultSearchRegion = value;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithFailedDownloadHandling()
+        {
+            _applicationSettings.FailedDownloadHandlingEnabled = true;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithoutFailedDownloadHandling()
+        {
+            _applicationSettings.FailedDownloadHandlingEnabled = false;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithoutAmazonSearch()
+        {
+            _applicationSettings.EnableAmazonSearch = false;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithoutAudibleSearch()
+        {
+            _applicationSettings.EnableAudibleSearch = false;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithNotificationsEnabled()
+        {
+            _applicationSettings.EnableNotifications = true;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithoutNotificationsEnabled()
+        {
+            _applicationSettings.EnableNotifications = false;
             return this;
         }
 
