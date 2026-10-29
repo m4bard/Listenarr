@@ -371,6 +371,18 @@
               <span>Wanted</span>
               <Pill variant="count" v-if="wantedCount > 0">{{ wantedCount }}</Pill>
             </RouterLink>
+            <RouterLink
+              to="/history"
+              class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/history' }"
+              @mouseenter="preload('history')"
+              @focus="preload('history')"
+              @touchstart.passive="preload('history')"
+              @click="closeMobileMenu"
+            >
+              <PhClockCounterClockwise />
+              <span>History</span>
+            </RouterLink>
           </div>
 
           <div class="nav-section">
@@ -470,7 +482,15 @@
             >
               <PhMonitor />
               <span>System</span>
-              <Pill variant="error" v-if="systemIssues > 0">{{ systemIssues }}</Pill>
+              <SystemNavHealthBadge
+                :enabled="
+                  isSystemHealthBadgeEnabled({
+                    startupConfigLoaded,
+                    authEnabled,
+                    authenticated: auth.user.authenticated,
+                  })
+                "
+              />
             </RouterLink>
           </div>
         </nav>
@@ -555,6 +575,7 @@ import {
   PhActivity,
   PhCalendar,
   PhHeart,
+  PhClockCounterClockwise,
   PhGear,
   PhMonitor,
   PhFileMinus,
@@ -587,6 +608,8 @@ import { getPlaceholderUrl } from '@/utils/placeholder'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import { logSessionState, clearAllAuthData } from '@/utils/sessionDebug'
 import { signalRService } from '@/services/signalr'
+import SystemNavHealthBadge from '@/components/system/SystemNavHealthBadge.vue'
+import { isSystemHealthBadgeEnabled } from '@/utils/systemHealthBadge'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 import type { QueueItem } from '@/types'
 import { ref as vueRef, ref as vueRef2, reactive } from 'vue'
@@ -821,7 +844,6 @@ const queueItems = ref<QueueItem[]>([])
 const wantedCount = computed(
   () => libraryStore.audiobooks.filter((book) => book.wanted === true).length,
 )
-const systemIssues = ref(0)
 
 // Activity count: Optimized with memoized intermediate computations
 // Breaks down complex logic into cacheable steps for 3-5x performance improvement
@@ -943,9 +965,11 @@ const scanNotifications = computed<HistoryNotification[]>(() =>
             ? `Scanning ${subject}`
             : normalizedStatus === 'completed'
               ? `Scan complete: ${subject}`
-              : normalizedStatus === 'superseded'
-                ? `Scan stopped: ${subject}`
-                : `Scan failed: ${subject}`
+              : normalizedStatus === 'completednofilesaccepted'
+                ? `Scan found no usable files: ${subject}`
+                : normalizedStatus === 'superseded'
+                  ? `Scan stopped: ${subject}`
+                  : `Scan failed: ${subject}`
       const message =
         normalizedStatus === 'queued'
           ? 'Waiting to scan folder'
@@ -955,7 +979,9 @@ const scanNotifications = computed<HistoryNotification[]>(() =>
               ? job.found != null
                 ? `${job.found} file${job.found === 1 ? '' : 's'} found${job.created != null ? ` · ${job.created} added` : ''}`
                 : 'Folder scan completed'
-              : job.error || 'The folder scan did not complete'
+              : normalizedStatus === 'completednofilesaccepted'
+                ? job.error || 'Audio files were found but none could be matched to this audiobook'
+                : job.error || 'The folder scan did not complete'
 
       return {
         id: `scan-${job.jobId}`,
@@ -1189,10 +1215,6 @@ const syncLibrarySnapshot = async () => {
 
 // --- Header search implementation ---
 const router = useRouter()
-// Clear the optimistic pending nav state once navigation fully resolves
-router.afterEach(() => {
-  pendingNavPath.value = null
-})
 const searchQuery = vueRef('')
 const suggestions = vueRef<
   Array<{ id: number; title: string; author?: string; imageUrl?: string }>
@@ -1269,6 +1291,28 @@ const onSearchInput = async () => {
     }
   }, 250)
 }
+
+// The results panel renders on `searching || suggestions.length || searchQuery.length`,
+// none of which a route change used to touch, so an abandoned search stayed painted
+// over whatever page the operator navigated to. Cancelling the debounce matters as
+// much as clearing the state: without it a search that was still pending when the
+// route changed lands afterwards and repopulates the panel on the new page.
+const resetNavSearch = () => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer)
+    searchDebounceTimer = undefined
+  }
+  searchQuery.value = ''
+  suggestions.value = []
+  searching.value = false
+  searchOpen.value = false
+}
+
+router.afterEach(() => {
+  // Clear the optimistic pending nav state once navigation fully resolves
+  pendingNavPath.value = null
+  resetNavSearch()
+})
 
 const selectSuggestion = (s: { id: number; title: string; author?: string }) => {
   // Navigate to audiobook detail if local (id > 0), else open search view
