@@ -30,7 +30,7 @@ public class SqliteMigrationSchemaTests : BaseTests
     // asserted apart from it. Two branches that each add a migration would otherwise rewrite
     // the same two lines of this file and conflict on merge in either order.
     private const string EmbedCoverArtSettingMigrationId =
-        "20260828190320_AddEmbedCoverArtInAudioFilesSetting";
+        "20261029020330_AddEmbedCoverArtInAudioFilesSetting";
 
     private const string AuthorIdentityRepairMigrationId =
         "20260921202317_AddAuthorIdentityRepair";
@@ -72,7 +72,7 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string CustomScriptNotificationsMigrationId =
         "20260916112317_AddCustomScriptNotifications";
     private const string QualityProfileUpgradeAllowedMigrationId =
-        "20260920025621_AddQualityProfileUpgradeAllowed";
+        "20261029020317_AddQualityProfileUpgradeAllowed";
     private const string BackupRetentionDaysMigrationId =
         "20260922212752_AddBackupRetentionDaysToApplicationSettings";
     private const string DownloadClientPriorityMigrationId =
@@ -560,7 +560,6 @@ public class SqliteMigrationSchemaTests : BaseTests
                 PreferredReleaseShapeMigrationId,
                 HistoryReleaseMetadataMigrationId,
                 CustomScriptNotificationsMigrationId,
-                QualityProfileUpgradeAllowedMigrationId,
                 BackupRetentionDaysMigrationId,
                 DownloadClientPriorityMigrationId,
                 FreeSpaceImportSettingsMigrationId,
@@ -573,6 +572,7 @@ public class SqliteMigrationSchemaTests : BaseTests
                 OperationEvidencePublicationsMigrationId,
                 RejectClearlyMusicReleasesMigrationId,
                 AutomaticSearchTimingMigrationId,
+                QualityProfileUpgradeAllowedMigrationId,
                 ReleaseBlocklistMigrationId
             ],
             postCanary);

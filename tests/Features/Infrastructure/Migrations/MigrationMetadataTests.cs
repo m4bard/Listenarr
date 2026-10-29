@@ -41,7 +41,7 @@ public class MigrationMetadataTests : BaseTests
         AssertMigrationId<AddQualityProfileUpgradeAllowed>(
             ListenarrDatabaseMigrationPreflight.QualityProfileUpgradeAllowedMigrationId);
         Assert.Equal(
-            "20260920025621_AddQualityProfileUpgradeAllowed",
+            "20261029020317_AddQualityProfileUpgradeAllowed",
             ListenarrDatabaseMigrationPreflight.QualityProfileUpgradeAllowedMigrationId);
     }
 

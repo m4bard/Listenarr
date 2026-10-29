@@ -9,7 +9,7 @@ internal static class ListenarrDatabaseMigrationPreflight
     internal const string RootFoldersMigrationId =
         "20260101172733_AddRootFolders";
     internal const string QualityProfileUpgradeAllowedMigrationId =
-        "20260920025621_AddQualityProfileUpgradeAllowed";
+        "20261029020317_AddQualityProfileUpgradeAllowed";
     internal const string HousekeepingRetentionMigrationId =
         "20260922220833_AddHousekeepingRetention";
 
