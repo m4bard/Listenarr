@@ -28,6 +28,23 @@ public class MigrationMetadataTests : BaseTests
             "20260825021432_AddWeakStorageVerifiedCleanup");
     }
 
+    /// <summary>
+    /// The startup backfill only runs when it finds this exact id in the applied set, so a rename
+    /// that missed its constant would leave the repair silently never running and every profile
+    /// that recorded upgrades-off as a blank cutoff would come out of the upgrade upgrading again.
+    /// Asserted against the constant itself rather than a fourth copy of the string, which is what
+    /// makes this a guard rather than a restatement.
+    /// </summary>
+    [Fact]
+    public void AddQualityProfileUpgradeAllowedMigration_IsDiscoverableByEf_AtTheIdTheBackfillGatesOn()
+    {
+        AssertMigrationId<AddQualityProfileUpgradeAllowed>(
+            ListenarrDatabaseMigrationPreflight.QualityProfileUpgradeAllowedMigrationId);
+        Assert.Equal(
+            "20260920025621_AddQualityProfileUpgradeAllowed",
+            ListenarrDatabaseMigrationPreflight.QualityProfileUpgradeAllowedMigrationId);
+    }
+
     [Fact]
     public void AddOperationEvidencePublications_IsDiscoverableAndConsolidated()
     {
@@ -278,6 +295,49 @@ public class MigrationMetadataTests : BaseTests
         Assert.NotNull(applicationSettings.FindProperty("AutomaticSearchIntervalHours"));
         Assert.NotNull(applicationSettings.FindProperty("AutomaticSearchCooldownHours"));
         Assert.NotNull(applicationSettings.FindProperty("AutomaticSearchBookDelaySeconds"));
+    }
+
+    [Fact]
+    public void AddMetadataRefreshSettings_IsDiscoverableByEf()
+    {
+        AssertMigrationId<AddMetadataRefreshSettings>(
+            "20260910120500_AddMetadataRefreshSettings");
+    }
+
+    [Fact]
+    public void AddAudiobookLastMetadataRefreshAt_IsDiscoverableByEf()
+    {
+        AssertMigrationId<AddAudiobookLastMetadataRefreshAt>(
+            "20260910120000_AddAudiobookLastMetadataRefreshAt");
+    }
+
+    [Fact]
+    public void AddAudiobookLastMetadataRefreshAtIndex_IsDiscoverableByEf()
+    {
+        AssertMigrationId<AddAudiobookLastMetadataRefreshAtIndex>(
+            "20260910121000_AddAudiobookLastMetadataRefreshAtIndex");
+    }
+
+    [Fact]
+    public void DropProcessExecutionLogsMigration_IsDiscoverableAndDropsOnlyThatTable()
+    {
+        AssertMigrationId<DropProcessExecutionLogs>(
+            "20260922225847_DropProcessExecutionLogs");
+
+        var migration = new DropProcessExecutionLogs();
+        var upBuilder = BuildOperations(migration, "Up");
+        var downBuilder = BuildOperations(migration, "Down");
+
+        var drop = Assert.Single(upBuilder.Operations.OfType<DropTableOperation>());
+        Assert.Equal("ProcessExecutionLogs", drop.Name);
+        Assert.Single(upBuilder.Operations);
+
+        var create = Assert.Single(downBuilder.Operations.OfType<CreateTableOperation>());
+        Assert.Equal("ProcessExecutionLogs", create.Name);
+        Assert.Single(downBuilder.Operations);
+
+        Assert.Null(migration.TargetModel.FindEntityType(
+            "Listenarr.Domain.ActivityHistory.ProcessExecutionLog"));
     }
 
     private static MigrationBuilder BuildOperations(Migration migration, string methodName)
