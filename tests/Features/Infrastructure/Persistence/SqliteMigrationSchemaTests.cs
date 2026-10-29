@@ -40,9 +40,9 @@ public class SqliteMigrationSchemaTests : BaseTests
 
     private static readonly string[] BranchMigrationIds =
     [
-        EmbedCoverArtSettingMigrationId,
         AuthorIdentityRepairMigrationId,
-        AuthorIdentityRecheckWindowMigrationId
+        AuthorIdentityRecheckWindowMigrationId,
+        EmbedCoverArtSettingMigrationId
     ];
 
     private const string CanaryMigrationFrontierId =
