@@ -18,6 +18,8 @@
 
 using Microsoft.Extensions.Logging;
 
+using Listenarr.Domain.Common;
+
 namespace Listenarr.Application.Audiobooks.Quality
 {
     public class QualityProfileService : IQualityProfileService
@@ -190,16 +192,29 @@ namespace Listenarr.Application.Audiobooks.Quality
             }
         }
 
-        public async Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile)
+        public Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile, bool targetIsBundle = false) =>
+            ScoreSearchResult(searchResult, profile, resolvedIndexers: null, targetIsBundle);
+
+        private async Task<QualityScore> ScoreSearchResult(
+            SearchResult searchResult,
+            QualityProfile profile,
+            IReadOnlyDictionary<int, Indexer>? resolvedIndexers,
+            bool targetIsBundle = false)
         {
-            var scorer = new SearchResultScorer(_indexerRepository, _logger);
-            var score = await scorer.Score(searchResult, profile);
+            var scorer = new SearchResultScorer(_indexerRepository, _logger, resolvedIndexers);
+            var score = await scorer.Score(searchResult, profile, targetIsBundle);
 
             // Also calculate the Prowlarr-style composite (Smart) score so the UI
             // can display the same composite ranking details used for Smart sorting.
             try
             {
-                var composite = CompositeScorer.CalculateProwlarrStyleScore(searchResult, null, _logger);
+                Indexer? indexer = null;
+                if (searchResult.IndexerId.HasValue && _indexerRepository != null)
+                {
+                    indexer = await _indexerRepository.GetByIdAsync(searchResult.IndexerId.Value);
+                }
+
+                var composite = CompositeScorer.CalculateProwlarrStyleScore(searchResult, indexer, _logger);
                 score.SmartScore = composite.Total;
                 score.SmartScoreBreakdown = composite.Breakdown.ToDictionary(kv => kv.Key, kv => (int)Math.Round(kv.Value));
             }
@@ -285,15 +300,64 @@ namespace Listenarr.Application.Audiobooks.Quality
 
 
 
-        public async Task<List<QualityScore>> ScoreSearchResults(List<SearchResult> searchResults, QualityProfile profile)
+        public async Task<List<QualityScore>> ScoreSearchResults(List<SearchResult> searchResults, QualityProfile profile, bool targetIsBundle = false)
         {
-            var scores = await Task.WhenAll(searchResults.Select(result => ScoreSearchResult(result, profile)));
+            // Resolve every indexer this batch refers to before fanning out, not inside it.
+            // Scoring runs in parallel and the scorer reads indexer retention per result, so a
+            // per-result lookup meant N concurrent queries against one scoped DbContext. EF
+            // rejects the overlap, the scorer catches it and logs at Debug, and the result keeps
+            // a retention of 0 with Usenet detection skipped. The scores come out quietly wrong
+            // rather than the request failing.
+            var resolvedIndexers = await ResolveIndexersAsync(searchResults);
+            var scores = await Task.WhenAll(
+                searchResults.Select(result => ScoreSearchResult(result, profile, resolvedIndexers, targetIsBundle)));
 
-            // Ensure rejected results are ordered last regardless of numeric TotalScore
+            // Rejected results last, then the operator's own quality ordering, then the score,
+            // then ScoredReleaseTiebreaker so the ranking does not depend on the order the
+            // indexer returned results in. Sorting on the score alone ranked by the hardcoded
+            // ladder in SearchResultScorer, which ties every AAC rung and puts MP3 320kbps above
+            // all of them, inverting the ordering the shipped default profile itself sets.
             return scores
-                .OrderBy(s => s.IsRejected) // false (not rejected) first
-                .ThenByDescending(s => s.TotalScore)
+                .InPreferenceOrder(profile)
+                .ThenBy(s => s, ScoredReleaseTiebreaker.ForNow())
                 .ToList();
+        }
+
+        private async Task<IReadOnlyDictionary<int, Indexer>> ResolveIndexersAsync(
+            List<SearchResult> searchResults)
+        {
+            var resolved = new Dictionary<int, Indexer>();
+            if (_indexerRepository == null)
+            {
+                return resolved;
+            }
+
+            // Sequential and de-duplicated: a batch usually refers to a handful of indexers even
+            // when it carries hundreds of results, so this is fewer queries than before as well as
+            // non-overlapping ones.
+            foreach (var indexerId in searchResults
+                .Where(result => result.IndexerId.HasValue)
+                .Select(result => result.IndexerId!.Value)
+                .Distinct())
+            {
+                try
+                {
+                    var indexer = await _indexerRepository.GetByIdAsync(indexerId);
+                    if (indexer != null)
+                    {
+                        resolved[indexerId] = indexer;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Failed to resolve indexer {IndexerId} while scoring a search batch; retention and Usenet detection will be skipped for its results",
+                        indexerId);
+                }
+            }
+
+            return resolved;
         }
 
         /// <summary>

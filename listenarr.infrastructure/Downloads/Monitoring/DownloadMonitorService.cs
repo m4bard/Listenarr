@@ -64,13 +64,16 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 initialDelay: null,
                 intervalProvider: () => TimeSpan.FromSeconds(_pollingInterval),
                 runCycle: processor.RunCycleAsync,
-                cancellationToken);
+                cancellationToken,
+                // Polls the download clients for progress. Readarr schedules and exposes
+                // the same thing as RefreshMonitoredDownloads.
+                manualTrigger: ScheduledTaskManualTrigger.Allowed);
 
             logger.LogInformation("Download Monitor Service stopping");
         }
     }
 
-    public class DownloadMonitorProcessor(
+    public partial class DownloadMonitorProcessor(
         IServiceScopeFactory scopeFactory,
         IDownloadPushService downloadPushService,
         TimeProvider timeProvider,
@@ -133,6 +136,11 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
             {
                 _pollingInterval = appSettings.PollingIntervalSeconds;
             }
+
+            // Settings > Download exposes this as Download Completion Stability. It has had no
+            // reader since #535/#492 removed the old one, so until now finalization began in the
+            // same pass that first saw the client report completion.
+            var stabilityWindow = TimeSpan.FromSeconds(Math.Max(0, appSettings.DownloadCompletionStabilitySeconds));
 
             var configuredClients = await configurationService.GetDownloadClientConfigurationsAsync();
             HashSet<string> enabledClientIds = configuredClients
@@ -203,8 +211,21 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                     foreach (Download download in updatedDownloads)
                     {
                         var downloadService = scope.ServiceProvider.GetRequiredService<IDownloadService>();
-                        await downloadService.UpdateAsync(download);
                         var previousDownload = previousDownloads.FirstOrDefault(d => d.Id == download.Id);
+
+                        if (previousDownload != null && !HasSettledAsComplete(download, previousDownload, stabilityWindow))
+                        {
+                            // Hold the transition, not the update. Progress and size still persist,
+                            // so the row stays current; only finalization waits. Reverting the
+                            // status rather than skipping the write also means the next cycle sees
+                            // the same transition again and can let it through once the window has
+                            // passed, without anything else needing to remember it is pending.
+                            download.SetStatus(previousDownload.Status);
+                            await downloadService.UpdateAsync(download);
+                            continue;
+                        }
+
+                        await downloadService.UpdateAsync(download);
                         if (previousDownload == null)
                         {
                             continue;
@@ -387,6 +408,42 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
             if (!settings.FailedDownloadHandlingEnabled)
             {
                 return;
+            }
+
+            // Block the release before the auto-search below, so the search that follows a
+            // failure cannot pick the same broken release straight back up.
+            //
+            // Below the FailedDownloadHandlingEnabled gate rather than above it. An operator who
+            // has turned failed-download handling off has said they want failures left alone, and
+            // a blocklist entry is durable state with no expiry: writing one anyway would
+            // accumulate permanent bans that the setting gives no hint exist.
+            //
+            // Only downloads the client accepted and then failed reach this method. A
+            // release the client refused at submission never gets here, which is what keeps
+            // a qBittorrent 409 out of the blocklist: that answer means the client already
+            // holds the release, so blocking it would ban something the user is currently
+            // downloading. The carve-out is structural rather than a condition to remember.
+            if (download.AudiobookId.HasValue)
+            {
+                var blocklistService = scope.ServiceProvider.GetRequiredService<IBlocklistService>();
+                // Read back the identity stamped on the download when it was grabbed. This method
+                // must not work one out for itself: by the time a download fails, its TotalSize
+                // has been overwritten from the client's queue snapshot and its OriginalUrl may be
+                // a spent per-fetch link, so anything derived here disagrees with what the search
+                // side derives from the indexer's listing and the row never matches. A live
+                // install wrote one correctly formatted row after the first failure and then
+                // grabbed the identical release more than a hundred times over the next eleven
+                // hours.
+                var identifier = ReleaseIdentity.ForGrabbed(download);
+                if (identifier is not null)
+                {
+                    await blocklistService.BlockAsync(
+                        download.AudiobookId.Value,
+                        identifier,
+                        download.Title ?? "Unknown",
+                        download.ExpectedFileSize ?? (download.TotalSize > 0 ? download.TotalSize : null),
+                        errorMessage);
+                }
             }
 
             var clientItemId = download.GetExternalId();

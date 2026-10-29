@@ -15,11 +15,12 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Search.Scoring
 {
-    public class SearchResultScorer
+    public partial class SearchResultScorer
     {
         private readonly IIndexerRepository? _indexerRepository;
         private readonly ILogger _logger;
@@ -32,15 +33,45 @@ namespace Listenarr.Application.Search.Scoring
         public int LanguageMissingPenalty { get; set; } = -10;
         public int LanguageMismatchPenalty { get; set; } = -15;
         public int QualityNotAllowedPenalty { get; set; } = -20;
+        // Mirrors FormatMatchBonus / QualityNotAllowedPenalty on purpose. Against a base of
+        // 100 the penalty cannot on its own reach the "computed score <= 0" reject below, so
+        // a preference stays a preference instead of quietly becoming a filter.
+        public int ReleaseShapeMatchBonus { get; set; } = 5;
+        public int ReleaseShapeMismatchPenalty { get; set; } = -20;
         public int ForbiddenWordRejectionFlag { get; set; } = -1; // sentinel for rejection
 
+        private readonly IReadOnlyDictionary<int, Indexer>? _resolvedIndexers;
+
         public SearchResultScorer(IIndexerRepository? indexerRepository, ILogger logger)
+            : this(indexerRepository, logger, resolvedIndexers: null)
+        {
+        }
+
+        // resolvedIndexers lets a caller scoring a whole batch resolve each indexer once up front
+        // and pass the results in. The repository is scoped, and so is the DbContext behind it, so
+        // results scored in parallel must not each run their own lookup.
+        public SearchResultScorer(
+            IIndexerRepository? indexerRepository,
+            ILogger logger,
+            IReadOnlyDictionary<int, Indexer>? resolvedIndexers)
         {
             _indexerRepository = indexerRepository;
             _logger = logger;
+            _resolvedIndexers = resolvedIndexers;
         }
 
-        public async Task<QualityScore> Score(SearchResult searchResult, QualityProfile profile)
+        /// <summary>
+        /// Score one candidate release against a quality profile.
+        /// </summary>
+        /// <param name="searchResult">The candidate release.</param>
+        /// <param name="profile">The quality profile the audiobook is monitored under.</param>
+        /// <param name="targetIsBundle">
+        /// Whether the audiobook record being searched for is itself a bundle, which the
+        /// caller knows and the release does not carry. The right release for a six-book
+        /// omnibus record is a six-book omnibus, so when this is set the profile's preference
+        /// is overridden for that book rather than penalising every candidate it can match.
+        /// </param>
+        public async Task<QualityScore> Score(SearchResult searchResult, QualityProfile profile, bool targetIsBundle = false)
         {
             // Mirror existing QualityProfileService semantics, but organized and configurable
             var score = new QualityScore
@@ -65,9 +96,7 @@ namespace Listenarr.Application.Search.Scoring
             string? normalizedQuality = NormalizeToken(searchResult.Quality);
 
             // Instant rejects: forbidden words
-            var forbidden = profile.MustNotContain.FirstOrDefault(word =>
-                !string.IsNullOrEmpty(word) &&
-                searchResult.Title.Contains(word, StringComparison.OrdinalIgnoreCase));
+            var forbidden = profile.MustNotContain.FirstOrDefault(word => TitleTermMatcher.TitleContainsTerm(searchResult.Title, word));
             if (forbidden != null)
             {
                 score.RejectionReasons.Add($"Contains forbidden word: '{forbidden}'");
@@ -75,107 +104,28 @@ namespace Listenarr.Application.Search.Scoring
                 return score;
             }
 
-            // Required words
-            var missingRequired = profile.MustContain.FirstOrDefault(required =>
-                !string.IsNullOrEmpty(required) &&
-                !searchResult.Title.Contains(required, StringComparison.OrdinalIgnoreCase));
-            if (missingRequired != null)
+            // Required words: the title has to match at least one of them, not all of them
+            var requiredWords = profile.MustContain.Where(required => !string.IsNullOrWhiteSpace(required)).ToList();
+            if (requiredWords.Count > 0 && !requiredWords.Any(required => TitleTermMatcher.TitleContainsTerm(searchResult.Title, required)))
             {
-                score.RejectionReasons.Add($"Missing required word: '{missingRequired}'");
+                var wordList = string.Join("', '", requiredWords.Select(required => required.Trim()));
+                score.RejectionReasons.Add($"Missing required word: title matches none of '{wordList}'");
                 score.TotalScore = -1;
                 return score;
             }
 
-            // Detect NZB/Usenet more broadly
-            var isNzb = IsNzbResult(searchResult);
-
-            // Size checks (skip for NZB)
-            if (!isNzb && searchResult.Size > 0)
+            // Every gate that can reject a release outright lives in SearchResultScorer.Gates.cs:
+            // the indexer lookup all three size and age gates depend on, the profile's size
+            // bounds, the seeders minimum and the age and retention ceilings. It settles isNzb
+            // once, before anything reads it, and hands back the age the penalties below need.
+            var gates = await ApplyRejectionGates(searchResult, profile, score);
+            if (gates.Rejected)
             {
-                if (profile.MinimumSize > 0 && searchResult.Size < profile.MinimumSize * 1024 * 1024)
-                {
-                    score.RejectionReasons.Add($"File too small (< {profile.MinimumSize} MB)");
-                    score.TotalScore = -1;
-                    return score;
-                }
-                if (profile.MaximumSize > 0 && searchResult.Size > profile.MaximumSize * 1024 * 1024)
-                {
-                    score.RejectionReasons.Add($"File too large (> {profile.MaximumSize} MB)");
-                    score.TotalScore = -1;
-                    return score;
-                }
-            }
-
-            // Seeders requirement (treat null as 0)
-            if (searchResult.DownloadType == "torrent" && (searchResult.Seeders ?? 0) < profile.MinimumSeeders)
-            {
-                var seedersValue = (searchResult.Seeders.HasValue) ? searchResult.Seeders.Value.ToString() : "(none)";
-                score.RejectionReasons.Add($"Not enough seeders ({seedersValue} < {profile.MinimumSeeders})");
-                score.TotalScore = -1;
                 return score;
             }
 
-            // Age checks and indexer retention
-            double ageDays = 0;
-            int indexerRetention = 0;
-            if (searchResult.IndexerId.HasValue && _indexerRepository != null)
-            {
-                try
-                {
-                    var idx = await _indexerRepository.GetByIdAsync(searchResult.IndexerId.Value);
-                    if (idx != null)
-                    {
-                        indexerRetention = idx.Retention;
-                        if (!isNzb && !string.IsNullOrWhiteSpace(idx.Type) && string.Equals(idx.Type, "Usenet", StringComparison.OrdinalIgnoreCase))
-                        {
-                            isNzb = true;
-                            _logger.LogDebug("Indexer {IndexerId} type '{Type}' detected as Usenet; applying NZB/Usenet exemptions", searchResult.IndexerId.Value, idx.Type);
-                        }
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                {
-                    _logger.LogDebug(ex, "Failed to fetch indexer retention for IndexerId {Id}", searchResult.IndexerId.Value);
-                }
-            }
-
-            if (!string.IsNullOrEmpty(searchResult.PublishedDate) && DateTime.TryParse(searchResult.PublishedDate, out var publishDate))
-            {
-                ageDays = (DateTime.UtcNow - publishDate).TotalDays;
-                if (isNzb)
-                {
-                    if (indexerRetention > 0 && ageDays > indexerRetention)
-                    {
-                        score.RejectionReasons.Add($"Too old ({(int)ageDays} days > indexer retention {indexerRetention} days)");
-                        score.TotalScore = -1;
-                        return score;
-                    }
-                    if (profile.MaximumAge > 0 && ageDays > profile.MaximumAge)
-                    {
-                        score.RejectionReasons.Add($"Too old ({(int)ageDays} days > profile maximum age {profile.MaximumAge} days)");
-                        score.TotalScore = -1;
-                        return score;
-                    }
-                }
-                else
-                {
-                    if (indexerRetention > 0)
-                    {
-                        if (ageDays > indexerRetention)
-                        {
-                            score.RejectionReasons.Add($"Too old ({(int)ageDays} days > indexer retention {indexerRetention} days)");
-                            score.TotalScore = -1;
-                            return score;
-                        }
-                    }
-                    else if (profile.MaximumAge > 0 && ageDays > profile.MaximumAge)
-                    {
-                        score.RejectionReasons.Add($"Too old ({(int)ageDays} days > profile maximum age {profile.MaximumAge} days)");
-                        score.TotalScore = -1;
-                        return score;
-                    }
-                }
-            }
+            var isNzb = gates.IsNzb;
+            var ageDays = gates.AgeDays;
 
             // Title lower for detection
             var titleLower = (searchResult.Title ?? string.Empty).ToLower();
@@ -260,11 +210,41 @@ namespace Listenarr.Application.Search.Scoring
                 }
             }
 
-            // Quality: missing -> penalty only when no format inferred and not NZB
+            // Quality: missing -> penalty only when no format inferred and not NZB.
+            //
+            // This exemption stays, alongside the missing-language and missing-format ones above.
+            // All three charge a release a fixed penalty for metadata a Usenet indexer often does
+            // not report, rather than for what the release contains, and none of them is an
+            // operator setting. The gates hoisted out of this condition are MinimumSize,
+            // MaximumSize and the profile's quality ordering and Allowed flags, all of which the
+            // operator sets and all of which describe the release rather than the protocol.
             if (string.IsNullOrEmpty(normalizedQuality))
             {
                 if (!isNzb)
                 {
+                    // A release with no quality label has still made a claim if it declared a
+                    // format, and the profile gates that claim the same way it gates a quality.
+                    // Only the release that declared neither is genuinely unclassified, and that
+                    // one stays in the pool carrying the missing-quality penalty below.
+                    //
+                    // Both gates are only as good as whatever classified the release. Today that
+                    // is TorznabResponseParser, which overwrites an explicit filetype attribute
+                    // with a substring scan of title plus description (:349-379), so a book called
+                    // "Magnum Opus" arrives here with Format "OPUS" and one called "The Year 1864"
+                    // with Quality "MP3 64kbps". Neither gate reads a title itself, and neither can
+                    // tell a parsed title apart from a declared attribute. Fixing that precedence
+                    // belongs in the parser.
+                    //
+                    // DetectFormatFromTitle can also write into normalizedFormat, but only under
+                    // isNzb, and this branch is torrent-only. Anyone hoisting these gates out of
+                    // the isNzb branch inherits that second title-to-veto path.
+                    if (!string.IsNullOrEmpty(normalizedFormat) && QualityGate.Refuses(normalizedFormat, profile))
+                    {
+                        score.TotalScore += QualityNotAllowedPenalty;
+                        score.ScoreBreakdown["QualityNotAllowed"] = QualityNotAllowedPenalty;
+                        score.RejectionReasons.Add($"Format '{normalizedFormat}' not allowed by profile");
+                    }
+
                     var formatDetected = !string.IsNullOrEmpty(normalizedFormat) || !string.IsNullOrEmpty(DetectFormatFromTitle(titleLower, profile.PreferredFormats)) || (!string.IsNullOrEmpty(searchResult.TorrentUrl) && (searchResult.TorrentUrl.ToLowerInvariant().Contains(".m4b") || searchResult.TorrentUrl.ToLowerInvariant().Contains(".mp3") || searchResult.TorrentUrl.ToLowerInvariant().Contains(".m4a")));
                     if (!formatDetected)
                     {
@@ -275,35 +255,25 @@ namespace Listenarr.Application.Search.Scoring
             }
             else
             {
-                if (!isNzb)
+                // The result told us its quality, so the profile decides what that is worth and
+                // whether it is wanted at all, whatever protocol carried it. Exempting NZB here
+                // left every NZB on the base score, so an NZB outranked any torrent regardless of
+                // what it contained, and a quality the operator had switched off was grabbed over
+                // Usenet with no rejection reason.
+                int qualityScore = GetQualityScore(normalizedQuality);
+                var qualityDeduction = 100 - qualityScore;
+                score.TotalScore -= qualityDeduction;
+                score.ScoreBreakdown["Quality"] = qualityScore;
+
+                // The profile's Allowed flags are the gate. PreferredFormats is a preference
+                // and was already applied above as a score adjustment; letting it also widen
+                // the allowed set made the flag inert, because every rung name in the ladder
+                // contains one of the default preferred tokens.
+                if (QualityGate.Refuses(normalizedQuality, profile))
                 {
-                    int qualityScore = GetQualityScore(normalizedQuality);
-                    var qualityDeduction = 100 - qualityScore;
-                    score.TotalScore -= qualityDeduction;
-                    score.ScoreBreakdown["Quality"] = qualityScore;
-
-                    if (profile.Qualities != null && profile.Qualities.Count > 0)
-                    {
-                        var allowed = profile.Qualities.Where(q => q.Allowed).Select(q => (q.Quality ?? string.Empty).ToLower()).ToList();
-                        if (profile.PreferredFormats != null && profile.PreferredFormats.Count > 0)
-                        {
-                            foreach (var f in profile.PreferredFormats
-                                .Where(format => !string.IsNullOrWhiteSpace(format))
-                                .Select(format => format.Trim().ToLower())
-                                .Where(format => !allowed.Contains(format)))
-                            {
-                                allowed.Add(f);
-                            }
-                        }
-
-                        var detectedQualityLower = normalizedQuality.ToLower();
-                        if (!allowed.Any(q => detectedQualityLower.Contains(q) || q.Contains(detectedQualityLower)))
-                        {
-                            score.TotalScore += QualityNotAllowedPenalty;
-                            score.ScoreBreakdown["QualityNotAllowed"] = QualityNotAllowedPenalty;
-                            score.RejectionReasons.Add($"Quality '{normalizedQuality}' not allowed by profile");
-                        }
-                    }
+                    score.TotalScore += QualityNotAllowedPenalty;
+                    score.ScoreBreakdown["QualityNotAllowed"] = QualityNotAllowedPenalty;
+                    score.RejectionReasons.Add($"Quality '{normalizedQuality}' not allowed by profile");
                 }
             }
 
@@ -312,11 +282,33 @@ namespace Listenarr.Application.Search.Scoring
             {
                 var bonus = profile.PreferredWords
                     .Where(word => !string.IsNullOrWhiteSpace(word))
-                    .Count(word => (searchResult.Title ?? string.Empty).Contains(word, StringComparison.OrdinalIgnoreCase)) * 5;
+                    .Count(word => TitleTermMatcher.TitleContainsTerm(searchResult.Title, word)) * 5;
                 if (bonus != 0)
                 {
                     score.TotalScore += bonus;
                     score.ScoreBreakdown["PreferredWords"] = bonus;
+                }
+            }
+
+            // Release shape preference: bundle/omnibus versus a single book.
+            if (profile.PreferredReleaseShape != ReleaseShapePreference.NoPreference)
+            {
+                var releaseLooksLikeBundle = ReleaseShapeDetector.LooksLikeBundle(searchResult.Title);
+                var wantBundle = targetIsBundle
+                    || profile.PreferredReleaseShape == ReleaseShapePreference.PreferBundle;
+
+                if (releaseLooksLikeBundle == wantBundle)
+                {
+                    score.TotalScore += ReleaseShapeMatchBonus;
+                    score.ScoreBreakdown["ReleaseShapeMatch"] = ReleaseShapeMatchBonus;
+                }
+                else
+                {
+                    // Deliberately not a rejection. Detection is a title heuristic, and a book
+                    // whose only candidate is on the wrong side of the preference should still
+                    // be filled; the breakdown key is how an operator sees why it lost.
+                    score.TotalScore += ReleaseShapeMismatchPenalty;
+                    score.ScoreBreakdown["ReleaseShapeMismatch"] = ReleaseShapeMismatchPenalty;
                 }
             }
 
@@ -370,11 +362,21 @@ namespace Listenarr.Application.Search.Scoring
                 return score;
             }
 
-            if (!score.IsRejected)
-            {
-                score.TotalScore = Math.Clamp(score.TotalScore, 0, 100);
-            }
-
+            // No ceiling on an accepted release. BaseScore is 100 and every preference above is
+            // added to it, so a ceiling of 100 discarded the operator's preferred words, the
+            // seeder bonus and the format bonus for any release whose accumulated score reached
+            // it, and two releases the profile ranks differently came back identical.
+            //
+            // The floor was already unreachable: the <= 0 check above returns first. MinimumScore
+            // is compared before that, so it has always been read against the accumulated score
+            // and its meaning does not change here.
+            //
+            // Readarr does not cap a preference score either. CalculateCustomFormatScore
+            // (src/NzbDrone.Core/Profiles/Qualities/QualityProfile.cs:90-93) is a plain Sum with
+            // no bound, DownloadDecisionComparer compares that sum directly
+            // (src/NzbDrone.Core/DecisionEngine/DownloadDecisionComparer.cs:79-82), and
+            // MinFormatScore and CutoffFormatScore (QualityProfile.cs:19-20) are thresholds over
+            // the unbounded sum.
             return score;
         }
 
