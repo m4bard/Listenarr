@@ -18,7 +18,9 @@ Rules (each one exists because guessing here can later let a delete hit the wron
 * A link also needs path evidence (same folder as the old path, or a folder/file name or album/title tag
   that names exactly this title, see ``paths.names_title``). Title evidence alone never selects a file; it
   only confirms one. A title with no distinctive token (``1``, ``It``) is never evidence or a veto key.
-* Tags that fully name another library book reject a candidate unless that title is part of this one.
+* Tags that fully name another library book reject a candidate unless that title is part of this one. For
+  the object .620 registered (physical identity), they do not when the tags also carry this book's whole title
+  and the other title's remaining words are this book's own authors or series (``other_book_named``).
 * A file (one object, whatever its names) is never linked to two rows, never to a file a live row already
   holds (also through a symlink row), and never to a file that was also a candidate of a row left
   unresolved (it might be that row's file).
@@ -143,8 +145,58 @@ def size_is_placeholder(row: FileRow) -> bool:
     return math.isfinite(seconds) and seconds >= PLACEHOLDER_MIN_DURATION_SECONDS
 
 
+def veto_keys(books: dict[int, BookRow]) -> dict[frozenset[str], int]:
+    """Token set of every distinctive library title -> the first book holding it."""
+    keys: dict[frozenset[str], int] = {}
+    for book in books.values():
+        if is_distinctive(book.title):
+            keys.setdefault(frozenset(tokens(book.title)), book.id)
+    return keys
+
+
+def tag_tokens(tags: dict[str, str]) -> frozenset[str]:
+    """Tokens of the album and title tags, the two that name a work."""
+    return frozenset(tokens(" ".join(tags.get(k, "") for k in ("album", "title"))))
+
+
+def own_title_tagged(tagged: frozenset[str], own: BookRow | None) -> bool:
+    """True when the tags carry every token of this book's (distinctive) title."""
+    return own is not None and is_distinctive(own.title) and frozenset(tokens(own.title)) <= tagged
+
+
+def explained_by_own_book(title_tokens: frozenset[str], own: BookRow | None) -> bool:
+    """True when every word of another title that is not in this book's title is in its authors or series."""
+    if own is None:
+        return False
+    own_words = {t for text in own.own_text for t in tokens(text)}
+    return title_tokens - frozenset(tokens(own.title)) <= own_words
+
+
+def other_book_named(tags: dict[str, str], other_titles: dict[frozenset[str], int], own: BookRow | None,
+                     identity_match: bool) -> int | None:
+    """The library book other than ``own`` whose title the tags fully name, or None.
+
+    A title that is part of this book's own title never counts. For a file whose physical identity matched,
+    neither does one explained by this book's own text (``Allan Quatermain``, the series, in tags of ``Marie``)
+    while the tags also carry this book's whole title. A different book's real tags rarely carry both, and
+    the identity match already rules out a renamer's swap of two files: only content rewritten into this
+    object is left to catch. Without identity the tags may be all that separates two books, so they keep the
+    strict reading.
+    """
+    tagged = tag_tokens(tags)
+    own_tokens = frozenset(tokens(own.title)) if own else frozenset()
+    own_named = identity_match and own_title_tagged(tagged, own)
+    for title_tokens, book_id in other_titles.items():
+        if not title_tokens <= tagged or title_tokens <= own_tokens:
+            continue
+        if own_named and explained_by_own_book(title_tokens, own):
+            continue
+        return book_id
+    return None
+
+
 def _consistency(row: FileRow, probe: media.Probe, other_titles: dict[frozenset[str], int],
-                 own_title: str) -> str | None:
+                 own: BookRow | None, identity_match: bool) -> str | None:
     if probe.error:
         return f"not readable as audio: {probe.error}"
     stored_duration = row.values.get("DurationSeconds")
@@ -164,12 +216,8 @@ def _consistency(row: FileRow, probe: media.Probe, other_titles: dict[frozenset[
         stored = row.values.get(column)
         if stored is not None and value is not None and int(str(stored)) != value:
             return f"{column} {value} != stored {stored}"
-    tag_tokens = frozenset(tokens(" ".join(probe.tags.get(k, "") for k in ("album", "title"))))
-    own_tokens = frozenset(tokens(own_title))
-    for title_tokens, book_id in other_titles.items():
-        if title_tokens <= tag_tokens and not title_tokens <= own_tokens:
-            return f"tags name another library book (audiobook {book_id})"
-    return None
+    book_id = other_book_named(probe.tags, other_titles, own, identity_match)
+    return None if book_id is None else f"tags name another library book (audiobook {book_id})"
 
 
 def _resolves(db_path: str, path_map: PathMap) -> bool:
@@ -257,11 +305,7 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
         by_inode[(os.major(disk_file.dev), os.minor(disk_file.dev), disk_file.ino)].append(disk_file)
     log.info("rows=%d live=%d stale=%d unclaimed_audio_files=%d", len(library.files), live_rows, len(stale), len(pool))
 
-    other_titles: dict[frozenset[str], int] = {}
-    for book in library.books.values():
-        key = frozenset(tokens(book.title))
-        if is_distinctive(book.title):
-            other_titles.setdefault(key, book.id)
+    other_titles = veto_keys(library.books)
 
     decisions = [RowDecision(row) for row in stale]
     keep_identity: dict[int, bool] = {}
@@ -317,7 +361,7 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             assert isinstance(probe, media.Probe)
             candidate.probe = probe
             others = {k: v for k, v in other_titles.items() if v != decision.row.audiobook_id}
-            candidate.rejected = _consistency(decision.row, probe, others, title)
+            candidate.rejected = _consistency(decision.row, probe, others, owner, candidate.identity_match)
             root = _root_of(candidate.file.db_path, library.roots) or "/"
             parts = name_parts(candidate.file.db_path, root)
             candidate.same_dir = os.path.dirname(candidate.file.host_path) == old_parent

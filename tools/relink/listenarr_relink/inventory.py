@@ -20,6 +20,8 @@ FILE_COLUMNS = ("Id", "AudiobookId", "Path", "Size", "DurationSeconds", "Codec",
                 "PhysicalObjectIdentity", "PhysicalIdentityObservedAtUtc", "CanonicalPath", "PathIdentityState",
                 "PathIdentityLookupKey", "PathOwnershipKey")
 BOOK_COLUMNS = ("Id", "Title", "Authors", "BasePath", "FilePath")
+# Book columns read only as matching context, never as a precondition; a database may predate them.
+BOOK_CONTEXT_COLUMNS = ("Series", "Subtitle")
 
 
 @dataclass
@@ -56,9 +58,10 @@ class FileRow:
 
 @dataclass
 class BookRow:
-    """One Audiobooks row (the columns the re-link reads or writes)."""
+    """One Audiobooks row (the columns the re-link reads or writes) plus its context columns."""
 
     values: dict[str, object]
+    context: dict[str, str] = field(default_factory=dict)
 
     @property
     def id(self) -> int:
@@ -79,6 +82,14 @@ class BookRow:
         except json.JSONDecodeError:
             return [str(raw)]
         return [str(a) for a in parsed] if isinstance(parsed, list) else [str(parsed)]
+
+    @property
+    def own_text(self) -> list[str]:
+        """Authors and series: what this book's own tags may say besides its title.
+
+        Not the subtitle: one names another edition of the same work as often as this one.
+        """
+        return [*self.authors, *([self.context["Series"]] if "Series" in self.context else [])]
 
     @property
     def base_path(self) -> str:
@@ -150,10 +161,13 @@ def snapshot_database(live_db: str, copy_path: str) -> None:
 def load_rows(connection: sqlite3.Connection) -> tuple[list[str], dict[int, BookRow], list[FileRow]]:
     """Roots, audiobooks and file rows."""
     roots = [str(r["Path"]) for r in connection.execute("SELECT Path FROM RootFolders ORDER BY Id") if r["Path"]]
-    books = {
-        int(r["Id"]): BookRow(dict(r))
-        for r in connection.execute(f"SELECT {', '.join(BOOK_COLUMNS)} FROM Audiobooks")
-    }
+    present = {str(r["name"]) for r in connection.execute("PRAGMA table_info(Audiobooks)")}
+    context_columns = [c for c in BOOK_CONTEXT_COLUMNS if c in present]
+    books: dict[int, BookRow] = {}
+    for r in connection.execute(f"SELECT {', '.join([*BOOK_COLUMNS, *context_columns])} FROM Audiobooks"):
+        values = dict(r)
+        context = {c: str(value) for c in context_columns if (value := values.pop(c))}
+        books[int(str(values["Id"]))] = BookRow(values, context)
     files = [FileRow(dict(r)) for r in
              connection.execute(f"SELECT {', '.join(FILE_COLUMNS)} FROM AudiobookFiles ORDER BY Id")]
     return roots, books, files

@@ -1,4 +1,4 @@
-"""Command line: ``plan``, ``apply`` and ``verify``.
+"""Command line: ``plan``, ``apply``, ``verify`` and ``explain-veto``.
 
 Exit codes: 0 success; 2 usage or refused precondition (nothing written); 3 APPLY refused at least one
 entry and rolled everything back (nothing written; refusals listed in the report, re-plan), or PLAN wrote a
@@ -12,11 +12,13 @@ import argparse
 import json
 import logging
 import os
+import sqlite3
 import sys
 from pathlib import Path
 
 from listenarr_relink import inventory, matcher
 from listenarr_relink.apply import ApplyAborted, apply_plan, processes_holding
+from listenarr_relink.explain import explain_veto
 from listenarr_relink.paths import PathMap, is_within
 from listenarr_relink.plan_io import build_plan, file_sha256, write_outputs
 from listenarr_relink.verify import verify
@@ -171,6 +173,17 @@ def _verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def _explain_veto(args: argparse.Namespace) -> int:
+    path_map = PathMap.parse(args.path_map) if args.path_map else None
+    try:
+        lines = explain_veto(Path(args.plan), path_map, args.workers)
+    except (OSError, ValueError, KeyError, sqlite3.Error) as error:
+        log.error("cannot explain the plan's vetoes: %s", error)
+        return 2
+    print("\n".join(lines))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point."""
     _setup_logging()
@@ -212,6 +225,14 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--path-map", action="append", default=[], metavar="DBPREFIX=HOSTPREFIX")
     check.add_argument("--out", help="write the full JSON report here")
     check.set_defaults(handler=_verify)
+
+    explain = sub.add_parser("explain-veto", help="read-only, counts only: classify a plan's 'tags name another "
+                                                  "library book' vetoes (never prints titles or paths)")
+    explain.add_argument("--plan", required=True, help="plan.json produced by `plan` (its db-copy.sqlite is read)")
+    explain.add_argument("--path-map", action="append", default=[], metavar="DBPREFIX=HOSTPREFIX",
+                         help="default: the plan's own path map")
+    explain.add_argument("--workers", type=int, default=4, help="parallel ffprobe processes (default 4)")
+    explain.set_defaults(handler=_explain_veto)
 
     args = parser.parse_args(argv)
     if getattr(args, "workers", 1) < 1:
