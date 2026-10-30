@@ -87,7 +87,9 @@ class BookRow:
     def own_text(self) -> list[str]:
         """Authors and series: what this book's own tags may say besides its title.
 
-        Not the subtitle: one names another edition of the same work as often as this one.
+        Not the subtitle: nothing showed it is needed, and it can spell out another edition's whole title. The
+        series can name another edition too (a series named after the work); that is accepted, see
+        ``matcher.other_book_named``.
         """
         return [*self.authors, *([self.context["Series"]] if "Series" in self.context else [])]
 

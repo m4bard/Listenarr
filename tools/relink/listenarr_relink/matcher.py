@@ -182,6 +182,11 @@ def other_book_named(tags: dict[str, str], other_titles: dict[frozenset[str], in
     the identity match already rules out a renamer's swap of two files: only content rewritten into this
     object is left to catch. Without identity the tags may be all that separates two books, so they keep the
     strict reading.
+
+    Accepted on purpose: another edition of the same work whose title is this book's series (``Peter Pan``
+    for ``Peter and Wendy``), rewritten into this object with tags that also carry this title, is not
+    vetoed. Tags cannot tell it from this book's own series text; the stored duration, codec, sample rate
+    and channels are then the only check on the content.
     """
     tagged = tag_tokens(tags)
     own_tokens = frozenset(tokens(own.title)) if own else frozenset()

@@ -34,6 +34,10 @@ TANAR = ("Tanar of Pellucidar", "Edgar Rice Burroughs")
 FAUST = ("Faust", "Johann Wolfgang von Goethe")
 FAUST_SUBTITLE = "Der Tragödie erster Teil"
 RECLAM_FAUST = ("Goethe.Faust. Der Tragödie Erster Teil", "Johann Wolfgang von Goethe")
+PETER_AND_WENDY = ("Peter and Wendy", "J.M. Barrie")
+PETER_PAN = ("Peter Pan", "J M Barrie")
+# A library book whose title is a corpus author string, as an album tag "<author> - <title>" would name it.
+HAGGARD_TITLED = ("H. Rider Haggard", "H. Rider Haggard")
 PLACEHOLDER = 64
 
 SCHEMA = """
@@ -439,8 +443,38 @@ def test_database_without_a_series_column_keeps_the_strict_veto(library: Library
     assert left_out(plan)[row] == "physical identity matches but tags name another library book (audiobook 1)"
 
 
+def test_identity_match_tagged_with_own_author_relinks(library: Library) -> None:
+    library.add_book(1, HAGGARD_TITLED, 1)
+    (row,) = library.add_book(2, MARIE, 1, album=f"{MARIE[1]} - {MARIE[0]}", Size=PLACEHOLDER)
+    new = library.move(row)
+    rc, plan = library.plan("plan")
+    assert rc == 0 and plan is not None
+    assert relinked(plan) == {row: str(new)}
+
+
+@pytest.mark.parametrize(("stored_offset", "accepted"), [(0.0, True), (30.0, False)], ids=["duration-agrees",
+                                                                                         "duration-differs"])
+def test_identity_match_accepts_another_edition_named_by_the_series(library: Library, stored_offset: float,
+                                                                    accepted: bool) -> None:
+    """Accepted on purpose: the other edition's title is this book's series, so only its duration can tell."""
+    library.add_book(1, PETER_PAN, 1, series="Peter Pan")
+    (row,) = library.add_book(2, PETER_AND_WENDY, 1, series="Peter Pan", Size=PLACEHOLDER)
+    library.rewrite(row, PETER_AND_WENDY[0], PETER_PAN[0])  # the other edition's recording, tagged as this one
+    with sqlite3.connect(library.db) as connection:
+        connection.execute("UPDATE AudiobookFiles SET DurationSeconds = DurationSeconds + ? WHERE Id = ?",
+                           (stored_offset, row))
+    new = library.move(row)
+    _, plan = library.plan("plan")
+    assert plan is not None
+    if accepted:
+        assert relinked(plan) == {row: str(new)}
+    else:
+        assert relinked(plan) == {}
+        assert left_out(plan)[row].startswith("physical identity matches but duration")
+
+
 def test_explain_veto_prints_counts_only(library: Library, monkeypatch: pytest.MonkeyPatch,
-                                         capsys: pytest.CaptureFixture[str]) -> None:
+                                         capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture) -> None:
     library.add_book(1, QUATERMAIN, 1, series="Allan Quatermain")
     (marie,) = library.add_book(2, MARIE, 1, album="Allan Quatermain", series="Allan Quatermain", Size=PLACEHOLDER)
     library.add_book(3, TANAR, 1)
@@ -450,13 +484,16 @@ def test_explain_veto_prints_counts_only(library: Library, monkeypatch: pytest.M
     library.move(pellucidar)
     strict = matcher.other_book_named  # a plan written before identity could waive the veto
     monkeypatch.setattr(matcher, "other_book_named", lambda tags, others, own, _: strict(tags, others, own, False))
-    _, plan = library.plan("plan")
+    exclude = library.top / "exclude.txt"
+    exclude.write_text(f"{pellucidar}\n")
+    _, plan = library.plan("plan", "--exclude-file-ids", str(exclude))
     assert plan is not None and set(left_out(plan)) == {marie, pellucidar}
     monkeypatch.undo()
     capsys.readouterr()
     assert cli.main(["explain-veto", "--plan", str(library.top / "plan" / "plan.json"), "--workers", "2"]) == 0
     lines = capsys.readouterr().out.splitlines()
-    for expected in ("rows_left_out_with_veto_reason 2", "pairs_from_reasons 2", "pairs_named_now_strict 2",
+    for expected in ("rows_left_out_with_veto_reason 1", "rows_excluded_with_veto_reason 1",
+                     "rows_with_veto_reason_total 2", "pairs_from_reasons 2", "pairs_named_now_strict 2",
                      "candidates_strict_rule_not_reproduced_tags_changed 0", "candidates_cleared_by_this_version 1",
                      "rows_whose_every_vetoed_candidate_clears 1 (a cleared veto is not a relink: re-run PLAN "
                      "for that)",
@@ -469,3 +506,6 @@ def test_explain_veto_prints_counts_only(library: Library, monkeypatch: pytest.M
     assert str(library.top).casefold() not in text
     words = [w for book in (QUATERMAIN, MARIE, TANAR, PELLUCIDAR) for w in book[0].casefold().split() if len(w) > 3]
     assert words and not any(word in text for word in words)
+    (library.top / "plan" / "db-copy.sqlite").unlink()
+    assert cli.main(["explain-veto", "--plan", str(library.top / "plan" / "plan.json")]) == 2
+    assert "cannot explain" in caplog.text and str(library.top) not in caplog.text

@@ -6,6 +6,10 @@ host. For every (book, other book) pair a vetoed candidate names it reports whet
 token, whether the tags also carry this book's whole title (and whether a tag names it exactly), whether
 the other title's extra words are this book's authors or series (and with the subtitle added), and whether
 physical identity matched; and how many vetoed candidates and rows this version's rule would clear.
+
+Rows withheld by ``--exclude-file-ids`` carry the veto inside their reason and are counted separately.
+Opening the snapshot read-only still lets SQLite touch its ``-shm`` index when the copy is in WAL mode (the
+file's mtime changes); nothing else is written.
 """
 
 from __future__ import annotations
@@ -20,12 +24,21 @@ from typing import Any
 
 from listenarr_relink import inventory, media
 from listenarr_relink.inventory import BookRow
-from listenarr_relink.matcher import explained_by_own_book, other_book_named, own_title_tagged, tag_tokens, veto_keys
+from listenarr_relink.matcher import (
+    EXCLUDED,
+    explained_by_own_book,
+    other_book_named,
+    own_title_tagged,
+    tag_tokens,
+    veto_keys,
+)
 from listenarr_relink.paths import PathMap, names_title, tokens
 from listenarr_relink.plan_io import file_sha256
 
 VETO = re.compile(r"^tags name another library book \(audiobook (\d+)\)$")
 VETO_IN_REASON = re.compile(r"tags name another library book \(audiobook \d+\)$")
+VETO_IN_EXCLUDED_REASON = re.compile(rf"^{re.escape(EXCLUDED)} \(otherwise left out: .*tags name another library "
+                                     r"book \(audiobook \d+\)\)$")
 FLAGS = ("identity", "one_token", "own_title_tagged", "own_title_tag_exact", "explained_authors_series",
          "explained_with_subtitle")
 
@@ -116,10 +129,14 @@ def explain_veto(plan_path: Path, path_map: PathMap | None, workers: int) -> lis
         cells = [_yes_no({o.flags[i] for o in pair_observations}) for i in range(len(FLAGS))]
         table[" ".join(f"{name}={cell}" for name, cell in zip(FLAGS, cells, strict=True))] += 1
     rows_with_veto_reason = sum(1 for item in plan["left_out"] if VETO_IN_REASON.search(str(item["reason"])))
+    rows_excluded_with_veto = sum(1 for item in plan["left_out"]
+                                  if VETO_IN_EXCLUDED_REASON.match(str(item["reason"])))
     lines = [
         f"series_column_present {'Series' in present}",
         f"subtitle_column_present {'Subtitle' in present}",
         f"rows_left_out_with_veto_reason {rows_with_veto_reason}",
+        f"rows_excluded_with_veto_reason {rows_excluded_with_veto}",
+        f"rows_with_veto_reason_total {rows_with_veto_reason + rows_excluded_with_veto}",
         f"rows_with_a_vetoed_candidate {len(rows_vetoed)}",
         f"books_vetoed {len({own for own, _ in reason_pairs})}",
         f"other_books_named_in_reasons {len({other for _, other in reason_pairs})}",

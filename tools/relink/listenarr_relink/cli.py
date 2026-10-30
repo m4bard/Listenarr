@@ -178,7 +178,9 @@ def _explain_veto(args: argparse.Namespace) -> int:
     try:
         lines = explain_veto(Path(args.plan), path_map, args.workers)
     except (OSError, ValueError, KeyError, sqlite3.Error) as error:
-        log.error("cannot explain the plan's vetoes: %s", error)
+        # Counts-only output: an OSError's text names its file, so only its description is logged.
+        log.error("cannot explain the plan's vetoes: %s: %s", type(error).__name__,
+                  error.strerror if isinstance(error, OSError) else error)
         return 2
     print("\n".join(lines))
     return 0
@@ -227,7 +229,8 @@ def main(argv: list[str] | None = None) -> int:
     check.set_defaults(handler=_verify)
 
     explain = sub.add_parser("explain-veto", help="read-only, counts only: classify a plan's 'tags name another "
-                                                  "library book' vetoes (never prints titles or paths)")
+                                                  "library book' vetoes (never prints titles or paths; "
+                                                  "SQLite may touch the snapshot's -shm file)")
     explain.add_argument("--plan", required=True, help="plan.json produced by `plan` (its db-copy.sqlite is read)")
     explain.add_argument("--path-map", action="append", default=[], metavar="DBPREFIX=HOSTPREFIX",
                          help="default: the plan's own path map")
