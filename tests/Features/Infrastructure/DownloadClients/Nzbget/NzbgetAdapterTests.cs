@@ -300,20 +300,25 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         // AC: tracker#333. NZBGet's own client-side duplicate/health detection (and a
         // user's manual bad-mark) deletes a download without ever putting a FAILURE/
         // prefix on Status. DeleteStatus/MarkStatus are the only fields that carry that
-        // signal (e.g. Status="DELETED/COPY", DeleteStatus="COPY"). Mirrors Sonarr's
+        // signal (e.g. Status="DELETED/HEALTH", DeleteStatus="HEALTH"). Mirrors Sonarr's
         // _deleteFailedStatus array and MANUAL/BAD short-circuit (Nzbget.cs:24 and
-        // :141-148 @ 76c684e09; same shape in Readarr's Nzbget.cs @ 14f14e5da).
+        // :141-148 @ 76c684e09; same shape in Readarr's Nzbget.cs @ 14f14e5da), except that
+        // COPY and DUPE are Duplicate (3), not Failed: NZBGet already holds that content.
         [Theory]
-        [InlineData("COPY", "", 2)]
-        [InlineData("DUPE", "", 2)]
+        [InlineData("COPY", "", 3)]
+        [InlineData("DUPE", "", 3)]
+        [InlineData("copy", "", 3)]
+        [InlineData("DUPE", "BAD", 3)]
         [InlineData("HEALTH", "", 2)]
         [InlineData("SCAN", "", 2)]
         [InlineData("BAD", "", 2)]
         [InlineData("MANUAL", "", 0)]
         [InlineData("MANUAL", "NONE", 0)]
         [InlineData("MANUAL", "BAD", 2)]
+        [InlineData("GOOD", "", 0)]
+        [InlineData("NONE", "", 0)]
         [InlineData("", "", 0)]
-        public async Task HistoryReader_DeleteStatusFamily_ClassifiesFailedOrIgnoredLikeSonarrReadarr(
+        public async Task HistoryReader_DeleteStatusFamily_ClassifiesFailedDuplicateOrIgnored(
             string deleteStatus,
             string markStatus,
             int expectedOutcome)
@@ -760,6 +765,90 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
                 download.ErrorMessage);
             Assert.Equal("FAILURE/UNPACK", download.Metadata["ClientFailureReason"]);
             Assert.Equal("/existing/path", download.DownloadPath);
+        }
+
+        [Theory]
+        [InlineData("COPY")]
+        [InlineData("DUPE")]
+        public async Task GetQueueAsync_DuplicateHistoryEntry_IsReportedAsDuplicateAndNeverWarnedAsAFailure(
+            string deleteStatus)
+        {
+            // AC: #951. NZBGet keeps duplicate-deleted entries in history, and each one used to be
+            // warned about as a failure on the first poll after every restart.
+            // Behavior: Same DELETED/COPY or DELETED/DUPE entry on two polls -> no failure warning,
+            // both results carry the item with the duplicate status and the duplicate message.
+            // @category: edge-case
+            // @lane: integration
+            // @dependency: NZBGet history enrichment and the failed-history warning tracker
+            // @complexity: medium
+            using var apiMock = new NzbgetApiMock();
+            var duplicateEntry = HistoryEntryValue(
+                nzbId: "611",
+                title: "Duplicate Book",
+                status: $"DELETED/{deleteStatus}",
+                fileSizeMb: "100",
+                downloadedSizeMb: "0",
+                deleteStatus: deleteStatus);
+            QueuePollingResponses(apiMock, [], [duplicateEntry]);
+            QueuePollingResponses(apiMock, [], [duplicateEntry]);
+            using var http = new HttpClient(apiMock);
+            var logger = new CapturingLogger<NzbgetAdapter>();
+            var adapter = CreateAdapter(http, logger);
+            var client = CreateClient();
+
+            var firstPoll = await adapter.GetQueueAsync(client, CancellationToken.None);
+            var secondPoll = await adapter.GetQueueAsync(client, CancellationToken.None);
+
+            foreach (var poll in new[] { firstPoll, secondPoll })
+            {
+                var item = Assert.Single(poll);
+                Assert.Equal("611", item.Id);
+                Assert.Equal(ClientDuplicateHold.QueueStatus, item.Status);
+                Assert.Equal($"DELETED/{deleteStatus}", item.ClientFailureReason);
+                Assert.Contains($"(DELETED/{deleteStatus})", item.ErrorMessage);
+            }
+
+            Assert.Empty(FailedHistoryWarnings(logger));
+        }
+
+        [Fact]
+        public async Task FetchDownloadsAsync_QueuedDownloadDeletedAsCopy_IsHeldAsClientDuplicateNotFailed()
+        {
+            // AC: NZBGet declining a grab as identical content is not a download failure.
+            // Behavior: tracked Queued download whose history entry is DELETED/COPY -> ImportBlocked
+            // with the client-duplicate reason, never Failed.
+            // @category: regression
+            // @lane: integration
+            // @dependency: NZBGet history enrichment, QueueItemConverter
+            // @complexity: medium
+            using var apiMock = new NzbgetApiMock();
+            QueuePollingResponses(
+                apiMock,
+                [],
+                [HistoryEntryValue(
+                    nzbId: "612",
+                    title: "Copy Book",
+                    status: "DELETED/COPY",
+                    fileSizeMb: "100",
+                    downloadedSizeMb: "0",
+                    deleteStatus: "COPY")]);
+            using var http = new HttpClient(apiMock);
+            var adapter = CreateAdapter(http);
+            var download = CreateDownload("copy", "Copy Book", "612", 100);
+            download.Status = DownloadStatus.Queued;
+
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
+                CreateClient(),
+                [download],
+                CancellationToken.None);
+
+            Assert.Equal(DownloadStatus.ImportBlocked, download.Status);
+            Assert.True(ClientDuplicateHold.Holds(download));
+            Assert.Null(download.ErrorMessage);
+            Assert.Equal("DELETED/COPY", download.Metadata["ClientFailureReason"]);
+            var message = Assert.Single(download.ImportBlockMessages!);
+            Assert.StartsWith("NZBGet skipped this grab as a duplicate", message);
         }
 
         [Fact]
@@ -3588,6 +3677,41 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             Assert.Equal("/downloads/completed/Book Folder", clientItem.OutputPath);
             Assert.Equal("/downloads/completed/Book Folder", queueItem.RemotePath);
             Assert.Equal("/downloads/completed/Book Folder", queueItem.ContentPath);
+        }
+
+        [Theory]
+        [InlineData("COPY", "NZBGet skipped this grab as a duplicate: its queue or history")]
+        [InlineData("DUPE", "NZBGet skipped this grab as a duplicate of an earlier download")]
+        public void DuplicateHistory_MapsToDuplicateQueueStatusAndWarningItem_WithNoImportPath(
+            string deleteStatus,
+            string expectedMessageStart)
+        {
+            var entry = new NzbgetHistoryEntry
+            {
+                CanonicalNzbId = "503",
+                Title = "Duplicate Book Folder",
+                RawStatus = $"DELETED/{deleteStatus}",
+                DeleteStatus = deleteStatus,
+                MarkStatus = "NONE",
+                Outcome = NzbgetHistoryOutcome.Duplicate,
+                Category = "audiobooks",
+                FinalDir = string.Empty,
+                DestDir = "/downloads/incomplete/Duplicate Book Folder",
+                TotalSizeBytes = 100,
+                DownloadedSizeBytes = 0,
+                HistoryTimeUtc = DateTime.UtcNow
+            };
+
+            var clientItem = NzbgetResponseMapper.MapHistoryToDownloadClientItem(CreateClient(), entry);
+            var queueItem = NzbgetResponseMapper.MapHistoryToQueueItem(CreateClient(), entry);
+
+            Assert.Equal(DownloadItemStatus.Warning, clientItem.Status);
+            Assert.Equal(string.Empty, clientItem.OutputPath);
+            Assert.False(clientItem.CanMoveFiles);
+            Assert.Equal(ClientDuplicateHold.QueueStatus, queueItem.Status);
+            Assert.StartsWith(expectedMessageStart, queueItem.ErrorMessage);
+            Assert.Equal($"DELETED/{deleteStatus}", queueItem.ClientFailureReason);
+            Assert.Null(queueItem.ContentPath);
         }
 
         [Fact]
