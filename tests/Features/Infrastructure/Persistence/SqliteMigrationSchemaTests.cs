@@ -49,7 +49,7 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string QualityProfileUpgradeAllowedMigrationId =
         "20261029020317_AddQualityProfileUpgradeAllowed";
     private const string ReleaseBlocklistMigrationId =
-        "20261029020400_AddReleaseBlocklist";
+        "20261029020838_AddReleaseBlocklist";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()

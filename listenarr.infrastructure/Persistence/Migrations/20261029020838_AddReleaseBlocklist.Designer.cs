@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20261029020400_AddReleaseBlocklist")]
+    [Migration("20261029020838_AddReleaseBlocklist")]
     partial class AddReleaseBlocklist
     {
         /// <inheritdoc />
@@ -1358,6 +1358,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("UpgradeAllowed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
 
                     b.HasKey("Id");
 
