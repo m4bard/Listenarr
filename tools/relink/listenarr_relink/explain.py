@@ -137,13 +137,15 @@ def explain_veto(plan_path: Path, path_map: PathMap | None, workers: int) -> lis
             rows_still_vetoed.add(row_id)
             continue
         others = {k: v for k, v in keys.items() if v != own_id}
-        if other_book_named(probe.tags, others, own, False) != reason_book:
-            counts["candidates_strict_rule_not_reproduced_tags_changed"] += 1
+        tagged = tag_tokens(probe.tags)
+        # The tags must still name the book the reason cites. Which book a rule reports first depends on the
+        # version that wrote the plan, so the rule itself is not re-run for this control.
+        if reason_book not in key_of or not key_of[reason_book] <= tagged:
+            counts["candidates_reason_book_not_named_now_tags_changed"] += 1
         if other_book_named(probe.tags, others, own, identity_match) is None:
             counts["candidates_cleared_by_this_version"] += 1
         else:
             rows_still_vetoed.add(row_id)
-        tagged = tag_tokens(probe.tags)
         own_tokens = frozenset(tokens(own.title))
         exact = any(names_title(probe.tags[k], own.title, own.authors) for k in ("album", "title")
                     if probe.tags.get(k))
@@ -180,7 +182,7 @@ def explain_veto(plan_path: Path, path_map: PathMap | None, workers: int) -> lis
         *(f"{name} {counts[name]}" for name in ("candidates_vetoed", "candidates_vetoed_identity_Y",
                                                 "candidates_vetoed_identity_N",
                                                 "candidates_unreadable_now_or_book_gone",
-                                                "candidates_strict_rule_not_reproduced_tags_changed",
+                                                "candidates_reason_book_not_named_now_tags_changed",
                                                 "candidates_cleared_by_this_version")),
         f"rows_whose_every_vetoed_candidate_clears {len(rows_vetoed - rows_still_vetoed)} "
         "(a cleared veto is not a relink: re-run PLAN for that)",

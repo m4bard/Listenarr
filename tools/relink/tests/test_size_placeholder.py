@@ -496,7 +496,7 @@ def test_explain_veto_prints_counts_only(library: Library, monkeypatch: pytest.M
     lines = capsys.readouterr().out.splitlines()
     for expected in ("rows_left_out_with_veto_reason 1", "rows_excluded_with_veto_reason 1",
                      "rows_with_veto_reason_total 2", "pairs_from_reasons 2", "pairs_named_now_strict 2",
-                     "candidates_strict_rule_not_reproduced_tags_changed 0", "candidates_cleared_by_this_version 1",
+                     "candidates_reason_book_not_named_now_tags_changed 0", "candidates_cleared_by_this_version 1",
                      "rows_whose_every_vetoed_candidate_clears 1 (a cleared veto is not a relink: re-run PLAN "
                      "for that)",
                      "       1 identity=Y one_token=N contained=N own_title_tagged=Y own_title_tag_exact=Y "

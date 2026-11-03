@@ -10,6 +10,8 @@ import sqlite3
 
 import pytest
 from test_size_placeholder import (
+    LITTLE_WOMEN,
+    MARIE,
     PELLUCIDAR,
     PETER_PAN,
     PLACEHOLDER,
@@ -20,6 +22,7 @@ from test_size_placeholder import (
     left_out,
     library,
     relinked,
+    render,
 )
 
 from listenarr_relink import cli, matcher
@@ -193,3 +196,21 @@ def test_explain_veto_separates_a_secondary_series(library: Library, monkeypatch
                      "       1 identity=Y one_token=N contained=N own_title_tagged=Y own_title_tag_exact=Y "
                      "explained_authors_series=N explained_with_memberships=Y explained_with_subtitle=N"):
         assert expected in lines
+
+
+def test_explain_veto_reproduction_control_reads_the_cited_book(library: Library,
+                                                                 capsys: pytest.CaptureFixture[str]) -> None:
+    """The tags name two other books; this version cites the second, the strict rule would report the first."""
+    library.add_book(1, QUATERMAIN, 1, series="Allan Quatermain")
+    (row,) = library.add_book(2, MARIE, 1, album="Allan Quatermain", series="Allan Quatermain", Size=PLACEHOLDER)
+    library.add_book(3, LITTLE_WOMEN, 1)
+    library.rewrite(row, f"{MARIE[0]} / {LITTLE_WOMEN[0]}", "Allan Quatermain")
+    new = library.move(row)
+    _, plan = library.plan("plan")
+    assert plan is not None
+    assert left_out(plan)[row] == "physical identity matches but tags name another library book (audiobook 3)"
+    assert "candidates_reason_book_not_named_now_tags_changed 0" in explain(library, capsys)
+    donor = library.top / "retagged.mp3"
+    render(donor, 4000, MARIE[0], "Allan Quatermain")
+    new.write_bytes(donor.read_bytes())
+    assert "candidates_reason_book_not_named_now_tags_changed 1" in explain(library, capsys)
