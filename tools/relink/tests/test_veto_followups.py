@@ -6,6 +6,9 @@ stale after a rename). Titles, authors and series names are corpus values.
 
 from __future__ import annotations
 
+import json
+import sqlite3
+
 import pytest
 from test_size_placeholder import (
     LITTLE_WOMEN,
@@ -30,6 +33,7 @@ from listenarr_relink.paths import tokens
 __all__ = ["library"]  # the fixture, re-exported so pytest finds it here
 
 KENSINGTON = ("Peter Pan in Kensington Gardens", "James M. Barrie")
+MARIE_NARRATOR = "Shelly Frasier"  # the corpus narrator of MARIE
 VETO_BOOK_1 = "physical identity matches but tags name another library book (audiobook 1)"
 
 # This book, and another library book whose title is part of this one.
@@ -63,7 +67,8 @@ def test_own_tags_carrying_this_whole_title_relink_beside_a_contained_title(
     assert relinked(plan) == {row: str(new)}
 
 
-def test_own_tags_naming_only_a_contained_title_are_vetoed(library: Library) -> None:
+def test_own_tags_naming_only_a_contained_title_are_vetoed(library: Library,
+                                                         capsys: pytest.CaptureFixture[str]) -> None:
     """Accepted cost: this book's own file whose tags name only the shorter title looks like that book's file."""
     library.add_book(1, PELLUCIDAR, 1)
     (row,) = library.add_book(2, TANAR, 1, album=PELLUCIDAR[0], Size=PLACEHOLDER)
@@ -72,6 +77,10 @@ def test_own_tags_naming_only_a_contained_title_are_vetoed(library: Library) -> 
     _, plan = library.plan("plan")
     assert plan is not None and relinked(plan) == {}
     assert left_out(plan)[row] == VETO_BOOK_1
+    # A contained title has no words beyond this title, so every "explained" flag holds trivially.
+    assert ("       1 identity=Y one_token=Y contained=Y own_title_tagged=N own_title_tag_exact=N "
+            "explained_authors_series=Y explained_with_subtitle=Y "
+            "explained_with_narrators=Y") in explain(library, capsys)
 
 
 def test_shape_candidate_tagged_with_a_contained_title_is_vetoed(library: Library) -> None:
@@ -145,3 +154,22 @@ def test_explain_veto_reproduction_control_reads_the_cited_book(library: Library
     render(donor, 4000, MARIE[0], "Allan Quatermain")
     new.write_bytes(donor.read_bytes())
     assert "candidates_reason_book_not_named_now_tags_changed 1" in explain(library, capsys)
+
+
+def test_explain_veto_separates_a_narrator(library: Library, monkeypatch: pytest.MonkeyPatch,
+                                           capsys: pytest.CaptureFixture[str]) -> None:
+    """A library book titled with this book's narrator (a corpus narrator string), named in this book's tags."""
+    library.add_book(1, (MARIE_NARRATOR, MARIE_NARRATOR), 1)
+    (row,) = library.add_book(2, MARIE, 1, album=f"{MARIE[0]} - {MARIE_NARRATOR}", Size=PLACEHOLDER)
+    with sqlite3.connect(library.db) as connection:
+        connection.execute("UPDATE Audiobooks SET Narrators = ? WHERE Id = 2", (json.dumps([MARIE_NARRATOR]),))
+    library.move(row)
+    _, plan = library.plan("plan")
+    assert plan is not None and left_out(plan)[row] == VETO_BOOK_1
+    lines = explain(library, capsys)
+    for expected in ("candidates_cleared_by_this_version 0",
+                     "       1 identity=Y one_token=N contained=N own_title_tagged=Y own_title_tag_exact=Y "
+                     "explained_authors_series=N explained_with_subtitle=N "
+                     "explained_with_narrators=Y"):
+        assert expected in lines
+    assert "frasier" not in "\n".join(lines).casefold()

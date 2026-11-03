@@ -21,7 +21,7 @@ FILE_COLUMNS = ("Id", "AudiobookId", "Path", "Size", "DurationSeconds", "Codec",
                 "PathIdentityLookupKey", "PathOwnershipKey")
 BOOK_COLUMNS = ("Id", "Title", "Authors", "BasePath", "FilePath")
 # Book columns read only as matching context, never as a precondition; a database may predate them.
-BOOK_CONTEXT_COLUMNS = ("Series", "Subtitle")
+BOOK_CONTEXT_COLUMNS = ("Series", "Subtitle", "Narrators")
 
 
 @dataclass

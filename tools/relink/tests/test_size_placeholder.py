@@ -43,7 +43,7 @@ PLACEHOLDER = 64
 SCHEMA = """
 CREATE TABLE RootFolders (Id INTEGER PRIMARY KEY, Path TEXT);
 CREATE TABLE Audiobooks (Id INTEGER PRIMARY KEY, Title TEXT, Authors TEXT, BasePath TEXT, FilePath TEXT,
-    Series TEXT, Subtitle TEXT);
+    Series TEXT, Subtitle TEXT, Narrators TEXT);
 CREATE TABLE AudiobookFiles (Id INTEGER PRIMARY KEY, AudiobookId INTEGER, Path TEXT, Size INTEGER,
     DurationSeconds REAL, Codec TEXT, SampleRate INTEGER, Channels INTEGER, PhysicalObjectIdentity TEXT,
     PhysicalIdentityObservedAtUtc TEXT, CanonicalPath TEXT, PathIdentityState TEXT, PathIdentityLookupKey TEXT,
@@ -498,9 +498,10 @@ def test_explain_veto_prints_counts_only(library: Library, monkeypatch: pytest.M
                      "rows_whose_every_vetoed_candidate_clears 1 (a cleared veto is not a relink: re-run PLAN "
                      "for that)",
                      "       1 identity=Y one_token=N contained=N own_title_tagged=Y own_title_tag_exact=Y "
-                     "explained_authors_series=Y explained_with_subtitle=Y",
+                     "explained_authors_series=Y explained_with_subtitle=Y explained_with_narrators=Y",
                      "       1 identity=Y one_token=N contained=N own_title_tagged=Y own_title_tag_exact=N "
-                     "explained_authors_series=N explained_with_subtitle=N",
+                     "explained_authors_series=N explained_with_subtitle=N "
+                     "explained_with_narrators=N",
                      "relinks_in_plan 0", "relinks_vetoed_by_this_version 0"):
         assert expected in lines
     text = "\n".join(lines).casefold()
