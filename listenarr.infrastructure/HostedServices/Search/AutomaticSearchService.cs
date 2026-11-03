@@ -311,7 +311,8 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 return new AudiobookSearchOutcome(0, indexersSkipped);
             }
 
-            // Drop releases already blocked for this book before they are assessed.
+            // Drop releases already blocked for this book, or held by the client as a duplicate of
+            // content it already has, before they are assessed.
             //
             // This is the path that actually re-grabs: it selects here and calls StartDownloadAsync
             // directly rather than going through SearchAndDownloadAsync, so without this a release
@@ -319,8 +320,10 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             using (var blocklistScope = _serviceScopeFactory.CreateScope())
             {
                 var blocklistService = blocklistScope.ServiceProvider.GetRequiredService<IBlocklistService>();
-                searchResults = await BlockedReleaseFilter.ExcludeAsync(
-                    blocklistService, audiobook.Id, searchResults, _logger);
+                searchResults = ClientDuplicateReleaseFilter.Exclude(
+                    allDownloads,
+                    await BlockedReleaseFilter.ExcludeAsync(blocklistService, audiobook.Id, searchResults, _logger),
+                    _logger);
             }
 
             var assessment = await automaticScoring.ScoreAsync(audiobook, searchResults, audiobook.QualityProfile, stoppingToken);

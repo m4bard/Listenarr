@@ -71,9 +71,12 @@ namespace Listenarr.Application.Downloads.Submission
                 return new SearchAndDownloadResult { Success = false, Message = "No search results found" };
             }
 
-            // Drop releases already blocked for this book before they are assessed, so a blocked
-            // release can never be the one selected.
-            searchResults = await BlockedReleaseFilter.ExcludeAsync(blocklistService, audiobookId, searchResults, logger);
+            // Drop releases already blocked for this book, or held by the client as a duplicate of
+            // content it already has, before they are assessed, so neither can be the one selected.
+            searchResults = ClientDuplicateReleaseFilter.Exclude(
+                await downloadRepository.GetByAudiobookIdAsync(audiobookId),
+                await BlockedReleaseFilter.ExcludeAsync(blocklistService, audiobookId, searchResults, logger),
+                logger);
 
             var assessment = await automaticScoring.ScoreAsync(audiobook, searchResults, audiobook.QualityProfile);
             var scoredResults = assessment.Candidates;

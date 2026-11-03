@@ -190,6 +190,7 @@ internal static class NzbgetResponseMapper
         NzbgetHistoryEntry entry)
     {
         var isCompleted = entry.Outcome == NzbgetHistoryOutcome.Completed;
+        var isDuplicate = entry.Outcome == NzbgetHistoryOutcome.Duplicate;
         var downloadedBytes = isCompleted
             ? entry.TotalSizeBytes
             : entry.DownloadedSizeBytes;
@@ -213,7 +214,9 @@ internal static class NzbgetResponseMapper
             Id = entry.CanonicalNzbId,
             Title = entry.Title,
             Quality = entry.Category,
-            Status = isCompleted ? "completed" : "failed",
+            Status = isCompleted
+                ? "completed"
+                : isDuplicate ? ClientDuplicateHold.QueueStatus : "failed",
             Progress = progress,
             Size = entry.TotalSizeBytes,
             Downloaded = downloadedBytes,
@@ -223,7 +226,9 @@ internal static class NzbgetResponseMapper
             DownloadClientId = client.Id ?? string.Empty,
             DownloadClientType = "nzbget",
             AddedAt = DateTime.UtcNow,
-            ErrorMessage = isCompleted ? null : NzbgetFailureMessageMapper.Map(entry),
+            ErrorMessage = isCompleted
+                ? null
+                : isDuplicate ? NzbgetFailureMessageMapper.MapDuplicate(entry) : NzbgetFailureMessageMapper.Map(entry),
             ClientFailureReason = isCompleted ? null : entry.RawStatus,
             CanPause = false,
             CanRemove = true,
@@ -281,9 +286,14 @@ internal static class NzbgetResponseMapper
             DownloadId = entry.CanonicalNzbId.ToUpperInvariant(),
             Title = entry.Title,
             Category = entry.Category,
-            Status = isCompleted
-                ? DownloadItemStatus.Completed
-                : DownloadItemStatus.Failed,
+            // Warning rather than Failed for a duplicate: the client is not reporting a broken
+            // download, only that it did not download this one because it already has it.
+            Status = entry.Outcome switch
+            {
+                NzbgetHistoryOutcome.Completed => DownloadItemStatus.Completed,
+                NzbgetHistoryOutcome.Duplicate => DownloadItemStatus.Warning,
+                _ => DownloadItemStatus.Failed
+            },
             TotalSize = entry.TotalSizeBytes,
             RemainingSize = remainingBytes,
             RemainingTime = null,
