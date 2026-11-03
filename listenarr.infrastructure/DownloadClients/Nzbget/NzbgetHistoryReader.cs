@@ -38,7 +38,11 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
     {
         Ignored = 0,
         Completed = 1,
-        Failed = 2
+        Failed = 2,
+
+        // NZBGet's duplicate check skipped the entry because its queue or history already holds a
+        // match. Not a failure; see ClientDuplicateHold.
+        Duplicate = 3
     }
 
     internal sealed class NzbgetHistoryReader
@@ -172,16 +176,25 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                     : string.Empty;
         }
 
-        // Delete-status family that Sonarr/Readarr treat as a client-side failure even
-        // though NZBGet's own Status string never carries a FAILURE/ prefix for them
-        // (e.g. Status="DELETED/COPY" when DeleteStatus="COPY"). Sourced from Sonarr's
-        // Nzbget.cs:24 (_deleteFailedStatus) at commit 76c684e09; Readarr carries the
-        // identical array at Nzbget.cs:23 at commit 14f14e5da (one line earlier than
-        // Sonarr's, not the same line). Five values, not the four in the original task
-        // brief: "BAD" is a real DeleteStatus value NZBGet sets itself during
+        // Delete-status family that NZBGet sets itself even though its Status string never
+        // carries a FAILURE/ prefix for them (e.g. Status="DELETED/HEALTH" when
+        // DeleteStatus="HEALTH"). Sourced from Sonarr's Nzbget.cs:24 (_deleteFailedStatus) at
+        // commit 76c684e09; Readarr carries the identical array at Nzbget.cs:23 at commit
+        // 14f14e5da. "BAD" is a real DeleteStatus value NZBGet sets itself during
         // post-processing, distinct from MarkStatus="BAD".
+        //
+        // Sonarr's array also holds COPY and DUPE. They are split out below rather than failed
+        // here: both mean NZBGet's duplicate check skipped the grab because its queue or history
+        // already holds a match, so the release is not broken and must not be blocklisted. That follows the qBittorrent 409
+        // precedent, where the client already holding the release is not a failure either.
         private static readonly string[] DeleteFailedStatuses =
-            ["HEALTH", "DUPE", "SCAN", "COPY", "BAD"];
+            ["HEALTH", "SCAN", "BAD"];
+
+        // COPY: a queued or history entry has exactly the same content, whatever became of it.
+        // DUPE: the duplicate check matched a successful download by duplicate key, or by name
+        // when no key was sent.
+        private static readonly string[] DeleteDuplicateStatuses =
+            ["COPY", "DUPE"];
 
         private static NzbgetHistoryOutcome ClassifyOutcome(
             string rawStatus,
@@ -209,6 +222,11 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                 return string.Equals(markStatus, "BAD", StringComparison.OrdinalIgnoreCase)
                     ? NzbgetHistoryOutcome.Failed
                     : NzbgetHistoryOutcome.Ignored;
+            }
+
+            if (DeleteDuplicateStatuses.Contains(deleteStatus, StringComparer.OrdinalIgnoreCase))
+            {
+                return NzbgetHistoryOutcome.Duplicate;
             }
 
             return DeleteFailedStatuses.Contains(deleteStatus, StringComparer.OrdinalIgnoreCase)
