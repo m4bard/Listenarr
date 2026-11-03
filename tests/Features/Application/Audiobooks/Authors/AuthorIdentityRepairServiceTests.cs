@@ -333,7 +333,10 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Authors
             var corrected = new MonitoredAuthor { Id = 12, AuthorName = "Blanche Bendahan", AuthorAsin = "B017TI5S3E", Region = "us" };
             var alreadyCorrect = new MonitoredAuthor { Id = 13, AuthorName = "Constance Garnett", AuthorAsin = "B000APTDDU", Region = "us" };
             var updatedBefore = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-            var rows = new[] { cleared, corrected, alreadyCorrect };
+            // No provider setup for this name, so the lookup answers null and the verdict is Unresolved,
+            // which in a live run is still stamped and upserted.
+            var unresolved = new MonitoredAuthor { Id = 14, AuthorName = "Aria Sattva", AuthorAsin = "B00AU4XSH8", Region = "us" };
+            var rows = new[] { cleared, corrected, alreadyCorrect, unresolved };
             foreach (var row in rows)
             {
                 row.UpdatedAt = updatedBefore;
@@ -349,21 +352,26 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Authors
             // The loop ran and reached a different verdict for each row, so the empty write list
             // below is the guard working rather than the loop never starting.
             Assert.True(report.DryRun);
-            Assert.Equal(3, report.Examined);
+            Assert.Equal(4, report.Examined);
             Assert.Equal(1, report.Cleared);
             Assert.Equal(1, report.Corrected);
             Assert.Equal(1, report.AlreadyCorrect);
-            Assert.Equal(3, report.Decisions.Count(decision => decision.Store == "MonitoredAuthors"));
+            Assert.Equal(1, report.Unresolved);
+            Assert.Equal(4, report.Decisions.Count(decision => decision.Store == "MonitoredAuthors"));
 
+            // The only call on the monitored repository is the read, so a write added to it later
+            // (Upsert, Delete, anything) fails here too.
             harness.MonitoredAuthors.Verify(
-                repository => repository.UpsertAsync(It.IsAny<MonitoredAuthor>(), It.IsAny<CancellationToken>()),
-                Times.Never);
+                repository => repository.GetAllAsync(It.IsAny<CancellationToken>()),
+                Times.Once);
+            harness.MonitoredAuthors.VerifyNoOtherCalls();
 
             // Upsert is not the only way to write a tracked entity, so the rows themselves are
             // checked as well: none of them has moved.
             Assert.Equal("B00O0C6Z26", cleared.AuthorAsin);
             Assert.Equal("B017TI5S3E", corrected.AuthorAsin);
             Assert.Equal("B000APTDDU", alreadyCorrect.AuthorAsin);
+            Assert.Equal("B00AU4XSH8", unresolved.AuthorAsin);
             Assert.All(rows, row =>
             {
                 Assert.Null(row.AuthorIdentityCheckedAt);
