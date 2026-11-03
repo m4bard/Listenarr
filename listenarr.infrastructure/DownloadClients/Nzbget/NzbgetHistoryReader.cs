@@ -185,8 +185,9 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
         //
         // Sonarr's array also holds COPY and DUPE. They are split out below rather than failed
         // here: both mean NZBGet's duplicate check skipped the grab because its queue or history
-        // already holds a match, so the release is not broken and must not be blocklisted. That follows the qBittorrent 409
-        // precedent, where the client already holding the release is not a failure either.
+        // already holds a match, so the release is not broken and must not be blocklisted. That
+        // follows the qBittorrent 409 precedent, where the client already holding the release is
+        // not a failure either.
         private static readonly string[] DeleteFailedStatuses =
             ["HEALTH", "SCAN", "BAD"];
 

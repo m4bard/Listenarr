@@ -54,8 +54,8 @@ internal static class NzbgetFailureMessageMapper
         // COPY does not mean the earlier entry ever downloaded anything: NZBGet also answers COPY
         // for an identical entry that is still queued, or that was deleted from the queue.
         return string.Equals(entry.DeleteStatus, "COPY", StringComparison.OrdinalIgnoreCase)
-            ? $"NZBGet skipped this grab as a duplicate: its queue or history already holds an entry with exactly the same content{detail}, so nothing was downloaded. That entry may still be downloading, or may have finished, failed or been deleted. Check NZBGet's queue and history, then remove this download to allow the same release again."
-            : $"NZBGet skipped this grab as a duplicate of an earlier download with the same name or duplicate key that already succeeded{detail}, so nothing was downloaded. Check the library and NZBGet's history, then remove this download to allow the same release again.";
+            ? $"NZBGet skipped this grab as a duplicate: its queue or history already holds an entry with exactly the same content{detail}, so nothing was downloaded. That entry may still be downloading, or may have finished, failed or been deleted. NZBGet keeps answering this way while that entry exists, so delete it from NZBGet's queue or history first, then remove this download to allow the same release again."
+            : $"NZBGet skipped this grab as a duplicate of an earlier download with the same name or duplicate key that already succeeded{detail}, so nothing was downloaded. Check the library first. NZBGet keeps answering this way while that successful entry is in its history, so delete it there before removing this download if the same release should be grabbed again.";
     }
 
     public static bool IsMoveOrPostProcessingFailure(string? rawStatus)

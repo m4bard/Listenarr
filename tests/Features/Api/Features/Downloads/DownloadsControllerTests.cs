@@ -338,6 +338,30 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
 
         [Fact]
         [Trait("Method", "RetryBlockedImport")]
+        [Trait("Scenario", "RetryBlockedImportRefusesAClientDuplicateHold")]
+        public async Task RetryBlockedImport_ClientDuplicateHold_IsRefusedAndKeepsTheHold()
+        {
+            // RetryBlockedImport_ImportBlocked_TransitionsToImportPending above is the control: the
+            // same call on an ordinary import block is accepted.
+            await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithId("d-duplicate")
+                .WithStartDate(DateTime.UtcNow.AddMinutes(-1))
+                .WithDownloadClientConfiguration(_client)
+                .WithBlockedStatus(ClientDuplicateHold.Reason)
+                .WithBlockMessage("skipped as a duplicate")
+                .Build());
+
+            var controller = MockUtils.CreateDownloadsController(_provider);
+            var action = await controller.RetryBlockedImport("d-duplicate");
+
+            Assert.IsType<ConflictObjectResult>(action);
+            var unchanged = await _downloadRepository.GetByIdAsync("d-duplicate");
+            Assert.NotNull(unchanged);
+            Assert.True(ClientDuplicateHold.Holds(unchanged!));
+        }
+
+        [Fact]
+        [Trait("Method", "RetryBlockedImport")]
         [Trait("Scenario", "RetryBlockedImportActuallyQueuesTheImport")]
         public async Task RetryBlockedImport_QueuesAProcessingJob()
         {

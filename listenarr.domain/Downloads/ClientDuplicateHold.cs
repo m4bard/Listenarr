@@ -14,15 +14,18 @@ namespace Listenarr.Domain.Downloads
     /// A grab the download client accepted and then skipped as a duplicate of something already in
     /// its queue or history, such as NZBGet's duplicate check deleting it as DELETED/COPY.
     ///
-    /// This is not a failure: the release is not broken, so it is never blocklisted and never
-    /// records DownloadFailed. It is not a completion either, because nothing new was downloaded
-    /// and there is nothing at the client's path to import. The download is held as
+    /// This is not a failure: the release is not broken, so it is never blocklisted, never
+    /// records DownloadFailed and never sends the failure notification. It is not a completion
+    /// either, because nothing new was downloaded and there is nothing at the client's path to
+    /// import. The download is held as
     /// <see cref="DownloadStatus.ImportBlocked" /> with this reason, which is terminal, is not
     /// polled, is skipped by orphan cleanup, and stays visible until the user clears it.
     ///
     /// While it is held, searches that grab on their own skip the identical release for that book,
-    /// because grabbing it again only gets the same answer from the client. Clearing the download lifts
-    /// that, so nothing is banned permanently.
+    /// because grabbing it again only gets the same answer from the client. Removing the download
+    /// lifts that, so nothing is banned permanently, though the client keeps answering the same
+    /// way until its own matching entry is gone. Retry-import refuses a hold, since there is
+    /// nothing to import and unblocking would drop the hold.
     /// </summary>
     public static class ClientDuplicateHold
     {
