@@ -56,7 +56,9 @@ namespace Listenarr.Application.Downloads.Submission
             return kept;
         }
 
-        private static bool IsBlocked(SearchResult result, HashSet<string> blockedSet)
+        // Internal so ClientDuplicateReleaseFilter asks the same question through the same code
+        // rather than deriving a search-side identity of its own.
+        internal static bool IsBlocked(SearchResult result, HashSet<string> blockedSet)
         {
             // Deliberately no field-picking here. ReleaseIdentity owns which parts of a search
             // result make up the key, and the grab side asks it the same question about the same
