@@ -13,6 +13,7 @@ from test_size_placeholder import (
     PELLUCIDAR,
     PETER_PAN,
     PLACEHOLDER,
+    PRINCESS,
     QUATERMAIN,
     TANAR,
     Library,
@@ -20,6 +21,10 @@ from test_size_placeholder import (
     library,
     relinked,
 )
+
+from listenarr_relink import cli, matcher
+from listenarr_relink.inventory import BookRow
+from listenarr_relink.paths import tokens
 
 __all__ = ["library"]  # the fixture, re-exported so pytest finds it here
 
@@ -128,3 +133,63 @@ def test_database_without_series_memberships_reads_the_primary_series_only(libra
     assert rc == 0 and plan is not None and relinked(plan) == {}
     assert left_out(plan)[row] == VETO_BOOK_1
 
+
+
+def rule_before_contained_titles(tags: dict[str, str], others: dict[frozenset[str], int],
+                                 own: BookRow | None, identity_match: bool) -> int | None:
+    """The veto as it was before this change: a title contained in this one never counted."""
+    own_tokens = frozenset(tokens(own.title)) if own else frozenset()
+    tagged = matcher.tag_tokens(tags)
+    own_named = identity_match and matcher.own_title_tagged(tagged, own)
+    for title_tokens, book_id in others.items():
+        if not title_tokens <= tagged or title_tokens <= own_tokens:
+            continue
+        if own_named and matcher.explained_by_own_book(title_tokens, own):
+            continue
+        return book_id
+    return None
+
+
+def explain(library: Library, capsys: pytest.CaptureFixture[str]) -> list[str]:
+    """Run explain-veto on the library's plan; return its output lines."""
+    capsys.readouterr()
+    assert cli.main(["explain-veto", "--plan", str(library.top / "plan" / "plan.json"), "--workers", "2"]) == 0
+    return capsys.readouterr().out.splitlines()
+
+
+def test_explain_veto_audits_an_applied_plan_against_contained_titles(
+        library: Library, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    library.add_book(1, PELLUCIDAR, 1)
+    (tanar,) = library.add_book(2, TANAR, 1, Size=PLACEHOLDER)
+    (princess,) = library.add_book(3, PRINCESS, 1, Size=PLACEHOLDER)
+    library.rewrite(tanar, PELLUCIDAR[0])
+    library.move(tanar)
+    library.move(princess)
+    monkeypatch.setattr(matcher, "other_book_named", rule_before_contained_titles)
+    _, plan = library.plan("plan")
+    assert plan is not None and set(relinked(plan)) == {tanar, princess}
+    monkeypatch.undo()
+    lines = explain(library, capsys)
+    for expected in ("relinks_in_plan 2", "relinks_unreadable_now_or_book_gone 0", "relinks_vetoed_by_this_version 1",
+                     "relinks_vetoed_by_a_contained_title 1"):
+        assert expected in lines
+    text = "\n".join(lines).casefold()
+    assert str(library.top).casefold() not in text and "pellucidar" not in text
+
+
+def test_explain_veto_separates_a_secondary_series(library: Library, monkeypatch: pytest.MonkeyPatch,
+                                                   capsys: pytest.CaptureFixture[str]) -> None:
+    library.add_book(1, QUATERMAIN, 1, series="Allan Quatermain")
+    (row,) = library.add_book(2, SHE_AND_ALLAN, 1, album="Allan Quatermain", series="Ayesha", Size=PLACEHOLDER)
+    add_secondary_series(library, 2, "Ayesha", "Allan Quatermain")
+    library.move(row)
+    strict = matcher.other_book_named  # a plan written before identity could waive the veto
+    monkeypatch.setattr(matcher, "other_book_named", lambda tags, others, own, _: strict(tags, others, own, False))
+    _, plan = library.plan("plan")
+    assert plan is not None and left_out(plan)[row] == VETO_BOOK_1
+    monkeypatch.undo()
+    lines = explain(library, capsys)
+    for expected in ("candidates_cleared_by_this_version 1",
+                     "       1 identity=Y one_token=N contained=N own_title_tagged=Y own_title_tag_exact=Y "
+                     "explained_authors_series=N explained_with_memberships=Y explained_with_subtitle=N"):
+        assert expected in lines

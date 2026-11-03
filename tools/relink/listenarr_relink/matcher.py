@@ -18,9 +18,10 @@ Rules (each one exists because guessing here can later let a delete hit the wron
 * A link also needs path evidence (same folder as the old path, or a folder/file name or album/title tag
   that names exactly this title, see ``paths.names_title``). Title evidence alone never selects a file; it
   only confirms one. A title with no distinctive token (``1``, ``It``) is never evidence or a veto key.
-* Tags that fully name another library book reject a candidate unless that title is part of this one. For
-  the object .620 registered (physical identity), they do not when the tags also carry this book's whole title
-  and the other title's remaining words are this book's own authors or series (``other_book_named``).
+* Tags that fully name another library book reject a candidate. A title that is part of this one does not
+  when the tags also carry this book's whole title. For the object .620 registered (physical identity),
+  neither does one whose remaining words are this book's own authors or series (any of its series), again
+  when the tags also carry this book's whole title (``other_book_named``).
 * A file (one object, whatever its names) is never linked to two rows, never to a file a live row already
   holds (also through a symlink row), and never to a file that was also a candidate of a row left
   unresolved (it might be that row's file).
@@ -165,7 +166,10 @@ def own_title_tagged(tagged: frozenset[str], own: BookRow | None) -> bool:
 
 
 def explained_by_own_book(title_tokens: frozenset[str], own: BookRow | None) -> bool:
-    """True when every word of another title that is not in this book's title is in its authors or series."""
+    """True when every word of another title that is not in this book's title is in its authors or series.
+
+    The series are the primary one (``Audiobooks.Series``) and every series membership.
+    """
     if own is None:
         return False
     own_words = {t for text in own.own_text for t in tokens(text)}
@@ -176,9 +180,11 @@ def other_book_named(tags: dict[str, str], other_titles: dict[frozenset[str], in
                      identity_match: bool) -> int | None:
     """The library book other than ``own`` whose title the tags fully name, or None.
 
-    A title that is part of this book's own title never counts. For a file whose physical identity matched,
-    neither does one explained by this book's own text (``Allan Quatermain``, the series, in tags of ``Marie``)
-    while the tags also carry this book's whole title. A different book's real tags rarely carry both, and
+    A title that is part of this book's own title (``Pellucidar`` in ``Tanar of Pellucidar``) counts only when
+    the tags lack the rest of this title: that book's own file, rewritten into this object, carries its title
+    and not the words this one adds. For a file whose physical identity matched, a title explained by this
+    book's own text (``Allan Quatermain``, the series, in tags of ``Marie``) does not count either while the
+    tags also carry this book's whole title. A different book's real tags rarely carry both, and
     the identity match already rules out a renamer's swap of two files: only content rewritten into this
     object is left to catch. Without identity the tags may be all that separates two books, so they keep the
     strict reading.
@@ -190,11 +196,15 @@ def other_book_named(tags: dict[str, str], other_titles: dict[frozenset[str], in
     """
     tagged = tag_tokens(tags)
     own_tokens = frozenset(tokens(own.title)) if own else frozenset()
-    own_named = identity_match and own_title_tagged(tagged, own)
+    own_tagged = own_title_tagged(tagged, own)
     for title_tokens, book_id in other_titles.items():
-        if not title_tokens <= tagged or title_tokens <= own_tokens:
+        if not title_tokens <= tagged:
             continue
-        if own_named and explained_by_own_book(title_tokens, own):
+        if title_tokens <= own_tokens:
+            if own_tagged:
+                continue
+            return book_id
+        if identity_match and own_tagged and explained_by_own_book(title_tokens, own):
             continue
         return book_id
     return None

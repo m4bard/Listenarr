@@ -22,6 +22,8 @@ FILE_COLUMNS = ("Id", "AudiobookId", "Path", "Size", "DurationSeconds", "Codec",
 BOOK_COLUMNS = ("Id", "Title", "Authors", "BasePath", "FilePath")
 # Book columns read only as matching context, never as a precondition; a database may predate them.
 BOOK_CONTEXT_COLUMNS = ("Series", "Subtitle")
+# Every series a book belongs to; Audiobooks.Series holds only the primary one. Context too, never a precondition.
+SERIES_MEMBERSHIPS_TABLE = "AudiobookSeriesMemberships"
 
 
 @dataclass
@@ -62,6 +64,7 @@ class BookRow:
 
     values: dict[str, object]
     context: dict[str, str] = field(default_factory=dict)
+    series_memberships: list[str] = field(default_factory=list)
 
     @property
     def id(self) -> int:
@@ -85,13 +88,14 @@ class BookRow:
 
     @property
     def own_text(self) -> list[str]:
-        """Authors and series: what this book's own tags may say besides its title.
+        """Authors and series (primary and memberships): what this book's own tags may say besides its title.
 
         Not the subtitle: nothing showed it is needed, and it can spell out another edition's whole title. The
         series can name another edition too (a series named after the work); that is accepted, see
         ``matcher.other_book_named``.
         """
-        return [*self.authors, *([self.context["Series"]] if "Series" in self.context else [])]
+        primary = [self.context["Series"]] if "Series" in self.context else []
+        return [*self.authors, *primary, *self.series_memberships]
 
     @property
     def base_path(self) -> str:
@@ -161,7 +165,7 @@ def snapshot_database(live_db: str, copy_path: str) -> None:
 
 
 def load_rows(connection: sqlite3.Connection) -> tuple[list[str], dict[int, BookRow], list[FileRow]]:
-    """Roots, audiobooks and file rows."""
+    """Roots, audiobooks (with their series memberships, when the database has them) and file rows."""
     roots = [str(r["Path"]) for r in connection.execute("SELECT Path FROM RootFolders ORDER BY Id") if r["Path"]]
     present = {str(r["name"]) for r in connection.execute("PRAGMA table_info(Audiobooks)")}
     context_columns = [c for c in BOOK_CONTEXT_COLUMNS if c in present]
@@ -170,6 +174,14 @@ def load_rows(connection: sqlite3.Connection) -> tuple[list[str], dict[int, Book
         values = dict(r)
         context = {c: str(value) for c in context_columns if (value := values.pop(c))}
         books[int(str(values["Id"]))] = BookRow(values, context)
+    has_memberships = connection.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                                         (SERIES_MEMBERSHIPS_TABLE,)).fetchone()
+    if has_memberships:
+        for r in connection.execute(f"SELECT AudiobookId, SeriesName FROM {SERIES_MEMBERSHIPS_TABLE} "
+                                    "WHERE SeriesName IS NOT NULL AND SeriesName != '' ORDER BY AudiobookId, Id"):
+            book = books.get(int(str(r["AudiobookId"])))
+            if book is not None:
+                book.series_memberships.append(str(r["SeriesName"]))
     files = [FileRow(dict(r)) for r in
              connection.execute(f"SELECT {', '.join(FILE_COLUMNS)} FROM AudiobookFiles ORDER BY Id")]
     return roots, books, files
