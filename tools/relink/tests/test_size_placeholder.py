@@ -48,6 +48,8 @@ CREATE TABLE AudiobookFiles (Id INTEGER PRIMARY KEY, AudiobookId INTEGER, Path T
     DurationSeconds REAL, Codec TEXT, SampleRate INTEGER, Channels INTEGER, PhysicalObjectIdentity TEXT,
     PhysicalIdentityObservedAtUtc TEXT, CanonicalPath TEXT, PathIdentityState TEXT, PathIdentityLookupKey TEXT,
     PathOwnershipKey TEXT, PathIdentityReason TEXT);
+CREATE TABLE AudiobookSeriesMemberships (Id INTEGER PRIMARY KEY, AudiobookId INTEGER, SeriesName TEXT,
+    SeriesNumber TEXT, SeriesAsin TEXT, IsPrimary INTEGER, SortOrder INTEGER);
 """
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
