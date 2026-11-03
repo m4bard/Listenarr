@@ -546,7 +546,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             string deleteStatus,
             string releaseIdentityHash)
         {
-            var downloadHistory = UseDownloadHistoryMock();
+            var (downloadHistory, notifications) = UseObservedServiceMocks();
             var nzbgetClient = await SetUpNzbgetClientAsync();
             await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
                 .WithFailedDownloadHandling()
@@ -575,6 +575,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             var blocklist = _provider.GetRequiredService<IBlocklistService>();
             Assert.Single(await blocklist.GetForAudiobookAsync(audiobook.Id));
             VerifyDownloadFailedRecorded(downloadHistory, download.Id, Times.Once());
+            notifications.Verify(service => service.OnDownloadFailedAsync(It.IsAny<Download>()), Times.AtLeastOnce());
         }
 
         // NZBGet's duplicate check declined the grab because it already holds the content. That
@@ -594,7 +595,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             DownloadStatus startingStatus,
             string releaseIdentityHash)
         {
-            var downloadHistory = UseDownloadHistoryMock();
+            var (downloadHistory, notifications) = UseObservedServiceMocks();
             var nzbgetClient = await SetUpNzbgetClientAsync();
             await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
                 .WithFailedDownloadHandling()
@@ -627,6 +628,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             var blocklist = _provider.GetRequiredService<IBlocklistService>();
             Assert.Empty(await blocklist.GetForAudiobookAsync(audiobook.Id));
             VerifyDownloadFailedRecorded(downloadHistory, download.Id, Times.Never());
+            notifications.Verify(service => service.OnDownloadFailedAsync(It.IsAny<Download>()), Times.Never());
         }
 
         [Fact]
@@ -698,14 +700,17 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
         }
 
         // History the monitor writes from its own scope does not read back through the test's
-        // history repository here, so the history service is observed as a mock instead. The
-        // real-failure rows verifying it Once are what show it is the instance the monitor calls.
-        private Mock<IDownloadHistoryService> UseDownloadHistoryMock()
+        // history repository here, so the history and notification services are observed as
+        // mocks instead. The real-failure rows verifying them are what show they are the
+        // instances the monitor calls.
+        private (Mock<IDownloadHistoryService> DownloadHistory, Mock<INotificationService> Notifications) UseObservedServiceMocks()
         {
             var downloadHistory = new Mock<IDownloadHistoryService>();
+            var notifications = new Mock<INotificationService>();
             _services.AddSingleton(downloadHistory.Object);
+            _services.AddSingleton(notifications.Object);
             Init();
-            return downloadHistory;
+            return (downloadHistory, notifications);
         }
 
         private static void VerifyDownloadFailedRecorded(

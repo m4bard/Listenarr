@@ -208,6 +208,19 @@ public partial class DownloadsController : ControllerBase
                 });
             }
 
+            // A client-duplicate hold has nothing to import: the client skipped the grab. Unblocking
+            // it would only end in a different block, and would drop the hold that stops automatic
+            // search grabbing the same release straight back.
+            if (ClientDuplicateHold.Holds(download))
+            {
+                return Conflict(new
+                {
+                    error = "The download client skipped this download as a duplicate, so there is nothing to import. Clear the matching entry in the download client's queue or history, then remove this download to allow the same release again.",
+                    id,
+                    status = download.Status.ToString()
+                });
+            }
+
             // At most one active download per audiobook: EfDownloadRepository sets
             // ActiveAudiobookDeduplicationKey from the audiobook id whenever the status is active,
             // and a filtered unique index enforces it. ImportPending counts as active and

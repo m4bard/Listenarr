@@ -486,7 +486,8 @@ namespace Listenarr.Application.Downloads.Submission
                     await notificationService.OnDownloadImportedAsync(download);
                     return;
                 case (_, DownloadStatus.Failed):
-                case (_, DownloadStatus.ImportBlocked):
+                // A client-duplicate hold is not a failure, so it must not raise the failure alert.
+                case (_, DownloadStatus.ImportBlocked) when !ClientDuplicateHold.Holds(download):
                     await notificationService.OnDownloadFailedAsync(download);
                     return;
                 default:
