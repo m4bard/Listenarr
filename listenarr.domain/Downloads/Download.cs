@@ -286,10 +286,14 @@ namespace Listenarr.Domain.Downloads
                     or DownloadStatus.Completed
                     or DownloadStatus.ImportBlocked,
 
+                // Queued and Paused are for ClientDuplicateHold: the client can decline a grab as a
+                // duplicate before it ever reports the download as started.
                 DownloadStatus.ImportBlocked => Status is DownloadStatus.ImportPending
                     or DownloadStatus.Processing
                     or DownloadStatus.Completed
-                    or DownloadStatus.Downloading,
+                    or DownloadStatus.Downloading
+                    or DownloadStatus.Queued
+                    or DownloadStatus.Paused,
 
                 DownloadStatus.Moved => Status is DownloadStatus.ImportPending
                     or DownloadStatus.Completed

@@ -364,5 +364,52 @@ namespace Listenarr.Tests.Features.Application.Mapping
             Assert.Equal("/new/path", updated.Metadata["ClientContentPath"]);
             Assert.False(updated.Metadata.ContainsKey("ClientFailureReason"));
         }
+
+        [Theory]
+        [Trait("Method", "UpdateFromQueueItem")]
+        [InlineData(DownloadStatus.Queued)]
+        [InlineData(DownloadStatus.Paused)]
+        [InlineData(DownloadStatus.Downloading)]
+        public void UpdateFromQueueItem_HoldsDownload_WhenClientReportsADuplicate(DownloadStatus startingStatus)
+        {
+            var download = new Download { Status = startingStatus };
+            var item = new QueueItem
+            {
+                Status = ClientDuplicateHold.QueueStatus,
+                ErrorMessage = "client already has it",
+                ClientFailureReason = "DELETED/COPY",
+                LocalPath = "/client/intermediate/book",
+                Size = 100,
+                Downloaded = 0
+            };
+
+            var updated = QueueItemConverter.UpdateFromQueueItem(download, item);
+
+            Assert.Equal(DownloadStatus.ImportBlocked, updated.Status);
+            Assert.True(ClientDuplicateHold.Holds(updated));
+            Assert.Equal("client already has it", Assert.Single(updated.ImportBlockMessages!));
+            Assert.Equal("DELETED/COPY", updated.Metadata["ClientFailureReason"]);
+            Assert.Null(updated.ErrorMessage);
+            // Nothing was downloaded, so the client's path must not become an import source.
+            Assert.True(string.IsNullOrEmpty(updated.DownloadPath));
+        }
+
+        [Fact]
+        [Trait("Method", "UpdateFromQueueItem")]
+        public void UpdateFromQueueItem_RecordsTheDuplicateMessageOnce_WhenTheItemArrivesTwice()
+        {
+            var download = new Download { Status = DownloadStatus.Queued };
+            var item = new QueueItem
+            {
+                Status = ClientDuplicateHold.QueueStatus,
+                ErrorMessage = "client already has it"
+            };
+
+            QueueItemConverter.UpdateFromQueueItem(download, item);
+            var updated = QueueItemConverter.UpdateFromQueueItem(download, item);
+
+            Assert.Equal(DownloadStatus.ImportBlocked, updated.Status);
+            Assert.Single(updated.ImportBlockMessages!);
+        }
     }
 }
