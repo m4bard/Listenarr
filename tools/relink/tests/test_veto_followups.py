@@ -8,15 +8,19 @@ from __future__ import annotations
 
 import pytest
 from test_size_placeholder import (
+    LITTLE_WOMEN,
+    MARIE,
     PELLUCIDAR,
     PETER_PAN,
     PLACEHOLDER,
     PRINCESS,
+    QUATERMAIN,
     TANAR,
     Library,
     left_out,
     library,
     relinked,
+    render,
 )
 
 from listenarr_relink import cli, matcher
@@ -125,3 +129,19 @@ def test_explain_veto_audits_an_applied_plan_against_contained_titles(
     assert str(library.top).casefold() not in text and "pellucidar" not in text
 
 
+def test_explain_veto_reproduction_control_reads_the_cited_book(library: Library,
+                                                                 capsys: pytest.CaptureFixture[str]) -> None:
+    """The tags name two other books; this version cites the second, the strict rule would report the first."""
+    library.add_book(1, QUATERMAIN, 1, series="Allan Quatermain")
+    (row,) = library.add_book(2, MARIE, 1, album="Allan Quatermain", series="Allan Quatermain", Size=PLACEHOLDER)
+    library.add_book(3, LITTLE_WOMEN, 1)
+    library.rewrite(row, f"{MARIE[0]} / {LITTLE_WOMEN[0]}", "Allan Quatermain")
+    new = library.move(row)
+    _, plan = library.plan("plan")
+    assert plan is not None
+    assert left_out(plan)[row] == "physical identity matches but tags name another library book (audiobook 3)"
+    assert "candidates_reason_book_not_named_now_tags_changed 0" in explain(library, capsys)
+    donor = library.top / "retagged.mp3"
+    render(donor, 4000, MARIE[0], "Allan Quatermain")
+    new.write_bytes(donor.read_bytes())
+    assert "candidates_reason_book_not_named_now_tags_changed 1" in explain(library, capsys)
