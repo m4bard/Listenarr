@@ -24,9 +24,8 @@ describe('HistorySettingsSection', () => {
   })
 
   it('loads the currently configured retention value', async () => {
-    const { default: HistorySettingsSection } = await import(
-      '@/components/settings/HistorySettingsSection.vue'
-    )
+    const { default: HistorySettingsSection } =
+      await import('@/components/settings/HistorySettingsSection.vue')
     const wrapper = mount(HistorySettingsSection, {
       props: { settings: { historyRetentionDays: 45 } },
     })
@@ -36,9 +35,8 @@ describe('HistorySettingsSection', () => {
   })
 
   it('defaults to 0 when no retention value has been configured yet', async () => {
-    const { default: HistorySettingsSection } = await import(
-      '@/components/settings/HistorySettingsSection.vue'
-    )
+    const { default: HistorySettingsSection } =
+      await import('@/components/settings/HistorySettingsSection.vue')
     const wrapper = mount(HistorySettingsSection, { props: { settings: {} } })
 
     const input = wrapper.find('input[type="number"]')
@@ -46,9 +44,8 @@ describe('HistorySettingsSection', () => {
   })
 
   it('emits update:settings with the changed value when saved', async () => {
-    const { default: HistorySettingsSection } = await import(
-      '@/components/settings/HistorySettingsSection.vue'
-    )
+    const { default: HistorySettingsSection } =
+      await import('@/components/settings/HistorySettingsSection.vue')
     const wrapper = mount(HistorySettingsSection, {
       props: { settings: { historyRetentionDays: 30 } },
     })
