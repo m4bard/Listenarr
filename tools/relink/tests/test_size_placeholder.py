@@ -497,10 +497,11 @@ def test_explain_veto_prints_counts_only(library: Library, monkeypatch: pytest.M
                      "candidates_strict_rule_not_reproduced_tags_changed 0", "candidates_cleared_by_this_version 1",
                      "rows_whose_every_vetoed_candidate_clears 1 (a cleared veto is not a relink: re-run PLAN "
                      "for that)",
-                     "       1 identity=Y one_token=N own_title_tagged=Y own_title_tag_exact=Y "
+                     "       1 identity=Y one_token=N contained=N own_title_tagged=Y own_title_tag_exact=Y "
                      "explained_authors_series=Y explained_with_subtitle=Y",
-                     "       1 identity=Y one_token=N own_title_tagged=Y own_title_tag_exact=N "
-                     "explained_authors_series=N explained_with_subtitle=N"):
+                     "       1 identity=Y one_token=N contained=N own_title_tagged=Y own_title_tag_exact=N "
+                     "explained_authors_series=N explained_with_subtitle=N",
+                     "relinks_in_plan 0", "relinks_vetoed_by_this_version 0"):
         assert expected in lines
     text = "\n".join(lines).casefold()
     assert str(library.top).casefold() not in text

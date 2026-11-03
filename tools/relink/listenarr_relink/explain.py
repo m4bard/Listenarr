@@ -3,9 +3,13 @@
 Reads the plan, the database snapshot PLAN took, and the album/title tags of each vetoed candidate again
 (ffprobe, read-only). It prints counts only, never a title, a name or a path, so the output can leave the
 host. For every (book, other book) pair a vetoed candidate names it reports whether the other title is one
-token, whether the tags also carry this book's whole title (and whether a tag names it exactly), whether
-the other title's extra words are this book's authors or series (and with the subtitle added), and whether
-physical identity matched; and how many vetoed candidates and rows this version's rule would clear.
+token, whether it is part of this book's title, whether the tags also carry this book's whole title (and
+whether a tag names it exactly), whether the other title's extra words are this book's authors or series
+(and with the subtitle added), and whether physical identity matched; and how many vetoed candidates and
+rows this version's rule would clear.
+
+It also re-reads the tags of every file the plan re-links and counts the links this version's rule would
+veto, so a plan already applied can be audited against a stricter rule.
 
 Rows withheld by ``--exclude-file-ids`` carry the veto inside their reason and are counted separately.
 Opening the snapshot read-only still lets SQLite touch its ``-shm`` index when the copy is in WAL mode (the
@@ -39,8 +43,8 @@ VETO = re.compile(r"^tags name another library book \(audiobook (\d+)\)$")
 VETO_IN_REASON = re.compile(r"tags name another library book \(audiobook \d+\)$")
 VETO_IN_EXCLUDED_REASON = re.compile(rf"^{re.escape(EXCLUDED)} \(otherwise left out: .*tags name another library "
                                      r"book \(audiobook \d+\)\)$")
-FLAGS = ("identity", "one_token", "own_title_tagged", "own_title_tag_exact", "explained_authors_series",
-         "explained_with_subtitle")
+FLAGS = ("identity", "one_token", "contained", "own_title_tagged", "own_title_tag_exact",
+         "explained_authors_series", "explained_with_subtitle")
 
 
 @dataclass(frozen=True)
@@ -55,9 +59,37 @@ def _yes_no(values: set[bool]) -> str:
     return "mixed" if len(values) > 1 else ("Y" if values.pop() else "N")
 
 
-def _with_subtitle(title_tokens: frozenset[str], own: BookRow) -> bool:
-    words = {t for text in [*own.own_text, own.context.get("Subtitle", "")] for t in tokens(text)}
+def _explained_by(title_tokens: frozenset[str], own: BookRow, texts: list[str]) -> bool:
+    words = {t for text in texts for t in tokens(text)}
     return title_tokens - frozenset(tokens(own.title)) <= words
+
+
+def _audit_relinks(plan: dict[str, Any], books: dict[int, BookRow], keys: dict[frozenset[str], int],
+                   path_map: PathMap, workers: int) -> list[str]:
+    """Count the plan's re-links whose file's tags this version's rule vetoes now."""
+    host_paths = sorted({path_map.to_host(r["new_path"]) for r in plan["relinks"]})
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        probes = dict(zip(host_paths, pool.map(media.probe, host_paths), strict=True))
+    counts: Counter[str] = Counter()
+    for relink in plan["relinks"]:
+        own_id = int(relink["audiobook_id"])
+        own = books.get(own_id)
+        probe = probes[path_map.to_host(relink["new_path"])]
+        if own is None or probe.error:
+            counts["relinks_unreadable_now_or_book_gone"] += 1
+            continue
+        others = {k: v for k, v in keys.items() if v != own_id}
+        named = other_book_named(probe.tags, others, own, bool(relink["evidence"]["identity_match"]))
+        if named is None:
+            continue
+        counts["relinks_vetoed_by_this_version"] += 1
+        named_key = next(k for k, v in others.items() if v == named)
+        if named_key <= frozenset(tokens(own.title)):
+            counts["relinks_vetoed_by_a_contained_title"] += 1
+    return [f"relinks_in_plan {len(plan['relinks'])}",
+            *(f"{name} {counts[name]}" for name in ("relinks_unreadable_now_or_book_gone",
+                                                    "relinks_vetoed_by_this_version",
+                                                    "relinks_vetoed_by_a_contained_title"))]
 
 
 def explain_veto(plan_path: Path, path_map: PathMap | None, workers: int) -> list[str]:
@@ -115,11 +147,12 @@ def explain_veto(plan_path: Path, path_map: PathMap | None, workers: int) -> lis
         own_tokens = frozenset(tokens(own.title))
         exact = any(names_title(probe.tags[k], own.title, own.authors) for k in ("album", "title")
                     if probe.tags.get(k))
-        for other_id in sorted({v for k, v in others.items() if k <= tagged and not k <= own_tokens}):
+        for other_id in sorted({v for k, v in others.items() if k <= tagged and k != own_tokens}):
             key = key_of[other_id]
             observations.append(Observation((own_id, other_id), (
-                identity_match, len(key) == 1, own_title_tagged(tagged, own), exact,
-                explained_by_own_book(key, own), _with_subtitle(key, own))))
+                identity_match, len(key) == 1, key <= own_tokens, own_title_tagged(tagged, own), exact,
+                explained_by_own_book(key, own),
+                _explained_by(key, own, [*own.own_text, own.context.get("Subtitle", "")]))))
 
     by_pair: dict[tuple[int, int], list[Observation]] = defaultdict(list)
     for observation in observations:
@@ -155,5 +188,6 @@ def explain_veto(plan_path: Path, path_map: PathMap | None, workers: int) -> lis
         "observations_by_flag (candidate x named other book):",
         *(f"  {name}_Y {sum(1 for o in observations if o.flags[i])} of {len(observations)}"
           for i, name in enumerate(FLAGS)),
+        *_audit_relinks(plan, books, keys, path_map, workers),
     ]
     return lines
