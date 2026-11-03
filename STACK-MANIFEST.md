@@ -2,10 +2,10 @@
 
 This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
-    base:        fb863d794240051c4e8bab4d8671268d88523417
-    base short:  fb863d794
-    patches:     658
-    version:     1.5.10+m4bard.658
+    base:        61117b81345b7c3b03d5e0fafc16e6032bec9b51
+    base short:  61117b813
+    patches:     661
+    version:     1.5.11+m4bard.661
 
 ## Patches, oldest first
 
@@ -667,6 +667,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     e91fc1955  #237  stack: queue reconciliation tests mock the snapshot API the poller now calls
     5b30ea849  #68   stack: adapt the nested-symlink source test to item 68's behaviour
     3096e8267  #237  stack: pin System.Security.Cryptography.Pkcs to 10.0.13, the first version outside two published advisories
+    558655eef  #-   stack: merge upstream canary 1.5.11 into the published stack
+    782a3aa12  #-   style(fe): run prettier over the 12 stack files that drifted from it
 
 ## Items, in application order
 
@@ -986,8 +988,11 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
 Regenerate with tools/local_stack.sh in the tracker repo.
 
-Round 27 publishes the reviewed candidate 3096e8267 directly rather than a fresh
-rebuild. The candidate's own cherry-pick trailers name the earlier history, so items are
-stamped from the verification rebuild of the declaration at tracker stack-rebuild-159
-c444b31: that rebuild is tree-identical to the candidate (final tree 7509d1ec6) at every
-one of the 658 positions, and each patch line carries the candidate's commit at that position.
+This head is the published round 27 stack (3096e8267 plus its manifest commit e8d8e52bf) with upstream canary
+61117b813 merged in, so it is a fast-forward of the branch it replaces and no published sha changed. It is not
+a linear stack on the base. The patch list above is the round 27 list, still accurate for every patch it names
+except three, a06b1b347, ac5e63bc2 and 5d99e112d, which upstream 3b7e0fbff (#961) now supplies; they stay in
+history and are listed for continuity. The two entries added at the end are the merge and a stack-only prettier
+commit. The patch count is `git rev-list --count base..HEAD` taken before this manifest commit, so it counts the
+round 27 manifest commit, the merge and the three superseded commits, and overstates the distinct patches
+(about 656). The next `local_stack.sh refresh` re-linearizes the stack.
