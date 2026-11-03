@@ -19,18 +19,17 @@ using System.Text;
 using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks;
 
 namespace Listenarr.Tests.Features.Api
 {
-    public class StartupConfigurationLockoutGuardTests : IClassFixture<ListenarrWebApplicationFactory>
+    [Trait("Area", "StartupConfigurationApi")]
+    [Trait("Name", "StartupConfigurationLockoutGuardTests")]
+    [Trait("Category", "StartupConfiguration")]
+    public sealed class StartupConfigurationLockoutGuardTests(ListenarrWebApplicationFactory factory)
+        : BaseTests, IClassFixture<ListenarrWebApplicationFactory>
     {
-        private readonly ListenarrWebApplicationFactory _factory;
-
-        public StartupConfigurationLockoutGuardTests(ListenarrWebApplicationFactory factory)
-        {
-            _factory = factory;
-        }
 
         [Fact]
         public async Task SaveStartupConfig_ReturnsBadRequest_WhenEnablingLoginWithoutAdminUser()
@@ -62,7 +61,7 @@ namespace Listenarr.Tests.Features.Api
 
         private WebApplicationFactory<Program> CreateFactory()
         {
-            return _factory.WithWebHostBuilder(builder =>
+            return factory.WithWebHostBuilder(builder =>
             {
                 builder.ConfigureServices(services =>
                 {
