@@ -41,15 +41,14 @@ namespace Listenarr.Application.Downloads.Submission
 
             var heldSet = new HashSet<string>(held, StringComparer.OrdinalIgnoreCase);
             var kept = scoredResults
-                .Where(scored => ReleaseIdentity.For(scored.SearchResult) is not { } identifier
-                    || !heldSet.Contains(identifier))
+                .Where(scored => !BlockedReleaseFilter.IsBlocked(scored.SearchResult, heldSet))
                 .ToList();
 
             var dropped = scoredResults.Count - kept.Count;
             if (dropped > 0)
             {
                 logger.LogInformation(
-                    "Skipped {Dropped} search result(s) the download client already reported holding as a duplicate",
+                    "Skipped {Dropped} search result(s) the download client already skipped as a duplicate for this book",
                     dropped);
             }
 
