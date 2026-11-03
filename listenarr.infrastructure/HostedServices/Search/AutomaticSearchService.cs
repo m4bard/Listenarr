@@ -373,7 +373,8 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 }
             }
 
-            // Drop releases already blocked for this book before picking a winner.
+            // Drop releases already blocked for this book, or held by the client as a duplicate of
+            // content it already has, before picking a winner.
             //
             // This is the path that actually re-grabs. The blocklist filter was wired into
             // SearchAndDownloadAsync, which covers the manual search endpoint and the retry that
@@ -382,8 +383,10 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             // again by the next automatic pass a minute later, which is what a live install saw.
             using var blocklistScope = _serviceScopeFactory.CreateScope();
             var blocklistService = blocklistScope.ServiceProvider.GetRequiredService<IBlocklistService>();
-            var unblockedResults = await BlockedReleaseFilter.ExcludeAsync(
-                blocklistService, audiobook.Id, ranked, _logger);
+            var unblockedResults = ClientDuplicateReleaseFilter.Exclude(
+                allDownloads,
+                await BlockedReleaseFilter.ExcludeAsync(blocklistService, audiobook.Id, ranked, _logger),
+                _logger);
 
             // Drop releases that are plainly for a different book, before the pick. Nothing
             // between the indexer and this point compares a release with the book it was

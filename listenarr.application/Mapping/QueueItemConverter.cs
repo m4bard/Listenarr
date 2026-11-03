@@ -16,6 +16,14 @@ namespace Listenarr.Application.Mapping
                 return download;
             }
 
+            // Checked before any progress mapping, which would otherwise read the unknown status as
+            // Queued. The client downloaded nothing for this grab, so none of its telemetry or
+            // paths describe content to import.
+            if (string.Equals(item.Status, ClientDuplicateHold.QueueStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                return HoldAsClientDuplicate(download, item);
+            }
+
             if (!string.IsNullOrEmpty(item.LocalPath))
             {
                 download.DownloadPath = item.LocalPath;
@@ -186,6 +194,27 @@ namespace Listenarr.Application.Mapping
                 // detection logic, and Moved means the file is already imported (we only keep
                 // polling Moved downloads to update CanBeRemoved for deferred client removal).
                 download.SetStatus(mappedStatus);
+            }
+
+            return download;
+        }
+
+        private static Download HoldAsClientDuplicate(Download download, QueueItem item)
+        {
+            if (!string.IsNullOrWhiteSpace(item.ClientFailureReason))
+            {
+                download.SetMetadata("ClientFailureReason", item.ClientFailureReason);
+            }
+
+            download.SetMetadata("ClientState", item.Status ?? string.Empty);
+
+            // A held download is no longer polled, but the same poll can still deliver the item
+            // twice, so only the first sighting records the message.
+            if (!ClientDuplicateHold.Holds(download))
+            {
+                download.Blocked(
+                    ClientDuplicateHold.Reason,
+                    item.ErrorMessage ?? "The download client skipped this grab as a duplicate.");
             }
 
             return download;

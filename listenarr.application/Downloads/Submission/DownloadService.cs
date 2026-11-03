@@ -164,11 +164,13 @@ namespace Listenarr.Application.Downloads.Submission
                 }
             }
 
-            // Only consider non-rejected, score > 0 results that are not already blocked.
-            // ExcludeAsync keeps the order it is given, so the grab is still the top of the
+            // Only consider non-rejected, score > 0 results not blocked or held as client duplicates.
+            // Both filters keep the order they are given, so the grab is still the top of the
             // ranked list rather than whatever the indexer returned first.
-            var unblocked = await BlockedReleaseFilter.ExcludeAsync(
-                blocklistService, audiobookId, ranked, logger);
+            var unblocked = ClientDuplicateReleaseFilter.Exclude(
+                await downloadRepository.GetByAudiobookIdAsync(audiobookId),
+                await BlockedReleaseFilter.ExcludeAsync(blocklistService, audiobookId, ranked, logger),
+                logger);
 
             // Same identity check as the automatic sweep, since this path grabs without a
             // person choosing the release too.
