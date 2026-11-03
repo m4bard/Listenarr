@@ -322,6 +322,55 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Authors
                 Times.Never);
         }
 
+        // The cache half of the preview guard has a test of its own above, and that one seeds no
+        // monitored rows, so its UpsertAsync check passes whether or not the monitored loop is
+        // guarded. This one is the monitored half: every verdict a monitored row can get, and not
+        // one of them may change the row, stamp its cursor, or reach the repository.
+        [Fact]
+        public async Task Run_DryRun_ExaminesMonitoredAuthorsButNeverWritesOne()
+        {
+            var cleared = new MonitoredAuthor { Id = 11, AuthorName = "George Makepeace Towle - translator", AuthorAsin = "B00O0C6Z26", Region = "us" };
+            var corrected = new MonitoredAuthor { Id = 12, AuthorName = "Blanche Bendahan", AuthorAsin = "B017TI5S3E", Region = "us" };
+            var alreadyCorrect = new MonitoredAuthor { Id = 13, AuthorName = "Constance Garnett", AuthorAsin = "B000APTDDU", Region = "us" };
+            var updatedBefore = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            var rows = new[] { cleared, corrected, alreadyCorrect };
+            foreach (var row in rows)
+            {
+                row.UpdatedAt = updatedBefore;
+            }
+
+            var harness = new Harness(dryRun: true).WithMonitoredRows(rows);
+            ProviderKnowsNobodyNamed(harness, "George Makepeace Towle - translator");
+            ProviderSays(harness, "Blanche Bendahan", "B0BENDAHAN");
+            ProviderSays(harness, "Constance Garnett", "B000APTDDU");
+
+            var report = await harness.Build().RunAsync(CancellationToken.None);
+
+            // The loop ran and reached a different verdict for each row, so the empty write list
+            // below is the guard working rather than the loop never starting.
+            Assert.True(report.DryRun);
+            Assert.Equal(3, report.Examined);
+            Assert.Equal(1, report.Cleared);
+            Assert.Equal(1, report.Corrected);
+            Assert.Equal(1, report.AlreadyCorrect);
+            Assert.Equal(3, report.Decisions.Count(decision => decision.Store == "MonitoredAuthors"));
+
+            harness.MonitoredAuthors.Verify(
+                repository => repository.UpsertAsync(It.IsAny<MonitoredAuthor>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+
+            // Upsert is not the only way to write a tracked entity, so the rows themselves are
+            // checked as well: none of them has moved.
+            Assert.Equal("B00O0C6Z26", cleared.AuthorAsin);
+            Assert.Equal("B017TI5S3E", corrected.AuthorAsin);
+            Assert.Equal("B000APTDDU", alreadyCorrect.AuthorAsin);
+            Assert.All(rows, row =>
+            {
+                Assert.Null(row.AuthorIdentityCheckedAt);
+                Assert.Equal(updatedBefore, row.UpdatedAt);
+            });
+        }
+
         // The pass is only worth running if it cannot be talked out of its answer by the row it
         // is examining. The lookup path seeds itself from the persisted ASIN before it asks
         // anybody anything, so a pass built on it would read its own bad row back and confirm it.
