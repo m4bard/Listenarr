@@ -123,7 +123,12 @@ describe('SystemView download client status', () => {
         connected: 0,
         total: 1,
         clients: [
-          { name: 'qBittorrent', status: 'disconnected', type: 'qbittorrent', failureReason: 'timeout' },
+          {
+            name: 'qBittorrent',
+            status: 'disconnected',
+            type: 'qbittorrent',
+            failureReason: 'timeout',
+          },
         ],
       },
     })

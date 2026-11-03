@@ -319,11 +319,7 @@ import { ref, reactive, onMounted, nextTick } from 'vue'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
-import type {
-  DownloadClientConfiguration,
-  DownloadClientStatus,
-  RemotePathMapping,
-} from '@/types'
+import type { DownloadClientConfiguration, DownloadClientStatus, RemotePathMapping } from '@/types'
 import DownloadClientFormModal from '@/components/domain/download/DownloadClientFormModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import RemotePathMappingModal from '@/components/feedback/RemotePathMappingModal.vue'

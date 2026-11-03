@@ -27,10 +27,7 @@
           :value="settings.historyRetentionDays ?? 0"
           @input="
             (e) =>
-              updateField(
-                'historyRetentionDays',
-                Number((e.target as HTMLInputElement).value || 0),
-              )
+              updateField('historyRetentionDays', Number((e.target as HTMLInputElement).value || 0))
           "
           type="number"
           min="0"
