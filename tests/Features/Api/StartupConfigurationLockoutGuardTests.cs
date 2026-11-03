@@ -17,7 +17,6 @@
  */
 using System.Text;
 using System.Net;
-using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Listenarr.Tests.Mocks;
@@ -38,7 +37,32 @@ namespace Listenarr.Tests.Features.Api
         {
             // The settings screen only offers the config.json download fallback for
             // non-4xx failures, so a refusal by the lockout guard must not be a 500.
-            using var factory = _factory.WithWebHostBuilder(builder =>
+            using var factory = CreateFactory();
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+
+            var response = await PostStartupConfigAsync(client, "true");
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Contains("Cannot enable the login screen", body);
+        }
+
+        [Fact]
+        public async Task SaveStartupConfig_Succeeds_WhenLoginStaysDisabled()
+        {
+            // Control: the same request path with the guard not triggered must succeed,
+            // so the BadRequest above is attributable to the guard.
+            using var factory = CreateFactory();
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+
+            var response = await PostStartupConfigAsync(client, "false");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        private WebApplicationFactory<Program> CreateFactory()
+        {
+            return _factory.WithWebHostBuilder(builder =>
             {
                 builder.ConfigureServices(services =>
                 {
@@ -46,20 +70,18 @@ namespace Listenarr.Tests.Features.Api
                         new StartupConfigServiceMock(new StartupConfig { AuthenticationRequired = "false" }));
                 });
             });
-            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
-            var csrfToken = await GetAntiforgeryTokenAsync(client);
+        }
 
+        private static async Task<HttpResponseMessage> PostStartupConfigAsync(HttpClient client, string authenticationRequired)
+        {
+            var csrfToken = await GetAntiforgeryTokenAsync(client);
             using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/configuration/startupconfig")
             {
-                Content = new StringContent("""{ "authenticationRequired": "true" }""", Encoding.UTF8, "application/json")
+                Content = new StringContent(
+                    $$"""{ "authenticationRequired": "{{authenticationRequired}}" }""", Encoding.UTF8, "application/json")
             };
             request.Headers.Add("X-XSRF-TOKEN", csrfToken);
-
-            var response = await client.SendAsync(request);
-
-            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-            var body = await response.Content.ReadAsStringAsync();
-            Assert.Contains("Cannot enable the login screen", body);
+            return await client.SendAsync(request);
         }
 
         private static async Task<string> GetAntiforgeryTokenAsync(HttpClient client)
