@@ -5,8 +5,9 @@ Reads the plan, the database snapshot PLAN took, and the album/title tags of eac
 host. For every (book, other book) pair a vetoed candidate names it reports whether the other title is one
 token, whether it is part of this book's title, whether the tags also carry this book's whole title (and
 whether a tag names it exactly), whether the other title's extra words are this book's authors or primary
-series (and with its other series memberships, or the subtitle, added), and whether physical identity
-matched; and how many vetoed candidates and rows this version's rule would clear.
+series (as earlier versions reported it), and with its other series memberships, the subtitle or the
+narrators added (the narrators on top of the memberships), and whether physical identity matched; and how
+many vetoed candidates and rows this version's rule would clear.
 
 It also re-reads the tags of every file the plan re-links and counts the links this version's rule would
 veto, so a plan already applied can be audited against a stricter rule.
@@ -43,8 +44,10 @@ VETO = re.compile(r"^tags name another library book \(audiobook (\d+)\)$")
 VETO_IN_REASON = re.compile(r"tags name another library book \(audiobook \d+\)$")
 VETO_IN_EXCLUDED_REASON = re.compile(rf"^{re.escape(EXCLUDED)} \(otherwise left out: .*tags name another library "
                                      r"book \(audiobook \d+\)\)$")
+# For a contained title (part of this book's title) every "explained" flag holds trivially: no words are left.
 FLAGS = ("identity", "one_token", "contained", "own_title_tagged", "own_title_tag_exact",
-         "explained_authors_series", "explained_with_memberships", "explained_with_subtitle")
+         "explained_authors_series", "explained_with_memberships", "explained_with_subtitle",
+         "explained_with_narrators")
 
 
 @dataclass(frozen=True)
@@ -155,7 +158,8 @@ def explain_veto(plan_path: Path, path_map: PathMap | None, workers: int) -> lis
             observations.append(Observation((own_id, other_id), (
                 identity_match, len(key) == 1, key <= own_tokens, own_title_tagged(tagged, own), exact,
                 _explained_by(key, own, primary), explained_by_own_book(key, own),
-                _explained_by(key, own, [*primary, own.context.get("Subtitle", "")]))))
+                _explained_by(key, own, [*primary, own.context.get("Subtitle", "")]),
+                _explained_by(key, own, [*own.own_text, own.context.get("Narrators", "")]))))
 
     by_pair: dict[tuple[int, int], list[Observation]] = defaultdict(list)
     for observation in observations:

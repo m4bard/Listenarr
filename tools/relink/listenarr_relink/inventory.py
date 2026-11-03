@@ -21,7 +21,7 @@ FILE_COLUMNS = ("Id", "AudiobookId", "Path", "Size", "DurationSeconds", "Codec",
                 "PathIdentityLookupKey", "PathOwnershipKey")
 BOOK_COLUMNS = ("Id", "Title", "Authors", "BasePath", "FilePath")
 # Book columns read only as matching context, never as a precondition; a database may predate them.
-BOOK_CONTEXT_COLUMNS = ("Series", "Subtitle")
+BOOK_CONTEXT_COLUMNS = ("Series", "Subtitle", "Narrators")
 # Every series a book belongs to; Audiobooks.Series holds only the primary one. Context too, never a precondition.
 SERIES_MEMBERSHIPS_TABLE = "AudiobookSeriesMemberships"
 
