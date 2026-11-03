@@ -87,12 +87,7 @@
           <!-- Select all lives in the first column's header. Its clicks and keys stop
                here: the cell around it is the sort control, and ticking a box is not a
                request to re-sort the queue. -->
-          <span
-            v-if="column.key === 'title'"
-            @click.stop
-            @keydown.enter.stop
-            @keydown.space.stop
-          >
+          <span v-if="column.key === 'title'" @click.stop @keydown.enter.stop @keydown.space.stop>
             <QueueSelectCell
               :checked="allSelectableSelected"
               :indeterminate="selectedRows.length > 0"

@@ -944,7 +944,9 @@ class ApiService {
       if (err?.body) {
         try {
           const parsed =
-            typeof err.body === 'string' ? JSON.parse(err.body) : (err.body as Record<string, unknown>)
+            typeof err.body === 'string'
+              ? JSON.parse(err.body)
+              : (err.body as Record<string, unknown>)
           const data = parsed as { message?: string; failures?: string[] }
           message = data.message || message
           failures = data.failures

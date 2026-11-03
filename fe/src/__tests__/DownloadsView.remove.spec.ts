@@ -111,7 +111,10 @@ describe('DownloadsView terminal download removal', () => {
 
   it('renders Remove on Failed and ImportBlocked rows', async () => {
     mockStore({
-      failedDownloads: [buildDownload('d-failed', 'Failed'), buildDownload('d-blocked', 'ImportBlocked')],
+      failedDownloads: [
+        buildDownload('d-failed', 'Failed'),
+        buildDownload('d-blocked', 'ImportBlocked'),
+      ],
     })
     mockConfirm(true)
     mockSupportingModules()
@@ -126,7 +129,10 @@ describe('DownloadsView terminal download removal', () => {
 
   it('does not render Remove on downloads that are still live', async () => {
     mockStore({
-      activeDownloads: [buildDownload('d-queued', 'Queued'), buildDownload('d-downloading', 'Downloading')],
+      activeDownloads: [
+        buildDownload('d-queued', 'Queued'),
+        buildDownload('d-downloading', 'Downloading'),
+      ],
     })
     mockConfirm(true)
     mockSupportingModules()
@@ -168,7 +174,10 @@ describe('DownloadsView terminal download removal', () => {
 
   it('clears every terminal download in bulk once the removal is confirmed', async () => {
     const store = mockStore({
-      failedDownloads: [buildDownload('d-failed', 'Failed'), buildDownload('d-blocked', 'ImportBlocked')],
+      failedDownloads: [
+        buildDownload('d-failed', 'Failed'),
+        buildDownload('d-blocked', 'ImportBlocked'),
+      ],
     })
     const showConfirm = mockConfirm(true)
     mockSupportingModules()

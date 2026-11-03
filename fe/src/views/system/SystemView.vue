@@ -77,7 +77,10 @@
               class="client-status"
               :title="client.failureReason || undefined"
             >
-              <component :is="clientStatusIcon(client.status)" :class="clientStatusIconClass(client.status)" />
+              <component
+                :is="clientStatusIcon(client.status)"
+                :class="clientStatusIconClass(client.status)"
+              />
               <span class="client-name">{{ client.name }}</span>
               <span :class="['client-indicator', client.status]">{{ client.status }}</span>
             </div>
@@ -316,9 +319,9 @@ const downloadClientsStatus = ref({
   total: 0,
 })
 
-const downloadClients = ref<
-  Array<{ name: string; status: string; failureReason?: string | null }>
->([])
+const downloadClients = ref<Array<{ name: string; status: string; failureReason?: string | null }>>(
+  [],
+)
 
 // Null against a backend that predates indexer health checks, which hides the card.
 const indexerHealth = ref<IndexerHealth | null>(null)

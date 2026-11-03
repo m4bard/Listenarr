@@ -103,7 +103,11 @@ describe('BlocklistView', () => {
     mockApi({
       getBlocklist: vi.fn(async () => [
         makeEntry({ id: 1, audiobookId: 101 }),
-        makeEntry({ id: 2, audiobookId: 202, releaseIdentifier: 'btih:1111111111111111111111111111111111111111' }),
+        makeEntry({
+          id: 2,
+          audiobookId: 202,
+          releaseIdentifier: 'btih:1111111111111111111111111111111111111111',
+        }),
       ]),
     })
     mockLibraryStore([{ id: 101, title: 'Synthetic Audiobook A' }])
@@ -134,7 +138,9 @@ describe('BlocklistView', () => {
     // synchronously -- the bug this test guards against -- the assertion below would already
     // see it called before we ever decide whether to confirm.
     const confirmModule = await import('@/composables/useConfirm')
-    const showConfirm = vi.spyOn(confirmModule, 'showConfirm').mockReturnValue(new Promise(() => {}))
+    const showConfirm = vi
+      .spyOn(confirmModule, 'showConfirm')
+      .mockReturnValue(new Promise(() => {}))
 
     const wrapper = await mountBlocklistView()
     await wrapper.find('.action-button.remove').trigger('click')
@@ -145,7 +151,7 @@ describe('BlocklistView', () => {
     expect(wrapper.findAll('.blocklist-card')).toHaveLength(1)
   })
 
-  it('removes the row and calls DELETE with that entry\'s id once the user confirms', async () => {
+  it("removes the row and calls DELETE with that entry's id once the user confirms", async () => {
     const entry = makeEntry({ id: 42, audiobookId: 101 })
     const apiService = mockApi({
       getBlocklist: vi.fn(async () => [entry]),
