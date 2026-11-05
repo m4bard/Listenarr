@@ -18,6 +18,7 @@ import ctypes.util
 import errno
 import fcntl
 import os
+import re
 import struct
 from dataclasses import dataclass
 
@@ -185,3 +186,18 @@ def mount_pools(mountinfo: str = "/proc/self/mountinfo") -> dict[int, str]:
         fstype, source = tail[0], tail[1]
         pools.setdefault(os.makedev(int(major), int(minor)), source.split("/")[0] if fstype == "zfs" else source)
     return pools
+
+
+def mount_points(mountinfo: str = "/proc/self/mountinfo") -> list[str]:
+    """Every mount point this process sees (octal escapes decoded). Read-only; an unreadable table gives []."""
+    try:
+        with open(mountinfo, encoding="utf-8", errors="replace") as table:
+            lines = table.read().splitlines()
+    except OSError:
+        return []
+    points: list[str] = []
+    for line in lines:
+        fields = line.split(" ")
+        if len(fields) > 4:
+            points.append(re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), fields[4]))
+    return points

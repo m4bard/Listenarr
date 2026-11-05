@@ -59,8 +59,10 @@ def _quarantine_dirs(values: list[str] | None, host_roots: list[str]) -> list[st
     """The ``--quarantine-dir`` folders, resolved; None (logged) when one is missing or overlaps a root or another.
 
     Each value is taken literally (no globbing). A folder inside a library root, or holding one, is refused:
-    its names would be library names, not quarantine names.
+    its names would be library names, not quarantine names. So is one at or above a mount point: a bind mount
+    could show library folders, or one folder twice, inside it.
     """
+    mounts = identity.mount_points()
     folders = [os.path.realpath(value) for value in values or []]
     for folder in folders:
         if not os.path.isdir(folder):
@@ -68,6 +70,9 @@ def _quarantine_dirs(values: list[str] | None, host_roots: list[str]) -> list[st
             return None
         if any(is_within(folder, root) or is_within(root, folder) for root in host_roots):
             log.error("--quarantine-dir %s lies inside, or holds, a library root", folder)
+            return None
+        if any(is_within(point, folder) for point in mounts):
+            log.error("--quarantine-dir %s is, or holds, a mount point", folder)
             return None
         if sum(1 for other in folders if is_within(folder, other)) > 1:
             log.error("--quarantine-dir %s is given twice, or lies inside another one", folder)
@@ -139,7 +144,7 @@ def _plan(args: argparse.Namespace) -> int:
 def _walk(library: inventory.Library, path_map: PathMap, quarantine_dirs: list[str]) -> bool:
     """Record each root's device and every mount's pool, walk the roots and the quarantine folders.
 
-    False on a bad path map.
+    False on a bad path map, or a quarantine folder that reaches a folder already walked.
     """
     library.root_devices = {r: os.stat(path_map.to_host(r)).st_dev for r in library.roots}
     library.device_pools = identity.mount_pools()
@@ -152,8 +157,12 @@ def _walk(library: inventory.Library, path_map: PathMap, quarantine_dirs: list[s
     except inventory.PathMapError as error:
         log.error("%s", error)
         return False
-    for folder in quarantine_dirs:
-        inventory.walk_quarantine(folder, library)
+    try:
+        for folder in quarantine_dirs:
+            inventory.walk_quarantine(folder, library)
+    except inventory.QuarantineAliasError as error:
+        log.error("%s", error)
+        return False
     return True
 
 

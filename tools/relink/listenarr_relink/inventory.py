@@ -157,6 +157,10 @@ class Library:
     # Names under the operator's --quarantine-dir folders, by inode: a hard-linked object may still be matched
     # when every other name it has is one of these (``matcher._other_names_quarantined``). Empty: never.
     quarantine: dict[int, list[QuarantineName]] = field(default_factory=dict)
+    quarantine_dirs: list[str] = field(default_factory=list)
+    # (st_dev, st_ino) of every folder walked, under the roots and the quarantine folders: a folder reached a
+    # second time (a bind mount, or the root seen through one) refuses the quarantine walk.
+    walked_dirs: set[tuple[int, int]] = field(default_factory=set)
 
 
 def row_digest(values: dict[str, object]) -> str:
@@ -219,6 +223,20 @@ class PathMapError(ValueError):
     """The path map does not translate a walked file back to the same host path."""
 
 
+class QuarantineAliasError(ValueError):
+    """A quarantine folder reaches a folder already walked: its names could be library names or counted twice."""
+
+
+def _note_folder(directory: str, library: Library) -> tuple[int, int] | None:
+    """Record a walked folder's (st_dev, st_ino); None when it cannot be read (logged as a walk error)."""
+    try:
+        info = os.lstat(directory)
+    except OSError as error:
+        library.walk_errors.append(f"{directory}: {error.strerror}")
+        return None
+    return info.st_dev, info.st_ino
+
+
 def walk_root(db_root: str, path_map: PathMap, library: Library) -> None:
     """Collect regular audio files under one root without following links.
 
@@ -231,6 +249,8 @@ def walk_root(db_root: str, path_map: PathMap, library: Library) -> None:
         library.walk_errors.append(f"{error.filename}: {error.strerror}")
 
     for directory, dirnames, filenames in os.walk(host_root, onerror=on_error, followlinks=False):
+        if (key := _note_folder(directory, library)) is not None:
+            library.walked_dirs.add(key)
         for name in [*dirnames]:
             if os.path.islink(os.path.join(directory, name)):
                 library.symlinks.append(path_map.to_db(os.path.join(directory, name)))
@@ -257,13 +277,23 @@ def walk_root(db_root: str, path_map: PathMap, library: Library) -> None:
 
 
 def walk_quarantine(host_dir: str, library: Library) -> None:
-    """Record every regular file with more than one link under one quarantine folder, without following links."""
+    """Record every regular file with more than one link under one quarantine folder, without following links.
+
+    Raises QuarantineAliasError when a folder is one already walked (under a root, or earlier here): a bind
+    mount would otherwise show a library name as a quarantine name, or one quarantine name twice.
+    """
     count = 0
+    library.quarantine_dirs.append(host_dir)
 
     def on_error(error: OSError) -> None:
         library.walk_errors.append(f"{error.filename}: {error.strerror}")
 
     for directory, _, filenames in os.walk(host_dir, onerror=on_error, followlinks=False):
+        key = _note_folder(directory, library)
+        if key in library.walked_dirs:
+            raise QuarantineAliasError(f"quarantine folder {directory} is a folder already walked (a bind mount?)")
+        if key is not None:
+            library.walked_dirs.add(key)
         for name in filenames:
             host_path = os.path.join(directory, name)
             try:

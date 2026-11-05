@@ -123,6 +123,7 @@ def build_plan(library: Library, result: MatchResult, path_map: PathMap, db_copy
         "path_map": [f"{a}={b}" for a, b in path_map.pairs],
         "identity_only": identity_only,
         "tags_waiver": result.tags_waiver,
+        "quarantine_dirs": library.quarantine_dirs,
         "exclude_file": {"path": str(exclude_file), "sha256": file_sha256(exclude_file)} if exclude_file else None,
         "excluded_file_ids": sorted(excluded),
         "summary": {
