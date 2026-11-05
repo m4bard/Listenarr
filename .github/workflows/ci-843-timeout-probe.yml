@@ -77,7 +77,10 @@ jobs:
               --results-directory $results.FullName
             $code = $LASTEXITCODE
             Write-Host "::endgroup::"
-            Write-Host "PROBE ${{ matrix.variant }} iteration $i exit $code"
+            # A filter that matches nothing also exits 0, so a pass only counts with executed tests.
+            $counters = (Select-Xml -Path (Join-Path $results.FullName "iteration-$i.trx") -XPath "//*[local-name()='Counters']").Node
+            Write-Host "PROBE ${{ matrix.variant }} iteration $i exit $code total $($counters.total) executed $($counters.executed) passed $($counters.passed) failed $($counters.failed)"
+            if ([int]$counters.executed -eq 0) { throw "Iteration $i executed no tests; the filter matched nothing." }
             if ($code -ne 0) { $failedIterations++ }
           }
           Write-Host "PROBE SUMMARY ${{ matrix.variant }}: $failedIterations of $iterations iterations failed"
