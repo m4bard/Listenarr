@@ -59,7 +59,7 @@ def test_mount_points_decode_the_table(tmp_path: Path) -> None:
                      "37 36 0:51 /books /QUARANTINE\\040DUP/view rw - zfs tank/media rw\n"
                      "short line\n", encoding="utf-8")
     assert identity.mount_points(str(table)) == ["/ROOT-A", "/QUARANTINE DUP/view"]
-    assert identity.mount_points(str(tmp_path / "missing")) == []
+    assert identity.mount_points(str(tmp_path / "missing")) is None
 
 
 def test_cli_refuses_a_quarantine_folder_holding_a_mount_point(library: Library,
@@ -128,6 +128,27 @@ def test_each_up_front_quarantine_check_refuses_on_its_own(tmp_path: Path, monke
     (outside / "sub").mkdir(parents=True)
     host_roots = [str(root)]
     assert _quarantine_dirs([str(outside)], host_roots) == [str(outside)]
+    monkeypatch.setattr(identity, "mount_points", lambda: None)  # the mount table could not be read
+    assert _quarantine_dirs([str(outside)], host_roots) is None
+    assert _quarantine_dirs([], host_roots) == []  # no --quarantine-dir: the table is not needed
+    monkeypatch.setattr(identity, "mount_points", lambda: [])
     for values in ([str(root / "inside")], [str(tmp_path)], [str(outside), str(outside)],
                    [str(outside), str(outside / "sub")], [str(tmp_path / "missing")]):
         assert _quarantine_dirs(values, host_roots) is None, values
+
+
+@in_namespace
+def test_a_file_bind_mounted_into_a_quarantine_folder_refuses(library: Library) -> None:
+    row, new = princess_in_its_asin_folder(library)
+    elsewhere = library.top / "ELSEWHERE" / "seed.mp3"  # the real other name: not a quarantine name
+    elsewhere.parent.mkdir()
+    os.link(new, elsewhere)
+    folder = library.top / "QUARANTINE-DUP"
+    shown = folder / PRINCESS[1] / new.parent.name / new.name
+    shown.parent.mkdir(parents=True)
+    shown.touch()
+    _, control = library.plan("plan-control", "--quarantine-dir", str(folder))
+    assert control is not None and relinked(control) == {} and "hard links" in left_out(control)[row]
+    bind(new, shown)  # the in-root file itself, shown as a quarantine name: only the mount-point guard sees it
+    rc, plan = library.plan("plan-bound", "--quarantine-dir", str(folder))
+    assert rc == 2 and plan is None

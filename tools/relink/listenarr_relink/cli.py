@@ -64,6 +64,9 @@ def _quarantine_dirs(values: list[str] | None, host_roots: list[str]) -> list[st
     """
     mounts = identity.mount_points()
     folders = [os.path.realpath(value) for value in values or []]
+    if folders and mounts is None:
+        log.error("--quarantine-dir needs the mount table (/proc/self/mountinfo), which could not be read")
+        return None
     for folder in folders:
         if not os.path.isdir(folder):
             log.error("--quarantine-dir %s is not a folder", folder)
@@ -71,7 +74,7 @@ def _quarantine_dirs(values: list[str] | None, host_roots: list[str]) -> list[st
         if any(is_within(folder, root) or is_within(root, folder) for root in host_roots):
             log.error("--quarantine-dir %s lies inside, or holds, a library root", folder)
             return None
-        if any(is_within(point, folder) for point in mounts):
+        if any(is_within(point, folder) for point in mounts or []):
             log.error("--quarantine-dir %s is, or holds, a mount point", folder)
             return None
         if sum(1 for other in folders if is_within(folder, other)) > 1:

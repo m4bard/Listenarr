@@ -188,13 +188,13 @@ def mount_pools(mountinfo: str = "/proc/self/mountinfo") -> dict[int, str]:
     return pools
 
 
-def mount_points(mountinfo: str = "/proc/self/mountinfo") -> list[str]:
-    """Every mount point this process sees (octal escapes decoded). Read-only; an unreadable table gives []."""
+def mount_points(mountinfo: str = "/proc/self/mountinfo") -> list[str] | None:
+    """Every mount point this process sees (octal escapes decoded). Read-only; None when the table is unreadable."""
     try:
         with open(mountinfo, encoding="utf-8", errors="replace") as table:
             lines = table.read().splitlines()
     except OSError:
-        return []
+        return None
     points: list[str] = []
     for line in lines:
         fields = line.split(" ")
