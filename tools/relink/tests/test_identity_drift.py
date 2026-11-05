@@ -153,6 +153,23 @@ def test_generation_only_identity_is_not_matched_across_a_drift(monkeypatch: pyt
     assert fake.run(monkeypatch).decisions[0].identity_class == physical.HANDLE_MISMATCH
 
 
+def test_another_device_major_is_never_matched(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = Fake()
+    fake.book(1, PRINCESS)
+    fake.row(1, 1, f"linux-generation:00000008:{LIVE_MINOR:08x}:{1234:016x}:{zfs_handle(1234, 77)}")
+    fake.file(renamed(PRINCESS), 1234, 77)  # the stored identity was taken on a block device, not this dataset
+    assert fake.run(monkeypatch).decisions[0].identity_class == physical.HANDLE_MISMATCH
+
+
+def test_a_file_replaced_since_the_walk_is_not_matched(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = Fake()
+    fake.book(1, PRINCESS)
+    fake.row(1, 1, spelled(OLD_MINOR, 1234, 77))
+    target = fake.file(renamed(PRINCESS), 1234, 77)
+    fake.live[target.host_path] = LiveIdentity(0, OTHER_MINOR, 1234, frozenset({zfs_handle(1234, 77)}))
+    assert fake.run(monkeypatch).decisions[0].identity_class == physical.HANDLE_UNREADABLE
+
+
 def test_cross_pool_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = Fake()
     other = os.makedev(0, OTHER_MINOR)
