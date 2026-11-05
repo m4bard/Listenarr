@@ -117,3 +117,17 @@ def test_a_quarantine_folder_bind_mounted_twice_refuses(library: Library, guard:
         monkeypatch.setattr(identity, "mount_points", lambda: [])
     rc, plan = library.plan("plan-bound", "--quarantine-dir", str(folder))
     assert rc == 2 and plan is None
+
+
+def test_each_up_front_quarantine_check_refuses_on_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The walked-folder guard would catch these too; each up-front check must hold without it.
+    from listenarr_relink.cli import _quarantine_dirs
+    monkeypatch.setattr(identity, "mount_points", lambda: [])
+    root, outside = tmp_path / "ROOT-A", tmp_path / "QUARANTINE-DUP"
+    (root / "inside").mkdir(parents=True)
+    (outside / "sub").mkdir(parents=True)
+    host_roots = [str(root)]
+    assert _quarantine_dirs([str(outside)], host_roots) == [str(outside)]
+    for values in ([str(root / "inside")], [str(tmp_path)], [str(outside), str(outside)],
+                   [str(outside), str(outside / "sub")], [str(tmp_path / "missing")]):
+        assert _quarantine_dirs(values, host_roots) is None, values
