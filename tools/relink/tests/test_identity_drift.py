@@ -52,10 +52,11 @@ class Fake:
     live: dict[str, LiveIdentity | None] = field(default_factory=dict)
     titles: dict[str, str] = field(default_factory=dict)
 
-    def book(self, book_id: int, book: tuple[str, str, str], *, asin: bool = True) -> str:
-        """Add a book; return its old (now gone) folder."""
+    def book(self, book_id: int, book: tuple[str, str, str], *, asin: bool = True,
+             folder_bracket: str | None = None) -> str:
+        """Add a book; return its old (now gone) folder, whose bracketed id is the Asin unless overridden."""
         title, author, book_asin = book
-        folder = f"{ROOT}/{author}/{title} [{book_asin}]"
+        folder = f"{ROOT}/{author}/{title} [{folder_bracket or book_asin}]"
         self.library.books[book_id] = BookRow({"Id": book_id, "Title": title, "Authors": json.dumps([author]),
                                                "BasePath": folder, "FilePath": None},
                                               {"Asin": book_asin} if asin else {})
@@ -80,13 +81,13 @@ class Fake:
         self.titles[db_path] = title
         return disk_file
 
-    def run(self, monkeypatch: pytest.MonkeyPatch) -> MatchResult:
+    def run(self, monkeypatch: pytest.MonkeyPatch, *, identity_only: bool = True) -> MatchResult:
         """Match with the fake identities and probes (tags name the file's book)."""
         monkeypatch.setattr(identity, "read_live", lambda path: self.live.get(path))
         monkeypatch.setattr(media, "probe", lambda path: media.Probe(DURATION, "mp3", 44100, 2, 128000,
                                                                      {"title": self.titles[path],
                                                                       "album": self.titles[path]}))
-        return match(self.library, PathMap(), workers=1, hash_chosen=False, identity_only=True)
+        return match(self.library, PathMap(), workers=1, hash_chosen=False, identity_only=identity_only)
 
 
 def renamed(book: tuple[str, str, str], name: str = "01 - 01.mp3", bracket: str | None = None) -> str:
@@ -382,3 +383,85 @@ def test_mount_pools_names_the_zfs_pool_of_each_device(tmp_path: os.PathLike[str
     assert identity.mount_pools(table) == {os.makedev(0, 51): "tank", os.makedev(0, 64): "backup",
                                            os.makedev(8, 1): "/dev/sda1"}
     assert identity.mount_pools(os.path.join(tmp_path, "missing")) == {}
+
+
+@pytest.mark.parametrize("refusal", ["shared-row", "nlink", "folder-id"])
+def test_a_refused_identity_keeps_its_file_from_a_size_match(monkeypatch: pytest.MonkeyPatch, refusal: str) -> None:
+    fake = Fake()
+    fake.book(1, PRINCESS)
+    fake.book(2, QUATERMAIN)
+    fake.book(3, JUNGLE)
+    fake.row(1, 1, spelled(OLD_MINOR, 1234, 77))
+    if refusal == "shared-row":
+        fake.row(2, 2, spelled(OLD_MINOR, 1234, 77))
+    fake.row(3, 3, None)  # no identity, but a real stored size equal to the refused object's
+    fake.library.files[-1].values["Size"] = 4_000_000
+    bracket = JUNGLE[2] if refusal == "folder-id" else None
+    fake.file(renamed(PRINCESS, bracket=bracket), 1234, 77, nlink=2 if refusal == "nlink" else 1, title=JUNGLE[0])
+    result = fake.run(monkeypatch, identity_only=False)
+    assert all(d.chosen is None for d in result.decisions), outcome(result)
+
+
+def test_a_live_row_on_a_drifted_minor_is_flagged_apart(monkeypatch: pytest.MonkeyPatch,
+                                                        tmp_path: os.PathLike[str]) -> None:
+    fake = Fake()
+    fake.book(1, PRINCESS)
+    for row_id, generation in ((1, 77), (2, 78)):
+        held = os.path.join(tmp_path, f"held{row_id}.mp3")
+        open(held, "wb").close()
+        fake.row(row_id, 1, spelled(OLD_MINOR, 1000 + row_id, 77))
+        fake.library.files[-1].values["Path"] = held
+        fake.live[held] = LiveIdentity(0, LIVE_MINOR, 1000 + row_id, frozenset({zfs_handle(1000 + row_id, generation)}))
+    result = fake.run(monkeypatch)
+    assert sorted((f.kind, f.row_id) for f in result.flags) == [("live-identity-device-drift", 1),
+                                                                 ("live-identity-mismatch", 2)]
+
+
+def test_a_nested_root_on_its_own_dataset_is_its_files_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = Fake()
+    nested, nested_dev = f"{ROOT}/nested", os.makedev(0, OTHER_MINOR)
+    fake.library.roots.append(nested)
+    fake.library.root_devices[nested] = nested_dev
+    fake.library.device_pools[nested_dev] = "tank"
+    fake.book(1, PRINCESS)
+    fake.row(1, 1, spelled(OLD_MINOR, 1234, 77))
+    fake.file(f"{nested}/{PRINCESS[1]}/{PRINCESS[0]} [{PRINCESS[2]}]/01.mp3", 1234, 77, dev=nested_dev)
+    assert outcome(fake.run(monkeypatch))[1][0] == "matched"
+
+
+def test_a_stored_device_that_is_an_empty_root_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = Fake()
+    old = os.makedev(0, OLD_MINOR)
+    fake.library.roots.append("/ROOT-B")
+    fake.library.root_devices["/ROOT-B"] = old  # holds no audio file at all
+    fake.book(1, PRINCESS)
+    fake.row(1, 1, spelled(OLD_MINOR, 1234, 77))
+    fake.file(renamed(PRINCESS), 1234, 77)
+    assert outcome(fake.run(monkeypatch))[1][0] == physical.CROSS_POOL
+
+
+def test_the_asin_takes_precedence_over_the_stored_folder_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = Fake()
+    fake.book(1, PRINCESS, folder_bracket=JUNGLE[2])
+    fake.row(1, 1, spelled(OLD_MINOR, 1234, 77))
+    fake.file(renamed(PRINCESS), 1234, 77)
+    (decision,) = fake.run(monkeypatch).decisions
+    assert decision.chosen is not None and decision.folder_id == "agrees"
+    other = Fake()
+    other.book(1, PRINCESS, folder_bracket=JUNGLE[2])
+    other.row(1, 1, spelled(OLD_MINOR, 1234, 77))
+    other.file(renamed(PRINCESS, bracket=JUNGLE[2]), 1234, 77)
+    result = other.run(monkeypatch)
+    assert result.decisions[0].identity_class == physical.FOLDER_ID_DISAGREES
+    assert "folder_id_disagrees_but_the_stored_folder_id_agrees 1" in explain_identity(other.library, result)
+
+
+def test_reason_labels_keep_exclusion_and_the_placeholder_duration_apart() -> None:
+    from listenarr_relink.explain_identity import _veto
+    from listenarr_relink.matcher import EXCLUDED
+    from listenarr_relink.plan_io import reason_class
+    assert reason_class(f"{EXCLUDED} (otherwise left out: physical identity (inode or file handle) is shared by 2 "
+                        "rows (ambiguous, not linked))") == "excluded"
+    assert _veto("physical identity matches but the stored size is the placeholder and the file's duration, which "
+                 "stands in for it, could not be read") == "identity-inconsistent-placeholder-duration-unreadable"
+    assert _veto("physical identity matches but duration 3.00s != stored 9.00s") == "identity-inconsistent-duration"

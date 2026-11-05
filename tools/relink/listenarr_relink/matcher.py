@@ -246,8 +246,8 @@ def _folder_id_check(row: FileRow, hit: DiskFile, library: Library) -> str:
     """
     book = library.books.get(row.audiobook_id)
     own = (book.context.get("Asin", "").strip().casefold() if book else "") or physical.folder_id(
-        row.path, _root_of(row.path, library.roots))
-    found = physical.folder_id(hit.db_path, _root_of(hit.db_path, library.roots))
+        row.path, root_of(row.path, library.roots))
+    found = physical.folder_id(hit.db_path, root_of(hit.db_path, library.roots))
     if not own or not found:
         return "unknown"
     return "agrees" if own == found else "disagrees"
@@ -262,7 +262,8 @@ def _resolves(db_path: str, path_map: PathMap) -> bool:
         return False
 
 
-def _root_of(path: str, roots: list[str]) -> str | None:
+def root_of(path: str, roots: list[str]) -> str | None:
+    """The longest root ``path`` lies in, or None."""
     matching = [root for root in roots if is_within(path, root)]
     return max(matching, key=len) if matching else None
 
@@ -326,9 +327,11 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
         stored_identity = identity.parse_stored(str(row.values.get("PhysicalObjectIdentity") or ""))
         if stored_identity is not None:
             live = identity.read_live(host)
-            if live is not None and not live.matches(stored_identity) and not live.same_object(stored_identity):
-                flags.append(Flag("live-identity-mismatch", row.id, row.audiobook_id,
-                                  f"{row.path}: the file at this path is not the object the row was registered with"))
+            if live is not None and not live.matches(stored_identity):
+                # Same inode and handle on another device minor is reported apart: it may be a remount, or a clone.
+                kind = "live-identity-device-drift" if live.same_object(stored_identity) else "live-identity-mismatch"
+                flags.append(Flag(kind, row.id, row.audiobook_id,
+                                  f"{row.path}: the file at this path does not carry the row's stored identity"))
 
     pool = [f for f in library.disk if (f.dev, f.ino) not in claimed and f.db_path not in row_paths]
     by_size: dict[int, list[DiskFile]] = defaultdict(list)
@@ -351,10 +354,12 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
     devices_under_roots = frozenset({f.dev for f in library.disk} | set(library.root_devices.values()))
 
     def root_device_of(disk_file: DiskFile) -> int | None:
-        root = _root_of(disk_file.db_path, library.roots)
+        root = root_of(disk_file.db_path, library.roots)
         return library.root_devices.get(root) if root is not None else None
 
     identity_taken: dict[str, RowDecision] = {}
+    # Files a refused identity could be: never offered to another row's size match.
+    withheld_objects: set[str] = set()
     for decision in decisions:
         stored_identity = stored_of[decision.row.id]
         if stored_identity is None:
@@ -366,6 +371,8 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             decision.identity_class = physical.AMBIGUOUS_ROWS
             decision.leave_out(f"physical identity (inode or file handle) is shared by {sharing} rows (ambiguous, "
                                "not linked)")
+            decision.candidates = [Candidate(f) for f in by_inode.get(stored_identity.inode, [])]
+            withheld_objects.update(f.db_path for f in by_inode.get(stored_identity.inode, []))
             continue
         verdict = physical.classify(stored_identity, by_inode.get(stored_identity.inode, []), identity.read_live,
                                     root_device_of, devices_under_roots, library.device_pools)
@@ -376,6 +383,7 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             decision.leave_out(verdict.detail)
             decision.candidates = [Candidate(f, identity_match=verdict.kind == physical.HARDLINKED)
                                    for f in verdict.hits]
+            withheld_objects.update(f.db_path for f in verdict.hits)
             continue
         (hit,) = verdict.hits
         decision.candidates = [Candidate(hit, identity_match=True, device_drift=verdict.device_drift)]
@@ -386,6 +394,7 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
                                "(review)")
             flags.append(Flag("folder-id-disagrees", decision.row.id, decision.row.audiobook_id,
                               f"{decision.row.path} -> {hit.db_path}"))
+            withheld_objects.add(hit.db_path)
             continue
         if decision.row.size != hit.size and not size_is_placeholder(decision.row):
             decision.leave_out(f"physical identity matches {hit.db_path} but its size changed "
@@ -410,7 +419,8 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
         if size is None or size in UNUSABLE_SIZES:
             decision.leave_out("no usable stored size and no physical identity match")
             continue
-        decision.candidates = [Candidate(f) for f in by_size.get(size, []) if f.db_path not in identity_taken]
+        decision.candidates = [Candidate(f) for f in by_size.get(size, [])
+                               if f.db_path not in identity_taken and f.db_path not in withheld_objects]
         pending.append(decision)
 
     probes = _parallel((c.file.host_path for d in pending for c in d.candidates), media.probe, workers)
@@ -425,7 +435,7 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             candidate.probe = probe
             others = {k: v for k, v in other_titles.items() if v != decision.row.audiobook_id}
             candidate.rejected = _consistency(decision.row, probe, others, owner, candidate.identity_match)
-            root = _root_of(candidate.file.db_path, library.roots) or "/"
+            root = root_of(candidate.file.db_path, library.roots) or "/"
             parts = name_parts(candidate.file.db_path, root)
             candidate.same_dir = os.path.dirname(candidate.file.host_path) == old_parent
             candidate.title_in_path = any(names_title(part, title, authors) for part in parts)
@@ -600,7 +610,7 @@ def _book_updates(library: Library, path_map: PathMap, decisions: list[RowDecisi
         if base and not os.path.isdir(path_map.to_host(base)):
             final = _final_paths(files_by_book[book_id], links, stale_ids)
             new_base = os.path.commonpath([os.path.dirname(p) for p in final]) if final else None
-            root = _root_of(new_base, library.roots) if new_base else None
+            root = root_of(new_base, library.roots) if new_base else None
             reason = None
             if final is None:
                 reason = "some of the book's rows stay unresolved"

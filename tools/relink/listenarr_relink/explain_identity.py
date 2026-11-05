@@ -24,16 +24,17 @@ from collections import Counter
 
 from listenarr_relink import identity, physical
 from listenarr_relink.inventory import Library
-from listenarr_relink.matcher import MatchResult, RowDecision
+from listenarr_relink.matcher import MatchResult, RowDecision, root_of
 from listenarr_relink.plan_io import reason_class
 
 IDENTITY_CLASSES = (physical.AMBIGUOUS_ROWS, physical.AMBIGUOUS_FILES, physical.HARDLINKED, physical.CROSS_POOL,
                     physical.OTHER_DATASET, physical.FOLDER_ID_DISAGREES, physical.HANDLE_MISMATCH,
                     physical.HANDLE_UNREADABLE, physical.NO_CANDIDATE, physical.NO_STORED)
 # Sub-reasons of "physical identity matches but ...": the consistency check that failed.
-_INCONSISTENT = (("tags name another library book", "tags-name-another-book"), ("duration", "duration"),
-                 ("codec", "codec"), ("SampleRate", "stream"), ("Channels", "stream"),
-                 ("not readable as audio", "unreadable-audio"))
+_INCONSISTENT = (("which stands in for it", "placeholder-duration-unreadable"),
+                 ("but tags name another library book", "tags-name-another-book"), ("but duration ", "duration"),
+                 ("but stored duration ", "duration"), ("but codec ", "codec"), ("but SampleRate ", "stream"),
+                 ("but Channels ", "stream"), ("but not readable as audio", "unreadable-audio"))
 
 
 def _veto(reason: str) -> str:
@@ -93,6 +94,15 @@ def _rows_sharing_only_an_inode(library: Library, result: MatchResult) -> int:
     return count
 
 
+def _stored_folder_agrees(library: Library, decision: RowDecision) -> bool:
+    """True for a folder-id refusal whose stored path carries the same bracketed id as the matched folder."""
+    if not decision.candidates:
+        return False
+    own = physical.folder_id(decision.row.path, root_of(decision.row.path, library.roots))
+    found = decision.candidates[0].file.db_path
+    return own is not None and own == physical.folder_id(found, root_of(found, library.roots))
+
+
 def explain_identity(library: Library, result: MatchResult) -> list[str]:
     """Counts lines: every class, the identity totals to compare with an earlier inode count, and subsets."""
     classes = Counter(row_class(d) for d in result.decisions)
@@ -107,6 +117,8 @@ def explain_identity(library: Library, result: MatchResult) -> list[str]:
     for decision in result.decisions:
         stale_by_book.setdefault(decision.row.audiobook_id, []).append(decision)
     fixed = ["matched", *IDENTITY_CLASSES]
+    stored_folder_agrees = sum(1 for d in result.decisions if d.identity_class == physical.FOLDER_ID_DISAGREES
+                               and _stored_folder_agrees(library, d))
     lines = [
         f"stale_rows {len(result.decisions)}",
         f"walk_errors {len(library.walk_errors)}",
@@ -123,6 +135,8 @@ def explain_identity(library: Library, result: MatchResult) -> list[str]:
         f"hardlinked_every_name_unclaimed_under_the_roots {sum(1 for d in hardlinked if _all_names_seen(d))}",
         f"hardlinked_a_name_elsewhere {sum(1 for d in hardlinked if not _all_names_seen(d))}",
         f"ambiguous_rows_whose_file_handle_is_unique {_rows_sharing_only_an_inode(library, result)}",
+        f"folder_id_disagrees_but_the_stored_folder_id_agrees {stored_folder_agrees}",
+        f"devices_under_the_roots {len({f.dev for f in library.disk} | set(library.root_devices.values()))}",
         f"books_with_a_stale_row {len(stale_by_book)}",
         "books_whose_every_stale_row_is_matched "
         f"{sum(1 for ds in stale_by_book.values() if all(row_class(d) == 'matched' for d in ds))}",

@@ -144,8 +144,9 @@ def _explain_identity(args: argparse.Namespace) -> int:
         log.error("--with-paths needs --rows-out: paths never go to stdout")
         return 2
     rows_out = Path(args.rows_out).resolve() if args.rows_out else None
-    if rows_out is not None and (rows_out.exists() or any(is_within(str(rows_out), r) for r in host_roots)):
-        log.error("--rows-out must be a new file outside every library root")
+    if rows_out is not None and (rows_out.exists() or not rows_out.parent.is_dir()
+                                 or any(is_within(str(rows_out), r) for r in host_roots)):
+        log.error("--rows-out must be a new file, in an existing folder, outside every library root")
         return 2
     library = inventory.Library(roots, books, files)
     if not _walk(library, path_map):

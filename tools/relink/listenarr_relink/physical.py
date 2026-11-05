@@ -3,8 +3,11 @@
 A file is the row's object when its inode and file handle (object number and generation) equal the stored
 ones and either its device is the stored device, or it sits on the dataset of the library root it was found
 under. The second case covers a device minor that drifted (ZFS gives a dataset a new anonymous minor when it
-is mounted again). It never reaches across datasets: the handle carries no dataset id, so a clone or a
-received copy of a dataset holds the very same handles.
+is mounted again). The handle carries no dataset id, so a clone or a received copy of a dataset holds the very
+same handles: a file on any other dataset than the root's is refused, and so is a stored device that is another
+filesystem under the roots now. What cannot be told apart from a remount is a root dataset that was itself
+replaced by a clone or a received copy since the rows were registered; the device major does not help (every
+ZFS dataset has major 0).
 
 Refused, never guessed:
 

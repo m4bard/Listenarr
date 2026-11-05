@@ -53,7 +53,12 @@ def verify(db_file: str, path_map: PathMap, plan: dict[str, Any] | None) -> dict
             status["live-identity-null"] += 1
         elif stored is not None:
             live = identity.read_live(path_map.to_host(path))
-            status["live-identity-match" if live and live.matches(stored) else "live-identity-mismatch"] += 1
+            if live is not None and live.matches(stored):
+                status["live-identity-match"] += 1
+            elif live is not None and live.same_object(stored):
+                status["live-identity-device-drift"] += 1
+            else:
+                status["live-identity-mismatch"] += 1
     report: dict[str, Any] = {
         "rows": len(rows),
         "status": dict(sorted(status.items())),

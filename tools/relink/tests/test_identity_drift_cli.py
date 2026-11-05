@@ -58,6 +58,7 @@ def test_explain_identity_writes_rows_only_where_asked(library: Library, capsys:
     inside = library.root / "rows.tsv"
     assert cli.main(["explain-identity", "--db", db, "--rows-out", str(inside)]) == 2
     assert cli.main(["explain-identity", "--db", db, "--with-paths"]) == 2
+    assert cli.main(["explain-identity", "--db", db, "--rows-out", str(library.top / "missing" / "rows.tsv")]) == 2
     rows = library.top / "rows.tsv"
     assert cli.main(["explain-identity", "--db", db, "--rows-out", str(rows)]) == 0
     assert rows.read_text().splitlines()[1].split("\t") == [str(row), "1", "matched", "Y", "unknown"]

@@ -156,12 +156,12 @@ def build_plan(library: Library, result: MatchResult, path_map: PathMap, db_copy
 
 def reason_class(reason: str) -> str:
     """A short, path-free label for a left-out reason."""
-    for marker, label in (("physical identity (inode or file handle) is shared by", "identity-ambiguous"),
+    for marker, label in (("its book holds row", "withheld-excluded-book"), ("--exclude-file-ids", "excluded"),
+                          ("physical identity (inode or file handle) is shared by", "identity-ambiguous"),
                           ("physical identity is carried by", "identity-ambiguous"),
                           ("matched only a file on another pool", "identity-cross-pool"),
                           ("matched only a file on another dataset", "identity-other-dataset"),
                           ("but its folder id is not this book's", "identity-folder-id-disagrees"),
-                          ("its book holds row", "withheld-excluded-book"), ("--exclude-file-ids", "excluded"),
                           ("equally consistent", "ambiguous"), ("chosen by", "contended"),
                           ("also a consistent candidate", "contested"), ("no folder/title/tag", "weak-evidence"),
                           ("no unclaimed file", "no-candidate"), ("agrees with the stored", "no-consistent-candidate"),
