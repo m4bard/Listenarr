@@ -69,6 +69,7 @@ def _relink(decision: RowDecision, keep_identity: bool, book_title: str) -> dict
             "identity_device_drift": chosen.device_drift,
             "identity_hardlinked_to_quarantine": chosen.hardlinked_to_quarantine,
             "tags_disagree_folder_agrees": chosen.tags_waived,
+            "tags_same_series": chosen.tags_same_series if chosen.tags_waived else None,
             "folder_id": decision.folder_id,
             "same_dir": chosen.same_dir,
             "title_in_path": chosen.title_in_path,
@@ -121,6 +122,7 @@ def build_plan(library: Library, result: MatchResult, path_map: PathMap, db_copy
         "roots": library.roots,
         "path_map": [f"{a}={b}" for a, b in path_map.pairs],
         "identity_only": identity_only,
+        "tags_waiver": result.tags_waiver,
         "exclude_file": {"path": str(exclude_file), "sha256": file_sha256(exclude_file)} if exclude_file else None,
         "excluded_file_ids": sorted(excluded),
         "summary": {

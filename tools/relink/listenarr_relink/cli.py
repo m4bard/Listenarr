@@ -121,7 +121,8 @@ def _plan(args: argparse.Namespace) -> int:
     if not _walk(library, path_map, quarantine_dirs):
         return 2
     identity_only = not args.include_shape_matches
-    result = matcher.match(library, path_map, args.workers, not args.no_hash_chosen, identity_only, excluded)
+    result = matcher.match(library, path_map, args.workers, not args.no_hash_chosen, identity_only, excluded,
+                           args.tags_waiver)
     plan = build_plan(library, result, path_map, db_copy, args.db, identity_only, excluded, exclude_file)
     plan_path, plan_sha = write_outputs(plan, out_dir, [o.db_path for o in result.orphans])
     summary = plan["summary"]
@@ -182,7 +183,8 @@ def _explain_identity(args: argparse.Namespace) -> int:
     library = inventory.Library(roots, books, files)
     if not _walk(library, path_map, quarantine_dirs):
         return 2
-    result = matcher.match(library, path_map, args.workers, hash_chosen=False, identity_only=True)
+    result = matcher.match(library, path_map, args.workers, hash_chosen=False, identity_only=True,
+                           tags_waiver=args.tags_waiver)
     if rows_out is not None:
         rows_out.write_text("\n".join(row_lines(result, args.with_paths)) + "\n", encoding="utf-8")
     print("\n".join(explain_identity(library, result)))
@@ -257,7 +259,11 @@ def _explain_veto(args: argparse.Namespace) -> int:
     return 0
 
 
-def _add_quarantine_dir(parser: argparse.ArgumentParser) -> None:
+def _add_narrowed_rules(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--tags-waiver", choices=matcher.TAGS_WAIVER_SCOPES, default="none",
+                        help="waive 'tags name another library book' for a physical identity match whose file "
+                             "handle and folder Asin agree: none (default), same-series (the tags name a book "
+                             "sharing a series with this one) or all")
     parser.add_argument("--quarantine-dir", nargs="+", action="extend", metavar="DIR",
                         help="folder(s) outside every library root holding quarantine hard links (no default, "
                              "taken literally). A hard-linked file is matched only when every other name lies "
@@ -287,7 +293,7 @@ def main(argv: list[str] | None = None) -> int:
                       help="AudiobookFiles ids (one per line, # comments) never to re-link; every book holding "
                            "one is withheld whole, live rows or not. A list naming no id, or an id that is no "
                            "file row, refuses the run")
-    _add_quarantine_dir(plan)
+    _add_narrowed_rules(plan)
     plan.set_defaults(handler=_plan)
 
     apply = sub.add_parser("apply", help="write a reviewed plan into the stopped service's DB, one transaction")
@@ -327,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:
                                                        "every library root); ids and classes only")
     why.add_argument("--with-paths", action="store_true", help="add the stored and matched paths and the reason "
                                                                "to --rows-out (that file then stays on this host)")
-    _add_quarantine_dir(why)
+    _add_narrowed_rules(why)
     why.set_defaults(handler=_explain_identity)
 
     args = parser.parse_args(argv)

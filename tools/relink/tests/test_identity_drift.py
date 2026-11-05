@@ -81,13 +81,15 @@ class Fake:
         self.titles[db_path] = title
         return disk_file
 
-    def run(self, monkeypatch: pytest.MonkeyPatch, *, identity_only: bool = True) -> MatchResult:
+    def run(self, monkeypatch: pytest.MonkeyPatch, *, identity_only: bool = True,
+            tags_waiver: str = "none") -> MatchResult:
         """Match with the fake identities and probes (tags name the file's book)."""
         monkeypatch.setattr(identity, "read_live", lambda path: self.live.get(path))
         monkeypatch.setattr(media, "probe", lambda path: media.Probe(DURATION, "mp3", 44100, 2, 128000,
                                                                      {"title": self.titles[path],
                                                                       "album": self.titles[path]}))
-        return match(self.library, PathMap(), workers=1, hash_chosen=False, identity_only=identity_only)
+        return match(self.library, PathMap(), workers=1, hash_chosen=False, identity_only=identity_only,
+                     tags_waiver=tags_waiver)
 
 
 def renamed(book: tuple[str, str, str], name: str = "01 - 01.mp3", bracket: str | None = None) -> str:
@@ -315,9 +317,7 @@ def test_existing_vetoes_still_apply_under_a_drift(monkeypatch: pytest.MonkeyPat
     fake.book(1, PRINCESS)
     fake.book(2, JUNGLE)
     fake.row(1, 1, spelled(OLD_MINOR, 1234, 77))
-    # Its tags name another library book, and its folder carries no bracketed id (one with this book's Asin
-    # waives the tag veto: test_waivers.py).
-    fake.file(f"{ROOT}/{PRINCESS[1]}/{PRINCESS[0]}/01.mp3", 1234, 77, title=JUNGLE[0])
+    fake.file(renamed(PRINCESS), 1234, 77, title=JUNGLE[0])  # its tags name another library book
     result = fake.run(monkeypatch)
     assert outcome(result)[1][0] == "vetoed:identity-inconsistent-tags-name-another-book"
     real_size = Fake()

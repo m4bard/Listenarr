@@ -6,7 +6,7 @@ exactly one class:
 * ``matched``: PLAN would re-link it by physical identity. Two subsets are counted apart:
   ``matched_hardlinked_to_quarantine`` (a hard-linked object whose every other name is a quarantine name of
   this book) and ``matched_tags_disagree_folder_agrees`` (tags name another book, waived because the file
-  handle and the folder's ``Asin`` agree);
+  handle and the folder's ``Asin`` agree, within ``--tags-waiver``), split ``_same_series`` / ``_unrelated``;
 * ``vetoed:<reason>``: its identity matched one file, but a later rule left it out (audio facts, tags naming
   another book, the book left whole, ...);
 * ``ambiguous-shared-by-rows`` / ``ambiguous-shared-by-files``: more than one row or file carries the identity;
@@ -27,7 +27,7 @@ from collections import Counter
 
 from listenarr_relink import identity, physical
 from listenarr_relink.inventory import Library
-from listenarr_relink.matcher import MatchResult, RowDecision, root_of
+from listenarr_relink.matcher import Candidate, MatchResult, RowDecision, root_of
 from listenarr_relink.plan_io import reason_class
 
 IDENTITY_CLASSES = (physical.AMBIGUOUS_ROWS, physical.AMBIGUOUS_FILES, physical.HARDLINKED, physical.CROSS_POOL,
@@ -68,9 +68,15 @@ def _summary_class(name: str) -> str:
 def _waivers(decision: RowDecision) -> str:
     """Which narrowed rule a row's identity candidate passed by, whatever its final class ('-' for none)."""
     found = decision.candidates[0] if decision.candidates else None
-    names = [name for name, used in (("hardlinked-to-quarantine", found is not None and found.hardlinked_to_quarantine),
-                                     ("tags-disagree-folder-agrees", found is not None and found.tags_waived)) if used]
+    if found is None:
+        return "-"
+    names = [name for name, used in (("hardlinked-to-quarantine", found.hardlinked_to_quarantine),
+                                     (f"tags-disagree-folder-agrees-{_series(found)}", found.tags_waived)) if used]
     return ",".join(names) or "-"
+
+
+def _series(candidate: Candidate) -> str:
+    return "same-series" if candidate.tags_same_series else "unrelated"
 
 
 def row_lines(result: MatchResult, with_paths: bool) -> list[str]:
@@ -126,6 +132,9 @@ def explain_identity(library: Library, result: MatchResult) -> list[str]:
         physical.FOLDER_ID_DISAGREES))
     hardlinked = [d for d in result.decisions if d.identity_class == physical.HARDLINKED]
     waived = Counter(name for d in result.decisions for name in _waivers(d).split(","))
+    # Waivable: the tag veto fired while the handle and the folder's Asin agree, whatever --tags-waiver says.
+    waivable = [c for d in result.decisions for c in d.candidates[:1] if c.tags_other_book is not None]
+    fan_in = Counter(c.tags_other_book for c in waivable)
     stale_by_book: dict[int, list[RowDecision]] = {}
     for decision in result.decisions:
         stale_by_book.setdefault(decision.row.audiobook_id, []).append(decision)
@@ -133,6 +142,7 @@ def explain_identity(library: Library, result: MatchResult) -> list[str]:
     stored_folder_agrees = sum(1 for d in result.decisions if d.identity_class == physical.FOLDER_ID_DISAGREES
                                and _stored_folder_agrees(library, d))
     lines = [
+        f"tags_waiver {result.tags_waiver}",
         f"stale_rows {len(result.decisions)}",
         f"walk_errors {len(library.walk_errors)}",
         "classes (each stale row in exactly one):",
@@ -145,8 +155,16 @@ def explain_identity(library: Library, result: MatchResult) -> list[str]:
         f"matched_same_device {sum(1 for d in matched if d.chosen and not d.chosen.device_drift)}",
         f"matched_hardlinked_to_quarantine {sum(1 for d in matched if d.chosen and d.chosen.hardlinked_to_quarantine)}",
         f"matched_tags_disagree_folder_agrees {sum(1 for d in matched if d.chosen and d.chosen.tags_waived)}",
+        *(f"matched_tags_disagree_folder_agrees_{kind.replace('-', '_')} "
+          f"{sum(1 for d in matched if d.chosen and d.chosen.tags_waived and _series(d.chosen) == kind)}"
+          for kind in ("same-series", "unrelated")),
         f"hardlinked_to_quarantine_before_vetoes {waived['hardlinked-to-quarantine']}",
-        f"tags_disagree_folder_agrees_waived {waived['tags-disagree-folder-agrees']}",
+        f"tags_disagree_folder_agrees_waived {sum(n for k, n in waived.items() if k.startswith('tags-'))}",
+        *(f"tags_disagree_folder_agrees_waivable_{kind.replace('-', '_')} "
+          f"{sum(1 for c in waivable if _series(c) == kind)}" for kind in ("same-series", "unrelated")),
+        f"tags_disagree_folder_agrees_waivable_other_books {len(fan_in)}",
+        "tags_disagree_folder_agrees_waivable_rows_per_other_book_top10 "
+        f"{' '.join(str(n) for _, n in fan_in.most_common(10)) or '-'}",
         f"quarantine_names_with_links {sum(len(names) for names in library.quarantine.values())}",
         *(f"matched_folder_id_{state} {sum(1 for d in matched if d.folder_id == state)}"
           for state in ("agrees", "unknown")),

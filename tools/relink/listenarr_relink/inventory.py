@@ -62,6 +62,14 @@ class BookRow:
 
     values: dict[str, object]
     context: dict[str, str] = field(default_factory=dict)
+    memberships: list[tuple[str, str]] = field(default_factory=list)  # (SeriesName, SeriesAsin) rows
+
+    @property
+    def series_keys(self) -> frozenset[tuple[str, str]]:
+        """The series this book is in, by name (Series column and memberships) and by series ASIN, casefolded."""
+        names = [self.context.get("Series", ""), *(name for name, _ in self.memberships)]
+        return frozenset({("name", n.strip().casefold()) for n in names if n.strip()}
+                         | {("asin", a.strip().casefold()) for _, a in self.memberships if a.strip()})
 
     @property
     def id(self) -> int:
@@ -187,6 +195,11 @@ def load_rows(connection: sqlite3.Connection) -> tuple[list[str], dict[int, Book
         values = dict(r)
         context = {c: str(value) for c in context_columns if (value := values.pop(c))}
         books[int(str(values["Id"]))] = BookRow(values, context)
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'AudiobookSeriesMemberships'"
+                          ).fetchone():
+        for r in connection.execute("SELECT AudiobookId, SeriesName, SeriesAsin FROM AudiobookSeriesMemberships"):
+            if (book := books.get(int(r["AudiobookId"]))) is not None:
+                book.memberships.append((str(r["SeriesName"] or ""), str(r["SeriesAsin"] or "")))
     files = [FileRow(dict(r)) for r in
              connection.execute(f"SELECT {', '.join(FILE_COLUMNS)} FROM AudiobookFiles ORDER BY Id")]
     return roots, books, files

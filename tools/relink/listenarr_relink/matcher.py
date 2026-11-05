@@ -30,7 +30,9 @@ Rules (each one exists because guessing here can later let a delete hit the wron
   neither does one whose remaining words are this book's own authors or series, again when the tags also
   carry this book's whole title (``other_book_named``). The veto is waived only for a physical identity match
   whose stored file handle (object + generation) and inode are the file's own and whose folder's bracketed
-  id is this book's ``Asin`` (``_folder_is_asin``); every other check still applies.
+  id is this book's ``Asin`` (``_folder_is_asin``), and only within the operator's ``--tags-waiver`` scope:
+  ``none`` (the default: never), ``same-series`` (the book the tags name shares a series with this one) or
+  ``all``. Every other check still applies.
 * A file (one object, whatever its names) is never linked to two rows, never to a file a live row already
   holds (also through a symlink row), and never to a file that was also a candidate of a row left
   unresolved (it might be that row's file).
@@ -72,6 +74,7 @@ EXCLUDED = "withheld: listed in --exclude-file-ids"
 DURATION_ABS_TOLERANCE = 1.0
 SHAPE = "shape-and-name"
 TAGS_VETO = "tags name another library book"
+TAGS_WAIVER_SCOPES = ("none", "same-series", "all")
 DURATION_REL_TOLERANCE = 0.005
 
 
@@ -90,7 +93,11 @@ class Candidate:
     device_drift: bool = False
     handle_equal: bool = False
     hardlinked_to_quarantine: bool = False
-    tags_waived: bool = False  # tags name another book, waived: the handle and the folder's Asin agree
+    # Tags name another book (tags_other_book) while the handle and the folder's Asin agree: waivable. Waived
+    # when --tags-waiver covers it; tags_same_series says whether the two books share a series.
+    tags_other_book: int | None = None
+    tags_same_series: bool = False
+    tags_waived: bool = False
 
     @property
     def path_evidence(self) -> bool:
@@ -152,6 +159,7 @@ class MatchResult:
     move_safe_books: dict[int, str]
     orphans: list[DiskFile]
     keep_identity: dict[int, bool]
+    tags_waiver: str = "none"
 
 
 def size_is_placeholder(row: FileRow) -> bool:
@@ -308,8 +316,10 @@ def _parallel(items: Iterable[str], work: Callable[[str], object], workers: int)
 
 
 def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, identity_only: bool,
-          excluded: frozenset[int] = frozenset()) -> MatchResult:
+          excluded: frozenset[int] = frozenset(), tags_waiver: str = "none") -> MatchResult:
     """Classify rows, choose links, derive book updates and the scan-safe list; never link an excluded row."""
+    if tags_waiver not in TAGS_WAIVER_SCOPES:
+        raise ValueError(f"tags_waiver must be one of {TAGS_WAIVER_SCOPES}, not {tags_waiver!r}")
     flags: list[Flag] = []
     files_by_book: dict[int, list[FileRow]] = defaultdict(list)
     for row in library.files:
@@ -472,7 +482,11 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             if (candidate.rejected is not None and candidate.rejected.startswith(TAGS_VETO)
                     and candidate.identity_match and candidate.handle_equal
                     and _folder_is_asin(candidate.file, owner, library)):
-                candidate.rejected, candidate.tags_waived = None, True
+                candidate.tags_other_book = other_book_named(probe.tags, others, owner, True)
+                named = library.books.get(candidate.tags_other_book or -1)
+                candidate.tags_same_series = bool(owner and named and owner.series_keys & named.series_keys)
+                if tags_waiver == "all" or (tags_waiver == "same-series" and candidate.tags_same_series):
+                    candidate.rejected, candidate.tags_waived = None, True
             root = root_of(candidate.file.db_path, library.roots) or "/"
             parts = name_parts(candidate.file.db_path, root)
             candidate.same_dir = os.path.dirname(candidate.file.host_path) == old_parent
@@ -610,7 +624,8 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
     chosen_paths = {d.chosen.file.db_path for d in decisions if d.chosen}
     candidate_paths = {c.file.db_path for d in decisions for c in d.candidates}
     orphans = [f for f in pool if f.db_path not in chosen_paths and f.db_path not in candidate_paths]
-    return MatchResult(decisions, live_rows, book_updates, flags, scan_safe, move_safe, orphans, keep_identity)
+    return MatchResult(decisions, live_rows, book_updates, flags, scan_safe, move_safe, orphans, keep_identity,
+                       tags_waiver)
 
 
 def _final_paths(rows: list[FileRow], links: dict[int, str], stale_ids: set[int]) -> list[str] | None:
