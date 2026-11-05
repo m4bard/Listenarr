@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        61117b81345b7c3b03d5e0fafc16e6032bec9b51
     base short:  61117b813
-    patches:     661
-    version:     1.5.11+m4bard.661
+    patches:     665
+    version:     1.5.11+m4bard.665
 
 ## Patches, oldest first
 
@@ -669,6 +669,9 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     3096e8267  #237  stack: pin System.Security.Cryptography.Pkcs to 10.0.13, the first version outside two published advisories
     558655eef  #-   stack: merge upstream canary 1.5.11 into the published stack
     782a3aa12  #-   style(fe): run prettier over the 12 stack files that drifted from it
+    5572dfbf4  #-   fix(nzbget): hold DELETED/COPY and DELETED/DUPE as client duplicates, not failures
+    810109adc  #-   fix(downloads): reuse the blocklist filter's identity check for client-duplicate holds
+    b6e218549  #-   fix(downloads): keep client-duplicate holds out of failure alerts and retry-import
 
 ## Items, in application order
 
@@ -989,10 +992,11 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 Regenerate with tools/local_stack.sh in the tracker repo.
 
 This head is the published round 27 stack (3096e8267 plus its manifest commit e8d8e52bf) with upstream canary
-61117b813 merged in, so it is a fast-forward of the branch it replaces and no published sha changed. It is not
-a linear stack on the base. The patch list above is the round 27 list, still accurate for every patch it names
-except three, a06b1b347, ac5e63bc2 and 5d99e112d, which upstream 3b7e0fbff (#961) now supplies; they stay in
-history and are listed for continuity. The two entries added at the end are the merge and a stack-only prettier
-commit. The patch count is `git rev-list --count base..HEAD` taken before this manifest commit, so it counts the
-round 27 manifest commit, the merge and the three superseded commits, and overstates the distinct patches
-(about 656). The next `local_stack.sh refresh` re-linearizes the stack.
+61117b813 merged in, then the previous manifest commit 7a9704ae4 and the NZBGet client-duplicate fix on top, so it is
+a fast-forward of the branch it replaces and no published sha changed. It is not a linear stack on the base. The
+patch list above is the round 27 list, still accurate for every patch it names except three, a06b1b347, ac5e63bc2
+and 5d99e112d, which upstream 3b7e0fbff (#961) now supplies; they stay in history and are listed for continuity. The
+five entries added at the end are the merge, a stack-only prettier commit and the three NZBGet duplicate-fix commits.
+The patch count is `git rev-list --count base..HEAD` taken before this manifest commit, so it counts the round 27
+manifest commit, the previous stack manifest commit, the merge and the three superseded commits, and overstates the
+distinct patches (about 659). The next `local_stack.sh refresh` re-linearizes the stack.
