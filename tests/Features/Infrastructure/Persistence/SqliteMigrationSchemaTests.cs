@@ -55,6 +55,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         ListenarrDatabaseMigrationPreflight.AudiobookAddedDateMigrationId;
     private const string MonitoringQualityProfileMigrationId =
         "20261121052354_AddMonitoringQualityProfile";
+    private const string IndexerRequestBudgetMigrationId =
+        "20261105075017_AddIndexerRequestBudget";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -307,6 +309,7 @@ public class SqliteMigrationSchemaTests : BaseTests
                 OperationEvidencePublicationsMigrationId,
                 AutomaticSearchTimingMigrationId,
                 ReleaseBlocklistMigrationId,
+                IndexerRequestBudgetMigrationId,
                 AudiobookAddedDateMigrationId,
                 MonitoringQualityProfileMigrationId
             ],

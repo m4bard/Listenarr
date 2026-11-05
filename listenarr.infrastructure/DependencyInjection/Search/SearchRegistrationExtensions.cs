@@ -10,6 +10,7 @@
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Infrastructure.Search.Matching;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Search;
 
@@ -33,6 +34,9 @@ internal static class SearchRegistrationExtensions
     {
         services.AddScoped<IIndexerRepository, EfIndexerRepository>();
         services.AddSingleton<IReleaseAnnotationCatalogSource, EmbeddedReleaseAnnotationCatalogSource>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IIndexerRequestUsageStore, EfIndexerRequestUsageStore>();
+        services.AddSingleton<IIndexerRequestBudget, IndexerRequestBudget>();
         return services;
     }
 }
