@@ -1816,6 +1816,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("AutomaticSearchIntervalHours")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("AutomaticSearchMaxBooksPerCycle")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("CompletedFileAction")
                         .HasColumnType("INTEGER");
 
@@ -1902,6 +1905,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<string>("ImportBlacklistExtensions")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("IndexerInteractiveReservePercent")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int>("MaxConcurrentDownloads")
                         .HasColumnType("INTEGER");
@@ -2609,6 +2615,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("DailyRequestLimit")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("EnableAnimeStandardSearch")
                         .HasColumnType("INTEGER");
 
@@ -2670,6 +2679,24 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Indexers");
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Search.IndexerRequestUsage", b =>
+                {
+                    b.Property<int>("IndexerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("HourStartUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Count")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("IndexerId", "HourStartUtc");
+
+                    b.HasIndex("HourStartUtc");
+
+                    b.ToTable("IndexerRequestUsages", (string)null);
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.Audiobook", b =>
@@ -2812,6 +2839,15 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Relocation");
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Search.IndexerRequestUsage", b =>
+                {
+                    b.HasOne("Listenarr.Domain.Search.Indexer", null)
+                        .WithMany()
+                        .HasForeignKey("IndexerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.Audiobook", b =>
