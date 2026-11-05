@@ -315,7 +315,9 @@ def test_existing_vetoes_still_apply_under_a_drift(monkeypatch: pytest.MonkeyPat
     fake.book(1, PRINCESS)
     fake.book(2, JUNGLE)
     fake.row(1, 1, spelled(OLD_MINOR, 1234, 77))
-    fake.file(renamed(PRINCESS), 1234, 77, title=JUNGLE[0])  # its tags name another library book
+    # Its tags name another library book, and its folder carries no bracketed id (one with this book's Asin
+    # waives the tag veto: test_waivers.py).
+    fake.file(f"{ROOT}/{PRINCESS[1]}/{PRINCESS[0]}/01.mp3", 1234, 77, title=JUNGLE[0])
     result = fake.run(monkeypatch)
     assert outcome(result)[1][0] == "vetoed:identity-inconsistent-tags-name-another-book"
     real_size = Fake()
@@ -367,8 +369,8 @@ def test_explain_identity_counts_every_class_without_names_or_paths(monkeypatch:
     for word in ("Princess", "Jungle", "Quatermain", "Pellucidar", "Little", "Burroughs", ROOT, "/"):
         assert word not in text
     rows = row_lines(result, with_paths=False)
-    assert rows[0].split("\t") == ["row_id", "audiobook_id", "class", "device_drift", "folder_id"]
-    assert rows[1].split("\t") == ["1", "1", "matched", "Y", "agrees"]
+    assert rows[0].split("\t") == ["row_id", "audiobook_id", "class", "device_drift", "folder_id", "waivers"]
+    assert rows[1].split("\t") == ["1", "1", "matched", "Y", "agrees", "-"]
     assert not any("/" in line for line in rows)
     assert ROOT in "\n".join(row_lines(result, with_paths=True))
 

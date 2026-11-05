@@ -67,6 +67,8 @@ def _relink(decision: RowDecision, keep_identity: bool, book_title: str) -> dict
             "file_codec": probe.codec if probe else None,
             "identity_match": chosen.identity_match,
             "identity_device_drift": chosen.device_drift,
+            "identity_hardlinked_to_quarantine": chosen.hardlinked_to_quarantine,
+            "tags_disagree_folder_agrees": chosen.tags_waived,
             "folder_id": decision.folder_id,
             "same_dir": chosen.same_dir,
             "title_in_path": chosen.title_in_path,
@@ -129,6 +131,10 @@ def build_plan(library: Library, result: MatchResult, path_map: PathMap, db_copy
             "relinks_by_confidence": dict(sorted(confidence.items())),
             "relinks_over_placeholder_size": sum(1 for r in relinks
                                                  if r["evidence"]["stored_size"] != r["evidence"]["file_size"]),
+            "relinks_hardlinked_to_quarantine": sum(1 for r in relinks
+                                                    if r["evidence"]["identity_hardlinked_to_quarantine"]),
+            "relinks_tags_disagree_folder_agrees": sum(1 for r in relinks
+                                                       if r["evidence"]["tags_disagree_folder_agrees"]),
             "excluded_file_ids": len(excluded),
             "left_out": len(left_out),
             "left_out_by_reason": dict(sorted(reasons.items())),

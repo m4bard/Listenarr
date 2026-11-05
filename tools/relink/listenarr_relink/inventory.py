@@ -122,6 +122,16 @@ class DiskFile:
     ctime_ns: int
 
 
+@dataclass(frozen=True)
+class QuarantineName:
+    """A regular file with more than one link, found under an operator-named quarantine folder."""
+
+    host_path: str
+    quarantine_dir: str
+    dev: int
+    ino: int
+
+
 @dataclass
 class Library:
     """Everything PLAN reads."""
@@ -136,6 +146,9 @@ class Library:
     # minor is accepted only on the root's dataset. Left empty, only the stored device is accepted.
     root_devices: dict[str, int] = field(default_factory=dict)
     device_pools: dict[int, str] = field(default_factory=dict)
+    # Names under the operator's --quarantine-dir folders, by inode: a hard-linked object may still be matched
+    # when every other name it has is one of these (``matcher._other_names_quarantined``). Empty: never.
+    quarantine: dict[int, list[QuarantineName]] = field(default_factory=dict)
 
 
 def row_digest(values: dict[str, object]) -> str:
@@ -228,3 +241,25 @@ def walk_root(db_root: str, path_map: PathMap, library: Library) -> None:
                                          info.st_nlink, info.st_mtime_ns, info.st_ctime_ns))
             count += 1
     log.info("walked root=%s audio_files=%d", db_root, count)
+
+
+def walk_quarantine(host_dir: str, library: Library) -> None:
+    """Record every regular file with more than one link under one quarantine folder, without following links."""
+    count = 0
+
+    def on_error(error: OSError) -> None:
+        library.walk_errors.append(f"{error.filename}: {error.strerror}")
+
+    for directory, _, filenames in os.walk(host_dir, onerror=on_error, followlinks=False):
+        for name in filenames:
+            host_path = os.path.join(directory, name)
+            try:
+                info = os.lstat(host_path)
+            except OSError as error:
+                library.walk_errors.append(f"{host_path}: {error.strerror}")
+                continue
+            if stat.S_ISREG(info.st_mode) and info.st_nlink > 1:
+                library.quarantine.setdefault(info.st_ino, []).append(
+                    QuarantineName(host_path, host_dir, info.st_dev, info.st_ino))
+                count += 1
+    log.info("walked quarantine=%s linked_files=%d", host_dir, count)

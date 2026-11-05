@@ -12,7 +12,9 @@ ZFS dataset has major 0).
 Refused, never guessed:
 
 * more than one file (or a same-inode file that cannot be read) could be the object: ambiguous;
-* the object has more than one name (``nlink > 1``): hard-linked, not linked automatically;
+* the object has more than one name (``nlink > 1``): hard-linked, not linked automatically, unless every
+  other name is a quarantine name the caller accepts (``quarantined``; see ``matcher``). The match is then
+  the name under the root, never the quarantine name;
 * the only match sits on another dataset or pool, or the stored device is another filesystem under the roots
   now: cross-dataset.
 
@@ -56,6 +58,8 @@ class Verdict:
     hits: tuple[DiskFile, ...] = ()
     device_drift: bool = False
     detail: str = ""
+    handle_equal: bool = False  # the stored file handle (object + generation) is the file's own
+    hardlinked_to_quarantine: bool = False
 
 
 def _cross_kind(pools: dict[int, str], file_dev: int, other_dev: int | None) -> str:
@@ -66,9 +70,12 @@ def _cross_kind(pools: dict[int, str], file_dev: int, other_dev: int | None) -> 
 
 def classify(stored: StoredIdentity, same_inode: list[DiskFile], live_of: Callable[[str], LiveIdentity | None],
              root_device_of: Callable[[DiskFile], int | None], devices_under_roots: frozenset[int],
-             pools: dict[int, str]) -> Verdict:
-    """Decide which of the unclaimed files carrying the stored inode number is the row's object."""
-    eligible: list[tuple[DiskFile, bool]] = []
+             pools: dict[int, str], quarantined: Callable[[DiskFile], bool] = lambda _: False) -> Verdict:
+    """Decide which of the unclaimed files carrying the stored inode number is the row's object.
+
+    ``quarantined(file)`` says whether every other name of a hard-linked file is an accepted quarantine name.
+    """
+    eligible: list[tuple[DiskFile, bool, bool]] = []
     crossing: list[tuple[DiskFile, str]] = []
     mismatched = 0
     unreadable = 0
@@ -77,8 +84,9 @@ def classify(stored: StoredIdentity, same_inode: list[DiskFile], live_of: Callab
         if live is None or os.makedev(live.major, live.minor) != disk_file.dev or live.inode != disk_file.ino:
             unreadable += 1  # unreadable, or replaced since the walk: it might be the object
             continue
+        handle_equal = stored.handle is not None and stored.handle in live.generations
         if live.matches(stored):
-            eligible.append((disk_file, False))
+            eligible.append((disk_file, False, handle_equal))
         elif not live.same_object(stored):
             mismatched += 1
         elif stored.device in devices_under_roots:
@@ -87,8 +95,8 @@ def classify(stored: StoredIdentity, same_inode: list[DiskFile], live_of: Callab
         elif disk_file.dev != (root_dev := root_device_of(disk_file)):
             crossing.append((disk_file, _cross_kind(pools, disk_file.dev, root_dev)))
         else:
-            eligible.append((disk_file, True))
-    hits = [f for f, _ in eligible] + [f for f, _ in crossing]
+            eligible.append((disk_file, True, handle_equal))
+    hits = [f for f, _, _ in eligible] + [f for f, _ in crossing]
     if not hits:
         if mismatched:
             return Verdict(HANDLE_MISMATCH, detail="inode found but its file handle differs (inode reused)")
@@ -107,12 +115,14 @@ def classify(stored: StoredIdentity, same_inode: list[DiskFile], live_of: Callab
         where = "another pool" if kind == CROSS_POOL else "another dataset of the same pool"
         return Verdict(kind, tuple(hits), detail=f"physical identity matched only a file on {where} (refused: "
                                                  "only the stored device or the library root's dataset counts)")
-    (hit, drift), = eligible
+    (hit, drift, handle_equal), = eligible
     if hit.nlink > 1:
+        if quarantined(hit):
+            return Verdict(MATCH, (hit,), drift, handle_equal=handle_equal, hardlinked_to_quarantine=True)
         return Verdict(HARDLINKED, (hit,), drift,
                        detail=f"physical identity matches a file with {hit.nlink} hard links; not linked "
                               "automatically")
-    return Verdict(MATCH, (hit,), drift)
+    return Verdict(MATCH, (hit,), drift, handle_equal=handle_equal)
 
 
 def folder_id(db_path: str, root: str | None) -> str | None:

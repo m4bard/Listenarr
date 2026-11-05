@@ -83,12 +83,16 @@ def _audit_relinks(plan: dict[str, Any], books: dict[int, BookRow], keys: dict[f
         named = other_book_named(probe.tags, others, own, bool(relink["evidence"]["identity_match"]))
         if named is None:
             continue
+        if relink["evidence"].get("tags_disagree_folder_agrees"):
+            counts["relinks_tags_disagree_folder_agrees"] += 1  # vetoed by the tags, waived by handle and Asin
+            continue
         counts["relinks_vetoed_by_this_version"] += 1
         named_key = next(k for k, v in others.items() if v == named)
         if named_key <= frozenset(tokens(own.title)):
             counts["relinks_vetoed_by_a_contained_title"] += 1
     return [f"relinks_in_plan {len(plan['relinks'])}",
             *(f"{name} {counts[name]}" for name in ("relinks_unreadable_now_or_book_gone",
+                                                    "relinks_tags_disagree_folder_agrees",
                                                     "relinks_vetoed_by_this_version",
                                                     "relinks_vetoed_by_a_contained_title"))]
 

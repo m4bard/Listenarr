@@ -3,7 +3,10 @@
 Runs the same matching PLAN runs (identity-only, no hashing) and writes no plan. Each stale row falls in
 exactly one class:
 
-* ``matched``: PLAN would re-link it by physical identity;
+* ``matched``: PLAN would re-link it by physical identity. Two subsets are counted apart:
+  ``matched_hardlinked_to_quarantine`` (a hard-linked object whose every other name is a quarantine name of
+  this book) and ``matched_tags_disagree_folder_agrees`` (tags name another book, waived because the file
+  handle and the folder's ``Asin`` agree);
 * ``vetoed:<reason>``: its identity matched one file, but a later rule left it out (audio facts, tags naming
   another book, the book left whole, ...);
 * ``ambiguous-shared-by-rows`` / ``ambiguous-shared-by-files``: more than one row or file carries the identity;
@@ -62,14 +65,23 @@ def _summary_class(name: str) -> str:
     return name.split(":not-identity:")[0]
 
 
+def _waivers(decision: RowDecision) -> str:
+    """Which narrowed rule a row's identity candidate passed by, whatever its final class ('-' for none)."""
+    found = decision.candidates[0] if decision.candidates else None
+    names = [name for name, used in (("hardlinked-to-quarantine", found is not None and found.hardlinked_to_quarantine),
+                                     ("tags-disagree-folder-agrees", found is not None and found.tags_waived)) if used]
+    return ",".join(names) or "-"
+
+
 def row_lines(result: MatchResult, with_paths: bool) -> list[str]:
-    """One tab-separated line per stale row: ids, class, drift and folder id (and paths, reason if asked)."""
-    header = ["row_id", "audiobook_id", "class", "device_drift", "folder_id"]
+    """One tab-separated line per stale row: ids, class, drift, folder id, waivers (and paths, reason if asked)."""
+    header = ["row_id", "audiobook_id", "class", "device_drift", "folder_id", "waivers"]
     lines = ["\t".join([*header, *(["stored_path", "matched_path", "reason"] if with_paths else [])])]
     for decision in sorted(result.decisions, key=lambda d: d.row.id):
         found = decision.candidates[0] if decision.candidates else None
         cells = [str(decision.row.id), str(decision.row.audiobook_id), row_class(decision),
-                 "Y" if found is not None and found.device_drift else "N", decision.folder_id or "-"]
+                 "Y" if found is not None and found.device_drift else "N", decision.folder_id or "-",
+                 _waivers(decision)]
         if with_paths:
             cells += [decision.row.path, found.file.db_path if found else "", decision.reason or ""]
         lines.append("\t".join(cell.replace("\t", " ").replace("\n", " ") for cell in cells))
@@ -113,6 +125,7 @@ def explain_identity(library: Library, result: MatchResult) -> list[str]:
         physical.AMBIGUOUS_FILES, physical.HARDLINKED, physical.CROSS_POOL, physical.OTHER_DATASET,
         physical.FOLDER_ID_DISAGREES))
     hardlinked = [d for d in result.decisions if d.identity_class == physical.HARDLINKED]
+    waived = Counter(name for d in result.decisions for name in _waivers(d).split(","))
     stale_by_book: dict[int, list[RowDecision]] = {}
     for decision in result.decisions:
         stale_by_book.setdefault(decision.row.audiobook_id, []).append(decision)
@@ -130,6 +143,11 @@ def explain_identity(library: Library, result: MatchResult) -> list[str]:
         "+ hardlinked + cross-pool + other-dataset-same-pool + folder-id-disagrees)",
         f"matched_device_drift {sum(1 for d in matched if d.chosen and d.chosen.device_drift)}",
         f"matched_same_device {sum(1 for d in matched if d.chosen and not d.chosen.device_drift)}",
+        f"matched_hardlinked_to_quarantine {sum(1 for d in matched if d.chosen and d.chosen.hardlinked_to_quarantine)}",
+        f"matched_tags_disagree_folder_agrees {sum(1 for d in matched if d.chosen and d.chosen.tags_waived)}",
+        f"hardlinked_to_quarantine_before_vetoes {waived['hardlinked-to-quarantine']}",
+        f"tags_disagree_folder_agrees_waived {waived['tags-disagree-folder-agrees']}",
+        f"quarantine_names_with_links {sum(len(names) for names in library.quarantine.values())}",
         *(f"matched_folder_id_{state} {sum(1 for d in matched if d.folder_id == state)}"
           for state in ("agrees", "unknown")),
         f"hardlinked_every_name_unclaimed_under_the_roots {sum(1 for d in hardlinked if _all_names_seen(d))}",

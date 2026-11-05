@@ -55,6 +55,26 @@ def _read_exclude_file(path: Path) -> frozenset[int]:
     return frozenset(ids)
 
 
+def _quarantine_dirs(values: list[str] | None, host_roots: list[str]) -> list[str] | None:
+    """The ``--quarantine-dir`` folders, resolved; None (logged) when one is missing or overlaps a root or another.
+
+    Each value is taken literally (no globbing). A folder inside a library root, or holding one, is refused:
+    its names would be library names, not quarantine names.
+    """
+    folders = [os.path.realpath(value) for value in values or []]
+    for folder in folders:
+        if not os.path.isdir(folder):
+            log.error("--quarantine-dir %s is not a folder", folder)
+            return None
+        if any(is_within(folder, root) or is_within(root, folder) for root in host_roots):
+            log.error("--quarantine-dir %s lies inside, or holds, a library root", folder)
+            return None
+        if sum(1 for other in folders if is_within(folder, other)) > 1:
+            log.error("--quarantine-dir %s is given twice, or lies inside another one", folder)
+            return None
+    return folders
+
+
 def _plan(args: argparse.Namespace) -> int:
     path_map = PathMap.parse(args.path_map)
     out_dir = Path(args.out).resolve()
@@ -85,6 +105,9 @@ def _plan(args: argparse.Namespace) -> int:
     if missing_roots:
         log.error("library root(s) not visible on this host: %s (use --path-map)", ", ".join(missing_roots))
         return 2
+    quarantine_dirs = _quarantine_dirs(args.quarantine_dir, host_roots)
+    if quarantine_dirs is None:
+        return 2
     out_dir.mkdir(parents=True, exist_ok=True)
     db_copy = out_dir / "db-copy.sqlite"
     inventory.snapshot_database(args.db, str(db_copy))
@@ -95,7 +118,7 @@ def _plan(args: argparse.Namespace) -> int:
     finally:
         connection.close()
     library = inventory.Library(roots, books, files)
-    if not _walk(library, path_map):
+    if not _walk(library, path_map, quarantine_dirs):
         return 2
     identity_only = not args.include_shape_matches
     result = matcher.match(library, path_map, args.workers, not args.no_hash_chosen, identity_only, excluded)
@@ -112,8 +135,11 @@ def _plan(args: argparse.Namespace) -> int:
     return 0
 
 
-def _walk(library: inventory.Library, path_map: PathMap) -> bool:
-    """Record each root's device and every mount's pool, then walk the roots; False on a bad path map."""
+def _walk(library: inventory.Library, path_map: PathMap, quarantine_dirs: list[str]) -> bool:
+    """Record each root's device and every mount's pool, walk the roots and the quarantine folders.
+
+    False on a bad path map.
+    """
     library.root_devices = {r: os.stat(path_map.to_host(r)).st_dev for r in library.roots}
     library.device_pools = identity.mount_pools()
     try:
@@ -125,6 +151,8 @@ def _walk(library: inventory.Library, path_map: PathMap) -> bool:
     except inventory.PathMapError as error:
         log.error("%s", error)
         return False
+    for folder in quarantine_dirs:
+        inventory.walk_quarantine(folder, library)
     return True
 
 
@@ -140,6 +168,9 @@ def _explain_identity(args: argparse.Namespace) -> int:
     if missing_roots:
         log.error("%d library root(s) not visible on this host (use --path-map)", len(missing_roots))
         return 2
+    quarantine_dirs = _quarantine_dirs(args.quarantine_dir, host_roots)
+    if quarantine_dirs is None:
+        return 2
     if args.with_paths and not args.rows_out:
         log.error("--with-paths needs --rows-out: paths never go to stdout")
         return 2
@@ -149,7 +180,7 @@ def _explain_identity(args: argparse.Namespace) -> int:
         log.error("--rows-out must be a new file, in an existing folder, outside every library root")
         return 2
     library = inventory.Library(roots, books, files)
-    if not _walk(library, path_map):
+    if not _walk(library, path_map, quarantine_dirs):
         return 2
     result = matcher.match(library, path_map, args.workers, hash_chosen=False, identity_only=True)
     if rows_out is not None:
@@ -226,6 +257,13 @@ def _explain_veto(args: argparse.Namespace) -> int:
     return 0
 
 
+def _add_quarantine_dir(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--quarantine-dir", nargs="+", action="extend", metavar="DIR",
+                        help="folder(s) outside every library root holding quarantine hard links (no default, "
+                             "taken literally). A hard-linked file is matched only when every other name lies "
+                             "under one of these, on its dataset, in a folder with this book's bracketed id")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point."""
     _setup_logging()
@@ -249,6 +287,7 @@ def main(argv: list[str] | None = None) -> int:
                       help="AudiobookFiles ids (one per line, # comments) never to re-link; every book holding "
                            "one is withheld whole, live rows or not. A list naming no id, or an id that is no "
                            "file row, refuses the run")
+    _add_quarantine_dir(plan)
     plan.set_defaults(handler=_plan)
 
     apply = sub.add_parser("apply", help="write a reviewed plan into the stopped service's DB, one transaction")
@@ -288,6 +327,7 @@ def main(argv: list[str] | None = None) -> int:
                                                        "every library root); ids and classes only")
     why.add_argument("--with-paths", action="store_true", help="add the stored and matched paths and the reason "
                                                                "to --rows-out (that file then stays on this host)")
+    _add_quarantine_dir(why)
     why.set_defaults(handler=_explain_identity)
 
     args = parser.parse_args(argv)

@@ -12,6 +12,9 @@ Rules (each one exists because guessing here can later let a delete hit the wron
   rules. A shared identity (two rows, or two files), a hard-linked object, a match on another dataset or pool,
   or a folder whose bracketed id is another book's leaves the row out. Under a drifted device the stored
   identity is cleared on APPLY (it no longer spells the file's device), as for a shape link.
+* One exception to the hard-link refusal: a file whose every other name lies under a ``--quarantine-dir``
+  folder, outside every root, on the file's own dataset, in a folder whose bracketed id is this book's id
+  (``_other_names_quarantined``). The name under the root is the one linked.
 * Otherwise exactly one consistent candidate must remain. Equal-size siblings are separated only by an
   unchanged file name; part numbers and track tags are never trusted (a renamer may have rewritten both in
   any order). A same-size file that cannot be read makes the row ambiguous (it might be this row's file).
@@ -25,7 +28,9 @@ Rules (each one exists because guessing here can later let a delete hit the wron
 * Tags that fully name another library book reject a candidate. A title that is part of this one does not
   when the tags also carry this book's whole title. For the object .620 registered (physical identity),
   neither does one whose remaining words are this book's own authors or series, again when the tags also
-  carry this book's whole title (``other_book_named``).
+  carry this book's whole title (``other_book_named``). The veto is waived only for a physical identity match
+  whose stored file handle (object + generation) and inode are the file's own and whose folder's bracketed
+  id is this book's ``Asin`` (``_folder_is_asin``); every other check still applies.
 * A file (one object, whatever its names) is never linked to two rows, never to a file a live row already
   holds (also through a symlink row), and never to a file that was also a candidate of a row left
   unresolved (it might be that row's file).
@@ -48,6 +53,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import partial
 
 from listenarr_relink import identity, media, physical
 from listenarr_relink.inventory import BookRow, DiskFile, FileRow, Library, lstat_or_none
@@ -65,6 +71,7 @@ PLACEHOLDER_MIN_DURATION_SECONDS = 1.0
 EXCLUDED = "withheld: listed in --exclude-file-ids"
 DURATION_ABS_TOLERANCE = 1.0
 SHAPE = "shape-and-name"
+TAGS_VETO = "tags name another library book"
 DURATION_REL_TOLERANCE = 0.005
 
 
@@ -81,6 +88,9 @@ class Candidate:
     author_in_path: bool = False
     identity_match: bool = False
     device_drift: bool = False
+    handle_equal: bool = False
+    hardlinked_to_quarantine: bool = False
+    tags_waived: bool = False  # tags name another book, waived: the handle and the folder's Asin agree
 
     @property
     def path_evidence(self) -> bool:
@@ -236,21 +246,44 @@ def _consistency(row: FileRow, probe: media.Probe, other_titles: dict[frozenset[
         if stored is not None and value is not None and int(str(stored)) != value:
             return f"{column} {value} != stored {stored}"
     book_id = other_book_named(probe.tags, other_titles, own, identity_match)
-    return None if book_id is None else f"tags name another library book (audiobook {book_id})"
+    return None if book_id is None else f"{TAGS_VETO} (audiobook {book_id})"
+
+
+def _own_book_id(row: FileRow, library: Library) -> str | None:
+    """The book's id: its ``Asin`` when the database has one, else the id ending a folder of the stored path."""
+    book = library.books.get(row.audiobook_id)
+    return (book.context.get("Asin", "").strip().casefold() if book else "") or physical.folder_id(
+        row.path, root_of(row.path, library.roots))
 
 
 def _folder_id_check(row: FileRow, hit: DiskFile, library: Library) -> str:
-    """Whether the matched file's folder carries this book's bracketed id: agrees, disagrees or unknown.
-
-    The book's id is its ``Asin`` when the database has one, else the id ending a folder of the stored path.
-    """
-    book = library.books.get(row.audiobook_id)
-    own = (book.context.get("Asin", "").strip().casefold() if book else "") or physical.folder_id(
-        row.path, root_of(row.path, library.roots))
+    """Whether the matched file's folder carries this book's bracketed id: agrees, disagrees or unknown."""
+    own = _own_book_id(row, library)
     found = physical.folder_id(hit.db_path, root_of(hit.db_path, library.roots))
     if not own or not found:
         return "unknown"
     return "agrees" if own == found else "disagrees"
+
+
+def _folder_is_asin(disk_file: DiskFile, book: BookRow | None, library: Library) -> bool:
+    """True when the file's folder carries a bracketed id equal to the book's own ``Asin`` (none: False)."""
+    asin = book.context.get("Asin", "").strip().casefold() if book else ""
+    return bool(asin) and physical.folder_id(disk_file.db_path, root_of(disk_file.db_path, library.roots)) == asin
+
+
+def _other_names_quarantined(own_id: str | None, library: Library, host_roots: frozenset[str], hit: DiskFile) -> bool:
+    """True when every other name of ``hit`` is a quarantine name of this book.
+
+    Each must lie under a ``--quarantine-dir`` folder, outside every library root, on the file's own device,
+    in a folder whose bracketed id is this book's id; and the quarantine names must account for every link.
+    A same-inode file of another device counts against the total, so it refuses rather than stands in.
+    """
+    names = library.quarantine.get(hit.ino, [])
+    return bool(own_id) and len(names) == hit.nlink - 1 and all(
+        name.dev == hit.dev
+        and not any(is_within(name.host_path, root) for root in host_roots)
+        and physical.folder_id(name.host_path, name.quarantine_dir) == own_id
+        for name in names)
 
 
 def _resolves(db_path: str, path_map: PathMap) -> bool:
@@ -357,6 +390,8 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
         root = root_of(disk_file.db_path, library.roots)
         return library.root_devices.get(root) if root is not None else None
 
+    host_roots = frozenset(p for r in library.roots
+                           for p in (path_map.to_host(r), os.path.realpath(path_map.to_host(r))))
     identity_taken: dict[str, RowDecision] = {}
     for decision in decisions:
         stored_identity = stored_of[decision.row.id]
@@ -373,7 +408,9 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             decision.candidates = [Candidate(f) for f in by_inode.get(stored_identity.inode, [])]
             continue
         verdict = physical.classify(stored_identity, by_inode.get(stored_identity.inode, []), identity.read_live,
-                                    root_device_of, devices_under_roots, library.device_pools)
+                                    root_device_of, devices_under_roots, library.device_pools,
+                                    partial(_other_names_quarantined, _own_book_id(decision.row, library), library,
+                                            host_roots))
         decision.identity_class = verdict.kind
         if verdict.kind in physical.FALL_THROUGH:
             continue
@@ -383,7 +420,9 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
                                    for f in verdict.hits]
             continue
         (hit,) = verdict.hits
-        decision.candidates = [Candidate(hit, identity_match=True, device_drift=verdict.device_drift)]
+        decision.candidates = [Candidate(hit, identity_match=True, device_drift=verdict.device_drift,
+                                         handle_equal=verdict.handle_equal,
+                                         hardlinked_to_quarantine=verdict.hardlinked_to_quarantine)]
         decision.folder_id = _folder_id_check(decision.row, hit, library)
         if decision.folder_id == "disagrees":
             decision.identity_class = physical.FOLDER_ID_DISAGREES
@@ -430,6 +469,10 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             candidate.probe = probe
             others = {k: v for k, v in other_titles.items() if v != decision.row.audiobook_id}
             candidate.rejected = _consistency(decision.row, probe, others, owner, candidate.identity_match)
+            if (candidate.rejected is not None and candidate.rejected.startswith(TAGS_VETO)
+                    and candidate.identity_match and candidate.handle_equal
+                    and _folder_is_asin(candidate.file, owner, library)):
+                candidate.rejected, candidate.tags_waived = None, True
             root = root_of(candidate.file.db_path, library.roots) or "/"
             parts = name_parts(candidate.file.db_path, root)
             candidate.same_dir = os.path.dirname(candidate.file.host_path) == old_parent
