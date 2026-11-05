@@ -40,6 +40,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 .Include(a => a.QualityProfile)
                 .Include(a => a.SeriesMemberships)
                 .Where(a => eligibleIds.Contains(a.Id))
+                .OrderBy(a => a.LastSearchTime != null).ThenBy(a => a.LastSearchTime).ThenBy(a => a.Id)
                 .ToListAsync(ct);
         }
     }

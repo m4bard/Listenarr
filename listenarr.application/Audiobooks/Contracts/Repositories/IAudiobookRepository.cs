@@ -38,6 +38,10 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<Dictionary<int, List<AudiobookSeriesMembership>>> GetAllSeriesMembershipsGroupedByAudiobookIdAsync(CancellationToken ct = default);
         Task<Dictionary<int, List<AudiobookExternalIdentifier>>> GetAsinIdentifiersGroupedByAudiobookIdAsync(CancellationToken ct = default);
         Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, CancellationToken ct = default);
+        /// <summary>
+        /// Monitored books with a quality profile not searched since <paramref name="cutoff"/>:
+        /// never-searched first, then least recently searched, then by id.
+        /// </summary>
         Task<List<Audiobook>> GetMonitoredAudiobooksForSearchAsync(DateTime cutoff, CancellationToken ct = default);
         Task NormalizeJsonColumnsAsync(CancellationToken ct = default);
         /// <summary>
