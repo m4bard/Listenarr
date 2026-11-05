@@ -220,8 +220,8 @@ def test_both_waivers_on_one_row_are_both_reported(monkeypatch: pytest.MonkeyPat
 # (a) end to end, on real files
 
 
-def bracketed_and_quarantined(library: Library) -> tuple[int, Path, Path]:
-    """One placeholder-size row moved into '<title> [<Asin>]', with a second name under QUARANTINE-DUP."""
+def princess_in_its_asin_folder(library: Library) -> tuple[int, Path]:
+    """A placeholder-size row of book 1 (Asin set), its file moved into '<title> [<Asin>]' (the object stays)."""
     (row,) = library.add_book(1, PRINCESS[:2], 1, Size=PLACEHOLDER)
     with sqlite3.connect(library.db) as connection:
         connection.execute("ALTER TABLE Audiobooks ADD COLUMN Asin TEXT")
@@ -230,6 +230,13 @@ def bracketed_and_quarantined(library: Library) -> tuple[int, Path, Path]:
     new = old.parent.with_name(f"{old.parent.name} [{PRINCESS_ASIN}]") / old.name
     new.parent.mkdir()
     os.rename(old, new)
+    return row, new
+
+
+def bracketed_and_quarantined(library: Library) -> tuple[int, Path, Path]:
+    """That row, with a second name of its file under QUARANTINE-DUP."""
+    row, new = princess_in_its_asin_folder(library)
+    old = library.rows[row]
     held = library.top / "QUARANTINE-DUP" / PRINCESS[1] / new.parent.name / old.name
     held.parent.mkdir(parents=True)
     os.link(new, held)
@@ -263,3 +270,19 @@ def test_cli_refuses_a_quarantine_dir_inside_or_holding_a_root_missing_or_given_
         rc, plan = library.plan(f"plan-{len(list(library.top.iterdir()))}", "--quarantine-dir", *extra)
         assert rc == 2 and plan is None, extra
         assert cli.main(["explain-identity", "--db", str(library.db), "--quarantine-dir", *extra]) == 2, extra
+
+
+def test_cli_relinks_past_the_tags_when_the_folder_is_the_asin(library: Library,
+                                                               capsys: pytest.CaptureFixture[str]) -> None:
+    library.add_book(2, JUNGLE[:2], 1)
+    row, new = princess_in_its_asin_folder(library)
+    library.rows[row] = new
+    library.rewrite(row, JUNGLE[0])  # the same object, whose tags now name The Jungle Book
+    rc, plan = library.plan("plan")
+    assert rc == 0 and plan is not None and relinked(plan) == {row: str(new)}
+    assert plan["relinks"][0]["evidence"]["tags_disagree_folder_agrees"] is True
+    assert plan["summary"]["relinks_tags_disagree_folder_agrees"] == 1
+    capsys.readouterr()
+    assert cli.main(["explain-veto", "--plan", str(library.top / "plan" / "plan.json"), "--workers", "1"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert "relinks_tags_disagree_folder_agrees 1" in out and "relinks_vetoed_by_this_version 0" in out
