@@ -358,8 +358,6 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
         return library.root_devices.get(root) if root is not None else None
 
     identity_taken: dict[str, RowDecision] = {}
-    # Files a refused identity could be: never offered to another row's size match.
-    withheld_objects: set[str] = set()
     for decision in decisions:
         stored_identity = stored_of[decision.row.id]
         if stored_identity is None:
@@ -371,8 +369,8 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             decision.identity_class = physical.AMBIGUOUS_ROWS
             decision.leave_out(f"physical identity (inode or file handle) is shared by {sharing} rows (ambiguous, "
                                "not linked)")
+            # Its files stay its candidates: pass 3 then keeps them from any other row's size match.
             decision.candidates = [Candidate(f) for f in by_inode.get(stored_identity.inode, [])]
-            withheld_objects.update(f.db_path for f in by_inode.get(stored_identity.inode, []))
             continue
         verdict = physical.classify(stored_identity, by_inode.get(stored_identity.inode, []), identity.read_live,
                                     root_device_of, devices_under_roots, library.device_pools)
@@ -383,7 +381,6 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             decision.leave_out(verdict.detail)
             decision.candidates = [Candidate(f, identity_match=verdict.kind == physical.HARDLINKED)
                                    for f in verdict.hits]
-            withheld_objects.update(f.db_path for f in verdict.hits)
             continue
         (hit,) = verdict.hits
         decision.candidates = [Candidate(hit, identity_match=True, device_drift=verdict.device_drift)]
@@ -394,7 +391,6 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
                                "(review)")
             flags.append(Flag("folder-id-disagrees", decision.row.id, decision.row.audiobook_id,
                               f"{decision.row.path} -> {hit.db_path}"))
-            withheld_objects.add(hit.db_path)
             continue
         if decision.row.size != hit.size and not size_is_placeholder(decision.row):
             decision.leave_out(f"physical identity matches {hit.db_path} but its size changed "
@@ -420,7 +416,7 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
             decision.leave_out("no usable stored size and no physical identity match")
             continue
         decision.candidates = [Candidate(f) for f in by_size.get(size, [])
-                               if f.db_path not in identity_taken and f.db_path not in withheld_objects]
+                               if f.db_path not in identity_taken]
         pending.append(decision)
 
     probes = _parallel((c.file.host_path for d in pending for c in d.candidates), media.probe, workers)
