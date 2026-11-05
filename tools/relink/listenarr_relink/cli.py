@@ -1,4 +1,4 @@
-"""Command line: ``plan``, ``apply``, ``verify`` and ``explain-veto``.
+"""Command line: ``plan``, ``apply``, ``verify``, ``explain-veto`` and ``explain-identity``.
 
 Exit codes: 0 success; 2 usage or refused precondition (nothing written); 3 APPLY refused at least one
 entry and rolled everything back (nothing written; refusals listed in the report, re-plan), or PLAN wrote a
@@ -16,9 +16,10 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from listenarr_relink import inventory, matcher
+from listenarr_relink import identity, inventory, matcher
 from listenarr_relink.apply import ApplyAborted, apply_plan, processes_holding
 from listenarr_relink.explain import explain_veto
+from listenarr_relink.explain_identity import explain_identity, row_lines
 from listenarr_relink.paths import PathMap, is_within
 from listenarr_relink.plan_io import build_plan, file_sha256, write_outputs
 from listenarr_relink.verify import verify
@@ -94,14 +95,7 @@ def _plan(args: argparse.Namespace) -> int:
     finally:
         connection.close()
     library = inventory.Library(roots, books, files)
-    try:
-        for root in roots:
-            if any(other != root and is_within(root, other) for other in roots):
-                log.info("root %s lies inside another root; walked once as part of it", root)
-                continue
-            inventory.walk_root(root, path_map, library)
-    except inventory.PathMapError as error:
-        log.error("%s", error)
+    if not _walk(library, path_map):
         return 2
     identity_only = not args.include_shape_matches
     result = matcher.match(library, path_map, args.workers, not args.no_hash_chosen, identity_only, excluded)
@@ -116,6 +110,51 @@ def _plan(args: argparse.Namespace) -> int:
                   len(library.walk_errors))
         return 3
     return 0
+
+
+def _walk(library: inventory.Library, path_map: PathMap) -> bool:
+    """Record each root's device and every mount's pool, then walk the roots; False on a bad path map."""
+    library.root_devices = {r: os.stat(path_map.to_host(r)).st_dev for r in library.roots}
+    library.device_pools = identity.mount_pools()
+    try:
+        for root in library.roots:
+            if any(other != root and is_within(root, other) for other in library.roots):
+                log.info("root %s lies inside another root; walked once as part of it", root)
+                continue
+            inventory.walk_root(root, path_map, library)
+    except inventory.PathMapError as error:
+        log.error("%s", error)
+        return False
+    return True
+
+
+def _explain_identity(args: argparse.Namespace) -> int:
+    path_map = PathMap.parse(args.path_map)
+    connection = inventory.open_read_only(args.db)
+    try:
+        roots, books, files = inventory.load_rows(connection)
+    finally:
+        connection.close()
+    host_roots = [os.path.realpath(path_map.to_host(r)) for r in roots]
+    missing_roots = [r for r in host_roots if not os.path.isdir(r)]
+    if missing_roots:
+        log.error("%d library root(s) not visible on this host (use --path-map)", len(missing_roots))
+        return 2
+    if args.with_paths and not args.rows_out:
+        log.error("--with-paths needs --rows-out: paths never go to stdout")
+        return 2
+    rows_out = Path(args.rows_out).resolve() if args.rows_out else None
+    if rows_out is not None and (rows_out.exists() or any(is_within(str(rows_out), r) for r in host_roots)):
+        log.error("--rows-out must be a new file outside every library root")
+        return 2
+    library = inventory.Library(roots, books, files)
+    if not _walk(library, path_map):
+        return 2
+    result = matcher.match(library, path_map, args.workers, hash_chosen=False, identity_only=True)
+    if rows_out is not None:
+        rows_out.write_text("\n".join(row_lines(result, args.with_paths)) + "\n", encoding="utf-8")
+    print("\n".join(explain_identity(library, result)))
+    return 3 if library.walk_errors else 0
 
 
 def _apply(args: argparse.Namespace) -> int:
@@ -236,6 +275,19 @@ def main(argv: list[str] | None = None) -> int:
                          help="default: the plan's own path map")
     explain.add_argument("--workers", type=int, default=4, help="parallel ffprobe processes (default 4)")
     explain.set_defaults(handler=_explain_veto)
+
+    why = sub.add_parser("explain-identity", help="read-only, counts only: classify every stale row's physical "
+                                                  "identity against the live files (no plan, nothing written but "
+                                                  "--rows-out; SQLite may touch the database's -shm file)")
+    why.add_argument("--db", required=True, help="a COPY of the Listenarr DB (opened read-only, never snapshotted)")
+    why.add_argument("--path-map", action="append", default=[], metavar="DBPREFIX=HOSTPREFIX",
+                     help="translate stored paths to this host's view (repeatable)")
+    why.add_argument("--workers", type=int, default=4, help="parallel ffprobe processes (default 4)")
+    why.add_argument("--rows-out", metavar="FILE", help="also write one line per stale row here (a new file outside "
+                                                       "every library root); ids and classes only")
+    why.add_argument("--with-paths", action="store_true", help="add the stored and matched paths and the reason "
+                                                               "to --rows-out (that file then stays on this host)")
+    why.set_defaults(handler=_explain_identity)
 
     args = parser.parse_args(argv)
     if getattr(args, "workers", 1) < 1:

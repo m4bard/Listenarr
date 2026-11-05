@@ -21,7 +21,7 @@ FILE_COLUMNS = ("Id", "AudiobookId", "Path", "Size", "DurationSeconds", "Codec",
                 "PathIdentityLookupKey", "PathOwnershipKey")
 BOOK_COLUMNS = ("Id", "Title", "Authors", "BasePath", "FilePath")
 # Book columns read only as matching context, never as a precondition; a database may predate them.
-BOOK_CONTEXT_COLUMNS = ("Series", "Subtitle", "Narrators")
+BOOK_CONTEXT_COLUMNS = ("Series", "Subtitle", "Narrators", "Asin")
 
 
 @dataclass
@@ -132,6 +132,10 @@ class Library:
     disk: list[DiskFile] = field(default_factory=list)
     symlinks: list[str] = field(default_factory=list)
     walk_errors: list[str] = field(default_factory=list)
+    # Device of each root's own folder, and the pool of each device: physical identity across a drifted device
+    # minor is accepted only on the root's dataset. Left empty, only the stored device is accepted.
+    root_devices: dict[str, int] = field(default_factory=dict)
+    device_pools: dict[int, str] = field(default_factory=dict)
 
 
 def row_digest(values: dict[str, object]) -> str:

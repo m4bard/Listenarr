@@ -7,7 +7,11 @@ Rules (each one exists because guessing here can later let a delete hit the wron
   ``size_is_placeholder``). Physical identity then decides alone, without the size-changed veto; the
   candidate must still agree with the stored duration, codec, sample rate and channels.
 * A candidate must agree with the row's stored duration, codec, sample rate and channels.
-* Physical identity (device + inode + file handle/generation) decides on its own when it matches.
+* Physical identity (inode + file handle/generation, on the stored device or, when the device minor drifted,
+  on the library root's own dataset) decides on its own when it matches; ``physical.classify`` has the
+  rules. A shared identity (two rows, or two files), a hard-linked object, a match on another dataset or pool,
+  or a folder whose bracketed id is another book's leaves the row out. Under a drifted device the stored
+  identity is cleared on APPLY (it no longer spells the file's device), as for a shape link.
 * Otherwise exactly one consistent candidate must remain. Equal-size siblings are separated only by an
   unchanged file name; part numbers and track tags are never trusted (a renamer may have rewritten both in
   any order). A same-size file that cannot be read makes the row ambiguous (it might be this row's file).
@@ -40,12 +44,12 @@ import logging
 import math
 import os
 import stat
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from listenarr_relink import identity, media
+from listenarr_relink import identity, media, physical
 from listenarr_relink.inventory import BookRow, DiskFile, FileRow, Library, lstat_or_none
 from listenarr_relink.paths import PathMap, is_distinctive, is_within, name_parts, names_title, resolve_service, tokens
 
@@ -76,6 +80,7 @@ class Candidate:
     title_in_tags: bool = False
     author_in_path: bool = False
     identity_match: bool = False
+    device_drift: bool = False
 
     @property
     def path_evidence(self) -> bool:
@@ -94,6 +99,8 @@ class RowDecision:
     via: str | None = None
     reason: str | None = None
     audio_hashes: dict[str, str | None] = field(default_factory=dict)
+    identity_class: str | None = None
+    folder_id: str | None = None  # agrees, disagrees or unknown, for a physical identity match
 
     @property
     def consistent(self) -> list[Candidate]:
@@ -232,6 +239,20 @@ def _consistency(row: FileRow, probe: media.Probe, other_titles: dict[frozenset[
     return None if book_id is None else f"tags name another library book (audiobook {book_id})"
 
 
+def _folder_id_check(row: FileRow, hit: DiskFile, library: Library) -> str:
+    """Whether the matched file's folder carries this book's bracketed id: agrees, disagrees or unknown.
+
+    The book's id is its ``Asin`` when the database has one, else the id ending a folder of the stored path.
+    """
+    book = library.books.get(row.audiobook_id)
+    own = (book.context.get("Asin", "").strip().casefold() if book else "") or physical.folder_id(
+        row.path, _root_of(row.path, library.roots))
+    found = physical.folder_id(hit.db_path, _root_of(hit.db_path, library.roots))
+    if not own or not found:
+        return "unknown"
+    return "agrees" if own == found else "disagrees"
+
+
 def _resolves(db_path: str, path_map: PathMap) -> bool:
     """True when the stored path reaches a regular file as the service sees it."""
     try:
@@ -305,16 +326,16 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
         stored_identity = identity.parse_stored(str(row.values.get("PhysicalObjectIdentity") or ""))
         if stored_identity is not None:
             live = identity.read_live(host)
-            if live is not None and not live.matches(stored_identity):
+            if live is not None and not live.matches(stored_identity) and not live.same_object(stored_identity):
                 flags.append(Flag("live-identity-mismatch", row.id, row.audiobook_id,
                                   f"{row.path}: the file at this path is not the object the row was registered with"))
 
     pool = [f for f in library.disk if (f.dev, f.ino) not in claimed and f.db_path not in row_paths]
     by_size: dict[int, list[DiskFile]] = defaultdict(list)
-    by_inode: dict[tuple[int, int, int], list[DiskFile]] = defaultdict(list)
+    by_inode: dict[int, list[DiskFile]] = defaultdict(list)
     for disk_file in pool:
         by_size[disk_file.size].append(disk_file)
-        by_inode[(os.major(disk_file.dev), os.minor(disk_file.dev), disk_file.ino)].append(disk_file)
+        by_inode[disk_file.ino].append(disk_file)
     log.info("rows=%d live=%d stale=%d unclaimed_audio_files=%d", len(library.files), live_rows, len(stale), len(pool))
 
     other_titles = veto_keys(library.books)
@@ -323,29 +344,59 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
     keep_identity: dict[int, bool] = {}
 
     # Pass 1: physical identity decides on its own.
+    stored_of = {row.id: identity.parse_stored(str(row.values.get("PhysicalObjectIdentity") or ""))
+                 for row in library.files}
+    stale_rows_by_inode = Counter(s.inode for d in decisions if (s := stored_of[d.row.id]) is not None)
+    rows_by_handle = Counter((s.inode, s.handle) for s in stored_of.values() if s is not None and s.handle)
+    devices_under_roots = frozenset({f.dev for f in library.disk} | set(library.root_devices.values()))
+
+    def root_device_of(disk_file: DiskFile) -> int | None:
+        root = _root_of(disk_file.db_path, library.roots)
+        return library.root_devices.get(root) if root is not None else None
+
     identity_taken: dict[str, RowDecision] = {}
     for decision in decisions:
-        stored_identity = identity.parse_stored(str(decision.row.values.get("PhysicalObjectIdentity") or ""))
+        stored_identity = stored_of[decision.row.id]
         if stored_identity is None:
+            decision.identity_class = physical.NO_STORED
             continue
-        hits = [f for f in by_inode.get((stored_identity.major, stored_identity.minor, stored_identity.inode), [])
-                if (live := identity.read_live(f.host_path)) is not None and live.matches(stored_identity)]
-        if len(hits) > 1:
-            decision.leave_out(f"physical identity matches {len(hits)} names of one object (hard links)")
-            decision.candidates = [Candidate(f, identity_match=True) for f in hits]
+        sharing = max(stale_rows_by_inode[stored_identity.inode],
+                      rows_by_handle[(stored_identity.inode, stored_identity.handle)] if stored_identity.handle else 0)
+        if sharing > 1:
+            decision.identity_class = physical.AMBIGUOUS_ROWS
+            decision.leave_out(f"physical identity (inode or file handle) is shared by {sharing} rows (ambiguous, "
+                               "not linked)")
             continue
-        if len(hits) == 1:
-            decision.candidates = [Candidate(hits[0], identity_match=True)]
-            if decision.row.size != hits[0].size and not size_is_placeholder(decision.row):
-                decision.leave_out(f"physical identity matches {hits[0].db_path} but its size changed "
-                                   f"({decision.row.size} -> {hits[0].size}); content was rewritten, review")
-                continue
-            if hits[0].db_path in identity_taken:
-                other = identity_taken[hits[0].db_path]
-                other.leave_out("two rows carry the same physical identity")
-                decision.leave_out("two rows carry the same physical identity")
-                continue
-            identity_taken[hits[0].db_path] = decision
+        verdict = physical.classify(stored_identity, by_inode.get(stored_identity.inode, []), identity.read_live,
+                                    root_device_of, devices_under_roots, library.device_pools)
+        decision.identity_class = verdict.kind
+        if verdict.kind in physical.FALL_THROUGH:
+            continue
+        if verdict.kind != physical.MATCH:
+            decision.leave_out(verdict.detail)
+            decision.candidates = [Candidate(f, identity_match=verdict.kind == physical.HARDLINKED)
+                                   for f in verdict.hits]
+            continue
+        (hit,) = verdict.hits
+        decision.candidates = [Candidate(hit, identity_match=True, device_drift=verdict.device_drift)]
+        decision.folder_id = _folder_id_check(decision.row, hit, library)
+        if decision.folder_id == "disagrees":
+            decision.identity_class = physical.FOLDER_ID_DISAGREES
+            decision.leave_out(f"physical identity matches {hit.db_path} but its folder id is not this book's "
+                               "(review)")
+            flags.append(Flag("folder-id-disagrees", decision.row.id, decision.row.audiobook_id,
+                              f"{decision.row.path} -> {hit.db_path}"))
+            continue
+        if decision.row.size != hit.size and not size_is_placeholder(decision.row):
+            decision.leave_out(f"physical identity matches {hit.db_path} but its size changed "
+                               f"({decision.row.size} -> {hit.size}); content was rewritten, review")
+            continue
+        if hit.db_path in identity_taken:
+            other = identity_taken[hit.db_path]
+            other.leave_out("two rows carry the same physical identity")
+            decision.leave_out("two rows carry the same physical identity")
+            continue
+        identity_taken[hit.db_path] = decision
 
     # Gather size candidates for everyone not yet holding an identity hit, then probe in parallel.
     pending: list[RowDecision] = []
@@ -492,7 +543,8 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
         if decision.chosen is None:
             continue
         stored_identity = identity.parse_stored(str(decision.row.values.get("PhysicalObjectIdentity") or ""))
-        keep_identity[decision.row.id] = decision.confidence == "identity" and stored_identity is not None
+        keep_identity[decision.row.id] = (decision.confidence == "identity" and stored_identity is not None
+                                          and not decision.chosen.device_drift)
         if hash_chosen and decision.chosen.file.host_path not in decision.audio_hashes:
             decision.audio_hashes[decision.chosen.file.host_path] = media.audio_hash(decision.chosen.file.host_path)
 

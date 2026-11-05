@@ -66,6 +66,8 @@ def _relink(decision: RowDecision, keep_identity: bool, book_title: str) -> dict
             "stored_codec": decision.row.values.get("Codec"),
             "file_codec": probe.codec if probe else None,
             "identity_match": chosen.identity_match,
+            "identity_device_drift": chosen.device_drift,
+            "folder_id": decision.folder_id,
             "same_dir": chosen.same_dir,
             "title_in_path": chosen.title_in_path,
             "title_in_tags": chosen.title_in_tags,
@@ -106,7 +108,7 @@ def build_plan(library: Library, result: MatchResult, path_map: PathMap, db_copy
         "precondition": {"row_sha256": u.book.digest()},
     } for u in result.book_updates]
     confidence = Counter(r["confidence"] for r in relinks)
-    reasons = Counter(_reason_class(str(item["reason"])) for item in left_out)
+    reasons = Counter(reason_class(str(item["reason"])) for item in left_out)
     flags = Counter(f.kind for f in result.flags)
     return {
         "tool": TOOL_NAME,
@@ -152,8 +154,14 @@ def build_plan(library: Library, result: MatchResult, path_map: PathMap, db_copy
     }
 
 
-def _reason_class(reason: str) -> str:
-    for marker, label in (("its book holds row", "withheld-excluded-book"), ("--exclude-file-ids", "excluded"),
+def reason_class(reason: str) -> str:
+    """A short, path-free label for a left-out reason."""
+    for marker, label in (("physical identity (inode or file handle) is shared by", "identity-ambiguous"),
+                          ("physical identity is carried by", "identity-ambiguous"),
+                          ("matched only a file on another pool", "identity-cross-pool"),
+                          ("matched only a file on another dataset", "identity-other-dataset"),
+                          ("but its folder id is not this book's", "identity-folder-id-disagrees"),
+                          ("its book holds row", "withheld-excluded-book"), ("--exclude-file-ids", "excluded"),
                           ("equally consistent", "ambiguous"), ("chosen by", "contended"),
                           ("also a consistent candidate", "contested"), ("no folder/title/tag", "weak-evidence"),
                           ("no unclaimed file", "no-candidate"), ("agrees with the stored", "no-consistent-candidate"),

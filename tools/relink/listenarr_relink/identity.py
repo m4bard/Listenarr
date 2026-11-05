@@ -4,6 +4,11 @@ Listenarr (.620) stores ``linux-generation:{major:x8}:{minor:x8}:{inode:x16}:fh:
 (or ``...:gen:{x8}``; the older ``linux:...:{birth}:{ns}:fh|gen...`` spelling also exists). A match
 on the strong generation key means the candidate IS the object the row was registered with, even
 after a rename. A bare inode match is not identity: inodes are reused after delete.
+
+The device number is not stable on ZFS: a dataset gets a new anonymous minor when it is mounted again, so
+a stored device can drift while the object stays. The file handle (object number and generation) does not
+drift, but it carries no dataset id either: a clone or a received copy of a dataset has the same handles.
+``LiveIdentity.same_object`` therefore leaves the dataset to the caller (``physical.classify``).
 """
 
 from __future__ import annotations
@@ -41,6 +46,16 @@ class StoredIdentity:
     inode: int
     generations: frozenset[str]
 
+    @property
+    def device(self) -> int:
+        """The stored device number (``st_dev`` spelling)."""
+        return os.makedev(self.major, self.minor)
+
+    @property
+    def handle(self) -> str | None:
+        """The stored file handle (``fh:<type>:<hex>``); None when only an inode generation was stored."""
+        return next((g for g in self.generations if g.startswith("fh:")), None)
+
 
 @dataclass(frozen=True)
 class LiveIdentity:
@@ -55,6 +70,14 @@ class LiveIdentity:
         """Same device, inode and at least one strong generation suffix."""
         return ((self.major, self.minor, self.inode) == (stored.major, stored.minor, stored.inode)
                 and bool(self.generations & stored.generations))
+
+    def same_object(self, stored: StoredIdentity) -> bool:
+        """Same device major, inode and file handle; the device minor is not compared.
+
+        Only a stored file handle counts: a bare inode generation (``gen:``) is not compared across devices.
+        """
+        return (self.major == stored.major and self.inode == stored.inode and stored.handle is not None
+                and stored.handle in self.generations)
 
 
 def _is_hex(text: str, width: int | None = None) -> bool:
@@ -138,3 +161,27 @@ def read_live(path: str) -> LiveIdentity | None:
         return LiveIdentity(os.major(info.st_dev), os.minor(info.st_dev), info.st_ino, frozenset(generations))
     finally:
         os.close(fd)
+
+
+def mount_pools(mountinfo: str = "/proc/self/mountinfo") -> dict[int, str]:
+    """Device number -> pool of every mount this process sees: the ZFS pool name, else the mount source.
+
+    Read-only. An unreadable or malformed mount table gives an empty map (every pool then reads as unknown).
+    """
+    pools: dict[int, str] = {}
+    try:
+        with open(mountinfo, encoding="utf-8", errors="replace") as table:
+            lines = table.read().splitlines()
+    except OSError:
+        return pools
+    for line in lines:
+        fields = line.split(" ")
+        if "-" not in fields[6:] or len(fields) < 5:
+            continue
+        major, _, minor = fields[2].partition(":")
+        tail = fields[fields.index("-", 6) + 1:]
+        if not (major.isdigit() and minor.isdigit()) or len(tail) < 2:
+            continue
+        fstype, source = tail[0], tail[1]
+        pools.setdefault(os.makedev(int(major), int(minor)), source.split("/")[0] if fstype == "zfs" else source)
+    return pools
