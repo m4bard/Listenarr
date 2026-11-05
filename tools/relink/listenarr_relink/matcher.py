@@ -415,8 +415,7 @@ def match(library: Library, path_map: PathMap, workers: int, hash_chosen: bool, 
         if size is None or size in UNUSABLE_SIZES:
             decision.leave_out("no usable stored size and no physical identity match")
             continue
-        decision.candidates = [Candidate(f) for f in by_size.get(size, [])
-                               if f.db_path not in identity_taken]
+        decision.candidates = [Candidate(f) for f in by_size.get(size, []) if f.db_path not in identity_taken]
         pending.append(decision)
 
     probes = _parallel((c.file.host_path for d in pending for c in d.candidates), media.probe, workers)

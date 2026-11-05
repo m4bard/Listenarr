@@ -6,6 +6,7 @@ anonymous device minor shifts when it is mounted again. Titles and authors are c
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
 import pytest
@@ -64,3 +65,15 @@ def test_explain_identity_writes_rows_only_where_asked(library: Library, capsys:
     assert rows.read_text().splitlines()[1].split("\t") == [str(row), "1", "matched", "Y", "unknown"]
     assert cli.main(["explain-identity", "--db", db, "--rows-out", str(rows)]) == 2  # never overwrites
     assert not inside.exists()
+
+
+def test_verify_reports_a_live_row_on_a_drifted_minor_apart(library: Library,
+                                                            capsys: pytest.CaptureFixture[str]) -> None:
+    drifted, exact = library.add_book(1, PRINCESS, 2, Size=PLACEHOLDER)
+    drift(library, drifted)  # both files stay at their stored paths: both rows are live
+    capsys.readouterr()
+    assert cli.main(["verify", "--db", str(library.db)]) == 0
+    status = json.loads(capsys.readouterr().out)["status"]
+    assert status.get("live-identity-device-drift") == 1 and status.get("live-identity-match") == 1
+    assert "live-identity-mismatch" not in status
+    assert exact != drifted
