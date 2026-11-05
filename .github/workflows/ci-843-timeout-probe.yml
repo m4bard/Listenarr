@@ -1,0 +1,92 @@
+name: CI 843 timeout probe
+
+# Scratch probe for a fork-only branch. Runs ManualImportMarkerlessRegistrationTests in a
+# loop on native Windows, once with the lease fix and once at the PR head without it, so
+# a timeout in that class can be attributed or ruled out. Not part of any pull request.
+
+on:
+  push:
+    branches: [ ci-843-timeout-probe ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-843-timeout-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  markerless-loop-windows:
+    name: markerless-loop-windows (${{ matrix.variant }})
+    runs-on: windows-2025
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: with-fix
+            code_ref: 5f47826ec26cffa1a0bc8cd10b37b543128e31e1
+          - variant: without-fix
+            code_ref: 03fd6cfe56d15ebeeeb51f2804d18ab513ea6fee
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      LISTENARR_REQUIRED_NATIVE_TEST_CAPABILITIES: 'DirectorySymbolicLinks,FileSymbolicLinks'
+      ASPNETCORE_ENVIRONMENT: Test
+      Playwright__Enabled: 'false'
+      ITERATIONS: '10'
+      TEST_FILTER: 'FullyQualifiedName~Listenarr.Tests.Features.Api.Features.Downloads.ManualImportMarkerlessRegistrationTests.'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.code_ref }}
+
+      - name: Confirm code under test
+        shell: pwsh
+        run: |
+          $head = (git rev-parse HEAD).Trim()
+          Write-Host "Variant ${{ matrix.variant }} testing $head"
+          if ($head -ne '${{ matrix.code_ref }}') { throw "Checked out $head, expected ${{ matrix.code_ref }}" }
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore listenarr.slnx
+
+      - name: Build backend
+        run: dotnet build listenarr.slnx --no-restore --configuration Release
+
+      - name: Run markerless registration tests in a loop
+        shell: pwsh
+        run: |
+          $iterations = [int]$env:ITERATIONS
+          $failedIterations = 0
+          $results = New-Item -ItemType Directory -Path 'probe-results' -Force
+          for ($i = 1; $i -le $iterations; $i++) {
+            Write-Host "::group::Iteration $i of $iterations (${{ matrix.variant }})"
+            & dotnet test tests/Listenarr.Tests.csproj `
+              -c Release `
+              --no-build `
+              --filter $env:TEST_FILTER `
+              --logger 'console;verbosity=normal' `
+              --logger "trx;LogFileName=iteration-$i.trx" `
+              --results-directory $results.FullName
+            $code = $LASTEXITCODE
+            Write-Host "::endgroup::"
+            Write-Host "PROBE ${{ matrix.variant }} iteration $i exit $code"
+            if ($code -ne 0) { $failedIterations++ }
+          }
+          Write-Host "PROBE SUMMARY ${{ matrix.variant }}: $failedIterations of $iterations iterations failed"
+          if ($failedIterations -gt 0) { exit 1 }
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-${{ matrix.variant }}
+          path: probe-results/
+          retention-days: 14
