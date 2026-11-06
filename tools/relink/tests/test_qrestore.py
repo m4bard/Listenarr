@@ -132,6 +132,12 @@ class Restore:
                          str(self.library.top / journal), "--confirm-service-stopped", *extra])
 
 
+def _row(library: Library, row: int) -> dict[str, Any]:
+    with sqlite3.connect(library.db) as connection:
+        connection.row_factory = sqlite3.Row
+        return dict(connection.execute("SELECT * FROM AudiobookFiles WHERE Id = ?", (row,)).fetchone())
+
+
 def long_render(path: Path, title: str, seconds: int) -> None:
     """Write a ``seconds`` long MP3 tagged ``title``."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -229,6 +235,17 @@ def test_undo_leaves_a_name_that_is_another_object(restore: Restore) -> None:
     assert cli.main(["restore-undo", "--journal", str(restore.library.top / "journal.tsv"), "--undo-journal",
                      str(restore.library.top / "u.tsv"), "--confirm-service-stopped"]) == 3
     assert destination.exists() and not restore.library.rows[row].exists()
+
+
+def test_undo_leaves_a_file_whose_quarantine_folder_is_gone(restore: Restore) -> None:
+    (row,) = restore.book(1, PRINCESS, PRINCESS_ASIN, parts=1)
+    folder = restore.quarantine([row], PRINCESS, PRINCESS_ASIN)
+    _, out = restore.plan([1])
+    assert restore.move(out) == 0
+    folder.rmdir()
+    assert cli.main(["restore-undo", "--journal", str(restore.library.top / "journal.tsv"), "--undo-journal",
+                     str(restore.library.top / "u.tsv"), "--confirm-service-stopped"]) == 3
+    assert (restore.target(PRINCESS, PRINCESS_ASIN) / restore.library.rows[row].name).exists()
 
 
 def test_a_book_missing_one_row_object_is_not_restorable(restore: Restore) -> None:
@@ -411,6 +428,15 @@ def test_a_file_on_another_device_is_not_restorable(restore: Restore, monkeypatc
     monkeypatch.setattr(os, "lstat", lstat)
     qrestore._place(book, library, PathMap(), [str(restore.library.root)], {}, PRINCESS_ASIN.casefold())
     assert book.verdict == "cross-device"
+
+
+def test_a_file_two_books_would_take_back_refuses_both(restore: Restore) -> None:
+    (row,) = restore.book(1, PRINCESS, PRINCESS_ASIN, parts=1)
+    restore.quarantine([row], PRINCESS, PRINCESS_ASIN)
+    (row2,) = restore.book(2, ("The Gods of Mars", "Edgar Rice Burroughs"), "B01BKS3DPE", parts=1)
+    restore.library.rows[row2].unlink()  # its file is gone; its row now carries the first book's object
+    restore.library.set_row(row2, **{k: v for k, v in _row(restore.library, row).items() if k not in ("Id", "AudiobookId", "Path")})
+    assert restore.classes() == {1: "object-shared", 2: "object-shared"}
 
 
 def test_a_zero_row_book_is_restored_from_its_only_folder(restore: Restore) -> None:

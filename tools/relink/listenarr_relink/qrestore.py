@@ -28,7 +28,8 @@ A book is restorable only when every check below passes; the first that fails na
 * ``target-name-taken``: a destination name exists already, or two files would land on one name;
 * ``cross-device``: a file is not on the target folder's device (the move would be a copy, a new object);
 * ``hardlinked-elsewhere``: a file has another name that is not under a --restore-from or --quarantine-dir
-  folder in a folder with the book's id (PLAN would then refuse the re-link after the move).
+  folder in a folder with the book's id (PLAN would then refuse the re-link after the move);
+* ``object-shared``: a file would go back for two books (both are refused).
 
 A book with no file row at all (the service dropped its rows) is a candidate when exactly one folder under
 --restore-from carries its ``Asin``; all its audio is restored, with the tag veto never waived (no identity).
@@ -63,7 +64,7 @@ RESTORABLE = "restorable"
 BOOK_CLASSES = ("restorable", "not-every-row-found", "row-content-disagrees", "tags-name-another-book",
                 "asin-tag-not-own", "no-asin", "source-folder-id-not-asin", "several-source-folders",
                 "runtime-misfit", "no-target-folder", "several-target-folders", "target-holds-other-audio",
-                "target-name-taken", "cross-device", "hardlinked-elsewhere")
+                "target-name-taken", "cross-device", "hardlinked-elsewhere", "object-shared")
 RUNTIME_FIT_SECONDS = 60.0
 RUNTIME_FIT_SHARE = 0.01
 RUNTIME_NEAR_SHARE = 0.10
@@ -276,7 +277,13 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
     blocklisted = _blocklisted_books(db_file)
     other_titles = veto_keys(library.books)
     rows_by_id = {r.id: r for r in library.files}
+    books_of_object: dict[tuple[int, int], set[int]] = defaultdict(set)
     for restore in candidates.values():
+        for item in restore.files:
+            books_of_object[(item.source.dev, item.source.ino)].add(restore.book.id)
+    for restore in candidates.values():
+        if any(len(books_of_object[(f.source.dev, f.source.ino)]) > 1 for f in restore.files):
+            restore.refuse("object-shared", "a file would go back for another book too")
         for item in restore.files:
             probe = probes[item.source.host_path]
             assert isinstance(probe, media.Probe)
@@ -683,7 +690,7 @@ def undo_journal(journal_path: str, undo_path: str | None, dry_run: bool) -> Cou
             destination_is = at_destination is not None and (at_destination.st_dev, at_destination.st_ino) == key
             if source_is and destination_is:
                 action = "unlink-destination"  # interrupted between link and unlink
-            elif destination_is and at_source is None:
+            elif destination_is and at_source is None and os.path.isdir(os.path.dirname(source)):
                 action = "move-back"
             elif source_is and at_destination is None:
                 action = "nothing-to-undo"
