@@ -467,10 +467,9 @@ def summary_lines(library: Library, result: Survey) -> list[str]:
         *(f"target_other_audio_runtime_{fit} {sum(1 for b in result.books if b.target_audio_runtime == fit)}"
           for fit in ("fits", "near", "misfit", "unknown")),
         "target_other_audio_books_by_repeats (every file repeats a quarantined duration / some / none):",
-        *(f"  {name} {sum(1 for b in holding if test(b))}" for name, test in (
-            ("all", lambda b: b.target_audio_repeats == b.target_audio_files),
-            ("some", lambda b: 0 < b.target_audio_repeats < b.target_audio_files),
-            ("none", lambda b: b.target_audio_repeats == 0))),
+        f"  all {sum(1 for b in holding if b.target_audio_repeats == b.target_audio_files)}",
+        f"  some {sum(1 for b in holding if 0 < b.target_audio_repeats < b.target_audio_files)}",
+        f"  none {sum(1 for b in holding if b.target_audio_repeats == 0)}",
         f"basepath_is_target {sum(1 for b in result.books if b.target and b.book.base_path.rstrip('/') == b.target)}",
         f"tags_waivable {sum(b.tags_waivable for b in result.books)}",
         f"tags_waived {sum(b.tags_waived for b in result.books)}",
