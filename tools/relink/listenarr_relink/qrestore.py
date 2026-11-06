@@ -8,17 +8,19 @@ into the book's own folder under the root. The ordinary PLAN/APPLY then re-links
 
 A book is restorable only when every check below passes; the first that fails names its class:
 
-* ``not-every-row-found``: some stale row's object is not exactly one file under a --restore-from folder on
-  the root's dataset (a book is restored whole or not at all, as PLAN re-links it whole);
+* ``not-every-row-found``: some stale row's object is neither exactly one file under a --restore-from folder on
+  the root's dataset nor a file PLAN would match under the root (a book is restored whole or not at all, as
+  PLAN re-links it whole);
 * ``row-content-disagrees``: a file's duration, codec, sample rate or channels disagree with its row;
 * ``tags-name-another-book``: a file's album/title tags name another library book (``matcher.other_book_named``)
   and ``--tags-waiver`` does not cover it; the waiver needs a physical identity match, as in PLAN;
 * ``asin-tag-not-own``: a file carries an ASIN tag that is not the book's ``Asin``;
 * ``no-asin`` / ``source-folder-id-not-asin``: the files' folder under --restore-from does not carry the book's
   ``Asin`` as its bracketed id;
-* ``source-folder-mixed`` / ``several-source-folders``: that folder also holds audio that is not this book's
-  rows (a merge leaves exactly that), or the book's files are spread over several such folders;
-* ``runtime-misfit``: the files' summed duration is more than 10 % off the book's catalog runtime;
+* ``several-source-folders``: the book's files are spread over several such folders;
+* ``runtime-misfit``: the summed duration of the book's files (restored, other stale rows' objects under the
+  root, live rows) is more than 10 % off the catalog runtime. Audio beside the quarantined files that no row
+  holds (rows the service dropped) is restored with them and counted here, so a merged-in second copy fails;
 * ``no-target-folder`` / ``several-target-folders``: no single folder under a root carries the book's ``Asin``
   (``BasePath`` wins when it is one of them);
 * ``target-holds-other-audio``: that folder already holds audio no row of this book holds (a second copy, or
@@ -59,9 +61,9 @@ log = logging.getLogger("relink.qrestore")
 RESTORE_PLAN_FORMAT = 1
 RESTORABLE = "restorable"
 BOOK_CLASSES = ("restorable", "not-every-row-found", "row-content-disagrees", "tags-name-another-book",
-                "asin-tag-not-own", "no-asin", "source-folder-id-not-asin", "source-folder-mixed",
-                "several-source-folders", "runtime-misfit", "no-target-folder", "several-target-folders",
-                "target-holds-other-audio", "target-name-taken", "cross-device", "hardlinked-elsewhere")
+                "asin-tag-not-own", "no-asin", "source-folder-id-not-asin", "several-source-folders",
+                "runtime-misfit", "no-target-folder", "several-target-folders", "target-holds-other-audio",
+                "target-name-taken", "cross-device", "hardlinked-elsewhere")
 RUNTIME_FIT_SECONDS = 60.0
 RUNTIME_FIT_SHARE = 0.01
 RUNTIME_NEAR_SHARE = 0.10
@@ -132,6 +134,10 @@ class RestoreBook:
     tags_waivable: int = 0
     blocklisted: bool = False
     target_audio: list[str] = field(default_factory=list)  # audio already in the target (the book's own live rows)
+    target_audio_files: int = 0  # audio in the target that is not this book's (counted when it refuses)
+    target_audio_repeats: int = 0  # ... of which a quarantined file has the same duration (the same recording?)
+    in_root: list[DiskFile] = field(default_factory=list)  # objects of this book's other stale rows under a root
+    live: list[str] = field(default_factory=list)  # host paths of this book's live rows
 
     def refuse(self, verdict: str, detail: str) -> None:
         """Record the first failing check; later ones do not overwrite it."""
@@ -181,9 +187,13 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
     stale_ids = {r.id for r in stale}
     claimed = {(info.st_dev, info.st_ino) for r in library.files if r.path and r.id not in stale_ids
                for info in [lstat_or_none(path_map.to_host(r.path))] if info is not None}
-    by_inode: dict[int, list[DiskFile]] = defaultdict(list)
+    in_source: dict[int, list[DiskFile]] = defaultdict(list)
     for source_file in library.restore_source:
-        by_inode[source_file.ino].append(source_file)
+        in_source[source_file.ino].append(source_file)
+    under_roots: dict[int, list[DiskFile]] = defaultdict(list)
+    for disk_file in library.disk:
+        if (disk_file.dev, disk_file.ino) not in claimed:
+            under_roots[disk_file.ino].append(disk_file)
     devices_under_roots = frozenset({f.dev for f in library.disk} | set(library.root_devices.values()))
     other_names: dict[int, list[str]] = defaultdict(list)
     for names in library.quarantine.values():
@@ -194,18 +204,32 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
         root = root_of(row.path, library.roots)
         return library.root_devices.get(root) if root is not None else None
 
+    def object_of(row: FileRow, same_inode: list[DiskFile]) -> physical.Verdict:
+        stored = identity.parse_stored(str(row.values.get("PhysicalObjectIdentity") or ""))
+        assert stored is not None
+        return physical.classify(stored, same_inode, identity.read_live, partial(_root_device, root_device_of, row),
+                                 devices_under_roots, library.device_pools, _accept_links)
+
     candidates: dict[int, RestoreBook] = {}
+    in_root: dict[int, list[DiskFile]] = defaultdict(list)
+    accounted: set[int] = set()
     for row in stale:
         stored = identity.parse_stored(str(row.values.get("PhysicalObjectIdentity") or ""))
         if stored is None:
             rows["no-stored-identity"] += 1
             continue
-        same_inode = [f for f in by_inode.get(stored.inode, []) if (f.dev, f.ino) not in claimed]
+        same_inode = [f for f in in_source.get(stored.inode, []) if (f.dev, f.ino) not in claimed]
         if not same_inode:
-            rows["object-not-in-restore-source"] += 1
+            # Not quarantined. A sibling PLAN re-links by identity under the root does not hold its book back.
+            verdict = object_of(row, under_roots[stored.inode]) if under_roots.get(stored.inode) else None
+            if verdict is not None and verdict.kind == physical.MATCH:
+                rows["object-under-a-root"] += 1
+                in_root[row.audiobook_id].extend(verdict.hits)
+                accounted.add(row.id)
+            else:
+                rows["object-nowhere-walked"] += 1
             continue
-        verdict = physical.classify(stored, same_inode, identity.read_live, partial(_root_device, root_device_of, row),
-                                    devices_under_roots, library.device_pools, _accept_links)
+        verdict = object_of(row, same_inode)
         book = library.books.get(row.audiobook_id)
         if book is None:
             rows["no-book"] += 1
@@ -219,14 +243,16 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
         (hit,) = verdict.hits
         rows["nlink-1" if hit.nlink == 1 else "nlink-over-1"] += 1
         restore.files.append(RestoreFile(hit, "", row.id))
+        accounted.add(row.id)
     for book_id, restore in candidates.items():
-        restored_rows = {f.row_id for f in restore.files}
-        missing = [r.id for r in files_by_book[book_id] if r.id in stale_ids and r.id not in restored_rows]
-        live = [r for r in files_by_book[book_id] if r.id not in stale_ids]
+        missing = [r.id for r in files_by_book[book_id] if r.id in stale_ids and r.id not in accounted]
         if missing:
-            restore.refuse("not-every-row-found", f"{len(missing)} stale row(s) without an object to restore")
-        if live:
-            rows["books-with-live-rows"] += 1
+            restore.refuse("not-every-row-found", f"{len(missing)} stale row(s) whose object was not found")
+        restore.in_root = in_root.get(book_id, [])
+        restore.live = [path_map.to_host(r.path) for r in files_by_book[book_id] if r.id not in stale_ids and r.path]
+        rows["books-with-a-row-under-a-root"] += bool(restore.in_root)
+        rows["books-with-a-live-row"] += bool(restore.live)
+        _add_unregistered(restore, library, rows)
 
     folders_by_id: dict[str, list[str]] = defaultdict(list)
     for folder in library.restore_folders:
@@ -243,19 +269,39 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
             continue
         restore.files = [RestoreFile(f, "", None) for f in library.restore_source if is_within(f.host_path, sources[0])]
 
-    probes = _parallel((f.source.host_path for b in candidates.values() for f in b.files), media.probe, workers)
+    paths = [*(f.source.host_path for b in candidates.values() for f in b.files),
+             *(f.host_path for b in candidates.values() for f in b.in_root),
+             *(p for b in candidates.values() for p in b.live)]
+    probes = _parallel(paths, media.probe, workers)
+    blocklisted = _blocklisted_books(db_file)
+    other_titles = veto_keys(library.books)
+    rows_by_id = {r.id: r for r in library.files}
     for restore in candidates.values():
         for item in restore.files:
             probe = probes[item.source.host_path]
             assert isinstance(probe, media.Probe)
             item.probe = probe
-    blocklisted = _blocklisted_books(db_file)
-    other_titles = veto_keys(library.books)
-    rows_by_id = {r.id: r for r in library.files}
-    for restore in candidates.values():
         restore.blocklisted = restore.book.id in blocklisted
-        _check(restore, library, path_map, host_roots, rows_by_id, other_titles, other_names, tags_waiver, rows)
+        _check(restore, library, path_map, host_roots, rows_by_id, other_titles, other_names, tags_waiver, rows,
+               probes)
     return Survey(sorted(candidates.values(), key=lambda b: b.book.id), rows, tags_waiver)
+
+
+def _add_unregistered(restore: RestoreBook, library: Library, rows: Counter[str]) -> None:
+    """Add the audio beside a book's quarantined files that no row holds: files whose rows the service dropped.
+
+    Only from the one folder carrying the book's id; every check then applies to them too, the tag veto never
+    waived (no identity), and the runtime check covers the whole set, so a second copy makes it misfit.
+    """
+    folders = {book_folder(f.source.host_path, _restore_dir_of(f.source, library)) for f in restore.files}
+    if len(folders) != 1 or None in folders:
+        return
+    (folder,) = folders
+    objects = {(f.source.dev, f.source.ino) for f in restore.files}
+    for source_file in library.restore_source:
+        if is_within(source_file.host_path, str(folder)) and (source_file.dev, source_file.ino) not in objects:
+            restore.files.append(RestoreFile(source_file, "", None))
+            rows["unregistered-files-beside"] += 1
 
 
 def _root_device(root_device_of: Callable[[FileRow], int | None], row: FileRow, _file: DiskFile) -> int | None:
@@ -269,7 +315,8 @@ def _accept_links(_file: DiskFile) -> bool:
 
 def _check(restore: RestoreBook, library: Library, path_map: PathMap, host_roots: list[str],
            rows_by_id: dict[int, FileRow], other_titles: dict[frozenset[str], int],
-           other_names: dict[int, list[str]], tags_waiver: str, rows: Counter[str]) -> None:
+           other_names: dict[int, list[str]], tags_waiver: str, rows: Counter[str],
+           probes: dict[str, object]) -> None:
     book = restore.book
     asin = book.context.get("Asin", "").strip().casefold()
     others = {k: v for k, v in other_titles.items() if v != book.id}
@@ -310,20 +357,19 @@ def _check(restore: RestoreBook, library: Library, path_map: PathMap, host_roots
         restore.refuse("source-folder-id-not-asin", "a file's folder under --restore-from does not carry the Asin")
     elif len(source_folders) > 1:
         restore.refuse("several-source-folders", f"the files lie in {len(source_folders)} folders")
-    elif source_folders and restore.files:
-        (source_folder,) = source_folders
-        own_objects = {(f.source.dev, f.source.ino) for f in restore.files}
-        extra = [f for f in library.restore_source if is_within(f.host_path, str(source_folder))
-                 and (f.dev, f.ino) not in own_objects]
-        if extra:
-            restore.refuse("source-folder-mixed", f"its folder holds {len(extra)} other audio file(s)")
     durations = [f.probe.duration if f.probe else None for f in restore.files]
-    total = None if not durations or None in durations else sum(d for d in durations if d is not None)
+    durations += [_duration(probes, path) for path in [*(f.host_path for f in restore.in_root), *restore.live]]
+    total = None if not restore.files or None in durations else sum(d for d in durations if d is not None)
     restore.runtime = runtime_fit(total, book.context.get("Runtime"))
     if restore.runtime == "misfit":
         restore.refuse("runtime-misfit", "summed duration is more than 10 % off the catalog runtime")
     _choose_target(restore, library, path_map, asin, rows_by_id)
     _place(restore, library, path_map, host_roots, other_names, asin)
+
+
+def _duration(probes: dict[str, object], path: str) -> float | None:
+    probe = probes.get(path)
+    return probe.duration if isinstance(probe, media.Probe) and not probe.error else None
 
 
 def _restore_dir_of(source: DiskFile, library: Library) -> str:
@@ -345,12 +391,18 @@ def _choose_target(restore: RestoreBook, library: Library, path_map: PathMap, as
     restore.target = targets[0]
     restore.target_host = path_map.to_host(targets[0])
     held = {r.path for r in rows_by_id.values() if r.audiobook_id == restore.book.id}
-    present = [f for f in library.disk if is_within(f.db_path, targets[0]) and f.db_path not in held]
+    own = {(f.dev, f.ino) for f in restore.in_root}
+    present = [f for f in library.disk if is_within(f.db_path, targets[0]) and f.db_path not in held
+               and (f.dev, f.ino) not in own]
     if present:
         probes = [media.probe(f.host_path) for f in present]
         durations = [p.duration for p in probes]
         restore.target_audio_runtime = runtime_fit(None if None in durations else sum(d or 0.0 for d in durations),
                                                    restore.book.context.get("Runtime"))
+        quarantined = [f.probe.duration for f in restore.files if f.probe and f.probe.duration is not None]
+        restore.target_audio_repeats = sum(1 for d in durations if d is not None and any(
+            abs(d - q) <= max(1.0, 0.005 * q) for q in quarantined))
+        restore.target_audio_files = len(present)
         restore.refuse("target-holds-other-audio", f"the target already holds {len(present)} audio file(s)")
     restore.target_audio = sorted(os.path.relpath(f.host_path, restore.target_host) for f in library.disk
                                   if is_within(f.db_path, targets[0]))
@@ -395,6 +447,7 @@ def summary_lines(library: Library, result: Survey) -> list[str]:
     """Counts only: never a title, a name or a path."""
     classes = Counter(b.verdict for b in result.books)
     restorable = [b for b in result.books if b.verdict == RESTORABLE]
+    holding = [b for b in result.books if b.target_audio_files]
     lines = [
         f"tags_waiver {result.tags_waiver}",
         f"restore_from_dirs {len(library.restore_dirs)}",
@@ -413,6 +466,11 @@ def summary_lines(library: Library, result: Survey) -> list[str]:
           for fit in ("fits", "near", "misfit", "unknown")),
         *(f"target_other_audio_runtime_{fit} {sum(1 for b in result.books if b.target_audio_runtime == fit)}"
           for fit in ("fits", "near", "misfit", "unknown")),
+        "target_other_audio_books_by_repeats (every file repeats a quarantined duration / some / none):",
+        *(f"  {name} {sum(1 for b in holding if test(b))}" for name, test in (
+            ("all", lambda b: b.target_audio_repeats == b.target_audio_files),
+            ("some", lambda b: 0 < b.target_audio_repeats < b.target_audio_files),
+            ("none", lambda b: b.target_audio_repeats == 0))),
         f"basepath_is_target {sum(1 for b in result.books if b.target and b.book.base_path.rstrip('/') == b.target)}",
         f"tags_waivable {sum(b.tags_waivable for b in result.books)}",
         f"tags_waived {sum(b.tags_waived for b in result.books)}",
@@ -421,6 +479,10 @@ def summary_lines(library: Library, result: Survey) -> list[str]:
         f"restorable_files {sum(len(b.files) for b in restorable)}",
         f"restorable_rows {sum(1 for b in restorable for f in b.files if f.row_id is not None)}",
         f"restorable_files_with_other_links {sum(1 for b in restorable for f in b.files if f.source.nlink > 1)}",
+        f"restorable_files_without_a_row {sum(1 for b in restorable for f in b.files if f.row_id is None)}",
+        "restorable_books_rows_needing_a_scan_after_relink "
+        f"{sum(1 for b in restorable if b.kind == 'rows' and any(f.row_id is None for f in b.files))}",
+        f"restorable_books_with_a_row_under_a_root {sum(1 for b in restorable if b.in_root)}",
         "candidate_file_ctime_days (UTC day: files):",
         *(f"  {day} {count}" for day, count in sorted(ctime_days(result).items())),
     ]

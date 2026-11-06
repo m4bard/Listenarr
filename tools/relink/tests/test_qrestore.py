@@ -132,6 +132,14 @@ class Restore:
                          str(self.library.top / journal), "--confirm-service-stopped", *extra])
 
 
+def long_render(path: Path, title: str, seconds: int) -> None:
+    """Write a ``seconds`` long MP3 tagged ``title``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=frequency=500:duration={seconds}",
+                    "-c:a", "libmp3lame", "-b:a", "32k", "-ar", "22050", "-ac", "1", "-metadata", f"title={title}",
+                    "-metadata", f"album={title}", str(path)], check=True)
+
+
 def _sha(path: Path) -> str:
     return file_sha256(path)
 
@@ -272,11 +280,42 @@ def test_a_quarantine_folder_naming_another_asin_is_not_restorable(restore: Rest
     assert restore.classes() == {1: "source-folder-id-not-asin"}
 
 
-def test_a_quarantine_folder_holding_other_audio_is_not_restorable(restore: Restore) -> None:
+def test_a_second_copy_merged_in_beside_the_files_does_not_fit_the_runtime(restore: Restore) -> None:
     rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
     folder = restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
-    render(folder / "merged-in.mp3", 650, PRINCESS[0])  # what a bad merge leaves beside the book's own files
-    assert restore.classes() == {1: "source-folder-mixed"}
+    long_render(folder / "merged-in.mp3", PRINCESS[0], 120)  # what a bad merge leaves beside the book's own files
+    assert restore.classes() == {1: "runtime-misfit"}
+
+
+def test_a_file_whose_row_was_dropped_goes_back_with_its_siblings(restore: Restore,
+                                                                  capsys: pytest.CaptureFixture[str]) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN, parts=3)
+    folder = restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    with sqlite3.connect(restore.library.db) as connection:
+        connection.execute("DELETE FROM AudiobookFiles WHERE Id = ?", (rows[2],))  # the service removed its row
+    counts = restore.explain(capsys)
+    assert counts["restorable"] == "1" and counts["restorable_files_without_a_row"] == "1"
+    assert counts["restorable_books_rows_needing_a_scan_after_relink"] == "1"
+    _, out = restore.plan([1])
+    assert restore.move(out) == 0
+    target = restore.target(PRINCESS, PRINCESS_ASIN)
+    assert sorted(p.name for p in target.iterdir()) == sorted(restore.library.rows[r].name for r in rows)
+    assert not list(folder.iterdir())
+    rc, after = restore.library.plan("plan-after")
+    assert rc == 0 and after is not None and set(relinked(after)) == set(rows[:2])
+
+
+def test_a_sibling_row_already_under_the_root_does_not_hold_the_book_back(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows[:1], PRINCESS, PRINCESS_ASIN)
+    target = restore.target(PRINCESS, PRINCESS_ASIN)
+    os.rename(restore.library.rows[rows[1]], target / restore.library.rows[rows[1]].name)  # renamed in place
+    restore.library.rows[rows[1]] = target / restore.library.rows[rows[1]].name
+    assert restore.classes() == {1: "restorable"}
+    _, out = restore.plan([1])
+    assert restore.move(out) == 0
+    rc, after = restore.library.plan("plan-after")
+    assert rc == 0 and after is not None and set(relinked(after)) == set(rows)
 
 
 def test_files_that_do_not_fit_the_catalog_runtime_are_not_restorable(restore: Restore) -> None:
