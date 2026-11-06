@@ -1,4 +1,7 @@
-"""Command line: ``plan``, ``apply``, ``verify``, ``explain-veto`` and ``explain-identity``.
+"""Command line: ``plan``, ``apply``, ``verify``, ``explain-veto``, ``explain-identity`` and the quarantine restore.
+
+The restore commands are ``restore-explain`` (read-only, counts only), ``restore-plan`` (read-only, writes a move
+plan), ``restore-move`` and ``restore-undo`` (the only commands that change library files; see ``qrestore``).
 
 Exit codes: 0 success; 2 usage or refused precondition (nothing written); 3 APPLY refused at least one
 entry and rolled everything back (nothing written; refusals listed in the report, re-plan), or PLAN wrote a
@@ -16,7 +19,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from listenarr_relink import identity, inventory, matcher
+from listenarr_relink import identity, inventory, matcher, qrestore
 from listenarr_relink.apply import ApplyAborted, apply_plan, processes_holding
 from listenarr_relink.explain import explain_veto
 from listenarr_relink.explain_identity import explain_identity, row_lines
@@ -144,10 +147,11 @@ def _plan(args: argparse.Namespace) -> int:
     return 0
 
 
-def _walk(library: inventory.Library, path_map: PathMap, quarantine_dirs: list[str]) -> bool:
-    """Record each root's device and every mount's pool, walk the roots and the quarantine folders.
+def _walk(library: inventory.Library, path_map: PathMap, quarantine_dirs: list[str],
+          restore_dirs: list[str] | None = None) -> bool:
+    """Record each root's device and every mount's pool, walk the roots, the quarantine and the restore folders.
 
-    False on a bad path map, or a quarantine folder that reaches a folder already walked.
+    False on a bad path map, or a quarantine or restore folder that reaches a folder already walked.
     """
     library.root_devices = {r: os.stat(path_map.to_host(r)).st_dev for r in library.roots}
     library.device_pools = identity.mount_pools()
@@ -163,6 +167,8 @@ def _walk(library: inventory.Library, path_map: PathMap, quarantine_dirs: list[s
     try:
         for folder in quarantine_dirs:
             inventory.walk_quarantine(folder, library)
+        for folder in restore_dirs or []:
+            inventory.walk_restore_source(folder, library)
     except inventory.QuarantineAliasError as error:
         log.error("%s", error)
         return False
@@ -201,6 +207,143 @@ def _explain_identity(args: argparse.Namespace) -> int:
         rows_out.write_text("\n".join(row_lines(result, args.with_paths)) + "\n", encoding="utf-8")
     print("\n".join(explain_identity(library, result)))
     return 3 if library.walk_errors else 0
+
+
+def _restore_survey(args: argparse.Namespace) -> tuple[inventory.Library, qrestore.Survey, PathMap] | None:
+    """Load the DB, check and walk the roots, the quarantine and the restore folders, and survey; None: refused."""
+    path_map = PathMap.parse(args.path_map)
+    connection = inventory.open_read_only(args.db)
+    try:
+        roots, books, files = inventory.load_rows(connection)
+    finally:
+        connection.close()
+    host_roots = [os.path.realpath(path_map.to_host(r)) for r in roots]
+    if [r for r in host_roots if not os.path.isdir(r)]:
+        log.error("library root(s) not visible on this host (use --path-map)")
+        return None
+    quarantine = args.quarantine_dir or []
+    folders = _quarantine_dirs([*quarantine, *args.restore_from], host_roots)
+    if folders is None:
+        return None
+    library = inventory.Library(roots, books, files)
+    if not _walk(library, path_map, folders[:len(quarantine)], folders[len(quarantine):]):
+        return None
+    return library, qrestore.survey(library, path_map, args.workers, args.tags_waiver, args.db), path_map
+
+
+def _new_file_outside_roots(value: str, host_roots: list[str]) -> Path | None:
+    path = Path(value).resolve()
+    if path.exists() or not path.parent.is_dir() or any(is_within(str(path), r) for r in host_roots):
+        log.error("%s must be a new file, in an existing folder, outside every library root", value)
+        return None
+    return path
+
+
+def _restore_explain(args: argparse.Namespace) -> int:
+    if args.with_paths and not args.rows_out:
+        log.error("--with-paths needs --rows-out: paths never go to stdout")
+        return 2
+    surveyed = _restore_survey(args)
+    if surveyed is None:
+        return 2
+    library, result, path_map = surveyed
+    if args.rows_out:
+        rows_out = _new_file_outside_roots(args.rows_out, [path_map.to_host(r) for r in library.roots])
+        if rows_out is None:
+            return 2
+        rows_out.write_text("\n".join(qrestore.book_lines(result, args.with_paths)) + "\n", encoding="utf-8")
+    print("\n".join(qrestore.summary_lines(library, result)))
+    return 3 if library.walk_errors else 0
+
+
+def _restore_plan(args: argparse.Namespace) -> int:
+    out_dir = Path(args.out).resolve()
+    if out_dir.exists() and any(out_dir.iterdir()):
+        log.error("output directory %s exists and is not empty", out_dir)
+        return 2
+    try:
+        chosen = _read_book_ids(Path(args.books))
+    except (OSError, ValueError) as error:
+        log.error("book list unusable: %s", error)
+        return 2
+    surveyed = _restore_survey(args)
+    if surveyed is None:
+        return 2
+    library, result, path_map = surveyed
+    roots_host = [path_map.to_host(r) for r in library.roots]
+    if any(is_within(str(out_dir), r) for r in roots_host):
+        log.error("output directory lies inside a library root")
+        return 2
+    if library.walk_errors:
+        log.error("%d walk errors: no restore plan is written on incomplete evidence", len(library.walk_errors))
+        return 3
+    try:
+        plan = qrestore.build_restore_plan(result, chosen, library)
+    except ValueError as error:
+        log.error("%s", error)
+        return 2
+    plan["roots_host"] = roots_host
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path, digest = qrestore.write_restore_plan(plan, str(out_dir))
+    log.info("restore plan=%s sha256=%s books=%d files=%d", path, digest, plan["summary"]["books"],
+             plan["summary"]["files"])
+    print(digest)
+    return 0
+
+
+def _read_book_ids(path: Path) -> frozenset[int]:
+    """Audiobook ids, one per line (blank lines and ``#`` comments ignored); ValueError otherwise or when empty."""
+    ids: set[int] = set()
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        text = line.strip()
+        if not text or text.startswith("#"):
+            continue
+        if not text.isdecimal():
+            raise ValueError(f"{path}:{number}: not an audiobook id: {text!r}")
+        ids.add(int(text))
+    if not ids:
+        raise ValueError(f"{path} names no audiobook id")
+    return frozenset(ids)
+
+
+def _restore_move(args: argparse.Namespace) -> int:
+    plan_path = Path(args.plan).resolve()
+    if file_sha256(plan_path) != args.plan_sha256.lower():
+        log.error("restore plan sha256 does not match the reviewed value")
+        return 2
+    if not args.dry_run and not args.confirm_service_stopped:
+        log.error("restore-move needs --confirm-service-stopped (or --dry-run): stop Listenarr first")
+        return 2
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    roots_host = [str(r) for r in plan.get("roots_host", [])]
+    journal = None
+    if not args.dry_run:
+        journal = _new_file_outside_roots(args.journal or "", roots_host) if args.journal else None
+        if journal is None:
+            log.error("restore-move needs --journal: a new file outside every root")
+            return 2
+    try:
+        done = qrestore.move_plan(plan, roots_host, str(journal) if journal else None, args.dry_run)
+    except qrestore.MoveRefused as error:
+        log.error("refused, nothing moved: %s", error)
+        return 3
+    print("\n".join(f"{key} {value}" for key, value in sorted(done.items())))
+    return 0
+
+
+def _restore_undo(args: argparse.Namespace) -> int:
+    if not args.dry_run and not args.confirm_service_stopped:
+        log.error("restore-undo needs --confirm-service-stopped (or --dry-run): stop Listenarr first")
+        return 2
+    undo = None
+    if not args.dry_run:
+        undo = Path(args.undo_journal).resolve() if args.undo_journal else None
+        if undo is None or undo.exists() or not undo.parent.is_dir():
+            log.error("restore-undo needs --undo-journal: a new file in an existing folder")
+            return 2
+    counts = qrestore.undo_journal(args.journal, str(undo) if undo else None, args.dry_run)
+    print("\n".join(f"{key} {value}" for key, value in sorted(counts.items())))
+    return 3 if counts["refused"] else 0
 
 
 def _apply(args: argparse.Namespace) -> int:
@@ -282,6 +425,44 @@ def _add_narrowed_rules(parser: argparse.ArgumentParser) -> None:
                              "under one of these, on its dataset, in a folder with this book's bracketed id")
 
 
+def _add_restore_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    def survey_arguments(command: argparse.ArgumentParser) -> None:
+        command.add_argument("--db", required=True, help="a COPY of the Listenarr DB (opened read-only)")
+        command.add_argument("--path-map", action="append", default=[], metavar="DBPREFIX=HOSTPREFIX")
+        command.add_argument("--workers", type=int, default=4, help="parallel ffprobe processes (default 4)")
+        command.add_argument("--restore-from", nargs="+", action="extend", required=True, metavar="DIR",
+                             help="quarantine folder(s) outside every root whose files may go back (taken literally)")
+        _add_narrowed_rules(command)
+
+    explain = sub.add_parser("restore-explain", help="read-only, counts only: which quarantined books may go back")
+    survey_arguments(explain)
+    explain.add_argument("--rows-out", metavar="FILE", help="one line per candidate book (ids and classes) here")
+    explain.add_argument("--with-paths", action="store_true", help="add the target folder and reason to --rows-out")
+    explain.set_defaults(handler=_restore_explain)
+
+    plan = sub.add_parser("restore-plan", help="read-only: write the move plan for the operator's chosen books")
+    survey_arguments(plan)
+    plan.add_argument("--books", required=True, metavar="FILE",
+                      help="audiobook ids to restore, one per line; each must be in the restorable class")
+    plan.add_argument("--out", required=True, help="new, empty output directory outside every library root")
+    plan.set_defaults(handler=_restore_plan)
+
+    move = sub.add_parser("restore-move", help="move a reviewed plan's files back under the root (link, then unlink)")
+    move.add_argument("--plan", required=True)
+    move.add_argument("--plan-sha256", required=True)
+    move.add_argument("--journal", help="new file outside every root: every step is recorded here first")
+    move.add_argument("--dry-run", action="store_true", help="check every precondition, move nothing")
+    move.add_argument("--confirm-service-stopped", action="store_true")
+    move.set_defaults(handler=_restore_move)
+
+    undo = sub.add_parser("restore-undo", help="reverse a restore-move journal, newest step first")
+    undo.add_argument("--journal", required=True)
+    undo.add_argument("--undo-journal", help="new file: every undo step is recorded here first")
+    undo.add_argument("--dry-run", action="store_true", help="say what would be undone, change nothing")
+    undo.add_argument("--confirm-service-stopped", action="store_true")
+    undo.set_defaults(handler=_restore_undo)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point."""
     _setup_logging()
@@ -347,6 +528,8 @@ def main(argv: list[str] | None = None) -> int:
                                                                "to --rows-out (that file then stays on this host)")
     _add_narrowed_rules(why)
     why.set_defaults(handler=_explain_identity)
+
+    _add_restore_commands(sub)
 
     args = parser.parse_args(argv)
     if getattr(args, "workers", 1) < 1:
