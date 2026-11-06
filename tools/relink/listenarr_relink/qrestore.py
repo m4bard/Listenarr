@@ -262,6 +262,7 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
         rows["nlink-1" if hit.nlink == 1 else "nlink-over-1"] += 1
         restore.files.append(RestoreFile(hit, "", row.id))
         accounted.add(row.id)
+    in_library = claimed | {(f.dev, f.ino) for f in library.disk}
     for book_id, restore in candidates.items():
         missing = [r.id for r in files_by_book[book_id] if r.id in stale_ids and r.id not in accounted]
         if missing:
@@ -270,7 +271,7 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
         restore.live = [path_map.to_host(r.path) for r in files_by_book[book_id] if r.id not in stale_ids and r.path]
         rows["books-with-a-row-under-a-root"] += bool(restore.in_root)
         rows["books-with-a-live-row"] += bool(restore.live)
-        _add_unregistered(restore, library, rows, claimed | {(f.dev, f.ino) for f in library.disk})
+        _add_unregistered(restore, library, rows, in_library)
 
     folders_by_id: dict[str, list[str]] = defaultdict(list)
     for folder in library.restore_folders:
