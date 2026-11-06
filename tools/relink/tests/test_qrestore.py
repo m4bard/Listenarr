@@ -158,7 +158,8 @@ def restore(library: Library) -> Restore:
 
 def test_a_restorable_book_moves_back_and_then_relinks(restore: Restore, capsys: pytest.CaptureFixture[str]) -> None:
     rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
-    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    folder = restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    (folder / "cover.jpg").write_bytes(b"not audio")  # sidecars stay where they are
     inodes = {row: restore.library.rows[row].stat().st_ino for row in rows}
     # Control: without the move, PLAN finds nothing to re-link (the objects lie outside the root).
     rc, before = restore.library.plan("plan-before")
@@ -521,6 +522,81 @@ def test_a_move_needs_the_reviewed_sha_the_stop_and_a_new_journal(restore: Resto
     assert cli.main(["restore-move", "--plan", plan, "--plan-sha256", _sha(Path(plan)), "--journal", journal,
                      "--confirm-service-stopped"]) == 2
     assert all(restore.library.rows[row].exists() for row in rows)
+
+
+def _retarget(out: Path, change: Any) -> None:
+    plan_file = out / "restore-plan.json"
+    plan = json.loads(plan_file.read_text())
+    change(plan["books"][0])
+    plan_file.write_text(json.dumps(plan))
+
+
+def test_a_move_refuses_a_plan_whose_names_leave_their_folders(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    live = restore.library.root / "live.mp3"
+    render(live, 222, PRINCESS[0])
+    _, out = restore.plan([1])
+    pristine = (out / "restore-plan.json").read_text()
+
+    def source_under_the_root(book: dict[str, Any]) -> None:
+        info = live.stat()
+        book["files"][0]["source"] = str(live)
+        book["files"][0]["pin"] = {"dev": info.st_dev, "ino": info.st_ino, "size": info.st_size,
+                                   "mtime_ns": info.st_mtime_ns, "ctime_ns": info.st_ctime_ns, "nlink": info.st_nlink}
+
+    def destination_outside_the_target(book: dict[str, Any]) -> None:
+        book["files"][0]["destination"] = str(restore.library.root / "elsewhere.mp3")
+
+    for change in (source_under_the_root, destination_outside_the_target):
+        (out / "restore-plan.json").write_text(pristine)
+        _retarget(out, change)
+        assert restore.move(out, journal=f"j-{change.__name__}.tsv") == 3
+        assert live.exists() and all(restore.library.rows[row].exists() for row in rows)
+    (out / "restore-plan.json").write_text(pristine)
+    assert restore.move(out) == 0  # control: the plan as written moves
+
+
+def test_a_move_refuses_a_target_on_another_device(restore: Restore, monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    _, out = restore.plan([1])
+    target = str(restore.target(PRINCESS, PRINCESS_ASIN))
+    real = qrestore.lstat_or_none
+
+    def lstat_or_none(path: str) -> os.stat_result | None:
+        info = real(path)
+        if info is None or path != target:
+            return info
+        values = list(info)
+        values[2] += 1
+        return os.stat_result(values)
+
+    monkeypatch.setattr(qrestore, "lstat_or_none", lstat_or_none)
+    assert restore.move(out) == 3
+    assert all(restore.library.rows[row].exists() for row in rows)
+
+
+def test_a_move_stops_when_the_new_name_is_not_the_object(restore: Restore, monkeypatch: pytest.MonkeyPatch) -> None:
+    (row,) = restore.book(1, PRINCESS, PRINCESS_ASIN, parts=1)
+    restore.quarantine([row], PRINCESS, PRINCESS_ASIN)
+    _, out = restore.plan([1])
+
+    def copy_instead(source: str, destination: str, *, follow_symlinks: bool = True) -> None:
+        Path(destination).write_bytes(Path(source).read_bytes())  # a new object, not a second name
+
+    monkeypatch.setattr(qrestore.os, "link", copy_instead)
+    assert restore.move(out) == 4
+    assert restore.library.rows[row].exists()  # the source is never unlinked
+    journal = (restore.library.top / "journal.tsv").read_text().splitlines()
+    assert [line.split("\t")[0] for line in journal] == ["intent"]
+
+
+def test_a_restore_folder_already_walked_refuses(restore: Restore) -> None:
+    library = inventory.Library([str(restore.library.root)], {}, [])
+    inventory.walk_root(str(restore.library.root), PathMap(), library)
+    with pytest.raises(inventory.QuarantineAliasError):
+        inventory.walk_restore_source(str(restore.library.root), library)
 
 
 def test_a_nested_part_folder_is_recreated_and_undone(restore: Restore) -> None:

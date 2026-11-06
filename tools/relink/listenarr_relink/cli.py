@@ -327,6 +327,9 @@ def _restore_move(args: argparse.Namespace) -> int:
     except qrestore.MoveRefused as error:
         log.error("refused, nothing moved: %s", error)
         return 3
+    except OSError as error:
+        log.error("stopped part-way, do not start the service: %s; run restore-undo on the journal", error)
+        return 4
     print("\n".join(f"{key} {value}" for key, value in sorted(done.items())))
     return 0
 
