@@ -238,7 +238,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                     Metadata = new AudibleBookMetadata
                     {
                         Title = "Different Book",
-                        Asin = "DIFFERENT-ASIN",
+                        Asin = "B0DIFFERNT",
                         Author = "Different Author"
                     },
                     DestinationPath = destination,
@@ -332,6 +332,46 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 CreateRequest(Path.Join(tempRoot, "Edition B"))));
 
             Assert.Equal(2, (await _audiobookRepository.GetAllAsync()).Count);
+        }
+
+        [Theory]
+        [InlineData("erg")]
+        [InlineData("B0BK9W82PQ1")]
+        [InlineData("B0BK9W-2PQ")]
+        public async Task AddToLibrary_MalformedAsin_IsRejectedWithoutAddingTheBook(string asin)
+        {
+            var controller = _provider.GetRequiredService<LibraryController>();
+            var before = (await _audiobookRepository.GetAllAsync()).Count;
+
+            var result = await controller.AddToLibrary(new LibraryController.AddToLibraryRequest
+            {
+                Metadata = new AudibleBookMetadata { Title = "Hand-edited ASIN", Asin = asin },
+                DestinationPath = Path.Join(tempRoot, "Hand-edited ASIN"),
+                Monitored = true
+            });
+
+            var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+            Assert.Contains("asin_invalid", badRequest.Value?.ToString() ?? string.Empty, StringComparison.Ordinal);
+            Assert.Equal(before, (await _audiobookRepository.GetAllAsync()).Count);
+        }
+
+        [Theory]
+        [InlineData("B0BK9W82PQ")]
+        [InlineData("2821124945")]
+        [InlineData("")]
+        public async Task AddToLibrary_WellFormedOrMissingAsin_IsAccepted(string asin)
+        {
+            var controller = _provider.GetRequiredService<LibraryController>();
+
+            var result = await controller.AddToLibrary(new LibraryController.AddToLibraryRequest
+            {
+                Metadata = new AudibleBookMetadata { Title = $"ASIN '{asin}'", Asin = asin },
+                // "ASIN " (empty case) would end with a space, which Windows rejects as a folder name
+                DestinationPath = Path.Join(tempRoot, asin.Length == 0 ? "No ASIN" : $"ASIN {asin}"),
+                Monitored = true
+            });
+
+            Assert.IsType<OkObjectResult>(result);
         }
 
         [Fact]
@@ -507,6 +547,72 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 releaseLock.TrySetResult();
                 await blocker;
             }
+        }
+
+        // "Search for downloads immediately" is its own option, next to "Monitor for new releases" rather
+        // than under it: ticking it searches right away whether or not the book is monitored.
+        [Theory]
+        [InlineData(true, true, true)]
+        [InlineData(true, false, true)]
+        [InlineData(false, true, false)]
+        [InlineData(false, false, false)]
+        public async Task AddToLibrary_AutoSearch_SearchesRightAfterTheAddRegardlessOfMonitored(
+            bool autoSearch,
+            bool monitored,
+            bool expectSearch)
+        {
+            var downloads = new Mock<IDownloadService>();
+            downloads
+                .Setup(service => service.SearchAndDownloadAsync(It.IsAny<int>()))
+                .ReturnsAsync(new SearchAndDownloadResult { Success = true, Message = "queued" });
+            await ReinitializeAsync(builder => builder.WithSingleton(downloads.Object));
+
+            var result = await _provider.GetRequiredService<LibraryController>().AddToLibrary(
+                new LibraryController.AddToLibraryRequest
+                {
+                    Metadata = new AudibleBookMetadata { Title = "Bazaar", Authors = ["Stephen King"] },
+                    Monitored = monitored,
+                    AutoSearch = autoSearch
+                });
+
+            Assert.IsType<OkObjectResult>(result);
+            var audiobook = Assert.Single(await _audiobookRepository.GetAllAsync());
+            Assert.Equal(monitored, audiobook.Monitored);
+            var pending = _provider.GetRequiredService<LibraryAddWorkflow>().AutoSearchTask;
+            if (pending != null)
+            {
+                await pending.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+
+            Assert.Equal(expectSearch, pending != null);
+            downloads.Verify(
+                service => service.SearchAndDownloadAsync(audiobook.Id),
+                expectSearch ? Times.Once() : Times.Never());
+        }
+
+        [Fact]
+        public async Task AddToLibrary_AutoSearchFailure_DoesNotFailTheCommittedAdd()
+        {
+            var downloads = new Mock<IDownloadService>();
+            downloads
+                .Setup(service => service.SearchAndDownloadAsync(It.IsAny<int>()))
+                .ThrowsAsync(new HttpRequestException("indexers unavailable"));
+            await ReinitializeAsync(builder => builder.WithSingleton(downloads.Object));
+
+            var result = await _provider.GetRequiredService<LibraryController>().AddToLibrary(
+                new LibraryController.AddToLibraryRequest
+                {
+                    Metadata = new AudibleBookMetadata { Title = "Bazaar", Authors = ["Stephen King"] },
+                    Monitored = false,
+                    AutoSearch = true
+                });
+
+            Assert.IsType<OkObjectResult>(result);
+            Assert.Single(await _audiobookRepository.GetAllAsync());
+            var pending = _provider.GetRequiredService<LibraryAddWorkflow>().AutoSearchTask;
+            Assert.NotNull(pending);
+            await pending!.WaitAsync(TimeSpan.FromSeconds(10));
+            downloads.Verify(service => service.SearchAndDownloadAsync(It.IsAny<int>()), Times.Once);
         }
 
         [Fact]
@@ -842,7 +948,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         [Fact]
         public async Task AddToLibrary_ImagePreparationFailure_UsesFallbackAndCommitsHistory()
         {
-            const string asin = "B000FALLBACK";
+            const string asin = "B0FALLBACK";
             const string imageUrl = "https://example.com/fallback.jpg";
             imageCacheServiceMock
                 .Setup(service => service.DownloadAndCacheImageAsync(imageUrl, asin))
@@ -888,7 +994,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                     Metadata = new AudibleBookMetadata
                     {
                         Title = "Invalid Destination",
-                        Asin = "B000INVALID",
+                        Asin = "B0DESTPATH",
                         ImageUrl = imageUrl1,
                         Authors = ["External Author"]
                     },

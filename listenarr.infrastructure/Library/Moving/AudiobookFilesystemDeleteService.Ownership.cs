@@ -36,7 +36,16 @@ public sealed partial class AudiobookFilesystemDeleteService
                     && authorization.ParentAnchor.VisiblePathMatches()))
                 return false;
 
-            publication.DeletePinnedEmptyDirectoryImmediately(name);
+            // SMB degrade: this is the final retirement of the authorized target, so release
+            // the local anchor and the caller's witness so delete-on-close can finalize. The
+            // authorization/parent handle stays alive for the parent-relative absence check.
+            publication.DeletePinnedEmptyDirectoryImmediately(
+                name,
+                releaseCoHeldDirectoryPins: () =>
+                {
+                    current.Dispose();
+                    originalTarget.Dispose();
+                });
             return true;
         }
         catch (Exception exception) when (exception is not (
@@ -184,7 +193,8 @@ public sealed partial class AudiobookFilesystemDeleteService
     private async Task<bool> RetireOwnedDirectoryAsync(
         LibraryDirectoryOwnership ownership,
         PinnedDirectoryCreation.PinnedDirectoryAnchor originalDirectory,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action? releaseAdditionalCoHeldPins = null)
     {
         var ownershipKey = ownership.PathOwnershipKey
             ?? throw new InvalidOperationException(
@@ -229,7 +239,21 @@ public sealed partial class AudiobookFilesystemDeleteService
                 return false;
             }
 
-            publication.DeletePinnedEmptyDirectoryImmediately(directoryName);
+            // SMB degrade: release this directory's local anchor and the witness that
+            // authorized its retirement (for the hierarchy target this is originalTarget,
+            // released only now that the target itself is being retired). The executing
+            // publication's own handle is closed by the helper, and the parent/authorization
+            // stay alive for the parent-relative absence check.
+            publication.DeletePinnedEmptyDirectoryImmediately(
+                directoryName,
+                releaseCoHeldDirectoryPins: () =>
+                {
+                    directory.Dispose();
+                    originalDirectory.Dispose();
+                    // Any handle the caller still holds on this directory in an outer frame
+                    // — e.g. RetireOwnedHierarchyAsync's outer publication for a descendant.
+                    releaseAdditionalCoHeldPins?.Invoke();
+                });
         }
         else if (!parent.VisiblePathMatches())
         {
@@ -351,8 +375,14 @@ public sealed partial class AudiobookFilesystemDeleteService
                 continue;
             }
             using var directory = publication.OpenCreatedDirectoryAnchor();
+            // The outer publication here is a separate handle on the descendant directory; hand
+            // it over so the SMB degrade can finalize (it stays open across RetireOwnedDirectory).
             if (!observation.Matches(directory) || !originalTarget.VisiblePathMatches()
-                || !await RetireOwnedDirectoryAsync(ownership, directory, cancellationToken)) return false;
+                || !await RetireOwnedDirectoryAsync(
+                    ownership,
+                    directory,
+                    cancellationToken,
+                    releaseAdditionalCoHeldPins: publication.Dispose)) return false;
         }
 
         return true;

@@ -28,7 +28,13 @@
     <div class="scan-controls">
       <div class="folder-select-wrap">
         <label class="control-label">Root folder</label>
-        <select v-model="selectedFolderId" class="folder-select" @change="onFolderChange">
+        <!-- Locked while a scan runs: its results belong to the folder it was started on -->
+        <select
+          v-model="selectedFolderId"
+          class="folder-select"
+          :disabled="store.scanStatus === 'scanning'"
+          @change="onFolderChange"
+        >
           <option v-for="f in rootFoldersStore.folders" :key="f.id" :value="f.id">
             {{ f.name || f.path }}
           </option>
@@ -82,6 +88,24 @@
       <div v-for="warning in store.scanWarnings" :key="warning" class="scan-warning">
         <PhWarning :size="14" />
         <span>{{ warning }}</span>
+      </div>
+    </div>
+
+    <!-- The address asked for a root folder that no longer exists: say so above whatever the
+         default folder shows, saved results included -->
+    <div
+      v-if="requestedFolderMissing"
+      class="scan-warnings"
+      role="alert"
+      data-testid="requested-folder-missing"
+    >
+      <div class="scan-warning">
+        <PhWarning :size="14" />
+        <span>
+          <strong>This root folder no longer exists.</strong> The link asked for a root folder that
+          isn't in Settings &gt; Root Folders any more. The default folder is selected instead:
+          click <strong>Scan</strong> to scan it, or pick another folder.
+        </span>
       </div>
     </div>
 
@@ -234,6 +258,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   PhSpinner,
   PhMagnifyingGlass,
@@ -267,6 +292,10 @@ const MAX_COLUMN_WIDTH = 960
 const MOBILE_TABLE_BREAKPOINT = 720
 
 const store = useLibraryImportStore()
+const route = useRoute()
+// The address named a root folder that doesn't exist (any more)
+const requestedFolderMissing = ref(false)
+const router = useRouter()
 const rootFoldersStore = useRootFoldersStore()
 const configStore = useConfigurationStore()
 const filesystemReadinessStore = useFilesystemReadinessStore()
@@ -327,13 +356,43 @@ onMounted(async () => {
   await configStore.loadApplicationSettings()
   loadColumnWidths()
 
-  const defaultFolder = rootFoldersStore.defaultFolder ?? rootFoldersStore.folders[0] ?? null
-  if (defaultFolder) {
-    selectedFolderId.value = defaultFolder.id
-    await store.initFromRootFolder(defaultFolder.id)
-  }
+  // A folder asked for in the address ("Scan for unmatched files" in Settings > Root Folders), else
+  // the default one
+  const requestedId = Number(route.query.rootFolder)
+  const requestedFolder = rootFoldersStore.folders.find((f) => f.id === requestedId) ?? null
+  // An old link may name a folder removed since: open as usual on the default one, and say so
+  requestedFolderMissing.value = route.query.rootFolder !== undefined && !requestedFolder
+  const scanRequested = requestedFolder !== null && route.query.scan === '1'
 
   store.action = 'none'
+
+  if (requestedFolderMissing.value) {
+    // Nothing left to ask for: a reload opens the page normally
+    void router.replace({ query: { ...route.query, rootFolder: undefined, scan: undefined } })
+  } else if (route.query.scan === '1') {
+    // Scan once: a reload of the page must not start another scan
+    void router.replace({ query: { ...route.query, scan: undefined } })
+  }
+
+  if (scanRequested) {
+    // The requested folder itself, whatever the list shows by then; this replaces any running scan
+    selectedFolderId.value = requestedFolder.id
+    await store.triggerScan(requestedFolder.id)
+    return
+  }
+
+  if ((store.scanStatus === 'scanning' || store.isProcessing) && store.rootFolderId !== null) {
+    // Back on the page while a scan or Start Matching runs: show its folder rather than another one
+    selectedFolderId.value = store.rootFolderId
+    return
+  }
+
+  const folder =
+    requestedFolder ?? rootFoldersStore.defaultFolder ?? rootFoldersStore.folders[0] ?? null
+  if (folder) {
+    selectedFolderId.value = folder.id
+    await store.initFromRootFolder(folder.id)
+  }
 })
 
 onBeforeUnmount(() => {
@@ -341,14 +400,16 @@ onBeforeUnmount(() => {
 })
 
 async function onFolderChange() {
-  if (selectedFolderId.value) {
+  requestedFolderMissing.value = false
+  if (selectedFolderId.value && store.scanStatus !== 'scanning') {
     store.stopProcessing()
     await store.initFromRootFolder(selectedFolderId.value)
   }
 }
 
 async function startScan() {
-  if (!selectedFolderId.value) return
+  if (!selectedFolderId.value || store.scanStatus === 'scanning') return
+  requestedFolderMissing.value = false
   await store.triggerScan(selectedFolderId.value)
 }
 
