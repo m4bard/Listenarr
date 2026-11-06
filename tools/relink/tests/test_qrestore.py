@@ -431,6 +431,15 @@ def test_a_file_on_another_device_is_not_restorable(restore: Restore, monkeypatc
     assert book.verdict == "cross-device"
 
 
+def test_a_sibling_row_plan_would_refuse_under_the_root_holds_the_book_back(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows[:1], PRINCESS, PRINCESS_ASIN)
+    target = restore.target(PRINCESS, PRINCESS_ASIN)
+    os.rename(restore.library.rows[rows[1]], target / restore.library.rows[rows[1]].name)
+    restore.library.set_row(rows[1], DurationSeconds=999.0)  # PLAN vetoes this sibling: its audio facts disagree
+    assert restore.classes() == {1: "not-every-row-found"}
+
+
 def test_a_file_two_books_would_take_back_refuses_both(restore: Restore) -> None:
     (row,) = restore.book(1, PRINCESS, PRINCESS_ASIN, parts=1)
     restore.quarantine([row], PRINCESS, PRINCESS_ASIN)

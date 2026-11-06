@@ -52,8 +52,16 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from listenarr_relink import TOOL_NAME, identity, media, physical
-from listenarr_relink.inventory import BookRow, DiskFile, FileRow, Library, lstat_or_none, open_read_only
-from listenarr_relink.matcher import _consistency, _parallel, _resolves, other_book_named, root_of, veto_keys
+from listenarr_relink.inventory import (
+    BookRow,
+    DiskFile,
+    FileRow,
+    Library,
+    QuarantineName,
+    lstat_or_none,
+    open_read_only,
+)
+from listenarr_relink.matcher import _consistency, _parallel, _resolves, match, other_book_named, root_of, veto_keys
 from listenarr_relink.paths import PathMap, is_audio, is_within
 from listenarr_relink.plan_io import file_sha256
 
@@ -191,15 +199,19 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
     in_source: dict[int, list[DiskFile]] = defaultdict(list)
     for source_file in library.restore_source:
         in_source[source_file.ino].append(source_file)
-    under_roots: dict[int, list[DiskFile]] = defaultdict(list)
-    for disk_file in library.disk:
-        if (disk_file.dev, disk_file.ino) not in claimed:
-            under_roots[disk_file.ino].append(disk_file)
+        if source_file.nlink > 1:
+            # A restore folder's linked names count as quarantine names, as the PLAN after the move will be told.
+            library.quarantine.setdefault(source_file.ino, []).append(QuarantineName(
+                source_file.host_path, _restore_dir_of(source_file, library), source_file.dev, source_file.ino))
     devices_under_roots = frozenset({f.dev for f in library.disk} | set(library.root_devices.values()))
     other_names: dict[int, list[str]] = defaultdict(list)
     for names in library.quarantine.values():
         for name in names:
             other_names[name.ino].append(name.host_path)
+    # What PLAN decides today for the rows whose objects are under a root: their books may be restored only
+    # when PLAN would re-link those rows too, once the quarantined siblings are back (book-atomic rule).
+    plan_today = {d.row.id: d for d in match(library, path_map, workers, hash_chosen=False, identity_only=True,
+                                             tags_waiver=tags_waiver).decisions}
 
     def root_device_of(row: FileRow) -> int | None:
         root = root_of(row.path, library.roots)
@@ -222,11 +234,15 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
         same_inode = [f for f in in_source.get(stored.inode, []) if (f.dev, f.ino) not in claimed]
         if not same_inode:
             # Not quarantined. A sibling PLAN re-links by identity under the root does not hold its book back.
-            verdict = object_of(row, under_roots[stored.inode]) if under_roots.get(stored.inode) else None
-            if verdict is not None and verdict.kind == physical.MATCH:
-                rows["object-under-a-root"] += 1
-                in_root[row.audiobook_id].extend(verdict.hits)
+            decision = plan_today.get(row.id)
+            found = decision.candidates[0] if decision is not None and decision.candidates else None
+            if decision is not None and found is not None and found.identity_match and (
+                    decision.chosen is not None or "partly linked" in str(decision.reason)):
+                rows["object-under-a-root-plan-links"] += 1
+                in_root[row.audiobook_id].append(found.file)
                 accounted.add(row.id)
+            elif found is not None and found.identity_match:
+                rows["object-under-a-root-plan-refuses"] += 1
             else:
                 rows["object-nowhere-walked"] += 1
             continue
@@ -433,8 +449,6 @@ def _place(restore: RestoreBook, library: Library, path_map: PathMap, host_roots
         destinations.add(item.destination)
         if item.source.nlink > 1:
             names = [n for n in other_names.get(item.source.ino, []) if n != item.source.host_path]
-            names += [f.host_path for f in library.restore_source
-                      if f.ino == item.source.ino and f.dev == item.source.dev and f.host_path != item.source.host_path]
             relinkable = len(names) == item.source.nlink - 1 and all(
                 not any(is_within(n, r) for r in host_roots)
                 and own_folder_id(book_folder(n, next((d for d in [*library.restore_dirs, *library.quarantine_dirs]
