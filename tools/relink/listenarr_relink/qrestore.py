@@ -231,20 +231,21 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
         if stored is None:
             rows["no-stored-identity"] += 1
             continue
-        same_inode = [f for f in in_source.get(stored.inode, []) if (f.dev, f.ino) not in claimed]
-        if not same_inode:
-            # Not quarantined. A sibling PLAN re-links by identity under the root does not hold its book back.
-            decision = plan_today.get(row.id)
-            found = decision.candidates[0] if decision is not None and decision.candidates else None
-            if decision is not None and found is not None and found.identity_match and (
-                    decision.chosen is not None or "partly linked" in str(decision.reason)):
+        decision = plan_today.get(row.id)
+        found = decision.candidates[0] if decision is not None and decision.candidates else None
+        if found is not None and found.identity_match:
+            # The object has a name under the root: PLAN's case, not a restore. It does not hold its book back
+            # when PLAN links it, or withholds it only because its quarantined siblings are still away.
+            if decision is not None and (decision.chosen is not None or "partly linked" in str(decision.reason)):
                 rows["object-under-a-root-plan-links"] += 1
                 in_root[row.audiobook_id].append(found.file)
                 accounted.add(row.id)
-            elif found is not None and found.identity_match:
-                rows["object-under-a-root-plan-refuses"] += 1
             else:
-                rows["object-nowhere-walked"] += 1
+                rows["object-under-a-root-plan-refuses"] += 1
+            continue
+        same_inode = [f for f in in_source.get(stored.inode, []) if (f.dev, f.ino) not in claimed]
+        if not same_inode:
+            rows["object-nowhere-walked"] += 1
             continue
         verdict = object_of(row, same_inode)
         book = library.books.get(row.audiobook_id)
@@ -269,7 +270,7 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
         restore.live = [path_map.to_host(r.path) for r in files_by_book[book_id] if r.id not in stale_ids and r.path]
         rows["books-with-a-row-under-a-root"] += bool(restore.in_root)
         rows["books-with-a-live-row"] += bool(restore.live)
-        _add_unregistered(restore, library, rows)
+        _add_unregistered(restore, library, rows, claimed | {(f.dev, f.ino) for f in library.disk})
 
     folders_by_id: dict[str, list[str]] = defaultdict(list)
     for folder in library.restore_folders:
@@ -310,11 +311,13 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
     return Survey(sorted(candidates.values(), key=lambda b: b.book.id), rows, tags_waiver)
 
 
-def _add_unregistered(restore: RestoreBook, library: Library, rows: Counter[str]) -> None:
+def _add_unregistered(restore: RestoreBook, library: Library, rows: Counter[str],
+                      in_library: set[tuple[int, int]]) -> None:
     """Add the audio beside a book's quarantined files that no row holds: files whose rows the service dropped.
 
-    Only from the one folder carrying the book's id; every check then applies to them too, the tag veto never
-    waived (no identity), and the runtime check covers the whole set, so a second copy makes it misfit.
+    Only from the one folder carrying the book's id, and never an object that also has a name under a root or
+    a row's path. Every check then applies to them too, the tag veto never waived (no identity), and the runtime
+    check covers the whole set, so a second copy makes it misfit.
     """
     folders = {book_folder(f.source.host_path, _restore_dir_of(f.source, library)) for f in restore.files}
     if len(folders) != 1 or None in folders:
@@ -322,7 +325,8 @@ def _add_unregistered(restore: RestoreBook, library: Library, rows: Counter[str]
     (folder,) = folders
     objects = {(f.source.dev, f.source.ino) for f in restore.files}
     for source_file in library.restore_source:
-        if is_within(source_file.host_path, str(folder)) and (source_file.dev, source_file.ino) not in objects:
+        key = (source_file.dev, source_file.ino)
+        if is_within(source_file.host_path, str(folder)) and key not in objects and key not in in_library:
             restore.files.append(RestoreFile(source_file, "", None))
             rows["unregistered-files-beside"] += 1
 
