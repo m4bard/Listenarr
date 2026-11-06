@@ -499,6 +499,8 @@ def test_restore_plan_refuses_a_restore_folder_inside_the_root(restore: Restore)
     assert cli.main(["restore-explain", "--db", str(restore.library.db), "--restore-from", str(inside)]) == 2
     assert cli.main(["restore-explain", "--db", str(restore.library.db), "--restore-from", str(restore.bad),
                      "--quarantine-dir", str(restore.bad)]) == 2  # one folder given twice
+    missing = restore.library.top / "no-such-quarantine"
+    assert cli.main(["restore-explain", "--db", str(restore.library.db), "--restore-from", str(missing)]) == 2
 
 
 def test_a_move_refuses_everything_when_one_source_changed(restore: Restore) -> None:
