@@ -435,7 +435,8 @@ def test_a_file_two_books_would_take_back_refuses_both(restore: Restore) -> None
     restore.quarantine([row], PRINCESS, PRINCESS_ASIN)
     (row2,) = restore.book(2, ("The Gods of Mars", "Edgar Rice Burroughs"), "B01BKS3DPE", parts=1)
     restore.library.rows[row2].unlink()  # its file is gone; its row now carries the first book's object
-    restore.library.set_row(row2, **{k: v for k, v in _row(restore.library, row).items() if k not in ("Id", "AudiobookId", "Path")})
+    carried = {k: v for k, v in _row(restore.library, row).items() if k not in ("Id", "AudiobookId", "Path")}
+    restore.library.set_row(row2, **carried)
     assert restore.classes() == {1: "object-shared", 2: "object-shared"}
 
 
