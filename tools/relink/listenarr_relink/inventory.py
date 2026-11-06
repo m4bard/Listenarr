@@ -21,7 +21,7 @@ FILE_COLUMNS = ("Id", "AudiobookId", "Path", "Size", "DurationSeconds", "Codec",
                 "PathIdentityLookupKey", "PathOwnershipKey")
 BOOK_COLUMNS = ("Id", "Title", "Authors", "BasePath", "FilePath")
 # Book columns read only as matching context, never as a precondition; a database may predate them.
-BOOK_CONTEXT_COLUMNS = ("Series", "Subtitle", "Narrators", "Asin")
+BOOK_CONTEXT_COLUMNS = ("Series", "Subtitle", "Narrators", "Asin", "Runtime")
 
 
 @dataclass
@@ -161,6 +161,13 @@ class Library:
     # (st_dev, st_ino) of every folder walked, under the roots and the quarantine folders: a folder reached a
     # second time (a bind mount, or the root seen through one) refuses the quarantine walk.
     walked_dirs: set[tuple[int, int]] = field(default_factory=set)
+    # Every folder walked under the roots, in the service's spelling: where a restored book's files may go.
+    folders: list[str] = field(default_factory=list)
+    # Every regular audio file (any link count) and folder under the operator's --restore-from folders, by host
+    # path: the files a quarantine restore may move back under a root (``qrestore``). Empty: none.
+    restore_source: list[DiskFile] = field(default_factory=list)
+    restore_folders: list[str] = field(default_factory=list)
+    restore_dirs: list[str] = field(default_factory=list)
 
 
 def row_digest(values: dict[str, object]) -> str:
@@ -251,6 +258,7 @@ def walk_root(db_root: str, path_map: PathMap, library: Library) -> None:
     for directory, dirnames, filenames in os.walk(host_root, onerror=on_error, followlinks=False):
         if (key := _note_folder(directory, library)) is not None:
             library.walked_dirs.add(key)
+        library.folders.append(path_map.to_db(directory))
         for name in [*dirnames]:
             if os.path.islink(os.path.join(directory, name)):
                 library.symlinks.append(path_map.to_db(os.path.join(directory, name)))
@@ -306,3 +314,36 @@ def walk_quarantine(host_dir: str, library: Library) -> None:
                     QuarantineName(host_path, host_dir, info.st_dev, info.st_ino))
                 count += 1
     log.info("walked quarantine=%s linked_files=%d", host_dir, count)
+
+
+def walk_restore_source(host_dir: str, library: Library) -> None:
+    """Record every regular audio file and folder under one --restore-from folder, without following links.
+
+    Raises QuarantineAliasError when a folder is one already walked, as ``walk_quarantine`` does. The files keep
+    their host path in both spellings: they lie outside every root, so the service has no name for them.
+    """
+    count = 0
+    library.restore_dirs.append(host_dir)
+
+    def on_error(error: OSError) -> None:
+        library.walk_errors.append(f"{error.filename}: {error.strerror}")
+
+    for directory, _, filenames in os.walk(host_dir, onerror=on_error, followlinks=False):
+        key = _note_folder(directory, library)
+        if key in library.walked_dirs:
+            raise QuarantineAliasError(f"restore folder {directory} is a folder already walked (a bind mount?)")
+        if key is not None:
+            library.walked_dirs.add(key)
+        library.restore_folders.append(directory)
+        for name in filenames:
+            host_path = os.path.join(directory, name)
+            try:
+                info = os.lstat(host_path)
+            except OSError as error:
+                library.walk_errors.append(f"{host_path}: {error.strerror}")
+                continue
+            if stat.S_ISREG(info.st_mode) and is_audio(name):
+                library.restore_source.append(DiskFile(host_path, host_path, info.st_size, info.st_dev, info.st_ino,
+                                                       info.st_nlink, info.st_mtime_ns, info.st_ctime_ns))
+                count += 1
+    log.info("walked restore source=%s audio_files=%d", host_dir, count)
