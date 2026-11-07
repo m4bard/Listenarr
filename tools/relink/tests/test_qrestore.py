@@ -292,11 +292,12 @@ def test_tags_naming_another_book_always_refuse(restore: Restore) -> None:
         cli.main(["restore-explain", *restore.survey_args("--tags-waiver", "all")])
 
 
-def test_a_tag_only_containing_a_short_title_does_not_name_that_book(restore: Restore) -> None:
+def test_a_tag_only_containing_a_short_title_is_a_loose_match_not_a_naming(restore: Restore) -> None:
     rows = restore.book(1, PRINCESS, PRINCESS_ASIN, album="Pellucidar chapter 01")
     restore.library.add_book(2, PELLUCIDAR, 1)  # a one-word library title, contained in the tag
     restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
-    assert restore.classes()[1] == "restorable"
+    # Not evidence it is that book (answers/28: such hits are mostly false), but not restorable either: manual.
+    assert restore.classes()[1] == "tags-loose-match-other-book"
 
 
 def test_a_tag_that_is_exactly_another_title_names_that_book(restore: Restore) -> None:
@@ -324,6 +325,31 @@ def test_a_foreign_title_with_a_suffix_under_the_own_album_is_vetoed(restore: Re
         restore.retag_album(row, PRINCESS[0])
     restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
     assert restore.classes()[1] == "tags-name-another-book"
+
+
+LOOSE_WRAPPERS = {  # the round-5 review's everyday wrappers: no wrapper list can be complete, so any subset hit refuses
+    "series-prefix": (GODS, "Barsoom 2 - The Gods of Mars - 0{n}"),
+    "by-author": (GODS, "The Gods of Mars by Edgar Rice Burroughs - 0{n}"),
+    "word-number": (GODS, "The Gods of Mars, Chapter Seven{n}"),
+    "narrator-bracket": (GODS, "The Gods of Mars (Unabridged) [Read by Someone] 0{n}"),
+    "other-language": (GODS, "The Gods of Mars - Kapitel 0{n}"),
+    "one-word-a-novel": (PELLUCIDAR[:2], "Pellucidar: A Novel - 0{n}"),
+    "one-word-chapter": (PELLUCIDAR[:2], "Pellucidar chapter 0{n}"),
+}
+
+
+@pytest.mark.parametrize("case", list(LOOSE_WRAPPERS))
+def test_any_other_title_inside_a_tag_is_a_loose_match_never_restorable(restore: Restore, case: str) -> None:
+    other, pattern = LOOSE_WRAPPERS[case]
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.library.add_book(2, other, 1)
+    for number, row in enumerate(rows, start=1):
+        restore.retag(row, pattern.format(n=number))
+        restore.retag_album(row, PRINCESS[0])  # this book's own album: the files still name this book
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    assert restore.classes()[1] in ("tags-name-another-book", "tags-loose-match-other-book")
+    rc, out = restore.plan([1], f"rplan-{case}")
+    assert rc == 2 and not out.exists()
 
 
 def test_a_foreign_title_with_only_a_track_number_is_vetoed(restore: Restore) -> None:

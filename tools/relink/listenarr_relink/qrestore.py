@@ -19,6 +19,11 @@ A book is restorable only when every check below passes; the first that fails na
   one-word matches (answers/28), so it is not used here. Never waived: PLAN's waiver rests on the file being
   the row's own object, while the open question for a quarantined book is whether that object was ever the
   right content;
+* ``tags-loose-match-other-book``: no tag is another book's title by the rule above, but the album and title
+  tags together hold every word of another library book's title (PLAN's ``matcher.other_book_named``, the
+  round-3 rule). answers/28 found such hits mostly false, so this is not evidence the content is another book;
+  but series prefixes, "by Author", narrator credits and other languages wrap real foreign titles too, and no
+  list of wrappers is complete. Never restorable: a list for manual review;
 * ``asin-tag-not-own``: a file carries an ASIN tag that is not the book's ``Asin``;
 * ``no-asin`` / ``source-folder-id-not-asin``: the files' folder under --restore-from does not carry the book's
   ``Asin`` as its bracketed id;
@@ -95,9 +100,11 @@ from listenarr_relink.matcher import (
     _parallel,
     _resolves,
     match,
+    other_book_named,
     own_title_tagged,
     root_of,
     tag_tokens,
+    veto_keys,
 )
 from listenarr_relink.paths import PathMap, is_audio, is_distinctive, is_within, tokens
 from listenarr_relink.plan_io import file_sha256
@@ -113,6 +120,7 @@ DELIBERATE_LABELS = ("wrong-content", "wrong-asin", "edition-audit", "manual-rev
 LABELS = (*DUPLICATE_LABELS, *DELIBERATE_LABELS)
 UNLABELLED = "unlabelled"
 BOOK_CLASSES = ("restorable", "not-every-row-found", "row-content-disagrees", "tags-name-another-book",
+                "tags-loose-match-other-book",
                 "asin-tag-not-own", "no-asin", "source-folder-id-not-asin", "several-source-folders",
                 "runtime-misfit", "runtime-unknown", "runtime-near", "content-unconfirmed", "no-target-folder",
                 "several-target-folders", "target-holds-other-audio", "target-name-taken", "cross-device",
@@ -122,8 +130,8 @@ FAILURES = (*(name for name in BOOK_CLASSES if name not in (RESTORABLE, "in-root
                                                             "deliberate-removal", UNLABELLED)),
             "deliberate-label", UNLABELLED)
 # Checks about what the audio is (not where it goes): a later re-point design must look at these first.
-CONTENT_CHECKS = ("row-content-disagrees", "tags-name-another-book", "asin-tag-not-own", "runtime-misfit",
-                  "runtime-unknown", "runtime-near", "content-unconfirmed")
+CONTENT_CHECKS = ("row-content-disagrees", "tags-name-another-book", "tags-loose-match-other-book",
+                  "asin-tag-not-own", "runtime-misfit", "runtime-unknown", "runtime-near", "content-unconfirmed")
 RUNTIME_FIT_SECONDS = 60.0
 RUNTIME_FIT_SHARE = 0.01
 RUNTIME_NEAR_SHARE = 0.10
@@ -452,6 +460,7 @@ def survey(library: Library, path_map: PathMap, workers: int, db_file: str | Non
     probes = _parallel(paths, media.probe, workers)
     blocklisted = _blocklisted_books(db_file)
     other_titles = title_keys(library.books)
+    loose_titles = veto_keys(library.books)
     rows_by_id = {r.id: r for r in library.files}
     books_of_object: dict[tuple[int, int], set[int]] = defaultdict(set)
     for restore in candidates.values():
@@ -466,7 +475,7 @@ def survey(library: Library, path_map: PathMap, workers: int, db_file: str | Non
             item.probe = probe
         restore.blocklisted = restore.book.id in blocklisted
         restore.label = _label_of(restore, library, labels or {})
-        _check(restore, library, path_map, host_roots, rows_by_id, other_titles, other_names, rows,
+        _check(restore, library, path_map, host_roots, rows_by_id, other_titles, loose_titles, other_names, rows,
                probes)
         if restore.label in DELIBERATE_LABELS:
             restore.failures.append("deliberate-label")
@@ -525,12 +534,14 @@ def _accept_links(_file: DiskFile) -> bool:
 
 def _check(restore: RestoreBook, library: Library, path_map: PathMap, host_roots: list[str],
            rows_by_id: dict[int, FileRow], other_titles: dict[tuple[str, ...], int],
+           loose_titles: dict[frozenset[str], int],
            other_names: dict[int, list[str]], rows: Counter[str],
            probes: dict[str, object]) -> None:
     book = restore.book
     asin = book.context.get("Asin", "").strip().casefold()
     own_key = title_key(book.title)
     others = {k: v for k, v in other_titles.items() if v != book.id and k != own_key}
+    loose_others = {k: v for k, v in loose_titles.items() if v != book.id}
     if not restore.files:
         restore.refuse("not-every-row-found", "no audio file to restore")
     for item in restore.files:
@@ -549,6 +560,11 @@ def _check(restore: RestoreBook, library: Library, path_map: PathMap, host_roots
         if named is not None:
             rows["tags-name-another-book"] += 1
             restore.refuse("tags-name-another-book", f"tags name audiobook {named}")
+        elif (loose := other_book_named(probe.tags, loose_others, book, row is not None)) is not None:
+            # PLAN's token-subset hit: mostly false (answers/28), so not evidence, but no wrapper list can be
+            # complete either. It never restores: the book goes to manual review instead.
+            rows["tags-loose-match-other-book"] += 1
+            restore.refuse("tags-loose-match-other-book", f"tags contain audiobook {loose}'s title")
         tagged = asin_tags(probe.tags)
         rows["asin-tag-absent" if not tagged else "asin-tag-own" if tagged == {asin} else "asin-tag-other"] += 1
         if tagged and tagged != {asin}:
