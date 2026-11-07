@@ -222,6 +222,11 @@ def _restore_survey(args: argparse.Namespace) -> tuple[inventory.Library, qresto
     if [r for r in host_roots if not os.path.isdir(r)]:
         log.error("library root(s) not visible on this host (use --path-map)")
         return None
+    try:
+        labels = qrestore.read_labels(args.labels)
+    except (OSError, ValueError) as error:
+        log.error("labels unusable: %s", error if isinstance(error, ValueError) else error.strerror)
+        return None
     quarantine = args.quarantine_dir or []
     folders = _quarantine_dirs([*quarantine, *args.restore_from], host_roots)
     if folders is None:
@@ -229,7 +234,7 @@ def _restore_survey(args: argparse.Namespace) -> tuple[inventory.Library, qresto
     library = inventory.Library(roots, books, files)
     if not _walk(library, path_map, folders[:len(quarantine)], folders[len(quarantine):]):
         return None
-    return library, qrestore.survey(library, path_map, args.workers, args.db), path_map
+    return library, qrestore.survey(library, path_map, args.workers, args.db, labels), path_map
 
 
 def _new_file_outside_roots(value: str, host_roots: list[str]) -> Path | None:
@@ -462,6 +467,9 @@ def _add_restore_commands(sub: argparse._SubParsersAction[argparse.ArgumentParse
         command.add_argument("--quarantine-dir", nargs="+", action="extend", metavar="DIR",
                              help="other quarantine folder(s) holding hard links (the duplicate-quarantine); "
                                   "no tag waiver exists for a restore")
+        command.add_argument("--labels", required=True, metavar="FILE",
+                             help="'<top-level entry under --restore-from><TAB><label>' per line, from the operator's "
+                                  f"records; labels: {', '.join(qrestore.LABELS)}")
 
     explain = sub.add_parser("restore-explain", help="read-only, counts only: which quarantined books may go back")
     survey_arguments(explain)

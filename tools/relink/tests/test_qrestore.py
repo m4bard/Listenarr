@@ -39,6 +39,8 @@ class Restore:
         self.dup = library.top / "QUAR-DUP"
         self.bad.mkdir()
         self.dup.mkdir()
+        self.labels: dict[str, str] = {}
+        self.unlabelled: set[str] = set()
         with sqlite3.connect(library.db) as connection:
             connection.execute("ALTER TABLE Audiobooks ADD COLUMN Asin TEXT")
             connection.execute("ALTER TABLE Audiobooks ADD COLUMN Runtime REAL")
@@ -103,9 +105,13 @@ class Restore:
                                [*values.values(), book_id])
 
     def survey_args(self, *extra: str) -> list[str]:
-        """The arguments every restore command shares."""
+        """The arguments every restore command shares; every top-level quarantine entry is labelled (default
+        doubled-merge, or what ``self.labels`` says)."""
+        labels = self.library.top / "labels.tsv"
+        labels.write_text("".join(f"{entry.name}\t{self.labels.get(entry.name, 'doubled-merge')}\n"
+                                  for entry in self.bad.iterdir() if entry.name not in self.unlabelled))
         return ["--db", str(self.library.db), "--workers", "2", "--restore-from", str(self.bad),
-                "--quarantine-dir", str(self.dup), *extra]
+                "--quarantine-dir", str(self.dup), "--labels", str(labels), *extra]
 
     def explain(self, capsys: pytest.CaptureFixture[str], *extra: str) -> dict[str, str]:
         """Run restore-explain; return its counts, keyed by the line's name."""
@@ -195,7 +201,8 @@ def test_counts_carry_no_title_and_no_path(restore: Restore, capsys: pytest.Capt
     out = capsys.readouterr().out
     assert str(restore.library.top) not in out and PRINCESS[0] not in out and PRINCESS_ASIN not in out
     assert str(restore.library.top) not in rows_out.read_text() and PRINCESS[0] not in rows_out.read_text()
-    assert rows_out.read_text().splitlines()[1].split("\t") == ["1", "rows", "restorable", "2", "2", "fits", "-", "N"]
+    assert rows_out.read_text().splitlines()[1].split("\t") == ["1", "rows", "restorable", "2", "2", "fits", "-", "N",
+                                                             "doubled-merge", "2"]
 
 
 def test_undo_puts_every_file_back(restore: Restore) -> None:
@@ -550,13 +557,57 @@ def test_restore_plan_refuses_a_book_that_is_not_restorable(restore: Restore) ->
 def test_restore_plan_refuses_a_restore_folder_inside_the_root(restore: Restore) -> None:
     rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
     restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    restore.survey_args()  # writes the labels file
+    common = ["restore-explain", "--db", str(restore.library.db), "--labels", str(restore.library.top / "labels.tsv")]
+    assert cli.main([*common, "--restore-from", str(restore.bad)]) == 0  # control
     inside = restore.library.root / "QUAR"
     inside.mkdir()
-    assert cli.main(["restore-explain", "--db", str(restore.library.db), "--restore-from", str(inside)]) == 2
-    assert cli.main(["restore-explain", "--db", str(restore.library.db), "--restore-from", str(restore.bad),
-                     "--quarantine-dir", str(restore.bad)]) == 2  # one folder given twice
+    assert cli.main([*common, "--restore-from", str(inside)]) == 2
+    assert cli.main([*common, "--restore-from", str(restore.bad), "--quarantine-dir", str(restore.bad)]) == 2
     missing = restore.library.top / "no-such-quarantine"
-    assert cli.main(["restore-explain", "--db", str(restore.library.db), "--restore-from", str(missing)]) == 2
+    assert cli.main([*common, "--restore-from", str(missing)]) == 2
+
+
+def test_a_labels_file_with_an_unknown_label_is_refused(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    args = restore.survey_args()
+    labels = restore.library.top / "labels.tsv"
+    labels.write_text(labels.read_text().replace("doubled-merge", "Some free text"))
+    assert cli.main(["restore-explain", *args]) == 2
+
+
+def test_a_deliberate_removal_is_listed_for_review_never_restorable(restore: Restore,
+                                                                     capsys: pytest.CaptureFixture[str]) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    assert restore.classes() == {1: "restorable"}  # control: a duplicate-kind label
+    for label in ("wrong-content", "wrong-asin", "edition-audit", "manual-review", "empty-stub"):
+        restore.labels[PRINCESS[1]] = label
+        assert restore.classes() == {1: "deliberate-removal"}
+    counts = restore.explain(capsys)
+    assert counts["empty-stub deliberate-removal"] == "1"
+    rc, out = restore.plan([1])
+    assert rc == 2 and not out.exists()
+
+
+def test_an_unlabelled_entry_fails_closed(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    restore.unlabelled.add(PRINCESS[1])
+    assert restore.classes() == {1: "unlabelled"}
+
+
+def test_a_book_the_library_still_holds_a_copy_of_is_relinked_not_restored(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    target = restore.target(PRINCESS, PRINCESS_ASIN)
+    for row in rows:  # a doubled merge: the other copy stayed in the library
+        (target / f"copy-{restore.library.rows[row].name}").write_bytes(restore.library.rows[row].read_bytes())
+    assert restore.classes() == {1: "in-root-copy"}
+    (target / f"copy-{restore.library.rows[rows[1]].name}").unlink()
+    render(target / "other.mp3", 999, PRINCESS[0])  # one file differs: not a copy of every file
+    assert restore.classes() == {1: "target-holds-other-audio"}
 
 
 def test_a_move_refuses_everything_when_one_source_changed(restore: Restore) -> None:

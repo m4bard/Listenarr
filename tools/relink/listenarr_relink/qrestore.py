@@ -37,6 +37,17 @@ A book is restorable only when every check below passes; the first that fails na
   folder in a folder with the book's id (PLAN would then refuse the re-link after the move);
 * ``object-shared``: a file would go back for two books (both are refused).
 
+Two classes come from what the operator's records say about each quarantine entry (``--labels``: one line per
+top-level entry under --restore-from, ``<entry name><TAB><label>``, filled from highside's records and never sent):
+
+* ``in-root-copy``: the target folder already holds a copy of every quarantined file (same size, duration within
+  1 s, same audio-stream hash, one to one). The quarantine was a de-duplication, the library keeps the other
+  copy: re-point the rows at it rather than restore a duplicate. This overrides any other refusal, since it says what to do instead;
+* ``deliberate-removal``: a book that passes every check but sits in an entry the operator removed on purpose
+  (``wrong-content``, ``wrong-asin``, ``edition-audit``, ``manual-review``, ``empty-stub``). Never restored by
+  this tool: a list for manual review;
+* ``unlabelled``: a book that passes every check but whose entry has no label. Fails closed.
+
 A book with no file row at all (the service dropped its rows) is a candidate when exactly one folder under
 --restore-from carries its ``Asin``; all its audio is restored, under the same checks.
 Registering those files is left to the service (a per-book scan of a book with no rows removes nothing).
@@ -88,11 +99,17 @@ log = logging.getLogger("relink.qrestore")
 
 RESTORE_PLAN_FORMAT = 1
 RESTORABLE = "restorable"
+# Quarantine entry labels the operator may give (--labels); anything else refuses the run, so no free text from a
+# highside record can reach the counts. The first group put aside a second copy; the second removed content on purpose.
+DUPLICATE_LABELS = ("doubled-merge", "series-collision", "same-asin-dedup")
+DELIBERATE_LABELS = ("wrong-content", "wrong-asin", "edition-audit", "manual-review", "empty-stub")
+LABELS = (*DUPLICATE_LABELS, *DELIBERATE_LABELS)
+UNLABELLED = "unlabelled"
 BOOK_CLASSES = ("restorable", "not-every-row-found", "row-content-disagrees", "tags-name-another-book",
                 "asin-tag-not-own", "no-asin", "source-folder-id-not-asin", "several-source-folders",
                 "runtime-misfit", "runtime-unknown", "runtime-near", "content-unconfirmed", "no-target-folder",
                 "several-target-folders", "target-holds-other-audio", "target-name-taken", "cross-device",
-                "hardlinked-elsewhere", "object-shared")
+                "hardlinked-elsewhere", "object-shared", "in-root-copy", "deliberate-removal", UNLABELLED)
 RUNTIME_FIT_SECONDS = 60.0
 RUNTIME_FIT_SHARE = 0.01
 RUNTIME_NEAR_SHARE = 0.10
@@ -160,6 +177,8 @@ class RestoreBook:
     runtime: str = "unknown"
     target_audio_runtime: str | None = None  # runtime fit of the audio already in the target, when there is some
     own_evidence: int = 0  # files that positively name this book (own title tagged, or own ASIN tag)
+    label: str = UNLABELLED  # the operator's label of the quarantine entry holding the files
+    in_root_copy: bool = False  # the target already holds a same-size, same-duration copy of every file
     blocklisted: bool = False
     target_audio: list[str] = field(default_factory=list)  # audio already in the target (the book's own live rows)
     target_audio_files: int = 0  # audio in the target that is not this book's (counted when it refuses)
@@ -199,7 +218,22 @@ def _blocklisted_books(db_file: str | None) -> set[int]:
         connection.close()
 
 
-def survey(library: Library, path_map: PathMap, workers: int, db_file: str | None = None) -> Survey:
+def read_labels(path: str) -> dict[str, str]:
+    """``<entry name><TAB><label>`` lines (blank and ``#`` lines ignored); ValueError on an unknown label."""
+    labels: dict[str, str] = {}
+    with open(path, encoding="utf-8", errors="surrogateescape") as handle:
+        for number, line in enumerate(handle, start=1):
+            if not line.strip() or line.startswith("#"):
+                continue
+            name, sep, label = line.rstrip("\n").rpartition("\t")
+            if not sep or label.strip() not in LABELS:
+                raise ValueError(f"labels line {number}: expected '<entry><TAB><one of {', '.join(LABELS)}>'")
+            labels[name] = label.strip()
+    return labels
+
+
+def survey(library: Library, path_map: PathMap, workers: int, db_file: str | None = None,
+           labels: dict[str, str] | None = None) -> Survey:
     """Classify every book whose stale rows' objects, or whose only folder, lie under a --restore-from folder."""
     rows: Counter[str] = Counter()
     host_roots = _host_roots(library, path_map)
@@ -322,9 +356,24 @@ def survey(library: Library, path_map: PathMap, workers: int, db_file: str | Non
             assert isinstance(probe, media.Probe)
             item.probe = probe
         restore.blocklisted = restore.book.id in blocklisted
+        restore.label = _label_of(restore, library, labels or {})
         _check(restore, library, path_map, host_roots, rows_by_id, other_titles, other_names, rows,
                probes)
+        if restore.in_root_copy:
+            restore.verdict, restore.detail = "in-root-copy", "the target already holds a copy of every file"
+        elif restore.verdict == RESTORABLE and restore.label in DELIBERATE_LABELS:
+            restore.verdict, restore.detail = "deliberate-removal", f"removed on purpose ({restore.label}): review"
+        elif restore.verdict == RESTORABLE and restore.label == UNLABELLED:
+            restore.verdict, restore.detail = UNLABELLED, "its quarantine entry has no label"
     return Survey(sorted(candidates.values(), key=lambda b: b.book.id), rows)
+
+
+def _label_of(restore: RestoreBook, library: Library, labels: dict[str, str]) -> str:
+    """The label of the one top-level quarantine entry holding the book's files (unlabelled if none or several)."""
+    entries = {PurePosixPath(os.path.relpath(f.source.host_path, _restore_dir_of(f.source, library))).parts[0]
+               for f in restore.files}
+    found = {labels.get(entry, UNLABELLED) for entry in entries}
+    return found.pop() if len(found) == 1 else UNLABELLED
 
 
 def _add_unregistered(restore: RestoreBook, library: Library, rows: Counter[str],
@@ -449,9 +498,35 @@ def _choose_target(restore: RestoreBook, library: Library, path_map: PathMap, as
         restore.target_audio_repeats = sum(1 for d in durations if d is not None and any(
             abs(d - q) <= max(1.0, 0.005 * q) for q in quarantined))
         restore.target_audio_files = len(present)
+        restore.in_root_copy = _copies_of_every_file(restore.files, present, durations)
         restore.refuse("target-holds-other-audio", f"the target already holds {len(present)} audio file(s)")
     restore.target_audio = sorted(os.path.relpath(f.host_path, restore.target_host) for f in library.disk
                                   if is_within(f.db_path, targets[0]))
+
+
+def _copies_of_every_file(files: list[RestoreFile], present: list[DiskFile], durations: list[float | None]) -> bool:
+    """True when each file pairs, one to one, with a present file of the same size, a duration within 1 s and the
+    same audio-stream hash (equal sizes and lengths alone happen between chapters of one constant-bitrate book).
+    """
+    free = list(zip(present, durations, strict=True))
+    hashes: dict[str, str | None] = {}
+
+    def audio(path: str) -> str | None:
+        if path not in hashes:
+            hashes[path] = media.audio_hash(path)
+        return hashes[path]
+
+    for item in files:
+        duration = item.probe.duration if item.probe else None
+        match_at = next((i for i, (other, other_duration) in enumerate(free)
+                         if other.size == item.source.size and duration is not None and other_duration is not None
+                         and abs(other_duration - duration) <= 1.0
+                         and audio(other.host_path) is not None
+                         and audio(other.host_path) == audio(item.source.host_path)), None)
+        if match_at is None:
+            return False
+        free.pop(match_at)
+    return bool(files)
 
 
 def _place(restore: RestoreBook, library: Library, path_map: PathMap, host_roots: list[str],
@@ -514,6 +589,12 @@ def summary_lines(library: Library, result: Survey) -> list[str]:
         f"  some {sum(1 for b in holding if 0 < b.target_audio_repeats < b.target_audio_files)}",
         f"  none {sum(1 for b in holding if b.target_audio_repeats == 0)}",
         f"basepath_is_target {sum(1 for b in result.books if b.target and b.book.base_path.rstrip('/') == b.target)}",
+        "label_class (operator label, class: books):",
+        *(f"  {label} {name} {count}" for (label, name), count in sorted(Counter(
+            (b.label, b.verdict) for b in result.books).items())),
+        f"books_with_an_in_root_copy {sum(1 for b in result.books if b.in_root_copy)}",
+        "restorable_runtime (fits only, by construction): "
+        f"{sum(1 for b in restorable if b.runtime == 'fits')}",
         "books_by_files_naming_this_book (every file / some / none):",
         f"  all {sum(1 for b in result.books if b.files and b.own_evidence == len(b.files))}",
         f"  some {sum(1 for b in result.books if 0 < b.own_evidence < len(b.files))}",
@@ -536,12 +617,13 @@ def summary_lines(library: Library, result: Survey) -> list[str]:
 def book_lines(result: Survey, with_paths: bool) -> list[str]:
     """One tab-separated line per candidate book: ids and classes (and folders and reason when asked for)."""
     header = ["audiobook_id", "kind", "class", "files", "rows", "runtime", "target_other_audio_runtime",
-              "blocklisted"]
+              "blocklisted", "label", "own_evidence_files"]
     lines = ["\t".join([*header, *(["target", "reason"] if with_paths else [])])]
     for book in result.books:
         cells = [str(book.book.id), book.kind, book.verdict, str(len(book.files)),
                  str(sum(1 for f in book.files if f.row_id is not None)), book.runtime,
-                 book.target_audio_runtime or "-", "Y" if book.blocklisted else "N"]
+                 book.target_audio_runtime or "-", "Y" if book.blocklisted else "N", book.label,
+                 str(book.own_evidence)]
         if with_paths:
             cells += [book.target or "", book.detail]
         lines.append("\t".join(cell.replace("\t", " ").replace("\n", " ") for cell in cells))
