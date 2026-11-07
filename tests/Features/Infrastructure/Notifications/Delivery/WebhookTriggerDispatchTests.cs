@@ -103,6 +103,20 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         }
 
         [Fact]
+        public async Task StoredType_DecidesTheProvider_EvenWhenTheUrlLooksLikeAnotherOne()
+        {
+            // The stored Type wins over URL sniffing. A target saved as Zapier is delivered generically
+            // even though its host is ntfy-shaped, so it carries no ntfy Tags header. If the dispatcher
+            // stopped passing the stored Type along, sniffing would take over and this header would appear.
+            using var probe = WebhookDispatchProbe.ForWebhook(NtfyUrl, NotificationTriggers.BookCompleted, storedType: "Zapier");
+
+            await probe.Service.OnDownloadImportedAsync(ImportedDownload());
+
+            var request = Assert.Single(probe.Requests);
+            Assert.False(request.Headers.Contains("Tags"));
+        }
+
+        [Fact]
         public async Task FailedDownload_ReachesAWebhookSubscribedToTheFailureTrigger()
         {
             using var probe = WebhookDispatchProbe.ForWebhook(WebhookUrl, NotificationTriggers.DownloadFailed);
