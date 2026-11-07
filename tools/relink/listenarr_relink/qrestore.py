@@ -42,7 +42,8 @@ top-level entry under --restore-from, ``<entry name><TAB><label>``, filled from 
 
 * ``in-root-copy``: the target folder already holds a copy of every quarantined file (same size, duration within
   1 s, same audio-stream hash, one to one). The quarantine was a de-duplication, the library keeps the other
-  copy: re-point the rows at it rather than restore a duplicate. This overrides any other refusal, since it says what to do instead;
+  copy: re-point the rows at it rather than restore a duplicate. This overrides any other refusal, since it
+  says what to do instead;
 * ``deliberate-removal``: a book that passes every check but sits in an entry the operator removed on purpose
   (``wrong-content``, ``wrong-asin``, ``edition-audit``, ``manual-review``, ``empty-stub``). Never restored by
   this tool: a list for manual review;
@@ -505,8 +506,9 @@ def _choose_target(restore: RestoreBook, library: Library, path_map: PathMap, as
 
 
 def _copies_of_every_file(files: list[RestoreFile], present: list[DiskFile], durations: list[float | None]) -> bool:
-    """True when each file pairs, one to one, with a present file of the same size, a duration within 1 s and the
-    same audio-stream hash (equal sizes and lengths alone happen between chapters of one constant-bitrate book).
+    """True when each file pairs, one to one, with a present file of equal size, duration (1 s) and audio hash.
+
+    Equal sizes and lengths alone happen between chapters of one constant-bitrate book.
     """
     free = list(zip(present, durations, strict=True))
     hashes: dict[str, str | None] = {}
