@@ -41,6 +41,7 @@ class Restore:
         self.dup.mkdir()
         self.labels: dict[str, str] = {}
         self.unlabelled: set[str] = set()
+        self.extra_label_lines: list[str] = []
         with sqlite3.connect(library.db) as connection:
             connection.execute("ALTER TABLE Audiobooks ADD COLUMN Asin TEXT")
             connection.execute("ALTER TABLE Audiobooks ADD COLUMN Runtime REAL")
@@ -109,7 +110,8 @@ class Restore:
         doubled-merge, or what ``self.labels`` says)."""
         labels = self.library.top / "labels.tsv"
         labels.write_text("".join(f"{entry.name}\t{self.labels.get(entry.name, 'doubled-merge')}\n"
-                                  for entry in self.bad.iterdir() if entry.name not in self.unlabelled))
+                                  for entry in self.bad.iterdir() if entry.name not in self.unlabelled)
+                          + "".join(f"{line}\n" for line in self.extra_label_lines))
         return ["--db", str(self.library.db), "--workers", "2", "--restore-from", str(self.bad),
                 "--quarantine-dir", str(self.dup), "--labels", str(labels), *extra]
 
@@ -202,7 +204,7 @@ def test_counts_carry_no_title_and_no_path(restore: Restore, capsys: pytest.Capt
     assert str(restore.library.top) not in out and PRINCESS[0] not in out and PRINCESS_ASIN not in out
     assert str(restore.library.top) not in rows_out.read_text() and PRINCESS[0] not in rows_out.read_text()
     assert rows_out.read_text().splitlines()[1].split("\t") == ["1", "rows", "restorable", "2", "2", "fits", "-", "N",
-                                                             "doubled-merge", "2"]
+                                                             "doubled-merge", "2", "0"]
 
 
 def test_undo_puts_every_file_back(restore: Restore) -> None:
@@ -311,14 +313,22 @@ def test_a_zero_row_book_tagged_as_another_work_is_unconfirmed(restore: Restore)
     assert restore.classes() == {3: "content-unconfirmed"}
 
 
-def test_an_own_asin_tag_confirms_a_file_without_the_title(restore: Restore) -> None:
+def test_an_own_asin_tag_alone_does_not_confirm_the_content(restore: Restore,
+                                                             capsys: pytest.CaptureFixture[str]) -> None:
     rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
-    restore.retag(rows[0], "Chapter One", PRINCESS_ASIN)
-    restore.retag(rows[1], "Chapter Two", PRINCESS_ASIN)
+    for row in rows:  # another work's audio, as manual import leaves it: the target book's ASIN written in
+        restore.retag(row, "Little Men", PRINCESS_ASIN)
     restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
-    assert restore.classes() == {1: "restorable"}
-    restore.retag(rows[1], "Chapter Two")  # the same, without the ASIN tag: nothing names the book
     assert restore.classes() == {1: "content-unconfirmed"}
+    counts = restore.explain(capsys)
+    assert counts["books_with_asin_only_files"] == "1" and counts["restorable_books_by_evidence title"] == "0"
+
+
+def test_the_title_in_the_tags_confirms_with_or_without_an_asin_tag(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.retag(rows[0], PRINCESS[0], PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    assert restore.classes() == {1: "restorable"}  # control: the title is what confirms
 
 
 def test_an_asin_tag_naming_another_edition_is_not_restorable(restore: Restore) -> None:
@@ -588,6 +598,46 @@ def test_a_deliberate_removal_is_listed_for_review_never_restorable(restore: Res
     counts = restore.explain(capsys)
     assert counts["empty-stub deliberate-removal"] == "1"
     rc, out = restore.plan([1])
+    assert rc == 2 and not out.exists()
+
+
+def test_a_deliberate_label_wins_over_an_in_root_copy(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    target = restore.target(PRINCESS, PRINCESS_ASIN)
+    for row in rows:
+        (target / f"copy-{restore.library.rows[row].name}").write_bytes(restore.library.rows[row].read_bytes())
+    restore.labels[PRINCESS[1]] = "wrong-content"  # re-pointing rows at the same wrong audio would keep the mistake
+    assert restore.classes() == {1: "deliberate-removal"}
+
+
+def test_label_audit_counts_entries_rows_and_folders(restore: Restore, capsys: pytest.CaptureFixture[str]) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    restore.zero_row_book(3, LITTLE_WOMEN[0])
+    restore.labels["Louisa May Alcott"] = "edition-audit"
+    counts = restore.explain(capsys)
+    assert counts["label_entries"] == "2" and counts["label_entries_matched"] == "2"
+    assert counts["label_lines_unmatched"] == "0"
+    assert counts["stale_rows_by_label doubled-merge"] == "2" and counts["stale_rows_by_label edition-audit"] == "0"
+    assert counts["folders_with_files_by_label doubled-merge"] == "1"
+    assert counts["folders_with_files_by_label edition-audit"] == "1"
+
+
+def test_restore_plan_refuses_labels_that_do_not_match_the_quarantine(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    rc, out = restore.plan([1], "rplan-control")
+    assert rc == 0  # control: every entry labelled, every line used
+    restore.extra_label_lines.append("No Such Entry\tdoubled-merge")  # a typo'd or foreign line
+    rc, out = restore.plan([1], "rplan-extra")
+    assert rc == 2 and not out.exists()
+    restore.extra_label_lines.clear()
+    rows2 = restore.book(2, ("The Gods of Mars", "Edgar Rice Burroughs"), "B01BKS3DPE")
+    restore.quarantine(rows2, ("The Gods of Mars", "Edgar Rice Burroughs"), "B01BKS3DPE",
+                       under=restore.bad / "second run")
+    restore.unlabelled.add("second run")  # an entry with no label line
+    rc, out = restore.plan([1], "rplan-missing")
     assert rc == 2 and not out.exists()
 
 

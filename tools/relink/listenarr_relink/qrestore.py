@@ -24,9 +24,10 @@ A book is restorable only when every check below passes; the first that fails na
   holds (rows the service dropped) is restored with them and counted here, so a merged-in second copy fails;
 * ``runtime-unknown`` / ``runtime-near``: the catalog runtime is missing, a duration could not be read, or the
   sum is within 10 % but not within max(60 s, 1 %): the runtime does not positively confirm the book;
-* ``content-unconfirmed``: some file does not positively name this book, by its album/title tags carrying this
-  book's whole (distinctive) title or by an ASIN tag equal to its ``Asin``. A file merely not naming another
-  library book is not evidence: most wrong-content grabs are works that are not in the library;
+* ``content-unconfirmed``: some file's album/title tags do not carry this book's whole (distinctive) title. A
+  file merely not naming another library book is not evidence (most wrong-content grabs are works outside the
+  library), and neither is an ASIN tag equal to the book's ``Asin``: Listenarr's manual import writes the target
+  book's ASIN into every file it imports, whatever the audio is. Those files are counted as ``asin-only``;
 * ``no-target-folder`` / ``several-target-folders``: no single folder under a root carries the book's ``Asin``
   (``BasePath`` wins when it is one of them);
 * ``target-holds-other-audio``: that folder already holds audio no row of this book holds (a second copy, or
@@ -40,7 +41,8 @@ A book is restorable only when every check below passes; the first that fails na
 Two classes come from what the operator's records say about each quarantine entry (``--labels``: one line per
 top-level entry under --restore-from, ``<entry name><TAB><label>``, filled from highside's records and never sent):
 
-* ``in-root-copy``: the target folder already holds a copy of every quarantined file (same size, duration within
+* ``in-root-copy``: (unless the entry's label says it was removed on purpose, which wins) the target folder
+  already holds a copy of every quarantined file (same size, duration within
   1 s, same audio-stream hash, one to one). The quarantine was a de-duplication, the library keeps the other
   copy: re-point the rows at it rather than restore a duplicate. This overrides any other refusal, since it
   says what to do instead;
@@ -177,7 +179,8 @@ class RestoreBook:
     target_host: str | None = None
     runtime: str = "unknown"
     target_audio_runtime: str | None = None  # runtime fit of the audio already in the target, when there is some
-    own_evidence: int = 0  # files that positively name this book (own title tagged, or own ASIN tag)
+    own_evidence: int = 0  # files whose album/title tags carry this book's whole title (independent evidence)
+    asin_only: int = 0  # files naming the book only by an own ASIN tag: manual import writes that tag itself
     label: str = UNLABELLED  # the operator's label of the quarantine entry holding the files
     in_root_copy: bool = False  # the target already holds a same-size, same-duration copy of every file
     blocklisted: bool = False
@@ -195,10 +198,58 @@ class RestoreBook:
 
 @dataclass
 class Survey:
-    """Every candidate book, the row-level counts and what the walk saw."""
+    """Every candidate book, the row-level counts, what the walk saw, and how the labels fit the quarantine."""
 
     books: list[RestoreBook]
     rows: Counter[str]
+    labels: LabelAudit
+
+
+@dataclass
+class LabelAudit:
+    """The labels file against the quarantine as walked: what the kit pins against the operator's records."""
+
+    entries: int = 0  # top-level entries under the --restore-from folders
+    matched: int = 0  # entries with a label line
+    lines_unmatched: int = 0  # label lines naming no entry (a typo, or another quarantine)
+    stale_rows: Counter[str] = field(default_factory=Counter)  # quarantined objects of stale rows, by label
+    folders_with_files: Counter[str] = field(default_factory=Counter)  # by label
+
+    @property
+    def consistent(self) -> bool:
+        """Every entry labelled and every line used: the only state a restore plan is built from."""
+        return self.entries == self.matched and self.lines_unmatched == 0
+
+    def lines(self) -> list[str]:
+        """Counts only: the fixed labels and numbers, never an entry name."""
+        return [f"label_entries {self.entries}", f"label_entries_matched {self.matched}",
+                f"label_lines_unmatched {self.lines_unmatched}",
+                *(f"stale_rows_by_label {label} {self.stale_rows[label]}" for label in (*LABELS, UNLABELLED)),
+                *(f"folders_with_files_by_label {label} {self.folders_with_files[label]}"
+                  for label in (*LABELS, UNLABELLED))]
+
+
+def audit_labels(library: Library, labels: dict[str, str]) -> LabelAudit:
+    """Match label lines to top-level entries, and count folders holding files per label."""
+    audit = LabelAudit()
+    names: set[str] = set()
+    for top in library.restore_dirs:
+        for entry in os.listdir(top):
+            names.add(entry)
+    audit.entries, audit.matched = len(names), len(names & set(labels))
+    audit.lines_unmatched = len(set(labels) - names)
+    for folder in library.restore_folders:
+        top = next(d for d in library.restore_dirs if is_within(folder, d))
+        if folder.rstrip("/") == top.rstrip("/"):
+            continue
+        try:
+            holds_files = any(entry.is_file(follow_symlinks=False) for entry in os.scandir(folder))
+        except OSError:
+            continue
+        if holds_files:
+            entry_name = PurePosixPath(os.path.relpath(folder, top)).parts[0]
+            audit.folders_with_files[labels.get(entry_name, UNLABELLED)] += 1
+    return audit
 
 
 def _host_roots(library: Library, path_map: PathMap) -> list[str]:
@@ -274,6 +325,7 @@ def survey(library: Library, path_map: PathMap, workers: int, db_file: str | Non
                                  devices_under_roots, library.device_pools, _accept_links)
 
     candidates: dict[int, RestoreBook] = {}
+    label_audit = audit_labels(library, labels or {})
     in_root: dict[int, list[DiskFile]] = defaultdict(list)
     accounted: set[int] = set()
     for row in stale:
@@ -309,6 +361,8 @@ def survey(library: Library, path_map: PathMap, workers: int, db_file: str | Non
             continue
         rows["object-in-restore-source"] += 1
         (hit,) = verdict.hits
+        entry_name = PurePosixPath(os.path.relpath(hit.host_path, _restore_dir_of(hit, library))).parts[0]
+        label_audit.stale_rows[(labels or {}).get(entry_name, UNLABELLED)] += 1
         rows["nlink-1" if hit.nlink == 1 else "nlink-over-1"] += 1
         restore.files.append(RestoreFile(hit, "", row.id))
         accounted.add(row.id)
@@ -360,13 +414,14 @@ def survey(library: Library, path_map: PathMap, workers: int, db_file: str | Non
         restore.label = _label_of(restore, library, labels or {})
         _check(restore, library, path_map, host_roots, rows_by_id, other_titles, other_names, rows,
                probes)
-        if restore.in_root_copy:
-            restore.verdict, restore.detail = "in-root-copy", "the target already holds a copy of every file"
-        elif restore.verdict == RESTORABLE and restore.label in DELIBERATE_LABELS:
+        if restore.label in DELIBERATE_LABELS and (restore.in_root_copy or restore.verdict == RESTORABLE):
+            # Removed on purpose: re-pointing rows at an in-root copy of the same audio would keep the mistake.
             restore.verdict, restore.detail = "deliberate-removal", f"removed on purpose ({restore.label}): review"
+        elif restore.in_root_copy:
+            restore.verdict, restore.detail = "in-root-copy", "the target already holds a copy of every file"
         elif restore.verdict == RESTORABLE and restore.label == UNLABELLED:
             restore.verdict, restore.detail = UNLABELLED, "its quarantine entry has no label"
-    return Survey(sorted(candidates.values(), key=lambda b: b.book.id), rows)
+    return Survey(sorted(candidates.values(), key=lambda b: b.book.id), rows, label_audit)
 
 
 def _label_of(restore: RestoreBook, library: Library, labels: dict[str, str]) -> str:
@@ -437,8 +492,10 @@ def _check(restore: RestoreBook, library: Library, path_map: PathMap, host_roots
             restore.refuse("asin-tag-not-own", "an ASIN tag is not the book's Asin")
         title_own = own_title_tagged(tag_tokens(probe.tags), book)
         rows["own-title-tagged" if title_own else "own-title-not-tagged"] += 1
-        if title_own or (bool(asin) and tagged == {asin}):
+        if title_own:
             restore.own_evidence += 1
+        elif bool(asin) and tagged == {asin}:
+            restore.asin_only += 1
     if not asin:
         restore.refuse("no-asin", "the book has no Asin")
     source_folders = {book_folder(f.source.host_path, _restore_dir_of(f.source, library)) for f in restore.files}
@@ -591,12 +648,15 @@ def summary_lines(library: Library, result: Survey) -> list[str]:
         f"  some {sum(1 for b in holding if 0 < b.target_audio_repeats < b.target_audio_files)}",
         f"  none {sum(1 for b in holding if b.target_audio_repeats == 0)}",
         f"basepath_is_target {sum(1 for b in result.books if b.target and b.book.base_path.rstrip('/') == b.target)}",
+        *result.labels.lines(),
         "label_class (operator label, class: books):",
         *(f"  {label} {name} {count}" for (label, name), count in sorted(Counter(
             (b.label, b.verdict) for b in result.books).items())),
         f"books_with_an_in_root_copy {sum(1 for b in result.books if b.in_root_copy)}",
         "restorable_runtime (fits only, by construction): "
         f"{sum(1 for b in restorable if b.runtime == 'fits')}",
+        f"restorable_books_by_evidence title {sum(1 for b in restorable if b.own_evidence == len(b.files))}",
+        f"books_with_asin_only_files {sum(1 for b in result.books if b.asin_only)}",
         "books_by_files_naming_this_book (every file / some / none):",
         f"  all {sum(1 for b in result.books if b.files and b.own_evidence == len(b.files))}",
         f"  some {sum(1 for b in result.books if 0 < b.own_evidence < len(b.files))}",
@@ -619,13 +679,13 @@ def summary_lines(library: Library, result: Survey) -> list[str]:
 def book_lines(result: Survey, with_paths: bool) -> list[str]:
     """One tab-separated line per candidate book: ids and classes (and folders and reason when asked for)."""
     header = ["audiobook_id", "kind", "class", "files", "rows", "runtime", "target_other_audio_runtime",
-              "blocklisted", "label", "own_evidence_files"]
+              "blocklisted", "label", "own_evidence_files", "asin_only_files"]
     lines = ["\t".join([*header, *(["target", "reason"] if with_paths else [])])]
     for book in result.books:
         cells = [str(book.book.id), book.kind, book.verdict, str(len(book.files)),
                  str(sum(1 for f in book.files if f.row_id is not None)), book.runtime,
                  book.target_audio_runtime or "-", "Y" if book.blocklisted else "N", book.label,
-                 str(book.own_evidence)]
+                 str(book.own_evidence), str(book.asin_only)]
         if with_paths:
             cells += [book.target or "", book.detail]
         lines.append("\t".join(cell.replace("\t", " ").replace("\n", " ") for cell in cells))
@@ -642,6 +702,9 @@ def build_restore_plan(result: Survey, chosen: frozenset[int], library: Library)
     by_id = {b.book.id: b for b in result.books}
     unknown = sorted(chosen - set(by_id))
     refused = sorted(i for i in chosen if i in by_id and by_id[i].verdict != RESTORABLE)
+    if not result.labels.consistent:
+        raise ValueError(f"the labels do not match the quarantine: {result.labels.entries - result.labels.matched} "
+                         f"entries without a label, {result.labels.lines_unmatched} lines naming no entry")
     if unknown or refused:
         raise ValueError(f"{len(unknown)} chosen book(s) are no candidate and {len(refused)} are not restorable "
                          f"(e.g. {(unknown + refused)[:5]}); choose from the restorable class only")
@@ -682,7 +745,8 @@ def apply_basepaths(db_file: str, plan: dict[str, Any], out_dir: Path, dry_run: 
     """Set each planned book's BasePath to its restore target, in one transaction, or refuse and write nothing.
 
     Each book row must still equal what the plan read (digest of ``inventory.BOOK_COLUMNS``) and the target folder
-    must exist. Writes the undo SQL to ``out_dir`` (``undo-basepath-<stamp>.sql``) when it commits.
+    must exist. A dry run still takes the write lock (BEGIN IMMEDIATE), then rolls back. The undo SQL is written
+    to ``out_dir`` (``undo-basepath-<stamp>.sql``) before the commit.
     """
     updates = [(b, b["basepath_update"]) for b in plan["books"] if b.get("basepath_update")]
     connection = sqlite3.connect(db_file, timeout=0, isolation_level=None)
@@ -709,7 +773,15 @@ def apply_basepaths(db_file: str, plan: dict[str, Any], out_dir: Path, dry_run: 
             was = "NULL" if update["was"] is None else "'" + str(update["was"]).replace("'", "''") + "'"
             now = "'" + str(update["set"]).replace("'", "''") + "'"
             undo.append(f"UPDATE Audiobooks SET BasePath = {was} WHERE Id = {book_id} AND BasePath = {now};")
-        connection.execute("ROLLBACK" if refused or dry_run else "COMMIT")
+        if refused or dry_run:
+            connection.execute("ROLLBACK")
+        else:
+            # The undo goes to disk before the commit: a write that fails after it would leave no way back.
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            (out_dir / f"undo-basepath-{stamp}.sql").write_text(
+                "-- Reverses restore-basepath. Service STOPPED.\nBEGIN IMMEDIATE;\n" + "\n".join(undo)
+                + "\nCOMMIT;\n", encoding="utf-8")
+            connection.execute("COMMIT")
     except BaseException:
         if connection.in_transaction:
             connection.execute("ROLLBACK")
@@ -718,11 +790,6 @@ def apply_basepaths(db_file: str, plan: dict[str, Any], out_dir: Path, dry_run: 
         connection.close()
     if refused:
         raise BasePathRefused("; ".join(refused))
-    if not dry_run and undo:
-        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        (out_dir / f"undo-basepath-{stamp}.sql").write_text(
-            "-- Reverses restore-basepath. Service STOPPED.\nBEGIN IMMEDIATE;\n" + "\n".join(undo) + "\nCOMMIT;\n",
-            encoding="utf-8")
     return [int(b["audiobook_id"]) for b, _ in updates]
 
 
