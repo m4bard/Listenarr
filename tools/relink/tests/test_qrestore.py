@@ -744,3 +744,153 @@ def test_a_nested_part_folder_is_recreated_and_undone(restore: Restore) -> None:
     assert cli.main(["restore-undo", "--journal", str(restore.library.top / "journal.tsv"), "--undo-journal",
                      str(restore.library.top / "u.tsv"), "--confirm-service-stopped"]) == 0
     assert nested.exists() and not (target / "Disc 2").exists()
+
+
+def _basepath(restore: Restore, book_id: int) -> str:
+    with sqlite3.connect(restore.library.db) as connection:
+        return str(connection.execute("SELECT BasePath FROM Audiobooks WHERE Id = ?", (book_id,)).fetchone()[0])
+
+
+def _restore_basepath(restore: Restore, out: Path, *extra: str) -> int:
+    plan = out / "restore-plan.json"
+    return cli.main(["restore-basepath", "--db", str(restore.library.db), "--plan", str(plan), "--plan-sha256",
+                     _sha(plan), *extra])
+
+
+def test_restore_basepath_points_a_zero_row_book_at_its_target(restore: Restore) -> None:
+    restore.zero_row_book(3, LITTLE_WOMEN[0])
+    target = restore.target(LITTLE_WOMEN[:2], LITTLE_WOMEN[2])
+    restore.set_book(3, BasePath=str(restore.library.root / "Louisa May Alcott" / "Little Women"))  # gone
+    _, out = restore.plan([3])
+    plan = json.loads((out / "restore-plan.json").read_text())
+    assert plan["books"][0]["basepath_update"]["set"] == str(target)
+    before = _basepath(restore, 3)
+    assert _restore_basepath(restore, out) == 2  # the stop is not confirmed
+    assert _restore_basepath(restore, out, "--dry-run") == 0 and _basepath(restore, 3) == before
+    assert _restore_basepath(restore, out, "--confirm-service-stopped") == 0
+    assert _basepath(restore, 3) == str(target)
+    (undo,) = out.glob("undo-basepath-*.sql")
+    with sqlite3.connect(restore.library.db) as connection:
+        connection.executescript(undo.read_text())
+    assert _basepath(restore, 3) == before
+
+
+def test_restore_basepath_writes_nothing_when_a_book_changed(restore: Restore) -> None:
+    restore.zero_row_book(3, LITTLE_WOMEN[0])
+    restore.set_book(3, BasePath=str(restore.library.root / "elsewhere"))
+    _, out = restore.plan([3])
+    restore.set_book(3, Title="Little Women, retitled")  # the row the plan read has changed
+    assert _restore_basepath(restore, out, "--confirm-service-stopped") == 3
+    assert _basepath(restore, 3) == str(restore.library.root / "elsewhere")
+
+
+def test_a_book_whose_basepath_is_its_target_needs_no_update(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    restore.set_book(1, BasePath=str(restore.target(PRINCESS, PRINCESS_ASIN)))
+    _, out = restore.plan([1])
+    assert json.loads((out / "restore-plan.json").read_text())["books"][0]["basepath_update"] is None
+
+
+def test_a_name_that_is_not_utf8_is_refused_before_anything_moves(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    folder = restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    os.rename(os.fsencode(restore.library.rows[rows[1]]), os.path.join(os.fsencode(folder), b"part-\xff.mp3"))
+    rc, out = restore.plan([1])
+    assert rc == 0
+    assert restore.move(out) == 3
+    assert restore.library.rows[rows[0]].exists()  # nothing moved, not even the first file
+
+
+def test_any_failure_part_way_exits_4_never_a_traceback(restore: Restore, monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    _, out = restore.plan([1])
+    real = qrestore._move_one
+    calls: list[int] = []
+
+    def second_fails(*args: Any) -> None:
+        calls.append(1)
+        if len(calls) == 2:
+            raise ValueError("not an OSError")
+        real(*args)
+
+    monkeypatch.setattr(qrestore, "_move_one", second_fails)
+    assert restore.move(out) == 4
+
+
+def test_a_destination_with_a_newline_is_refused(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    _, out = restore.plan([1])
+    target = str(restore.target(PRINCESS, PRINCESS_ASIN))
+    _retarget(out, lambda book: book["files"][0].update(destination=target + "/two\nlines.mp3"))
+    assert restore.move(out) == 3
+    assert all(restore.library.rows[row].exists() for row in rows)
+
+
+def test_two_entries_to_one_destination_are_refused_before_anything_moves(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    _, out = restore.plan([1])
+
+    def same_name(book: dict[str, Any]) -> None:
+        book["files"][1]["destination"] = book["files"][0]["destination"].upper().replace(
+            book["target_host"].upper(), book["target_host"])
+
+    _retarget(out, same_name)
+    assert restore.move(out) == 3
+    assert all(restore.library.rows[row].exists() for row in rows)
+
+
+def test_an_object_a_live_row_holds_is_never_restored_for_a_stale_row(restore: Restore) -> None:
+    (live,) = restore.library.add_book(2, ("The Gods of Mars", "Edgar Rice Burroughs"), 1)
+    (row,) = restore.book(1, PRINCESS, PRINCESS_ASIN, parts=1)
+    folder = restore.quarantine([row], PRINCESS, PRINCESS_ASIN)
+    restore.library.rows[row].unlink()
+    os.link(restore.library.rows[live], folder / restore.library.rows[row].name)  # the live row's file, linked in
+    carried = {k: v for k, v in _row(restore.library, live).items() if k in ("PhysicalObjectIdentity", "Size",
+                                                                             "DurationSeconds")}
+    restore.library.set_row(row, **carried)  # the stale row claims the live row's object
+    assert 1 not in restore.classes()
+
+
+def test_restore_plan_refuses_on_an_incomplete_walk(restore: Restore, monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    real = inventory.walk_restore_source
+
+    def unreadable(folder: str, library: inventory.Library) -> None:
+        real(folder, library)
+        library.walk_errors.append("a folder: Permission denied")
+
+    monkeypatch.setattr(inventory, "walk_restore_source", unreadable)
+    rc, out = restore.plan([1])
+    assert rc == 3 and not (out / "restore-plan.json").exists()
+
+
+def test_a_journal_inside_a_root_is_refused(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    _, out = restore.plan([1])
+    plan = out / "restore-plan.json"
+    assert cli.main(["restore-move", "--plan", str(plan), "--plan-sha256", _sha(plan), "--journal",
+                     str(restore.library.root / "journal.tsv"), "--confirm-service-stopped"]) == 2
+    assert all(restore.library.rows[row].exists() for row in rows)
+
+
+def test_a_move_stops_when_the_source_name_changed_after_the_link(restore: Restore,
+                                                                  monkeypatch: pytest.MonkeyPatch) -> None:
+    (row,) = restore.book(1, PRINCESS, PRINCESS_ASIN, parts=1)
+    restore.quarantine([row], PRINCESS, PRINCESS_ASIN)
+    _, out = restore.plan([1])
+    real = os.link
+
+    def link_then_swap_source(source: str, destination: str, *, follow_symlinks: bool = True) -> None:
+        real(source, destination, follow_symlinks=follow_symlinks)
+        os.unlink(source)
+        Path(source).write_bytes(b"another object now holds the quarantine name")
+
+    monkeypatch.setattr(qrestore.os, "link", link_then_swap_source)
+    assert restore.move(out) == 4
+    assert restore.library.rows[row].read_bytes() == b"another object now holds the quarantine name"  # not unlinked
