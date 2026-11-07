@@ -204,7 +204,7 @@ def test_counts_carry_no_title_and_no_path(restore: Restore, capsys: pytest.Capt
     assert str(restore.library.top) not in out and PRINCESS[0] not in out and PRINCESS_ASIN not in out
     assert str(restore.library.top) not in rows_out.read_text() and PRINCESS[0] not in rows_out.read_text()
     assert rows_out.read_text().splitlines()[1].split("\t") == ["1", "rows", "restorable", "2", "2", "fits", "-", "N",
-                                                             "doubled-merge", "2", "0"]
+                                                             "doubled-merge", "2", "0", "-"]
 
 
 def test_undo_puts_every_file_back(restore: Restore) -> None:
@@ -610,9 +610,9 @@ def test_a_deliberate_removal_is_listed_for_review_never_restorable(restore: Res
     assert restore.classes() == {1: "restorable"}  # control: a duplicate-kind label
     for label in ("wrong-content", "wrong-asin", "edition-audit", "manual-review", "empty-stub"):
         restore.labels[PRINCESS[1]] = label
-        assert restore.classes() == {1: "deliberate-removal"}
+        assert restore.classes() == {1: "operator-re-review"}  # passes every check: the operator looks again
     counts = restore.explain(capsys)
-    assert counts["empty-stub deliberate-removal"] == "1"
+    assert counts["empty-stub operator-re-review"] == "1"
     rc, out = restore.plan([1])
     assert rc == 2 and not out.exists()
 
@@ -671,6 +671,38 @@ def test_restore_plan_refuses_labels_that_do_not_match_the_quarantine(restore: R
     restore.unlabelled.add("second run")  # an entry with no label line
     rc, out = restore.plan([1], "rplan-missing")
     assert rc == 2 and not out.exists()
+
+
+def test_every_failing_check_is_counted_not_only_the_first(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.retag(rows[1], "Little Men")  # content-unconfirmed, a later check than the runtime
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    restore.set_book(1, Runtime=10)  # runtime-misfit, the first failure
+    restore.labels[PRINCESS[1]] = "edition-audit"
+    out = restore.library.top / "books-check.tsv"
+    assert cli.main(["restore-explain", *restore.survey_args(), "--rows-out", str(out)]) == 0
+    cells = out.read_text().splitlines()[1].split("\t")
+    assert cells[2] == "runtime-misfit"  # the class is still the first failure
+    assert cells[-1] == "runtime-misfit,content-unconfirmed,deliberate-label"
+
+
+def test_failing_and_only_failing_counts(restore: Restore, capsys: pytest.CaptureFixture[str]) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    restore.set_book(1, Runtime=10)
+    capsys.readouterr()
+    assert cli.main(["restore-explain", *restore.survey_args()]) == 0
+    out = capsys.readouterr().out.splitlines()
+    failing = out[out.index("failing_checks (books failing each check; a book counts once per check it fails):") + 1:]
+    only = out[out.index("books_failing_only (the one check a book fails: what fixing that check alone would free):")
+               + 1:]
+    assert "  runtime-misfit 1" in failing[:20] and "  runtime-misfit 1" in only[:20]
+    restore.retag(rows[1], "Little Men")  # a second failure: still failing, no longer the only one
+    assert cli.main(["restore-explain", *restore.survey_args()]) == 0
+    out = capsys.readouterr().out.splitlines()
+    only = out[out.index("books_failing_only (the one check a book fails: what fixing that check alone would free):")
+               + 1:]
+    assert "  runtime-misfit 0" in only[:20]
 
 
 def test_an_unlabelled_entry_fails_closed(restore: Restore) -> None:

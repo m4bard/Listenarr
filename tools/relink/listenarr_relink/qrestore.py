@@ -49,9 +49,11 @@ top-level entry under --restore-from, ``<entry name><TAB><label>``, filled from 
   one. Size is not compared: a retagged copy is still a copy. The quarantine was a de-duplication and the
   library keeps the other copy: re-point the rows at it rather than restore a duplicate. This overrides any
   other refusal, since it says what to do instead;
-* ``deliberate-removal``: a book that passes every check but sits in an entry the operator removed on purpose
-  (``wrong-content``, ``wrong-asin``, ``edition-audit``, ``manual-review``, ``empty-stub``). Never restored by
-  this tool: a list for manual review;
+* ``operator-re-review``: a book that passes every check but sits in an entry the operator removed on purpose
+  (``wrong-content``, ``wrong-asin``, ``edition-audit``, ``manual-review``, ``empty-stub``): the only books whose
+  content is confirmed and which only the removal holds back. Never restored by this tool: the operator looks
+  at the removal again;
+* ``deliberate-removal``: a removed-on-purpose book whose target already holds a copy of its audio;
 * ``unlabelled``: a book that passes every check but whose entry has no label. Fails closed.
 
 A book with no file row at all (the service dropped its rows) is a candidate when exactly one folder under
@@ -113,7 +115,11 @@ BOOK_CLASSES = ("restorable", "not-every-row-found", "row-content-disagrees", "t
                 "asin-tag-not-own", "no-asin", "source-folder-id-not-asin", "several-source-folders",
                 "runtime-misfit", "runtime-unknown", "runtime-near", "content-unconfirmed", "no-target-folder",
                 "several-target-folders", "target-holds-other-audio", "target-name-taken", "cross-device",
-                "hardlinked-elsewhere", "object-shared", "in-root-copy", "deliberate-removal", UNLABELLED)
+                "hardlinked-elsewhere", "object-shared", "in-root-copy", "operator-re-review", "deliberate-removal",
+                UNLABELLED)
+FAILURES = (*(name for name in BOOK_CLASSES if name not in (RESTORABLE, "in-root-copy", "operator-re-review",
+                                                            "deliberate-removal", UNLABELLED)),
+            "deliberate-label", UNLABELLED)
 RUNTIME_FIT_SECONDS = 60.0
 RUNTIME_FIT_SHARE = 0.01
 RUNTIME_NEAR_SHARE = 0.10
@@ -204,9 +210,14 @@ class RestoreBook:
     target_audio_repeats: int = 0  # ... of which a quarantined file has the same duration (the same recording?)
     in_root: list[DiskFile] = field(default_factory=list)  # objects of this book's other stale rows under a root
     live: list[str] = field(default_factory=list)  # host paths of this book's live rows
+    # Every check the book fails, in check order (the class is the first); "deliberate-label" when its entry was
+    # removed on purpose, "unlabelled" when it has no label: what each fix alone would and would not free.
+    failures: list[str] = field(default_factory=list)
 
     def refuse(self, verdict: str, detail: str) -> None:
-        """Record the first failing check; later ones do not overwrite it."""
+        """Record a failing check. The first names the class; every one is kept in ``failures``."""
+        if verdict not in self.failures:
+            self.failures.append(verdict)
         if self.verdict == RESTORABLE:
             self.verdict, self.detail = verdict, detail
 
@@ -429,7 +440,15 @@ def survey(library: Library, path_map: PathMap, workers: int, db_file: str | Non
         restore.label = _label_of(restore, library, labels or {})
         _check(restore, library, path_map, host_roots, rows_by_id, other_titles, other_names, rows,
                probes)
-        if restore.label in DELIBERATE_LABELS and (restore.in_root_copy or restore.verdict == RESTORABLE):
+        if restore.label in DELIBERATE_LABELS:
+            restore.failures.append("deliberate-label")
+        elif restore.label == UNLABELLED:
+            restore.failures.append(UNLABELLED)
+        if restore.label in DELIBERATE_LABELS and restore.verdict == RESTORABLE and not restore.in_root_copy:
+            # Passes every check, held only by the operator's removal: the operator looks again. Never restorable.
+            restore.verdict = "operator-re-review"
+            restore.detail = f"passes every check; removed on purpose ({restore.label})"
+        elif restore.label in DELIBERATE_LABELS and restore.in_root_copy:
             # Removed on purpose: re-pointing rows at an in-root copy of the same audio would keep the mistake.
             restore.verdict, restore.detail = "deliberate-removal", f"removed on purpose ({restore.label}): review"
         elif restore.in_root_copy:
@@ -668,6 +687,10 @@ def summary_lines(library: Library, result: Survey) -> list[str]:
         f"  none {sum(1 for b in holding if b.target_audio_repeats == 0)}",
         f"basepath_is_target {sum(1 for b in result.books if b.target and b.book.base_path.rstrip('/') == b.target)}",
         *result.labels.lines(),
+        "failing_checks (books failing each check; a book counts once per check it fails):",
+        *(f"  {name} {sum(1 for b in result.books if name in b.failures)}" for name in FAILURES),
+        "books_failing_only (the one check a book fails: what fixing that check alone would free):",
+        *(f"  {name} {sum(1 for b in result.books if b.failures == [name])}" for name in FAILURES),
         "label_class (operator label, class: books):",
         *(f"  {label} {name} {count}" for (label, name), count in sorted(Counter(
             (b.label, b.verdict) for b in result.books).items())),
@@ -698,13 +721,13 @@ def summary_lines(library: Library, result: Survey) -> list[str]:
 def book_lines(result: Survey, with_paths: bool) -> list[str]:
     """One tab-separated line per candidate book: ids and classes (and folders and reason when asked for)."""
     header = ["audiobook_id", "kind", "class", "files", "rows", "runtime", "target_other_audio_runtime",
-              "blocklisted", "label", "own_evidence_files", "asin_only_files"]
+              "blocklisted", "label", "own_evidence_files", "asin_only_files", "failures"]
     lines = ["\t".join([*header, *(["target", "reason"] if with_paths else [])])]
     for book in result.books:
         cells = [str(book.book.id), book.kind, book.verdict, str(len(book.files)),
                  str(sum(1 for f in book.files if f.row_id is not None)), book.runtime,
                  book.target_audio_runtime or "-", "Y" if book.blocklisted else "N", book.label,
-                 str(book.own_evidence), str(book.asin_only)]
+                 str(book.own_evidence), str(book.asin_only), ",".join(book.failures) or "-"]
         if with_paths:
             cells += [book.target or "", book.detail]
         lines.append("\t".join(cell.replace("\t", " ").replace("\n", " ") for cell in cells))
