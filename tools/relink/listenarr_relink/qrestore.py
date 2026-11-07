@@ -12,9 +12,12 @@ A book is restorable only when every check below passes; the first that fails na
   the root's dataset nor a file PLAN would match under the root (a book is restored whole or not at all, as
   PLAN re-links it whole);
 * ``row-content-disagrees``: a file's duration, codec, sample rate or channels disagree with its row;
-* ``tags-name-another-book``: a file's album/title tags name another library book (``matcher.other_book_named``).
-  Never waived here: PLAN's waiver rests on the file being the row's own object, while the open question for a
-  quarantined book is whether that object was ever the right content;
+* ``tags-name-another-book``: a file's album or title tag, normalised (case, accents and punctuation folded,
+  numbers dropped), is exactly another library book's whole distinctive title (``title_key``). Containing it is
+  not enough: PLAN's token-subset veto (``matcher.other_book_named``) was found to fire mostly on loose and
+  one-word matches (answers/28), so it is not used here. Never waived: PLAN's waiver rests on the file being
+  the row's own object, while the open question for a quarantined book is whether that object was ever the
+  right content;
 * ``asin-tag-not-own``: a file carries an ASIN tag that is not the book's ``Asin``;
 * ``no-asin`` / ``source-folder-id-not-asin``: the files' folder under --restore-from does not carry the book's
   ``Asin`` as its bracketed id;
@@ -89,13 +92,11 @@ from listenarr_relink.matcher import (
     _parallel,
     _resolves,
     match,
-    other_book_named,
     own_title_tagged,
     root_of,
     tag_tokens,
-    veto_keys,
 )
-from listenarr_relink.paths import PathMap, is_audio, is_within
+from listenarr_relink.paths import PathMap, is_audio, is_distinctive, is_within, tokens
 from listenarr_relink.plan_io import file_sha256
 
 log = logging.getLogger("relink.qrestore")
@@ -118,6 +119,20 @@ RUNTIME_FIT_SHARE = 0.01
 RUNTIME_NEAR_SHARE = 0.10
 ASIN_TAG_KEYS = ("asin", "audible_asin", "cdek")
 _BRACKETED_ID = re.compile(r"\[([^\[\]]+)\]\s*$")
+
+
+def title_key(text: str) -> tuple[str, ...]:
+    """A title normalised for an exact comparison: folded word tokens in order, pure numbers dropped."""
+    return tuple(token for token in tokens(text) if not token.isdigit())
+
+
+def title_keys(books: dict[int, BookRow]) -> dict[tuple[str, ...], int]:
+    """Normalised whole title of every distinctive library title -> the first book holding it."""
+    keys: dict[tuple[str, ...], int] = {}
+    for book in books.values():
+        if is_distinctive(book.title):
+            keys.setdefault(title_key(book.title), book.id)
+    return keys
 
 
 def own_folder_id(folder: str) -> str | None:
@@ -397,7 +412,7 @@ def survey(library: Library, path_map: PathMap, workers: int, db_file: str | Non
              *(p for b in candidates.values() for p in b.live)]
     probes = _parallel(paths, media.probe, workers)
     blocklisted = _blocklisted_books(db_file)
-    other_titles = veto_keys(library.books)
+    other_titles = title_keys(library.books)
     rows_by_id = {r.id: r for r in library.files}
     books_of_object: dict[tuple[int, int], set[int]] = defaultdict(set)
     for restore in candidates.values():
@@ -462,12 +477,13 @@ def _accept_links(_file: DiskFile) -> bool:
 
 
 def _check(restore: RestoreBook, library: Library, path_map: PathMap, host_roots: list[str],
-           rows_by_id: dict[int, FileRow], other_titles: dict[frozenset[str], int],
+           rows_by_id: dict[int, FileRow], other_titles: dict[tuple[str, ...], int],
            other_names: dict[int, list[str]], rows: Counter[str],
            probes: dict[str, object]) -> None:
     book = restore.book
     asin = book.context.get("Asin", "").strip().casefold()
-    others = {k: v for k, v in other_titles.items() if v != book.id}
+    own_key = title_key(book.title)
+    others = {k: v for k, v in other_titles.items() if v != book.id and k != own_key}
     if not restore.files:
         restore.refuse("not-every-row-found", "no audio file to restore")
     for item in restore.files:
@@ -482,7 +498,8 @@ def _check(restore: RestoreBook, library: Library, path_map: PathMap, host_roots
             rows["content-agrees" if reason is None else "content-disagrees"] += 1
             if reason is not None:
                 restore.refuse("row-content-disagrees", f"row {row.id}: {reason}")
-        named = other_book_named(probe.tags, others, book, row is not None)
+        named = next((others[key] for tag in ("album", "title")
+                      if (key := title_key(probe.tags.get(tag, ""))) in others), None)
         if named is not None:
             rows["tags-name-another-book"] += 1
             restore.refuse("tags-name-another-book", f"tags name audiobook {named}")

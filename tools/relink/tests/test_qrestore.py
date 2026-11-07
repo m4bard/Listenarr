@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from test_size_placeholder import JUNGLE, PRINCESS, Library, library, relinked, render, stored_identity
+from test_size_placeholder import JUNGLE, PELLUCIDAR, PRINCESS, Library, library, relinked, render, stored_identity
 
 from listenarr_relink import cli, inventory, qrestore
 from listenarr_relink.paths import PathMap
@@ -282,6 +282,22 @@ def test_tags_naming_another_book_always_refuse(restore: Restore) -> None:
     assert restore.classes()[1] == "tags-name-another-book"
     with pytest.raises(SystemExit):  # no waiver exists for a restore
         cli.main(["restore-explain", *restore.survey_args("--tags-waiver", "all")])
+
+
+def test_a_tag_only_containing_a_short_title_does_not_name_that_book(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN, album="Pellucidar chapter 01")
+    restore.library.add_book(2, PELLUCIDAR, 1)  # a one-word library title, contained in the tag
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    assert restore.classes()[1] == "restorable"
+
+
+def test_a_tag_that_is_exactly_another_title_names_that_book(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN, album="Pellucidar")
+    restore.library.add_book(2, PELLUCIDAR, 1)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    assert restore.classes()[1] == "tags-name-another-book"  # control: the full title, normalised, still vetoes
+    restore.retag(rows[0], "pellucidar!", None)  # punctuation and case normalise away
+    assert restore.classes()[1] == "tags-name-another-book"
 
 
 def test_tags_naming_another_book_refuse_a_book_without_a_row(restore: Restore) -> None:
