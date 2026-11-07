@@ -766,6 +766,10 @@ def test_restore_basepath_points_a_zero_row_book_at_its_target(restore: Restore)
     assert plan["books"][0]["basepath_update"]["set"] == str(target)
     before = _basepath(restore, 3)
     assert _restore_basepath(restore, out) == 2  # the stop is not confirmed
+    plan_file = str(out / "restore-plan.json")
+    assert cli.main(["restore-basepath", "--db", str(restore.library.db), "--plan", plan_file, "--plan-sha256",
+                     "0" * 64, "--confirm-service-stopped"]) == 2  # not the reviewed plan
+    assert _basepath(restore, 3) == before
     assert _restore_basepath(restore, out, "--dry-run") == 0 and _basepath(restore, 3) == before
     assert _restore_basepath(restore, out, "--confirm-service-stopped") == 0
     assert _basepath(restore, 3) == str(target)
