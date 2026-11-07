@@ -57,7 +57,7 @@ namespace Listenarr.Tests.Features.Api.Features.Search
         private static MetadataSearchResult SheAndAllan() => new()
         {
             Asin = "B00CQ5WAXW",
-            Title = "She and Allan",
+            Title = "She And Allan",
             Author = "H. Rider Haggard",
             Series = "Ayesha",
             SeriesNumber = "0",

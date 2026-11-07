@@ -39,7 +39,7 @@ namespace Listenarr.Tests.Features.Api.Features.Search
                 ProviderUnavailable = true
             });
 
-            var result = await controller.SearchAudible("dune");
+            var result = await controller.SearchAudible("The Gods of Mars");
 
             var status = Assert.IsType<ObjectResult>(result.Result);
             Assert.Equal(503, status.StatusCode);
@@ -54,7 +54,7 @@ namespace Listenarr.Tests.Features.Api.Features.Search
                 TotalResults = 0
             });
 
-            var result = await controller.SearchAudible("dune");
+            var result = await controller.SearchAudible("The Gods of Mars");
 
             Assert.IsType<OkObjectResult>(result.Result);
         }

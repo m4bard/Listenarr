@@ -41,7 +41,7 @@ describe('formatSeriesMemberships', () => {
 
 describe('looksLikeAsin', () => {
   // The three below are real Audible series ASINs, for Ayesha, Allan Quatermain and the
-  // She and Allan product record respectively.
+  // She And Allan product record respectively.
   it.each(['B01E633FQM', 'B01F5TL5K4', 'B00CQ5WAXW'])('accepts the real ASIN %s', (asin) => {
     expect(looksLikeAsin(asin)).toBe(true)
   })

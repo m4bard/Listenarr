@@ -77,6 +77,67 @@ describe('library import store', () => {
     getAudibleMetadata.mockResolvedValue({})
   })
 
+  it('imports a match picked from an ASIN search with its series, genres and year', async () => {
+    // What the metadata endpoint answers for an ASIN (Add New's ASIN search, used by Find Match)
+    getAudibleMetadata.mockResolvedValue({
+      source: 'audible',
+      metadata: {
+        asin: 'B008DFUGCQ',
+        title: 'A Princess of Mars',
+        authors: [{ name: 'Edgar Rice Burroughs' }],
+        narrators: [{ name: 'Bob Thomley' }],
+        series: [{ name: 'Barsoom', asin: 'B007D0J4H0', position: '1' }],
+        genres: [{ asin: '1', name: 'Science Fiction', type: 'Genres' }],
+        releaseDate: '2012-06-23',
+      },
+    })
+    const { useSearch } = await import('@/composables/useSearch')
+    const search = useSearch()
+    search.searchQuery.value = 'B008DFUGCQ'
+    search.searchLanguage.value = 'us'
+    const [picked] = (await search.performSearch()) as SearchResult[]
+    expect(picked).toMatchObject({
+      series: 'Barsoom',
+      seriesNumber: '1',
+      seriesAsin: 'B007D0J4H0',
+      genres: ['Science Fiction'],
+      releaseDate: '2012-06-23',
+    })
+
+    const { useLibraryImportStore } = await import('@/stores/libraryImport')
+    const store = useLibraryImportStore()
+    store.items = {
+      '/incoming/Mars/01.m4b': {
+        id: '/incoming/Mars/01.m4b',
+        fullPath: '/incoming/Mars/01.m4b',
+        sourceFiles: ['/incoming/Mars/01.m4b'],
+        folderPath: '/incoming/Mars',
+        relativePath: 'Mars',
+        folderName: 'Mars',
+        format: 'M4B',
+        fileCount: 1,
+        selectedMatch: { ...picked!, region: 'us' },
+        hasSearched: true,
+        isSearching: false,
+        selected: true,
+      },
+    }
+    store.action = 'move'
+    await store.importSelected('/library')
+
+    expect(addToLibrary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'A Princess of Mars',
+        series: 'Barsoom',
+        seriesNumber: '1',
+        seriesAsin: 'B007D0J4H0',
+        genres: ['Science Fiction'],
+        publishYear: '2012',
+      }),
+      expect.anything(),
+    )
+  })
+
   it('submits every grouped source file during import', async () => {
     const { useLibraryImportStore } = await import('@/stores/libraryImport')
     const store = useLibraryImportStore()
@@ -931,11 +992,11 @@ describe('library import store', () => {
         format: 'M4B',
         fileCount: 1,
         selectedMatch: {
-          title: 'Two Series Book',
-          authors: [{ name: 'Author' }],
+          title: 'She And Allan',
+          authors: [{ name: 'H. Rider Haggard' }],
           series: [
-            { asin: 'B01E633FQM', name: 'First Series', position: '0' },
-            { asin: 'B01F5TL5K4', name: 'Second Series', position: '7' },
+            { asin: 'B01E633FQM', name: 'Ayesha', position: '0' },
+            { asin: 'B01F5TL5K4', name: 'Allan Quatermain' },
           ],
         } as unknown as SearchResult,
         hasSearched: true,
@@ -950,22 +1011,21 @@ describe('library import store', () => {
     const metadata = addToLibrary.mock.calls[0][0]
     expect(metadata.seriesMemberships).toEqual([
       {
-        seriesName: 'First Series',
+        seriesName: 'Ayesha',
         seriesNumber: '0',
         seriesAsin: 'B01E633FQM',
         isPrimary: true,
         sortOrder: 0,
       },
       {
-        seriesName: 'Second Series',
-        seriesNumber: '7',
+        seriesName: 'Allan Quatermain',
         seriesAsin: 'B01F5TL5K4',
         isPrimary: false,
         sortOrder: 1,
       },
     ])
     // The primary is still mirrored onto the legacy scalars.
-    expect(metadata.series).toBe('First Series')
+    expect(metadata.series).toBe('Ayesha')
     expect(metadata.seriesNumber).toBe('0')
   })
 
@@ -1022,8 +1082,8 @@ describe('library import store', () => {
       metadata: {
         authors: [{ name: 'Author' }],
         series: [
-          { asin: 'B01E633FQM', name: 'First Series', position: '0' },
-          { asin: 'B01F5TL5K4', name: 'Second Series', position: '7' },
+          { asin: 'B01E633FQM', name: 'Ayesha', position: '0' },
+          { asin: 'B01F5TL5K4', name: 'Allan Quatermain' },
         ],
       },
     })
@@ -1042,7 +1102,7 @@ describe('library import store', () => {
           asin: 'B000000001',
           title: 'Enriched Book',
           authors: [],
-          series: [{ asin: 'B01E633FQM', name: 'First Series', position: '0' }],
+          series: [{ asin: 'B01E633FQM', name: 'Ayesha', position: '0' }],
         } as unknown as SearchResult,
         hasSearched: true,
         isSearching: false,
@@ -1056,22 +1116,21 @@ describe('library import store', () => {
     const metadata = addToLibrary.mock.calls[0][0]
     expect(metadata.seriesMemberships).toEqual([
       {
-        seriesName: 'First Series',
+        seriesName: 'Ayesha',
         seriesNumber: '0',
         seriesAsin: 'B01E633FQM',
         isPrimary: true,
         sortOrder: 0,
       },
       {
-        seriesName: 'Second Series',
-        seriesNumber: '7',
+        seriesName: 'Allan Quatermain',
         seriesAsin: 'B01F5TL5K4',
         isPrimary: false,
         sortOrder: 1,
       },
     ])
     // The legacy scalars agree with the primary membership rather than the older match.
-    expect(metadata.series).toBe('First Series')
+    expect(metadata.series).toBe('Ayesha')
     expect(metadata.seriesNumber).toBe('0')
     expect(metadata.seriesAsin).toBe('B01E633FQM')
   })
@@ -1101,7 +1160,7 @@ describe('library import store', () => {
           asin: 'B000000001',
           title: 'Enriched Book',
           authors: [],
-          series: [{ asin: 'B01E633FQM', name: 'First Series', position: '0' }],
+          series: [{ asin: 'B01E633FQM', name: 'Ayesha', position: '0' }],
         } as unknown as SearchResult,
         hasSearched: true,
         isSearching: false,
@@ -1115,14 +1174,14 @@ describe('library import store', () => {
     const metadata = addToLibrary.mock.calls[0][0]
     expect(metadata.seriesMemberships).toEqual([
       {
-        seriesName: 'First Series',
+        seriesName: 'Ayesha',
         seriesNumber: '0',
         seriesAsin: 'B01E633FQM',
         isPrimary: true,
         sortOrder: 0,
       },
     ])
-    expect(metadata.series).toBe('First Series')
+    expect(metadata.series).toBe('Ayesha')
   })
 
   it('treats a ten-character, non-B0 value typed into the manual search box as an ASIN', async () => {

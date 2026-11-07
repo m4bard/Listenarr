@@ -28,8 +28,9 @@ namespace Listenarr.Tests.Features.Application.Search.Metadata
     /// The series ASIN is the stable identifier: a book ASIN is per-marketplace and
     /// per-narrator, and a series name is free text that varies between editions.
     ///
-    /// Data below is from the live Audnexus record for H. Rider Haggard's "She and Allan"
-    /// (B00CQ5WAXW), which belongs to two series at once.
+    /// The series names and ASINs below are catalogue values for H. Rider Haggard's "She And Allan"
+    /// (B00CQ5WAXW), which belongs to two series at once. The second series' position is left
+    /// unset; these tests check the series identifier and the membership, not the position.
     /// </summary>
     [Trait("Name", "MetadataConvertersSeriesAsinTests")]
     [Trait("Category", "Application")]
@@ -43,7 +44,7 @@ namespace Listenarr.Tests.Features.Application.Search.Metadata
         private static AudnexusBookResponse SheAndAllan() => new()
         {
             Asin = "B00CQ5WAXW",
-            Title = "She and Allan",
+            Title = "She And Allan",
             SeriesPrimary = new AudnexusSeries
             {
                 Asin = "B01E633FQM",
@@ -54,7 +55,6 @@ namespace Listenarr.Tests.Features.Application.Search.Metadata
             {
                 Asin = "B01F5TL5K4",
                 Name = "Allan Quatermain",
-                Position = "7",
             },
         };
 
@@ -80,7 +80,7 @@ namespace Listenarr.Tests.Features.Application.Search.Metadata
 
             Assert.NotNull(secondary);
             Assert.Equal("Allan Quatermain", secondary!.SeriesName);
-            Assert.Equal("7", secondary.SeriesNumber);
+            Assert.Null(secondary.SeriesNumber);
             Assert.Equal("B01F5TL5K4", secondary.SeriesAsin);
         }
 

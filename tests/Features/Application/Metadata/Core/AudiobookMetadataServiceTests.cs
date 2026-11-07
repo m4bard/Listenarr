@@ -79,10 +79,10 @@ namespace Listenarr.Tests.Features.Application.Metadata.Core
         {
             var response = await LookupAudnexusBookAsync(new AudnexusBookResponse
             {
-                Asin = "BTESTASIN",
-                Title = "Test Title",
+                Asin = "B00CQ5WAXW",
+                Title = "She And Allan",
                 SeriesPrimary = new AudnexusSeries { Asin = "B01E633FQM", Name = "Ayesha", Position = "0" },
-                SeriesSecondary = new AudnexusSeries { Asin = "B01F5TL5K4", Name = "Allan Quatermain", Position = "7" }
+                SeriesSecondary = new AudnexusSeries { Asin = "B01F5TL5K4", Name = "Allan Quatermain" }
             });
 
             Assert.NotNull(response.Series);
@@ -98,7 +98,7 @@ namespace Listenarr.Tests.Features.Application.Metadata.Core
                 {
                     Assert.Equal("B01F5TL5K4", secondary.Asin);
                     Assert.Equal("Allan Quatermain", secondary.Name);
-                    Assert.Equal("7", secondary.Position);
+                    Assert.Null(secondary.Position);
                 });
         }
 
@@ -107,8 +107,8 @@ namespace Listenarr.Tests.Features.Application.Metadata.Core
         {
             var response = await LookupAudnexusBookAsync(new AudnexusBookResponse
             {
-                Asin = "BTESTASIN",
-                Title = "Test Title"
+                Asin = "B00CQ5WAXW",
+                Title = "She And Allan"
             });
 
             Assert.True(response.Series == null || response.Series.Count == 0);
@@ -138,7 +138,7 @@ namespace Listenarr.Tests.Features.Application.Metadata.Core
                 audnexusMock.Object,
                 Mock.Of<ILogger<AudiobookMetadataService>>());
 
-            var result = await svc.GetMetadataAsync("BTESTASIN", "us", true);
+            var result = await svc.GetMetadataAsync("B00CQ5WAXW", "us", true);
 
             Assert.NotNull(result);
             return result!.Metadata;

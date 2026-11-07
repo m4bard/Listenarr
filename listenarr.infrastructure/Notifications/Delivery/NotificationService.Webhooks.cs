@@ -116,6 +116,8 @@ namespace Listenarr.Infrastructure.Notifications.Delivery
                     // Helpful ntfy headers per docs: Title, Priority, Tags
                     if (!string.IsNullOrWhiteSpace(title)) request.Headers.TryAddWithoutValidation("Title", title);
                     request.Headers.TryAddWithoutValidation("Priority", "3");
+                    // The tag is the dispatched trigger name, so a completed import is tagged
+                    // book-completed (it was Imported before the trigger vocabulary was unified).
                     request.Headers.TryAddWithoutValidation("Tags", trigger);
 
                     var redactedUrl = LogRedaction.SanitizeWebhookUrl(webhookUrl);
