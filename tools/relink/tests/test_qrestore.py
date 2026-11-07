@@ -99,6 +99,14 @@ class Restore:
         self.library.set_row(row, Size=path.stat().st_size, DurationSeconds=float(probe["format"]["duration"]),
                              PhysicalObjectIdentity=stored_identity(path))
 
+    def retag_album(self, row: int, album: str) -> None:
+        """Rewrite only the album tag of a row's file in place (the audio packets stay), and re-register it."""
+        path = self.library.rows[row]
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(path), "-c", "copy", "-metadata", f"album={album}",
+                        str(path) + ".new.mp3"], check=True)
+        os.replace(str(path) + ".new.mp3", path)
+        self.library.set_row(row, Size=path.stat().st_size, PhysicalObjectIdentity=stored_identity(path))
+
     def set_book(self, book_id: int, **values: Any) -> None:
         """Overwrite columns of one Audiobooks row."""
         with sqlite3.connect(self.library.db) as connection:
@@ -298,6 +306,38 @@ def test_a_tag_that_is_exactly_another_title_names_that_book(restore: Restore) -
     assert restore.classes()[1] == "tags-name-another-book"  # control: the full title, normalised, still vetoes
     restore.retag(rows[0], "pellucidar!", None)  # punctuation and case normalise away
     assert restore.classes()[1] == "tags-name-another-book"
+
+
+GODS = ("The Gods of Mars", "Edgar Rice Burroughs")
+TANAR = ("Tanar of Pellucidar", "Edgar Rice Burroughs")
+TANAR_ASIN = "B0C6B525PQ"
+
+
+@pytest.mark.parametrize("title_tag", ["The Gods of Mars (Unabridged) - 01", "Book 2: The Gods of Mars",
+                                       "Edgar Rice Burroughs - The Gods of Mars", "The Gods of Mars: A Novel"])
+def test_a_foreign_title_with_a_suffix_under_the_own_album_is_vetoed(restore: Restore, title_tag: str) -> None:
+    # Another book's audio under a folder-wide retag of the album to this book's title: round 3 vetoed it.
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.library.add_book(2, GODS, 1)
+    for row in rows:
+        restore.retag(row, title_tag)
+        restore.retag_album(row, PRINCESS[0])
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    assert restore.classes()[1] == "tags-name-another-book"
+
+
+def test_a_foreign_title_with_only_a_track_number_is_vetoed(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN, album="The Gods of Mars - 02")  # numbers are not a title
+    restore.library.add_book(2, GODS, 1)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    assert restore.classes()[1] == "tags-name-another-book"
+
+
+def test_own_title_containing_a_one_word_library_title_is_not_vetoed(restore: Restore) -> None:
+    rows = restore.book(1, TANAR, TANAR_ASIN)  # tags carry "Tanar of Pellucidar", which holds "Pellucidar"
+    restore.library.add_book(2, PELLUCIDAR, 1)
+    restore.quarantine(rows, TANAR, TANAR_ASIN)
+    assert restore.classes()[1] == "restorable"
 
 
 def test_tags_naming_another_book_refuse_a_book_without_a_row(restore: Restore) -> None:
@@ -617,7 +657,8 @@ def test_a_deliberate_removal_is_listed_for_review_never_restorable(restore: Res
     assert rc == 2 and not out.exists()
 
 
-def test_a_retagged_copy_of_the_same_audio_is_an_in_root_copy(restore: Restore) -> None:
+def test_a_retagged_copy_of_the_same_audio_is_an_in_root_copy(restore: Restore,
+                                                                 capsys: pytest.CaptureFixture[str]) -> None:
     rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
     restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
     target = restore.target(PRINCESS, PRINCESS_ASIN)
@@ -628,6 +669,10 @@ def test_a_retagged_copy_of_the_same_audio_is_an_in_root_copy(restore: Restore) 
         copy = target / f"copy-{restore.library.rows[row].name}"
         assert copy.stat().st_size != restore.library.rows[row].stat().st_size
     assert restore.classes() == {1: "in-root-copy"}
+    restore.set_book(1, Runtime=10)  # a content failure under the copy: counted apart for the re-point design
+    counts = restore.explain(capsys)
+    assert counts["in_root_copy_books_with_a_content_failure"] == "1"
+    restore.set_book(1, Runtime=0.1)
     (target / f"copy-{restore.library.rows[rows[1]].name}").unlink()
     render(target / "other.mp3", 999, PRINCESS[0])  # control: different audio is still not a copy
     assert restore.classes() == {1: "target-holds-other-audio"}

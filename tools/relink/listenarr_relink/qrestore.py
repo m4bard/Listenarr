@@ -13,7 +13,8 @@ A book is restorable only when every check below passes; the first that fails na
   PLAN re-links it whole);
 * ``row-content-disagrees``: a file's duration, codec, sample rate or channels disagree with its row;
 * ``tags-name-another-book``: a file's album or title tag, normalised (case, accents and punctuation folded,
-  numbers dropped), is exactly another library book's whole distinctive title (``title_key``). Containing it is
+  numbers dropped), is another library book's whole distinctive title, alone or wrapped only in release words
+  ("(Unabridged)", "Book 2:", ": A Novel") or that book's author's name (``tag_is_title``). Containing it is
   not enough: PLAN's token-subset veto (``matcher.other_book_named``) was found to fire mostly on loose and
   one-word matches (answers/28), so it is not used here. Never waived: PLAN's waiver rests on the file being
   the row's own object, while the open question for a quarantined book is whether that object was ever the
@@ -120,6 +121,9 @@ BOOK_CLASSES = ("restorable", "not-every-row-found", "row-content-disagrees", "t
 FAILURES = (*(name for name in BOOK_CLASSES if name not in (RESTORABLE, "in-root-copy", "operator-re-review",
                                                             "deliberate-removal", UNLABELLED)),
             "deliberate-label", UNLABELLED)
+# Checks about what the audio is (not where it goes): a later re-point design must look at these first.
+CONTENT_CHECKS = ("row-content-disagrees", "tags-name-another-book", "asin-tag-not-own", "runtime-misfit",
+                  "runtime-unknown", "runtime-near", "content-unconfirmed")
 RUNTIME_FIT_SECONDS = 60.0
 RUNTIME_FIT_SHARE = 0.01
 RUNTIME_NEAR_SHARE = 0.10
@@ -130,6 +134,30 @@ _BRACKETED_ID = re.compile(r"\[([^\[\]]+)\]\s*$")
 def title_key(text: str) -> tuple[str, ...]:
     """A title normalised for an exact comparison: folded word tokens in order, pure numbers dropped."""
     return tuple(token for token in tokens(text) if not token.isdigit())
+
+
+# Words a release may wrap a title in without naming another work: "(Unabridged)", "Book 2:", ": A Novel", "Part 3".
+# Applies to titles of two or more words; a one-word title must stand alone (bar these few), since a tag such as
+# "<word> chapter 01" or "<word> Notes" is the loose match answers/28 found to be mostly false.
+TITLE_WRAPPERS = frozenset({"unabridged", "abridged", "audiobook", "audio", "edition", "book", "books", "volume",
+                            "vol", "part", "pt", "disc", "disk", "cd", "track", "chapter", "a", "novel", "the"})
+ONE_WORD_TITLE_WRAPPERS = frozenset({"unabridged", "abridged", "audiobook"})
+
+
+def tag_is_title(tag: str, key: tuple[str, ...], wrapper_words: frozenset[str]) -> bool:
+    """True when the tag is this title, possibly wrapped in release words or the work's author's name.
+
+    The title's words must appear together and in order; everything else in the tag must be a number, a
+    wrapper word or one of ``wrapper_words`` (the named book's author tokens). Exact equality is the plain case.
+    """
+    words = title_key(tag)
+    allowed = (TITLE_WRAPPERS | wrapper_words) if len(key) > 1 else ONE_WORD_TITLE_WRAPPERS
+    for start in range(len(words) - len(key) + 1):
+        if words[start:start + len(key)] == key:
+            rest = words[:start] + words[start + len(key):]
+            if all(word in allowed for word in rest):
+                return True
+    return False
 
 
 def title_keys(books: dict[int, BookRow]) -> dict[tuple[str, ...], int]:
@@ -517,8 +545,7 @@ def _check(restore: RestoreBook, library: Library, path_map: PathMap, host_roots
             rows["content-agrees" if reason is None else "content-disagrees"] += 1
             if reason is not None:
                 restore.refuse("row-content-disagrees", f"row {row.id}: {reason}")
-        named = next((others[key] for tag in ("album", "title")
-                      if (key := title_key(probe.tags.get(tag, ""))) in others), None)
+        named = _tags_name_another(probe.tags, others, library)
         if named is not None:
             rows["tags-name-another-book"] += 1
             restore.refuse("tags-name-another-book", f"tags name audiobook {named}")
@@ -554,6 +581,25 @@ def _check(restore: RestoreBook, library: Library, path_map: PathMap, host_roots
                                               "this book (own title in the tags, or own ASIN tag)")
     _choose_target(restore, library, path_map, asin, rows_by_id)
     _place(restore, library, path_map, host_roots, other_names, asin)
+
+
+def _tags_name_another(tags: dict[str, str], others: dict[tuple[str, ...], int], library: Library) -> int | None:
+    """The other library book whose whole title a file's album or title tag is (``tag_is_title``), or None."""
+    for tag in ("album", "title"):
+        text = tags.get(tag, "")
+        if not text:
+            continue
+        exact = others.get(title_key(text))
+        if exact is not None:
+            return exact
+        present = set(title_key(text))
+        for key, book_id in others.items():
+            if key[0] in present and set(key) <= present:  # cheap pre-filter before the ordered match
+                other = library.books.get(book_id)
+                author_words = frozenset(t for a in (other.authors if other else []) for t in tokens(a))
+                if tag_is_title(text, key, author_words):
+                    return book_id
+    return None
 
 
 def _duration(probes: dict[str, object], path: str) -> float | None:
@@ -695,6 +741,8 @@ def summary_lines(library: Library, result: Survey) -> list[str]:
         *(f"  {label} {name} {count}" for (label, name), count in sorted(Counter(
             (b.label, b.verdict) for b in result.books).items())),
         f"books_with_an_in_root_copy {sum(1 for b in result.books if b.in_root_copy)}",
+        "in_root_copy_books_with_a_content_failure "
+        f"{sum(1 for b in result.books if b.in_root_copy and set(b.failures) & set(CONTENT_CHECKS))}",
         "restorable_runtime (fits only, by construction): "
         f"{sum(1 for b in restorable if b.runtime == 'fits')}",
         f"restorable_books_by_evidence title {sum(1 for b in restorable if b.own_evidence == len(b.files))}",
