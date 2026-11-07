@@ -1,0 +1,813 @@
+From dad44fc1d523b2d3459716055b4142f59e1cb181 Mon Sep 17 00:00:00 2001
+From: m4bard <304653687+m4bard@users.noreply.github.com>
+Date: Mon, 19 Oct 2026 18:31:36 -0500
+Subject: [PATCH 2/3] wip: harden the outside-every-root resolution on physical
+ location
+
+WIP on aa68/work; clean commits are cut separately.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../FileMover.MutationCapability.cs           |  20 +-
+ .../FileSystem/FileMover.SourceCapability.cs  | 290 ++++++++----------
+ .../FilePublicationCapabilityResolver.cs      |   9 +-
+ .../FileSystem/SymlinkedAncestors.cs          | 160 ++++++++++
+ .../FileMoverLinkedSourceRootPolicyTests.cs   | 102 ++++++
+ .../FileMoverSymlinkedSourceBoundaryTests.cs  |  48 +++
+ .../FilePublicationCapabilityResolverTests.cs |  30 ++
+ 7 files changed, 488 insertions(+), 171 deletions(-)
+ create mode 100644 listenarr.infrastructure/FileSystem/SymlinkedAncestors.cs
+ create mode 100644 tests/Features/Infrastructure/FileSystem/FileMoverLinkedSourceRootPolicyTests.cs
+
+diff --git a/listenarr.infrastructure/FileSystem/FileMover.MutationCapability.cs b/listenarr.infrastructure/FileSystem/FileMover.MutationCapability.cs
+index 3e8e4dc87..ec3f1a348 100644
+--- a/listenarr.infrastructure/FileSystem/FileMover.MutationCapability.cs
++++ b/listenarr.infrastructure/FileSystem/FileMover.MutationCapability.cs
+@@ -57,13 +57,27 @@ public partial class FileMover
+             return true;
+         }
+ 
+-        return action == FileAction.Move
+-            && await IsManagedRootMutationBlockedAsync(
++        if (action != FileAction.Move)
++        {
++            return false;
++        }
++
++        // A source reported through a link outside every root can physically sit in a root, and
++        // that root's storage decides whether it may be mutated, exactly as when it is reported there.
++        var physicalSource = SymlinkedAncestors.ResolveFileParent(source);
++        return await IsManagedRootMutationBlockedAsync(
+                 source,
+                 action,
+                 source,
+                 destination,
+-                "source");
++                "source")
++            || (physicalSource != Path.GetFullPath(source)
++                && await IsManagedRootMutationBlockedAsync(
++                    physicalSource,
++                    action,
++                    source,
++                    destination,
++                    "source"));
+     }
+ 
+     private async Task<bool> IsManagedRootMutationBlockedAsync(
+diff --git a/listenarr.infrastructure/FileSystem/FileMover.SourceCapability.cs b/listenarr.infrastructure/FileSystem/FileMover.SourceCapability.cs
+index 97c9ce6a4..012cf7237 100644
+--- a/listenarr.infrastructure/FileSystem/FileMover.SourceCapability.cs
++++ b/listenarr.infrastructure/FileSystem/FileMover.SourceCapability.cs
+@@ -114,36 +114,105 @@ public partial class FileMover : IFilePublicationSourceCapability
+     }
+ 
+     /// <summary>
+-    /// The directory the source proof is opened from: the parent as given when it names a place
+-    /// inside a configured root, otherwise the parent with its symlinked ancestors resolved.
++    /// The directory the source proof is opened from, decided on where the source physically is
++    /// rather than on how its path is spelled.
+     /// </summary>
+     /// <remarks>
+-    /// Inside a configured root the managed boundary walk stays exactly as it is, so a link
+-    /// planted inside a root still cannot carry a source out of it: the walk opens every segment
+-    /// below the root with O_NOFOLLOW and refuses the first link it meets. Outside every root
+-    /// there is no boundary to escape, and the walk that would otherwise run is a plain
+-    /// O_NOFOLLOW open from the filesystem root, which refuses any linked ancestor at all, such
+-    /// as a download directory reached through a symlinked mount. Only that case resolves.
++    /// The parent as given is kept, and the managed boundary walk runs on it exactly as upstream's
++    /// does, when it is spelled inside a configured root, when its root containment cannot be
++    /// decided, when its link chain is broken, or when any link the chain passes through
++    /// physically sits inside a configured root, compared against both the root's configured
++    /// spelling and its real path. A link inside a root therefore cannot carry a source out of
++    /// it, whichever alias of the root the source was reported through: inside a root the walk
++    /// opens every segment below the root with O_NOFOLLOW and refuses the first link it meets,
++    /// and outside every root by spelling it is a plain O_NOFOLLOW open from the filesystem root
++    /// that refuses the first linked ancestor.
+     ///
+-    /// The resolved path is used to open the file and for nothing else. The caller still
+-    /// receives the path it passed in, so root containment, retirement policy and every other
+-    /// decision downstream see exactly what they saw before. If the resolved path lands inside a
+-    /// configured root, it is opened through that root's authorized walk like any other path.
+-    /// A parent whose root containment cannot be decided is left unresolved, so the managed walk
+-    /// refuses it as it would have anyway.
++    /// Only when every link in the chain sits outside every root is the parent resolved, which is
++    /// the shape of a download directory reached through a symlinked mount. The resolved path is
++    /// then opened by upstream's own rule for where it physically lands: through that root's
++    /// authorized walk if it is inside a configured root, with a plain O_NOFOLLOW open otherwise.
++    /// The publication plan likewise keys a Move source's retirement on the root it physically
++    /// belongs to. The caller still receives the path it passed in.
+     /// </remarks>
+     private async Task<SourceProofParent> SelectSourceProofParentAsync(string parent)
+     {
+         var managed = await ResolveManagedRootPathAsync(parent);
+-        return managed.Root != null || managed.HasUnavailableOverlap
+-            ? new SourceProofParent(parent, managed)
+-            : new SourceProofParent(ResolveSymlinkedAncestors(parent), managed);
++        if (managed.Root != null || managed.HasUnavailableOverlap)
++            return new SourceProofParent(parent, managed, LinkInsideRoot: false);
++
++        SymlinkedAncestors.ChainWalk walk;
++        try
++        {
++            walk = SymlinkedAncestors.Walk(parent);
++        }
++        catch (Exception exception) when (SymlinkedAncestors.IsInspectionFailure(exception))
++        {
++            return new SourceProofParent(parent, managed, LinkInsideRoot: false);
++        }
++
++        if (walk.BlockingLink != null || walk.Links.Count == 0)
++            return new SourceProofParent(parent, managed, LinkInsideRoot: false);
++        if (await AnyLinkSitsInsideConfiguredRootAsync(walk.Links))
++            return new SourceProofParent(parent, managed, LinkInsideRoot: true);
++        return new SourceProofParent(walk.ResolvedPath, managed, LinkInsideRoot: false);
+     }
+ 
+     /// <summary>
+-    /// The directory the source proof is opened from, and the root containment that chose it.
++    /// The directory the source proof is opened from, the root containment of the parent as
++    /// given, and whether a link physically inside a root kept it unresolved.
++    /// </summary>
++    private readonly record struct SourceProofParent(
++        string Path,
++        ManagedRootPathResolution Managed,
++        bool LinkInsideRoot);
++
++    /// <summary>
++    /// Whether any of these links physically sits inside a configured root: the directory that
++    /// holds the link, resolved, is the root or below it, by the root's configured spelling or by
++    /// its real path. A root whose containment cannot be decided counts as containing it.
+     /// </summary>
+-    private readonly record struct SourceProofParent(string Path, ManagedRootPathResolution Managed);
++    private async Task<bool> AnyLinkSitsInsideConfiguredRootAsync(IReadOnlyList<string> links)
++    {
++        if (_rootFolderRepository == null)
++            return false;
++
++        var locations = links
++            .Select(SymlinkedAncestors.PhysicalParentOf)
++            .Select(location => FileSystemPathIdentity.TryDetectAbsoluteSyntaxForHost(location, out var syntax)
++                ? (Path: location, Syntax: (FileSystemPathSyntax?)syntax)
++                : (Path: location, Syntax: null))
++            .ToList();
++        if (locations.Any(location => location.Syntax == null))
++            return true;
++
++        foreach (var root in await _rootFolderRepository.GetAllAsync())
++        {
++            if (string.IsNullOrWhiteSpace(root.Path))
++                continue;
++
++            var persisted = RootFolderPathSemantics.ResolvePersisted(root);
++            if (!FileSystemPathIdentity.TryCanonicalizeUnambiguousStoredAbsolutePathForHost(
++                    root.Path, out var canonicalRoot, out _)
++                || !persisted.HasValue
++                || persisted.Value.DetectAmbiguousCaseMatches)
++            {
++                if (locations.Any(location => FileSystemPathIdentity.StoredBoundaryMayContainPath(
++                        root.Path, location.Path, location.Syntax!.Value, root.CaseSensitivityMode)))
++                    return true;
++                continue;
++            }
++
++            var semantics = persisted.Value.Semantics;
++            var realRoot = SymlinkedAncestors.Resolve(canonicalRoot);
++            if (locations.Any(location =>
++                    FileSystemPathIdentity.IsSameOrInside(location.Path, canonicalRoot, semantics)
++                    || FileSystemPathIdentity.IsSameOrInside(location.Path, realRoot, semantics)))
++                return true;
++        }
++
++        return false;
++    }
+ 
+     private async Task<PinnedDirectoryCreation.PinnedDirectoryAnchor> OpenSourceProofParentAsync(
+         string parent, CancellationToken cancellationToken)
+@@ -216,35 +285,43 @@ public partial class FileMover : IFilePublicationSourceCapability
+     /// The link a refusal is reported against, or null if no link is to blame.
+     /// </summary>
+     /// <remarks>
+-    /// Which link that is depends on which walk refused. Inside a configured root the parent was
+-    /// not resolved, so the managed walk met the first link below the root and stopped there,
+-    /// whether or not that link would have resolved. Anywhere else the parent was resolved, and
++    /// Which link that is depends on which walk refused. When the parent was kept as given, the
++    /// walk met the first link on its way down and stopped there, whether or not that link would
++    /// have resolved: below the root for a parent spelled inside one, from the filesystem root for
++    /// a parent kept because a link in its chain sits inside a root. When the parent was resolved,
+     /// only a link that resolution could not remove is to blame. A failure before the parent was
+-    /// chosen at all is reported the second way.
++    /// chosen at all is reported the last way.
+     /// </remarks>
+-    private static string? FindRefusingLink(string sourcePath, SourceProofParent? proofParent) =>
+-        proofParent is { Managed: { Root: { } root, Semantics: { } semantics } } managedParent
+-            ? FindFirstLinkBelowRoot(root.Path, managedParent.Path, semantics)
+-            : FindSymlinkedAncestor(sourcePath);
++    private static string? FindRefusingLink(string sourcePath, SourceProofParent? proofParent)
++    {
++        if (proofParent is { Managed: { Root: { } root, Semantics: { } semantics } } managedParent)
++        {
++            return FileSystemPathIdentity.TryGetRelativePathWithinBase(
++                    root.Path, managedParent.Path, semantics, out var relative)
++                ? FindFirstLinkBelow(root.Path, relative)
++                : null;
++        }
++
++        if (proofParent is { LinkInsideRoot: true } keptParent)
++        {
++            var filesystemRoot = Path.GetPathRoot(keptParent.Path);
++            return string.IsNullOrEmpty(filesystemRoot)
++                ? null
++                : FindFirstLinkBelow(filesystemRoot, keptParent.Path[filesystemRoot.Length..]);
++        }
++
++        return FindSymlinkedAncestor(sourcePath);
++    }
+ 
+     /// <summary>
+-    /// The first symbolic link the managed walk would open below <paramref name="rootPath"/> on
+-    /// its way down to <paramref name="parent"/>, or null if there is none.
++    /// The first symbolic link a no-follow walk from <paramref name="basePath"/> would open on its
++    /// way down through <paramref name="relative"/>, or null if there is none.
+     /// </summary>
+-    private static string? FindFirstLinkBelowRoot(
+-        string rootPath,
+-        string parent,
+-        FileSystemPathSemantics semantics)
++    private static string? FindFirstLinkBelow(string basePath, string relative)
+     {
+         try
+         {
+-            if (!FileSystemPathIdentity.TryGetRelativePathWithinBase(
+-                    rootPath, parent, semantics, out var relative))
+-            {
+-                return null;
+-            }
+-
+-            var current = rootPath;
++            var current = basePath;
+             foreach (var segment in relative.Split(
+                 [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                 StringSplitOptions.RemoveEmptyEntries).Where(segment => segment != "."))
+@@ -256,9 +333,7 @@ public partial class FileMover : IFilePublicationSourceCapability
+                 }
+             }
+         }
+-        catch (Exception exception) when (exception is
+-            IOException or UnauthorizedAccessException or NotSupportedException
+-                or System.Security.SecurityException)
++        catch (Exception exception) when (SymlinkedAncestors.IsInspectionFailure(exception))
+         {
+             // Best effort only. The caller still reports the original failure.
+         }
+@@ -271,10 +346,10 @@ public partial class FileMover : IFilePublicationSourceCapability
+     /// </summary>
+     /// <remarks>
+     /// This does not change the answer. It only says which link caused a refusal, because the
+-    /// raw failure is an ENOTDIR from openat and gives an operator nothing to act on. Outside every
+-    /// configured root a linked source ancestor normally resolves and is published, so this
+-    /// names a link only when that resolution could not remove it from the walk: a cycle, a
+-    /// dangling target, or the hop cap. It walks the same chain ResolveSymlinkedAncestors does,
++    /// raw failure is an ENOTDIR from openat and gives an operator nothing to act on. When every
++    /// link in the chain sits outside every configured root the chain resolves and is published,
++    /// so this names a link only when that resolution could not remove it from the walk: a cycle,
++    /// a dangling target, or the hop cap. It walks the same chain SymlinkedAncestors.Resolve does,
+     /// because a chain of two or more links is not necessarily an ancestor of the original path at
+     /// all; the second link only appears once the first has been substituted for its target.
+     /// </remarks>
+@@ -288,130 +363,13 @@ public partial class FileMover : IFilePublicationSourceCapability
+                 return null;
+             }
+ 
+-            return WalkSymlinkedAncestors(current, new HashSet<string>(StringComparer.Ordinal), MaxSymlinkChainHops)
+-                .BlockingLink;
++            return SymlinkedAncestors.Walk(current).BlockingLink;
+         }
+-        catch (Exception exception) when (exception is
+-            IOException or UnauthorizedAccessException or NotSupportedException
+-                or System.Security.SecurityException)
++        catch (Exception exception) when (SymlinkedAncestors.IsInspectionFailure(exception))
+         {
+             // Best effort only. The caller still reports the original failure.
+         }
+ 
+         return null;
+     }
+-
+-    /// <summary>
+-    /// The physical path of an existing directory, with every symlinked component in the whole
+-    /// chain replaced by what it ultimately points at.
+-    /// </summary>
+-    /// <remarks>
+-    /// The pinned walk opens every segment with O_NOFOLLOW so a component cannot be substituted
+-    /// between the check and the use. On a destination, or a lock directory, that is load bearing:
+-    /// a swapped link redirects a write outside the configured boundary, which
+-    /// FileOperation_LinkedLockDirectoryAncestor_DoesNotCreateOutsideBoundary pins. On a source it
+-    /// buys less. The operation is a read and a hash, the resulting proof is an inode and a content
+-    /// digest, and both describe the object rather than the route taken to it. Resolving here does
+-    /// not weaken that proof.
+-    ///
+-    /// What it does cost is the guarantee that the route itself cannot change, so this is
+-    /// deliberately narrow: only the source capability walk resolves, only for opening, and the
+-    /// resolved path is never returned or used for a policy decision.
+-    ///
+-    /// Readarr draws the same line, in src/NzbDrone.Mono/Disk/SymbolicLinkResolver.cs, resolving
+-    /// the real path where physical identity matters and letting the OS follow links elsewhere.
+-    /// Its GetCompleteRealPath walks every path component in order, not only the last one, and
+-    /// bounds the walk at 32 hops, explicitly in the name of the same ELOOP the kernel enforces
+-    /// (SymbolicLinkResolver.cs lines 22-50). This resolver does the same, component by component,
+-    /// with a comparable cap.
+-    /// </remarks>
+-    private static string ResolveSymlinkedAncestors(string directory)
+-    {
+-        try
+-        {
+-            var walk = WalkSymlinkedAncestors(
+-                directory,
+-                new HashSet<string>(StringComparer.Ordinal),
+-                MaxSymlinkChainHops);
+-
+-            // A blocked walk (a cycle, a dangling target, or the hop cap) hands back the original,
+-            // unresolved directory rather than whatever partial progress it made. The pinned walk
+-            // then fails naturally on the first link it cannot follow, and FindSymlinkedAncestor,
+-            // which performs the same walk, is what names the link actually responsible.
+-            return walk.BlockingLink == null ? walk.ResolvedPath : directory;
+-        }
+-        catch (Exception exception) when (exception is
+-            IOException or UnauthorizedAccessException or NotSupportedException
+-                or System.Security.SecurityException)
+-        {
+-            // Unreadable, or the directory does not exist at all (unrelated to any link). Hand
+-            // back what we were given and let the pinned walk report it.
+-            return directory;
+-        }
+-    }
+-
+-    /// <summary>
+-    /// How many links this resolver will follow in one chain before refusing to go further, in
+-    /// the spirit of the OS ELOOP limit (Linux defaults to 40; Readarr's own resolver caps at 32).
+-    /// Bounds both a direct cycle the walk's own visited-set already catches sooner and a very long
+-    /// non-repeating chain that never revisits a directory.
+-    /// </summary>
+-    private const int MaxSymlinkChainHops = 40;
+-
+-    private readonly record struct SymlinkChainWalk(string ResolvedPath, string? BlockingLink);
+-
+-    /// <summary>
+-    /// Walks a directory's own symlink chain, then its ancestors', substituting each link's target
+-    /// as it goes. <see cref="SymlinkChainWalk.BlockingLink"/> is null when every link in the chain
+-    /// resolved to something real; otherwise it names the specific link where the walk broke: one
+-    /// already visited in this same walk (a cycle), one whose target could not be inspected (most
+-    /// often because it does not exist), or the one where the hop cap was reached.
+-    /// </summary>
+-    private static SymlinkChainWalk WalkSymlinkedAncestors(
+-        string directory,
+-        HashSet<string> visited,
+-        int hopsRemaining)
+-    {
+-        var resolved = Directory.ResolveLinkTarget(directory, returnFinalTarget: false);
+-        if (resolved != null)
+-        {
+-            if (hopsRemaining <= 0 || !visited.Add(directory))
+-            {
+-                return new SymlinkChainWalk(directory, directory);
+-            }
+-
+-            try
+-            {
+-                var inner = WalkSymlinkedAncestors(resolved.FullName, visited, hopsRemaining - 1);
+-                return inner.BlockingLink == null
+-                    ? inner
+-                    : new SymlinkChainWalk(directory, inner.BlockingLink);
+-            }
+-            catch (Exception exception) when (exception is
+-                IOException or UnauthorizedAccessException or NotSupportedException
+-                    or System.Security.SecurityException)
+-            {
+-                // What this link points at cannot even be inspected, most often because it does
+-                // not exist. This link is where the chain breaks, not whatever it names.
+-                return new SymlinkChainWalk(directory, directory);
+-            }
+-        }
+-
+-        var parent = Path.GetDirectoryName(directory);
+-        if (string.IsNullOrEmpty(parent) || parent == directory)
+-        {
+-            return new SymlinkChainWalk(directory, null);
+-        }
+-
+-        var parentWalk = WalkSymlinkedAncestors(parent, visited, hopsRemaining);
+-        if (parentWalk.BlockingLink != null)
+-        {
+-            return new SymlinkChainWalk(directory, parentWalk.BlockingLink);
+-        }
+-
+-        var resolvedPath = parentWalk.ResolvedPath == parent
+-            ? directory
+-            : Path.Join(parentWalk.ResolvedPath, Path.GetFileName(directory));
+-        return new SymlinkChainWalk(resolvedPath, null);
+-    }
+ }
+diff --git a/listenarr.infrastructure/FileSystem/FilePublicationCapabilityResolver.cs b/listenarr.infrastructure/FileSystem/FilePublicationCapabilityResolver.cs
+index ab60c1648..c6c2e7672 100644
+--- a/listenarr.infrastructure/FileSystem/FilePublicationCapabilityResolver.cs
++++ b/listenarr.infrastructure/FileSystem/FilePublicationCapabilityResolver.cs
+@@ -60,7 +60,11 @@ internal sealed class FilePublicationCapabilityResolver(
+         var sourceCanBeRetiredAfterVerifiedCopy = true;
+         if (requestedAction == FileAction.Move)
+         {
+-            sourceRoot = FindContainingRoot(source, roots);
++            // A source reported through a link outside every root can physically be a file a root
++            // holds. Its retirement is that root's decision, exactly as when it is reported there.
++            var physicalSource = SymlinkedAncestors.ResolveFileParent(source);
++            sourceRoot = FindContainingRoot(source, roots)
++                ?? FindContainingRoot(physicalSource, roots);
+             if (sourceRoot != null)
+             {
+                 var sourceHealth = await storageHealthResolver.ResolveAsync(
+@@ -70,7 +74,8 @@ internal sealed class FilePublicationCapabilityResolver(
+                 sourceCanBeRetiredAfterVerifiedCopy =
+                     sourceHealth.CanRetireVerifiedSource;
+             }
+-            else if (MayOverlapUnresolvedRoot(source, roots))
++            else if (MayOverlapUnresolvedRoot(source, roots)
++                || MayOverlapUnresolvedRoot(physicalSource, roots))
+             {
+                 // A configured root whose persisted semantics are unavailable must not be
+                 // reclassified as an unmanaged external source. Retain until its boundary
+diff --git a/listenarr.infrastructure/FileSystem/SymlinkedAncestors.cs b/listenarr.infrastructure/FileSystem/SymlinkedAncestors.cs
+new file mode 100644
+index 000000000..56c120da0
+--- /dev/null
++++ b/listenarr.infrastructure/FileSystem/SymlinkedAncestors.cs
+@@ -0,0 +1,160 @@
++namespace Listenarr.Infrastructure.FileSystem;
++
++/// <summary>
++/// The physical path of an existing directory, with every symlinked component in the whole chain
++/// replaced by what it ultimately points at, and the links that chain passed through.
++/// </summary>
++/// <remarks>
++/// The pinned walk opens every segment with O_NOFOLLOW so a component cannot be substituted
++/// between the check and the use. On a destination, or a lock directory, that is load bearing:
++/// a swapped link redirects a write outside the configured boundary, which
++/// FileOperation_LinkedLockDirectoryAncestor_DoesNotCreateOutsideBoundary pins. On a source it
++/// buys less. The operation is a read and a hash, the resulting proof is an inode and a content
++/// digest, and both describe the object rather than the route taken to it. Resolving here does
++/// not weaken that proof.
++///
++/// What it does cost is the guarantee that the route itself cannot change, so this is
++/// deliberately narrow: the source capability walk resolves only for opening, and the publication
++/// plan uses the resolved path only to find the root a source physically belongs to.
++///
++/// Readarr draws the same line, in src/NzbDrone.Mono/Disk/SymbolicLinkResolver.cs, resolving
++/// the real path where physical identity matters and letting the OS follow links elsewhere.
++/// Its GetCompleteRealPath walks every path component in order, not only the last one, and
++/// bounds the walk at 32 hops, explicitly in the name of the same ELOOP the kernel enforces
++/// (SymbolicLinkResolver.cs lines 22-50). This resolver does the same, component by component,
++/// with a comparable cap.
++/// </remarks>
++internal static class SymlinkedAncestors
++{
++    /// <summary>
++    /// How many links this resolver will follow in one chain before refusing to go further, in
++    /// the spirit of the OS ELOOP limit (Linux defaults to 40; Readarr's own resolver caps at 32).
++    /// Bounds both a direct cycle the walk's own visited-set already catches sooner and a very long
++    /// non-repeating chain that never revisits a directory.
++    /// </summary>
++    private const int MaxChainHops = 40;
++
++    /// <summary>
++    /// The outcome of walking a directory's chain. <see cref="BlockingLink"/> is null when every
++    /// link in the chain resolved to something real; otherwise it names the specific link where the
++    /// walk broke: one already visited in this same walk (a cycle), one whose target could not be
++    /// inspected (most often because it does not exist), or the one where the hop cap was reached.
++    /// <see cref="Links"/> lists every link the walk followed, as spelled when it met them.
++    /// </summary>
++    internal readonly record struct ChainWalk(
++        string ResolvedPath,
++        string? BlockingLink,
++        IReadOnlyList<string> Links);
++
++    /// <summary>
++    /// Walks a directory's own symlink chain, then its ancestors', substituting each link's target
++    /// as it goes. Throws when a directory on the way cannot be inspected at all.
++    /// </summary>
++    internal static ChainWalk Walk(string directory)
++    {
++        var links = new List<string>();
++        var (resolvedPath, blockingLink) = Walk(
++            directory,
++            new HashSet<string>(StringComparer.Ordinal),
++            MaxChainHops,
++            links);
++        return new ChainWalk(resolvedPath, blockingLink, links);
++    }
++
++    /// <summary>
++    /// The directory with its whole chain resolved, or the directory unchanged when the chain is
++    /// broken or cannot be inspected.
++    /// </summary>
++    internal static string Resolve(string directory)
++    {
++        try
++        {
++            var walk = Walk(directory);
++
++            // A blocked walk (a cycle, a dangling target, or the hop cap) hands back the original,
++            // unresolved directory rather than whatever partial progress it made. A pinned walk
++            // then fails naturally on the first link it cannot follow.
++            return walk.BlockingLink == null ? walk.ResolvedPath : directory;
++        }
++        catch (Exception exception) when (IsInspectionFailure(exception))
++        {
++            // Unreadable, or the directory does not exist at all (unrelated to any link). Hand
++            // back what we were given and let the pinned walk report it.
++            return directory;
++        }
++    }
++
++    /// <summary>
++    /// A file path with its parent directory's chain resolved; the file name itself is kept.
++    /// </summary>
++    internal static string ResolveFileParent(string filePath)
++    {
++        var fullPath = Path.GetFullPath(filePath);
++        var parent = Path.GetDirectoryName(fullPath);
++        return string.IsNullOrEmpty(parent)
++            ? fullPath
++            : Path.Join(Resolve(parent), Path.GetFileName(fullPath));
++    }
++
++    /// <summary>
++    /// The physical directory a link itself sits in: its parent, resolved. Where the link leads
++    /// does not enter into it.
++    /// </summary>
++    internal static string PhysicalParentOf(string link)
++    {
++        var parent = Path.GetDirectoryName(link);
++        return string.IsNullOrEmpty(parent) ? link : Resolve(parent);
++    }
++
++    internal static bool IsInspectionFailure(Exception exception) => exception is
++        IOException or UnauthorizedAccessException or NotSupportedException
++            or System.Security.SecurityException;
++
++    private static (string ResolvedPath, string? BlockingLink) Walk(
++        string directory,
++        HashSet<string> visited,
++        int hopsRemaining,
++        List<string> links)
++    {
++        var resolved = Directory.ResolveLinkTarget(directory, returnFinalTarget: false);
++        if (resolved != null)
++        {
++            if (hopsRemaining <= 0 || !visited.Add(directory))
++            {
++                return (directory, directory);
++            }
++
++            links.Add(directory);
++            try
++            {
++                var inner = Walk(resolved.FullName, visited, hopsRemaining - 1, links);
++                return inner.BlockingLink == null
++                    ? inner
++                    : (directory, inner.BlockingLink);
++            }
++            catch (Exception exception) when (IsInspectionFailure(exception))
++            {
++                // What this link points at cannot even be inspected, most often because it does
++                // not exist. This link is where the chain breaks, not whatever it names.
++                return (directory, directory);
++            }
++        }
++
++        var parent = Path.GetDirectoryName(directory);
++        if (string.IsNullOrEmpty(parent) || parent == directory)
++        {
++            return (directory, null);
++        }
++
++        var parentWalk = Walk(parent, visited, hopsRemaining, links);
++        if (parentWalk.BlockingLink != null)
++        {
++            return (directory, parentWalk.BlockingLink);
++        }
++
++        var resolvedPath = parentWalk.ResolvedPath == parent
++            ? directory
++            : Path.Join(parentWalk.ResolvedPath, Path.GetFileName(directory));
++        return (resolvedPath, null);
++    }
++}
+diff --git a/tests/Features/Infrastructure/FileSystem/FileMoverLinkedSourceRootPolicyTests.cs b/tests/Features/Infrastructure/FileSystem/FileMoverLinkedSourceRootPolicyTests.cs
+new file mode 100644
+index 000000000..fcb9db8b9
+--- /dev/null
++++ b/tests/Features/Infrastructure/FileSystem/FileMoverLinkedSourceRootPolicyTests.cs
+@@ -0,0 +1,102 @@
++/*
++ * Listenarr - Audiobook Management System
++ * Copyright (C) 2024-2026 Listenarr Contributors
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU Affero General Public License as published
++ * by the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU Affero General Public License for more details.
++ *
++ * You should have received a copy of the GNU Affero General Public License
++ * along with this program. If not, see <https://www.gnu.org/licenses/>.
++ */
++using Listenarr.Tests.Common;
++
++namespace Listenarr.Tests.Features.Infrastructure.FileSystem;
++
++/// <summary>
++/// A source reported through a link outside every root can physically be a file a root holds.
++/// That root's storage policy has to decide what happens to it, exactly as when the same file is
++/// reported at its in-root path.
++/// </summary>
++[Trait("Area", "FileSystem")]
++[Trait("Name", "FileMoverLinkedSourceRootPolicyTests")]
++[Trait("Category", "PublicationCapability")]
++public sealed class FileMoverLinkedSourceRootPolicyTests : BaseTests
++{
++    private const string HoldingRootName = "Holding root";
++
++    public FileMoverLinkedSourceRootPolicyTests()
++    {
++        Init(builder => builder.WithSingleton<IRootFolderStorageHealthResolver>(new HoldingRootForbidsMutation()));
++    }
++
++    [DirectoryLinkTheory]
++    [InlineData(false)]
++    [InlineData(true)]
++    [Trait("Scenario", "A Move of a file a root holds follows that root's mutation policy however it is reported")]
++    public async Task Move_SourceInAHoldingRoot_IsBlockedByThatRootWhetherReportedThereOrThroughALink(bool throughLink)
++    {
++        var temp = FileService.GetTempDirectory("linked-source-root-policy");
++        var holding = Path.Join(temp, "holding");
++        await AddAuthorizedRootAsync(holding, HoldingRootName);
++        var held = Directory.CreateDirectory(Path.Join(holding, "Other", "Book")).FullName;
++        var heldFile = Path.Join(held, "book.m4b");
++        await File.WriteAllTextAsync(heldFile, "audio");
++        var library = Path.Join(temp, "library");
++        await AddAuthorizedRootAsync(library, "Library root");
++        var downloads = Directory.CreateDirectory(Path.Join(temp, "dl")).FullName;
++        Directory.CreateSymbolicLink(Path.Join(downloads, "incoming"), held);
++        var source = throughLink ? Path.Join(downloads, "incoming", "book.m4b") : heldFile;
++        var destination = Path.Join(library, "Author", "Book", "book.m4b");
++        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
++
++        var capability = await _provider.GetRequiredService<IFilePublicationSourceCapability>()
++            .CheckAsync(source);
++        Assert.True(capability.IsSupported, capability.Reason);
++        var plan = await _provider.GetRequiredService<IFilePublicationCapabilityResolver>()
++            .ResolveAsync(FileAction.Move, source, destination, capability.SourceProof!.Value);
++        Assert.Equal(FilePublicationExecutionMode.Durable, plan.Mode);
++        var preparation = await _provider.GetRequiredService<IFileMover>()
++            .PrepareActionForRegistrationDetailedAsync(
++                plan,
++                source,
++                destination,
++                Guid.NewGuid(),
++                expectedRegisteredPhysicalObjectIdentity: null,
++                capability.SourceProof.Value);
++        using var lease = preparation.RegistrationLease;
++
++        Assert.Equal(FilePublicationOutcome.Blocked, preparation.Outcome);
++        Assert.True(File.Exists(heldFile), "the holding root's file was touched");
++        Assert.False(File.Exists(destination), "a blocked Move published its destination");
++    }
++
++    // The holding root may retire sources, so the plan stays a durable Move, but it does not
++    // authorize filesystem mutation, which is what the Move itself has to respect.
++    private sealed class HoldingRootForbidsMutation : IRootFolderStorageHealthResolver
++    {
++        public Task<RootFolderStorageObservation> ResolveAsync(
++            RootFolder root,
++            CancellationToken cancellationToken = default) =>
++            Task.FromResult(root.Name == HoldingRootName
++                ? new RootFolderStorageObservation(
++                    RootFolderStorageState.Limited, RootFolderStorageReason.MutationCapabilityUnavailable,
++                    "The holding root does not authorize filesystem mutation.",
++                    CanConfirmCurrentFolder: false, CanChangePath: false,
++                    CanMutateFilesystem: false, ConfirmationToken: null,
++                    CanPublishNewFiles: true, CanRetireSource: true,
++                    CanRetireAfterVerifiedCopy: true)
++                : new RootFolderStorageObservation(
++                    RootFolderStorageState.Healthy, RootFolderStorageReason.None, null,
++                    CanConfirmCurrentFolder: true, CanChangePath: true,
++                    CanMutateFilesystem: true, ConfirmationToken: null,
++                    CanPublishNewFiles: true, CanRetireSource: true,
++                    CanRetireAfterVerifiedCopy: true));
++    }
++}
+diff --git a/tests/Features/Infrastructure/FileSystem/FileMoverSymlinkedSourceBoundaryTests.cs b/tests/Features/Infrastructure/FileSystem/FileMoverSymlinkedSourceBoundaryTests.cs
+index c4a7597c1..01069c204 100644
+--- a/tests/Features/Infrastructure/FileSystem/FileMoverSymlinkedSourceBoundaryTests.cs
++++ b/tests/Features/Infrastructure/FileSystem/FileMoverSymlinkedSourceBoundaryTests.cs
+@@ -137,6 +137,54 @@ public sealed class FileMoverSymlinkedSourceBoundaryTests : BaseTests
+         AssertRefusalNamesLink(outcome, Path.Join(root, "incoming"));
+     }
+ 
++    // The same link inside the root, reached through an alias of the root rather than the root's
++    // configured spelling. Where the link physically sits decides, not how the path is spelled.
++    [DirectoryLinkFact]
++    [Trait("Scenario", "A link inside a root reached through an alias of the root is refused")]
++    public async Task ManagedRoot_ReachedThroughAnAlias_LinkLeavingEveryRoot_IsRefused()
++    {
++        var temp = FileService.GetTempDirectory("boundary-escape-alias");
++        var outsideFile = Path.Join(Directory.CreateDirectory(Path.Join(temp, "outside", "Book")).FullName, "book.m4b");
++        await File.WriteAllTextAsync(outsideFile, "audio");
++        var root = Path.Join(temp, "library");
++        await AddAuthorizedRootAsync(root, "Escape root");
++        Directory.CreateSymbolicLink(Path.Join(root, "incoming"), Path.Join(temp, "outside"));
++        var alias = Path.Join(temp, "alias");
++        Directory.CreateSymbolicLink(alias, root);
++
++        var outcome = await PublishAsync(
++            FileAction.Move,
++            Path.Join(alias, "incoming", "Book", "book.m4b"),
++            Path.Join(root, "Author", "Book", "book.m4b"));
++
++        Assert.True(File.Exists(outsideFile), "the file outside every root was retired through a link inside the root");
++        Assert.False(outcome.Supported, "a link inside a configured root carried the source outside every root");
++        AssertRefusalNamesLink(outcome, alias);
++    }
++
++    [DirectoryLinkFact]
++    [Trait("Scenario", "A link inside a root configured through a link is refused at the root's real path")]
++    public async Task ManagedRoot_ConfiguredThroughALink_LinkLeavingEveryRoot_IsRefusedAtTheRealPath()
++    {
++        var temp = FileService.GetTempDirectory("boundary-escape-linked-root");
++        var outsideFile = Path.Join(Directory.CreateDirectory(Path.Join(temp, "outside", "Book")).FullName, "book.m4b");
++        await File.WriteAllTextAsync(outsideFile, "audio");
++        var real = Directory.CreateDirectory(Path.Join(temp, "real-library")).FullName;
++        Directory.CreateSymbolicLink(Path.Join(real, "incoming"), Path.Join(temp, "outside"));
++        var linkedRoot = Path.Join(temp, "linked-root");
++        Directory.CreateSymbolicLink(linkedRoot, real);
++        await AddAuthorizedRootAsync(linkedRoot, "Escape root");
++
++        var outcome = await PublishAsync(
++            FileAction.Move,
++            Path.Join(real, "incoming", "Book", "book.m4b"),
++            Path.Join(linkedRoot, "Author", "Book", "book.m4b"));
++
++        Assert.True(File.Exists(outsideFile), "the file outside every root was retired through a link inside the root");
++        Assert.False(outcome.Supported, "a link inside a configured root carried the source outside every root");
++        AssertRefusalNamesLink(outcome, Path.Join(real, "incoming"));
++    }
++
+     // Known gap, pinned as it stands rather than skipped. A chain outside every root resolves at
+     // the capability gate, but preparing the publication then fails closed in its path-lock step:
+     // nothing is published and the source is untouched. A skip would stop exercising either
+diff --git a/tests/Features/Infrastructure/FileSystem/FilePublicationCapabilityResolverTests.cs b/tests/Features/Infrastructure/FileSystem/FilePublicationCapabilityResolverTests.cs
+index 640727692..e3d361844 100644
+--- a/tests/Features/Infrastructure/FileSystem/FilePublicationCapabilityResolverTests.cs
++++ b/tests/Features/Infrastructure/FileSystem/FilePublicationCapabilityResolverTests.cs
+@@ -356,6 +356,36 @@ public sealed class FilePublicationCapabilityResolverTests : BaseTests
+         Assert.Equal(CompatibilityCleanupOwner.None, plan.CleanupOwner);
+     }
+ 
++    [DirectoryLinkFact]
++    public async Task ResolveAsync_MoveSourceLinkedIntoARoot_IsRetiredOnlyAsThatRootAllows()
++    {
++        var destinationRoot = BuildRoot();
++        var holdingRoot = BuildRoot();
++        holdingRoot.Id = 94;
++        holdingRoot.Path = FileService.GetTempDirectory("publication-holding-root");
++        var held = Directory.CreateDirectory(Path.Join(holdingRoot.Path, "Other", "Book")).FullName;
++        var downloads = FileService.GetTempDirectory("publication-linked-source");
++        Directory.CreateSymbolicLink(Path.Join(downloads, "incoming"), held);
++        var repository = new Mock<IRootFolderRepository>(MockBehavior.Strict);
++        repository.Setup(candidate => candidate.GetAllAsync()).ReturnsAsync([destinationRoot, holdingRoot]);
++        var health = new Mock<IRootFolderStorageHealthResolver>(MockBehavior.Strict);
++        health.Setup(candidate => candidate.ResolveAsync(destinationRoot, It.IsAny<CancellationToken>()))
++            .ReturnsAsync(StrongWritableObservation());
++        health.Setup(candidate => candidate.ResolveAsync(holdingRoot, It.IsAny<CancellationToken>()))
++            .ReturnsAsync(WeakWritableObservation());
++        var resolver = new FilePublicationCapabilityResolver(repository.Object, health.Object);
++
++        var plan = await resolver.ResolveAsync(FileAction.Move,
++            Path.Join(downloads, "incoming", "source.m4b"),
++            Path.Join(destinationRoot.Path, "target.m4b"), ContentOnlyProof());
++
++        // Reported outside every root, the source is physically a file the holding root keeps,
++        // and that root cannot retire it, so the Move must not be planned as one that deletes it.
++        Assert.Equal(FilePublicationExecutionMode.AdditiveCopyRetainSource, plan.Mode);
++        Assert.Equal(FilePublicationSourceDisposition.Retained, plan.SourceDisposition);
++        health.VerifyAll();
++    }
++
+     [Theory]
+     [InlineData(0xff534d42u, false)]
+     [InlineData(0xfe534d42u, false)]
+-- 
+2.53.0
+

@@ -1,0 +1,1 @@
+Three local-only commits from the aa68 worktree (branch aa68/work, tip 0c195241b), kept as patches because they do not apply cleanly on the published stack. Base in their original clone: 21dece05a. Apply with git am onto a matching base.
