@@ -1,7 +1,8 @@
 """Command line: ``plan``, ``apply``, ``verify``, ``explain-veto``, ``explain-identity`` and the quarantine restore.
 
 The restore commands are ``restore-explain`` (read-only, counts only), ``restore-plan`` (read-only, writes a move
-plan), ``restore-move`` and ``restore-undo`` (the only commands that change library files; see ``qrestore``).
+plan), ``restore-move`` and ``restore-undo`` (the only commands that change library files; see ``qrestore``), and
+``restore-basepath`` (a DB-only write of the planned books' BasePath).
 
 Exit codes: 0 success; 2 usage or refused precondition (nothing written); 3 APPLY refused at least one
 entry and rolled everything back (nothing written; refusals listed in the report, re-plan), or PLAN wrote a
@@ -228,7 +229,7 @@ def _restore_survey(args: argparse.Namespace) -> tuple[inventory.Library, qresto
     library = inventory.Library(roots, books, files)
     if not _walk(library, path_map, folders[:len(quarantine)], folders[len(quarantine):]):
         return None
-    return library, qrestore.survey(library, path_map, args.workers, args.tags_waiver, args.db), path_map
+    return library, qrestore.survey(library, path_map, args.workers, args.db), path_map
 
 
 def _new_file_outside_roots(value: str, host_roots: list[str]) -> Path | None:
@@ -327,10 +328,33 @@ def _restore_move(args: argparse.Namespace) -> int:
     except qrestore.MoveRefused as error:
         log.error("refused, nothing moved: %s", error)
         return 3
-    except OSError as error:
+    except qrestore.MoveStopped as error:
         log.error("stopped part-way, do not start the service: %s; run restore-undo on the journal", error)
         return 4
     print("\n".join(f"{key} {value}" for key, value in sorted(done.items())))
+    return 0
+
+
+def _restore_basepath(args: argparse.Namespace) -> int:
+    plan_path = Path(args.plan).resolve()
+    if file_sha256(plan_path) != args.plan_sha256.lower():
+        log.error("restore plan sha256 does not match the reviewed value")
+        return 2
+    if not args.dry_run and not args.confirm_service_stopped:
+        log.error("restore-basepath needs --confirm-service-stopped (or --dry-run): stop Listenarr first")
+        return 2
+    holders, _ = processes_holding(args.db)
+    if holders:
+        log.error("database is open in process(es) %s; stop the service first", holders)
+        return 2
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    out_dir = Path(args.out).resolve() if args.out else plan_path.parent
+    try:
+        books = qrestore.apply_basepaths(args.db, plan, out_dir, args.dry_run)
+    except qrestore.BasePathRefused as error:
+        log.error("refused, nothing written: %s", error)
+        return 3
+    print(f"basepath_updates {len(books)}{' (dry run, rolled back)' if args.dry_run else ''}")
     return 0
 
 
@@ -435,7 +459,9 @@ def _add_restore_commands(sub: argparse._SubParsersAction[argparse.ArgumentParse
         command.add_argument("--workers", type=int, default=4, help="parallel ffprobe processes (default 4)")
         command.add_argument("--restore-from", nargs="+", action="extend", required=True, metavar="DIR",
                              help="quarantine folder(s) outside every root whose files may go back (taken literally)")
-        _add_narrowed_rules(command)
+        command.add_argument("--quarantine-dir", nargs="+", action="extend", metavar="DIR",
+                             help="other quarantine folder(s) holding hard links (the duplicate-quarantine); "
+                                  "no tag waiver exists for a restore")
 
     explain = sub.add_parser("restore-explain", help="read-only, counts only: which quarantined books may go back")
     survey_arguments(explain)
@@ -457,6 +483,16 @@ def _add_restore_commands(sub: argparse._SubParsersAction[argparse.ArgumentParse
     move.add_argument("--dry-run", action="store_true", help="check every precondition, move nothing")
     move.add_argument("--confirm-service-stopped", action="store_true")
     move.set_defaults(handler=_restore_move)
+
+    basepath = sub.add_parser("restore-basepath", help="set BasePath to the restore target for the plan's books "
+                                                       "whose BasePath is not it (one transaction, DB only)")
+    basepath.add_argument("--db", required=True, help="the live Listenarr DB file (service stopped)")
+    basepath.add_argument("--plan", required=True)
+    basepath.add_argument("--plan-sha256", required=True)
+    basepath.add_argument("--out", help="where the undo SQL goes (default: next to the plan)")
+    basepath.add_argument("--dry-run", action="store_true", help="check every precondition, then roll back")
+    basepath.add_argument("--confirm-service-stopped", action="store_true")
+    basepath.set_defaults(handler=_restore_basepath)
 
     undo = sub.add_parser("restore-undo", help="reverse a restore-move journal, newest step first")
     undo.add_argument("--journal", required=True)

@@ -81,12 +81,15 @@ class Restore:
         self.target((title, author), asin).mkdir(parents=True)
         return folder
 
-    def retag_with_asin(self, row: int, asin: str) -> None:
-        """Replace a row's file with a new recording carrying an ASIN tag, and register that object instead."""
+    def retag(self, row: int, title: str, asin: str | None = None) -> None:
+        """Replace a row's file with a new recording tagged ``title`` (title and album) and, if given, an ASIN tag;
+        register that object instead (what a wrong-content import, or a tagged release, leaves)."""
         path = self.library.rows[row]
+        extra = ["-metadata", f"asin={asin}"] if asin else []
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=777:duration=3",
                         "-c:a", "libmp3lame", "-b:a", "64k", "-ar", "44100", "-ac", "1", "-metadata",
-                        f"title={PRINCESS[0]}", "-metadata", f"asin={asin}", str(path) + ".new.mp3"], check=True)
+                        f"title={title}", "-metadata", f"album={title}", *extra, str(path) + ".new.mp3"],
+                       check=True)
         os.replace(str(path) + ".new.mp3", path)
         probe = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json",
                                            str(path)], check=True, capture_output=True, text=True).stdout)
@@ -263,31 +266,64 @@ def test_a_row_whose_audio_facts_disagree_is_not_restorable(restore: Restore) ->
     assert restore.classes() == {1: "row-content-disagrees"}
 
 
-def test_tags_naming_another_book_refuse_unless_waived(restore: Restore) -> None:
+def test_tags_naming_another_book_always_refuse(restore: Restore) -> None:
     rows = restore.book(1, PRINCESS, PRINCESS_ASIN, album="The Jungle Book")
     restore.library.add_book(2, JUNGLE, 1)  # the other library book, live under the root
     restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
     assert restore.classes()[1] == "tags-name-another-book"
-    assert restore.classes("--tags-waiver", "all")[1] == "restorable"
+    with pytest.raises(SystemExit):  # no waiver exists for a restore
+        cli.main(["restore-explain", *restore.survey_args("--tags-waiver", "all")])
 
 
-def test_tags_naming_another_book_are_never_waived_without_a_row(restore: Restore) -> None:
+def test_tags_naming_another_book_refuse_a_book_without_a_row(restore: Restore) -> None:
     restore.library.add_book(2, JUNGLE, 1)
     zero = restore.zero_row_book(3, "The Jungle Book")
-    assert restore.classes("--tags-waiver", "all")[3] == "tags-name-another-book"
+    assert restore.classes()[3] == "tags-name-another-book"
     assert zero.exists()
+
+
+def test_files_tagged_as_a_work_outside_the_library_are_unconfirmed(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    for row in rows:
+        restore.retag(row, "Little Men")  # a wrong-content import: a work that is not a library book
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    assert restore.classes() == {1: "content-unconfirmed"}
+
+
+def test_one_file_not_naming_the_book_leaves_it_unconfirmed(restore: Restore,
+                                                            capsys: pytest.CaptureFixture[str]) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.retag(rows[1], "Little Men")
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    counts = restore.explain(capsys)
+    assert counts["content-unconfirmed"] == "1" and counts["some"] == "1"
+
+
+def test_a_zero_row_book_tagged_as_another_work_is_unconfirmed(restore: Restore) -> None:
+    restore.zero_row_book(3, "Little Men")
+    assert restore.classes() == {3: "content-unconfirmed"}
+
+
+def test_an_own_asin_tag_confirms_a_file_without_the_title(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.retag(rows[0], "Chapter One", PRINCESS_ASIN)
+    restore.retag(rows[1], "Chapter Two", PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    assert restore.classes() == {1: "restorable"}
+    restore.retag(rows[1], "Chapter Two")  # the same, without the ASIN tag: nothing names the book
+    assert restore.classes() == {1: "content-unconfirmed"}
 
 
 def test_an_asin_tag_naming_another_edition_is_not_restorable(restore: Restore) -> None:
     rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
-    restore.retag_with_asin(rows[0], JUNGLE_ASIN)
+    restore.retag(rows[0], PRINCESS[0], JUNGLE_ASIN)
     restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
     assert restore.classes() == {1: "asin-tag-not-own"}
 
 
 def test_an_asin_tag_naming_this_book_is_restorable(restore: Restore) -> None:
     rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
-    restore.retag_with_asin(rows[0], PRINCESS_ASIN)
+    restore.retag(rows[0], PRINCESS[0], PRINCESS_ASIN)
     restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
     assert restore.classes() == {1: "restorable"}
 
@@ -342,7 +378,27 @@ def test_files_that_do_not_fit_the_catalog_runtime_are_not_restorable(restore: R
     restore.set_book(1, Runtime=10)
     assert restore.classes() == {1: "runtime-misfit"}
     restore.set_book(1, Runtime=None)
-    assert restore.classes() == {1: "restorable"}  # an unknown runtime is reported, not a refusal
+    assert restore.classes() == {1: "runtime-unknown"}  # no catalog runtime confirms nothing
+    restore.set_book(1, Runtime=0.1)
+    assert restore.classes() == {1: "restorable"}  # control: 6 s against 6 s fits
+
+
+def test_a_runtime_merely_near_is_not_restorable(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    folder = restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    long_render(folder / "part-3.mp3", PRINCESS[0], 1200)  # 20 min of this book's audio beside the two rows
+    restore.set_book(1, Runtime=21.5)  # 1,290 s against about 1,206 s: 6.5 % off, beyond max(60 s, 1 %)
+    assert restore.classes() == {1: "runtime-near"}
+    restore.set_book(1, Runtime=20.1)
+    assert restore.classes() == {1: "restorable"}
+
+
+def test_an_unknown_runtime_does_not_let_a_merged_in_copy_through(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    folder = restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    long_render(folder / "merged-in.mp3", PRINCESS[0], 120)
+    restore.set_book(1, Runtime=None)
+    assert restore.classes() == {1: "runtime-unknown"}
 
 
 def test_without_a_target_folder_nothing_is_restorable(restore: Restore) -> None:

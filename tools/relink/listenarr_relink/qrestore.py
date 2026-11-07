@@ -12,8 +12,9 @@ A book is restorable only when every check below passes; the first that fails na
   the root's dataset nor a file PLAN would match under the root (a book is restored whole or not at all, as
   PLAN re-links it whole);
 * ``row-content-disagrees``: a file's duration, codec, sample rate or channels disagree with its row;
-* ``tags-name-another-book``: a file's album/title tags name another library book (``matcher.other_book_named``)
-  and ``--tags-waiver`` does not cover it; the waiver needs a physical identity match, as in PLAN;
+* ``tags-name-another-book``: a file's album/title tags name another library book (``matcher.other_book_named``).
+  Never waived here: PLAN's waiver rests on the file being the row's own object, while the open question for a
+  quarantined book is whether that object was ever the right content;
 * ``asin-tag-not-own``: a file carries an ASIN tag that is not the book's ``Asin``;
 * ``no-asin`` / ``source-folder-id-not-asin``: the files' folder under --restore-from does not carry the book's
   ``Asin`` as its bracketed id;
@@ -21,6 +22,11 @@ A book is restorable only when every check below passes; the first that fails na
 * ``runtime-misfit``: the summed duration of the book's files (restored, other stale rows' objects under the
   root, live rows) is more than 10 % off the catalog runtime. Audio beside the quarantined files that no row
   holds (rows the service dropped) is restored with them and counted here, so a merged-in second copy fails;
+* ``runtime-unknown`` / ``runtime-near``: the catalog runtime is missing, a duration could not be read, or the
+  sum is within 10 % but not within max(60 s, 1 %): the runtime does not positively confirm the book;
+* ``content-unconfirmed``: some file does not positively name this book, by its album/title tags carrying this
+  book's whole (distinctive) title or by an ASIN tag equal to its ``Asin``. A file merely not naming another
+  library book is not evidence: most wrong-content grabs are works that are not in the library;
 * ``no-target-folder`` / ``several-target-folders``: no single folder under a root carries the book's ``Asin``
   (``BasePath`` wins when it is one of them);
 * ``target-holds-other-audio``: that folder already holds audio no row of this book holds (a second copy, or
@@ -32,7 +38,7 @@ A book is restorable only when every check below passes; the first that fails na
 * ``object-shared``: a file would go back for two books (both are refused).
 
 A book with no file row at all (the service dropped its rows) is a candidate when exactly one folder under
---restore-from carries its ``Asin``; all its audio is restored, with the tag veto never waived (no identity).
+--restore-from carries its ``Asin``; all its audio is restored, under the same checks.
 Registering those files is left to the service (a per-book scan of a book with no rows removes nothing).
 """
 
@@ -42,6 +48,7 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import stat
 from collections import Counter, defaultdict
 from collections.abc import Callable
@@ -53,6 +60,7 @@ from typing import Any
 
 from listenarr_relink import TOOL_NAME, identity, media, physical
 from listenarr_relink.inventory import (
+    BOOK_COLUMNS,
     BookRow,
     DiskFile,
     FileRow,
@@ -60,8 +68,19 @@ from listenarr_relink.inventory import (
     QuarantineName,
     lstat_or_none,
     open_read_only,
+    row_digest,
 )
-from listenarr_relink.matcher import _consistency, _parallel, _resolves, match, other_book_named, root_of, veto_keys
+from listenarr_relink.matcher import (
+    _consistency,
+    _parallel,
+    _resolves,
+    match,
+    other_book_named,
+    own_title_tagged,
+    root_of,
+    tag_tokens,
+    veto_keys,
+)
 from listenarr_relink.paths import PathMap, is_audio, is_within
 from listenarr_relink.plan_io import file_sha256
 
@@ -71,8 +90,9 @@ RESTORE_PLAN_FORMAT = 1
 RESTORABLE = "restorable"
 BOOK_CLASSES = ("restorable", "not-every-row-found", "row-content-disagrees", "tags-name-another-book",
                 "asin-tag-not-own", "no-asin", "source-folder-id-not-asin", "several-source-folders",
-                "runtime-misfit", "no-target-folder", "several-target-folders", "target-holds-other-audio",
-                "target-name-taken", "cross-device", "hardlinked-elsewhere", "object-shared")
+                "runtime-misfit", "runtime-unknown", "runtime-near", "content-unconfirmed", "no-target-folder",
+                "several-target-folders", "target-holds-other-audio", "target-name-taken", "cross-device",
+                "hardlinked-elsewhere", "object-shared")
 RUNTIME_FIT_SECONDS = 60.0
 RUNTIME_FIT_SHARE = 0.01
 RUNTIME_NEAR_SHARE = 0.10
@@ -139,8 +159,7 @@ class RestoreBook:
     target_host: str | None = None
     runtime: str = "unknown"
     target_audio_runtime: str | None = None  # runtime fit of the audio already in the target, when there is some
-    tags_waived: int = 0
-    tags_waivable: int = 0
+    own_evidence: int = 0  # files that positively name this book (own title tagged, or own ASIN tag)
     blocklisted: bool = False
     target_audio: list[str] = field(default_factory=list)  # audio already in the target (the book's own live rows)
     target_audio_files: int = 0  # audio in the target that is not this book's (counted when it refuses)
@@ -160,7 +179,6 @@ class Survey:
 
     books: list[RestoreBook]
     rows: Counter[str]
-    tags_waiver: str
 
 
 def _host_roots(library: Library, path_map: PathMap) -> list[str]:
@@ -181,11 +199,8 @@ def _blocklisted_books(db_file: str | None) -> set[int]:
         connection.close()
 
 
-def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str = "none",
-           db_file: str | None = None) -> Survey:
+def survey(library: Library, path_map: PathMap, workers: int, db_file: str | None = None) -> Survey:
     """Classify every book whose stale rows' objects, or whose only folder, lie under a --restore-from folder."""
-    if tags_waiver not in ("none", "same-series", "all"):
-        raise ValueError(f"tags_waiver must be none, same-series or all, not {tags_waiver!r}")
     rows: Counter[str] = Counter()
     host_roots = _host_roots(library, path_map)
     files_by_book: dict[int, list[FileRow]] = defaultdict(list)
@@ -211,7 +226,7 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
     # What PLAN decides today for the rows whose objects are under a root: their books may be restored only
     # when PLAN would re-link those rows too, once the quarantined siblings are back (book-atomic rule).
     plan_today = {d.row.id: d for d in match(library, path_map, workers, hash_chosen=False, identity_only=True,
-                                             tags_waiver=tags_waiver).decisions}
+                                             tags_waiver="none").decisions}
 
     def root_device_of(row: FileRow) -> int | None:
         root = root_of(row.path, library.roots)
@@ -307,9 +322,9 @@ def survey(library: Library, path_map: PathMap, workers: int, tags_waiver: str =
             assert isinstance(probe, media.Probe)
             item.probe = probe
         restore.blocklisted = restore.book.id in blocklisted
-        _check(restore, library, path_map, host_roots, rows_by_id, other_titles, other_names, tags_waiver, rows,
+        _check(restore, library, path_map, host_roots, rows_by_id, other_titles, other_names, rows,
                probes)
-    return Survey(sorted(candidates.values(), key=lambda b: b.book.id), rows, tags_waiver)
+    return Survey(sorted(candidates.values(), key=lambda b: b.book.id), rows)
 
 
 def _add_unregistered(restore: RestoreBook, library: Library, rows: Counter[str],
@@ -343,7 +358,7 @@ def _accept_links(_file: DiskFile) -> bool:
 
 def _check(restore: RestoreBook, library: Library, path_map: PathMap, host_roots: list[str],
            rows_by_id: dict[int, FileRow], other_titles: dict[frozenset[str], int],
-           other_names: dict[int, list[str]], tags_waiver: str, rows: Counter[str],
+           other_names: dict[int, list[str]], rows: Counter[str],
            probes: dict[str, object]) -> None:
     book = restore.book
     asin = book.context.get("Asin", "").strip().casefold()
@@ -365,19 +380,15 @@ def _check(restore: RestoreBook, library: Library, path_map: PathMap, host_roots
         named = other_book_named(probe.tags, others, book, row is not None)
         if named is not None:
             rows["tags-name-another-book"] += 1
-            other = library.books.get(named)
-            same_series = bool(other and book.series_keys & other.series_keys)
-            waivable = row is not None and asin != "" and own_folder_id(
-                book_folder(item.source.host_path, _restore_dir_of(item.source, library)) or "") == asin
-            restore.tags_waivable += waivable
-            if waivable and (tags_waiver == "all" or (tags_waiver == "same-series" and same_series)):
-                restore.tags_waived += 1
-            else:
-                restore.refuse("tags-name-another-book", f"tags name audiobook {named}")
+            restore.refuse("tags-name-another-book", f"tags name audiobook {named}")
         tagged = asin_tags(probe.tags)
         rows["asin-tag-absent" if not tagged else "asin-tag-own" if tagged == {asin} else "asin-tag-other"] += 1
         if tagged and tagged != {asin}:
             restore.refuse("asin-tag-not-own", "an ASIN tag is not the book's Asin")
+        title_own = own_title_tagged(tag_tokens(probe.tags), book)
+        rows["own-title-tagged" if title_own else "own-title-not-tagged"] += 1
+        if title_own or (bool(asin) and tagged == {asin}):
+            restore.own_evidence += 1
     if not asin:
         restore.refuse("no-asin", "the book has no Asin")
     source_folders = {book_folder(f.source.host_path, _restore_dir_of(f.source, library)) for f in restore.files}
@@ -391,6 +402,13 @@ def _check(restore: RestoreBook, library: Library, path_map: PathMap, host_roots
     restore.runtime = runtime_fit(total, book.context.get("Runtime"))
     if restore.runtime == "misfit":
         restore.refuse("runtime-misfit", "summed duration is more than 10 % off the catalog runtime")
+    elif restore.runtime == "unknown":
+        restore.refuse("runtime-unknown", "no catalog runtime, or a duration could not be read")
+    elif restore.runtime == "near":
+        restore.refuse("runtime-near", "summed duration is within 10 % but not within max(60 s, 1 %)")
+    if restore.own_evidence < len(restore.files):
+        restore.refuse("content-unconfirmed", f"{len(restore.files) - restore.own_evidence} file(s) do not name "
+                                              "this book (own title in the tags, or own ASIN tag)")
     _choose_target(restore, library, path_map, asin, rows_by_id)
     _place(restore, library, path_map, host_roots, other_names, asin)
 
@@ -475,7 +493,6 @@ def summary_lines(library: Library, result: Survey) -> list[str]:
     restorable = [b for b in result.books if b.verdict == RESTORABLE]
     holding = [b for b in result.books if b.target_audio_files]
     lines = [
-        f"tags_waiver {result.tags_waiver}",
         f"restore_from_dirs {len(library.restore_dirs)}",
         f"restore_source_audio_files {len(library.restore_source)}",
         f"restore_source_folders_with_id {sum(1 for f in library.restore_folders if own_folder_id(f))}",
@@ -497,8 +514,10 @@ def summary_lines(library: Library, result: Survey) -> list[str]:
         f"  some {sum(1 for b in holding if 0 < b.target_audio_repeats < b.target_audio_files)}",
         f"  none {sum(1 for b in holding if b.target_audio_repeats == 0)}",
         f"basepath_is_target {sum(1 for b in result.books if b.target and b.book.base_path.rstrip('/') == b.target)}",
-        f"tags_waivable {sum(b.tags_waivable for b in result.books)}",
-        f"tags_waived {sum(b.tags_waived for b in result.books)}",
+        "books_by_files_naming_this_book (every file / some / none):",
+        f"  all {sum(1 for b in result.books if b.files and b.own_evidence == len(b.files))}",
+        f"  some {sum(1 for b in result.books if 0 < b.own_evidence < len(b.files))}",
+        f"  none {sum(1 for b in result.books if b.files and b.own_evidence == 0)}",
         f"books_with_a_blocklisted_release {sum(1 for b in result.books if b.blocklisted)}",
         f"books_with_a_blocklisted_release_restorable {sum(1 for b in restorable if b.blocklisted)}",
         f"restorable_files {sum(len(b.files) for b in restorable)}",
@@ -550,7 +569,6 @@ def build_restore_plan(result: Survey, chosen: frozenset[int], library: Library)
         "created_utc": datetime.now(UTC).isoformat(timespec="seconds"),
         "restore_dirs": library.restore_dirs,
         "quarantine_dirs": library.quarantine_dirs,
-        "tags_waiver": result.tags_waiver,
         "summary": {"books": len(books), "files": sum(len(b.files) for b in books),
                     "rows": sum(1 for b in books for f in b.files if f.row_id is not None),
                     "zero_row_books": sum(1 for b in books if b.kind == "zero-rows")},
@@ -560,6 +578,11 @@ def build_restore_plan(result: Survey, chosen: frozenset[int], library: Library)
             "target": b.target,
             "target_host": b.target_host,
             "basepath_is_target": b.book.base_path.rstrip("/") == b.target,
+            # A per-book scan scans BasePath: a book whose BasePath is not the target gets it set (restore-basepath)
+            # before any scan registers its row-less files.
+            "basepath_update": None if b.book.base_path.rstrip("/") == b.target else {
+                "was": b.book.values.get("BasePath"), "set": b.target,
+                "precondition": {"row_sha256": b.book.digest()}},
             "target_audio": b.target_audio,
             "files": [{"row_id": f.row_id, "source": f.source.host_path, "destination": f.destination,
                        "pin": _stat_pin(f.source)} for f in b.files],
@@ -567,8 +590,64 @@ def build_restore_plan(result: Survey, chosen: frozenset[int], library: Library)
     }
 
 
+class BasePathRefused(Exception):
+    """A BasePath update failed its precondition; nothing was written."""
+
+
+def apply_basepaths(db_file: str, plan: dict[str, Any], out_dir: Path, dry_run: bool) -> list[int]:
+    """Set each planned book's BasePath to its restore target, in one transaction, or refuse and write nothing.
+
+    Each book row must still equal what the plan read (digest of ``inventory.BOOK_COLUMNS``) and the target folder
+    must exist. Writes the undo SQL to ``out_dir`` (``undo-basepath-<stamp>.sql``) when it commits.
+    """
+    updates = [(b, b["basepath_update"]) for b in plan["books"] if b.get("basepath_update")]
+    connection = sqlite3.connect(db_file, timeout=0, isolation_level=None)
+    connection.row_factory = sqlite3.Row
+    undo: list[str] = []
+    refused: list[str] = []
+    try:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError as error:
+            raise BasePathRefused(f"database is locked by another writer: {error}") from error
+        for book, update in updates:
+            book_id = int(book["audiobook_id"])
+            row = connection.execute(f"SELECT {', '.join(BOOK_COLUMNS)} FROM Audiobooks WHERE Id = ?",
+                                     (book_id,)).fetchone()
+            if row is None or row_digest(dict(row)) != update["precondition"]["row_sha256"]:
+                refused.append(f"audiobook {book_id}: row changed since the plan")
+                continue
+            target = lstat_or_none(str(book["target_host"]))
+            if target is None or not stat.S_ISDIR(target.st_mode):
+                refused.append(f"audiobook {book_id}: target folder is gone")
+                continue
+            connection.execute("UPDATE Audiobooks SET BasePath = ? WHERE Id = ?", (update["set"], book_id))
+            was = "NULL" if update["was"] is None else "'" + str(update["was"]).replace("'", "''") + "'"
+            now = "'" + str(update["set"]).replace("'", "''") + "'"
+            undo.append(f"UPDATE Audiobooks SET BasePath = {was} WHERE Id = {book_id} AND BasePath = {now};")
+        connection.execute("ROLLBACK" if refused or dry_run else "COMMIT")
+    except BaseException:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
+    finally:
+        connection.close()
+    if refused:
+        raise BasePathRefused("; ".join(refused))
+    if not dry_run and undo:
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        (out_dir / f"undo-basepath-{stamp}.sql").write_text(
+            "-- Reverses restore-basepath. Service STOPPED.\nBEGIN IMMEDIATE;\n" + "\n".join(undo) + "\nCOMMIT;\n",
+            encoding="utf-8")
+    return [int(b["audiobook_id"]) for b, _ in updates]
+
+
 class MoveRefused(Exception):
     """A precondition failed before anything was moved."""
+
+
+class MoveStopped(Exception):
+    """The move stopped part-way: some files may have moved; the journal says which."""
 
 
 def _check_move(entry: dict[str, Any], target_host: str, roots_host: list[str],
@@ -576,6 +655,10 @@ def _check_move(entry: dict[str, Any], target_host: str, roots_host: list[str],
     source, destination, pin = str(entry["source"]), str(entry["destination"]), entry["pin"]
     if any(ch in source + destination for ch in "\t\n"):
         return "a name holds a tab or a newline (the journal could not record it)"
+    try:
+        (source + destination).encode("utf-8")
+    except UnicodeEncodeError:
+        return "a name is not valid UTF-8 (the journal could not record it)"
     info = lstat_or_none(source)
     if info is None or not stat.S_ISREG(info.st_mode):
         return "source is gone or no longer a regular file"
@@ -616,8 +699,9 @@ class Journal:
     """Append-only record of every filesystem step, written and synced before and after each one."""
 
     def __init__(self, path: str) -> None:
-        """Create the journal; it must not exist yet."""
+        """Create the journal (it must not exist yet), and make its name durable."""
         self._fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_APPEND, 0o600)
+        _fsync_dir(os.path.dirname(os.path.abspath(path)))
 
     def write(self, *cells: object) -> None:
         """One tab-separated line, synced to disk before returning."""
@@ -633,7 +717,7 @@ def move_plan(plan: dict[str, Any], roots_host: list[str], journal_path: str | N
     """Check every entry, then (not dry run) move each file back: link to the destination, then unlink the source.
 
     Nothing moves unless every entry passes. A folder the destination needs below the target is created (and
-    journalled). Raises MoveRefused before any change; OSError mid-way leaves the journal to undo from.
+    journalled). Raises MoveRefused before any change, and MoveStopped (journal to undo from) part-way.
     """
     if plan.get("tool") != TOOL_NAME or plan.get("kind") != "quarantine-restore" or (
             plan.get("format") != RESTORE_PLAN_FORMAT):
@@ -646,9 +730,10 @@ def move_plan(plan: dict[str, Any], roots_host: list[str], journal_path: str | N
             refusals["target folder's audio changed since the plan"] += 1
         for entry in book["files"]:
             reason = _check_move(entry, str(book["target_host"]), roots_host, restore_dirs)
-            if reason is None and entry["destination"] in seen:
+            # Casefolded: on a case-insensitive dataset two such names are one, and the second link would fail.
+            if reason is None and str(entry["destination"]).casefold() in seen:
                 reason = "two entries move to one destination"
-            seen.add(str(entry["destination"]))
+            seen.add(str(entry["destination"]).casefold())
             if reason is not None:
                 refusals[reason] += 1
     if refusals:
@@ -663,6 +748,8 @@ def move_plan(plan: dict[str, Any], roots_host: list[str], journal_path: str | N
         for book in plan["books"]:
             for entry in book["files"]:
                 _move_one(entry, str(book["target_host"]), journal, done)
+    except Exception as error:  # anything after the first journal line: undo from the journal, never a traceback
+        raise MoveStopped(f"{type(error).__name__} after {done['moved']} file(s) moved") from error
     finally:
         journal.close()
     return done
