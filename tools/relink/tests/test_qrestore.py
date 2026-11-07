@@ -601,6 +601,22 @@ def test_a_deliberate_removal_is_listed_for_review_never_restorable(restore: Res
     assert rc == 2 and not out.exists()
 
 
+def test_a_retagged_copy_of_the_same_audio_is_an_in_root_copy(restore: Restore) -> None:
+    rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
+    restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)
+    target = restore.target(PRINCESS, PRINCESS_ASIN)
+    for row in rows:  # the library's copy went through manual import, which wrote an ASIN tag: same audio, new size
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(restore.library.rows[row]), "-c", "copy",
+                        "-metadata", f"asin={PRINCESS_ASIN}", str(target / f"copy-{restore.library.rows[row].name}")],
+                       check=True)
+        copy = target / f"copy-{restore.library.rows[row].name}"
+        assert copy.stat().st_size != restore.library.rows[row].stat().st_size
+    assert restore.classes() == {1: "in-root-copy"}
+    (target / f"copy-{restore.library.rows[rows[1]].name}").unlink()
+    render(target / "other.mp3", 999, PRINCESS[0])  # control: different audio is still not a copy
+    assert restore.classes() == {1: "target-holds-other-audio"}
+
+
 def test_a_deliberate_label_wins_over_an_in_root_copy(restore: Restore) -> None:
     rows = restore.book(1, PRINCESS, PRINCESS_ASIN)
     restore.quarantine(rows, PRINCESS, PRINCESS_ASIN)

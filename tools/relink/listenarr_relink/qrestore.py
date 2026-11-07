@@ -42,10 +42,10 @@ Two classes come from what the operator's records say about each quarantine entr
 top-level entry under --restore-from, ``<entry name><TAB><label>``, filled from highside's records and never sent):
 
 * ``in-root-copy``: (unless the entry's label says it was removed on purpose, which wins) the target folder
-  already holds a copy of every quarantined file (same size, duration within
-  1 s, same audio-stream hash, one to one). The quarantine was a de-duplication, the library keeps the other
-  copy: re-point the rows at it rather than restore a duplicate. This overrides any other refusal, since it
-  says what to do instead;
+  already holds a copy of every quarantined file: duration within 1 s and the same audio-stream hash, one to
+  one. Size is not compared: a retagged copy is still a copy. The quarantine was a de-duplication and the
+  library keeps the other copy: re-point the rows at it rather than restore a duplicate. This overrides any
+  other refusal, since it says what to do instead;
 * ``deliberate-removal``: a book that passes every check but sits in an entry the operator removed on purpose
   (``wrong-content``, ``wrong-asin``, ``edition-audit``, ``manual-review``, ``empty-stub``). Never restored by
   this tool: a list for manual review;
@@ -563,9 +563,11 @@ def _choose_target(restore: RestoreBook, library: Library, path_map: PathMap, as
 
 
 def _copies_of_every_file(files: list[RestoreFile], present: list[DiskFile], durations: list[float | None]) -> bool:
-    """True when each file pairs, one to one, with a present file of equal size, duration (1 s) and audio hash.
+    """True when each file pairs, one to one, with a present file of the same duration (1 s) and audio-stream hash.
 
-    Equal sizes and lengths alone happen between chapters of one constant-bitrate book.
+    The hash covers the audio packets only, so a copy that was retagged (manual import writes an ASIN tag) still
+    pairs; size is not compared, since a tag edit changes it. Equal lengths alone happen between chapters of one
+    constant-bitrate book, which is why the hash, not the duration, decides.
     """
     free = list(zip(present, durations, strict=True))
     hashes: dict[str, str | None] = {}
@@ -578,7 +580,7 @@ def _copies_of_every_file(files: list[RestoreFile], present: list[DiskFile], dur
     for item in files:
         duration = item.probe.duration if item.probe else None
         match_at = next((i for i, (other, other_duration) in enumerate(free)
-                         if other.size == item.source.size and duration is not None and other_duration is not None
+                         if duration is not None and other_duration is not None
                          and abs(other_duration - duration) <= 1.0
                          and audio(other.host_path) is not None
                          and audio(other.host_path) == audio(item.source.host_path)), None)
