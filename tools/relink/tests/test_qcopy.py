@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 from test_qrestore import GODS, PRINCESS_ASIN, Restore, restore
-from test_size_placeholder import PRINCESS, library, relinked, render
+from test_size_placeholder import PRINCESS, library, relinked, render, stored_identity
 
 from listenarr_relink import cli
 from listenarr_relink.plan_io import file_sha256
@@ -142,5 +142,23 @@ def test_a_removed_on_purpose_book_with_a_copy_is_refused(restore: Restore) -> N
     quarantined_copy_book(restore)
     restore.labels[PRINCESS[1]] = "wrong-content"  # re-pointing at the same wrong audio would keep the mistake
     assert restore.classes() == {1: "deliberate-removal"}
+    rc, out = copy_plan(restore, [1])
+    assert rc == 2 and not out.exists()
+
+
+def test_a_copy_that_is_another_books_stale_row_object_is_refused(restore: Restore) -> None:
+    rows, copies = quarantined_copy_book(restore)
+    restore.library.add_book(2, GODS, 1)
+    restore.library.rows[3].unlink()  # book 2's row is stale (its file is gone) ...
+    restore.library.set_row(3, PhysicalObjectIdentity=stored_identity(copies[rows[0]]))  # ... and names the copy
+    assert restore.classes()[1] == "in-root-copy"  # the class does not see it
+    rc, out = copy_plan(restore, [1])
+    assert rc == 2 and not out.exists()
+
+
+def test_a_target_holding_unpaired_audio_is_refused(restore: Restore) -> None:
+    quarantined_copy_book(restore)
+    render(restore.target(PRINCESS, PRINCESS_ASIN) / "99 - extra.mp3", 777, PRINCESS[0])  # a scan would claim it
+    assert restore.classes() == {1: "in-root-copy"}
     rc, out = copy_plan(restore, [1])
     assert rc == 2 and not out.exists()

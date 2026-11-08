@@ -11,7 +11,10 @@ A book is refused (and with it the whole plan, so the operator re-chooses) unles
 * its class is exactly ``in-root-copy``, and none of its failing checks is a content check
   (``qrestore.CONTENT_CHECKS``) or ``not-every-row-found``;
 * every stale row of the book is paired with a copy (no row under the root left to PLAN, none left over);
-* no copy is a path any row stores, or an object a live row reaches, and no copy is chosen twice.
+* no copy is a path any row stores, an object a live row reaches, or the object another row's stored physical
+  identity names (inode and file handle, stale rows included: a doubled merge can leave the library's file as
+  another book's row's object), and no copy is chosen twice;
+* the target folder holds no audio beyond the copies (a later per-book scan would claim it as new rows).
 
 ``verify_copy_plan`` re-hashes every copy (and every quarantined original still present) just before APPLY and
 refuses on any difference: the audio identity the plan rests on is checked again, not assumed from the pin.
@@ -23,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from listenarr_relink import PLAN_FORMAT_VERSION, TOOL_NAME, media
+from listenarr_relink import PLAN_FORMAT_VERSION, TOOL_NAME, identity, media
 from listenarr_relink.inventory import Library, lstat_or_none
 from listenarr_relink.matcher import _resolves
 from listenarr_relink.paths import PathMap
@@ -54,6 +57,11 @@ def build_copy_plan(result: Survey, chosen: frozenset[int], library: Library, pa
                 live_objects.add((info.st_dev, info.st_ino))
         else:
             stale_by_book.setdefault(row.audiobook_id, set()).add(row.id)
+    stored_by_inode: dict[int, list[tuple[int, identity.StoredIdentity]]] = {}
+    for row in library.files:
+        stored = identity.parse_stored(str(row.values.get("PhysicalObjectIdentity") or ""))
+        if stored is not None:
+            stored_by_inode.setdefault(stored.inode, []).append((row.id, stored))
     refusals: list[str] = []
     used: set[tuple[int, int]] = set()
     relinks: list[dict[str, Any]] = []
@@ -69,6 +77,9 @@ def build_copy_plan(result: Survey, chosen: frozenset[int], library: Library, pa
         if blocking:
             refusals.append(f"audiobook {book_id}: fails {', '.join(blocking)} under its copy")
             continue
+        if restore.target_audio_files > len(restore.copy_pairs):
+            refusals.append(f"audiobook {book_id}: target holds unpaired audio")
+            continue
         paired_rows = {item.row_id for item, _, _ in restore.copy_pairs if item.row_id is not None}
         if paired_rows != stale_by_book.get(book_id, set()):
             refusals.append(f"audiobook {book_id}: {len(stale_by_book.get(book_id, set()) - paired_rows)} stale "
@@ -80,6 +91,9 @@ def build_copy_plan(result: Survey, chosen: frozenset[int], library: Library, pa
             key = (copy.dev, copy.ino)
             if copy.db_path in row_paths or key in live_objects:
                 refusals.append(f"audiobook {book_id}: a copy is already tracked by a row")
+                break
+            if _another_rows_object(copy.host_path, stored_by_inode.get(copy.ino, []), paired_rows):
+                refusals.append(f"audiobook {book_id}: a copy is another row's object")
                 break
             if key in used:
                 refusals.append(f"audiobook {book_id}: a copy is chosen twice")
@@ -152,3 +166,14 @@ def verify_copy_plan(plan: dict[str, Any]) -> tuple[int, list[str]]:
         if lstat_or_none(original) is not None and media.audio_hash(original) != want:
             mismatches.append("quarantined original's audio differs from the plan")
     return checked, mismatches
+
+
+def _another_rows_object(host_path: str, candidates: list[tuple[int, identity.StoredIdentity]],
+                         own_rows: set[int]) -> bool:
+    """True when a row other than ``own_rows`` stores this file's object: same device major, inode and handle."""
+    others = [stored for row_id, stored in candidates if row_id not in own_rows]
+    if not others:
+        return False
+    live = identity.read_live(host_path)
+    # An unreadable file cannot be shown not to be that object: refuse rather than guess.
+    return live is None or any(live.same_object(stored) or live.matches(stored) for stored in others)
