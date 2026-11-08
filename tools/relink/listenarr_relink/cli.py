@@ -20,7 +20,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from listenarr_relink import identity, inventory, matcher, qrestore
+from listenarr_relink import identity, inventory, matcher, qcopy, qrestore
 from listenarr_relink.apply import ApplyAborted, apply_plan, processes_holding
 from listenarr_relink.explain import explain_veto
 from listenarr_relink.explain_identity import explain_identity, row_lines
@@ -297,6 +297,54 @@ def _restore_plan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _restore_copy_plan(args: argparse.Namespace) -> int:
+    out_dir = Path(args.out).resolve()
+    if out_dir.exists() and any(out_dir.iterdir()):
+        log.error("output directory %s exists and is not empty", out_dir)
+        return 2
+    try:
+        chosen = _read_book_ids(Path(args.books))
+    except (OSError, ValueError) as error:
+        log.error("book list unusable: %s", error)
+        return 2
+    surveyed = _restore_survey(args)
+    if surveyed is None:
+        return 2
+    library, result, path_map = surveyed
+    if any(is_within(str(out_dir), path_map.to_host(r)) for r in library.roots):
+        log.error("output directory lies inside a library root")
+        return 2
+    if library.walk_errors:
+        log.error("%d walk errors: no plan is written on incomplete evidence", len(library.walk_errors))
+        return 3
+    try:
+        plan = qcopy.build_copy_plan(result, chosen, library, path_map, Path(args.db).resolve(), args.db)
+    except qcopy.CopyPlanRefused as error:
+        log.error("refused, no plan written: %s", error)
+        return 2
+    out_dir.mkdir(parents=True, exist_ok=True)
+    plan_path = out_dir / "plan.json"
+    plan_path.write_text(json.dumps(plan, indent=1) + "\n", encoding="utf-8")
+    digest = file_sha256(plan_path)
+    log.info("copy relink plan=%s sha256=%s books=%d relinks=%d book_updates=%d", plan_path, digest,
+             plan["summary"]["books"], plan["summary"]["relinks"], plan["summary"]["book_updates"])
+    print(digest)
+    return 0
+
+
+def _restore_copy_verify(args: argparse.Namespace) -> int:
+    plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+    try:
+        checked, mismatches = qcopy.verify_copy_plan(plan)
+    except qcopy.CopyPlanRefused as error:
+        log.error("%s", error)
+        return 2
+    print(f"copies_checked {checked}")
+    print(f"audio_mismatches {len(mismatches)}")
+    print(f"verdict {'STOP' if mismatches else 'PASS'}")
+    return 3 if mismatches else 0
+
+
 def _read_book_ids(path: Path) -> frozenset[int]:
     """Audiobook ids, one per line (blank lines and ``#`` comments ignored); ValueError otherwise or when empty."""
     ids: set[int] = set()
@@ -483,6 +531,18 @@ def _add_restore_commands(sub: argparse._SubParsersAction[argparse.ArgumentParse
                       help="audiobook ids to restore, one per line; each must be in the restorable class")
     plan.add_argument("--out", required=True, help="new, empty output directory outside every library root")
     plan.set_defaults(handler=_restore_plan)
+
+    copy = sub.add_parser("restore-copy-plan", help="read-only: a relink plan pointing the chosen in-root-copy "
+                                                     "books' stale rows at the copies the library holds")
+    survey_arguments(copy)
+    copy.add_argument("--books", required=True, metavar="FILE",
+                      help="audiobook ids, one per line; each must be exactly in-root-copy with no content failure")
+    copy.add_argument("--out", required=True, help="new, empty output directory outside every library root")
+    copy.set_defaults(handler=_restore_copy_plan)
+
+    check = sub.add_parser("restore-copy-verify", help="read-only: re-hash the plan's copies and originals")
+    check.add_argument("--plan", required=True)
+    check.set_defaults(handler=_restore_copy_verify)
 
     move = sub.add_parser("restore-move", help="move a reviewed plan's files back under the root (link, then unlink)")
     move.add_argument("--plan", required=True)

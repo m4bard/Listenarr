@@ -239,7 +239,9 @@ class RestoreBook:
     own_evidence: int = 0  # files whose album/title tags carry this book's whole title (independent evidence)
     asin_only: int = 0  # files naming the book only by an own ASIN tag: manual import writes that tag itself
     label: str = UNLABELLED  # the operator's label of the quarantine entry holding the files
-    in_root_copy: bool = False  # the target already holds a same-size, same-duration copy of every file
+    in_root_copy: bool = False  # the target already holds a copy of every file (duration and audio hash)
+    # (quarantined file, its in-root copy, the shared audio-stream hash), when in_root_copy
+    copy_pairs: list[tuple[RestoreFile, DiskFile, str]] = field(default_factory=list)
     blocklisted: bool = False
     target_audio: list[str] = field(default_factory=list)  # audio already in the target (the book's own live rows)
     target_audio_files: int = 0  # audio in the target that is not this book's (counted when it refuses)
@@ -654,21 +656,24 @@ def _choose_target(restore: RestoreBook, library: Library, path_map: PathMap, as
         restore.target_audio_repeats = sum(1 for d in durations if d is not None and any(
             abs(d - q) <= max(1.0, 0.005 * q) for q in quarantined))
         restore.target_audio_files = len(present)
-        restore.in_root_copy = _copies_of_every_file(restore.files, present, durations)
+        restore.copy_pairs = _copy_pairs(restore.files, present, durations) or []
+        restore.in_root_copy = bool(restore.copy_pairs)
         restore.refuse("target-holds-other-audio", f"the target already holds {len(present)} audio file(s)")
     restore.target_audio = sorted(os.path.relpath(f.host_path, restore.target_host) for f in library.disk
                                   if is_within(f.db_path, targets[0]))
 
 
-def _copies_of_every_file(files: list[RestoreFile], present: list[DiskFile], durations: list[float | None]) -> bool:
-    """True when each file pairs, one to one, with a present file of the same duration (1 s) and audio-stream hash.
+def _copy_pairs(files: list[RestoreFile], present: list[DiskFile],
+                durations: list[float | None]) -> list[tuple[RestoreFile, DiskFile, str]] | None:
+    """Each file paired, one to one, with a present file of the same duration (1 s) and audio-stream hash.
 
     The hash covers the audio packets only, so a copy that was retagged (manual import writes an ASIN tag) still
     pairs; size is not compared, since a tag edit changes it. Equal lengths alone happen between chapters of one
-    constant-bitrate book, which is why the hash, not the duration, decides.
+    constant-bitrate book, which is why the hash, not the duration, decides. None when any file has no partner.
     """
     free = list(zip(present, durations, strict=True))
     hashes: dict[str, str | None] = {}
+    pairs: list[tuple[RestoreFile, DiskFile, str]] = []
 
     def audio(path: str) -> str | None:
         if path not in hashes:
@@ -683,9 +688,10 @@ def _copies_of_every_file(files: list[RestoreFile], present: list[DiskFile], dur
                          and audio(other.host_path) is not None
                          and audio(other.host_path) == audio(item.source.host_path)), None)
         if match_at is None:
-            return False
-        free.pop(match_at)
-    return bool(files)
+            return None
+        copy, _ = free.pop(match_at)
+        pairs.append((item, copy, str(audio(copy.host_path))))
+    return pairs if files else None
 
 
 def _place(restore: RestoreBook, library: Library, path_map: PathMap, host_roots: list[str],
