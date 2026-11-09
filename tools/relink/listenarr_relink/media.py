@@ -83,3 +83,21 @@ def audio_hash(path: str) -> str | None:
         log.warning("audio hash failed path=%s err=%s", path, result.stderr.strip()[:200])
         return None
     return line.removeprefix("SHA256=")
+
+
+def decode_duration(path: str) -> float | None:
+    """Seconds of the first audio stream measured by decoding it to null (reads only), not the container's claim."""
+    command = ["ffmpeg", "-nostdin", "-v", "error", "-i", path, "-map", "0:a:0", "-f", "null", "-",
+               "-progress", "pipe:1", "-nostats"]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=HASH_TIMEOUT_SECONDS,
+                                check=False, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        return None
+    times = [line.split("=", 1)[1] for line in result.stdout.splitlines() if line.startswith("out_time_us=")]
+    try:
+        return int(times[-1]) / 1_000_000 if times else None
+    except ValueError:
+        return None

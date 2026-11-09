@@ -20,7 +20,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from listenarr_relink import identity, inventory, matcher, qcopy, qrestore
+from listenarr_relink import identity, inventory, matcher, oplinks, qcopy, qrestore
 from listenarr_relink.apply import ApplyAborted, apply_plan, processes_holding
 from listenarr_relink.explain import explain_veto
 from listenarr_relink.explain_identity import explain_identity, row_lines
@@ -94,6 +94,12 @@ def _plan(args: argparse.Namespace) -> int:
         log.error("output directory %s exists and is not empty", out_dir)
         return 2
     exclude_file = Path(args.exclude_file_ids).resolve() if args.exclude_file_ids else None
+    links_file = Path(args.operator_links).resolve() if args.operator_links else None
+    try:
+        links = oplinks.read_links(links_file) if links_file else None
+    except (OSError, oplinks.OperatorLinksRefused) as error:
+        log.error("operator links unusable: %s", error if isinstance(error, ValueError) else error.strerror)
+        return 2
     try:
         excluded = _read_exclude_file(exclude_file) if exclude_file else frozenset()
     except (OSError, ValueError) as error:
@@ -135,7 +141,20 @@ def _plan(args: argparse.Namespace) -> int:
     identity_only = not args.include_shape_matches
     result = matcher.match(library, path_map, args.workers, not args.no_hash_chosen, identity_only, excluded,
                            args.tags_waiver)
+    link_outcome = None
+    if links is not None:
+        try:
+            link_outcome = oplinks.apply_links(library, path_map, result, links)
+        except oplinks.OperatorLinksRefused as error:
+            log.error("operator links refused, no plan written: %s", error)
+            return 2
+        for line in link_outcome.lines():
+            log.info("%s", line)
     plan = build_plan(library, result, path_map, db_copy, args.db, identity_only, excluded, exclude_file)
+    if link_outcome is not None and links_file is not None:
+        plan["operator_links"] = {"path": str(links_file), "sha256": file_sha256(links_file),
+                                  "accepted_rows": {str(k): v for k, v in sorted(link_outcome.accepted_rows.items())},
+                                  "counts": link_outcome.lines()}
     plan_path, plan_sha = write_outputs(plan, out_dir, [o.db_path for o in result.orphans])
     summary = plan["summary"]
     log.info("plan=%s sha256=%s relinks=%d left_out=%d book_updates=%d scan_safe_books=%d", plan_path, plan_sha,
@@ -593,6 +612,10 @@ def main(argv: list[str] | None = None) -> int:
                       help="AudiobookFiles ids (one per line, # comments) never to re-link; every book holding "
                            "one is withheld whole, live rows or not. A list naming no id, or an id that is no "
                            "file row, refuses the run")
+    plan.add_argument("--operator-links", metavar="FILE",
+                      help="'<row id><TAB><target path><TAB><reason>' per line: reviewed links that each lift exactly "
+                           "one refusal (reasons: " + ", ".join(oplinks.REASONS) + "); every other check still "
+                           "applies, a failing link refuses its book, and a malformed list refuses the run")
     _add_narrowed_rules(plan)
     plan.set_defaults(handler=_plan)
 
