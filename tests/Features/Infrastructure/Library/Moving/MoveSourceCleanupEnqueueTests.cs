@@ -7,19 +7,21 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Moving;
 public sealed class MoveSourceCleanupEnqueueTests : BaseTests
 {
     [Fact]
-    public async Task EnqueueMoveAsync_ResolverDeleteAuthorization_IsRejectedForMissingPolicyRevisions()
+    public async Task EnqueueMoveAsync_ResolverDeleteAuthorization_Succeeds()
     {
         var (authorization, command) = await ResolveAndBuildCommandAsync(
             "enqueue-resolver-delete", targetInsideRoot: true);
         Assert.True(authorization.DeletesSourceAfterVerifiedCopy);
-        Assert.Null(authorization.SourcePolicyRevision);
-        Assert.Null(authorization.TargetPolicyRevision);
 
-        var error = await Assert.ThrowsAsync<ArgumentException>(
-            () => _provider.GetRequiredService<IMoveQueueService>()
-                .EnqueueMoveAsync(command));
+        var jobId = await _provider.GetRequiredService<IMoveQueueService>()
+            .EnqueueMoveAsync(command);
 
-        Assert.Contains("complete root-folder policy snapshot", error.Message);
+        var job = await _provider.GetRequiredService<IMoveQueueService>()
+            .GetJobAsync(jobId);
+        Assert.NotNull(job);
+        Assert.Equal(MoveSourceCleanupMode.DeleteAfterVerifiedCopy, job.SourceCleanupMode);
+        Assert.Equal(authorization.SourceStorageContractRevision, job.SourceStorageContractRevision);
+        Assert.Equal(authorization.TargetStorageContractRevision, job.TargetStorageContractRevision);
     }
 
     [Fact]
