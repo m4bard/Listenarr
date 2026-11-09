@@ -9,13 +9,16 @@ one refusal for that row, and every other check still runs:
   id (or no id). Lifts ``hardlinked`` and the folder-id refusal together, since one implies the other here;
 * ``hl-other-quarantine``: the row's own object, in the book's own-``Asin`` folder, with exactly one other name, in
   a ``--quarantine-dir`` folder whose path carries exactly one bracketed id (anywhere in it), another than the
-  ``Asin``. Lifts ``hardlinked``. Anything else (two other names, no id, several ids) is ambiguous and refused;
+  ``Asin`` and no other library book's (with rows or without: that is HL9's pattern, the file is that book's).
+  Lifts ``hardlinked``. Anything else (two other names, no id, several ids) is ambiguous and refused;
 * ``duration-decode``: the row's own object, refused only because the container's duration disagrees with the
   stored one. Lifted only when decoding the audio gives the stored duration (1 %): the container is what is wrong.
 
 Still enforced on every link: the target is the row's own object (PLAN's identity match, on the root's dataset); no
 other row stores its path, reaches it, or names it by stored identity (stale rows too); the row's duration, codec,
-sample rate and channels (decoded duration for ``duration-decode``); the tags veto; for the two edition reasons,
+sample rate and channels (decoded duration for ``duration-decode``); the tags veto; no ASIN tag naming another
+library book (manual import writes the target's own ASIN, so only another book's is evidence); for the two edition
+reasons,
 positive evidence that the content is this book (every file's tags carry its whole title and the book's summed
 duration is within 10 % of its catalog runtime); and the book is linked whole, every stale row by a link, or none.
 
@@ -49,6 +52,7 @@ from listenarr_relink.matcher import (
     veto_keys,
 )
 from listenarr_relink.paths import PathMap
+from listenarr_relink.qrestore import asin_tags
 
 REASONS = {"folder-edition": "folder-id-disagrees", "hl-edition": "hardlinked",
            "hl-other-quarantine": "hardlinked", "duration-decode": "vetoed:identity-inconsistent-duration"}
@@ -129,7 +133,7 @@ def apply_links(library: Library, path_map: PathMap, result: MatchResult, links:
             candidate = decision.candidates[0]
             why = (_claimed(candidate, decision.row, claims)
                    or _reason_check(link, decision, candidate, library, asins)
-                   or _content_check(link, decision, candidate, library, others))
+                   or _content_check(link, decision, candidate, library, others, asins))
             picked[decision.row.id] = candidate
         if why is None and any(link.reason in EDITION_REASONS for link, _ in entries):
             why = _edition_evidence(library, book_id, [picked[d.row.id] for _, d in entries])
@@ -227,16 +231,22 @@ def _reason_check(link: Link, decision: RowDecision, candidate: Candidate, libra
             return "other-names-ambiguous"
         ids = {m.strip().casefold() for m in _ANY_BRACKETED_ID.findall(
             os.path.relpath(names[0].host_path, names[0].quarantine_dir))}
-        return None if len(ids) == 1 and asin not in ids else "other-names-ambiguous"
+        if len(ids) != 1 or asin in ids:
+            return "other-names-ambiguous"
+        # The quarantine name naming another library book (rows or none) is HL9's pattern: Y's file, not X's.
+        return "names-another-library-book" if ids & asins else None
     return None
 
 
 def _content_check(link: Link, decision: RowDecision, candidate: Candidate, library: Library,
-                   others: dict[frozenset[str], int]) -> str | None:
+                   others: dict[frozenset[str], int], asins: set[str]) -> str | None:
     if candidate.probe is None:
         candidate.probe = media.probe(candidate.file.host_path)
     probe = candidate.probe
     owner = library.books.get(decision.row.audiobook_id)
+    own = owner.context.get("Asin", "").strip().casefold() if owner else ""
+    if asin_tags(probe.tags) & (asins - {own}):
+        return "asin-tag-names-another-library-book"
     other_titles = {k: v for k, v in others.items() if v != decision.row.audiobook_id}
     if link.reason == "duration-decode":
         stored = float(str(decision.row.values.get("DurationSeconds") or 0))

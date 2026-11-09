@@ -258,3 +258,52 @@ def test_every_check_but_the_lifted_one_still_runs(lib: Library) -> None:
     rc, after = plan(lib, "with", "--operator-links", str(links_file(lib, [(row, target, "folder-edition")])))
     assert rc == 0 and after is not None and relinked(after) == {}
     assert "operator_links_refused_books row-content-disagrees 1" in after["operator_links"]["counts"]
+
+
+MARIE = ("Marie", "H. Rider Haggard")
+MARIE_ASIN = "B002UZKHRE"
+
+
+def tag_asin(lib: Library, row: int, asin: str) -> None:
+    """Write an ASIN tag into a row's file (a new object, same audio) and register that object."""
+    import subprocess
+
+    path = lib.rows[row]
+    tagged = path.with_name("tagged-" + path.name)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(path), "-c", "copy", "-metadata", f"asin={asin}",
+                    str(tagged)], check=True)
+    os.replace(tagged, path)
+    lib.set_row(row, Size=path.stat().st_size, PhysicalObjectIdentity=stored_identity(path))
+
+
+def zero_row_library_book(lib: Library, book_id: int, book: tuple[str, str], asin: str) -> None:
+    with sqlite3.connect(lib.db) as connection:
+        connection.execute("INSERT INTO Audiobooks (Id, Title, Authors, BasePath, Asin, Runtime) VALUES "
+                           "(?, ?, ?, ?, ?, 0.05)", (book_id, book[0], json.dumps([book[1]]), str(lib.root), asin))
+
+
+def test_hl_other_quarantine_refuses_a_quarantine_id_naming_a_library_book(lib: Library) -> None:
+    (row,) = add(lib, 1, PRINCESS, PRINCESS_ASIN)
+    zero_row_library_book(lib, 9, MARIE, MARIE_ASIN)  # a library book with no rows: the HL9 pattern
+    target = hardlinked(lib, row, edition_folder(lib, PRINCESS, PRINCESS_ASIN), f"[{MARIE_ASIN}] - Marie")
+    rc, after = plan(lib, "with", "--operator-links", str(links_file(lib, [(row, target, "hl-other-quarantine")])))
+    assert rc == 0 and after is not None and relinked(after) == {}
+    assert "operator_links_refused_books names-another-library-book 1" in after["operator_links"]["counts"]
+
+
+def test_an_asin_tag_naming_another_library_book_refuses_any_link(lib: Library) -> None:
+    (row,) = add(lib, 1, PRINCESS, PRINCESS_ASIN)
+    zero_row_library_book(lib, 9, MARIE, MARIE_ASIN)
+    tag_asin(lib, row, MARIE_ASIN)  # the file says it is Marie; its quarantine id names no library book
+    target = hardlinked(lib, row, edition_folder(lib, PRINCESS, PRINCESS_ASIN), f"[{Y_ASIN}] - Little Men")
+    rc, after = plan(lib, "with", "--operator-links", str(links_file(lib, [(row, target, "hl-other-quarantine")])))
+    assert rc == 0 and after is not None and relinked(after) == {}
+    assert "operator_links_refused_books asin-tag-names-another-library-book 1" in after["operator_links"]["counts"]
+
+
+def test_an_asin_tag_naming_no_library_book_does_not_refuse(lib: Library) -> None:
+    (row,) = add(lib, 1, PRINCESS, PRINCESS_ASIN)
+    tag_asin(lib, row, EDITION_ASIN)  # another edition's ASIN, which no library book holds
+    target = move_to(lib, row, edition_folder(lib, PRINCESS, EDITION_ASIN))
+    rc, after = plan(lib, "with", "--operator-links", str(links_file(lib, [(row, target, "folder-edition")])))
+    assert rc == 0 and after is not None and relinked(after) == {row: str(target)}
