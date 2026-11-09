@@ -80,9 +80,9 @@ public sealed class MoveSourceCleanupPolicyResolver(
         return new MoveSourceCleanupAuthorization(
             MoveSourceCleanupMode.DeleteAfterVerifiedCopy,
             sourceRoot?.Id,
-            null,
+            sourceRoot?.WeakStoragePolicyRevision,
             targetRoot.Id,
-            null,
+            targetRoot.WeakStoragePolicyRevision,
             sourceIsManagedRoot,
             sourceIsManagedRoot
                 ? "Source files will be removed after every copied file is verified. The managed root folder will remain."
