@@ -118,13 +118,15 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             // A book skipped before its search (cutoff met, active download) sends no indexer request,
             // so it does not wait; otherwise a run of skipped books holds up the next real search.
             var hasSearchedThisCycle = false;
-            async Task WaitBeforeIndexerSearchAsync()
+            async Task<bool> WaitBeforeIndexerSearchAsync()
             {
-                if (hasSearchedThisCycle && timing.BookDelay > TimeSpan.Zero)
+                var waited = hasSearchedThisCycle && timing.BookDelay > TimeSpan.Zero;
+                if (waited)
                 {
                     await Task.Delay(timing.BookDelay, _timeProvider, stoppingToken);
                 }
                 hasSearchedThisCycle = true;
+                return waited;
             }
 
             foreach (var audiobook in monitoredAudiobooks)
@@ -173,7 +175,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             IAudiobookRepository audiobookRepository,
             IDownloadRepository downloadRepository,
             IAudiobookFileRepository fileRepository,
-            Func<Task> waitBeforeIndexerSearchAsync,
+            Func<Task<bool>> waitBeforeIndexerSearchAsync,
             CancellationToken stoppingToken)
         {
             if (audiobook.QualityProfile == null)
@@ -182,36 +184,22 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 return 0;
             }
 
-            // Check if there's already an active download for this audiobook
-            var allDownloads = await downloadRepository.GetByAudiobookIdAsync(audiobook.Id, stoppingToken);
-            var activeDownload = allDownloads.FirstOrDefault(d =>
-                d.Status == DownloadStatus.Queued ||
-                d.Status == DownloadStatus.Downloading ||
-                d.Status == DownloadStatus.Paused ||
-                d.Status == DownloadStatus.Processing ||
-                d.Status == DownloadStatus.Ready ||
-                d.Status == DownloadStatus.ImportPending);
-
-            if (activeDownload != null)
+            var (skipSearch, bestExistingQuality) = await ShouldSkipSearchAsync(audiobook, downloadRepository, fileRepository, stoppingToken);
+            if (skipSearch)
             {
-                _logger.LogInformation("Audiobook '{Title}' already has an active download (ID: {DownloadId}, Status: {Status}), skipping automatic search",
-                    audiobook.Title, activeDownload.Id, activeDownload.Status);
                 return 0;
             }
 
-            // Check existing quality and decide whether to search
-            var (cutoffMet, bestExistingQuality) = await _qualityEvaluator.GetExistingQualityAsync(audiobook, downloadRepository, fileRepository, stoppingToken);
-            _logger.LogInformation("Audiobook '{Title}': cutoff met={CutoffMet}, best existing quality={BestQuality}",
-                audiobook.Title, cutoffMet, bestExistingQuality ?? "none");
-
-            // Skip automatic search if quality cutoff is already met
-            if (cutoffMet)
+            // The checks above can be a whole book delay old once the wait ends. Repeat them so a
+            // download started or an import finished meanwhile is not grabbed a second time.
+            if (await waitBeforeIndexerSearchAsync())
             {
-                _logger.LogInformation("Quality cutoff already met for audiobook '{Title}', skipping automatic search", audiobook.Title);
-                return 0;
+                (skipSearch, bestExistingQuality) = await ShouldSkipSearchAsync(audiobook, downloadRepository, fileRepository, stoppingToken);
+                if (skipSearch)
+                {
+                    return 0;
+                }
             }
-
-            await waitBeforeIndexerSearchAsync();
 
             // Build search query
             var searchQuery = _resultClassifier.BuildSearchQuery(audiobook);
@@ -376,6 +364,44 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             }
 
             return downloadsQueued;
+        }
+
+        private async Task<(bool skipSearch, string? bestExistingQuality)> ShouldSkipSearchAsync(
+            Audiobook audiobook,
+            IDownloadRepository downloadRepository,
+            IAudiobookFileRepository fileRepository,
+            CancellationToken stoppingToken)
+        {
+            // Check if there's already an active download for this audiobook
+            var allDownloads = await downloadRepository.GetByAudiobookIdAsync(audiobook.Id, stoppingToken);
+            var activeDownload = allDownloads.FirstOrDefault(d =>
+                d.Status == DownloadStatus.Queued ||
+                d.Status == DownloadStatus.Downloading ||
+                d.Status == DownloadStatus.Paused ||
+                d.Status == DownloadStatus.Processing ||
+                d.Status == DownloadStatus.Ready ||
+                d.Status == DownloadStatus.ImportPending);
+
+            if (activeDownload != null)
+            {
+                _logger.LogInformation("Audiobook '{Title}' already has an active download (ID: {DownloadId}, Status: {Status}), skipping automatic search",
+                    audiobook.Title, activeDownload.Id, activeDownload.Status);
+                return (true, null);
+            }
+
+            // Check existing quality and decide whether to search
+            var (cutoffMet, bestExistingQuality) = await _qualityEvaluator.GetExistingQualityAsync(audiobook, downloadRepository, fileRepository, stoppingToken);
+            _logger.LogInformation("Audiobook '{Title}': cutoff met={CutoffMet}, best existing quality={BestQuality}",
+                audiobook.Title, cutoffMet, bestExistingQuality ?? "none");
+
+            // Skip automatic search if quality cutoff is already met
+            if (cutoffMet)
+            {
+                _logger.LogInformation("Quality cutoff already met for audiobook '{Title}', skipping automatic search", audiobook.Title);
+                return (true, bestExistingQuality);
+            }
+
+            return (false, bestExistingQuality);
         }
 
     }
