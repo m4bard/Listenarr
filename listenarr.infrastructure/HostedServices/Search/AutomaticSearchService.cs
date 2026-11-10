@@ -67,13 +67,16 @@ namespace Listenarr.Infrastructure.HostedServices.Search
         private readonly AutomaticSearchResultClassifier _resultClassifier;
         private readonly AutomaticSearchQualityEvaluator _qualityEvaluator;
         private readonly AutomaticSearchDownloadClientSelector _downloadClientSelector;
+        private readonly TimeProvider _timeProvider;
 
         public AutomaticSearchProcessor(
             ILogger<AutomaticSearchProcessor> logger,
-            IServiceScopeFactory serviceScopeFactory)
+            IServiceScopeFactory serviceScopeFactory,
+            TimeProvider? timeProvider = null)
         {
             _logger = logger;
             _serviceScopeFactory = serviceScopeFactory;
+            _timeProvider = timeProvider ?? TimeProvider.System;
             _resultClassifier = new AutomaticSearchResultClassifier(_logger);
             _qualityEvaluator = new AutomaticSearchQualityEvaluator(_logger);
             _downloadClientSelector = new AutomaticSearchDownloadClientSelector(_serviceScopeFactory, _logger);
@@ -111,7 +114,19 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             var processedCount = 0;
             var downloadsQueued = 0;
 
-            var isFirstBook = true;
+            // Pause between books that query the indexers so a large wanted list does not hammer them.
+            // A book skipped before its search (cutoff met, active download) sends no indexer request,
+            // so it does not wait; otherwise a run of skipped books holds up the next real search.
+            var hasSearchedThisCycle = false;
+            async Task WaitBeforeIndexerSearchAsync()
+            {
+                if (hasSearchedThisCycle && timing.BookDelay > TimeSpan.Zero)
+                {
+                    await Task.Delay(timing.BookDelay, _timeProvider, stoppingToken);
+                }
+                hasSearchedThisCycle = true;
+            }
+
             foreach (var audiobook in monitoredAudiobooks)
             {
                 if (stoppingToken.IsCancellationRequested)
@@ -119,15 +134,8 @@ namespace Listenarr.Infrastructure.HostedServices.Search
 
                 try
                 {
-                    // Pause between books so a large wanted list does not hammer the indexers.
-                    if (!isFirstBook && timing.BookDelay > TimeSpan.Zero)
-                    {
-                        await Task.Delay(timing.BookDelay, stoppingToken);
-                    }
-                    isFirstBook = false;
-
                     var downloadsQueuedForBook = await ProcessAudiobookAsync(
-                        audiobook, searchService, qualityProfileService, downloadService, audiobookRepository, downloadRepository, fileRepository, stoppingToken);
+                        audiobook, searchService, qualityProfileService, downloadService, audiobookRepository, downloadRepository, fileRepository, WaitBeforeIndexerSearchAsync, stoppingToken);
 
                     downloadsQueued += downloadsQueuedForBook;
                     processedCount++;
@@ -165,6 +173,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             IAudiobookRepository audiobookRepository,
             IDownloadRepository downloadRepository,
             IAudiobookFileRepository fileRepository,
+            Func<Task> waitBeforeIndexerSearchAsync,
             CancellationToken stoppingToken)
         {
             if (audiobook.QualityProfile == null)
@@ -201,6 +210,8 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 _logger.LogInformation("Quality cutoff already met for audiobook '{Title}', skipping automatic search", audiobook.Title);
                 return 0;
             }
+
+            await waitBeforeIndexerSearchAsync();
 
             // Build search query
             var searchQuery = _resultClassifier.BuildSearchQuery(audiobook);
