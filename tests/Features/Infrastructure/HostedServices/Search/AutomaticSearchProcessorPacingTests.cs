@@ -71,7 +71,66 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             Assert.Equal(new[] { TimeSpan.FromSeconds(BookDelaySeconds) }, _timeProvider.Delays);
         }
 
-        private async Task InitAsync()
+        [Fact]
+        public async Task RunCycleAsync_ActiveDownloadAndOneWantedBook_SearchesTheWantedBookWithoutWaiting()
+        {
+            await InitAsync();
+            var downloading = await SeedWantedAudiobookAsync("The Three Musketeers", "Alexandre Dumas");
+            await AddDownloadAsync(downloading, DownloadStatus.Queued);
+            await SeedWantedAudiobookAsync("The Wonderful Wizard of Oz", "L. Frank Baum");
+
+            await RunCycleAsync();
+
+            VerifySearchedOnlyFor("The Wonderful Wizard of Oz");
+            Assert.Empty(_timeProvider.Delays);
+        }
+
+        [Fact]
+        public async Task RunCycleAsync_DownloadStartsDuringTheWait_DoesNotGrabTheBookAgain()
+        {
+            var download = new Mock<IDownloadService>();
+            var grabbedIds = new ConcurrentQueue<int>();
+            download.Setup(d => d.StartDownloadAsync(
+                    It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()))
+                .Callback((SearchResult _, string _, int? audiobookId) => grabbedIds.Enqueue(audiobookId!.Value))
+                .ReturnsAsync("download-1");
+            // Accept every result with a positive score, so each searched book would be grabbed.
+            var quality = new Mock<IQualityProfileService>();
+            quality.Setup(q => q.ScoreSearchResults(
+                    It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>()))
+                .ReturnsAsync((List<SearchResult> results, QualityProfile _) =>
+                    results.Select(r => new QualityScore { SearchResult = r, TotalScore = 100 }).ToList());
+            await InitAsync(
+                new SearchResult { Title = "M4B", DownloadType = DirectDownloadMetadataKeys.ClientId },
+                builder =>
+                {
+                    builder.WithSingleton(download.Object);
+                    builder.WithSingleton(quality.Object);
+                });
+            var books = new[]
+            {
+                await SeedWantedAudiobookAsync("The Wonderful Wizard of Oz", "L. Frank Baum"),
+                await SeedWantedAudiobookAsync("The Jungle Book", "Rudyard Kipling")
+            };
+            // While the cycle waits before the second search, something else (a manual grab) starts a
+            // download for the book that has not been grabbed yet.
+            _timeProvider.OnDelay = () =>
+            {
+                foreach (var book in books.Where(b => !grabbedIds.Contains(b.Id)))
+                {
+                    AddDownloadAsync(book, DownloadStatus.Queued).GetAwaiter().GetResult();
+                }
+            };
+
+            await RunCycleAsync();
+
+            Assert.Single(_timeProvider.Delays);
+            Assert.Single(grabbedIds);
+        }
+
+        private async Task InitAsync(
+            SearchResult? searchResult = null,
+            Action<ServiceCollectionBuilder>? configureBuilder = null)
         {
             _search.Setup(s => s.SearchAsync(
                     It.IsAny<string>(),
@@ -80,15 +139,19 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>()))
-                .ReturnsAsync(new List<SearchResult>());
-            Init(builder => builder.WithSingleton(_search.Object));
+                .ReturnsAsync(searchResult == null ? new List<SearchResult>() : new List<SearchResult> { searchResult });
+            Init(builder =>
+            {
+                builder.WithSingleton(_search.Object);
+                configureBuilder?.Invoke(builder);
+            });
 
             var settings = new ApplicationSettingsBuilder().Build();
             settings.AutomaticSearchBookDelaySeconds = BookDelaySeconds;
             await _applicationSettingsRepository.SaveAsync(settings);
         }
 
-        private async Task SeedWantedAudiobookAsync(string title, string author) =>
+        private async Task<Audiobook> SeedWantedAudiobookAsync(string title, string author) =>
             await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle(title)
                 .WithAuthor(author)
@@ -104,18 +167,26 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                 .WithMonitored()
                 .WithQualityProfile(CreateMp3Profile())
                 .Build());
-            var download = new DownloadBuilder()
-                .WithId($"completed-{audiobook.Id}")
-                .WithAudiobookId(audiobook.Id)
-                .WithStatus(DownloadStatus.Completed)
-                .WithTitle(title)
-                .Build();
-            download.Metadata["Quality"] = "MP3";
-            await _downloadRepository.AddAsync(download);
+            await AddDownloadAsync(audiobook, DownloadStatus.Completed, quality: "MP3");
 
             // Precondition: the book is skipped by the cutoff check, not by some other guard.
             Assert.True(await AudiobookQualityCutoffEvaluator.IsQualityCutoffMetAsync(
                 audiobook, _downloadRepository, _audiobookFileRepository));
+        }
+
+        private async Task AddDownloadAsync(Audiobook audiobook, DownloadStatus status, string? quality = null)
+        {
+            var download = new DownloadBuilder()
+                .WithId($"{status}-{audiobook.Id}")
+                .WithAudiobookId(audiobook.Id)
+                .WithStatus(status)
+                .WithTitle(audiobook.Title!)
+                .Build();
+            if (quality != null)
+            {
+                download.Metadata["Quality"] = quality;
+            }
+            await _downloadRepository.AddAsync(download);
         }
 
         private static QualityProfile CreateMp3Profile() => new()
@@ -155,16 +226,19 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
         }
 
         // Records every requested delay and completes it at once, so a 180 s pacing delay costs
-        // nothing in the test but stays observable.
+        // nothing in the test but stays observable. OnDelay runs inside the wait, before it ends.
         private sealed class RecordingTimeProvider : TimeProvider
         {
             private readonly ConcurrentQueue<TimeSpan> _delays = new();
 
             public IReadOnlyCollection<TimeSpan> Delays => _delays.ToArray();
 
+            public Action? OnDelay { get; set; }
+
             public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
             {
                 _delays.Enqueue(dueTime);
+                OnDelay?.Invoke();
                 ThreadPool.QueueUserWorkItem(_ => callback(state));
                 return new CompletedTimer();
             }
