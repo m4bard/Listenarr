@@ -67,7 +67,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
         }
     }
 
-    public class AutomaticSearchProcessor : IAutomaticSearchProcessor
+    public partial class AutomaticSearchProcessor : IAutomaticSearchProcessor
     {
         private readonly ILogger<AutomaticSearchProcessor> _logger;
         private readonly IServiceScopeFactory _serviceScopeFactory;
@@ -468,44 +468,6 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             }
 
             return new AudiobookSearchOutcome(downloadsQueued, indexersSkipped);
-        }
-
-        private async Task<(bool skipSearch, string? bestExistingQuality, List<Download> allDownloads)> ShouldSkipSearchAsync(
-            Audiobook audiobook,
-            IDownloadRepository downloadRepository,
-            IAudiobookFileRepository fileRepository,
-            CancellationToken stoppingToken)
-        {
-            // Check if there's already an active download for this audiobook
-            var allDownloads = await downloadRepository.GetByAudiobookIdAsync(audiobook.Id, stoppingToken);
-            var activeDownload = allDownloads.FirstOrDefault(d =>
-                d.Status == DownloadStatus.Queued ||
-                d.Status == DownloadStatus.Downloading ||
-                d.Status == DownloadStatus.Paused ||
-                d.Status == DownloadStatus.Processing ||
-                d.Status == DownloadStatus.Ready ||
-                d.Status == DownloadStatus.ImportPending);
-
-            if (activeDownload != null)
-            {
-                _logger.LogInformation("Audiobook '{Title}' already has an active download (ID: {DownloadId}, Status: {Status}), skipping automatic search",
-                    audiobook.Title, activeDownload.Id, activeDownload.Status);
-                return (true, null, allDownloads);
-            }
-
-            // Check existing quality and decide whether to search
-            var (cutoffMet, bestExistingQuality) = await _qualityEvaluator.GetExistingQualityAsync(audiobook, downloadRepository, fileRepository, stoppingToken);
-            _logger.LogInformation("Audiobook '{Title}': cutoff met={CutoffMet}, best existing quality={BestQuality}",
-                audiobook.Title, cutoffMet, bestExistingQuality ?? "none");
-
-            // Skip automatic search if quality cutoff is already met
-            if (cutoffMet)
-            {
-                _logger.LogInformation("Quality cutoff already met for audiobook '{Title}', skipping automatic search", audiobook.Title);
-                return (true, bestExistingQuality, allDownloads);
-            }
-
-            return (false, bestExistingQuality, allDownloads);
         }
 
     }
