@@ -58,7 +58,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
 
             var savedJob = (await _downloadProcessingJobRepository.GetByIdAsync(job.Id))!;
             Assert.Equal(ProcessingJobStatus.Failed, savedJob.Status);
-            Assert.Equal(message, savedJob.ErrorMessage);
+            // This stack keeps the exception text on the log line only (#975).
+            Assert.Equal("Unable to import the download's files (see the log for detail)", savedJob.ErrorMessage);
 
             var savedDownload = (await _downloadRepository.GetByIdAsync(download.Id))!;
             Assert.Equal(DownloadStatus.ImportBlocked, savedDownload.Status);
