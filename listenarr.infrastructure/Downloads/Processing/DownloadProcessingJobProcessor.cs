@@ -18,8 +18,6 @@
 using Listenarr.Application.Common.Exceptions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace Listenarr.Infrastructure.Downloads.Processing
 {
@@ -493,18 +491,6 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                 await ScheduleRetryAsync(job, downloadProcessingJobService, historyRepository, download, audiobook,
                     correlationId, "Unable to commit import finalization (see the log for detail)", cancellationToken, retryInitialDelaySeconds);
             }
-        }
-
-        private static Guid ResolveCompatibilityBatchId(string jobId)
-        {
-            if (Guid.TryParse(jobId, out var parsed))
-            {
-                return parsed;
-            }
-
-            var hash = SHA256.HashData(
-                Encoding.UTF8.GetBytes("download-import:" + jobId));
-            return new Guid(hash.AsSpan(0, 16));
         }
     }
 }
