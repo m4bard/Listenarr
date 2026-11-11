@@ -38,7 +38,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
 
             await RunCycleAsync();
 
-            VerifySearched("The Wonderful Wizard of Oz L. Frank Baum", Times.Once());
+            VerifySearched("The Wonderful Wizard of Oz L Frank Baum", Times.Once());
             VerifySearchedOnlyFor("The Wonderful Wizard of Oz");
             Assert.Empty(_timeProvider.Delays);
         }
@@ -52,7 +52,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
 
             await RunCycleAsync();
 
-            VerifySearched("The Wonderful Wizard of Oz L. Frank Baum", Times.Once());
+            VerifySearched("The Wonderful Wizard of Oz L Frank Baum", Times.Once());
             VerifySearched("The Jungle Book Rudyard Kipling", Times.Once());
             Assert.Equal(new[] { TimeSpan.FromSeconds(BookDelaySeconds) }, _timeProvider.Delays);
         }
@@ -91,22 +91,32 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             var download = new Mock<IDownloadService>();
             var grabbedIds = new ConcurrentQueue<int>();
             download.Setup(d => d.StartDownloadAsync(
-                    It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()))
-                .Callback((SearchResult _, string _, int? audiobookId) => grabbedIds.Enqueue(audiobookId!.Value))
+                    It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+                .Callback((SearchResult _, string _, int? audiobookId, CancellationToken _) => grabbedIds.Enqueue(audiobookId!.Value))
                 .ReturnsAsync("download-1");
             // Accept every result with a positive score, so each searched book would be grabbed.
             var quality = new Mock<IQualityProfileService>();
             quality.Setup(q => q.ScoreSearchResults(
-                    It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>()))
-                .ReturnsAsync((List<SearchResult> results, QualityProfile _) =>
+                    It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>(), It.IsAny<bool>()))
+                .ReturnsAsync((List<SearchResult> results, QualityProfile _, bool _) =>
                     results.Select(r => new QualityScore { SearchResult = r, TotalScore = 100 }).ToList());
-            await InitAsync(
-                new SearchResult { Title = "M4B", DownloadType = DirectDownloadMetadataKeys.ClientId },
-                builder =>
-                {
-                    builder.WithSingleton(download.Object);
-                    builder.WithSingleton(quality.Object);
-                });
+            await InitAsync(configureBuilder: builder =>
+            {
+                builder.WithSingleton(download.Object);
+                builder.WithSingleton(quality.Object);
+            });
+            // This stack drops a release whose title does not name the book before the pick, so each
+            // query answers with a release named after the book it searched for.
+            _search.Setup(s => s.SearchAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<List<string>?>(),
+                    It.IsAny<SearchSortBy>(),
+                    It.IsAny<SearchSortDirection>(),
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchQueryPlan?>()))
+                .ReturnsAsync((string query, string? _, List<string>? _, SearchSortBy _, SearchSortDirection _, bool _, SearchQueryPlan? _) =>
+                    new List<SearchResult> { new() { Title = $"{query} M4B", DownloadType = DirectDownloadMetadataKeys.ClientId } });
             var books = new[]
             {
                 await SeedWantedAudiobookAsync("The Wonderful Wizard of Oz", "L. Frank Baum"),
@@ -128,9 +138,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             Assert.Single(grabbedIds);
         }
 
-        private async Task InitAsync(
-            SearchResult? searchResult = null,
-            Action<ServiceCollectionBuilder>? configureBuilder = null)
+        private async Task InitAsync(Action<ServiceCollectionBuilder>? configureBuilder = null)
         {
             _search.Setup(s => s.SearchAsync(
                     It.IsAny<string>(),
@@ -138,8 +146,9 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<List<string>?>(),
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>()))
-                .ReturnsAsync(searchResult == null ? new List<SearchResult>() : new List<SearchResult> { searchResult });
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchQueryPlan?>()))
+                .ReturnsAsync(new List<SearchResult>());
             Init(builder =>
             {
                 builder.WithSingleton(_search.Object);
@@ -203,7 +212,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<List<string>?>(),
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>()),
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchQueryPlan?>()),
                 times);
 
         private void VerifySearchedOnlyFor(params string[] titles) =>
@@ -213,7 +223,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<List<string>?>(),
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>()),
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchQueryPlan?>()),
                 Times.Never);
 
         private async Task RunCycleAsync()
