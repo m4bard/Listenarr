@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        192f5a9bdbfb53906777732ae193546ae6e5237f
     base short:  192f5a9bd
-    patches:     672
-    version:     1.6.3+m4bard.672
+    patches:     683
+    version:     1.6.3+m4bard.683
 
 ## Patches, oldest first
 
@@ -676,6 +676,16 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     65bfb964d  #-   stack: merge upstream canary 1.6.2 into the published stack
     b666fb4d8  #-   Pin stored webhook type over URL sniffing in dispatch
     14c94b363  #-   stack: merge upstream canary 1.6.3 into the stack
+    ffed25710  #-   fix(import): fail the job when the import refuses with a conflict
+    7a1e662e1  #-   stack: merge the import-conflict fix that ends stuck Processing jobs (local/fix-stuck-processing-conflict)
+    eb00b3d0a  #-   Take the pinned directory open failure message from the caller
+    d719f91ea  #-   Defer metadata rescan candidates per file so failures cannot starve the batch
+    d99f3b6cb  #-   stack: merge the metadata rescan starvation fix (#1151, local/teamA-1143-rescan-starvation-on-3290)
+    b6a5c7639  #-   Don't wait the per-book search delay for books that are not searched
+    3696447f0  #-   Repeat the pre-search checks after the per-book wait
+    afd437e34  #-   stack: merge the per-book search delay fix (local/fix-search-skip-delay)
+    faa90f62c  #-   stack: reconcile two files with the 500-line cap after the ff6 merges
+    fa945f972  #-   stack: point the search-delay and import-conflict tests at this stack's surfaces
 
 ## Items, in application order
 
@@ -998,16 +1008,19 @@ Regenerate with tools/local_stack.sh in the tracker repo.
 This head is the published round 27 stack (3096e8267 plus its manifest commit e8d8e52bf) with upstream canary
 61117b813 merged in, then the previous manifest commit 7a9704ae4, the NZBGet client-duplicate fix and its manifest
 commit 0958080d2, then upstream canary 40991ae27 (1.5.15) merged in, then its manifest commit 30d81a2b6, then upstream
-canary 3290673d8 (1.6.2) merged in, then its manifest commit 67510c1f1, then the stored-webhook-type pin b666fb4d8, and
-then upstream canary 192f5a9bd (1.6.3) merged in, so it is a fast-forward of the branch it replaces and no published sha
-changed. It is not a linear stack on the base. The patch list above is the round 27 list, still accurate for every patch
+canary 3290673d8 (1.6.2) merged in, then its manifest commit 67510c1f1, then the stored-webhook-type pin b666fb4d8, then
+upstream canary 192f5a9bd (1.6.3) merged in, then its manifest commit a90de91c6, then three fix branches merged in as they
+are (the import-conflict fix ffed25710, #1151's rescan starvation fix d719f91ea and the per-book search delay fix
+3696447f0) and two stack commits that reconcile them with the 500-line cap and with this stack's test surfaces, so it is
+a fast-forward of the branch it replaces and no published sha changed. It is not a linear stack on the base. The patch list above is the round 27 list, still accurate for every patch
 it names except three, a06b1b347, ac5e63bc2 and 5d99e112d, which upstream 3b7e0fbff (#961) now supplies; they stay in
 history and are listed for continuity. Upstream 1.5.12 to 1.5.15 also supplies #1021, #1120, #1121 and #1013, 1.6.0 to
 1.6.2 supplies #1020 and #943, and 1.6.3 supplies #843 (the ASIN tag writer repair, listed above as the #24 entries),
 which this stack already carried in an earlier or later revision; the merges kept the stack's side where it was the later
 revision and took upstream's version where it was the final one, and the stack's commits for those PRs stay in the list
-for continuity. Upstream 1.6.0 also brings #1054 (repair), which the stack did not carry before. The nine entries added at
-the end are the first merge, a stack-only prettier commit, the three NZBGet duplicate-fix commits, the second merge, the
-webhook-type pin and the third merge. The patch count is `git rev-list --count base..HEAD` taken before this manifest
+for continuity. Upstream 1.6.0 also brings #1054 (repair), which the stack did not carry before. The nine entries after
+round 27's list are the first merge, a stack-only prettier commit, the three NZBGet duplicate-fix commits, the second
+merge, the webhook-type pin and the third merge. The ten entries after those are the three fix branches' five commits,
+each followed into the stack by its merge, then the line-cap reconcile and the test reconcile. The patch count is `git rev-list --count base..HEAD` taken before this manifest
 commit, so it counts the round 27 manifest commit, the earlier stack manifest commits, all merges and the superseded
 commits, and overstates the distinct patches. The next `local_stack.sh refresh` re-linearizes the stack.
