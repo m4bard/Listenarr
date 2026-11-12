@@ -99,14 +99,13 @@ def test_old_build_shim_has_no_out_time_us(audio: str, build: Callable[[str], No
     assert "out_time_us=" not in old and f"out_time_ms={SECONDS * 1_000_000}" in old and "out_time=00:00:03" in old
 
 
-@pytest.mark.parametrize("mode", ["old-build", "ms-only"])
-def test_decodes_on_a_build_without_out_time_us(audio: str, build: Callable[[str], None], mode: str) -> None:
-    build(mode)
+def test_decodes_on_a_build_without_out_time_us(audio: str, build: Callable[[str], None]) -> None:
+    build("old-build")  # the answers/55 shape: out_time_ms in microseconds and out_time
     decoded = media.decode_duration(audio)
     assert decoded is not None and abs(decoded - SECONDS) < 0.1
 
 
-@pytest.mark.parametrize("mode", ["not-available", "garbage", "no-progress"])
+@pytest.mark.parametrize("mode", ["ms-only", "not-available", "garbage", "no-progress"])
 def test_a_build_with_no_usable_progress_gives_none(audio: str, build: Callable[[str], None], mode: str) -> None:
     build(mode)
     assert media.decode_duration(audio) is None
@@ -115,12 +114,14 @@ def test_a_build_with_no_usable_progress_gives_none(audio: str, build: Callable[
 @pytest.mark.parametrize(("progress", "expected"), [
     ("out_time_us=5000000\nout_time_ms=5000000\nout_time=00:00:05.000000", (5.0, "out_time_us")),
     ("out_time_ms=5000000\nout_time=00:00:05.000000\nprogress=end", (5.0, "out_time")),
-    ("out_time_ms=5000000\nprogress=end", (5.0, "out_time_ms")),
+    ("out_time_ms=5000000\nprogress=end", None),  # out_time_ms alone is not read
     ("out_time_us=N/A\nout_time_ms=N/A\nout_time=N/A", None),
     ("out_time_us=N/A\nout_time=01:02:03.500000", (3723.5, "out_time")),
     ("out_time_us=1000000\nout_time_us=N/A", (1.0, "out_time_us")),  # the last number counts, N/A is ignored
     ("out_time_us=soon\nout_time_ms=-5\nout_time=-00:00:01.000000", None),
     ("", None),
+    ("out_time_us=" + "9" * 5000 + "\nout_time=00:00:02.500000", (2.5, "out_time")),  # absurd value: ignored
+    ("out_time_us=" + "9" * 5000, None),
 ])
 def test_progress_seconds_reads_the_best_available_key(progress: str, expected: tuple[float, str] | None) -> None:
     assert media.progress_seconds(progress) == expected

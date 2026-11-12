@@ -99,21 +99,25 @@ def no_progress_decode_count() -> int:
 def progress_seconds(progress: str) -> tuple[float, str] | None:
     """Decoded seconds and the progress key they came from, read from ``-progress`` output; None when it has none.
 
-    Keys, in order of preference: ``out_time_us`` (microseconds); ``out_time`` (HH:MM:SS.micro, unambiguous); last,
-    ``out_time_ms``, which holds microseconds despite its name (measured on a 2018 git build, which prints
-    ``out_time_ms=5000000`` beside ``out_time=00:00:05.000000`` for a 5 s decode and has no ``out_time_us``).
-    Each key's last value that is a number counts; N/A and garbage are ignored.
+    Keys, in order of preference: ``out_time_us`` (microseconds), then ``out_time`` (HH:MM:SS.micro). ``out_time_ms``
+    is not read: its unit is not part of ffmpeg's documented progress format, and ``out_time`` carries the same value
+    unambiguously on every build seen (a 2018 git build prints ``out_time_ms=5000000`` beside
+    ``out_time=00:00:05.000000`` and has no ``out_time_us``). Each key's last value that is a number counts; N/A,
+    garbage and absurdly large values are ignored.
     """
     last: dict[str, float] = {}
     for line in progress.splitlines():
         key, _, value = line.partition("=")
         value = value.strip()
-        if key == "out_time" and (clock := _CLOCK.fullmatch(value)):
-            hours, minutes, seconds = clock.groups()
-            last[key] = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
-        elif key in ("out_time_us", "out_time_ms") and value.isascii() and value.isdigit():
-            last[key] = int(value) / 1_000_000
-    for key in ("out_time_us", "out_time", "out_time_ms"):
+        try:
+            if key == "out_time" and (clock := _CLOCK.fullmatch(value)):
+                hours, minutes, seconds = clock.groups()
+                last[key] = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+            elif key == "out_time_us" and value.isascii() and value.isdigit():
+                last[key] = int(value) / 1_000_000
+        except (ValueError, OverflowError):
+            continue
+    for key in ("out_time_us", "out_time"):
         if key in last:
             return last[key], key
     return None
