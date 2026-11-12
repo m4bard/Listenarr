@@ -91,6 +91,57 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             Assert.Equal("ABCDEF1234567890ABCDEF1234567890ABCDEF12", persisted.Metadata["TorrentHash"]?.ToString());
         }
 
+        [Theory]
+        [InlineData(null)]
+        [InlineData(0)]
+        [InlineData(-3)]
+        public async Task SendToDownloadClientAsync_RecordsTheGrabWithoutAnAudiobookIdWhenNoneIsGiven(int? requestedId)
+        {
+            await SendAndVerifyGrabAudiobookIdAsync(_ => requestedId);
+        }
+
+        [Fact]
+        public async Task SendToDownloadClientAsync_PassesTheLibraryAudiobookIdToTheGrabHistory()
+        {
+            await SendAndVerifyGrabAudiobookIdAsync(libraryId => libraryId);
+        }
+
+        private async Task SendAndVerifyGrabAudiobookIdAsync(Func<int, int?> requestedIdFor)
+        {
+            var gatewayMock = new Mock<IDownloadClientGateway>();
+            gatewayMock
+                .Setup(g => g.AddAsync(It.IsAny<DownloadClientConfiguration>(), It.IsAny<PreparedDownloadSubmission>(), It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync(new DownloadClientSubmissionResult("ABCDEF1234567890ABCDEF1234567890ABCDEF12"));
+            var historyMock = new Mock<IDownloadHistoryService>();
+            _services.AddSingleton(gatewayMock.Object);
+            _services.AddSingleton(historyMock.Object);
+
+            Init();
+            await InitData();
+            // InitData seeds an active download for _audiobook, which the duplicate guard would refuse.
+            var otherAudiobook = await CreateAudiobook();
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var searchResult = new SearchResult
+            {
+                Title = "The Time Machine",
+                Artist = "H. G. Wells",
+                DownloadType = "Torrent",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12&dn=The%20Time%20Machine",
+                Size = 123456789
+            };
+
+            var requestedId = requestedIdFor(otherAudiobook.Id);
+            int? expected = requestedId > 0 ? requestedId : null;
+
+            await downloadService.SendToDownloadClientAsync(searchResult, "qb-1", requestedId);
+
+            historyMock.Verify(
+                h => h.RecordGrabbedAsync(
+                    It.IsAny<string>(), "qb-1", It.IsAny<string>(),
+                    DownloadProtocol.Torrent, expected),
+                Times.Once);
+        }
+
         [Fact]
         public async Task SendToDownloadClientAsync_WhenClientSubmissionFails_RemovesProvisionalDownloadAndDoesNotRecordGrab()
         {
@@ -133,7 +184,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             historyMock.Verify(
                 h => h.RecordGrabbedAsync(
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                    It.IsAny<DownloadProtocol>(), It.IsAny<Guid?>()),
+                    It.IsAny<DownloadProtocol>(), It.IsAny<int?>()),
                 Times.Never);
             notificationMock.VerifyNoOtherCalls();
         }
@@ -324,7 +375,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             historyMock.Verify(
                 h => h.RecordGrabbedAsync(
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                    It.IsAny<DownloadProtocol>(), It.IsAny<Guid?>()),
+                    It.IsAny<DownloadProtocol>(), It.IsAny<int?>()),
                 Times.Never);
             // A blank external id leaves nothing to track, so this path records a failure too.
             // Stubbing RecordDownloadFailedAsync without asserting it would let that behaviour
