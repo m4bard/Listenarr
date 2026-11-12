@@ -87,8 +87,9 @@ def audio_hash(path: str) -> str | None:
 
 def decode_duration(path: str) -> float | None:
     """Seconds of the first audio stream measured by decoding it to null (reads only), not the container's claim."""
-    command = ["ffmpeg", "-nostdin", "-v", "error", "-i", path, "-map", "0:a:0", "-f", "null", "-",
-               "-progress", "pipe:1", "-nostats"]
+    # Every option goes before the output: some ffmpeg builds ignore options placed after it.
+    command = ["ffmpeg", "-nostdin", "-v", "error", "-progress", "pipe:1", "-nostats", "-i", path, "-map", "0:a:0",
+               "-f", "null", "-"]
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=HASH_TIMEOUT_SECONDS,
                                 check=False, stdin=subprocess.DEVNULL)
@@ -97,6 +98,8 @@ def decode_duration(path: str) -> float | None:
     if result.returncode != 0:
         return None
     times = [line.split("=", 1)[1] for line in result.stdout.splitlines() if line.startswith("out_time_us=")]
+    if not times:
+        log.warning("decode reported no progress (exit 0, no out_time_us) path=%s", path)
     try:
         return int(times[-1]) / 1_000_000 if times else None
     except ValueError:
