@@ -78,13 +78,17 @@ namespace Listenarr.Tests.Features.Infrastructure.Notifications.Delivery
         /// <summary>Every outbound POST, in delivery order, for tests that inspect headers.</summary>
         public IReadOnlyList<HttpRequestMessage> Requests => _handler.Requests;
 
-        public static WebhookDispatchProbe ForWebhook(string url, string storedTrigger, bool isEnabled = true)
-            => new(new ApplicationSettings
+        public static WebhookDispatchProbe ForWebhook(string url, string storedTrigger, bool isEnabled = true, string storedType = "Zapier")
+        {
+            var webhook = NewWebhook(url, isEnabled, storedTrigger);
+            webhook.Type = storedType;
+            return new(new ApplicationSettings
             {
                 WebhookUrl = string.Empty,
                 EnabledNotificationTriggers = [],
-                Webhooks = [NewWebhook(url, isEnabled, storedTrigger)]
+                Webhooks = [webhook]
             });
+        }
 
         public static WebhookConfiguration NewWebhook(string url, bool isEnabled, params string[] triggers)
             => new()

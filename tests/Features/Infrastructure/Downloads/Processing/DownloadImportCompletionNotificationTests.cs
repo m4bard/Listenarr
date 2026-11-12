@@ -117,7 +117,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
         [MemberData(nameof(ImportFailurePoints))]
         public async Task FailedImport_EmitsTheFailureAndNoCompletion(ImportFailurePoint failurePoint)
         {
-            var (download, jobId) = await EnqueueImportAsync(FileAction.Copy);
+            // The retry budget is a setting that the processor applies to the job on every attempt,
+            // so it is set here rather than on the queued job.
+            var (download, jobId) = await EnqueueImportAsync(FileAction.Copy, missingSourceMaxRetries: 0);
             if (failurePoint == ImportFailurePoint.SourceFilesMissing)
             {
                 _downloadClientGateway.SourceFiles = [Path.Join(FileService.GetTempDirectory("dl-missing"), "missing.m4b")];
@@ -126,10 +128,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
             {
                 _downloadClientGateway.MarkImportedResult = false;
             }
-
-            var job = (await _downloadProcessingJobRepository.GetByIdAsync(jobId))!;
-            job.MaxRetries = 0;
-            await _downloadProcessingJobRepository.UpdateAsync(job);
 
             await _processor.ProcessQueueAsync(CancellationToken.None);
 
@@ -175,7 +173,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
             Assert.Equal([download.Id], _notifications.Imported);
         }
 
-        private async Task<(Download Download, string JobId)> EnqueueImportAsync(FileAction fileAction)
+        private async Task<(Download Download, string JobId)> EnqueueImportAsync(FileAction fileAction, int? missingSourceMaxRetries = null)
         {
             var sourceDir = FileService.GetTempDirectory("dl-dir");
             var destRoot = FileService.GetTempDirectory("dl-dest");
@@ -199,6 +197,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
                 FileAction.HardlinkCopy => new ApplicationSettingsBuilder().WithHardlinkFileOnCompleted(),
                 _ => throw new ArgumentOutOfRangeException(nameof(fileAction), fileAction, "Not an import file action")
             };
+            if (missingSourceMaxRetries is { } maxRetries)
+            {
+                settings.WithMissingSourceMaxRetries(maxRetries);
+            }
+
             await _applicationSettingsRepository.SaveAsync(settings.WithoutMetadataProcessing().Build());
 
             var jobId = await _jobService.EnqueueAsync(download);
@@ -236,8 +239,10 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
 
             public Task SendNotificationAsync(string trigger, object data) => Task.CompletedTask;
 
-            public Task SendNotificationAsync(string trigger, object data, string webhookUrl, List<string> enabledTriggers)
+            public Task SendNotificationAsync(string trigger, object data, string webhookUrl, List<string> enabledTriggers, string? webhookType = null)
                 => Task.CompletedTask;
+
+            public Task PublishAsync(NotificationEvent notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
         }
     }
 }
