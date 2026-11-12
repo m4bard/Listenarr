@@ -283,6 +283,106 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
         }
 
         [Fact]
+        public async Task SendToDownloadClientAsync_WhenTheClientRequestTimesOut_RecordsFailedAttemptInHistory()
+        {
+            var timeout = new TaskCanceledException(
+                "The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.",
+                new TimeoutException());
+            var gatewayMock = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
+            gatewayMock
+                .Setup(g => g.AddAsync(
+                    It.Is<DownloadClientConfiguration>(client => client.Id == "qb-1"),
+                    It.IsAny<PreparedDownloadSubmission>(),
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(timeout);
+
+            var historyMock = new Mock<IDownloadHistoryService>(MockBehavior.Strict);
+            historyMock
+                .Setup(h => h.RecordDownloadFailedAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+                .Returns(Task.CompletedTask);
+            _services.AddSingleton(gatewayMock.Object);
+            _services.AddSingleton(historyMock.Object);
+
+            Init();
+            await InitData();
+            var initialDownloadCount = (await _downloadRepository.GetAllAsync()).Count;
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+
+            // Nobody asked for cancellation, so the timeout must not be mistaken for one.
+            var thrown = await Assert.ThrowsAsync<DownloadClientSubmissionException>(
+                () => downloadService.SendToDownloadClientAsync(PublicDomainMagnet(), _client.Id));
+
+            Assert.Same(timeout, thrown.InnerException);
+            Assert.Equal(initialDownloadCount, (await _downloadRepository.GetAllAsync()).Count);
+            historyMock.Verify(
+                h => h.RecordDownloadFailedAsync(
+                    It.IsAny<string>(), "qb-1", "A Princess of Mars", It.IsAny<string?>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task SendToDownloadClientAsync_WhenTheCallerCancels_StaysQuietAndRecordsNoFailure()
+        {
+            using var cts = new CancellationTokenSource();
+            await cts.CancelAsync();
+
+            var gatewayMock = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
+            gatewayMock
+                .Setup(g => g.AddAsync(
+                    It.Is<DownloadClientConfiguration>(client => client.Id == "qb-1"),
+                    It.IsAny<PreparedDownloadSubmission>(),
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new TaskCanceledException("Shutting down.", null, cts.Token));
+
+            var historyMock = new Mock<IDownloadHistoryService>(MockBehavior.Strict);
+            _services.AddSingleton(gatewayMock.Object);
+            _services.AddSingleton(historyMock.Object);
+
+            Init();
+            await InitData();
+            var initialDownloadCount = (await _downloadRepository.GetAllAsync()).Count;
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => downloadService.SendToDownloadClientAsync(PublicDomainMagnet(), _client.Id, null, cts.Token));
+
+            Assert.Equal(initialDownloadCount, (await _downloadRepository.GetAllAsync()).Count);
+            historyMock.VerifyNoOtherCalls();
+        }
+
+        [Fact]
+        public async Task SendToDownloadClientAsync_WhenTheCallerCancelsAfterQbittorrentAcceptedTheTorrent_KeepsTheDownload()
+        {
+            Init();
+            await InitData();
+            var apiMock = _provider.GetRequiredService<Listenarr.Tests.Mocks.Api.QbittorrentApiMock>();
+            using var cts = new CancellationTokenSource();
+            apiMock.OnAddAccepted = () => cts.Cancel();
+
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost").WithPort(8080).WithUsername("admin").WithPassword("admin").WithType("qbittorrent").Build());
+            var initialDownloadCount = (await _downloadRepository.GetAllAsync()).Count;
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+
+            // The client holds the torrent now; a shutdown must not delete the row that tracks it.
+            var downloadId = await downloadService.SendToDownloadClientAsync(PublicDomainMagnet(), client.Id, null, cts.Token);
+
+            Assert.Equal(1, apiMock.AddsAccepted);
+            Assert.False(string.IsNullOrEmpty(downloadId));
+            Assert.Equal(initialDownloadCount + 1, (await _downloadRepository.GetAllAsync()).Count);
+        }
+
+        private static SearchResult PublicDomainMagnet() => new()
+        {
+            Title = "A Princess of Mars",
+            Artist = "Edgar Rice Burroughs",
+            DownloadType = "Torrent",
+            MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+            Size = 123456789
+        };
+
+        [Fact]
         public async Task SendToDownloadClientAsync_WhenClientReturnsBlankExternalId_RemovesProvisionalDownloadAndDoesNotRecordGrab()
         {
             var gatewayMock = new Mock<IDownloadClientGateway>(MockBehavior.Strict);

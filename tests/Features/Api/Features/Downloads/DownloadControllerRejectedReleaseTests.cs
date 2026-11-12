@@ -71,7 +71,8 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 .Setup(service => service.SendToDownloadClientAsync(
                     It.IsAny<TrustedDownloadCandidate>(),
                     It.IsAny<string?>(),
-                    It.IsAny<int?>()))
+                    It.IsAny<int?>(),
+                    It.IsAny<CancellationToken>()))
                 .ThrowsAsync(thrown);
 
             var references = new Mock<IDownloadReferenceService>(MockBehavior.Loose);
