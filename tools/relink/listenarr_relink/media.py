@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 from dataclasses import dataclass
 
@@ -85,19 +86,42 @@ def audio_hash(path: str) -> str | None:
     return line.removeprefix("SHA256=")
 
 
-# Decodes that exited 0 without an out_time_us, so a run can report how many (a count only, never a path).
+# Decodes that exited 0 without any usable progress time, so a run can report how many (a count only, never a path).
 _no_progress_decodes = 0
+_CLOCK = re.compile(r"(\d+):([0-5]\d):([0-5]\d(?:\.\d+)?)")
 
 
 def no_progress_decode_count() -> int:
-    """How many decodes in this process exited 0 but printed no out_time_us."""
+    """How many decodes in this process exited 0 but printed no usable progress time."""
     return _no_progress_decodes
+
+
+def progress_seconds(progress: str) -> tuple[float, str] | None:
+    """Decoded seconds and the progress key they came from, read from ``-progress`` output; None when it has none.
+
+    Keys, in order of preference: ``out_time_us`` (microseconds); ``out_time`` (HH:MM:SS.micro, unambiguous); last,
+    ``out_time_ms``, which holds microseconds despite its name (measured on a 2018 git build, which prints
+    ``out_time_ms=5000000`` beside ``out_time=00:00:05.000000`` for a 5 s decode and has no ``out_time_us``).
+    Each key's last value that is a number counts; N/A and garbage are ignored.
+    """
+    last: dict[str, float] = {}
+    for line in progress.splitlines():
+        key, _, value = line.partition("=")
+        value = value.strip()
+        if key == "out_time" and (clock := _CLOCK.fullmatch(value)):
+            hours, minutes, seconds = clock.groups()
+            last[key] = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+        elif key in ("out_time_us", "out_time_ms") and value.isascii() and value.isdigit():
+            last[key] = int(value) / 1_000_000
+    for key in ("out_time_us", "out_time", "out_time_ms"):
+        if key in last:
+            return last[key], key
+    return None
 
 
 def decode_duration(path: str) -> float | None:
     """Seconds of the first audio stream measured by decoding it to null (reads only), not the container's claim."""
     global _no_progress_decodes  # noqa: PLW0603
-    # Every option goes before the output: some ffmpeg builds ignore options placed after it.
     command = ["ffmpeg", "-nostdin", "-v", "error", "-progress", "pipe:1", "-nostats", "-i", path, "-map", "0:a:0",
                "-f", "null", "-"]
     try:
@@ -107,10 +131,8 @@ def decode_duration(path: str) -> float | None:
         return None
     if result.returncode != 0:
         return None
-    times = [line.split("=", 1)[1] for line in result.stdout.splitlines() if line.startswith("out_time_us=")]
-    if not times:
+    found = progress_seconds(result.stdout)
+    if found is None:
         _no_progress_decodes += 1
-    try:
-        return int(times[-1]) / 1_000_000 if times else None
-    except ValueError:
         return None
+    return found[0]
