@@ -7,6 +7,7 @@ every argument after the first ``-`` (the output target) and then runs the real 
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import stat
@@ -15,24 +16,40 @@ from pathlib import Path
 
 import pytest
 
+from test_oplinks import PRINCESS, PRINCESS_ASIN, add, container_says, edition_folder, lib, links_file, move_to, plan
+from test_size_placeholder import Library, library
+
 from listenarr_relink import media
+
+__all__ = ["lib", "library"]
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs ffmpeg")
 
 SECONDS = 3
 
-WRAPPER = """#!/bin/sh
-real="$1"
-shift
-keep=""
-for arg in "$@"; do
-    keep="$keep $arg"
-    if [ "$arg" = "-" ]; then
-        break
-    fi
-done
-exec "$real" $keep
+WRAPPER = """#!/usr/bin/env python3
+import os
+import sys
+args = sys.argv[1:]
+MODE
+os.execv("REAL", ["REAL", *args])
 """
+DROP_AFTER_OUTPUT = "args = args[: args.index('-') + 1]"
+DROP_PROGRESS = (
+    "i = args.index('-progress')\n"
+    "del args[i : i + 2]"
+)
+
+
+def install_shim(folder: Path, mode: str) -> Path:
+    """Write an ``ffmpeg`` into ``folder`` that rewrites its arguments with ``mode``, then runs the real one."""
+    real = shutil.which("ffmpeg")
+    assert real is not None
+    folder.mkdir()
+    shim = folder / "ffmpeg"
+    shim.write_text(WRAPPER.replace("MODE", mode).replace("REAL", real))
+    shim.chmod(shim.stat().st_mode | stat.S_IXUSR)
+    return shim
 
 
 @pytest.fixture
@@ -46,13 +63,8 @@ def audio(tmp_path: Path) -> str:
 @pytest.fixture
 def old_build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Put an ``ffmpeg`` first on PATH that ignores every option after the output target."""
-    real = shutil.which("ffmpeg")
-    assert real is not None
     folder = tmp_path / "old-build"
-    folder.mkdir()
-    shim = folder / "ffmpeg"
-    shim.write_text(WRAPPER.replace('real="$1"\nshift\n', f'real="{real}"\n'))
-    shim.chmod(shim.stat().st_mode | stat.S_IXUSR)
+    shim = install_shim(folder, DROP_AFTER_OUTPUT)
     monkeypatch.setenv("PATH", f"{folder}{os.pathsep}{os.environ['PATH']}")
     return shim
 
@@ -75,3 +87,21 @@ def test_old_build_wrapper_drops_trailing_progress(audio: str, old_build: Path) 
 def test_decodes_on_a_build_that_ignores_trailing_options(audio: str, old_build: Path) -> None:
     decoded = media.decode_duration(audio)
     assert decoded is not None and abs(decoded - SECONDS) < 0.1
+
+
+def test_a_decode_without_progress_is_logged_as_a_count_with_no_path(
+        lib: Library, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    """A build that prints no out_time_us gives one summary line with the number only, never a path."""
+    folder = tmp_path / "no-progress"
+    install_shim(folder, DROP_PROGRESS)
+    (row,) = add(lib, 1, PRINCESS, PRINCESS_ASIN)
+    target = move_to(lib, row, edition_folder(lib, PRINCESS, PRINCESS_ASIN))
+    container_says(monkeypatch, 100.0)  # the duration veto fires, so the link needs the decode
+    before = media.no_progress_decode_count()
+    monkeypatch.setenv("PATH", f"{folder}{os.pathsep}{os.environ['PATH']}")
+    with caplog.at_level(logging.WARNING):
+        plan(lib, "with", "--operator-links", str(links_file(lib, [(row, target, "duration-decode")])))
+    assert media.no_progress_decode_count() == before + 1
+    lines = [r.getMessage() for r in caplog.records if "out_time_us" in r.getMessage()]
+    assert lines == ["decode exited 0 without out_time_us for 1 files; ffmpeg may ignore -progress"]
+    assert str(target) not in caplog.text and str(lib.top) not in caplog.text

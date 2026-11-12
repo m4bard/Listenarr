@@ -29,6 +29,7 @@ listed twice, a row whose class is not the one the reason lifts, or a target tha
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from collections import Counter
@@ -59,6 +60,7 @@ REASONS = {"folder-edition": "folder-id-disagrees", "hl-edition": "hardlinked",
 EDITION_REASONS = frozenset({"folder-edition", "hl-edition"})
 DECODE_TOLERANCE = 0.01
 RUNTIME_TOLERANCE = 0.10
+log = logging.getLogger("relink.oplinks")
 _ANY_BRACKETED_ID = re.compile(r"\[([^\[\]]+)\]")
 
 
@@ -111,6 +113,7 @@ def apply_links(library: Library, path_map: PathMap, result: MatchResult, links:
     decisions = {d.row.id: d for d in result.decisions}
     _refuse_malformed(links, decisions)
     outcome = LinkOutcome()
+    no_progress_before = media.no_progress_decode_count()
     asins = {b.context.get("Asin", "").strip().casefold() for b in library.books.values()} - {""}
     others = veto_keys(library.books)
     by_book: dict[int, list[tuple[Link, RowDecision]]] = {}
@@ -154,6 +157,9 @@ def apply_links(library: Library, path_map: PathMap, result: MatchResult, links:
     for row in library.files:
         files_by_book.setdefault(row.audiobook_id, []).append(row)
     result.book_updates = _book_updates(library, path_map, result.decisions, files_by_book, result.flags)
+    no_progress = media.no_progress_decode_count() - no_progress_before
+    if no_progress:
+        log.warning("decode exited 0 without out_time_us for %d files; ffmpeg may ignore -progress", no_progress)
     return outcome
 
 

@@ -85,8 +85,18 @@ def audio_hash(path: str) -> str | None:
     return line.removeprefix("SHA256=")
 
 
+# Decodes that exited 0 without an out_time_us, so a run can report how many (a count only, never a path).
+_no_progress_decodes = 0
+
+
+def no_progress_decode_count() -> int:
+    """How many decodes in this process exited 0 but printed no out_time_us."""
+    return _no_progress_decodes
+
+
 def decode_duration(path: str) -> float | None:
     """Seconds of the first audio stream measured by decoding it to null (reads only), not the container's claim."""
+    global _no_progress_decodes  # noqa: PLW0603
     # Every option goes before the output: some ffmpeg builds ignore options placed after it.
     command = ["ffmpeg", "-nostdin", "-v", "error", "-progress", "pipe:1", "-nostats", "-i", path, "-map", "0:a:0",
                "-f", "null", "-"]
@@ -99,7 +109,7 @@ def decode_duration(path: str) -> float | None:
         return None
     times = [line.split("=", 1)[1] for line in result.stdout.splitlines() if line.startswith("out_time_us=")]
     if not times:
-        log.warning("decode reported no progress (exit 0, no out_time_us) path=%s", path)
+        _no_progress_decodes += 1
     try:
         return int(times[-1]) / 1_000_000 if times else None
     except ValueError:
