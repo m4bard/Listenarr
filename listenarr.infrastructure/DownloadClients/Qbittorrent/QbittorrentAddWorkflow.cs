@@ -75,6 +75,27 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 throw new DownloadClientSubmissionException($"qBittorrent rejected the torrent with HTTP {(int)addResponse.StatusCode}.");
             }
 
+            // A 200 is not by itself an acceptance. qBittorrent's /torrents/add answers 200 with
+            // the body "Fails." when it will not take the torrent, and on Web API below 2.14.0
+            // (qBittorrent 5.2.0) that is the only signal there is: the 409 that newer builds
+            // return for a duplicate info-hash did not exist yet. Without reading the body, the
+            // workflow returns the info-hash it computed locally and the caller records a grab
+            // for a torrent the client never accepted, so the download is tracked, never
+            // progresses, and nothing explains why.
+            //
+            // The test is for the refusal, not for "Ok.": older builds answer 200 with an empty
+            // body on success, so a positive test would fail every grab against them.
+            var addBody = await addResponse.Content.ReadAsStringAsync(ct);
+            if (string.Equals(addBody.Trim(), "Fails.", StringComparison.Ordinal))
+            {
+                logger.LogError(
+                    "qBittorrent answered HTTP {Status} but refused the torrent in the response body. Response: {Response}",
+                    (int)addResponse.StatusCode,
+                    LogRedaction.SanitizeText(addBody));
+                throw new DownloadClientSubmissionException(
+                    "qBittorrent accepted the request but refused the torrent, answering \"Fails.\".");
+            }
+
             logger.LogInformation("Successfully sent torrent to qBittorrent");
 
             await Task.Delay(1000, ct);
