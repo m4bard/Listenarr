@@ -219,7 +219,7 @@ public sealed class FileMoverSymlinkedSourceBoundaryTests : BaseTests
         }
 
         PublicationOutcome outcome;
-        if (state == "unreadable")
+        if (state == "unreadable" && !OperatingSystem.IsWindows())
             File.SetUnixFileMode(guard, UnixFileMode.None);
         try
         {
@@ -230,7 +230,8 @@ public sealed class FileMoverSymlinkedSourceBoundaryTests : BaseTests
         }
         finally
         {
-            File.SetUnixFileMode(guard, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(guard, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
 
         Assert.True(File.Exists(outsideFile), "the file outside every root was retired through a link inside the root");
