@@ -52,7 +52,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             SetupSearch(search, fullQuery, fallbackQuery, new List<SearchResult> { correct });
             var download = new Mock<IDownloadService>();
             download.Setup(d => d.StartDownloadAsync(
-                    It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()))
+                    It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync("download-1");
             // Isolate the fallback -> selection wiring from the quality scorer (its own tests cover
             // scoring): accept the constrained result with a positive, non-rejected score.
@@ -74,7 +74,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             download.Verify(d => d.StartDownloadAsync(
                     It.Is<SearchResult>(r => r.Title == correct.Title),
                     DirectDownloadMetadataKeys.ClientId,
-                    audiobook.Id),
+                    audiobook.Id,
+                    It.IsAny<CancellationToken>()),
                 Times.Once);
         }
 
@@ -104,7 +105,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             // The guard drops the wrong book before scoring, so the download service is never asked
             // to grab it (strict mock would throw on any call).
             download.Verify(d => d.StartDownloadAsync(
-                It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()), Times.Never);
+                It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         private static void SetupSearch(
