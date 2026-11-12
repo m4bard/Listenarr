@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20261029020330_AddEmbedCoverArtInAudioFilesSetting")]
+    [Migration("20261112054145_AddEmbedCoverArtInAudioFilesSetting")]
     partial class AddEmbedCoverArtInAudioFilesSetting
     {
         /// <inheritdoc />
