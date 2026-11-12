@@ -14,6 +14,8 @@ namespace Listenarr.Tests.Mocks.Api
         public HttpStatusCode InfoStatusCode { get; set; } = HttpStatusCode.OK;
         public HttpStatusCode AddStatusCode { get; set; } = HttpStatusCode.OK;
         public string? AddResponseBody { get; set; }
+        public int AddsAccepted { get; private set; }
+        public Action? OnAddAccepted { get; set; }
         public string? InfoResponseOverride { get; set; }
         public NameValueCollection? LastForceStartForm { get; private set; }
         public HttpStatusCode ForceStartStatusCode { get; set; } = HttpStatusCode.OK;
@@ -85,6 +87,8 @@ namespace Listenarr.Tests.Mocks.Api
                 };
             }
 
+            AddsAccepted++;
+            OnAddAccepted?.Invoke();
             return MockUtils.GetCannedResponse("Ok");
         }
 
