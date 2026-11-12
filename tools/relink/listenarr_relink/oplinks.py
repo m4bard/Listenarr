@@ -257,7 +257,9 @@ def _content_check(link: Link, decision: RowDecision, candidate: Candidate, libr
     if link.reason == "duration-decode":
         stored = float(str(decision.row.values.get("DurationSeconds") or 0))
         decoded = media.decode_duration(candidate.file.host_path)
-        if decoded is None or stored <= 0 or abs(decoded - stored) > DECODE_TOLERANCE * stored:
+        if decoded is None:
+            return "decode-unavailable"
+        if stored <= 0 or abs(decoded - stored) > DECODE_TOLERANCE * stored:
             return "decode-differs-from-stored"
         probe = media.Probe(decoded, probe.codec, probe.sample_rate, probe.channels, probe.bit_rate, probe.tags,
                             probe.error)

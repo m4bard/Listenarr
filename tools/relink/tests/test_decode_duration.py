@@ -100,7 +100,11 @@ def test_a_decode_without_progress_is_logged_as_a_count_with_no_path(
     before = media.no_progress_decode_count()
     monkeypatch.setenv("PATH", f"{folder}{os.pathsep}{os.environ['PATH']}")
     with caplog.at_level(logging.WARNING):
-        plan(lib, "with", "--operator-links", str(links_file(lib, [(row, target, "duration-decode")])))
+        rc, after = plan(lib, "with", "--operator-links", str(links_file(lib, [(row, target, "duration-decode")])))
+    assert rc == 0 and after is not None
+    counts = after["operator_links"]["counts"]
+    assert "operator_links_refused_books decode-unavailable 1" in counts  # not folded into a real mismatch
+    assert not any("decode-differs-from-stored" in line for line in counts)
     assert media.no_progress_decode_count() == before + 1
     lines = [r.getMessage() for r in caplog.records if "out_time_us" in r.getMessage()]
     assert lines == ["decode exited 0 without out_time_us for 1 files; ffmpeg may ignore -progress"]
