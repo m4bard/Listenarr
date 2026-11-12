@@ -71,7 +71,7 @@ namespace Listenarr.Tests.Features.Domain.Utils
 
             // .wma is in FileUtils.AudioExtensions (the hardcoded default) but not in this
             // configured allowlist, so it must be rejected now that the setting is the live source.
-            Assert.True(FileUtils.AudioExtensions.Contains(".wma"));
+            Assert.Contains(".wma", FileUtils.AudioExtensions);
             Assert.False(FileUtils.IsAudioFile("book.wma", settings.AllowedFileExtensions));
         }
 
