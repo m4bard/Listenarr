@@ -97,7 +97,7 @@ namespace Listenarr.Domain.Downloads
             // A torrent info-hash is the release, across indexers and across submissions.
             if (!string.IsNullOrWhiteSpace(torrentInfoHash))
             {
-                return "btih:" + torrentInfoHash.Trim().ToLowerInvariant();
+                return "btih:" + TorrentInfoHash.Normalize(torrentInfoHash);
             }
 
             // Title and size next, and ahead of the URL, because a Usenet release URL is a
@@ -132,7 +132,9 @@ namespace Listenarr.Domain.Downloads
 
         /// <summary>
         /// Pull the info-hash out of a magnet so a torrent is recognised as the same release
-        /// even when the indexer hands back a different URL for it than last time.
+        /// even when the indexer hands back a different URL for it than last time. The value is
+        /// URI-decoded, as the submission path decodes it, so a percent-encoded hash keys on the
+        /// same torrent as its plain spelling.
         /// </summary>
         public static string? TorrentHashFrom(string? magnetLink)
         {
@@ -150,7 +152,7 @@ namespace Listenarr.Domain.Downloads
 
             var rest = magnetLink[(index + marker.Length)..];
             var end = rest.IndexOf('&');
-            return end < 0 ? rest : rest[..end];
+            return Uri.UnescapeDataString(end < 0 ? rest : rest[..end]);
         }
 
         private static string? FirstNonEmpty(params string?[] candidates)
