@@ -1,7 +1,5 @@
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
-using Listenarr.Infrastructure.HostedServices.Search;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Listenarr.Tests.Features.Application.Downloads.Submission;

@@ -3,7 +3,6 @@
  * Copyright (C) 2024-2026 Listenarr Contributors
  */
 using Microsoft.Extensions.Caching.Memory;
-using Listenarr.Domain.Common;
 namespace Listenarr.Api.Features.Library
 {
     public sealed partial class LibraryMetadataRescanWorkflow
