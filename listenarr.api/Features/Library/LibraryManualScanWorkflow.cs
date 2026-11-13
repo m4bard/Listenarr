@@ -109,7 +109,10 @@ namespace Listenarr.Api.Features.Library
                 cancellationToken);
             if (pathResolution.ErrorResult != null)
             {
-                return pathResolution.ErrorResult;
+                return IsMissingBasePathCandidate(audiobook, request, pathResolution)
+                    ? await ReconcileMissingBasePathAsync(audiobook, cancellationToken)
+                        ?? pathResolution.ErrorResult
+                    : pathResolution.ErrorResult;
             }
 
             var scanRoot = pathResolution.ScanRoot;
@@ -172,17 +175,7 @@ namespace Listenarr.Api.Features.Library
                     audiobook,
                     result.CreatedCount,
                     result.Audiobook);
-                return new OkObjectResult(new
-                {
-                    message = "Scan complete",
-                    scannedPath = scanRoot,
-                    found = result.AttributedFiles.Count,
-                    created = result.CreatedCount,
-                    complete = result.IsComplete,
-                    reconciliationPerformed = result.ReconciliationPerformed,
-                    diagnostics = result.Diagnostics,
-                    audiobook = result.Audiobook
-                });
+                return ScanComplete(scanRoot, result);
             }
             catch (DirectoryNotFoundException exception)
             {
@@ -202,15 +195,88 @@ namespace Listenarr.Api.Features.Library
                     exception,
                     "Manual scan rejected for audiobook {AudiobookId}",
                     audiobook.Id);
-                return new ObjectResult(new
-                {
-                    message = "The scan could not be completed safely. Review the server logs for details."
-                })
-                {
-                    StatusCode = StatusCodes.Status409Conflict
-                };
+                return ScanRejected();
             }
         }
+
+        // A default scan of a book whose folder is gone cannot pin that folder.
+        // It then only removes the rows of files that were inside it, and only
+        // while the folder's root still exists.
+        private bool IsMissingBasePathCandidate(
+            Audiobook audiobook,
+            LibraryController.ScanRequest? request,
+            LibraryScanPathResolution pathResolution) =>
+            string.IsNullOrWhiteSpace(request?.Path)
+            && pathResolution.AuthorizationFailure
+                == ScanPathAuthorizationFailure.IdentityUnavailable
+            && !string.IsNullOrWhiteSpace(audiobook.BasePath)
+            && !_fileSystem.DirectoryExists(audiobook.BasePath);
+
+        private async Task<IActionResult?> ReconcileMissingBasePathAsync(
+            Audiobook audiobook,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var scanService = scope.ServiceProvider
+                    .GetRequiredService<IAudiobookScanService>();
+                var result = await scanService.ReconcileMissingBasePathAsync(
+                    audiobook.Id,
+                    "Manual Scan",
+                    cancellationToken);
+                if (result == null)
+                {
+                    return null;
+                }
+
+                _logger.LogInformation(
+                    "Removed {Count} tracked file rows for '{Title}' because its BasePath no longer exists",
+                    result.RemovedFiles.Count,
+                    LogRedaction.SanitizeText(audiobook.Title));
+                return ScanComplete(audiobook.BasePath!, result);
+            }
+            catch (DirectoryNotFoundException exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "The root of a missing BasePath became unavailable for audiobook {AudiobookId}",
+                    audiobook.Id);
+                return null;
+            }
+            catch (InvalidOperationException exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Missing BasePath reconciliation rejected for audiobook {AudiobookId}",
+                    audiobook.Id);
+                return ScanRejected();
+            }
+        }
+
+        private static OkObjectResult ScanComplete(
+            string scannedPath,
+            AudiobookScanResult result) =>
+            new(new
+            {
+                message = "Scan complete",
+                scannedPath,
+                found = result.AttributedFiles.Count,
+                created = result.CreatedCount,
+                complete = result.IsComplete,
+                reconciliationPerformed = result.ReconciliationPerformed,
+                diagnostics = result.Diagnostics,
+                audiobook = result.Audiobook
+            });
+
+        private static ObjectResult ScanRejected() =>
+            new(new
+            {
+                message = "The scan could not be completed safely. Review the server logs for details."
+            })
+            {
+                StatusCode = StatusCodes.Status409Conflict
+            };
 
         private static bool IsAuthoritativeScope(
             string? existingBasePath,
