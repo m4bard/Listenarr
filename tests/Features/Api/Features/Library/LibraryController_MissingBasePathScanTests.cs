@@ -122,7 +122,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             Assert.Equal(3, (await _audiobookFileRepository.GetByAudiobookIdAsync(fixture.Audiobook.Id)).Count);
         }
 
-        [Fact]
+        [LinuxFact]
         public async Task ScanAudiobook_InsensitiveRootWithRecasedBasePath_RefusesAndPreservesLiveRows()
         {
             var fixture = await CreateFixtureAsync(
@@ -154,6 +154,31 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             AssertRefusedAndPreserved(result);
             Assert.Equal(3, (await _audiobookFileRepository.GetByAudiobookIdAsync(fixture.Audiobook.Id)).Count);
             Assert.NotNull(new DirectoryInfo(authorFolder).LinkTarget);
+        }
+
+        [DirectoryLinkTheory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task ScanAudiobook_DanglingLinkWithNoRowsInsideBasePath_RefusesAtTheAbsenceProbe(
+            bool linkReplacesAuthorFolder)
+        {
+            var fixture = await CreateFixtureAsync(
+                "scan-missing-basepath-probe-link",
+                includeRowsInsideBasePath: false);
+            var linkPath = linkReplacesAuthorFolder
+                ? Path.GetDirectoryName(fixture.BasePath)!
+                : fixture.BasePath;
+            Directory.Delete(linkPath, recursive: true);
+            Directory.CreateSymbolicLink(linkPath, Path.Join(fixture.Root, "missing-link-target"));
+
+            var result = await _provider.GetRequiredService<LibraryController>()
+                .ScanAudiobookFiles(fixture.Audiobook.Id, request: null);
+
+            AssertRefusedAndPreserved(result);
+            var remaining = Assert.Single(
+                await _audiobookFileRepository.GetByAudiobookIdAsync(fixture.Audiobook.Id));
+            Assert.Equal(fixture.OutsideRow.Id, remaining.Id);
+            Assert.NotNull(new DirectoryInfo(linkPath).LinkTarget);
         }
 
         [Fact]
@@ -191,7 +216,8 @@ namespace Listenarr.Tests.Features.Api.Features.Library
 
         private async Task<MissingBasePathFixture> CreateFixtureAsync(
             string name,
-            FileSystemCaseSensitivityMode? caseSensitivityMode = null)
+            FileSystemCaseSensitivityMode? caseSensitivityMode = null,
+            bool includeRowsInsideBasePath = true)
         {
             var root = FileService.GetTempDirectory(name);
             var basePath = Path.Join(root, Author, Title);
@@ -210,8 +236,12 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 .WithAuthor(SiblingAuthor)
                 .WithBasePath(siblingBasePath)
                 .Build());
-            await AddRowAsync(audiobook, Path.Join(basePath, Title + ".m4b"));
-            await AddRowAsync(audiobook, Path.Join("Disc 2", Title + ".m4b"));
+            if (includeRowsInsideBasePath)
+            {
+                await AddRowAsync(audiobook, Path.Join(basePath, Title + ".m4b"));
+                await AddRowAsync(audiobook, Path.Join("Disc 2", Title + ".m4b"));
+            }
+
             var outsideRow = await AddRowAsync(audiobook, Path.Join(root, Author, Title + ".m4b"));
             var siblingRow = await AddRowAsync(sibling, siblingFile);
             return new MissingBasePathFixture(
