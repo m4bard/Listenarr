@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.ComponentModel;
 using Listenarr.Application.Common.Exceptions;
 using Listenarr.Domain.Common;
 using Microsoft.AspNetCore.Mvc;
@@ -236,11 +237,14 @@ namespace Listenarr.Api.Features.Library
                     LogRedaction.SanitizeText(audiobook.Title));
                 return ScanComplete(audiobook.BasePath!, result);
             }
-            catch (DirectoryNotFoundException exception)
+            catch (Exception exception) when (exception is
+                IOException or Win32Exception or UnauthorizedAccessException)
             {
+                // Includes DirectoryNotFoundException. An unreadable or vanished
+                // parent is not proof of anything; keep the original refusal.
                 _logger.LogWarning(
                     exception,
-                    "The root of a missing BasePath became unavailable for audiobook {AudiobookId}",
+                    "The parent of a missing BasePath became unavailable for audiobook {AudiobookId}",
                     audiobook.Id);
                 return null;
             }

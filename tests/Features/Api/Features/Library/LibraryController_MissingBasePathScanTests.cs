@@ -122,6 +122,63 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             Assert.Equal(3, (await _audiobookFileRepository.GetByAudiobookIdAsync(fixture.Audiobook.Id)).Count);
         }
 
+        [Fact]
+        public async Task ScanAudiobook_InsensitiveRootWithRecasedBasePath_RefusesAndPreservesLiveRows()
+        {
+            var fixture = await CreateFixtureAsync(
+                "scan-missing-basepath-recased",
+                FileSystemCaseSensitivityMode.Insensitive);
+            var liveFile = await FileService.GetFileAsync(fixture.BasePath, Title + ".m4b", "audio");
+            var recasedBasePath = Path.Join(Path.GetDirectoryName(fixture.BasePath)!, Title.ToLowerInvariant());
+            Directory.Move(fixture.BasePath, recasedBasePath);
+
+            var result = await _provider.GetRequiredService<LibraryController>()
+                .ScanAudiobookFiles(fixture.Audiobook.Id, request: null);
+
+            AssertRefusedAndPreserved(result);
+            Assert.Equal(3, (await _audiobookFileRepository.GetByAudiobookIdAsync(fixture.Audiobook.Id)).Count);
+            Assert.True(File.Exists(Path.Join(recasedBasePath, Path.GetFileName(liveFile))));
+        }
+
+        [DirectoryLinkFact]
+        public async Task ScanAudiobook_DefaultScanWithDanglingAuthorFolderLink_RefusesAndPreservesRows()
+        {
+            var fixture = await CreateFixtureAsync("scan-missing-author-link");
+            var authorFolder = Path.GetDirectoryName(fixture.BasePath)!;
+            Directory.Delete(authorFolder, recursive: true);
+            Directory.CreateSymbolicLink(authorFolder, Path.Join(fixture.Root, "missing-author-target"));
+
+            var result = await _provider.GetRequiredService<LibraryController>()
+                .ScanAudiobookFiles(fixture.Audiobook.Id, request: null);
+
+            AssertRefusedAndPreserved(result);
+            Assert.Equal(3, (await _audiobookFileRepository.GetByAudiobookIdAsync(fixture.Audiobook.Id)).Count);
+            Assert.NotNull(new DirectoryInfo(authorFolder).LinkTarget);
+        }
+
+        [Fact]
+        public async Task ScanAudiobook_UnreadableRootDuringMissingBasePathChecks_KeepsOriginalRefusal()
+        {
+            var localFileSystem = new LocalFileSystem();
+            var fileSystem = new Mock<IFileSystem>();
+            fileSystem.Setup(system => system.DirectoryExists(It.IsAny<string>()))
+                .Returns<string>(localFileSystem.DirectoryExists);
+            fileSystem.Setup(system => system.IsReparsePoint(It.IsAny<string>()))
+                .Returns<string>(localFileSystem.IsReparsePoint);
+            fileSystem.Setup(system => system.EnumerateFileSystemEntries(It.IsAny<string>()))
+                .Throws(new UnauthorizedAccessException("simulated unreadable root"));
+            Init(services => services.WithSingleton(fileSystem.Object));
+            var fixture = await CreateFixtureAsync("scan-missing-basepath-unreadable");
+            Directory.Delete(fixture.BasePath, recursive: true);
+
+            var result = await _provider.GetRequiredService<LibraryController>()
+                .ScanAudiobookFiles(fixture.Audiobook.Id, request: null);
+
+            AssertRefusedAndPreserved(result);
+            Assert.Equal(3, (await _audiobookFileRepository.GetByAudiobookIdAsync(fixture.Audiobook.Id)).Count);
+            fileSystem.Verify(system => system.EnumerateFileSystemEntries(It.IsAny<string>()), Times.Once);
+        }
+
         private void AssertRefusedAndPreserved(IActionResult result)
         {
             var refused = Assert.IsType<ObjectResult>(result);
@@ -132,7 +189,9 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 StringComparison.Ordinal);
         }
 
-        private async Task<MissingBasePathFixture> CreateFixtureAsync(string name)
+        private async Task<MissingBasePathFixture> CreateFixtureAsync(
+            string name,
+            FileSystemCaseSensitivityMode? caseSensitivityMode = null)
         {
             var root = FileService.GetTempDirectory(name);
             var basePath = Path.Join(root, Author, Title);
@@ -140,7 +199,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var siblingBasePath = Path.Join(root, SiblingAuthor, SiblingTitle);
             Directory.CreateDirectory(siblingBasePath);
             var siblingFile = await FileService.GetFileAsync(siblingBasePath, SiblingTitle + ".m4b", "audio");
-            await AddAuthorizedRootAsync(root);
+            await AddAuthorizedRootAsync(root, caseSensitivityMode: caseSensitivityMode);
             var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle(Title)
                 .WithAuthor(Author)

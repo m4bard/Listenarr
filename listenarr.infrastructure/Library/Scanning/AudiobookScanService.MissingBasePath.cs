@@ -65,7 +65,8 @@ internal sealed partial class AudiobookScanService
         }
 
         using var pinnedAuthority = OpenPinnedScanAuthority(command);
-        if (!IsPinnedChildAbsent(pinnedAuthority, parent, basePath))
+        if (!IsPinnedChildAbsent(pinnedAuthority, parent, basePath)
+            || HasCaseInsensitiveAlias(parent, basePath, semantics))
         {
             return null;
         }
@@ -165,16 +166,37 @@ internal sealed partial class AudiobookScanService
         return null;
     }
 
+    private static string GetFirstMissingSegment(string parent, string path) =>
+        Path.GetRelativePath(parent, path)
+            .Split(
+                [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                StringSplitOptions.RemoveEmptyEntries)
+            .First();
+
+    // A root in case-insensitive mode can sit on a case-sensitive filesystem. A
+    // re-cased folder is then still the BasePath under the root's semantics and
+    // its files may still exist, so an exact-name miss is not proof of absence.
+    private bool HasCaseInsensitiveAlias(
+        string parent,
+        string path,
+        FileSystemPathSemantics semantics)
+    {
+        if (semantics.CaseSensitivity != FileSystemCaseSensitivity.Insensitive)
+        {
+            return false;
+        }
+
+        var childName = GetFirstMissingSegment(parent, path);
+        return fileSystem.EnumerateFileSystemEntries(parent)
+            .Any(entry => semantics.Comparer.Equals(Path.GetFileName(entry), childName));
+    }
+
     private static bool IsPinnedChildAbsent(
         PinnedScanAuthority authority,
         string parent,
         string path)
     {
-        var childName = Path.GetRelativePath(parent, path)
-            .Split(
-                [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
-                StringSplitOptions.RemoveEmptyEntries)
-            .First();
+        var childName = GetFirstMissingSegment(parent, path);
         try
         {
             authority.Root.OpenExistingChild(childName).Dispose();
