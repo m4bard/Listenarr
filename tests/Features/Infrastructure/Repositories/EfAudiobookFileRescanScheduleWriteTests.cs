@@ -1,5 +1,4 @@
 using System.Data.Common;
-using Listenarr.Infrastructure.Metadata.Jobs;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Tests.Common;
 using Microsoft.Data.Sqlite;
