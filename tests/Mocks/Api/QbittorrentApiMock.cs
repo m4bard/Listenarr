@@ -43,6 +43,13 @@ namespace Listenarr.Tests.Mocks.Api
         public bool ShareLimitsTimesOut { get; set; }
 
         /// <summary>
+        /// Make the tracker injection request time out the way HttpClient does, which surfaces as
+        /// a TaskCanceledException with nothing actually cancelled.
+        /// </summary>
+        public bool AddTrackersTimesOut { get; set; }
+        public int AddTrackersCallCount { get; private set; }
+
+        /// <summary>
         /// Make the per-torrent files request fail at the transport layer, the way it does when
         /// the client stops answering between the torrent list and the files calls that follow it.
         /// </summary>
@@ -59,6 +66,8 @@ namespace Listenarr.Tests.Mocks.Api
         public QbittorrentApiMock()
         {
             AddRoute("api/v2/auth/login", DoLogin, HttpMethod.Post);
+            // Ahead of torrents/add, whose pattern also matches this path and would win otherwise.
+            AddRoute("api/v2/torrents/addTrackers", AddTrackers, HttpMethod.Post);
             AddRoute("api/v2/torrents/add", DoAdd, HttpMethod.Post);
             AddRoute("api/v2/app/version", GetVersion, HttpMethod.Get);
             AddRoute("api/v2/torrents/info", GetInfo, HttpMethod.Get);
@@ -186,6 +195,19 @@ namespace Listenarr.Tests.Mocks.Api
             if (ForceStartStatusCode != HttpStatusCode.OK)
             {
                 return new HttpResponseMessage(ForceStartStatusCode);
+            }
+
+            return MockUtils.GetCannedResponse("Ok");
+        }
+
+        private async Task<HttpResponseMessage> AddTrackers(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (!Authenticated) return new HttpResponseMessage(HttpStatusCode.Forbidden);
+            AddTrackersCallCount++;
+
+            if (AddTrackersTimesOut)
+            {
+                throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout", new TimeoutException());
             }
 
             return MockUtils.GetCannedResponse("Ok");
