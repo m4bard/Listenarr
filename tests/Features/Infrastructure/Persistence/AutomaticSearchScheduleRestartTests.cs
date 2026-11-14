@@ -43,7 +43,7 @@ public sealed class AutomaticSearchScheduleRestartTests : BaseTests
         var failed = await _database.SeedIndexerAsync("Failed");
         var failedRetryUtc = NowUtc.AddHours(1);
 
-        Selection beforeRestart;
+        IReadOnlyList<string> beforeRestart;
         await using (var context = _database.CreateContext())
         {
             var store = new EfAutomaticSearchScheduleStore(context);
@@ -55,7 +55,7 @@ public sealed class AutomaticSearchScheduleRestartTests : BaseTests
                 new BookScheduleUpdate(searched, BookSearchOutcome.PartiallyCompleted, AnyPairCompleted: true), NowUtc, Cooldown);
 
             beforeRestart = await SelectAsync(store, failedRetryUtc, [completed, failed]);
-            Assert.Empty((await SelectAsync(store, NowUtc, [completed, failed])).Books);
+            Assert.Empty(await SelectAsync(store, NowUtc, [completed, failed]));
         }
 
         await using (var context = _database.CreateContext())
@@ -63,9 +63,7 @@ public sealed class AutomaticSearchScheduleRestartTests : BaseTests
             var afterRestart = await SelectAsync(new EfAutomaticSearchScheduleStore(context), failedRetryUtc, [completed, failed]);
 
             Assert.Equal(beforeRestart, afterRestart);
-            Assert.Equal([waiting, searched], afterRestart.Books.Select(book => book.Id));
-            Assert.Equal([completed, failed], afterRestart.Books[0].DueIndexers);
-            Assert.Equal([failed], afterRestart.Books[1].DueIndexers);
+            Assert.Equal([Selected(waiting, completed, failed), Selected(searched, failed)], afterRestart);
         }
 
         var stored = await _database.ReadBookAsync(searched);
@@ -73,35 +71,23 @@ public sealed class AutomaticSearchScheduleRestartTests : BaseTests
     }
 
     /// <summary>
-    /// The books a cycle at <paramref name="atUtc"/> would pick, with the indexers each would ask:
-    /// those with no pair row, or whose next attempt has come.
+    /// The books a cycle at <paramref name="atUtc"/> would pick, in order, each with the indexers it
+    /// would ask: those with no pair row, or whose next attempt has come.
     /// </summary>
-    private static async Task<Selection> SelectAsync(
+    private static async Task<IReadOnlyList<string>> SelectAsync(
         EfAutomaticSearchScheduleStore store, DateTime atUtc, IReadOnlyList<int> indexers)
     {
         var page = await store.GetDuePageAsync(atUtc, [], 10);
         var pairs = await store.GetPairStatesAsync(page.Select(book => book.Id).ToList());
-        return new Selection(page
-            .Select(book => new SelectedBook(book.Id, indexers
+        return page
+            .Select(book => Selected(book.Id, indexers
                 .Where(indexer => !pairs.Any(pair => pair.AudiobookId == book.Id
                     && pair.IndexerId == indexer
                     && pair.NextAttemptUtc > atUtc))
-                .ToList()))
-            .ToList());
+                .ToArray()))
+            .ToList();
     }
 
-    private sealed record SelectedBook(int Id, IReadOnlyList<int> DueIndexers)
-    {
-        public bool Equals(SelectedBook? other) =>
-            other is not null && Id == other.Id && DueIndexers.SequenceEqual(other.DueIndexers);
-
-        public override int GetHashCode() => Id;
-    }
-
-    private sealed record Selection(IReadOnlyList<SelectedBook> Books)
-    {
-        public bool Equals(Selection? other) => other is not null && Books.SequenceEqual(other.Books);
-
-        public override int GetHashCode() => Books.Count;
-    }
+    private static string Selected(int book, params int[] dueIndexers) =>
+        $"book {book}: indexers {string.Join(",", dueIndexers)}";
 }
