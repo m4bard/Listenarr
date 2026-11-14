@@ -259,8 +259,8 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                     // This search alone used the whole allowance, so it can never fit in a cycle.
                     // Retrying it on the failure ladder keeps it from spending every cycle's allowance.
                     logger.LogWarning(
-                        "Indexer '{Indexer}' needed more than the {MaxRequests} requests one automatic-search cycle may send for audiobook '{Title}' ({Sent} sent; enrichment settings: {Settings}); recording the search as failed",
-                        indexer.Name, maxRequests, audiobook.Title, outcome.RequestsSent, indexer.AdditionalSettings ?? "none");
+                        "Indexer '{Indexer}' needed more than the {MaxRequests} requests one automatic-search cycle may send for audiobook '{Title}' ({Sent} sent); recording the search as failed",
+                        indexer.Name, maxRequests, audiobook.Title, outcome.RequestsSent);
                     await store.PersistPairAsync(
                         new PairScheduleUpdate(audiobook.Id, indexer.Id, PairScheduleResult.Failed),
                         nowUtc, cooldown, ct);

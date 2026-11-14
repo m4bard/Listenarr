@@ -131,7 +131,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             await context.SaveChangesAsync();
         }
 
-        protected async Task<int> AddIndexerAsync(string name)
+        protected async Task<int> AddIndexerAsync(string name, string? additionalSettings = null)
         {
             await using var context = _database!.CreateContext();
             var indexer = new IndexerBuilder()
@@ -141,6 +141,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
                 .WithEnabled()
                 .Build();
             indexer.EnableAutomaticSearch = true;
+            indexer.AdditionalSettings = additionalSettings;
             context.Indexers.Add(indexer);
             await context.SaveChangesAsync();
             return indexer.Id;

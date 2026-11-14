@@ -151,7 +151,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
         public async Task OversizedPair_IsFailedWithAWarning_AndBacksOff()
         {
             await ConfigureAsync(maxRequests: Allowance);
-            var indexer = await AddIndexerAsync("Enriching");
+            const string settingsMarker = "MARKER_SETTINGS_VALUE";
+            var indexer = await AddIndexerAsync("Enriching", $"{{\"session\":\"{settingsMarker}\"}}");
             var book = (await AddBooksAsync(1, StartUtc.AddMinutes(-5))).Single();
             // Enrichment configured for 400 detail requests: no allowance can hold this pair.
             Indexers.Script = (_, _) => Returns(RejectedSource, requests: 401);
@@ -160,7 +161,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
 
             var pair = await Database.ReadPairAsync(book.Id, indexer);
             Assert.Equal((nameof(PairScheduleResult.Failed), 1), (pair!.LastOutcome, pair.FailureCount));
-            Assert.Single(Log.Entries, entry => entry.Level == LogLevel.Warning && entry.Message.Contains("Enriching"));
+            var warning = Assert.Single(Log.Entries, entry => entry.Level == LogLevel.Warning && entry.Message.Contains("Enriching"));
+            Assert.DoesNotContain(settingsMarker, warning.Message);
             Server.Reset();
 
             Clock.Advance(TimeSpan.FromMinutes(30));
