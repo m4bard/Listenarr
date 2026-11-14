@@ -31,6 +31,38 @@ public sealed class IndexerRequestLoggingRedactionTests : BaseTests
     private const string SessionValue = "session-value-5d8e10";
 
     [Fact]
+    public async Task RedirectWithoutLocation_LogsNoUrlQueryKeyOrSetting()
+    {
+        // Given
+        await using var database = await IndexerRequestStateTestDatabase.CreateAsync(indexerCount: 1);
+        var captured = new ConcurrentQueue<string>();
+        var clock = new ManualClock(Start);
+        var gate = new IndexerRequestGate(
+            new IndexerRequestStateCache(
+                new EfIndexerRequestStateStore(database.Factory),
+                new CapturingLogger<IndexerRequestStateCache>(captured)),
+            [],
+            new IndexerConcurrencyLimiter(2, 8),
+            new IndexerPacingSchedule(Interval, clock, clock.AdvanceDelayAsync),
+            clock,
+            new CapturingLogger<IndexerRequestGate>(captured));
+        using var wire = new HttpClient(new DelegatingHandlerMock((_, _) => Task.FromResult(Status(HttpStatusCode.Found))));
+        var provider = new TorznabNewznabSearchProvider(wire, gate, new CapturingLogger<TorznabNewznabSearchProvider>(captured));
+        var context = new IndexerSearchContext(SearchOrigin.Sweep, null, IndexerRequestKind.Search);
+
+        // When
+        var outcome = await provider.SearchAsync(Secret(database.IndexerIds[0], "moved"), "query", null, null, context, CancellationToken.None);
+
+        // Then: the missing Location was reached and reported, without the URL query, key or setting
+        Assert.Equal(IndexerSearchStatus.Failed, outcome.Status);
+        Assert.Contains(captured, line => line.Contains("did not include a Location header", StringComparison.Ordinal));
+        foreach (var secret in new[] { UrlKey, ApiKey, SessionValue })
+        {
+            Assert.DoesNotContain(captured, line => line.Contains(secret, StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
     public async Task RateLimitedDeferredAndFailingSearches_LogNoUrlQueryKeyOrSetting()
     {
         // Given
