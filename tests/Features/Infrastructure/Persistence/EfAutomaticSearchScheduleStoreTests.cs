@@ -15,6 +15,7 @@ using Listenarr.Tests.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Xunit.Abstractions;
 
 namespace Listenarr.Tests.Features.Infrastructure.Persistence;
 
@@ -31,6 +32,12 @@ public sealed class EfAutomaticSearchScheduleStoreTests : BaseTests
 
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
     private readonly CommandCapture _capture = new();
+    private readonly ITestOutputHelper _output;
+
+    public EfAutomaticSearchScheduleStoreTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
 
     public override async Task InitializeAsync()
     {
@@ -92,14 +99,19 @@ public sealed class EfAutomaticSearchScheduleStoreTests : BaseTests
     public async Task GetDuePageAsync_FiltersDueTimeAndExclusionsInSql()
     {
         var profile = await SeedProfileAsync();
-        var excluded = await SeedBookAsync(NowUtc.AddHours(-1), profile);
+        var excluded = new[]
+        {
+            await SeedBookAsync(NowUtc.AddHours(-2), profile),
+            await SeedBookAsync(NowUtc.AddHours(-1), profile)
+        };
 
         await using var context = CreateContext(_capture);
-        await new EfAutomaticSearchScheduleStore(context).GetDuePageAsync(NowUtc, [excluded], 5);
+        await new EfAutomaticSearchScheduleStore(context).GetDuePageAsync(NowUtc, excluded, 5);
 
         var sql = Assert.Single(_capture.Commands, command => command.Contains("FROM \"Audiobooks\""));
+        _output.WriteLine(sql);
         Assert.Matches("\"AutomaticSearchDueUtc\" <= @\\w+", sql);
-        Assert.Matches("\"Id\" NOT IN \\(@\\w+\\)", sql);
+        Assert.Matches("\"Id\" NOT IN \\(@\\w+, @\\w+\\)", sql);
         Assert.Matches("ORDER BY \"a\"\\.\"AutomaticSearchDueUtc\", \"a\"\\.\"Id\"", sql);
         Assert.Matches("LIMIT @\\w+", sql);
     }
@@ -119,6 +131,7 @@ public sealed class EfAutomaticSearchScheduleStoreTests : BaseTests
         // SQLite uses a partial index only when the query's WHERE carries each of the index
         // filter's terms in the same form, so the filter is written as EF emits the predicate.
         var sql = Assert.Single(_capture.Commands, command => command.Contains("FROM \"Audiobooks\""));
+        _output.WriteLine(sql);
         var where = Regex.Match(sql, "WHERE (.+?)\\s+ORDER BY", RegexOptions.Singleline).Groups[1].Value;
         Assert.Contains(filter, where.Replace("\"a\".", string.Empty, StringComparison.Ordinal));
     }
