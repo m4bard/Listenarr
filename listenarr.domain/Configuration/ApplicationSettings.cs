@@ -257,5 +257,12 @@ namespace Listenarr.Domain.Configuration
         /// unaffected. Clamped to [0, 300].
         /// </summary>
         public int AutomaticSearchBookDelaySeconds { get; set; } = 5;
+
+        /// <summary>
+        /// Poll each eligible indexer's feed for newly published releases and hand matches for
+        /// monitored books to the normal download path. Off by default; the sweep, add-time and
+        /// manual searches run the same either way.
+        /// </summary>
+        public bool RecentReleaseDiscoveryEnabled { get; set; } = false;
     }
 }

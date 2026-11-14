@@ -1935,6 +1935,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<string>("ProwlarrUrl")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("RecentReleaseDiscoveryEnabled")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("ShowCompletedExternalDownloads")
                         .HasColumnType("INTEGER");
 
@@ -2623,6 +2626,122 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.ToTable("UserSessions");
                 });
 
+            modelBuilder.Entity("Listenarr.Domain.Search.Discovery.DiscoveredRelease", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("FirstSeenUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("HandledUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("IndexerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("MatchedAudiobookId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Outcome")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("PublishedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReleaseId")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MatchedAudiobookId");
+
+                    b.HasIndex("IndexerId", "ReleaseId")
+                        .IsUnique();
+
+                    b.HasIndex("State", "FirstSeenUtc");
+
+                    b.ToTable("DiscoveredReleases", (string)null);
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Search.Discovery.IndexerCoverageGap", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("AcknowledgedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("DetectedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("GapEndUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("GapStartUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("IndexerId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IndexerId", "DetectedUtc");
+
+                    b.ToTable("IndexerCoverageGaps", (string)null);
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Search.Discovery.IndexerDiscoveryCheckpoint", b =>
+                {
+                    b.Property<int>("IndexerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("FutureDatedItemCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTime?>("LastPollUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastSuccessUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("NewestPublishedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NewestReleaseId")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UndatedItemCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
+
+                    b.HasKey("IndexerId");
+
+                    b.ToTable("IndexerDiscoveryCheckpoints", (string)null);
+                });
+
             modelBuilder.Entity("Listenarr.Domain.Search.Indexer", b =>
                 {
                     b.Property<int>("Id")
@@ -2847,6 +2966,38 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Relocation");
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Search.Discovery.DiscoveredRelease", b =>
+                {
+                    b.HasOne("Listenarr.Domain.Search.Indexer", null)
+                        .WithMany()
+                        .HasForeignKey("IndexerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Listenarr.Domain.Audiobooks.Audiobook", null)
+                        .WithMany()
+                        .HasForeignKey("MatchedAudiobookId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Search.Discovery.IndexerCoverageGap", b =>
+                {
+                    b.HasOne("Listenarr.Domain.Search.Indexer", null)
+                        .WithMany()
+                        .HasForeignKey("IndexerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Search.Discovery.IndexerDiscoveryCheckpoint", b =>
+                {
+                    b.HasOne("Listenarr.Domain.Search.Indexer", null)
+                        .WithOne()
+                        .HasForeignKey("Listenarr.Domain.Search.Discovery.IndexerDiscoveryCheckpoint", "IndexerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.Audiobook", b =>

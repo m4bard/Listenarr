@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Microsoft.EntityFrameworkCore;
+using Listenarr.Domain.Search.Discovery;
 using Listenarr.Infrastructure.Persistence.Configurations;
 
 namespace Listenarr.Infrastructure.Persistence
@@ -36,6 +37,9 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<ApplicationSettings> ApplicationSettings { get; set; } = null!;
         public DbSet<History> History { get; set; } = null!;
         public DbSet<Indexer> Indexers { get; set; } = null!;
+        public DbSet<IndexerDiscoveryCheckpoint> IndexerDiscoveryCheckpoints { get; set; } = null!;
+        public DbSet<DiscoveredRelease> DiscoveredReleases { get; set; } = null!;
+        public DbSet<IndexerCoverageGap> IndexerCoverageGaps { get; set; } = null!;
         public DbSet<ApiConfiguration> ApiConfigurations { get; set; } = null!;
         public DbSet<DownloadClientConfiguration> DownloadClientConfigurations { get; set; } = null!;
         public DbSet<User> Users { get; set; } = null!;

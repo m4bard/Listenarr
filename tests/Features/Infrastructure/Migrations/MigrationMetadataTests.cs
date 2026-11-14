@@ -284,7 +284,7 @@ public class MigrationMetadataTests : BaseTests
     public void AddRecentReleaseDiscovery_AddsOffSettingTablesAndNamedIndexesOnly()
     {
         AssertMigrationId<AddRecentReleaseDiscovery>(
-            "PENDING_AddRecentReleaseDiscovery");
+            "20261114012405_AddRecentReleaseDiscovery");
 
         var migration = new AddRecentReleaseDiscovery();
         var up = BuildOperations(migration, "Up").Operations;
