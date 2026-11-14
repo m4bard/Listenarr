@@ -237,7 +237,7 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
             using var httpClient = new HttpClient(handler) { BaseAddress = new System.Uri("https://api.althub.co.za") };
 
             // Call the provider's URL builder directly (private) to assert it includes extended=1
-            var provider = new TorznabNewznabSearchProvider(httpClient, NullLogger<TorznabNewznabSearchProvider>.Instance);
+            var provider = new TorznabNewznabSearchProvider(httpClient, new PassThroughIndexerRequestGate(TimeProvider.System), NullLogger<TorznabNewznabSearchProvider>.Instance);
             var mi = typeof(TorznabNewznabSearchProvider).GetMethod("BuildTorznabUrl", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             Assert.NotNull(mi);
             var idx1 = db.Indexers.First(i => i.Implementation == "newznab");

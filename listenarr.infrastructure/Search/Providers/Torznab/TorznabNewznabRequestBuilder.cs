@@ -23,18 +23,6 @@ internal static class TorznabNewznabRequestBuilder
 {
     public static string BuildUrl(Indexer indexer, string query, string? category)
     {
-        var url = indexer.Url.TrimEnd('/');
-
-        // Don't append /api if URL already ends with it (e.g., Prowlarr proxy URLs)
-        var apiPath = url.EndsWith("/api", StringComparison.OrdinalIgnoreCase)
-            ? ""
-            : indexer.Implementation.ToLower() switch
-            {
-                "torznab" => "/api",
-                "newznab" => "/api",
-                _ => "/api"
-            };
-
         var queryParams = new List<string>
         {
             $"t=search",
@@ -61,11 +49,41 @@ internal static class TorznabNewznabRequestBuilder
         queryParams.Add("limit=100");
 
         // Request extended info for Newznab/Torznab indexers to include grabs/snatches and other attributes when available
-        if (!string.IsNullOrEmpty(indexer.Implementation) && (indexer.Implementation.Equals("newznab", StringComparison.OrdinalIgnoreCase) || indexer.Implementation.Equals("torznab", StringComparison.OrdinalIgnoreCase)))
+        if (RequestsExtendedAttributes(indexer))
         {
             queryParams.Add("extended=1");
         }
 
-        return $"{url}{apiPath}?{string.Join("&", queryParams)}";
+        return $"{BuildApiUrl(indexer)}?{string.Join("&", queryParams)}";
+    }
+
+    /// <summary>
+    /// The indexer's API endpoint, without a query string.
+    /// </summary>
+    public static string BuildApiUrl(Indexer indexer)
+    {
+        var url = indexer.Url.TrimEnd('/');
+
+        // Don't append /api if URL already ends with it (e.g., Prowlarr proxy URLs)
+        var apiPath = url.EndsWith("/api", StringComparison.OrdinalIgnoreCase)
+            ? ""
+            : indexer.Implementation.ToLower() switch
+            {
+                "torznab" => "/api",
+                "newznab" => "/api",
+                _ => "/api"
+            };
+
+        return $"{url}{apiPath}";
+    }
+
+    /// <summary>
+    /// Whether the indexer is asked for its extended attributes (grabs, files and the like).
+    /// </summary>
+    public static bool RequestsExtendedAttributes(Indexer indexer)
+    {
+        return !string.IsNullOrEmpty(indexer.Implementation)
+            && (indexer.Implementation.Equals("newznab", StringComparison.OrdinalIgnoreCase)
+                || indexer.Implementation.Equals("torznab", StringComparison.OrdinalIgnoreCase));
     }
 }

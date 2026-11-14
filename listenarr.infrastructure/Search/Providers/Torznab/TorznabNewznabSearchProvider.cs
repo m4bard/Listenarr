@@ -27,15 +27,18 @@ namespace Listenarr.Infrastructure.Search.Providers.Torznab;
 public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
 {
     private readonly HttpClient _httpClient;
+    private readonly IIndexerRequestGate _requestGate;
     private readonly ILogger<TorznabNewznabSearchProvider> _logger;
 
     public string IndexerType => "Torznab"; // Handles both Torznab and Newznab
 
     public TorznabNewznabSearchProvider(
         HttpClient httpClient,
+        IIndexerRequestGate requestGate,
         ILogger<TorznabNewznabSearchProvider> logger)
     {
         _httpClient = httpClient;
+        _requestGate = requestGate;
         _logger = logger;
     }
 

@@ -10,7 +10,7 @@ namespace Listenarr.Infrastructure.Search.Providers.Torznab;
 
 public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
 {
-    private async Task<List<IndexerSearchResult>> ParseTorznabResponseAsync(string xmlContent, Indexer indexer)
+    private async Task<List<IndexerSearchResult>> ParseTorznabResponseAsync(string xmlContent, Indexer indexer, bool fetchDetailPages = true)
     {
         var results = new List<IndexerSearchResult>();
 
@@ -227,7 +227,7 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
                             if (!string.IsNullOrEmpty(commentsVal))
                             {
                                 // If comments is a URL, try scraping the page for a numeric comments count (only for known indexers to avoid many extra requests)
-                                if (Uri.TryCreate(commentsVal, UriKind.Absolute, out var commentsUri) && indexer.Url != null && indexer.Url.Contains("althub", StringComparison.OrdinalIgnoreCase))
+                                if (fetchDetailPages && Uri.TryCreate(commentsVal, UriKind.Absolute, out var commentsUri) && indexer.Url != null && indexer.Url.Contains("althub", StringComparison.OrdinalIgnoreCase))
                                 {
                                     try
                                     {
