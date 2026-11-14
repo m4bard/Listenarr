@@ -49,6 +49,7 @@ public sealed class EfIndexerRequestReservationUntilTests : BaseTests
         Assert.Equal(
             new RequestDeferral(FirstHour.AddHours(25), RequestDeferralReason.AllowanceExhausted),
             deferral);
+        Assert.Equal(DateTimeKind.Utc, deferral!.Value.UntilUtc.Kind);
         Assert.Equal(10, await database.SpentAsync(indexerId));
     }
 

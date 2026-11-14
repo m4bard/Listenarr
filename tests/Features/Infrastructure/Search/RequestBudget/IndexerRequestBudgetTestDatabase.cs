@@ -17,7 +17,6 @@
  */
 
 using Listenarr.Infrastructure.DependencyInjection.Search;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using static Listenarr.Tests.Features.Infrastructure.Search.RequestGate.IndexerRequestGateHarness;
@@ -39,7 +38,12 @@ internal sealed class IndexerRequestBudgetTestDatabase : IAsyncDisposable
     private IndexerRequestBudgetTestDatabase(string databasePath)
     {
         DatabasePath = databasePath;
-        ConnectionString = $"Data Source={databasePath}";
+
+        // Unpooled: under the concurrency tests' load the SQLite connection pool can return a
+        // native connection while another caller still has a statement running on it, and the
+        // open or close that touches it fails. The reservation's caller defers that request
+        // rather than admitting it.
+        ConnectionString = $"Data Source={databasePath};Pooling=False";
     }
 
     public string DatabasePath { get; }
@@ -190,11 +194,6 @@ internal sealed class IndexerRequestBudgetTestDatabase : IAsyncDisposable
         foreach (var provider in _providers)
         {
             await provider.DisposeAsync();
-        }
-
-        using (var connection = new SqliteConnection(ConnectionString))
-        {
-            SqliteConnection.ClearPool(connection);
         }
 
         foreach (var path in new[] { DatabasePath, DatabasePath + "-wal", DatabasePath + "-shm" })
