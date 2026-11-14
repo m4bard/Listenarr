@@ -271,10 +271,8 @@ public sealed partial class MetadataRescanSchedulingTests : BaseTests
         await InitSqliteAsync(builder => builder.WithSingleton(fileSystem.Object));
         var book = await SeedBookAsync("vanished", 1);
         File.Delete(book.Paths[0]);
-        var logger = new CapturingLogger();
 
-        await RunCycleAsync(NewProcessor(logger: logger));
-        _output.WriteLine(string.Join(Environment.NewLine, logger.Describe()));
+        await RunCycleAsync(NewProcessor());
 
         var file = await ReadFileAsync(book.Files[0].Id);
         Assert.Equal(nameof(MetadataRescanOutcome.FileMissing), file.MetadataRescanLastOutcome);

@@ -163,15 +163,12 @@ public sealed partial class MetadataRescanSchedulingTests
 
     private sealed class CapturingLogger : ILogger<MetadataRescanProcessor>
     {
-        private readonly ConcurrentQueue<(LogLevel Level, string Message, Exception? Exception)> _entries = new();
+        private readonly ConcurrentQueue<(LogLevel Level, string Message)> _entries = new();
 
         public IReadOnlyList<LogLevel> LevelsContaining(string text) =>
             _entries.Where(entry => entry.Message.Contains(text, StringComparison.Ordinal))
                 .Select(entry => entry.Level)
                 .ToList();
-
-        public IEnumerable<string> Describe() =>
-            _entries.Select(entry => $"{entry.Level} {entry.Message} {entry.Exception?.GetType().Name}");
 
         public void Clear() => _entries.Clear();
 
@@ -185,6 +182,6 @@ public sealed partial class MetadataRescanSchedulingTests
             TState state,
             Exception? exception,
             Func<TState, Exception?, string> formatter) =>
-            _entries.Enqueue((logLevel, formatter(state, exception), exception));
+            _entries.Enqueue((logLevel, formatter(state, exception)));
     }
 }

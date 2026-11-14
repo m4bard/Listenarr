@@ -71,7 +71,7 @@ namespace Listenarr.Infrastructure.Metadata.Jobs
                     canonicalPath,
                     expectedPhysicalObjectIdentity: null);
             }
-            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+            catch (Exception ex) when (FileSystemSafety.IsProvenMissingPathException(ex))
             {
                 logger.LogDebug(
                     "Skipping metadata rescan for file id={Id}; the file is no longer present",
