@@ -598,6 +598,66 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
         }
 
         [Fact]
+        public async Task Import_Succeeded_PerFileHistoryDataCarriesFileNamesNotDirectories()
+        {
+            const string sourceCanary = "success-source-leak-canary";
+            const string finalCanary = "success-final-leak-canary";
+            var sourceDirectory = FileService.GetTempDirectory(sourceCanary);
+            var finalDirectory = FileService.GetTempDirectory(finalCanary);
+            var sourcePath = await FileService.GetFileAsync(sourceDirectory, "book.m4b");
+            var finalPath = await FileService.GetFileAsync(finalDirectory, "book.m4b");
+            var importService = new Mock<IDownloadImportService>();
+            importService
+                .Setup(service => service.ImportDownloadFilesAsync(
+                    It.IsAny<Audiobook>(),
+                    It.IsAny<List<string>>(),
+                    It.IsAny<CancellationToken>(),
+                    It.IsAny<DownloadImportOptions?>()))
+                .ReturnsAsync([ImportResult.ImportSuccess(
+                    FileAction.Copy, sourcePath, finalPath, wasRegisteredToAudiobook: true)]);
+            Init(builder => builder.WithSingleton<IDownloadImportService>(importService.Object));
+            var audiobook = await CreateAudiobook();
+            var download = await _downloadRepository.AddAsync(new Download
+            {
+                Id = $"ddl-{Guid.NewGuid():N}",
+                AudiobookId = audiobook.Id,
+                Title = "Success Data Book",
+                Artist = "DDL Author",
+                Album = "Success Data Book",
+                DownloadClientId = DirectDownloadMetadataKeys.ClientId,
+                Status = DownloadStatus.Completed,
+                StartedAt = DateTime.UtcNow.AddMinutes(-5),
+                CompletedAt = DateTime.UtcNow,
+                DownloadPath = sourcePath,
+                Metadata = new Dictionary<string, object>
+                {
+                    [DirectDownloadMetadataKeys.DownloadType] = DirectDownloadMetadataKeys.ClientId
+                }
+            });
+            await _downloadProcessingJobRepository.AddAsync(new DownloadProcessingJobBuilder()
+                .WithDownload(download)
+                .Build());
+
+            await _provider.GetRequiredService<DownloadProcessingJobProcessor>()
+                .ProcessQueueAsync(CancellationToken.None);
+
+            var page = await _historyRepository.QueryAsync(new HistoryQuery
+            {
+                DownloadId = download.Id.ToUpperInvariant(),
+                Limit = 100
+            });
+            // This row is written for every successful import, so it is the widest exposure
+            // of the History API's habit of returning rows whole.
+            var copied = Assert.Single(page.Records, history =>
+                history.EventType == HistoryEvents.FileCopied);
+            using var data = JsonDocument.Parse(copied.Data!);
+            Assert.Equal("book.m4b", data.RootElement.GetProperty("SourcePath").GetString());
+            Assert.Equal("book.m4b", data.RootElement.GetProperty("FinalPath").GetString());
+            Assert.DoesNotContain(sourceCanary, copied.Data!, StringComparison.Ordinal);
+            Assert.DoesNotContain(finalCanary, copied.Data!, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task Import_FailedWithPathBearingException_ClassifiesTheFailureWithoutLeakingThePath()
         {
             // A distinctive fragment standing in for anything on a real host's directory
@@ -672,7 +732,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
             // DirectoryNotFoundException classifies to a fixed sentence: the exception's
             // own text (which quoted the path) never reaches the row.
             Assert.Equal(
-                "Failed to import file, destination unavailable",
+                "Failed to import file, path not found",
                 failedResult.GetProperty("Message").GetString());
             // The filename alone is retained; only the directory is stripped.
             Assert.Equal(Path.GetFileName(sourcePath), failedResult.GetProperty("SourcePath").GetString());
