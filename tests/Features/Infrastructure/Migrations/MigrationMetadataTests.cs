@@ -280,6 +280,75 @@ public class MigrationMetadataTests : BaseTests
         Assert.NotNull(applicationSettings.FindProperty("AutomaticSearchBookDelaySeconds"));
     }
 
+    [Fact]
+    public void AddRecentReleaseDiscovery_AddsOffSettingTablesAndNamedIndexesOnly()
+    {
+        AssertMigrationId<AddRecentReleaseDiscovery>(
+            "PENDING_AddRecentReleaseDiscovery");
+
+        var migration = new AddRecentReleaseDiscovery();
+        var up = BuildOperations(migration, "Up").Operations;
+        var down = BuildOperations(migration, "Down").Operations;
+
+        var setting = Assert.Single(up.OfType<AddColumnOperation>());
+        Assert.Equal(
+            ("ApplicationSettings", "RecentReleaseDiscoveryEnabled", false, (object?)false),
+            (setting.Table, setting.Name, setting.IsNullable, setting.DefaultValue));
+        var tables = up.OfType<CreateTableOperation>().ToDictionary(table => table.Name);
+        Assert.Equal(
+            ["DiscoveredReleases", "IndexerCoverageGaps", "IndexerDiscoveryCheckpoints"],
+            tables.Keys.Order());
+        Assert.All(
+            tables["IndexerDiscoveryCheckpoints"].Columns.Where(column => column.Name.EndsWith("ItemCount", StringComparison.Ordinal)),
+            column => Assert.Equal((false, (object?)0), (column.IsNullable, column.DefaultValue)));
+        AssertForeignKey(tables["IndexerDiscoveryCheckpoints"], "IndexerId", "Indexers", ReferentialAction.Cascade);
+        AssertForeignKey(tables["DiscoveredReleases"], "IndexerId", "Indexers", ReferentialAction.Cascade);
+        AssertForeignKey(tables["DiscoveredReleases"], "MatchedAudiobookId", "Audiobooks", ReferentialAction.SetNull);
+        AssertForeignKey(tables["IndexerCoverageGaps"], "IndexerId", "Indexers", ReferentialAction.Cascade);
+        var releaseColumns = tables["DiscoveredReleases"].Columns.ToDictionary(column => column.Name);
+        Assert.Equal((false, 512), (releaseColumns["ReleaseId"].IsNullable, releaseColumns["ReleaseId"].MaxLength));
+        Assert.Equal((false, 16), (releaseColumns["State"].IsNullable, releaseColumns["State"].MaxLength));
+        Assert.Equal((true, 32), (releaseColumns["Outcome"].IsNullable, releaseColumns["Outcome"].MaxLength));
+
+        // The unique pair is the dedup rule; the others are the handler, hand-off and gap access paths.
+        var indexes = up.OfType<CreateIndexOperation>()
+            .Select(index => (index.Name, index.Table, string.Join(",", index.Columns), index.IsUnique))
+            .OrderBy(index => index.Name, StringComparer.Ordinal);
+        Assert.Equal(
+            [
+                ("IX_DiscoveredReleases_IndexerId_ReleaseId", "DiscoveredReleases", "IndexerId,ReleaseId", true),
+                ("IX_DiscoveredReleases_MatchedAudiobookId", "DiscoveredReleases", "MatchedAudiobookId", false),
+                ("IX_DiscoveredReleases_State_FirstSeenUtc", "DiscoveredReleases", "State,FirstSeenUtc", false),
+                ("IX_IndexerCoverageGaps_IndexerId_DetectedUtc", "IndexerCoverageGaps", "IndexerId,DetectedUtc", false)
+            ],
+            indexes);
+        Assert.Equal(8, up.Count);
+
+        // Down drops the tables, then the setting column; no data is migrated either way.
+        Assert.Equal(
+            tables.Keys.Order(),
+            down.Take(3).Cast<DropTableOperation>().Select(table => table.Name).Order());
+        Assert.Equal("RecentReleaseDiscoveryEnabled", Assert.IsType<DropColumnOperation>(down[3]).Name);
+        Assert.Equal(4, down.Count);
+
+        var model = migration.TargetModel;
+        Assert.NotNull(AssertEntity(model, "Listenarr.Domain.Configuration.ApplicationSettings")
+            .FindProperty("RecentReleaseDiscoveryEnabled"));
+        AssertEntity(model, "Listenarr.Domain.Search.Discovery.IndexerDiscoveryCheckpoint");
+        AssertEntity(model, "Listenarr.Domain.Search.Discovery.DiscoveredRelease");
+        AssertEntity(model, "Listenarr.Domain.Search.Discovery.IndexerCoverageGap");
+    }
+
+    private static void AssertForeignKey(
+        CreateTableOperation table,
+        string column,
+        string principalTable,
+        ReferentialAction onDelete)
+    {
+        var foreignKey = Assert.Single(table.ForeignKeys, key => key.Columns.SequenceEqual([column]));
+        Assert.Equal((principalTable, onDelete), (foreignKey.PrincipalTable, foreignKey.OnDelete));
+    }
+
     private static MigrationBuilder BuildOperations(Migration migration, string methodName)
     {
         var builder = new MigrationBuilder("Microsoft.EntityFrameworkCore.Sqlite");
