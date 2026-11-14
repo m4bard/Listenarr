@@ -257,5 +257,11 @@ namespace Listenarr.Domain.Configuration
         /// unaffected. Clamped to [0, 300].
         /// </summary>
         public int AutomaticSearchBookDelaySeconds { get; set; } = 5;
+
+        /// <summary>
+        /// Share of each indexer's daily request limit, in percent, that only searches a person
+        /// asked for may spend. Unattended searches stop at the rest. Clamped to [0, 90].
+        /// </summary>
+        public int IndexerInteractiveReservePercent { get; set; } = 25;
     }
 }

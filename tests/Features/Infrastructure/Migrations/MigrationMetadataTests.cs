@@ -308,6 +308,53 @@ public class MigrationMetadataTests : BaseTests
         Assert.Equal("IndexerId", Assert.Single(state.FindPrimaryKey()!.Properties).Name);
     }
 
+    [Fact]
+    public void AddIndexerRequestBudget_SortsAfterRequestStateAndAddsLimitReserveAndUsageTable()
+    {
+        const string budgetId = "20261114025436_AddIndexerRequestBudget";
+        AssertMigrationId<AddIndexerRequestBudget>(budgetId);
+        Assert.True(string.CompareOrdinal(budgetId, "20261114012120_AddIndexerRequestState") > 0);
+        Assert.NotEqual("20261105075017_AddIndexerRequestBudget", budgetId);
+
+        var migration = new AddIndexerRequestBudget();
+        var up = BuildOperations(migration, "Up");
+        var down = BuildOperations(migration, "Down");
+
+        Assert.Equal(4, up.Operations.Count);
+        var columns = up.Operations.OfType<AddColumnOperation>().ToList();
+        var limit = columns.Single(column => column.Name == "DailyRequestLimit");
+        Assert.Equal("Indexers", limit.Table);
+        Assert.True(limit.IsNullable);
+        Assert.Null(limit.DefaultValue);
+        var reserve = columns.Single(column => column.Name == "IndexerInteractiveReservePercent");
+        Assert.Equal("ApplicationSettings", reserve.Table);
+        Assert.False(reserve.IsNullable);
+        Assert.Equal(25, reserve.DefaultValue);
+        var table = up.Operations.OfType<CreateTableOperation>().Single();
+        Assert.Equal("IndexerRequestUsages", table.Name);
+        Assert.Equal(["IndexerId", "HourStartUtc"], table.PrimaryKey!.Columns);
+        var foreignKey = Assert.Single(table.ForeignKeys);
+        Assert.Equal("Indexers", foreignKey.PrincipalTable);
+        Assert.Equal(ReferentialAction.Cascade, foreignKey.OnDelete);
+        var index = up.Operations.OfType<CreateIndexOperation>().Single();
+        Assert.Equal("IX_IndexerRequestUsages_HourStartUtc", index.Name);
+        Assert.Equal(["HourStartUtc"], index.Columns);
+
+        Assert.Equal(3, down.Operations.Count);
+        Assert.Equal("IndexerRequestUsages", Assert.IsType<DropTableOperation>(down.Operations[0]).Name);
+        Assert.Equal(
+            ["DailyRequestLimit", "IndexerInteractiveReservePercent"],
+            down.Operations.OfType<DropColumnOperation>().Select(column => column.Name).Order());
+
+        var settings = AssertEntity(
+            migration.TargetModel,
+            "Listenarr.Domain.Configuration.ApplicationSettings");
+        Assert.Equal(25, settings.FindProperty("IndexerInteractiveReservePercent")!.GetDefaultValue());
+        Assert.NotNull(AssertEntity(migration.TargetModel, "Listenarr.Domain.Search.Indexer")
+            .FindProperty("DailyRequestLimit"));
+        AssertEntity(migration.TargetModel, "Listenarr.Domain.Search.IndexerRequestUsage");
+    }
+
     private static MigrationBuilder BuildOperations(Migration migration, string methodName)
     {
         var builder = new MigrationBuilder("Microsoft.EntityFrameworkCore.Sqlite");
