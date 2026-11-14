@@ -25,8 +25,9 @@ namespace Listenarr.Infrastructure.Search.RequestGate;
 /// once. In order it checks the indexer's cooldown, takes a unit of the cycle allowance, waits
 /// for a concurrency slot and the pacing interval, checks the cooldown again, asks each
 /// reservation, dispatches, and records what the answer means for the indexer. It never
-/// retries. A request with an unattributed indexer id (0 or less) takes only the global
-/// concurrency slot: it is not paced, never deferred by a cooldown and never recorded.
+/// retries. A request with an unattributed indexer id (0 or less) takes only the cycle
+/// allowance and the global concurrency slot: it is not paced, never deferred by a cooldown,
+/// never offered to a reservation and never recorded.
 /// </summary>
 public sealed class IndexerRequestGate : IIndexerRequestGate
 {
@@ -101,7 +102,7 @@ public sealed class IndexerRequestGate : IIndexerRequestGate
             return new IndexerRequestResult.Deferred(cooldown);
         }
 
-        if (await ReserveAsync(context, cancellationToken) is { } reservationDeferral)
+        if (attributed && await ReserveAsync(context, cancellationToken) is { } reservationDeferral)
         {
             return new IndexerRequestResult.Deferred(reservationDeferral);
         }
@@ -114,10 +115,12 @@ public sealed class IndexerRequestGate : IIndexerRequestGate
         SearchOrigin origin,
         CancellationToken cancellationToken)
     {
-        var latest = IndexerConcurrencyLimiter.IsUnattributed(indexerId)
-            ? null
-            : await GetStateDeferralAsync(indexerId, cancellationToken);
+        if (IndexerConcurrencyLimiter.IsUnattributed(indexerId))
+        {
+            return null;
+        }
 
+        var latest = await GetStateDeferralAsync(indexerId, cancellationToken);
         foreach (var reservation in _reservations)
         {
             RequestDeferral? peeked;
