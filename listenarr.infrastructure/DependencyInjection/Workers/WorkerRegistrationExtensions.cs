@@ -43,7 +43,6 @@ internal static class WorkerRegistrationExtensions
         AddHostedProcessor<SeriesMonitoringProcessor, ISeriesMonitoringProcessor, SeriesMonitoringBackgroundService>(services);
         AddHostedProcessor<FfmpegInstallProcessor, IFfmpegInstallProcessor, FfmpegInstallBackgroundService>(services);
         AddHostedProcessor<MetadataRescanProcessor, IMetadataRescanProcessor, MetadataRescanService>(services);
-        services.AddScoped<MetadataRescanSelection>();
         services.AddSingleton<DownloadProcessingJobProcessor>();
         services.AddSingleton<IDownloadImportProcessor>(provider =>
             provider.GetRequiredService<DownloadProcessingJobProcessor>());
