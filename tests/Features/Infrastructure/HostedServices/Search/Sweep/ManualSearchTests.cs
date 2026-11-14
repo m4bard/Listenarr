@@ -68,15 +68,20 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
         {
             await ConfigureManualAsync();
             await AddIndexerAsync("Only");
-            var book = (await AddBooksAsync(1, NotDueForDaysUtc)).Single();
+            var book = (await AddBooksAsync(1, StartUtc.AddHours(-1))).Single();
             await MakeCutoffMetAsync(book.Id);
             Indexers.Script = (_, _) => Release(AcceptableSource);
+
+            // Control: the sweep does skip this book, so the manual search below is what searches it.
+            await RunCycleAsync();
+            Assert.Empty(TakeSearches());
 
             var result = await ManualSearchAsync(book.Id);
 
             Assert.True(result.Success, result.Message);
             Assert.Equal(AcceptableSource, result.SearchResult!.Source);
             Assert.False(string.IsNullOrEmpty(result.DownloadId));
+            Assert.Single(TakeSearches());
         }
 
         [Fact]
