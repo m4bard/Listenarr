@@ -83,7 +83,6 @@ namespace Listenarr.Application.Downloads.Submission
 
             if (searchResults.Count == 0)
             {
-                await RecordCompletedPairsAsync(audiobookId, completedIndexerIds, PairScheduleResult.NoAcceptableResults);
                 return NoSearchResults(report);
             }
 
@@ -113,7 +112,6 @@ namespace Listenarr.Application.Downloads.Submission
             if (topResult == null)
             {
                 logger.LogWarning("No acceptable search results found for audiobook '{Title}' after quality filtering", audiobook.Title);
-                await RecordCompletedPairsAsync(audiobookId, completedIndexerIds, PairScheduleResult.NoAcceptableResults);
                 return new SearchAndDownloadResult { Success = false, Message = "No acceptable search results found" };
             }
 
@@ -141,7 +139,7 @@ namespace Listenarr.Application.Downloads.Submission
 
             // Log to history
             await LogDownloadHistory(audiobook, "Search", topResult.SearchResult);
-            await RecordCompletedPairsAsync(audiobookId, completedIndexerIds, PairScheduleResult.Satisfied);
+            await RecordSatisfiedPairsAsync(audiobookId, completedIndexerIds);
 
             return new SearchAndDownloadResult
             {
@@ -176,9 +174,11 @@ namespace Listenarr.Application.Downloads.Submission
             };
         }
 
-        // A manual search records only what an indexer answered, through the schedule store. A failed or
-        // deferred indexer is not recorded: the failure ladder and the backoff belong to the sweep.
-        private async Task RecordCompletedPairsAsync(int audiobookId, IReadOnlyList<int> indexerIds, PairScheduleResult result)
+        // A manual search records only a grab, on every indexer that answered, through the schedule store.
+        // Finding nothing is not recorded: the manual query is narrower than the sweep's (no series, no
+        // fallback), so it must not push back the sweep's retries. A failed or deferred indexer is not
+        // recorded either: the failure ladder and the backoff belong to the sweep.
+        private async Task RecordSatisfiedPairsAsync(int audiobookId, IReadOnlyList<int> indexerIds)
         {
             if (indexerIds.Count == 0)
             {
@@ -192,7 +192,7 @@ namespace Listenarr.Application.Downloads.Submission
                 var nowUtc = clock.GetUtcNow().UtcDateTime;
                 foreach (var indexerId in indexerIds)
                 {
-                    await scheduleStore.PersistPairAsync(new PairScheduleUpdate(audiobookId, indexerId, result), nowUtc, cooldown);
+                    await scheduleStore.PersistPairAsync(new PairScheduleUpdate(audiobookId, indexerId, PairScheduleResult.Satisfied), nowUtc, cooldown);
                 }
             }
             catch (Exception ex) when (ex is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
