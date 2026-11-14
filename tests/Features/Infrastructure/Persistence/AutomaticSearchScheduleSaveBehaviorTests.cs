@@ -9,6 +9,7 @@
  */
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Tests.Builders;
+using Listenarr.Tests.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 

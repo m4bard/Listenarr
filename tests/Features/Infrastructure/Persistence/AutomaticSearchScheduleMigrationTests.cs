@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 using Listenarr.Tests.Builders;
+using Listenarr.Tests.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
