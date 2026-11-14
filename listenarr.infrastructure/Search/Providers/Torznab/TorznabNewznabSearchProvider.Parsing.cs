@@ -10,7 +10,12 @@ namespace Listenarr.Infrastructure.Search.Providers.Torznab;
 
 public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
 {
-    private async Task<List<IndexerSearchResult>> ParseTorznabResponseAsync(string xmlContent, Indexer indexer)
+    private async Task<List<IndexerSearchResult>> ParseTorznabResponseAsync(
+        string xmlContent,
+        Indexer indexer,
+        IndexerSearchContext searchContext,
+        SearchTally tally,
+        CancellationToken cancellationToken)
     {
         var results = new List<IndexerSearchResult>();
 
@@ -39,6 +44,7 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
             if (channel == null)
             {
                 _logger.LogWarning("Invalid Torznab response: no channel element");
+                tally.Unparseable = true;
                 return results;
             }
 
@@ -233,10 +239,13 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                     {
                                         var commentsPageUrl = new Uri(commentsUri.GetLeftPart(UriPartial.Path));
                                         _logger.LogDebug("Fetching comments page to extract grabs for {Title}: {Url}", result.Title, commentsPageUrl);
-                                        using var resp = await _httpClient.GetAsync(commentsPageUrl);
-                                        if (resp.IsSuccessStatusCode)
+
+                                        // Once a comments request is deferred, the remaining results keep zero grabs and send nothing more.
+                                        var html = tally.Deferral == null
+                                            ? await FetchCommentsPageAsync(commentsPageUrl, indexer, searchContext, tally, cancellationToken)
+                                            : null;
+                                        if (html != null)
                                         {
-                                            var html = await resp.Content.ReadAsStringAsync();
                                             var htmlDoc = new HtmlDocument();
                                             htmlDoc.LoadHtml(html);
 
@@ -434,6 +443,7 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
         {
             _logger.LogError(xmlEx, "XML parsing error from {IndexerName} at Line {Line}, Position {Position}: {Message}",
                 indexer.Name, xmlEx.LineNumber, xmlEx.LinePosition, xmlEx.Message);
+            tally.Unparseable = true;
 
             // Log the problematic XML content around the error
             if (!string.IsNullOrEmpty(xmlContent))
