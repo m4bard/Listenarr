@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 using Listenarr.Infrastructure.Persistence.Repositories;
+using Listenarr.Infrastructure.Search.RequestBudget;
 using Listenarr.Infrastructure.Search.RequestGate;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -37,6 +38,7 @@ internal static class SearchRegistrationExtensions
     {
         services.AddScoped<IIndexerRepository, EfIndexerRepository>();
         services.AddSingleton<IIndexerRequestStateStore, EfIndexerRequestStateStore>();
+        services.AddSingleton<IIndexerRequestReservation, EfIndexerRequestReservation>();
         return services;
     }
 }

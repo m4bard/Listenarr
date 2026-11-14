@@ -111,7 +111,7 @@ namespace Listenarr.Domain.Search
         public int MaximumSize { get; set; } = 0;
 
         /// <summary>
-        /// Most search requests this indexer accepts in a rolling 24 hours (null or 0 = no budget).
+        /// Most HTTP requests this indexer accepts in a rolling 24 hours (null or 0 = no budget).
         /// The automatic-search sweep stops short of it by the interactive reserve.
         /// </summary>
         public int? DailyRequestLimit { get; set; }

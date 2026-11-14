@@ -49,7 +49,13 @@ namespace Listenarr.Domain.Search
         /// <summary>
         /// The gate could not load its persisted per-indexer state, so the request was not sent.
         /// </summary>
-        RequestStateUnavailable
+        RequestStateUnavailable,
+
+        /// <summary>
+        /// The indexer's daily request limit, less the interactive reserve for an unattended
+        /// request, is spent; the time is when enough of the window's requests age out of it.
+        /// </summary>
+        AllowanceExhausted
     }
 
     /// <summary>

@@ -74,7 +74,9 @@ public sealed class ProductionCompositionValidationTests : BaseTests
                 typeof(MetadataRescanService),
                 typeof(DownloadProcessingJobProcessor),
                 typeof(IDownloadImportProcessor),
-                typeof(UnmatchedScanBackgroundService)
+                typeof(UnmatchedScanBackgroundService),
+                typeof(IIndexerRequestGate),
+                typeof(IIndexerRequestReservation)
             ];
             foreach (var serviceType in affectedSingletonServiceTypes)
             {
