@@ -16,8 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Net;
-using Listenarr.Application.Search.Contracts;
-using Listenarr.Application.Search.Indexers.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Torrents
