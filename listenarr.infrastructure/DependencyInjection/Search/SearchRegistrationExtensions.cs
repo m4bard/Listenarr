@@ -37,6 +37,7 @@ internal static class SearchRegistrationExtensions
         services.AddScoped<IIndexerRepository, EfIndexerRepository>();
         services.AddScoped<IAutomaticSearchScheduleStore, EfAutomaticSearchScheduleStore>();
         services.AddScoped<IAutomaticSearchAcquisition, AutomaticSearchAcquisition>();
+        services.AddSingleton<IIndexerRequestStateStore, EfIndexerRequestStateStore>();
         return services;
     }
 }

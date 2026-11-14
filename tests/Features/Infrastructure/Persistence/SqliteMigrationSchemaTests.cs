@@ -50,6 +50,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20261029020400_AddReleaseBlocklist";
     private const string AutomaticSearchScheduleMigrationId =
         "20261114021916_AddAutomaticSearchSchedule";
+    private const string IndexerRequestStateMigrationId =
+        "20261114075422_AddIndexerRequestState";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -235,7 +237,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 OperationEvidencePublicationsMigrationId,
                 AutomaticSearchTimingMigrationId,
                 ReleaseBlocklistMigrationId,
-                AutomaticSearchScheduleMigrationId
+                AutomaticSearchScheduleMigrationId,
+                IndexerRequestStateMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
