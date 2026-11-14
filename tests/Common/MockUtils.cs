@@ -135,6 +135,7 @@ namespace Listenarr.Tests.Common
             return new MyAnonamouseSearchProvider(
                 provider.GetRequiredService<ILogger<MyAnonamouseSearchProvider>>(),
                 httpClient,
+                new PassThroughIndexerRequestGate(TimeProvider.System),
                 provider.GetRequiredService<IIndexerRepository>());
         }
 
