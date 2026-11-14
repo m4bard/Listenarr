@@ -24,10 +24,12 @@ namespace Listenarr.Infrastructure.Torrents
     {
         private const int MaxAttempts = 3;
         private const int MaxRedirects = 10;
+        private static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(60);
         private readonly ILogger<TorrentFileDownloader> _logger;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IIndexerRequestGate _requestGate;
         private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
+        private readonly TimeSpan _requestTimeout;
 
         public TorrentFileDownloader(
             ILogger<TorrentFileDownloader> logger,
@@ -45,21 +47,20 @@ namespace Listenarr.Infrastructure.Torrents
             ILogger<TorrentFileDownloader> logger,
             IHttpClientFactory httpClientFactory,
             IIndexerRequestGate requestGate,
-            Func<TimeSpan, CancellationToken, Task> delayAsync)
+            Func<TimeSpan, CancellationToken, Task> delayAsync,
+            TimeSpan? requestTimeout = null)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
             _requestGate = requestGate ?? throw new ArgumentNullException(nameof(requestGate));
             _delayAsync = delayAsync ?? throw new ArgumentNullException(nameof(delayAsync));
+            _requestTimeout = requestTimeout ?? DefaultRequestTimeout;
         }
 
         public async Task<TorrentDownloadResult> DownloadAsync(string torrentUrl, int? indexerId, CancellationToken ct = default)
         {
             try
             {
-                using var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                downloadCts.CancelAfter(TimeSpan.FromSeconds(60));
-
                 // The Indexer client never follows redirects, so every hop passes the SSRF guard and the gate.
                 using var httpClient = _httpClientFactory.CreateClient(IndexerHttpDispatch.ClientName);
                 var gateContext = new IndexerRequestContext(
@@ -83,7 +84,7 @@ namespace Listenarr.Infrastructure.Torrents
                     request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
 
                     var sent = await IndexerHttpDispatch.SendAsync(
-                        _requestGate, gateContext, httpClient, request, onDispatch: null, downloadCts.Token);
+                        _requestGate, gateContext, httpClient, request, onDispatch: null, ct, _requestTimeout);
                     if (sent is IndexerRequestResult.Deferred deferred)
                     {
                         throw new IndexerRequestDeferredException(deferred.Deferral);
@@ -135,7 +136,7 @@ namespace Listenarr.Infrastructure.Torrents
                                 response.StatusCode,
                                 LogRedaction.SanitizeUrl(currentUrl),
                                 delay.TotalMilliseconds);
-                            await _delayAsync(delay, downloadCts.Token);
+                            await _delayAsync(delay, ct);
                             attempt++;
                             continue;
                         }
@@ -145,7 +146,7 @@ namespace Listenarr.Infrastructure.Torrents
                         return TorrentDownloadResult.Failed($"Torrent metadata download failed with HTTP {(int)response.StatusCode}.");
                     }
 
-                    var bytes = await response.Content.ReadAsByteArrayAsync(downloadCts.Token);
+                    var bytes = await response.Content.ReadAsByteArrayAsync(ct);
                     _logger.LogDebug("Pre-download fetched {Bytes} bytes from {Url} (hops: {Hops})",
                         bytes.Length, LogRedaction.SanitizeUrl(currentUrl), hop);
 
