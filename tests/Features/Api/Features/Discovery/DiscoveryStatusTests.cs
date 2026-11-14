@@ -1,6 +1,5 @@
 using Listenarr.Api.Features.Discovery;
 using Listenarr.Application.Search.Discovery;
-using Listenarr.Domain.Search.Discovery;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Features.Infrastructure.HostedServices.Search;
 using Listenarr.Tests.Features.Infrastructure.Persistence;
