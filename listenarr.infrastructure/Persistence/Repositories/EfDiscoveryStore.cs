@@ -185,6 +185,19 @@ public sealed class EfDiscoveryStore(IDbContextFactory<ListenArrDbContext> dbFac
         return new DiscoveryIndexerStatus(checkpoint, openGaps);
     }
 
+    public async Task<bool> AcknowledgeGapAsync(
+        int gapId,
+        DateTime utc,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await CreateRelationalContextAsync(cancellationToken);
+        var acknowledged = await db.IndexerCoverageGaps
+            .Where(gap => gap.Id == gapId && gap.AcknowledgedUtc == null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(gap => gap.AcknowledgedUtc, utc), cancellationToken);
+        return acknowledged > 0
+            || await db.IndexerCoverageGaps.AnyAsync(gap => gap.Id == gapId, cancellationToken);
+    }
+
     private async Task<ListenArrDbContext> CreateRelationalContextAsync(CancellationToken cancellationToken)
     {
         var db = await dbFactory.CreateDbContextAsync(cancellationToken);

@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Application.Search.Discovery;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -22,6 +23,9 @@ internal static class SearchRegistrationExtensions
         services.AddScoped<IIndexerSearchProvider, InternetArchiveSearchProvider>();
         services.AddScoped<IIndexerSearchProvider, TorznabNewznabSearchProvider>();
         services.AddScoped<IIndexerSearchProvider, MyAnonamouseSearchProvider>();
+        services.AddScoped<IIndexerFeedProvider>(provider =>
+            provider.GetServices<IIndexerSearchProvider>().OfType<IIndexerFeedProvider>().Single());
+        services.AddScoped<IDiscoveryStatusService, DiscoveryStatusService>();
         services.AddScoped<IMyAnonamouseConnectionTester, MyAnonamouseConnectionTester>();
         services.AddScoped<IndexerAdditionalSettingsParser>();
         services.AddScoped<IndexerSearchWorkflow>();

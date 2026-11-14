@@ -97,6 +97,19 @@ namespace Listenarr.Application.Search.Discovery
             int indexerId,
             int gapLimit,
             CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Marks one coverage gap as acknowledged. A gap that is already acknowledged keeps its
+        /// original acknowledgement time.
+        /// </summary>
+        /// <param name="gapId">The gap.</param>
+        /// <param name="utc">The acknowledgement time, written only by the call that acknowledges.</param>
+        /// <param name="cancellationToken">The caller's own token.</param>
+        /// <returns>False when no gap has this id; true when it exists, acknowledged by this call or before.</returns>
+        Task<bool> AcknowledgeGapAsync(
+            int gapId,
+            DateTime utc,
+            CancellationToken cancellationToken);
     }
 
     /// <summary>One fetched feed item, as it is stored in the inbox.</summary>
