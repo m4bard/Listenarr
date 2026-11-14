@@ -45,6 +45,12 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
         public void Configure(EntityTypeBuilder<ApplicationSettings> builder)
         {
             builder.Property(e => e.Version).IsConcurrencyToken();
+            // The column default gives existing settings rows the initializer's 25. A stored 0 is a
+            // real choice (no reserve), so the sentinel is 25 rather than the CLR default: EF then
+            // writes a 0 instead of omitting it and letting the column default turn it into 25.
+            builder.Property(e => e.IndexerInteractiveReservePercent)
+                .HasDefaultValue(25)
+                .HasSentinel(25);
             // AllowedFileExtensions stored as pipe-delimited list
             builder.Property(e => e.AllowedFileExtensions)
                 .HasConversion(

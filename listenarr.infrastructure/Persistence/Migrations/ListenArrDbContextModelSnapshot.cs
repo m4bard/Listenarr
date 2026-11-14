@@ -1903,6 +1903,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("IndexerInteractiveReservePercent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(25);
+
                     b.Property<int>("MaxConcurrentDownloads")
                         .HasColumnType("INTEGER");
 
@@ -2644,6 +2649,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("DailyRequestLimit")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("EnableAnimeStandardSearch")
                         .HasColumnType("INTEGER");
 
@@ -2733,6 +2741,24 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.HasKey("IndexerId");
 
                     b.ToTable("IndexerRequestStates", (string)null);
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Search.IndexerRequestUsage", b =>
+                {
+                    b.Property<int>("IndexerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("HourStartUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Count")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("IndexerId", "HourStartUtc");
+
+                    b.HasIndex("HourStartUtc");
+
+                    b.ToTable("IndexerRequestUsages", (string)null);
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.Audiobook", b =>
@@ -2878,6 +2904,15 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Search.IndexerRequestState", b =>
+                {
+                    b.HasOne("Listenarr.Domain.Search.Indexer", null)
+                        .WithMany()
+                        .HasForeignKey("IndexerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Search.IndexerRequestUsage", b =>
                 {
                     b.HasOne("Listenarr.Domain.Search.Indexer", null)
                         .WithMany()
