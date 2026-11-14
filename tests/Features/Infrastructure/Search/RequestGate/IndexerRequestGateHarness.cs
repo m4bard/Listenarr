@@ -41,7 +41,8 @@ internal sealed class IndexerRequestGateHarness : IDisposable
         int perIndexerCap = 2,
         int globalCap = 8,
         ManualClock? clock = null,
-        TimeSpan? clientTimeout = null)
+        TimeSpan? clientTimeout = null,
+        IEnumerable<IIndexerRequestReservation>? reservations = null)
     {
         Clock = clock ?? new ManualClock(Start);
         Store = store;
@@ -55,7 +56,7 @@ internal sealed class IndexerRequestGateHarness : IDisposable
         Cache = new IndexerRequestStateCache(store, NullLogger<IndexerRequestStateCache>.Instance);
         Gate = new IndexerRequestGate(
             Cache,
-            [],
+            reservations ?? [],
             new IndexerConcurrencyLimiter(perIndexerCap, globalCap),
             new IndexerPacingSchedule(Interval, Clock, Clock.AdvanceDelayAsync),
             Clock,
@@ -179,6 +180,37 @@ internal sealed class IndexerRequestGateHarness : IDisposable
         {
             Disposed = true;
             base.Dispose(disposing);
+        }
+    }
+
+    /// <summary>
+    /// A reservation that counts its calls and answers through the given delegates. By default it
+    /// admits every request and every peek.
+    /// </summary>
+    internal sealed class SpyReservation(
+        Func<IndexerRequestContext, CancellationToken, Task<RequestDeferral?>>? reserve = null,
+        Func<int, SearchOrigin, CancellationToken, Task<RequestDeferral?>>? peek = null) : IIndexerRequestReservation
+    {
+        private int _reserveCalls;
+        private int _peekCalls;
+
+        public int ReserveCalls => Volatile.Read(ref _reserveCalls);
+
+        public int PeekCalls => Volatile.Read(ref _peekCalls);
+
+        public ConcurrentQueue<IndexerRequestContext> Reserved { get; } = new();
+
+        public Task<RequestDeferral?> TryReserveAsync(IndexerRequestContext context, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _reserveCalls);
+            Reserved.Enqueue(context);
+            return reserve?.Invoke(context, cancellationToken) ?? Task.FromResult<RequestDeferral?>(null);
+        }
+
+        public Task<RequestDeferral?> PeekAsync(int indexerId, SearchOrigin origin, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _peekCalls);
+            return peek?.Invoke(indexerId, origin, cancellationToken) ?? Task.FromResult<RequestDeferral?>(null);
         }
     }
 
