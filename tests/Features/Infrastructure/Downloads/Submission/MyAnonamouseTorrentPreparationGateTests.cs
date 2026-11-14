@@ -53,15 +53,15 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Submission
         }
 
         [Fact]
-        public async Task Prepare_SendsEveryRequestThroughTheGateAsDownloadFetch()
+        public async Task Prepare_EachSendTheFetcherMakesIsOneDownloadFetchGateCall()
         {
-            // Given: a torrent URL that answers with one redirect, then the torrent
+            // Given: a torrent URL to prepare
             var searchResult = CreateSearchResult("https://www.myanonamouse.net/tor/redirectstart");
 
             // When
             await _provider.GetRequiredService<MyAnonamouseTorrentPreparationService>().PrepareAsync(searchResult);
 
-            // Then: every request that reached the wire was one gate call, all of the grab kind
+            // Then: each send the fetcher made was one DownloadFetch gate call
             var wireRequests = _provider.GetRequiredService<MyAnonamouseApiMock>().GetCallCount();
             Assert.Equal(2, wireRequests);
             Assert.Equal(wireRequests, _gate.Contexts.Count);
