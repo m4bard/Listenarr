@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Search.Scheduling;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Downloads.Submission
@@ -59,15 +60,31 @@ namespace Listenarr.Application.Downloads.Submission
             var searchQuery = DownloadSearchQueryBuilder.Build(audiobook);
             logger.LogInformation("Searching for audiobook '{Title}' with query: {Query}", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeText(searchQuery));
 
-            // Search using the working search service. This is an automatic search (triggered
-            // by the background/manual 'search-and-download' endpoint), so set isAutomaticSearch
-            // to true to ensure only indexers are queried (no Amazon/Audible scraping). The origin,
-            // not that flag, says who caused the search.
-            var searchResults = await searchService.SearchAsync(searchQuery, isAutomaticSearch: true, origin: origin);
+            // A manual search ignores the book's due time but not the request gate: it asks every
+            // indexer enabled for automatic search (no Amazon/Audible scraping) and sees what each
+            // answered. The origin, not the automatic flag, says who caused the search.
+            var report = await searchService.SearchIndexersDetailedAsync(
+                searchQuery,
+                new IndexerSearchContext(origin, CycleAllowance: null),
+                indexerIds: null,
+                isAutomaticSearch: true,
+                request: null,
+                CancellationToken.None);
+            var searchResults = report.Outcomes
+                .SelectMany(outcome => outcome.Results)
+                .OrderByDescending(result => result.Seeders ?? 0)
+                .ThenByDescending(result => result.PublishedDate)
+                .Select(SearchResultConverters.ToSearchResult)
+                .ToList();
+            var completedIndexerIds = report.Outcomes
+                .Where(outcome => outcome.Status == IndexerSearchStatus.Completed)
+                .Select(outcome => outcome.IndexerId)
+                .ToList();
 
-            if (searchResults == null || !searchResults.Any())
+            if (searchResults.Count == 0)
             {
-                return new SearchAndDownloadResult { Success = false, Message = "No search results found" };
+                await RecordCompletedPairsAsync(audiobookId, completedIndexerIds, PairScheduleResult.NoAcceptableResults);
+                return NoSearchResults(report);
             }
 
             // Score results against quality profile
@@ -96,6 +113,7 @@ namespace Listenarr.Application.Downloads.Submission
             if (topResult == null)
             {
                 logger.LogWarning("No acceptable search results found for audiobook '{Title}' after quality filtering", audiobook.Title);
+                await RecordCompletedPairsAsync(audiobookId, completedIndexerIds, PairScheduleResult.NoAcceptableResults);
                 return new SearchAndDownloadResult { Success = false, Message = "No acceptable search results found" };
             }
 
@@ -123,6 +141,7 @@ namespace Listenarr.Application.Downloads.Submission
 
             // Log to history
             await LogDownloadHistory(audiobook, "Search", topResult.SearchResult);
+            await RecordCompletedPairsAsync(audiobookId, completedIndexerIds, PairScheduleResult.Satisfied);
 
             return new SearchAndDownloadResult
             {
@@ -133,6 +152,53 @@ namespace Listenarr.Application.Downloads.Submission
                 DownloadClientUsed = downloadClientId,
                 SearchResult = topResult.SearchResult
             };
+        }
+
+        // Nothing came back. A request the gate held back is the reason when there is one; otherwise
+        // the indexers answered with nothing or failed.
+        private static SearchAndDownloadResult NoSearchResults(IndexerSearchReport report)
+        {
+            var deferrals = report.Outcomes
+                .Where(outcome => outcome.Status == IndexerSearchStatus.Deferred && outcome.Deferral != null)
+                .Select(outcome => outcome.Deferral!.Value)
+                .ToList();
+            if (deferrals.Count == 0)
+            {
+                return new SearchAndDownloadResult { Success = false, Message = "No search results found" };
+            }
+
+            var earliest = deferrals.MinBy(deferral => deferral.UntilUtc);
+            return new SearchAndDownloadResult
+            {
+                Success = false,
+                Message = $"Search deferred until {earliest.UntilUtc:u} ({earliest.Reason}); no search results yet",
+                Deferral = earliest
+            };
+        }
+
+        // A manual search records only what an indexer answered, through the schedule store. A failed or
+        // deferred indexer is not recorded: the failure ladder and the backoff belong to the sweep.
+        private async Task RecordCompletedPairsAsync(int audiobookId, IReadOnlyList<int> indexerIds, PairScheduleResult result)
+        {
+            if (indexerIds.Count == 0)
+            {
+                return;
+            }
+
+            try
+            {
+                var settings = await configurationService.GetApplicationSettingsAsync();
+                var cooldown = AutomaticSearchBounds.Cooldown(settings.AutomaticSearchCooldownHours);
+                var nowUtc = clock.GetUtcNow().UtcDateTime;
+                foreach (var indexerId in indexerIds)
+                {
+                    await scheduleStore.PersistPairAsync(new PairScheduleUpdate(audiobookId, indexerId, result), nowUtc, cooldown);
+                }
+            }
+            catch (Exception ex) when (ex is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+            {
+                logger.LogWarning(ex, "Failed to record the manual search's indexer outcomes for audiobook {AudiobookId}", audiobookId);
+            }
         }
     }
 }
