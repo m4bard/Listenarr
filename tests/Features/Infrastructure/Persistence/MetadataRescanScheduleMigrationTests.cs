@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Tests.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -43,8 +44,12 @@ public sealed class MetadataRescanScheduleMigrationTests : BaseTests
         _output = output;
     }
 
+    // The migration is a pure EF scaffold (#717), so it repairs no data: every file that
+    // existed before it takes the scaffolded default due time. All of them are due at once
+    // and the due page takes them in id order, not creation order; each file then moves to
+    // its own due time as the rescan processes it.
     [Fact]
-    public async Task Upgrade_BackfillsDueTimeFromCreatedAtAndBuildsTheFilteredIndex()
+    public async Task Upgrade_LeavesExistingFilesDueAtOnceInIdOrderAndBuildsTheFilteredIndex()
     {
         await using var connection = await OpenAtPreviousMigrationAsync();
         await SeedFilesAsync(connection);
@@ -53,14 +58,20 @@ public sealed class MetadataRescanScheduleMigrationTests : BaseTests
 
         Assert.Equal(
             [
-                ("2025-05-01 08:30:00", 0L, 0L, 0L, (string?)null),
-                ("2025-06-15 21:05:09.1234567", 0L, 0L, 0L, (string?)null)
+                ("0001-01-01 00:00:00", 0L, 0L, 0L, (string?)null),
+                ("0001-01-01 00:00:00", 0L, 0L, 0L, (string?)null)
             ],
             await ReadScheduleAsync(connection));
         Assert.Equal(
             "CREATE INDEX \"IX_AudiobookFiles_MetadataRescanDue\" ON \"AudiobookFiles\" (\"MetadataRescanDueUtc\") "
             + "WHERE \"DurationSeconds\" IS NULL OR \"Format\" IS NULL OR \"SampleRate\" IS NULL OR \"Size\" IS NULL OR \"Size\" = 64",
             await IndexSqlAsync(connection));
+
+        // Due even at a time before either file was created.
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+        var page = await new EfAudiobookFileRepository(context).GetMetadataRescanDuePageAsync(
+            new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc), [], pageSize: 10);
+        Assert.Equal([1, 2], page.Select(candidate => candidate.File.Id));
     }
 
     [Fact]
@@ -113,7 +124,7 @@ public sealed class MetadataRescanScheduleMigrationTests : BaseTests
                 sqlite.MigrationsAssembly(typeof(ListenArrDbContext).Assembly.GetName().Name))
             .Options;
 
-    // Two files as the previous schema stored them, created at different times.
+    // Two files as the previous schema stored them, the later id created first.
     private static async Task SeedFilesAsync(SqliteConnection connection)
     {
         await using var command = connection.CreateCommand();
@@ -121,8 +132,8 @@ public sealed class MetadataRescanScheduleMigrationTests : BaseTests
             INSERT INTO "Audiobooks" ("Id", "Title", "Monitored", "Explicit", "Abridged")
             VALUES (1, $title, 1, 0, 0);
             INSERT INTO "AudiobookFiles" ("Id", "AudiobookId", "Path", "CreatedAt")
-            VALUES (1, 1, 'first.m4b', '2025-05-01 08:30:00'),
-                   (2, 1, 'second.m4b', '2025-06-15 21:05:09.1234567');
+            VALUES (1, 1, 'first.m4b', '2025-06-15 21:05:09.1234567'),
+                   (2, 1, 'second.m4b', '2025-05-01 08:30:00');
             """;
         command.Parameters.AddWithValue("$title", "A Princess of Mars");
         await command.ExecuteNonQueryAsync();

@@ -281,7 +281,7 @@ public class MigrationMetadataTests : BaseTests
     }
 
     [Fact]
-    public void AddMetadataRescanSchedule_AddsScheduleColumnsBackfillAndFilteredIndex()
+    public void AddMetadataRescanSchedule_AddsScheduleColumnsAndFilteredIndex()
     {
         AssertMigrationId<AddMetadataRescanSchedule>(
             "20261114004926_AddMetadataRescanSchedule");
@@ -299,17 +299,14 @@ public class MigrationMetadataTests : BaseTests
             ["MetadataRescanBlockedCount", "MetadataRescanFailureCount", "MetadataRescanUnavailableCount"],
             columns.Where(column => column.Name.EndsWith("Count", StringComparison.Ordinal))
                 .Select(column => column.Name));
-        Assert.False(columns.Single(column => column.Name == "MetadataRescanDueUtc").IsNullable);
+        // The scaffolded default is the only due time existing rows get: no data repair runs here.
+        var due = columns.Single(column => column.Name == "MetadataRescanDueUtc");
+        Assert.Equal((false, (object)DateTime.MinValue), (due.IsNullable, due.DefaultValue));
         var outcome = columns.Single(column => column.Name == "MetadataRescanLastOutcome");
         Assert.Equal((true, 32), (outcome.IsNullable, outcome.MaxLength));
 
-        // The due time is backfilled from CreatedAt before the index is built.
-        var backfill = Assert.IsType<SqlOperation>(up[5]);
-        Assert.Equal(
-            "UPDATE \"AudiobookFiles\" SET \"MetadataRescanDueUtc\" = \"CreatedAt\";",
-            backfill.Sql);
-        var index = Assert.IsType<CreateIndexOperation>(up[6]);
-        Assert.Equal(7, up.Count);
+        var index = Assert.IsType<CreateIndexOperation>(up[5]);
+        Assert.Equal(6, up.Count);
         Assert.Equal("IX_AudiobookFiles_MetadataRescanDue", index.Name);
         Assert.Equal(["MetadataRescanDueUtc"], index.Columns);
         Assert.Equal(
