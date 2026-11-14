@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 using Listenarr.Infrastructure.Persistence.Repositories;
+using Listenarr.Infrastructure.Search.RequestGate;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -18,7 +19,8 @@ internal static class SearchRegistrationExtensions
     public static IServiceCollection AddSearchServices(this IServiceCollection services)
     {
         services.TryAddSingleton(TimeProvider.System);
-        services.AddSingleton<IIndexerRequestGate, PassThroughIndexerRequestGate>();
+        services.AddSingleton<IndexerRequestStateCache>();
+        services.AddSingleton<IIndexerRequestGate, IndexerRequestGate>();
         services.AddScoped<IIndexerSearchProvider, InternetArchiveSearchProvider>();
         services.AddScoped<IIndexerSearchProvider, TorznabNewznabSearchProvider>();
         services.AddScoped<IIndexerSearchProvider, MyAnonamouseSearchProvider>();
