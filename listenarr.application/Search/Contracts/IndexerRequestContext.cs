@@ -43,13 +43,25 @@ namespace Listenarr.Application.Search.Contracts
         /// <summary>
         /// A redirect hop that the application follows itself, after the first send.
         /// </summary>
-        Redirect
+        Redirect,
+
+        /// <summary>
+        /// Any wire request on the grab path: a torrent fetch, an NZB fetch or MyAnonamouse
+        /// torrent preparation, each hop and each retry included.
+        /// </summary>
+        DownloadFetch,
+
+        /// <summary>
+        /// A request that tests an indexer's connection or credentials.
+        /// </summary>
+        ConnectionTest
     }
 
     /// <summary>
     /// Identifies one indexer request to the gate.
     /// </summary>
-    /// <param name="IndexerId">The indexer the request goes to; the key for per-indexer state.</param>
+    /// <param name="IndexerId">The indexer the request goes to; the key for per-indexer state.
+    /// Values of 0 or less mean the request is unattributed and only the global cap applies.</param>
     /// <param name="Origin">Who caused the request.</param>
     /// <param name="Kind">What the request is for.</param>
     /// <param name="CycleAllowance">The worker cycle's request allowance, or null when the caller

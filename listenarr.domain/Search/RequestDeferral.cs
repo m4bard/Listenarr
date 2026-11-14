@@ -27,7 +27,29 @@ namespace Listenarr.Domain.Search
         /// <summary>
         /// The worker's per-cycle outbound request bound is spent.
         /// </summary>
-        CycleRequestBound
+        CycleRequestBound,
+
+        /// <summary>
+        /// The indexer answered 429, or 503 with Retry-After, and the cooldown it set has not
+        /// ended.
+        /// </summary>
+        RateLimited,
+
+        /// <summary>
+        /// The indexer's consecutive-failure ladder set a cooldown and it has not ended.
+        /// </summary>
+        FailureLadder,
+
+        /// <summary>
+        /// A request reservation threw while being checked, so the request was not sent. Set by
+        /// the gate, never by a reservation itself.
+        /// </summary>
+        ReservationUnavailable,
+
+        /// <summary>
+        /// The gate could not load its persisted per-indexer state, so the request was not sent.
+        /// </summary>
+        RequestStateUnavailable
     }
 
     /// <summary>
