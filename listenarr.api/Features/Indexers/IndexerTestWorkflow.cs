@@ -17,18 +17,21 @@ namespace Listenarr.Api.Features.Indexers
     public sealed class IndexerTestWorkflow
     {
         private readonly IIndexerRepository _indexerRepository;
-        private readonly HttpClient _httpClientNoRedirect;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IIndexerRequestGate _requestGate;
         private readonly ILogger<IndexerTestWorkflow> _logger;
         private readonly IMyAnonamouseConnectionTester? _myAnonamouseConnectionTester;
 
         public IndexerTestWorkflow(
             IIndexerRepository indexerRepository,
-            HttpClient httpClient,
+            IHttpClientFactory httpClientFactory,
+            IIndexerRequestGate requestGate,
             ILogger<IndexerTestWorkflow> logger,
             IMyAnonamouseConnectionTester? myAnonamouseConnectionTester = null)
         {
             _indexerRepository = indexerRepository;
-            _httpClientNoRedirect = httpClient;
+            _httpClientFactory = httpClientFactory;
+            _requestGate = requestGate;
             _logger = logger;
             _myAnonamouseConnectionTester = myAnonamouseConnectionTester;
         }
@@ -68,7 +71,7 @@ namespace Listenarr.Api.Features.Indexers
                     return IndexerTestWorkflowResult.Failure($"Blocked outbound target: {blockedReason}");
                 }
 
-                using var response = await SendValidatedAsync(currentUri =>
+                var sendResult = await SendGatedAsync(indexer, currentUri =>
                 {
                     var retryRequest = new HttpRequestMessage(HttpMethod.Get, currentUri);
                     retryRequest.Headers.UserAgent.ParseAdd(userAgent);
@@ -79,6 +82,12 @@ namespace Listenarr.Api.Features.Indexers
 
                     return retryRequest;
                 }, testUrl);
+                if (sendResult is IndexerRequestResult.Deferred deferred)
+                {
+                    return IndexerTestWorkflowResult.Failure(deferred.Deferral.Describe());
+                }
+
+                using var response = ((IndexerRequestResult.Sent)sendResult).Response;
 
                 _logger.LogInformation("[IndexerTest] {Name} responded {StatusCode}", LogRedaction.SanitizeText(indexer.Name), (int)response.StatusCode);
 
@@ -165,9 +174,16 @@ namespace Listenarr.Api.Features.Indexers
                 _logger.LogInformation("Testing Internet Archive indexer '{Name}' with collection '{Collection}'",
                     LogRedaction.SanitizeText(indexer.Name), LogRedaction.SanitizeText(collection));
 
-                using var response = await SendValidatedAsync(
+                var sendResult = await SendGatedAsync(
+                    indexer,
                     currentUri => new HttpRequestMessage(HttpMethod.Get, currentUri),
                     testUrl);
+                if (sendResult is IndexerRequestResult.Deferred deferred)
+                {
+                    return IndexerTestWorkflowResult.Failure(deferred.Deferral.Describe());
+                }
+
+                using var response = ((IndexerRequestResult.Sent)sendResult).Response;
                 response.EnsureSuccessStatusCode();
 
                 var content = await response.Content.ReadAsStringAsync();
@@ -236,6 +252,11 @@ namespace Listenarr.Api.Features.Indexers
                 LogRedaction.SanitizeText(indexer.Name));
 
             var result = await _myAnonamouseConnectionTester.TestAsync(indexer, mamId);
+            if (result.Deferral != null)
+            {
+                return IndexerTestWorkflowResult.Failure(result.Message);
+            }
+
             if (!result.Succeeded)
             {
                 await SaveTestResultAsync(indexer, persist, false, result.Message);
@@ -296,22 +317,20 @@ namespace Listenarr.Api.Features.Indexers
             return null;
         }
 
-        private async Task<HttpResponseMessage> SendValidatedAsync(
+        private Task<IndexerRequestResult> SendGatedAsync(
+            Indexer indexer,
             Func<Uri, HttpRequestMessage> requestFactory,
-            string url,
-            HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead,
-            CancellationToken cancellationToken = default)
+            string url)
         {
-            var uri = new Uri(url);
-            var (response, _) = await OutboundRequestSecurity.SendWithValidatedRedirectsAsync(
+            return IndexerHttpDispatch.SendFollowingRedirectsAsync(
+                _requestGate,
+                new IndexerRequestContext(indexer.Id, SearchOrigin.Interactive, IndexerRequestKind.ConnectionTest),
+                _httpClientFactory.CreateClient(IndexerHttpDispatch.ClientName),
                 requestFactory,
-                uri,
-                _httpClientNoRedirect,
+                new Uri(url),
                 _logger,
-                allowPrivateTargets: true,
-                completionOption: completionOption,
-                cancellationToken: cancellationToken);
-            return response;
+                onDispatch: null,
+                CancellationToken.None);
         }
 
         private async Task SaveTestResultAsync(

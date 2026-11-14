@@ -57,5 +57,11 @@ namespace Listenarr.Domain.Search
     /// </summary>
     /// <param name="UntilUtc">The earliest time, in UTC, at which the request may be sent.</param>
     /// <param name="Reason">Why the request was held back.</param>
-    public readonly record struct RequestDeferral(DateTime UntilUtc, RequestDeferralReason Reason);
+    public readonly record struct RequestDeferral(DateTime UntilUtc, RequestDeferralReason Reason)
+    {
+        /// <summary>
+        /// Describes the deferral for a caller that reports it to a person.
+        /// </summary>
+        public string Describe() => $"indexer in cooldown until {UntilUtc:O} ({Reason})";
+    }
 }
