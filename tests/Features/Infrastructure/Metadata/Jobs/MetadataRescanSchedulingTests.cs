@@ -67,13 +67,14 @@ public sealed partial class MetadataRescanSchedulingTests : BaseTests
         _extract = path => Task.FromResult(path == retry.Paths[0] && !retrySucceeds ? null : CompleteMetadata());
         var processor = NewProcessor();
         DateTime? retryDueUtc = null;
+        int? firstDueCycle = null;
+        int? retriedCycle = null;
 
         for (var cycle = 1; cycle <= 8; cycle++)
         {
             await SeedBookAsync($"arrivals-{cycle}", 20, NowUtc);
             var cycleNowUtc = NowUtc;
             var extracted = await RunCycleAsync(processor);
-            var retried = retrySucceeds && extracted.Contains(retry.Paths[0]);
             _output.WriteLine($"cycle {cycle} at +{(cycleNowUtc - _clock.Start).TotalMinutes} min: extracted {extracted.Count}, retry extracted {extracted.Contains(retry.Paths[0])}");
             if (cycle == 1)
             {
@@ -83,17 +84,21 @@ public sealed partial class MetadataRescanSchedulingTests : BaseTests
                 continue;
             }
 
-            if (cycleNowUtc < retryDueUtc)
+            if (cycleNowUtc >= retryDueUtc)
             {
-                Assert.False(extracted.Contains(retry.Paths[0]), $"the retry ran in cycle {cycle}, before its due time");
-                continue;
+                firstDueCycle ??= cycle;
             }
 
-            Assert.True(retried, $"the retry due at {retryDueUtc:O} was not extracted in the first cycle at or after it (cycle {cycle})");
-            return;
+            if (extracted.Contains(retry.Paths[0]))
+            {
+                retriedCycle ??= cycle;
+            }
         }
 
-        Assert.Fail("no cycle reached the retry's due time");
+        Assert.NotNull(firstDueCycle);
+        Assert.True(
+            retriedCycle == firstDueCycle,
+            $"the retry due at {retryDueUtc:O} was extracted in cycle {retriedCycle?.ToString() ?? "none"}, not in cycle {firstDueCycle}, the first cycle at or after its due time");
     }
 
     [Fact]
