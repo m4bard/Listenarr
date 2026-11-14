@@ -122,6 +122,19 @@ namespace Listenarr.Api.Features.Downloads
                     ex.IsExpired ? StatusCodes.Status410Gone : StatusCodes.Status400BadRequest,
                     new { message = "Unable to use download reference", error = ex.Message });
             }
+            catch (IndexerRequestDeferredException ex)
+            {
+                // The indexer's request gate held back the .torrent or NZB fetch. Nothing is broken:
+                // the caller is told when to try again.
+                _logger.LogInformation("Download deferred: {Reason}", ex.Deferral.Describe());
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+                {
+                    message = "The indexer is not accepting requests right now",
+                    error = ex.Deferral.Describe(),
+                    untilUtc = ex.Deferral.UntilUtc,
+                    reason = ex.Deferral.Reason.ToString()
+                });
+            }
             catch (DownloadClientRejectedReleaseException ex)
             {
                 // Same reasoning as search-and-download above, answered in this endpoint's own
