@@ -19,7 +19,8 @@
 namespace Listenarr.Infrastructure.Search.RequestBudget;
 
 /// <summary>
-/// The SQL behind the daily request allowance that has to be one statement.
+/// The SQL behind the daily request allowance, written by hand so each part is one statement
+/// with its hours bound the way EF writes them.
 /// </summary>
 internal static class IndexerRequestBudgetSql
 {
@@ -42,5 +43,15 @@ internal static class IndexerRequestBudgetSql
         WHERE (SELECT COALESCE(SUM("Count"), 0) FROM "IndexerRequestUsages"
                WHERE "IndexerId" = {indexerId} AND "HourStartUtc" >= {windowStartUtc}) < {ceiling}
         ON CONFLICT ("IndexerId", "HourStartUtc") DO UPDATE SET "Count" = "Count" + 1
+        """;
+
+    /// <summary>
+    /// Deletes every indexer's usage rows for hours before <paramref name="pruneBeforeUtc"/>.
+    /// The bound is a <see cref="DateTime"/> for the same reason as the charge's hours: the
+    /// rows are compared as text, so it has to be written in the form EF writes the key.
+    /// </summary>
+    public static FormattableString DeleteUsageBefore(DateTime pruneBeforeUtc) =>
+        $"""
+        DELETE FROM "IndexerRequestUsages" WHERE "HourStartUtc" < {pruneBeforeUtc}
         """;
 }

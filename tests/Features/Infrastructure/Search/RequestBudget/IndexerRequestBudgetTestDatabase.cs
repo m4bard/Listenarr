@@ -131,6 +131,18 @@ internal sealed class IndexerRequestBudgetTestDatabase : IAsyncDisposable
         await context.SaveChangesAsync();
     }
 
+    public async Task AddUsageAsync(int indexerId, DateTime hourStartUtc, int count)
+    {
+        await using var context = await Factory.CreateDbContextAsync();
+        context.IndexerRequestUsages.Add(new IndexerRequestUsage
+        {
+            IndexerId = indexerId,
+            HourStartUtc = hourStartUtc,
+            Count = count
+        });
+        await context.SaveChangesAsync();
+    }
+
     public async Task<IReadOnlyList<IndexerRequestUsage>> UsageAsync()
     {
         await using var context = await Factory.CreateDbContextAsync();

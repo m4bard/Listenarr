@@ -28,7 +28,8 @@ namespace Listenarr.Infrastructure.Search.RequestBudget;
 /// the origin's ceiling, so concurrent callers can never take more than the ceiling between
 /// them and a restart starts from the usage already spent. The gate is a singleton and so is
 /// this; every call opens its own short-lived context from the factory and runs in autocommit.
-/// A storage failure while charging is not caught here: the gate defers the request.
+/// A storage failure while charging is not caught here: the gate defers the request. Rows too
+/// old to count are pruned once an hour after an admitted charge.
 /// </summary>
 public sealed class EfIndexerRequestReservation : IIndexerRequestReservation
 {
@@ -43,6 +44,7 @@ public sealed class EfIndexerRequestReservation : IIndexerRequestReservation
     private readonly IDbContextFactory<ListenArrDbContext> _dbContextFactory;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<EfIndexerRequestReservation> _logger;
+    private readonly IndexerRequestUsagePruner _pruner;
     private readonly Lock _refusalLogLock = new();
     private readonly Dictionary<(int IndexerId, SearchOrigin Origin), DateTime> _refusalLoggedForHour = new();
 
@@ -54,6 +56,7 @@ public sealed class EfIndexerRequestReservation : IIndexerRequestReservation
         _dbContextFactory = dbContextFactory ?? throw new ArgumentNullException(nameof(dbContextFactory));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _pruner = new IndexerRequestUsagePruner(logger);
     }
 
     public async Task<RequestDeferral?> TryReserveAsync(
@@ -81,6 +84,7 @@ public sealed class EfIndexerRequestReservation : IIndexerRequestReservation
             cancellationToken);
         if (charged != 0)
         {
+            await _pruner.PruneOncePerHourAsync(db, window.HourStartUtc);
             return null;
         }
 
