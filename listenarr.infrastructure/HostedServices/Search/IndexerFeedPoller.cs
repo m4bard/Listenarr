@@ -64,10 +64,10 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             ArgumentNullException.ThrowIfNull(feed);
             ArgumentNullException.ThrowIfNull(indexer);
             var pollUtc = timeProvider.GetUtcNow().UtcDateTime;
-            var stored = (await store.GetStatusAsync(indexer.Id, gapLimit: 0, cancellationToken)).Checkpoint;
+            var existing = (await store.GetStatusAsync(indexer.Id, gapLimit: 0, cancellationToken)).Checkpoint;
             // A row that holds neither a date nor an item has nothing to read back to, so the
             // poll is a baseline: it reads one page and records no gap.
-            var checkpoint = stored is { NewestPublishedUtc: not null } or { NewestReleaseId: not null } ? stored : null;
+            var checkpoint = existing is { NewestPublishedUtc: not null } or { NewestReleaseId: not null } ? existing : null;
             var window = new FeedWindow(pollUtc + Overlap);
             var pageLimit = checkpoint is null ? 1 : PageBound;
             var offset = 0;
