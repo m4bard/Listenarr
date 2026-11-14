@@ -55,11 +55,17 @@ namespace Listenarr.Tests.Features.Application.Search.Indexers.Common
                     It.IsAny<Indexer>(),
                     It.IsAny<string>(),
                     It.IsAny<string?>(),
-                    It.IsAny<SearchRequest?>()))
-                .ReturnsAsync(new List<IndexerSearchResult>
-                {
-                    new IndexerSearchResult { Title = "Unrelated Release" }
-                });
+                    It.IsAny<SearchRequest?>(),
+                    It.IsAny<IndexerSearchContext>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new IndexerSearchOutcome(
+                    5,
+                    IndexerSearchStatus.Completed,
+                    new List<IndexerSearchResult>
+                    {
+                        new IndexerSearchResult { Title = "Unrelated Release" }
+                    },
+                    RequestsSent: 1));
 
             using var httpClient = new HttpClient();
             var workflow = new IndexerSearchWorkflow(
@@ -79,7 +85,9 @@ namespace Listenarr.Tests.Features.Application.Search.Indexers.Common
                     It.IsAny<Indexer>(),
                     It.IsAny<string>(),
                     It.IsAny<string?>(),
-                    It.IsAny<SearchRequest?>()),
+                    It.IsAny<SearchRequest?>(),
+                    It.IsAny<IndexerSearchContext>(),
+                    It.IsAny<CancellationToken>()),
                 Times.Never);
         }
     }

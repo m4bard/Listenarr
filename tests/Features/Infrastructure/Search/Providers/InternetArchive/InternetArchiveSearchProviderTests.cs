@@ -43,7 +43,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
             ? Ok(CreateSearchResponse("Alice in Wonderland").Replace("\"Lewis Carroll\"", creatorJson, StringComparison.Ordinal)
                 .Replace("2010-03-01", DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal))
             : Ok(metadata));
-        var results = await provider.SearchAsync(CreateIndexer(), "Alice in Wonderland");
+        var results = await provider.SearchResultsAsync(CreateIndexer(), "Alice in Wonderland");
         Assert.Equal(2, results.Count);
         var quality = new QualityProfileService(Mock.Of<IQualityProfileRepository>(), NullLogger<QualityProfileService>.Instance);
         var scorer = new AutomaticSearchScoringService(quality, Mock.Of<IAudiobookRepository>(), NullLogger<AutomaticSearchScoringService>.Instance, TestAnnotationCatalog.CreateProvider());
@@ -80,7 +80,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var indexer = CreateIndexer();
 
         // When
-        var results = await provider.SearchAsync(indexer, "Alice");
+        var results = await provider.SearchResultsAsync(indexer, "Alice");
 
         // Then
         Assert.Equal(2, results.Count);
@@ -123,7 +123,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
             "Songs from Alice in Wonderland and Through the Looking-Glass");
 
         // When
-        var result = Assert.Single(await provider.SearchAsync(CreateIndexer(), "Alice"));
+        var result = Assert.Single(await provider.SearchResultsAsync(CreateIndexer(), "Alice"));
 
         // Then
         Assert.Equal("English", result.Language);
@@ -150,7 +150,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var provider = CreateProvider(metadataJson);
 
         // When
-        var result = Assert.Single(await provider.SearchAsync(CreateIndexer(), "Alice"));
+        var result = Assert.Single(await provider.SearchResultsAsync(CreateIndexer(), "Alice"));
 
         // Then
         Assert.Equal("German", result.Language);
@@ -162,7 +162,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         const string metadata = """
         {"metadata":{"language":["eng","swe"]},"files":[{"name":"book.m4b","format":"LibriVox Apple Audiobook","size":"900"}]}
         """;
-        var result = Assert.Single(await CreateProvider(metadata).SearchAsync(CreateIndexer(), "Alice"));
+        var result = Assert.Single(await CreateProvider(metadata).SearchResultsAsync(CreateIndexer(), "Alice"));
         Assert.Equal("English; Swedish", result.Language);
         Assert.Equal(IdentityEvidenceOrigin.ProviderSupplied, result.LanguageOrigin);
     }
@@ -173,7 +173,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         const string metadata = """
         {"metadata":{},"files":[{"name":"book.m4b","format":"LibriVox Apple Audiobook","size":"900"}]}
         """;
-        var result = Assert.Single(await CreateProvider(metadata, "French Lessons").SearchAsync(CreateIndexer(), "French"));
+        var result = Assert.Single(await CreateProvider(metadata, "French Lessons").SearchResultsAsync(CreateIndexer(), "French"));
         Assert.Equal("French", result.Language);
         Assert.Equal(IdentityEvidenceOrigin.ReleaseNameDerived, result.LanguageOrigin);
     }
@@ -187,7 +187,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
             allowArchives: false);
 
         // When
-        var results = await provider.SearchAsync(CreateIndexer(), "Alice");
+        var results = await provider.SearchResultsAsync(CreateIndexer(), "Alice");
 
         // Then
         var mp3 = Assert.Single(results, result => result.Format == "128Kbps MP3");
@@ -223,7 +223,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var provider = CreateProvider(metadataJson);
 
         // When
-        var result = Assert.Single(await provider.SearchAsync(CreateIndexer(), "Alice"));
+        var result = Assert.Single(await provider.SearchResultsAsync(CreateIndexer(), "Alice"));
 
         // Then
         var artifact = Assert.Single(result.DirectDownloadArtifacts);
@@ -248,7 +248,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var provider = CreateProvider(metadataJson, allowArchives: false);
 
         // When
-        var results = await provider.SearchAsync(CreateIndexer(), "Alice");
+        var results = await provider.SearchResultsAsync(CreateIndexer(), "Alice");
 
         // Then
         Assert.Empty(results);
@@ -280,7 +280,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         });
 
         // When
-        var results = await provider.SearchAsync(CreateIndexer(), "Alices Adventures in Wonderland Lewis Carroll");
+        var results = await provider.SearchResultsAsync(CreateIndexer(), "Alices Adventures in Wonderland Lewis Carroll");
 
         // Then
         Assert.Contains(capturedQueries, query => query == expectedBroadQuery);
@@ -327,7 +327,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         };
 
         // When
-        var results = await provider.SearchAsync(
+        var results = await provider.SearchResultsAsync(
             CreateIndexer(),
             "Alices Adventures in Wonderland Lewis Carroll",
             request: request);
@@ -382,7 +382,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         };
 
         // When
-        var results = await provider.SearchAsync(
+        var results = await provider.SearchResultsAsync(
             CreateIndexer(),
             "Alices Adventures in Wonderland Lewis Carroll",
             request: request);
@@ -411,7 +411,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var indexer = CreateIndexer("librivoxaudio) OR mediatype:(texts");
 
         // When
-        await provider.SearchAsync(indexer, "Alice");
+        await provider.SearchResultsAsync(indexer, "Alice");
 
         // Then
         var query = Assert.Single(capturedQueries);
