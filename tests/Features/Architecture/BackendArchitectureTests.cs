@@ -473,8 +473,7 @@ public sealed class BackendArchitectureTests : BaseTests
             "listenarr.application/Common/MyAnonamouseHelper.cs",
             "listenarr.api/Features/Indexers/IndexerDebugSearchWorkflow.cs",
             "listenarr.infrastructure/DownloadClients/Qbittorrent/QbittorrentCookieSession.cs",
-            "listenarr.infrastructure/DownloadClients/Transmission/TransmissionAdapter.cs",
-            "listenarr.infrastructure/Torrents/TorrentFileDownloader.cs"
+            "listenarr.infrastructure/DownloadClients/Transmission/TransmissionAdapter.cs"
         };
         var roots = new[]
         {

@@ -11,8 +11,10 @@ namespace Listenarr.Infrastructure.Torrents
         /// <summary>
         /// Downloads a .torrent file from the given URL, following up to 10 redirects.
         /// If the indexer redirects to a magnet link, the result will contain the magnet URI.
-        /// Returns an empty result if the download fails.
+        /// Returns an empty result if the download fails. Every request goes through the indexer request
+        /// gate; a request the gate defers throws <see cref="Listenarr.Application.Search.Contracts.IndexerRequestDeferredException"/>.
+        /// A null or non-positive <paramref name="indexerId"/> is unattributed.
         /// </summary>
-        Task<TorrentDownloadResult> DownloadAsync(string torrentUrl, CancellationToken ct = default);
+        Task<TorrentDownloadResult> DownloadAsync(string torrentUrl, int? indexerId, CancellationToken ct = default);
     }
 }

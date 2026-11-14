@@ -151,7 +151,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
 
             Assert.Equal("ABCDEF1234567890ABCDEF1234567890ABCDEF12", submissionResult.ExternalId);
             downloader.Verify(
-                x => x.DownloadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+                x => x.DownloadAsync(It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()),
                 Times.Never);
         }
 
@@ -352,7 +352,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         {
             var downloader = new Mock<ITorrentFileDownloader>(MockBehavior.Strict);
             downloader
-                .Setup(x => x.DownloadAsync("https://indexer.example.com/book.torrent", It.IsAny<CancellationToken>()))
+                .Setup(x => x.DownloadAsync("https://indexer.example.com/book.torrent", It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(TorrentDownloadResult.Failed("Torrent metadata download failed with HTTP 500."));
             _services.AddSingleton(downloader.Object);
             Init();
@@ -388,7 +388,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             var content = await File.ReadAllBytesAsync(TestUtils.GetTorrentDataPath("big-buck-bunny.torrent"));
             var downloader = new Mock<ITorrentFileDownloader>(MockBehavior.Strict);
             downloader
-                .Setup(x => x.DownloadAsync("https://indexer.example.com/book.torrent", It.IsAny<CancellationToken>()))
+                .Setup(x => x.DownloadAsync("https://indexer.example.com/book.torrent", It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(TorrentDownloadResult.FromBytes(content));
             _services.AddSingleton(downloader.Object);
             Init();
@@ -421,7 +421,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         {
             var downloader = new Mock<ITorrentFileDownloader>(MockBehavior.Strict);
             downloader
-                .Setup(x => x.DownloadAsync("https://indexer.example.com/book.torrent", It.IsAny<CancellationToken>()))
+                .Setup(x => x.DownloadAsync("https://indexer.example.com/book.torrent", It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(TorrentDownloadResult.FromBytes("d3:foo3:bar"u8.ToArray()));
             _services.AddSingleton(downloader.Object);
             Init();
@@ -466,7 +466,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             };
 
             var downloader = new Mock<ITorrentFileDownloader>();
-            downloader.Setup(value => value.DownloadAsync(searchResult.TorrentUrl, It.IsAny<CancellationToken>()))
+            downloader.Setup(value => value.DownloadAsync(searchResult.TorrentUrl, It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(TorrentDownloadResult.Failed("The torrent URL was rejected by outbound request validation."));
             var exception = await Assert.ThrowsAsync<DownloadClientSubmissionException>(() =>
                 new GenericTorrentSourceResolver(downloader.Object, new TorrentMetadataService())
