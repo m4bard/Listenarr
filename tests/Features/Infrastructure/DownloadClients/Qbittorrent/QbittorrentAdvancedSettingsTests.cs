@@ -316,5 +316,25 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
 
             Assert.False(string.IsNullOrEmpty(result.ExternalId));
         }
+
+        [Fact]
+        [Trait("Scenario", "A tracker injection that times out does not fail a submission either")]
+        public async Task AddAsync_WhenAddTrackersTimesOut_StillReportsTheTorrentAsAdded()
+        {
+            // The tracker fallback for a .torrent file runs after the add was accepted and no
+            // longer takes the caller's token, so a TaskCanceledException from it is a timeout
+            // and must not fail the submission any more than a force start timeout does.
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.AddTrackersTimesOut = true;
+            var client = await SavedClientAsync(null);
+            var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await gateway.AddAsync(
+                client,
+                FileSubmission() with { TrackerUrls = ["https://tracker.example.com/announce"] });
+
+            Assert.Equal(1, apiMock.AddTrackersCallCount);
+            Assert.False(string.IsNullOrEmpty(result.ExternalId));
+        }
     }
 }

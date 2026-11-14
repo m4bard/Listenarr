@@ -144,6 +144,13 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                             logger.LogDebug($"addTrackers API returned {trackersResp.StatusCode} for torrent {addPlan.Hash} (non-fatal)");
                     }
                 }
+                catch (TaskCanceledException exception)
+                {
+                    // Like force start above, this request no longer takes the caller's token, so a
+                    // TaskCanceledException here is an HttpClient timeout. The torrent is already
+                    // added and must not be reported as a failed submission.
+                    logger.LogWarning(exception, "qBittorrent addTrackers request timed out; the torrent was added without the injected trackers");
+                }
                 catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
                 {
                     logger.LogDebug(exception, "Non-fatal failure injecting trackers via addTrackers API");
