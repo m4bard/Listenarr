@@ -25,17 +25,20 @@ namespace Listenarr.Infrastructure.Downloads.Submission
     {
         private readonly IIndexerRepository _indexerRepository;
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly MyAnonamouseTorrentFetcher _fetcher;
         private readonly DownloadCachedTorrentStore _cachedTorrentStore;
         private readonly ILogger<MyAnonamouseTorrentPreparationService> _logger;
 
         public MyAnonamouseTorrentPreparationService(
             IIndexerRepository indexerRepository,
             IHttpClientFactory httpClientFactory,
+            MyAnonamouseTorrentFetcher fetcher,
             DownloadCachedTorrentStore cachedTorrentStore,
             ILogger<MyAnonamouseTorrentPreparationService> logger)
         {
             _indexerRepository = indexerRepository;
             _httpClientFactory = httpClientFactory;
+            _fetcher = fetcher;
             _cachedTorrentStore = cachedTorrentStore;
             _logger = logger;
         }
@@ -107,34 +110,12 @@ namespace Listenarr.Infrastructure.Downloads.Submission
 
                 _logger.LogDebug("Downloading MyAnonamouse torrent for '{Title}' from {Url}", searchResult.Title, LogRedaction.SanitizeUrl(searchResult.TorrentUrl));
 
-                var currentUri = torrentUri;
-                HttpResponseMessage? response = null;
-                for (int redirectAttempt = 0; redirectAttempt < 6; redirectAttempt++)
+                var fetched = await _fetcher.FetchAsync(searchResult, indexer, torrentUri, indexerUri, mamId, httpClientToUse, cancellationToken);
+                var response = fetched.Response;
+                mamId = fetched.MamId;
+                if (fetched.Abandoned)
                 {
-                    using var req = BuildTorrentRequest(currentUri, indexerUri, mamId);
-
-                    _logger.LogDebug("Downloading MyAnonamouse torrent for '{Title}' from {Url} (attempt {Attempt})", searchResult.Title, LogRedaction.SanitizeUrl(currentUri.ToString()), redirectAttempt + 1);
-
-                    response = await httpClientToUse.SendAsync(req, cancellationToken);
-                    mamId = await PersistUpdatedMamIdAsync(response, indexer, mamId);
-
-                    if (IsRedirect(response))
-                    {
-                        if (response.Headers.Location == null)
-                        {
-                            _logger.LogWarning("MyAnonamouse torrent download redirect without Location header for '{Title}'", searchResult.Title);
-                            response.Dispose();
-                            return;
-                        }
-
-                        var next = response.Headers.Location.IsAbsoluteUri ? response.Headers.Location : new Uri(currentUri, response.Headers.Location);
-                        _logger.LogDebug("Following MyAnonamouse redirect to {Next}", LogRedaction.SanitizeUrl(next.ToString()));
-                        response.Dispose();
-                        currentUri = next;
-                        continue;
-                    }
-
-                    break;
+                    return;
                 }
 
                 if (response == null)
@@ -168,24 +149,7 @@ namespace Listenarr.Infrastructure.Downloads.Submission
                     try
                     {
                         using var authClient = MyAnonamouseHelper.CreateAuthenticatedHttpClient(mamId, indexer.Url);
-                        var retryUri = torrentUri;
-                        for (int retryHop = 0; retryHop < 6; retryHop++)
-                        {
-                            using var retryReq = BuildTorrentRequest(retryUri, indexerUri, mamId);
-                            response = await authClient.SendAsync(retryReq, cancellationToken);
-
-                            if (IsRedirect(response) && response.Headers.Location != null)
-                            {
-                                retryUri = response.Headers.Location.IsAbsoluteUri
-                                    ? response.Headers.Location
-                                    : new Uri(retryUri, response.Headers.Location);
-                                response.Dispose();
-                                response = null;
-                                continue;
-                            }
-
-                            break;
-                        }
+                        response = await _fetcher.FetchWithClientAsync(indexer, authClient, torrentUri, indexerUri, mamId, cancellationToken);
 
                         if (response != null && response.IsSuccessStatusCode)
                         {
@@ -197,7 +161,7 @@ namespace Listenarr.Infrastructure.Downloads.Submission
                             }
                         }
                     }
-                    catch (Exception retryEx) when (retryEx is not OperationCanceledException && retryEx is not OutOfMemoryException && retryEx is not StackOverflowException)
+                    catch (Exception retryEx) when (retryEx is not OperationCanceledException && retryEx is not IndexerRequestDeferredException && retryEx is not OutOfMemoryException && retryEx is not StackOverflowException)
                     {
                         _logger.LogDebug(retryEx, "Retry with authenticated MAM client also failed (non-fatal)");
                     }
@@ -235,57 +199,10 @@ namespace Listenarr.Infrastructure.Downloads.Submission
                 CachePreparedTorrent(searchResult.Title, torrentBytes, searchResult.TorrentFileName, downloadId);
                 response?.Dispose();
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not IndexerRequestDeferredException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogWarning(ex, "Failed to cache MyAnonamouse torrent for '{Title}'", searchResult.Title);
             }
-        }
-
-        private static HttpRequestMessage BuildTorrentRequest(Uri uri, Uri indexerUri, string? mamId)
-        {
-            var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
-            request.Headers.Referrer = new Uri("https://www.myanonamouse.net/");
-            request.Headers.Accept.ParseAdd("application/x-bittorrent, application/octet-stream, */*; q=0.01");
-            if (!string.IsNullOrEmpty(mamId))
-            {
-                request.Headers.Add("Cookie", $"mam_id={mamId}");
-            }
-
-            request.Headers.Host = indexerUri.IsDefaultPort ? indexerUri.Host : $"{indexerUri.Host}:{indexerUri.Port}";
-            return request;
-        }
-
-        private async Task<string> PersistUpdatedMamIdAsync(HttpResponseMessage response, Indexer indexer, string mamId)
-        {
-            try
-            {
-                var newMam = MyAnonamouseHelper.TryExtractMamIdFromResponse(response);
-                if (!string.IsNullOrEmpty(newMam) && !string.Equals(newMam, mamId, StringComparison.Ordinal))
-                {
-                    _logger.LogInformation("MyAnonamouse: received updated mam_id from download redirect response for indexer {Name}", indexer.Name);
-                    indexer.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(indexer.AdditionalSettings, newMam);
-                    await _indexerRepository.UpdateAsync(indexer);
-                    indexer.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(indexer.AdditionalSettings, newMam);
-                    return newMam;
-                }
-            }
-            catch (Exception exMam) when (exMam is not OperationCanceledException && exMam is not OutOfMemoryException && exMam is not StackOverflowException)
-            {
-                _logger.LogDebug(exMam, "Failed to persist updated mam_id from MyAnonamouse redirect response");
-            }
-
-            return mamId;
-        }
-
-        private static bool IsRedirect(HttpResponseMessage response)
-        {
-            return response.StatusCode is
-                System.Net.HttpStatusCode.MovedPermanently or
-                System.Net.HttpStatusCode.Found or
-                System.Net.HttpStatusCode.SeeOther or
-                System.Net.HttpStatusCode.TemporaryRedirect or
-                System.Net.HttpStatusCode.PermanentRedirect;
         }
 
         private static bool LooksLikeTorrent(byte[] torrentBytes)
