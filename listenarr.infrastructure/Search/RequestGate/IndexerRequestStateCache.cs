@@ -227,10 +227,17 @@ public sealed class IndexerRequestStateCache
                         : failed;
 
                 default:
-                    var delay = transition.RetryAfter ?? IndexerRequestPolicy.RateLimitCooldown(ConsecutiveRateLimits);
+                    // A 429 without Retry-After that arrives while a rate-limit cooldown is in
+                    // force answers a request already in flight when it was set: the same event,
+                    // so it keeps the current step instead of moving up the ladder.
+                    var sameEvent = transition.RetryAfter is null
+                        && CooldownAt(transition.ObservedUtc) is { Reason: RequestDeferralReason.RateLimited };
+                    var rateLimits = sameEvent ? ConsecutiveRateLimits : ConsecutiveRateLimits + 1;
+                    var delay = transition.RetryAfter
+                        ?? IndexerRequestPolicy.RateLimitCooldown(Math.Max(rateLimits - 1, 0));
                     return (this with
                     {
-                        ConsecutiveRateLimits = ConsecutiveRateLimits + 1,
+                        ConsecutiveRateLimits = rateLimits,
                         LastDispatchUtc = Latest(LastDispatchUtc, transition.DispatchStartUtc)
                     }).WithCooldown(transition.ObservedUtc + delay, RequestDeferralReason.RateLimited);
             }
