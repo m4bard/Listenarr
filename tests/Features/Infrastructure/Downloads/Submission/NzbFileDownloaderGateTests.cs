@@ -42,12 +42,11 @@ public sealed class NzbFileDownloaderGateTests : BaseTests
             NullLogger<IndexerRequestGate>.Instance);
 
         // When
-        var failure = await Assert.ThrowsAsync<DownloadClientSubmissionException>(
-            () => DownloadAsync(server.BaseUri + "get.nzb", IndexerId, gate));
+        var failure = await Record.ExceptionAsync(() => DownloadAsync(server.BaseUri + "get.nzb", IndexerId, gate));
 
         // Then: the failed fetch is one wire request, and the gate recorded it against the indexer
-        Assert.Contains("503", failure.Message);
         Assert.Single(server.RequestPaths);
+        Assert.Contains("503", Assert.IsType<DownloadClientSubmissionException>(failure).Message);
         Assert.Equal(1, Assert.IsType<IndexerRequestState>(store.Row(IndexerId)).ConsecutiveFailures);
     }
 
@@ -74,6 +73,7 @@ public sealed class NzbFileDownloaderGateTests : BaseTests
         // Then: both wire requests are gate calls for the candidate's indexer, and neither is a redirect kind
         Assert.Equal(new byte[] { 1, 2, 3 }, bytes);
         Assert.Equal(new[] { "/get.nzb", "/moved.nzb" }, server.RequestPaths);
+        Assert.Equal(2, gate.Contexts.Count);
         Assert.All(gate.Contexts, context => Assert.Equal(IndexerRequestKind.DownloadFetch, context.Kind));
         Assert.All(gate.Contexts, context => Assert.Equal(IndexerId, context.IndexerId));
     }
