@@ -104,7 +104,8 @@ public sealed class IndexerRequestGateReservationTests : BaseTests
     [Fact]
     public async Task SendAsync_CallerCancelsInsideReservation_PropagatesRecordsNothingAndFreesTheSlot()
     {
-        // Given: cap 1, so a slot kept by the cancelled request would block the next one.
+        // Given: cap 1, so a slot kept by the cancelled request would block the next one. The
+        // pacing start it reserved is kept by design, so the next one waits one interval.
         var store = new RecordingStateStore();
         using var caller = new CancellationTokenSource();
         var reservation = new SpyReservation(reserve: async (_, cancellationToken) =>
@@ -132,6 +133,7 @@ public sealed class IndexerRequestGateReservationTests : BaseTests
         Assert.Equal(caller.Token, thrown.CancellationToken);
         using var response = Assert.IsType<IndexerRequestResult.Sent>(next).Response;
         Assert.Equal(2, reservation.ReserveCalls);
+        Assert.Equal([Interval], harness.Clock.Delays);
         Assert.Equal(1, harness.Handler.Hits);
         Assert.Equal(0, store.Writes);
         Assert.Null(store.Row(IndexerId));
