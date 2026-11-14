@@ -62,6 +62,11 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
         /// </summary>
         internal bool ProductionFingerprints { get; set; }
 
+        /// <summary>The gate the processor resolves instead of <see cref="Gate"/>, when a test sets it.</summary>
+        internal IIndexerRequestGate? GateOverride { get; set; }
+
+        internal IDbContextFactory<ListenArrDbContext> DatabaseContexts => new DatabaseFactory(_database!);
+
         internal AutomaticSearchScheduleTestDatabase Database => _database!;
 
         public override async Task InitializeAsync()
@@ -104,7 +109,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             Init(builder => builder
                 .WithSingleton<IDbContextFactory<ListenArrDbContext>>(factory)
                 .WithSingleton<TimeProvider>(Clock)
-                .WithSingleton<IIndexerRequestGate>(Gate)
+                .WithSingleton<IIndexerRequestGate>(GateOverride ?? Gate)
                 .WithMocks(new[] { Indexers }
                     .Concat(AdditionalProviders)
                     .Select(provider => ServiceDescriptor.Singleton(provider)))
