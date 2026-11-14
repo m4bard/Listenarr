@@ -66,8 +66,7 @@ public static class IndexerHttpDispatch
 
     /// <summary>
     /// Sends a request and follows its redirects one hop at a time. Every hop is one gate call:
-    /// the first carries the context's kind, each followed hop is
-    /// <see cref="IndexerRequestKind.Redirect"/>. Every target is validated before it is sent, and
+    /// the first carries the context's kind, each followed hop carries <paramref name="redirectKind"/>. Every target is validated before it is sent, and
     /// private targets are allowed, as they are for every indexer request.
     /// </summary>
     /// <param name="gate">The request gate.</param>
@@ -78,6 +77,8 @@ public static class IndexerHttpDispatch
     /// <param name="logger">Receives the address validation warnings.</param>
     /// <param name="onDispatch">Called each time the gate dispatches a hop, or null.</param>
     /// <param name="cancellationToken">The caller's own token.</param>
+    /// <param name="redirectKind">The kind of each followed hop. Search paths keep the default;
+    /// the grab path sends every hop as <see cref="IndexerRequestKind.DownloadFetch"/>.</param>
     /// <returns>The final response, or the deferral that kept a hop from being sent.</returns>
     /// <exception cref="InvalidOperationException">A target failed validation.</exception>
     /// <exception cref="HttpRequestException">A redirect had no target, or there were too many.</exception>
@@ -89,7 +90,8 @@ public static class IndexerHttpDispatch
         Uri initialUri,
         ILogger logger,
         Action? onDispatch,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IndexerRequestKind redirectKind = IndexerRequestKind.Redirect)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -99,7 +101,7 @@ public static class IndexerHttpDispatch
             initialUri,
             async (hopRequest, hopIndex, token) =>
             {
-                var hopContext = hopIndex == 0 ? context : context with { Kind = IndexerRequestKind.Redirect };
+                var hopContext = hopIndex == 0 ? context : context with { Kind = redirectKind };
                 var result = await SendAsync(gate, hopContext, client, hopRequest, onDispatch, token);
                 if (result is IndexerRequestResult.Deferred deferred)
                 {
