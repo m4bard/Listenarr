@@ -112,8 +112,11 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 }
             }
 
-            var gap = checkpoint is not null && !reachedCheckpoint ? FindGap(checkpoint, window, pollUtc) : null;
-            var inserted = await CommitAsync(indexer.Id, window, Advance(checkpoint, window), gap?.Span, pollUtc, cancellationToken);
+            // A poll that read no items has nothing to compare with the checkpoint: it records no
+            // gap and leaves the checkpoint, and only the poll time moves.
+            var readItems = window.Items.Count > 0;
+            var gap = readItems && checkpoint is not null && !reachedCheckpoint ? FindGap(checkpoint, window, pollUtc) : null;
+            var inserted = await CommitAsync(indexer.Id, window, readItems ? Advance(checkpoint, window) : null, gap?.Span, pollUtc, cancellationToken);
             if (gap is not null)
             {
                 LogGap(indexer, gap);
@@ -124,7 +127,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 indexer.Name,
                 window.PagesRead,
                 inserted);
-            return new IndexerFeedPollResult(IndexerSearchStatus.Completed, window.PagesRead, inserted, true, gap?.Span);
+            return new IndexerFeedPollResult(IndexerSearchStatus.Completed, window.PagesRead, inserted, readItems, gap?.Span);
         }
 
         /// <summary>
