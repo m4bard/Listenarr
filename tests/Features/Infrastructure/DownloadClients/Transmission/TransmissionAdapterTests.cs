@@ -176,6 +176,36 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Transmission
         [Fact]
         [Trait("Method", "AddAsync")]
         [Trait("Area", "SeedCriteria")]
+        public async Task AddAsync_WhenTorrentSetTimesOut_StillReportsTheTorrentAsAdded()
+        {
+            var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()
+                .WithName("Hit and Run Tracker")
+                .WithType("Torrent")
+                .WithSeedRatio(1.5)
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                IndexerId = indexer.Id
+            };
+
+            // HttpClient reports its own timeout as TaskCanceledException with nothing cancelled.
+            // The torrent is already added, so the seed criteria step must not fail the submission.
+            var transmissionApiMock = _provider.GetRequiredService<TransmissionApiMock>();
+            transmissionApiMock.TorrentSetTimesOut = true;
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var added = await adapter.AddAsync(_client, PreparedSubmissionTestFactory.Torrent(searchResult));
+
+            Assert.Equal(1, transmissionApiMock.TorrentSetCallCount);
+            Assert.Equal("HASH1", added.ExternalId);
+        }
+
+        [Fact]
+        [Trait("Method", "AddAsync")]
+        [Trait("Area", "SeedCriteria")]
         public async Task AddAsync_WhenTransmissionReportsADuplicate_DoesNotIssueTorrentSetCall()
         {
             var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()

@@ -418,6 +418,39 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             Assert.Equal(initialDownloadCount + 1, (await _downloadRepository.GetAllAsync()).Count);
         }
 
+        [Fact]
+        public async Task SendToDownloadClientAsync_WhenTheCallerCancelsAfterTransmissionAcceptedATorrentWithSeedCriteria_KeepsTheDownload()
+        {
+            Init();
+            await InitData();
+            var apiMock = _provider.GetRequiredService<Listenarr.Tests.Mocks.Api.TransmissionApiMock>();
+            using var cts = new CancellationTokenSource();
+            apiMock.OnAddAccepted = () => cts.Cancel();
+
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost").WithPort(9091).WithType("transmission").Build());
+            // Added through a scope of its own, so the submission's context does not already
+            // track the indexer and the seed criteria lookup has to query the database.
+            Indexer indexer;
+            using (var scope = _provider.CreateScope())
+            {
+                indexer = await scope.ServiceProvider.GetRequiredService<IIndexerRepository>().AddAsync(new IndexerBuilder()
+                    .WithName("Seed Ratio Tracker").WithType("Torrent").WithSeedRatio(2.0).Build());
+            }
+            var searchResult = MagnetSearchResult();
+            searchResult.IndexerId = indexer.Id;
+            var initialDownloadCount = (await _downloadRepository.GetAllAsync()).Count;
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+
+            // Transmission resolves and applies the seed criteria after it took the torrent, so
+            // neither step may turn a shutdown into a failed submission that deletes the row.
+            var downloadId = await downloadService.SendToDownloadClientAsync(searchResult, client.Id, null, cts.Token);
+
+            Assert.Equal(1, apiMock.TorrentSetCallCount);
+            Assert.False(string.IsNullOrEmpty(downloadId));
+            Assert.Equal(initialDownloadCount + 1, (await _downloadRepository.GetAllAsync()).Count);
+        }
+
         private static SearchResult MagnetSearchResult() => new()
         {
             Title = "Artemis",

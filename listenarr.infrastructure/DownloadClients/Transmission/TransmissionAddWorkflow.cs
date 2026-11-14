@@ -95,10 +95,13 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
             // surface as a failed add, since the torrent was already accepted by Transmission
             // above. Falling back to no seed configuration is the same "leave the client's own
             // configuration alone" behavior as an indexer that genuinely has none configured.
+            // For the same reason neither this lookup nor the torrent-set below takes the
+            // caller's token: a cancellation here would fail a submission Transmission already
+            // holds, and the submission's cleanup would delete the row that tracks it.
             TorrentSeedConfiguration? seedConfiguration = null;
             try
             {
-                seedConfiguration = await seedCriteriaResolver.ResolveAsync(torrent.IndexerId, ct);
+                seedConfiguration = await seedCriteriaResolver.ResolveAsync(torrent.IndexerId, CancellationToken.None);
             }
             catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
             {
@@ -116,7 +119,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
                 try
                 {
                     var seedLimitPayload = new { method = "torrent-set", arguments = seedLimitArguments, tag = 2 };
-                    var seedLimitResponse = await rpcClient.InvokeAsync(client, seedLimitPayload, ct);
+                    var seedLimitResponse = await rpcClient.InvokeAsync(client, seedLimitPayload, CancellationToken.None);
                     if (seedLimitResponse.TryGetProperty("result", out var seedLimitResult) &&
                         string.Equals(seedLimitResult.GetString(), "success", StringComparison.OrdinalIgnoreCase))
                     {
@@ -126,6 +129,13 @@ namespace Listenarr.Infrastructure.DownloadClients.Transmission
                     {
                         logger.LogDebug("torrent-set for seed criteria returned a non-success result for torrent {Hash} (non-fatal)", LogRedaction.SanitizeText(torrent.InfoHash));
                     }
+                }
+                catch (TaskCanceledException exception)
+                {
+                    // This request no longer takes the caller's token, so a TaskCanceledException
+                    // here is an HttpClient timeout. The torrent is already added and must not be
+                    // reported as a failed submission.
+                    logger.LogWarning(exception, "Transmission torrent-set request timed out; the torrent was added without the indexer's seed criteria");
                 }
                 catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
                 {

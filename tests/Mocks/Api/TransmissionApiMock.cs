@@ -16,6 +16,20 @@ namespace Listenarr.Tests.Mocks.Api
         /// </summary>
         public bool SimulateDuplicateAdd { get; set; }
 
+        /// <summary>
+        /// Runs after a "torrent-add" call was answered with "torrent-added", so a test can
+        /// cancel the caller's token at the point where Transmission already holds the torrent.
+        /// </summary>
+        public Action? OnAddAccepted { get; set; }
+
+        /// <summary>
+        /// Make the "torrent-set" call time out the way HttpClient does, which surfaces as a
+        /// TaskCanceledException with nothing actually cancelled.
+        /// </summary>
+        public bool TorrentSetTimesOut { get; set; }
+
+        public int TorrentSetCallCount { get; private set; }
+
         public TransmissionApiMock()
         {
             AddRoute("rpc", GetTorrent, HttpMethod.Post);
@@ -113,6 +127,7 @@ namespace Listenarr.Tests.Mocks.Api
                         """);
                     }
 
+                    OnAddAccepted?.Invoke();
                     return MockUtils.GetCannedResponse("""
                     {
                         "result": "success",
@@ -148,6 +163,12 @@ namespace Listenarr.Tests.Mocks.Api
                 }
                 else if (string.Equals("torrent-set", method, StringComparison.OrdinalIgnoreCase))
                 {
+                    TorrentSetCallCount++;
+                    if (TorrentSetTimesOut)
+                    {
+                        throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout", new TimeoutException());
+                    }
+
                     return MockUtils.GetCannedResponse("""
                     {
                         "result": "success",
