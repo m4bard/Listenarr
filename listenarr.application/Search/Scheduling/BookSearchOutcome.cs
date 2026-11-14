@@ -48,7 +48,52 @@ public enum GrabResult
 
 public static class BookSearchOutcomeDecision
 {
+    /// <summary>
+    /// The outcome the per-indexer outcomes, the scoring result and the grab decide between them.
+    /// BookFailed is not decided here: it comes from an exception outside the indexer calls.
+    /// A queued download wins over any other indexer's status; otherwise a cancelled indexer makes
+    /// the book Cancelled. A Deferred indexer never counts as a Completed one (it cannot add to the
+    /// no-result ladder), and <paramref name="grabResult"/> is read only when
+    /// <paramref name="acceptableFound"/> is true.
+    /// </summary>
     public static BookSearchOutcome Decide(
-        IReadOnlyList<IndexerSearchOutcome> outcomes, bool acceptableFound, GrabResult grabResult) =>
-        BookSearchOutcome.NotNeeded;
+        IReadOnlyList<IndexerSearchOutcome> outcomes, bool acceptableFound, GrabResult grabResult)
+    {
+        ArgumentNullException.ThrowIfNull(outcomes);
+
+        if (acceptableFound && grabResult == GrabResult.Queued)
+        {
+            return BookSearchOutcome.Satisfied;
+        }
+
+        if (outcomes.Any(outcome => outcome.Status == IndexerSearchStatus.Cancelled))
+        {
+            return BookSearchOutcome.Cancelled;
+        }
+
+        if (acceptableFound)
+        {
+            return BookSearchOutcome.GrabNotCompleted;
+        }
+
+        if (outcomes.Count == 0)
+        {
+            return BookSearchOutcome.NotNeeded;
+        }
+
+        var completed = outcomes.Count(outcome => outcome.Status == IndexerSearchStatus.Completed);
+        if (completed == outcomes.Count)
+        {
+            return BookSearchOutcome.NoAcceptableResults;
+        }
+
+        if (completed > 0)
+        {
+            return BookSearchOutcome.PartiallyCompleted;
+        }
+
+        return outcomes.Any(outcome => outcome.Status == IndexerSearchStatus.Deferred)
+            ? BookSearchOutcome.Deferred
+            : BookSearchOutcome.Failed;
+    }
 }

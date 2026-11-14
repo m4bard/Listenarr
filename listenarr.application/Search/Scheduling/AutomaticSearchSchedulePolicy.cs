@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Search;
+
 namespace Listenarr.Application.Search.Scheduling;
 
 /// <summary>
@@ -24,9 +26,55 @@ namespace Listenarr.Application.Search.Scheduling;
 /// </summary>
 public static class AutomaticSearchSchedulePolicy
 {
-    public static DateTime NextNoResultAttempt(DateTime nowUtc, int noResultCount, TimeSpan cooldown) => nowUtc;
+    /// <summary>
+    /// After a Completed search found nothing acceptable: the cooldown, doubling with each
+    /// consecutive no-result up to the larger of the cooldown and a week.
+    /// </summary>
+    public static DateTime NextNoResultAttempt(DateTime nowUtc, int noResultCount, TimeSpan cooldown) =>
+        Add(nowUtc, Ladder(
+            cooldown,
+            noResultCount,
+            Max(cooldown, TimeSpan.FromHours(AutomaticSearchBounds.NoResultMaxIntervalHours))));
 
-    public static DateTime NextPairFailureAttempt(DateTime nowUtc, int failureCount) => nowUtc;
+    /// <summary>
+    /// After an indexer failed for a book: an hour, doubling with each consecutive failure up to a day.
+    /// </summary>
+    public static DateTime NextPairFailureAttempt(DateTime nowUtc, int failureCount) =>
+        Add(nowUtc, Ladder(
+            TimeSpan.FromMinutes(AutomaticSearchBounds.PairFailureBaseMinutes),
+            failureCount,
+            TimeSpan.FromHours(AutomaticSearchBounds.PairFailureMaxIntervalHours)));
 
-    public static DateTime NextBookFailureAttempt(DateTime nowUtc, int bookFailureCount, TimeSpan cooldown) => nowUtc;
+    /// <summary>
+    /// After a book-level failure or a grab that did not complete: a quarter hour, doubling with
+    /// each consecutive failure up to the cooldown.
+    /// </summary>
+    public static DateTime NextBookFailureAttempt(DateTime nowUtc, int bookFailureCount, TimeSpan cooldown) =>
+        Add(nowUtc, Ladder(
+            TimeSpan.FromMinutes(AutomaticSearchBounds.BookFailureBaseMinutes),
+            bookFailureCount,
+            cooldown));
+
+    /// <summary>
+    /// <paramref name="firstDelay"/> doubled <paramref name="count"/> - 1 times, never above
+    /// <paramref name="cap"/>. A count below 1 is the first step. Each doubling is checked against
+    /// half the cap first, so no count can overflow.
+    /// </summary>
+    private static TimeSpan Ladder(TimeSpan firstDelay, int count, TimeSpan cap)
+    {
+        var delay = firstDelay < cap ? firstDelay : cap;
+        for (var step = 1; step < count && delay < cap; step++)
+        {
+            delay = delay > cap / 2 ? cap : delay * 2;
+        }
+
+        return delay;
+    }
+
+    private static TimeSpan Max(TimeSpan left, TimeSpan right) => left > right ? left : right;
+
+    private static DateTime Add(DateTime nowUtc, TimeSpan delay) =>
+        delay.Ticks > DateTime.MaxValue.Ticks - nowUtc.Ticks
+            ? new DateTime(DateTime.MaxValue.Ticks, nowUtc.Kind)
+            : nowUtc.Add(delay);
 }
