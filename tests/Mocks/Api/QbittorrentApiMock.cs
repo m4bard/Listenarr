@@ -37,6 +37,12 @@ namespace Listenarr.Tests.Mocks.Api
         public bool ForceStartTimesOut { get; set; }
 
         /// <summary>
+        /// Make the share limits request time out the way HttpClient does, which surfaces as a
+        /// TaskCanceledException with nothing actually cancelled.
+        /// </summary>
+        public bool ShareLimitsTimesOut { get; set; }
+
+        /// <summary>
         /// Make the per-torrent files request fail at the transport layer, the way it does when
         /// the client stops answering between the torrent list and the files calls that follow it.
         /// </summary>
@@ -197,6 +203,12 @@ namespace Listenarr.Tests.Mocks.Api
             if (!Authenticated) return new HttpResponseMessage(HttpStatusCode.Forbidden);
             SetShareLimitsCallCount++;
             LastShareLimitsForm = HttpUtility.ParseQueryString(await request.Content!.ReadAsStringAsync(ct));
+
+            if (ShareLimitsTimesOut)
+            {
+                throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout", new TimeoutException());
+            }
+
             return MockUtils.GetCannedResponse("Ok");
         }
     }

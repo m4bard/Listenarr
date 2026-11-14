@@ -311,6 +311,42 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         }
 
         [Fact]
+        public async Task AddAsync_WhenSetShareLimitsTimesOut_StillReportsTheTorrentAsAdded()
+        {
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost")
+                .WithPort(8080)
+                .WithUsername("admin")
+                .WithPassword("admin")
+                .WithType("qbittorrent")
+                .Build());
+
+            var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()
+                .WithName("Hit and Run Tracker")
+                .WithType("Torrent")
+                .WithSeedRatio(2.0)
+                .Build());
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                IndexerId = indexer.Id
+            };
+
+            // HttpClient reports its own timeout as TaskCanceledException with nothing cancelled.
+            // The torrent is already added, so the seed criteria step must not fail the submission.
+            var mock = _provider.GetRequiredService<QbittorrentApiMock>();
+            mock.ShareLimitsTimesOut = true;
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+
+            var result = await adapter.AddAsync(client, PreparedSubmissionTestFactory.Torrent(searchResult));
+
+            Assert.Equal(1, mock.SetShareLimitsCallCount);
+            Assert.False(string.IsNullOrEmpty(result.ExternalId));
+        }
+
+        [Fact]
         public async Task AddAsync_WhenIndexerHasSeedTime_SendsSeedingTimeLimitInMinutes()
         {
             var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()

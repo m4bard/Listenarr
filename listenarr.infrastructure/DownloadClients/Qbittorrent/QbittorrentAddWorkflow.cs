@@ -199,11 +199,18 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                         addPlan.Hash,
                         addPlan.SeedConfiguration);
                     using var shareLimitsResponse = await httpClient.PostAsync(
-                        $"{baseUrl}/api/v2/torrents/setShareLimits", shareLimitsContent, ct);
+                        $"{baseUrl}/api/v2/torrents/setShareLimits", shareLimitsContent, CancellationToken.None);
                     if (shareLimitsResponse.IsSuccessStatusCode)
                         logger.LogInformation("Applied indexer seed criteria for torrent {Hash} via setShareLimits API", addPlan.Hash);
                     else
                         logger.LogDebug("setShareLimits API returned {StatusCode} for torrent {Hash} (non-fatal)", shareLimitsResponse.StatusCode, addPlan.Hash);
+                }
+                catch (TaskCanceledException exception)
+                {
+                    // Like force start above, this request no longer takes the caller's token, so a
+                    // TaskCanceledException here is an HttpClient timeout. The torrent is already
+                    // added and must not be reported as a failed submission.
+                    logger.LogWarning(exception, "qBittorrent setShareLimits request timed out; the torrent was added without the indexer's seed criteria");
                 }
                 catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
                 {

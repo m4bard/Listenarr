@@ -390,6 +390,34 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             Assert.Equal(initialDownloadCount + 1, (await _downloadRepository.GetAllAsync()).Count);
         }
 
+        [Fact]
+        public async Task SendToDownloadClientAsync_WhenTheCallerCancelsAfterQbittorrentAcceptedATorrentWithSeedCriteria_KeepsTheDownload()
+        {
+            Init();
+            await InitData();
+            var apiMock = _provider.GetRequiredService<Listenarr.Tests.Mocks.Api.QbittorrentApiMock>();
+            using var cts = new CancellationTokenSource();
+            apiMock.OnAddAccepted = () => cts.Cancel();
+
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost").WithPort(8080).WithUsername("admin").WithPassword("admin").WithType("qbittorrent").Build());
+            var indexer = await _indexerRepository.AddAsync(new IndexerBuilder()
+                .WithName("Seed Ratio Tracker").WithType("Torrent").WithSeedRatio(2.0).Build());
+            var searchResult = MagnetSearchResult();
+            searchResult.IndexerId = indexer.Id;
+            var initialDownloadCount = (await _downloadRepository.GetAllAsync()).Count;
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+
+            // The seed criteria step runs after the client took the torrent, so it must not
+            // turn a shutdown into a failed submission that deletes the row tracking it.
+            var downloadId = await downloadService.SendToDownloadClientAsync(searchResult, client.Id, null, cts.Token);
+
+            Assert.Equal(1, apiMock.AddsAccepted);
+            Assert.Equal(1, apiMock.SetShareLimitsCallCount);
+            Assert.False(string.IsNullOrEmpty(downloadId));
+            Assert.Equal(initialDownloadCount + 1, (await _downloadRepository.GetAllAsync()).Count);
+        }
+
         private static SearchResult MagnetSearchResult() => new()
         {
             Title = "Artemis",
