@@ -89,15 +89,14 @@ public sealed class EfAudiobookFileRescanScheduleWriteTests : BaseTests
     {
         await using var store = await ScheduleStore.CreateAsync(provider);
         var fileId = await store.SeedFileAsync(SeededSchedule, hasMetadata: true);
+        AudiobookFileRescanRefreshRecord recorded;
 
         await using (var context = store.CreateContext())
         {
-            Assert.Equal(
-                AudiobookFileRescanRefreshRecord.Completed,
-                await new EfAudiobookFileRepository(context).RecordMetadataRescanRefreshedAsync(
-                    fileId,
-                    SeededSchedule.Counts,
-                    PolicyWrite(MetadataRescanOutcome.Incomplete, SeededSchedule.Counts, NowUtc)));
+            recorded = await new EfAudiobookFileRepository(context).RecordMetadataRescanRefreshedAsync(
+                fileId,
+                SeededSchedule.Counts,
+                PolicyWrite(MetadataRescanOutcome.Incomplete, SeededSchedule.Counts, NowUtc));
         }
 
         Assert.Equal(
@@ -106,6 +105,7 @@ public sealed class EfAudiobookFileRescanScheduleWriteTests : BaseTests
                 new AudiobookFileRescanCounts(0, 0, 0),
                 nameof(MetadataRescanOutcome.Completed)),
             await store.ReadScheduleAsync(fileId));
+        Assert.Equal(AudiobookFileRescanRefreshRecord.Completed, recorded);
     }
 
     [Theory]
@@ -123,20 +123,20 @@ public sealed class EfAudiobookFileRescanScheduleWriteTests : BaseTests
                     .RecordMetadataRescanRefreshedAsync(fileId, SeededSchedule.Counts, concurrentWrite));
         }
 
+        AudiobookFileRescanRefreshRecord recorded;
         await using (var context = store.CreateContext())
         {
-            Assert.Equal(
-                AudiobookFileRescanRefreshRecord.NotRecorded,
-                await new EfAudiobookFileRepository(context).RecordMetadataRescanRefreshedAsync(
-                    fileId,
-                    SeededSchedule.Counts,
-                    PolicyWrite(MetadataRescanOutcome.Incomplete, SeededSchedule.Counts, NowUtc.AddMinutes(5))));
+            recorded = await new EfAudiobookFileRepository(context).RecordMetadataRescanRefreshedAsync(
+                fileId,
+                SeededSchedule.Counts,
+                PolicyWrite(MetadataRescanOutcome.Incomplete, SeededSchedule.Counts, NowUtc.AddMinutes(5)));
         }
 
         var persisted = await store.ReadScheduleAsync(fileId);
         Assert.Equal(3, persisted.Counts.Failure);
         Assert.Equal(nameof(MetadataRescanOutcome.Incomplete), persisted.LastOutcome);
         Assert.Equal(RescanSchedule.Of(concurrentWrite), persisted);
+        Assert.Equal(AudiobookFileRescanRefreshRecord.NotRecorded, recorded);
     }
 
     [Theory]
@@ -256,11 +256,11 @@ public sealed class EfAudiobookFileRescanScheduleWriteTests : BaseTests
         var firstWrite = PolicyWrite(MetadataRescanOutcome.FileMissing, SeededSchedule.Counts, NowUtc);
 
         Assert.True(await repository.ApplyMetadataRescanScheduleAsync(fileId, SeededSchedule.Counts, firstWrite));
-        Assert.Equal(RescanSchedule.Of(firstWrite), RescanSchedule.Of(trackedFile));
 
         var trackedCounts = RescanSchedule.Of(trackedFile).Counts;
         var secondWrite = PolicyWrite(MetadataRescanOutcome.NoMetadata, trackedCounts, NowUtc.AddMinutes(30));
         Assert.True(await repository.ApplyMetadataRescanScheduleAsync(fileId, trackedCounts, secondWrite));
+        Assert.Equal(RescanSchedule.Of(secondWrite), RescanSchedule.Of(trackedFile));
         trackedFile.DurationSeconds = 321;
         await repository.UpdateAsync(trackedFile);
 
