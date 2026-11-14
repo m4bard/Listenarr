@@ -111,7 +111,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                         // Pause between books so a large wanted list does not hammer the indexers.
                         if (!isFirstBook && timing.BookDelay > TimeSpan.Zero)
                         {
-                            await Task.Delay(timing.BookDelay, cancellationToken);
+                            await Task.Delay(timing.BookDelay, clock, cancellationToken);
                         }
                         isFirstBook = false;
 
