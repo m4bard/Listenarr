@@ -99,8 +99,9 @@ public sealed class ReleasedJournalRecoveryUpgradeTests : BaseTests
                 await migrator.MigrateAsync("20260825021432_AddWeakStorageVerifiedCleanup");
                 if (ownerMode != 0)
                 {
-                    legacy.Audiobooks.Add(audiobook);
-                    await legacy.SaveChangesAsync();
+                    await using var seed = new ReleasedSchemaSeedContext(options);
+                    seed.Audiobooks.Add(audiobook);
+                    await seed.SaveChangesAsync();
                 }
                 await legacy.Database.ExecuteSqlInterpolatedAsync($"""
                     INSERT INTO "FileMutationJournals" (

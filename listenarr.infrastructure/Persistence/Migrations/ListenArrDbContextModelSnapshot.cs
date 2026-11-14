@@ -237,6 +237,14 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<string>("Authors")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime>("AutomaticSearchDueUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AutomaticSearchFailureCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("BasePath")
                         .HasColumnType("TEXT");
 
@@ -316,6 +324,10 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AutomaticSearchDueUtc")
+                        .HasDatabaseName("IX_Audiobooks_AutomaticSearchDue")
+                        .HasFilter("\"Monitored\" AND \"QualityProfileId\" IS NOT NULL");
 
                     b.HasIndex("LastSearchTime");
 
@@ -1816,6 +1828,16 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("AutomaticSearchIntervalHours")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("AutomaticSearchMaxBooksPerCycle")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(25);
+
+                    b.Property<int>("AutomaticSearchMaxRequestsPerCycle")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(300);
+
                     b.Property<int>("CompletedFileAction")
                         .HasColumnType("INTEGER");
 
@@ -2623,6 +2645,42 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.ToTable("UserSessions");
                 });
 
+            modelBuilder.Entity("Listenarr.Domain.Search.AudiobookIndexerSearchState", b =>
+                {
+                    b.Property<int>("AudiobookId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("IndexerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("FailureCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTime?>("LastCompletedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastOutcome")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("NextAttemptUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("NoResultCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
+
+                    b.HasKey("AudiobookId", "IndexerId");
+
+                    b.HasIndex("IndexerId");
+
+                    b.ToTable("AudiobookIndexerSearchStates", (string)null);
+                });
+
             modelBuilder.Entity("Listenarr.Domain.Search.Indexer", b =>
                 {
                     b.Property<int>("Id")
@@ -2847,6 +2905,21 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Relocation");
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Search.AudiobookIndexerSearchState", b =>
+                {
+                    b.HasOne("Listenarr.Domain.Audiobooks.Audiobook", null)
+                        .WithMany()
+                        .HasForeignKey("AudiobookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Listenarr.Domain.Search.Indexer", null)
+                        .WithMany()
+                        .HasForeignKey("IndexerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.Audiobook", b =>
