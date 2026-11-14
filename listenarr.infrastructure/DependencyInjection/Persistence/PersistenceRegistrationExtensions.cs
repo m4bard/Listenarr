@@ -11,6 +11,7 @@ using Listenarr.Infrastructure.Persistence;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Persistence;
 
@@ -22,8 +23,16 @@ internal static class PersistenceRegistrationExtensions
     {
         if (configureDb != null)
         {
+            services.TryAddSingleton(TimeProvider.System);
+            services.TryAddSingleton<AutomaticSearchResetInterceptor>();
+            // The factory and the scoped context share these options, so every context the
+            // application resolves resets a book's search schedule when its metadata changes.
             services.AddDbContextFactory<ListenArrDbContext>(
-                configureDb,
+                (provider, options) =>
+                {
+                    configureDb(options);
+                    options.AddInterceptors(provider.GetRequiredService<AutomaticSearchResetInterceptor>());
+                },
                 ServiceLifetime.Singleton);
         }
 
