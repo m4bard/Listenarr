@@ -160,6 +160,54 @@ public sealed class IndexerRequestGateTests : BaseTests
         Assert.Null(await harness.Gate.GetDeferralAsync(unattributedId, SearchOrigin.Sweep, CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task SendAsync_UnattributedIndexer_IsNeverOfferedToAReservationOrPeek(int unattributedId)
+    {
+        // Given
+        var reservation = new SpyReservation();
+        using var harness = new IndexerRequestGateHarness(
+            new RecordingStateStore(),
+            Sequence(() => Status(HttpStatusCode.OK)),
+            reservations: [reservation]);
+
+        // When
+        var result = await harness.SendAsync(unattributedId);
+        var peeked = await harness.Gate.GetDeferralAsync(unattributedId, SearchOrigin.Sweep, CancellationToken.None);
+
+        // Then
+        Assert.Equal(0, reservation.ReserveCalls);
+        Assert.Equal(0, reservation.PeekCalls);
+        using var response = Assert.IsType<IndexerRequestResult.Sent>(result).Response;
+        Assert.Null(peeked);
+        Assert.Equal(1, harness.Handler.Hits);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task SendAsync_UnattributedIndexerWithSpentCycleAllowance_IsDeferredAsCycleRequestBound(int unattributedId)
+    {
+        // Given
+        var allowance = new CycleRequestAllowance(1);
+        using var harness = new IndexerRequestGateHarness(
+            new RecordingStateStore(),
+            Sequence(() => Status(HttpStatusCode.OK)));
+
+        // When
+        var first = await harness.SendAsync(unattributedId, cycleAllowance: allowance);
+        var second = await harness.SendAsync(unattributedId, cycleAllowance: allowance);
+
+        // Then
+        using var response = Assert.IsType<IndexerRequestResult.Sent>(first).Response;
+        Assert.Equal(
+            new RequestDeferral(Start.UtcDateTime, RequestDeferralReason.CycleRequestBound),
+            Assert.IsType<IndexerRequestResult.Deferred>(second).Deferral);
+        Assert.Equal(1, allowance.Taken);
+        Assert.Equal(1, harness.Handler.Hits);
+    }
+
     [Fact]
     public async Task SendAsync_UnattributedIndexer_StillHoldsTheGlobalCap()
     {
