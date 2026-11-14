@@ -36,6 +36,7 @@ public sealed class IndexerRequestStateQueryPlanTests(ITestOutputHelper output) 
         await using var database = await IndexerRequestStateTestDatabase.CreateAsync(
             IndexerCount,
             targetMigration: null,
+            pooling: false,
             capture);
         var store = new EfIndexerRequestStateStore(database.Factory);
         CapturedCommand? upsert = null;
