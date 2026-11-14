@@ -101,6 +101,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20261021212418_AddAutomaticSearchTiming";
     private const string ReleaseBlocklistMigrationId =
         "20261029020400_AddReleaseBlocklist";
+    private const string MetadataRescanScheduleMigrationId =
+        "20261114004926_AddMetadataRescanSchedule";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -573,7 +575,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 RejectClearlyMusicReleasesMigrationId,
                 AutomaticSearchTimingMigrationId,
                 ReleaseBlocklistMigrationId,
-                QualityProfileUpgradeAllowedMigrationId
+                QualityProfileUpgradeAllowedMigrationId,
+                MetadataRescanScheduleMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
