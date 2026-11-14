@@ -118,16 +118,17 @@ public sealed partial class MetadataRescanQueryPlanTests : BaseTests
                 await ScalarAsync(fixture, $"SELECT COUNT(*) FROM \"AudiobookFiles\" WHERE \"PathSyntax\" = '{foreign}' AND \"MetadataRescanDueUtc\" < {oldestHostDue}"),
                 0,
                 2_999);
-            return;
         }
-
-        // The unrescannable rows hold every due time older than any host row.
-        var oldRows = variant == LargeLibraryVariant.ForeignSyntaxOldest
-            ? $"\"PathSyntax\" = '{foreign}'"
-            : "\"PathSyntax\" IS NULL";
-        Assert.Equal(
-            variant == LargeLibraryVariant.ForeignSyntaxOldest ? 3_000 : 1_500,
-            await ScalarAsync(fixture, $"SELECT COUNT(*) FROM \"AudiobookFiles\" WHERE {oldRows} AND \"MetadataRescanDueUtc\" < {oldestHostDue}"));
+        else
+        {
+            // The unrescannable rows hold every due time older than any host row.
+            var oldRows = variant == LargeLibraryVariant.ForeignSyntaxOldest
+                ? $"\"PathSyntax\" = '{foreign}'"
+                : "\"PathSyntax\" IS NULL";
+            Assert.Equal(
+                variant == LargeLibraryVariant.ForeignSyntaxOldest ? 3_000 : 1_500,
+                await ScalarAsync(fixture, $"SELECT COUNT(*) FROM \"AudiobookFiles\" WHERE {oldRows} AND \"MetadataRescanDueUtc\" < {oldestHostDue}"));
+        }
     }
 
     [Fact]
