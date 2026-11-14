@@ -2707,6 +2707,34 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.ToTable("Indexers");
                 });
 
+            modelBuilder.Entity("Listenarr.Domain.Search.IndexerRequestState", b =>
+                {
+                    b.Property<int>("IndexerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ConsecutiveFailures")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
+
+                    b.Property<string>("CooldownReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CooldownUntilUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastDispatchUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("IndexerId");
+
+                    b.ToTable("IndexerRequestStates", (string)null);
+                });
+
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.Audiobook", b =>
                 {
                     b.HasOne("Listenarr.Domain.Audiobooks.QualityProfile", "QualityProfile")
@@ -2847,6 +2875,15 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Relocation");
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Search.IndexerRequestState", b =>
+                {
+                    b.HasOne("Listenarr.Domain.Search.Indexer", null)
+                        .WithMany()
+                        .HasForeignKey("IndexerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.Audiobook", b =>

@@ -280,6 +280,34 @@ public class MigrationMetadataTests : BaseTests
         Assert.NotNull(applicationSettings.FindProperty("AutomaticSearchBookDelaySeconds"));
     }
 
+    [Fact]
+    public void AddIndexerRequestState_IsDiscoverableAndCreatesOnlyTheStateTable()
+    {
+        AssertMigrationId<AddIndexerRequestState>(
+            "20261114012120_AddIndexerRequestState");
+
+        var migration = new AddIndexerRequestState();
+        var up = BuildOperations(migration, "Up");
+        var down = BuildOperations(migration, "Down");
+
+        var table = Assert.IsType<CreateTableOperation>(Assert.Single(up.Operations));
+        Assert.Equal("IndexerRequestStates", table.Name);
+        Assert.Equal(["IndexerId"], table.PrimaryKey!.Columns);
+        var foreignKey = Assert.Single(table.ForeignKeys);
+        Assert.Equal("Indexers", foreignKey.PrincipalTable);
+        Assert.Equal(ReferentialAction.Cascade, foreignKey.OnDelete);
+        Assert.Equal(32, table.Columns.Single(column => column.Name == "CooldownReason").MaxLength);
+        Assert.Equal(0, table.Columns.Single(column => column.Name == "ConsecutiveFailures").DefaultValue);
+        Assert.False(table.Columns.Single(column => column.Name == "UpdatedUtc").IsNullable);
+        var drop = Assert.IsType<DropTableOperation>(Assert.Single(down.Operations));
+        Assert.Equal("IndexerRequestStates", drop.Name);
+
+        var state = AssertEntity(
+            migration.TargetModel,
+            "Listenarr.Domain.Search.IndexerRequestState");
+        Assert.Equal("IndexerId", Assert.Single(state.FindPrimaryKey()!.Properties).Name);
+    }
+
     private static MigrationBuilder BuildOperations(Migration migration, string methodName)
     {
         var builder = new MigrationBuilder("Microsoft.EntityFrameworkCore.Sqlite");

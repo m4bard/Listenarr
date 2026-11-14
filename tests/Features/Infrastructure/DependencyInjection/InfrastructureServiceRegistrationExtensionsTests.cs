@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Infrastructure.DependencyInjection;
+using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Http;
@@ -107,6 +108,28 @@ namespace Listenarr.Tests.Features.Infrastructure.DependencyInjection
                     descriptor.ServiceType == typeof(IDownloadProcessingJobService) &&
                     descriptor.ImplementationType == typeof(DownloadProcessingJobService) &&
                     descriptor.Lifetime == ServiceLifetime.Scoped);
+        }
+
+        [Fact]
+        public void IndexerRequestStateStore_ResolvesAsSingletonFromTheRootProvider()
+        {
+            var services = new ServiceCollection();
+            services.AddLogging();
+
+            services.AddListenarrInfrastructure(options =>
+                options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+
+            // The request gate that uses the store is a singleton, so the store must be one
+            // too, and must resolve without a scope.
+            Assert.Contains(
+                services,
+                descriptor =>
+                    descriptor.ServiceType == typeof(IIndexerRequestStateStore) &&
+                    descriptor.ImplementationType == typeof(EfIndexerRequestStateStore) &&
+                    descriptor.Lifetime == ServiceLifetime.Singleton);
+            using var provider = services.BuildServiceProvider(validateScopes: true);
+            Assert.IsType<EfIndexerRequestStateStore>(
+                provider.GetRequiredService<IIndexerRequestStateStore>());
         }
 
         [Fact]
