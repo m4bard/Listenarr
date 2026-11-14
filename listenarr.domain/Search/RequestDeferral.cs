@@ -62,6 +62,12 @@ namespace Listenarr.Domain.Search
         /// <summary>
         /// Describes the deferral for a caller that reports it to a person.
         /// </summary>
-        public string Describe() => $"indexer in cooldown until {UntilUtc:O} ({Reason})";
+        public string Describe() => Reason switch
+        {
+            RequestDeferralReason.CycleRequestBound => $"request limit for this cycle reached, try again after {UntilUtc:O} ({Reason})",
+            RequestDeferralReason.ReservationUnavailable => $"request could not be checked, try again after {UntilUtc:O} ({Reason})",
+            RequestDeferralReason.RequestStateUnavailable => $"indexer request state could not be loaded, try again after {UntilUtc:O} ({Reason})",
+            _ => $"indexer in cooldown until {UntilUtc:O} ({Reason})"
+        };
     }
 }
