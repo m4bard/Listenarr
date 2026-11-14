@@ -58,20 +58,23 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
             var redactedUrl = LogRedaction.RedactText(url, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty }));
             _logger.LogDebug("Indexer API URL: {Url}", redactedUrl);
 
-            // Make HTTP request with User-Agent header
-            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+            // Make HTTP request with User-Agent header; each redirect hop is its own gate call
             var version = typeof(TorznabNewznabSearchProvider).Assembly.GetName().Version?.ToString() ?? "0.0.0";
             var userAgent = $"Listenarr/{version} (+https://github.com/Listenarrs/listenarr)";
-            requestMessage.Headers.UserAgent.ParseAdd(userAgent);
-
             var requestContext = new IndexerRequestContext(indexer.Id, context.Origin, context.QueryKind, context.CycleAllowance);
-            var sendResult = await _requestGate.SendAsync(
+            var sendResult = await IndexerHttpDispatch.SendFollowingRedirectsAsync(
+                _requestGate,
                 requestContext,
-                token =>
+                _httpClient,
+                uri =>
                 {
-                    tally.RequestsSent++;
-                    return _httpClient.SendAsync(requestMessage, token);
+                    var requestMessage = new HttpRequestMessage(HttpMethod.Get, uri);
+                    requestMessage.Headers.UserAgent.ParseAdd(userAgent);
+                    return requestMessage;
                 },
+                new Uri(url),
+                _logger,
+                () => tally.RequestsSent++,
                 cancellationToken);
             if (sendResult is IndexerRequestResult.Deferred deferred)
             {
@@ -142,13 +145,14 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
         CancellationToken cancellationToken)
     {
         var requestContext = new IndexerRequestContext(indexer.Id, context.Origin, IndexerRequestKind.Enrichment, context.CycleAllowance);
-        var sendResult = await _requestGate.SendAsync(
+        var sendResult = await IndexerHttpDispatch.SendFollowingRedirectsAsync(
+            _requestGate,
             requestContext,
-            token =>
-            {
-                tally.RequestsSent++;
-                return _httpClient.GetAsync(commentsPageUrl, token);
-            },
+            _httpClient,
+            uri => new HttpRequestMessage(HttpMethod.Get, uri),
+            commentsPageUrl,
+            _logger,
+            () => tally.RequestsSent++,
             cancellationToken);
         if (sendResult is IndexerRequestResult.Deferred deferred)
         {
