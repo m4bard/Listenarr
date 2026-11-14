@@ -126,6 +126,15 @@ public static class InfrastructureStartupCompositionExtensions
                     repairedAuthorAsins.CachedAuthorsRepaired);
             }
 
+            var scheduledBooks =
+                AutomaticSearchScheduleStartupRepair.SetScaffoldedDueTimes(ctx, DateTime.UtcNow);
+            if (scheduledBooks > 0)
+            {
+                Log.Logger.Information(
+                    "[Startup] Set the automatic-search due time of {Count} existing book(s) from their last search",
+                    scheduledBooks);
+            }
+
             Log.Logger.Information("[Startup] EF Core migrations applied successfully");
 
             // Swept only now the schema is current, because retention reads application settings
