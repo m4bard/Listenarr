@@ -265,8 +265,8 @@ namespace Listenarr.Domain.Configuration
         public int AutomaticSearchMaxBooksPerCycle { get; set; } = AutomaticSearchBounds.DefaultMaxBooksPerCycle;
 
         /// <summary>
-        /// Most indexer requests one automatic-search sweep sends, counting every request a
-        /// search needs (fallback queries, pages fetched for extra detail, redirect hops).
+        /// Most indexer requests one automatic-search sweep sends, counting the requests the
+        /// application sends for a search (query pages, fallback queries, pages fetched for extra detail).
         /// </summary>
         public int AutomaticSearchMaxRequestsPerCycle { get; set; } = AutomaticSearchBounds.DefaultMaxRequestsPerCycle;
     }
