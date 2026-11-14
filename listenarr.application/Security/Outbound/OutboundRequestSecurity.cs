@@ -225,7 +225,7 @@ public static class OutboundRequestSecurity
                 var location = response.Headers.Location;
                 if (location == null)
                 {
-                    throw new HttpRequestException($"Redirect response from {currentUri} did not include a Location header.");
+                    throw new HttpRequestException($"Redirect response from {LogRedaction.SanitizeUrl(currentUri.ToString())} did not include a Location header.");
                 }
 
                 var nextUri = location.IsAbsoluteUri ? location : new Uri(currentUri, location);
