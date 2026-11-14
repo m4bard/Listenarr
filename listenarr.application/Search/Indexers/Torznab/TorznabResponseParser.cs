@@ -25,18 +25,24 @@ namespace Listenarr.Application.Search.Indexers.Torznab
         private readonly HttpClient _httpClient;
         private readonly ILogger _logger;
         private readonly IHtmlTextExtractor? _htmlTextExtractor;
+        private readonly IIndexerRequestGate _requestGate;
 
         public TorznabResponseParser(
             HttpClient httpClient,
             ILogger logger,
-            IHtmlTextExtractor? htmlTextExtractor = null)
+            IHtmlTextExtractor? htmlTextExtractor = null,
+            IIndexerRequestGate? requestGate = null)
         {
             _httpClient = httpClient;
             _logger = logger;
             _htmlTextExtractor = htmlTextExtractor;
+            _requestGate = requestGate ?? new PassThroughIndexerRequestGate(TimeProvider.System);
         }
-        public async Task<List<IndexerSearchResult>> ParseAsync(string xmlContent, Indexer indexer)
+
+        public async Task<List<IndexerSearchResult>> ParseAsync(string xmlContent, Indexer indexer, CancellationToken cancellationToken = default)
         {
+            // Comments pages are interactive enrichment requests; once one is deferred, no more are sent.
+            RequestDeferral? commentsDeferral = null;
             var results = new List<IndexerSearchResult>();
 
             try
@@ -245,10 +251,14 @@ namespace Listenarr.Application.Search.Indexers.Torznab
                                         {
                                             var commentsPageUrl = new Uri(commentsUri.GetLeftPart(UriPartial.Path));
                                             _logger.LogDebug("Fetching comments page to extract grabs for {Title}: {Url}", result.Title, commentsPageUrl);
-                                            using var resp = await _httpClient.GetAsync(commentsPageUrl);
-                                            if (resp.IsSuccessStatusCode)
+                                            string? html = null;
+                                            if (commentsDeferral == null)
                                             {
-                                                var html = await resp.Content.ReadAsStringAsync();
+                                                (html, commentsDeferral) = await FetchCommentsPageAsync(commentsPageUrl, indexer, cancellationToken);
+                                            }
+
+                                            if (html != null)
+                                            {
                                                 // Look for common comment count patterns in page text
                                                 var text = _htmlTextExtractor?.ExtractText(html) ?? html;
                                                 var m = System.Text.RegularExpressions.Regex.Match(text, "(\\d{1,6})\\s+comments?", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
@@ -457,6 +467,27 @@ namespace Listenarr.Application.Search.Indexers.Torznab
             return results;
         }
 
+        // Sends one comments-page request through the gate. Returns the page, or the deferral that kept
+        // the request from being sent; both are null when the page did not load.
+        private async Task<(string? Html, RequestDeferral? Deferral)> FetchCommentsPageAsync(
+            Uri commentsPageUrl,
+            Indexer indexer,
+            CancellationToken cancellationToken)
+        {
+            var requestContext = new IndexerRequestContext(indexer.Id, SearchOrigin.Interactive, IndexerRequestKind.Enrichment);
+            var sendResult = await _requestGate.SendAsync(
+                requestContext,
+                token => _httpClient.GetAsync(commentsPageUrl, token),
+                cancellationToken);
+            if (sendResult is IndexerRequestResult.Deferred deferred)
+            {
+                _logger.LogDebug("Comments page request for {IndexerName} deferred: {Reason}", indexer.Name, deferred.Deferral.Reason);
+                return (null, deferred.Deferral);
+            }
 
+            using var response = ((IndexerRequestResult.Sent)sendResult).Response;
+            var html = response.IsSuccessStatusCode ? await response.Content.ReadAsStringAsync(cancellationToken) : null;
+            return (html, null);
+        }
     }
 }

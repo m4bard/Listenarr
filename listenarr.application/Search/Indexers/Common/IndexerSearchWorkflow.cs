@@ -39,7 +39,8 @@ public class IndexerSearchWorkflow
         IEnumerable<IIndexerSearchProvider> searchProviders,
         IndexerAdditionalSettingsParser additionalSettingsParser,
         ILogger<IndexerSearchWorkflow> logger,
-        IHtmlTextExtractor? htmlTextExtractor = null)
+        IHtmlTextExtractor? htmlTextExtractor = null,
+        IIndexerRequestGate? requestGate = null)
     {
         _httpClient = httpClient;
         _configurationService = configurationService;
@@ -47,7 +48,7 @@ public class IndexerSearchWorkflow
         _searchProviders = searchProviders;
         _additionalSettingsParser = additionalSettingsParser;
         _logger = logger;
-        _torznabResponseParser = new TorznabResponseParser(httpClient, logger, htmlTextExtractor);
+        _torznabResponseParser = new TorznabResponseParser(httpClient, logger, htmlTextExtractor, requestGate);
     }
 
     public async Task<List<IndexerSearchResult>> SearchIndexersAsync(
@@ -235,9 +236,9 @@ public class IndexerSearchWorkflow
         }
     }
 
-    public async Task<List<IndexerSearchResult>> ParseTorznabResponseAsync(string xmlContent, Indexer indexer)
+    public async Task<List<IndexerSearchResult>> ParseTorznabResponseAsync(string xmlContent, Indexer indexer, CancellationToken cancellationToken = default)
     {
-        return await _torznabResponseParser.ParseAsync(xmlContent, indexer);
+        return await _torznabResponseParser.ParseAsync(xmlContent, indexer, cancellationToken);
     }
 
     private async Task<Indexer?> GetIndexerByApiIdAsync(string apiId)
