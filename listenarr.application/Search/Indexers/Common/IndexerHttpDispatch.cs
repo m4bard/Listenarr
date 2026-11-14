@@ -41,6 +41,9 @@ public static class IndexerHttpDispatch
     /// <param name="request">The request to send.</param>
     /// <param name="onDispatch">Called when the gate dispatches the request, or null.</param>
     /// <param name="cancellationToken">The caller's own token.</param>
+    /// <param name="timeout">A deadline for the send itself, or null for none. It is enforced
+    /// inside the dispatch, so expiring with the caller's token still live is a failure the gate
+    /// records; the caller's token is never replaced by one that carries the deadline.</param>
     /// <returns>The response, or the deferral that kept the request from being sent.</returns>
     public static Task<IndexerRequestResult> SendAsync(
         IIndexerRequestGate gate,
@@ -48,7 +51,8 @@ public static class IndexerHttpDispatch
         HttpClient client,
         HttpRequestMessage request,
         Action? onDispatch,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? timeout = null)
     {
         ArgumentNullException.ThrowIfNull(gate);
         ArgumentNullException.ThrowIfNull(client);
@@ -56,10 +60,17 @@ public static class IndexerHttpDispatch
 
         return gate.SendAsync(
             context,
-            token =>
+            async token =>
             {
                 onDispatch?.Invoke();
-                return client.SendAsync(request, token);
+                if (timeout is not { } deadline)
+                {
+                    return await client.SendAsync(request, token);
+                }
+
+                using var deadlineSource = CancellationTokenSource.CreateLinkedTokenSource(token);
+                deadlineSource.CancelAfter(deadline);
+                return await client.SendAsync(request, deadlineSource.Token);
             },
             cancellationToken);
     }

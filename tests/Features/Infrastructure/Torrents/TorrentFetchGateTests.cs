@@ -108,6 +108,38 @@ public sealed class TorrentFetchGateTests : BaseTests
         Assert.Equal(0, Assert.Single(gate.Contexts).IndexerId);
     }
 
+    [Fact]
+    public async Task TorrentFetch_WhenTheSendTimesOutWithTheCallerTokenLive_RecordsAFailure()
+    {
+        // Given: a real gate over a wire that never answers, and a short downloader deadline
+        var store = new RecordingStateStore();
+        using var harness = new IndexerRequestGateHarness(
+            store,
+            async (_, cancellationToken) =>
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+                return Status(HttpStatusCode.OK);
+            });
+        var factory = new Mock<IHttpClientFactory>();
+        factory.Setup(f => f.CreateClient(It.IsAny<string>()))
+            .Returns(() => new HttpClient(harness.Handler, disposeHandler: false));
+        var downloader = new TorrentFileDownloader(
+            NullLogger<TorrentFileDownloader>.Instance,
+            factory.Object,
+            harness.Gate,
+            (_, _) => Task.CompletedTask,
+            TimeSpan.FromMilliseconds(100));
+
+        // When
+        var result = await downloader.DownloadAsync("https://indexer.example.invalid/book.torrent", IndexerId, CancellationToken.None);
+
+        // Then: the deadline is a failure of the indexer, not a cancellation by the caller
+        Assert.Equal("Torrent metadata download timed out.", result.FailureReason);
+        Assert.Equal(1, harness.Handler.Hits);
+        var row = Assert.IsType<IndexerRequestState>(store.Row(IndexerId));
+        Assert.Equal(1, row.ConsecutiveFailures);
+    }
+
     private static TorrentFileDownloader CreateDownloader(
         ServiceProvider services,
         IIndexerRequestGate gate,
