@@ -52,6 +52,27 @@ public sealed class IndexerPacingSchedule
     }
 
     /// <summary>
+    /// Records a dispatch start this schedule did not reserve itself, such as one persisted
+    /// before a restart, so the next start keeps the interval from it. A later start already
+    /// reserved is kept. An unattributed id is ignored.
+    /// </summary>
+    public void Seed(int indexerId, DateTimeOffset dispatchStart)
+    {
+        if (IndexerConcurrencyLimiter.IsUnattributed(indexerId))
+        {
+            return;
+        }
+
+        lock (_sync)
+        {
+            if (!_lastReservedStarts.TryGetValue(indexerId, out var lastStart) || dispatchStart > lastStart)
+            {
+                _lastReservedStarts[indexerId] = dispatchStart;
+            }
+        }
+    }
+
+    /// <summary>
     /// Reserves the next start for the indexer, max(now, last reserved start + interval), and
     /// waits until it. An unattributed id (see <see cref="IndexerConcurrencyLimiter.IsUnattributed"/>)
     /// is not paced. A cancelled wait keeps its reservation, so the next start is never earlier

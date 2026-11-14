@@ -17,6 +17,7 @@
  */
 
 using Listenarr.Infrastructure.DependencyInjection.Search;
+using Listenarr.Infrastructure.Search.RequestGate;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Infrastructure.DependencyInjection;
@@ -26,10 +27,12 @@ namespace Listenarr.Tests.Features.Infrastructure.DependencyInjection;
 public sealed class SearchRegistrationExtensionsTests : BaseTests
 {
     [Fact]
-    public void AddSearchServices_RegistersPassThroughGateAsSingleton()
+    public void AddSearchServices_RegistersRequestGateAndStateCacheAsSingletons()
     {
         // Given
         var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Mock.Of<IIndexerRequestStateStore>());
 
         // When
         services.AddSearchServices();
@@ -38,9 +41,14 @@ public sealed class SearchRegistrationExtensionsTests : BaseTests
         var second = provider.GetRequiredService<IIndexerRequestGate>();
 
         // Then
-        var descriptor = Assert.Single(services, service => service.ServiceType == typeof(IIndexerRequestGate));
-        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
-        Assert.IsType<PassThroughIndexerRequestGate>(first);
+        var gate = Assert.Single(services, service => service.ServiceType == typeof(IIndexerRequestGate));
+        Assert.Equal(ServiceLifetime.Singleton, gate.Lifetime);
+        var cache = Assert.Single(services, service => service.ServiceType == typeof(IndexerRequestStateCache));
+        Assert.Equal(ServiceLifetime.Singleton, cache.Lifetime);
+        Assert.IsType<IndexerRequestGate>(first);
         Assert.Same(first, second);
+        Assert.Same(
+            provider.GetRequiredService<IndexerRequestStateCache>(),
+            provider.GetRequiredService<IndexerRequestStateCache>());
     }
 }
