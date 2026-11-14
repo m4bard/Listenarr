@@ -43,13 +43,6 @@ namespace Listenarr.Tests.Mocks.Api
         public bool FilesRequestFailsAtTransport { get; set; }
 
         /// <summary>
-        /// Body returned by a successful /torrents/add. qBittorrent answers 200 with "Fails."
-        /// when it will not take the torrent, and older Web API versions answer 200 with nothing
-        /// at all, so the success body is a variable and not a constant.
-        /// </summary>
-        public string? AddSuccessResponseBody { get; set; }
-
-        /// <summary>
         /// Let this many per-torrent files requests through, then reject the rest the way the
         /// HTTP client's circuit breaker does once it has opened partway through a poll.
         /// </summary>
