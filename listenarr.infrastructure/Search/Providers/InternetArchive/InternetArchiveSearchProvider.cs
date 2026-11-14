@@ -45,12 +45,15 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
         _logger = logger;
     }
 
-    public async Task<List<IndexerSearchResult>> SearchAsync(
+    public async Task<IndexerSearchOutcome> SearchAsync(
         Indexer indexer,
         string query,
-        string? category = null,
-        SearchRequest? request = null)
+        string? category,
+        SearchRequest? request,
+        IndexerSearchContext context,
+        CancellationToken cancellationToken)
     {
+        var requestCounter = new RequestCounter();
         try
         {
             _logger.LogInformation("Searching Internet Archive for: {Query}", LogRedaction.SanitizeText(query));
@@ -92,12 +95,13 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
 
             if (queryPlan.Queries.Count == 0)
             {
-                return new List<IndexerSearchResult>();
+                return new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Completed, Array.Empty<IndexerSearchResult>(), RequestsSent: 0);
             }
 
             var applicationSettings = await _configurationService.GetApplicationSettingsAsync();
             var processedIdentifiers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var searchResults = new List<IndexerSearchResult>();
+            string? failureReason = null;
 
             var queryIndex = 0;
             foreach (var searchQuery in queryPlan.Queries)
@@ -115,14 +119,16 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                     queryIndex,
                     queryPlan.Queries.Count);
 
-                using var response = await _httpClient.GetAsync(searchUrl);
+                requestCounter.Sent++;
+                using var response = await _httpClient.GetAsync(searchUrl, cancellationToken);
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Internet Archive returned status {Status}", response.StatusCode);
+                    failureReason = $"status {(int)response.StatusCode}";
                     continue;
                 }
 
-                var jsonResponse = await response.Content.ReadAsStringAsync();
+                var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogDebug("Internet Archive response length: {Length}", jsonResponse.Length);
 
                 var queryResults = await ParseInternetArchiveSearchResponse(
@@ -130,18 +136,41 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                     indexer,
                     applicationSettings.ExtractArchives,
                     processedIdentifiers,
-                    MaxItemsToProcess - processedIdentifiers.Count);
+                    MaxItemsToProcess - processedIdentifiers.Count,
+                    requestCounter,
+                    cancellationToken);
                 searchResults.AddRange(queryResults);
             }
 
             _logger.LogInformation("Internet Archive returned {Count} results", searchResults.Count);
-            return searchResults;
+
+            // A variant that answered with a non-success status fails the search; the results the
+            // other variants found are still returned.
+            return failureReason == null
+                ? new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Completed, searchResults, requestCounter.Sent)
+                : new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Failed, searchResults, requestCounter.Sent, FailureReason: failureReason);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Cancelled, Array.Empty<IndexerSearchResult>(), requestCounter.Sent);
+        }
+        catch (OperationCanceledException ex)
+        {
+            // The caller's token is not cancelled, so this is the HttpClient's per-request timeout.
+            _logger.LogWarning(ex, "Timed out searching Internet Archive indexer {Name}", indexer.Name);
+            return Failed(indexer, requestCounter.Sent, "timeout");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error searching Internet Archive indexer {Name}", indexer.Name);
-            return new List<IndexerSearchResult>();
+            return Failed(indexer, requestCounter.Sent, "error");
         }
+    }
+
+    private static IndexerSearchOutcome Failed(Indexer indexer, int requestsSent, string reason)
+    {
+        return new IndexerSearchOutcome(
+            indexer.Id, IndexerSearchStatus.Failed, Array.Empty<IndexerSearchResult>(), requestsSent, FailureReason: reason);
     }
 
     private async Task<List<IndexerSearchResult>> ParseInternetArchiveSearchResponse(
@@ -149,7 +178,9 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
         Indexer indexer,
         bool allowArchives,
         ISet<string> processedIdentifiers,
-        int remainingItemsToProcess)
+        int remainingItemsToProcess,
+        RequestCounter requestCounter,
+        CancellationToken cancellationToken)
     {
         var results = new List<IndexerSearchResult>();
 
@@ -211,7 +242,8 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
 
                     // Fetch detailed metadata to get file information
                     var metadataUrl = $"https://archive.org/metadata/{identifier}";
-                    using var metadataResponse = await _httpClient.GetAsync(metadataUrl);
+                    requestCounter.Sent++;
+                    using var metadataResponse = await _httpClient.GetAsync(metadataUrl, cancellationToken);
 
                     if (!metadataResponse.IsSuccessStatusCode)
                     {
@@ -219,7 +251,7 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                         continue;
                     }
 
-                    var metadataJson = await metadataResponse.Content.ReadAsStringAsync();
+                    var metadataJson = await metadataResponse.Content.ReadAsStringAsync(cancellationToken);
                     var plan = InternetArchiveRepresentationPlanner.Create(
                         metadataJson,
                         identifier,
@@ -304,4 +336,9 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
         };
     }
 
+    // Counts the requests one search sends, across the query variants and their metadata lookups.
+    private sealed class RequestCounter
+    {
+        public int Sent { get; set; }
+    }
 }

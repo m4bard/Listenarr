@@ -28,7 +28,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var indexer = CreateIndexer();
 
         // When
-        var results = await provider.SearchAsync(indexer, "Alice");
+        var results = await provider.SearchResultsAsync(indexer, "Alice");
 
         // Then
         Assert.Equal(2, results.Count);
@@ -71,7 +71,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
             "Songs from Alice in Wonderland and Through the Looking-Glass");
 
         // When
-        var result = Assert.Single(await provider.SearchAsync(CreateIndexer(), "Alice"));
+        var result = Assert.Single(await provider.SearchResultsAsync(CreateIndexer(), "Alice"));
 
         // Then
         Assert.Equal("English", result.Language);
@@ -98,7 +98,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var provider = CreateProvider(metadataJson);
 
         // When
-        var result = Assert.Single(await provider.SearchAsync(CreateIndexer(), "Alice"));
+        var result = Assert.Single(await provider.SearchResultsAsync(CreateIndexer(), "Alice"));
 
         // Then
         Assert.Equal("German", result.Language);
@@ -113,7 +113,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
             allowArchives: false);
 
         // When
-        var results = await provider.SearchAsync(CreateIndexer(), "Alice");
+        var results = await provider.SearchResultsAsync(CreateIndexer(), "Alice");
 
         // Then
         var mp3 = Assert.Single(results, result => result.Format == "128Kbps MP3");
@@ -149,7 +149,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var provider = CreateProvider(metadataJson);
 
         // When
-        var result = Assert.Single(await provider.SearchAsync(CreateIndexer(), "Alice"));
+        var result = Assert.Single(await provider.SearchResultsAsync(CreateIndexer(), "Alice"));
 
         // Then
         var artifact = Assert.Single(result.DirectDownloadArtifacts);
@@ -174,7 +174,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var provider = CreateProvider(metadataJson, allowArchives: false);
 
         // When
-        var results = await provider.SearchAsync(CreateIndexer(), "Alice");
+        var results = await provider.SearchResultsAsync(CreateIndexer(), "Alice");
 
         // Then
         Assert.Empty(results);
@@ -206,7 +206,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         });
 
         // When
-        var results = await provider.SearchAsync(CreateIndexer(), "Alices Adventures in Wonderland Lewis Carroll");
+        var results = await provider.SearchResultsAsync(CreateIndexer(), "Alices Adventures in Wonderland Lewis Carroll");
 
         // Then
         Assert.Contains(capturedQueries, query => query == expectedBroadQuery);
@@ -253,7 +253,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         };
 
         // When
-        var results = await provider.SearchAsync(
+        var results = await provider.SearchResultsAsync(
             CreateIndexer(),
             "Alices Adventures in Wonderland Lewis Carroll",
             request: request);
@@ -308,7 +308,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         };
 
         // When
-        var results = await provider.SearchAsync(
+        var results = await provider.SearchResultsAsync(
             CreateIndexer(),
             "Alices Adventures in Wonderland Lewis Carroll",
             request: request);
@@ -337,7 +337,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         var indexer = CreateIndexer("librivoxaudio) OR mediatype:(texts");
 
         // When
-        await provider.SearchAsync(indexer, "Alice");
+        await provider.SearchResultsAsync(indexer, "Alice");
 
         // Then
         var query = Assert.Single(capturedQueries);
