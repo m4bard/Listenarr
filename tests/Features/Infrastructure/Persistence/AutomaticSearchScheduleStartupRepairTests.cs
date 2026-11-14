@@ -111,6 +111,24 @@ public sealed class AutomaticSearchScheduleStartupRepairTests : BaseTests
     }
 
     [Fact]
+    public async Task StartupRepair_LeavesARealDueTimeInsideAChunkAlone()
+    {
+        // Book 2 already has its own due time and sits between two scaffolded books, so the
+        // chunk's id range covers it: only the write's own scaffolded-value guard keeps it.
+        await using var connection = await OpenUpgradedAsync((1, "NULL"), (2, "NULL"), (3, "NULL"));
+        await ExecuteAsync(connection, "UPDATE \"Audiobooks\" SET \"AutomaticSearchDueUtc\" = '2026-11-20 00:00:00' WHERE \"Id\" = 2;");
+        var updates = new UpdateRowCounter();
+
+        Assert.Equal(2, Repair(connection, NowUtc, chunkSize: 3, updates));
+
+        Assert.Equal([2], updates.RowsAffected);
+        var due = await ReadDueTextsAsync(connection);
+        Assert.Equal("2026-11-13 12:00:00", due[1]);
+        Assert.Equal("2026-11-20 00:00:00", due[2]);
+        Assert.Equal("2026-11-13 12:00:00", due[3]);
+    }
+
+    [Fact]
     public async Task ApplyListenarrDatabaseMigrations_RepairsScaffoldedDueTimes()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
