@@ -220,7 +220,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             await RunCycleAsync();
 
             var searches = TakeSearches().Where(search => search.Query == broken.Query).ToList();
-            Assert.Single(searches.Select(search => search.Kind).Where(kind => kind == IndexerRequestKind.Search));
+            Assert.Single(searches, search => search.Kind == IndexerRequestKind.Search);
             foreach (var book in books.Skip(1))
             {
                 Assert.True((await Database.ReadBookAsync(book.Id)).DueUtc > Clock.UtcNow, $"book {book.Id} is still due");
