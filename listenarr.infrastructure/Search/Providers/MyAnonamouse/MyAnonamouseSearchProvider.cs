@@ -83,26 +83,22 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                         LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
 
                 // Each hop is one gate call: the first carries the query kind, every followed hop is a redirect.
-                var (searchResponse, _) = await OutboundRequestSecurity.SendWithValidatedRedirectsAsync(
+                var searchResult = await IndexerHttpDispatch.SendFollowingRedirectsAsync(
+                    _requestGate,
+                    new IndexerRequestContext(indexer.Id, context.Origin, context.QueryKind, context.CycleAllowance),
+                    httpClientToUse,
                     uri => MyAnonamouseRequestFactory.CreateSearchRequest(uri, mamId, addCookieHeader),
                     searchUri,
-                    (hopRequest, hopIndex, token) => SendThroughGateAsync(
-                        hopRequest,
-                        httpClientToUse,
-                        indexer,
-                        context,
-                        hopIndex == 0 ? context.QueryKind : IndexerRequestKind.Redirect,
-                        tally,
-                        token),
                     _logger,
-                    allowPrivateTargets: true,
-                    cancellationToken: cancellationToken);
-                if (searchResponse == null)
+                    tally.CountSent,
+                    cancellationToken);
+                if (searchResult is IndexerRequestResult.Deferred searchDeferred)
                 {
+                    tally.Defer(searchDeferred.Deferral);
                     return Deferred(indexer, Array.Empty<IndexerSearchResult>(), tally);
                 }
 
-                using var response = searchResponse;
+                using var response = ((IndexerRequestResult.Sent)searchResult).Response;
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("MyAnonamouse returned status {Status}", response.StatusCode);
