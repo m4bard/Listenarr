@@ -365,6 +365,7 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                 .ReturnsAsync(new ApplicationSettings { ExtractArchives = false });
             var provider = new InternetArchiveSearchProvider(
                 httpClient,
+                new PassThroughIndexerRequestGate(TimeProvider.System),
                 configurationService.Object,
                 NullLogger<InternetArchiveSearchProvider>.Instance);
 
