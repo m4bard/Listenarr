@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Search.Discovery;
 using Listenarr.Domain.Common;
 
 namespace Listenarr.Application.Audiobooks.Contracts.Repositories
@@ -44,6 +45,12 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         /// regions gives its primary identifier's.
         /// </summary>
         Task<Dictionary<(int AudiobookId, string Asin), string?>> GetAsinRegionsAsync(CancellationToken ct = default);
+
+        /// <summary>
+        /// The identity fields of every monitored book that has a quality profile, which is
+        /// the set automatic acquisition can act on. Read without tracking or includes.
+        /// </summary>
+        Task<List<MonitoredBookIdentity>> GetMonitoredBookIdentitiesAsync(CancellationToken ct = default);
         Task<Audiobook?> GetByAsinAsync(string asin);
         Task<Audiobook?> GetByIsbnAsync(string isbn);
         Task<Audiobook?> GetByIdAsync(int id);
