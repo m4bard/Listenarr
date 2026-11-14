@@ -1,5 +1,4 @@
 using System.Net;
-using Listenarr.Application.Search.Indexers.Common;
 using Listenarr.Infrastructure.Torrents;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.Logging.Abstractions;
