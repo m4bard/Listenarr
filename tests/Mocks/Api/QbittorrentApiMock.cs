@@ -16,6 +16,14 @@ namespace Listenarr.Tests.Mocks.Api
         public HttpStatusCode InfoStatusCode { get; set; } = HttpStatusCode.OK;
         public HttpStatusCode AddStatusCode { get; set; } = HttpStatusCode.OK;
         public string? AddResponseBody { get; set; }
+
+        /// <summary>
+        /// Body returned by a successful /torrents/add. qBittorrent answers 200 with "Fails."
+        /// when it will not take the torrent, and older Web API versions answer 200 with nothing
+        /// at all, so the success body is a variable and not a constant.
+        /// </summary>
+        public string? AddSuccessResponseBody { get; set; }
+
         public string? InfoResponseOverride { get; set; }
         public NameValueCollection? LastForceStartForm { get; private set; }
         public HttpStatusCode ForceStartStatusCode { get; set; } = HttpStatusCode.OK;
