@@ -46,10 +46,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 nullable: false,
                 defaultValue: 0);
 
-            // Existing files are due from their creation time, as a new row is.
-            migrationBuilder.Sql(
-                "UPDATE \"AudiobookFiles\" SET \"MetadataRescanDueUtc\" = \"CreatedAt\";");
-
             migrationBuilder.CreateIndex(
                 name: "IX_AudiobookFiles_MetadataRescanDue",
                 table: "AudiobookFiles",
