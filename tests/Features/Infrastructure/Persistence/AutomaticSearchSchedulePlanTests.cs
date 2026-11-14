@@ -161,11 +161,14 @@ public sealed partial class AutomaticSearchSchedulePlanTests : BaseTests
 
         var command = Assert.Single(capture.Commands);
         var plan = await ExplainAsync(context.Database.GetDbConnection(), command);
-        _output.WriteLine($"{command.Sql}\n-- plan\n{plan.Text}\n-- rows {books.Count}");
+        await context.Database.ExecuteSqlRawAsync("ANALYZE;");
+        var analyzedPlan = await ExplainAsync(context.Database.GetDbConnection(), command);
+        _output.WriteLine($"{command.Sql}\n-- plan\n{plan.Text}\n-- plan after ANALYZE\n{analyzedPlan.Text}\n-- rows {books.Count}");
 
         Assert.DoesNotContain("LIMIT", command.Sql, StringComparison.Ordinal);
         Assert.Equal(40_000, books.Count);
         Assert.NotEmpty(DescribeDuePageProblems(plan));
+        Assert.NotEmpty(DescribeDuePageProblems(analyzedPlan));
     }
 
     private static async Task<LargeLibraryFixture> BuildStampedAsync()
