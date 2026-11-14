@@ -89,22 +89,53 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
         {
             await ConfigureAsync();
             var answered = await AddIndexerAsync("Answered");
-            var silent = await AddIndexerAsync("Silent");
+            var cut = await AddIndexerAsync("Cut");
             var dueUtc = StartUtc.AddMinutes(-5);
             var book = (await AddBooksAsync(1, dueUtc)).Single();
-            Server.Silent[silent] = true;
+            Assert.NotEqual(book.Query, book.FallbackQuery);
             using var cycle = new CancellationTokenSource();
-            _ = Server.SilentRequestArrived.Task.ContinueWith(_ => cycle.Cancel(), TaskScheduler.Default);
+            // Both full queries come back empty; the cycle is cancelled as B's fallback starts, after
+            // A's fallback has finished A's search.
+            Indexers.Script = (indexerId, query) =>
+            {
+                if (indexerId == cut && query == book.FallbackQuery)
+                {
+                    cycle.Cancel();
+                }
+
+                return IndexerScript.Nothing;
+            };
 
             await RunCycleAsync(cycle.Token);
 
             var stored = await Database.ReadPairAsync(book.Id, answered);
             Assert.NotNull(stored);
             Assert.Equal(1, stored.NoResultCount);
-            Assert.Null(await Database.ReadPairAsync(book.Id, silent));
+            Assert.Null(await Database.ReadPairAsync(book.Id, cut));
             var (bookDueUtc, failureCount, _, _) = await Database.ReadBookAsync(book.Id);
             Assert.Equal(dueUtc, bookDueUtc);
             Assert.Equal(0, failureCount);
+        }
+
+        [Fact]
+        public async Task CallerCancel_BeforeAFallback_LeavesTheEmptyPairDue()
+        {
+            await ConfigureAsync();
+            var answered = await AddIndexerAsync("Answered");
+            var silent = await AddIndexerAsync("Silent");
+            var dueUtc = StartUtc.AddMinutes(-5);
+            var book = (await AddBooksAsync(1, dueUtc)).Single();
+            Assert.NotEqual(book.Query, book.FallbackQuery);
+            Server.Silent[silent] = true;
+            using var cycle = new CancellationTokenSource();
+            _ = Server.SilentRequestArrived.Task.ContinueWith(_ => cycle.Cancel(), TaskScheduler.Default);
+
+            await RunCycleAsync(cycle.Token);
+
+            // A's full query came back empty but its fallback was never sent: A's search is not over.
+            Assert.Null(await Database.ReadPairAsync(book.Id, answered));
+            Assert.Null(await Database.ReadPairAsync(book.Id, silent));
+            Assert.Equal((dueUtc, 0, (DateTime?)null, true), await Database.ReadBookAsync(book.Id));
         }
 
         [Fact]
