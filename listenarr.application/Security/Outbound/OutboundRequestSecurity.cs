@@ -143,6 +143,60 @@ public static class OutboundRequestSecurity
         if (requestFactory == null) throw new ArgumentNullException(nameof(requestFactory));
         if (noRedirectClient == null) throw new ArgumentNullException(nameof(noRedirectClient));
 
+        var (response, finalUri) = await SendWithValidatedRedirectsCoreAsync(
+            requestFactory,
+            initialUri,
+            async (request, _, token) => await noRedirectClient.SendAsync(request, completionOption, token),
+            logger,
+            allowPrivateTargets,
+            maxRedirects,
+            cancellationToken);
+
+        // The client always returns a response, so the loop never ends without one.
+        return (response!, finalUri);
+    }
+
+    /// <summary>
+    /// Sends a request and follows redirects itself, validating every target exactly as the
+    /// client-based overload does, but hands each hop to <paramref name="sendHop"/> instead of
+    /// sending it directly. A null from <paramref name="sendHop"/> means the hop was not sent and
+    /// ends the loop with no response.
+    /// </summary>
+    /// <param name="requestFactory">Builds the request for each hop's target.</param>
+    /// <param name="initialUri">The first target.</param>
+    /// <param name="sendHop">Sends one hop: the request, its index (0 for the first send) and the
+    /// caller's token. Returns the response, or null when the hop is not sent.</param>
+    /// <param name="logger">Receives the address validation warnings.</param>
+    /// <param name="allowPrivateTargets">Whether private and loopback targets are allowed.</param>
+    /// <param name="maxRedirects">How many redirects may be followed after the first send.</param>
+    /// <param name="cancellationToken">The caller's token, passed to every hop.</param>
+    /// <returns>The final response, or null when a hop was not sent; and the last target.</returns>
+    public static async Task<(HttpResponseMessage? Response, Uri FinalUri)> SendWithValidatedRedirectsAsync(
+        Func<Uri, HttpRequestMessage> requestFactory,
+        Uri initialUri,
+        Func<HttpRequestMessage, int, CancellationToken, Task<HttpResponseMessage?>> sendHop,
+        ILogger logger,
+        bool allowPrivateTargets = false,
+        int maxRedirects = 5,
+        CancellationToken cancellationToken = default)
+    {
+        if (requestFactory == null) throw new ArgumentNullException(nameof(requestFactory));
+        if (sendHop == null) throw new ArgumentNullException(nameof(sendHop));
+
+        return await SendWithValidatedRedirectsCoreAsync(
+            requestFactory, initialUri, sendHop, logger, allowPrivateTargets, maxRedirects, cancellationToken);
+    }
+
+    // The one redirect loop behind both public overloads, so every hop runs the same validation.
+    private static async Task<(HttpResponseMessage? Response, Uri FinalUri)> SendWithValidatedRedirectsCoreAsync(
+        Func<Uri, HttpRequestMessage> requestFactory,
+        Uri initialUri,
+        Func<HttpRequestMessage, int, CancellationToken, Task<HttpResponseMessage?>> sendHop,
+        ILogger logger,
+        bool allowPrivateTargets,
+        int maxRedirects,
+        CancellationToken cancellationToken)
+    {
         Uri currentUri = initialUri;
         HttpResponseMessage? response = null;
 
@@ -160,7 +214,11 @@ public static class OutboundRequestSecurity
 
             response?.Dispose();
             using var request = requestFactory(currentUri);
-            response = await noRedirectClient.SendAsync(request, completionOption, cancellationToken);
+            response = await sendHop(request, redirectCount, cancellationToken);
+            if (response == null)
+            {
+                return (null, currentUri);
+            }
 
             if (IsRedirectStatusCode(response.StatusCode))
             {

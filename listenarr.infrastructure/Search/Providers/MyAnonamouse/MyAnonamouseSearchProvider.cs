@@ -30,6 +30,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
     {
         private readonly ILogger<MyAnonamouseSearchProvider> _logger;
         private readonly HttpClient _httpClient;
+        private readonly IIndexerRequestGate _requestGate;
         private readonly IIndexerRepository _indexerRepository;
 
         public string IndexerType => "MyAnonamouse";
@@ -37,10 +38,12 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
         public MyAnonamouseSearchProvider(
             ILogger<MyAnonamouseSearchProvider> logger,
             HttpClient httpClient,
+            IIndexerRequestGate requestGate,
             IIndexerRepository indexerRepository)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+            _requestGate = requestGate ?? throw new ArgumentNullException(nameof(requestGate));
             _indexerRepository = indexerRepository ?? throw new ArgumentNullException(nameof(indexerRepository));
         }
 
@@ -52,7 +55,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
             IndexerSearchContext context,
             CancellationToken cancellationToken)
         {
-            var requestsSent = 0;
+            var tally = new RequestTally();
             try
             {
                 _logger.LogInformation("Searching MyAnonamouse for: {Query}", query);
@@ -63,7 +66,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                 if (string.IsNullOrEmpty(mamId))
                 {
                     _logger.LogWarning("MyAnonamouse indexer {Name} missing mam_id", indexer.Name);
-                    return Failed(indexer, requestsSent, "missing mam_id");
+                    return Failed(indexer, tally.Sent, "missing mam_id");
                 }
 
                 var searchUri = MyAnonamouseRequestFactory.BuildSearchUri(indexer, query, request);
@@ -79,21 +82,33 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                         searchUri.GetLeftPart(UriPartial.Path),
                         LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
 
-                requestsSent++;
+                // Each hop is one gate call: the first carries the query kind, every followed hop is a redirect.
                 var (searchResponse, _) = await OutboundRequestSecurity.SendWithValidatedRedirectsAsync(
                     uri => MyAnonamouseRequestFactory.CreateSearchRequest(uri, mamId, addCookieHeader),
                     searchUri,
-                    httpClientToUse,
+                    (hopRequest, hopIndex, token) => SendThroughGateAsync(
+                        hopRequest,
+                        httpClientToUse,
+                        indexer,
+                        context,
+                        hopIndex == 0 ? context.QueryKind : IndexerRequestKind.Redirect,
+                        tally,
+                        token),
                     _logger,
                     allowPrivateTargets: true,
                     cancellationToken: cancellationToken);
+                if (searchResponse == null)
+                {
+                    return Deferred(indexer, Array.Empty<IndexerSearchResult>(), tally);
+                }
+
                 using var response = searchResponse;
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("MyAnonamouse returned status {Status}", response.StatusCode);
                     var errorContent = await response.Content.ReadAsStringAsync();
                     _logger.LogWarning("MyAnonamouse error response: {Content}", LogRedaction.RedactText(errorContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
-                    return Failed(indexer, requestsSent, $"status {(int)response.StatusCode}");
+                    return Failed(indexer, tally.Sent, $"status {(int)response.StatusCode}");
                 }
 
                 // Capture and persist an updated mam_id cookie if the tracker provided one in Set-Cookie
@@ -130,7 +145,8 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                     if (shouldEnrich)
                     {
                         var enrichTop = mamRequestOptions!.EnrichTopResults ?? 3;
-                        await EnrichMyAnonamouseResultsAsync(indexer, results, enrichTop, mamId, httpClientToUse);
+                        await EnrichMyAnonamouseResultsAsync(
+                            indexer, results, enrichTop, mamId, httpClientToUse, context, tally, cancellationToken);
                     }
                 }
                 catch (Exception exEnrich) when (exEnrich is not OperationCanceledException && exEnrich is not OutOfMemoryException && exEnrich is not StackOverflowException)
@@ -139,22 +155,29 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                 }
 
                 _logger.LogInformation("MyAnonamouse returned {Count} results", results.Count);
-                return new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Completed, results, requestsSent);
+
+                // A deferred detail request ends the search with the results already found.
+                if (tally.Deferral != null)
+                {
+                    return Deferred(indexer, results, tally);
+                }
+
+                return new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Completed, results, tally.Sent);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                return new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Cancelled, Array.Empty<IndexerSearchResult>(), requestsSent);
+                return new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Cancelled, Array.Empty<IndexerSearchResult>(), tally.Sent);
             }
             catch (OperationCanceledException ex)
             {
                 // The caller's token is not cancelled, so this is the HttpClient's per-request timeout.
                 _logger.LogWarning(ex, "Timed out searching MyAnonamouse indexer {Name}", indexer.Name);
-                return Failed(indexer, requestsSent, "timeout");
+                return Failed(indexer, tally.Sent, "timeout");
             }
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Error searching MyAnonamouse indexer {Name}", indexer.Name);
-                return Failed(indexer, requestsSent, "error");
+                return Failed(indexer, tally.Sent, "error");
             }
         }
 
@@ -164,7 +187,48 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                 indexer.Id, IndexerSearchStatus.Failed, Array.Empty<IndexerSearchResult>(), requestsSent, FailureReason: reason);
         }
 
-        private async Task EnrichMyAnonamouseResultsAsync(Indexer indexer, List<IndexerSearchResult> results, int topN, string? mamId, HttpClient httpClient)
+        private IndexerSearchOutcome Deferred(Indexer indexer, IReadOnlyList<IndexerSearchResult> results, RequestTally tally)
+        {
+            var deferral = tally.Deferral!.Value;
+            _logger.LogInformation("MyAnonamouse search deferred until {Until} ({Reason})", deferral.UntilUtc, deferral.Reason);
+            return new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Deferred, results, tally.Sent, deferral);
+        }
+
+        private async Task<HttpResponseMessage?> SendThroughGateAsync(
+            HttpRequestMessage request,
+            HttpClient httpClient,
+            Indexer indexer,
+            IndexerSearchContext context,
+            IndexerRequestKind kind,
+            RequestTally tally,
+            CancellationToken cancellationToken)
+        {
+            var result = await _requestGate.SendAsync(
+                new IndexerRequestContext(indexer.Id, context.Origin, kind, context.CycleAllowance),
+                token =>
+                {
+                    tally.CountSent();
+                    return httpClient.SendAsync(request, token);
+                },
+                cancellationToken);
+            if (result is IndexerRequestResult.Deferred deferred)
+            {
+                tally.Defer(deferred.Deferral);
+                return null;
+            }
+
+            return ((IndexerRequestResult.Sent)result).Response;
+        }
+
+        private async Task EnrichMyAnonamouseResultsAsync(
+            Indexer indexer,
+            List<IndexerSearchResult> results,
+            int topN,
+            string? mamId,
+            HttpClient httpClient,
+            IndexerSearchContext context,
+            RequestTally tally,
+            CancellationToken cancellationToken)
         {
             if (results == null || results.Count == 0) return;
             if (topN <= 0) return;
@@ -180,6 +244,8 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                 using var lockHandle = await sem.LockAsync();
                 try
                 {
+                    // Once one detail request is deferred, the rest would be held back too.
+                    if (tally.Deferral != null) return;
                     if (string.IsNullOrEmpty(r.ResultUrl)) return;
 
                     // Extract torrent ID from result URL
@@ -194,9 +260,10 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                     req.Headers.Accept.ParseAdd("application/json");
                     if (!string.IsNullOrEmpty(mamId)) req.Headers.Add("Cookie", $"mam_id={mamId}");
 
-                    using var resp = await httpClient.SendAsync(req);
-                    if (!resp.IsSuccessStatusCode) return;
-                    var json = await resp.Content.ReadAsStringAsync();
+                    using var resp = await SendThroughGateAsync(
+                        req, httpClient, indexer, context, IndexerRequestKind.Enrichment, tally, cancellationToken);
+                    if (resp == null || !resp.IsSuccessStatusCode) return;
+                    var json = await resp.Content.ReadAsStringAsync(cancellationToken);
 
                     // Parse JSON for enrichment fields
                     try
@@ -269,5 +336,36 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
             await Task.WhenAll(tasks);
         }
 
+        // What one search sends and meets. Detail requests run in parallel, so every member is thread-safe.
+        private sealed class RequestTally
+        {
+            private readonly object _deferralLock = new();
+            private RequestDeferral? _deferral;
+            private int _sent;
+
+            public int Sent => Volatile.Read(ref _sent);
+
+            public RequestDeferral? Deferral
+            {
+                get
+                {
+                    lock (_deferralLock)
+                    {
+                        return _deferral;
+                    }
+                }
+            }
+
+            public void CountSent() => Interlocked.Increment(ref _sent);
+
+            // Keeps the first deferral met.
+            public void Defer(RequestDeferral deferral)
+            {
+                lock (_deferralLock)
+                {
+                    _deferral ??= deferral;
+                }
+            }
+        }
     }
 }
