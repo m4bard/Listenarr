@@ -275,5 +275,86 @@ namespace Listenarr.Tests.Features.Api.Services
 
             Assert.Equal(3, Assert.Single(groups).Count);
         }
+
+        [Fact]
+        public void BuildGroupedFilesForFolder_KeepsSeriesFilesWithATwoDigitBookIndexSeparate()
+        {
+            // An index whose match could start at its second digit used to slip past the series
+            // word: "1 of 20" read as an index after "Series Book 1", so both files collapsed to
+            // the stem "Series Book 1".
+            var folder = @"D:\test\Series";
+            var eleventh = Path.Join(folder, "Series Book 11 of 20.m4b");
+            var twelfth = Path.Join(folder, "Series Book 12 of 20.m4b");
+
+            var groups = UnmatchedScanBackgroundService.BuildGroupedFilesForFolder(
+                new[] { eleventh, twelfth },
+                folder,
+                FileSystemPathSemantics.CurrentHostDefault);
+
+            Assert.Equal(2, groups.Count);
+            Assert.Contains(groups, group => group.Single() == eleventh);
+            Assert.Contains(groups, group => group.Single() == twelfth);
+        }
+
+        [Theory]
+        [InlineData("Rougon-Macquart Book {0} of 20", 11)]
+        [InlineData("Rougon-Macquart Book {0:000} of 020", 11)]
+        [InlineData("Barsoom Book {0:000} of 006", 1)]
+        [InlineData("Rougon-Macquart Bk {0} of 20", 11)]
+        [InlineData("Rougon-Macquart Vol {0} of 20", 11)]
+        [InlineData("Rougon-Macquart Volume {0} of 20", 10)]
+        [InlineData("Rougon-Macquart Vol {0} of 20", 2)]
+        [InlineData("Rougon-Macquart Book{0}of20", 11)]
+        [InlineData("Rougon-Macquart Vol. {0} of 20", 11)]
+        [InlineData("Rougon-Macquart Book #{0} of 20", 11)]
+        [InlineData("Rougon-Macquart Book    {0} of 20", 11)]
+        public void BuildGroupedFilesForFolder_KeepsSeriesFilesSeparateWhateverTheIndexLooksLike(
+            string nameFormat,
+            int firstPosition)
+        {
+            // Three consecutive works of one series, with the index multi-digit, zero-padded,
+            // abbreviated, punctuated or spaced out. The series word has to hold for every
+            // shape, so the index is never read from inside the number or past a "." or "#".
+            var folder = @"D:\test\Boxed Set";
+            var files = Enumerable.Range(firstPosition, 3)
+                .Select(n => Path.Join(
+                    folder,
+                    string.Format(System.Globalization.CultureInfo.InvariantCulture, nameFormat, n) + ".m4b"))
+                .ToArray();
+
+            var groups = UnmatchedScanBackgroundService.BuildGroupedFilesForFolder(
+                files,
+                folder,
+                FileSystemPathSemantics.CurrentHostDefault);
+
+            Assert.Equal(3, groups.Count);
+            Assert.All(groups, group => Assert.Single(group));
+        }
+
+        [Theory]
+        [InlineData("A Princess of Mars {0:000} of 006", 1, 6)]
+        [InlineData("A Princess of Mars {0:000} of 120", 10, 3)]
+        [InlineData("The Wonderful Wizard of Oz - {0} of 24", 10, 3)]
+        public void BuildGroupedFilesForFolder_StillGroupsChapterFilesWithAMultiDigitIndex(
+            string nameFormat,
+            int firstPosition,
+            int count)
+        {
+            // The control for the series cases: anchoring the index at the start of its number
+            // must not stop a chapter rip without a series word from collapsing to one item.
+            var folder = @"D:\test\A Princess of Mars";
+            var files = Enumerable.Range(firstPosition, count)
+                .Select(n => Path.Join(
+                    folder,
+                    string.Format(System.Globalization.CultureInfo.InvariantCulture, nameFormat, n) + ".mp3"))
+                .ToArray();
+
+            var groups = UnmatchedScanBackgroundService.BuildGroupedFilesForFolder(
+                files,
+                folder,
+                FileSystemPathSemantics.CurrentHostDefault);
+
+            Assert.Equal(count, Assert.Single(groups).Count);
+        }
     }
 }

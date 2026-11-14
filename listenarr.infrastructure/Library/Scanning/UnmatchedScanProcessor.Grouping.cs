@@ -420,8 +420,13 @@ namespace Listenarr.Infrastructure.Library.Scanning
             // word in front of it says the opposite: "Barsoom Book 1 of 6" is one work
             // out of six in a boxed set, and collapsing that folder also denies it the
             // embedded-tag pass, which only runs when filename grouping produced more than one
-            // group. So the index is left alone when Book, Bk, Vol or Volume introduces it.
-            name = Regex.Replace(name, @"(?<!\b(?:book|bk|vol|volume)[\s\-_]{0,3})[\s\-_]*\d+\s*of\s*\d+$", "", RegexOptions.IgnoreCase);
+            // group. So the index is left alone when Book, Bk, Vol or Volume introduces it,
+            // however it is punctuated: "Book 11", "Vol. 11", "Book #11", "Book011".
+            //
+            // N must not start after another digit. Otherwise the match can begin inside the
+            // number: in "Book 11 of 20" the "1 of 20" after "Book 1" is not introduced by the
+            // series word, so every "Book 1x of 20" would strip to the same "Book 1".
+            name = Regex.Replace(name, @"[\s\-_]*(?<!\d)(?<!\b(?:book|bk|vol|volume)[^\p{L}\d]*)\d+\s*of\s*\d+$", "", RegexOptions.IgnoreCase);
             // Strip leading track/disc number prefix: "01 - ", "Track 01 - ", "1. "
             name = Regex.Replace(name, @"^(track\s*)?\d+[\s\-_\.]+", "", RegexOptions.IgnoreCase);
             // Strip trailing Part/CD/Disc/Chapter number: "- Part 1", "CD2", "Disc 2", "pt00"
