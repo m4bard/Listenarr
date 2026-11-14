@@ -16,7 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Net;
-using System.Net.Http.Headers;
+using Listenarr.Application.Search.Contracts;
+using Listenarr.Application.Search.Indexers.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Torrents
@@ -26,44 +27,45 @@ namespace Listenarr.Infrastructure.Torrents
         private const int MaxAttempts = 3;
         private const int MaxRedirects = 10;
         private readonly ILogger<TorrentFileDownloader> _logger;
-        private readonly Func<HttpMessageHandler> _handlerFactory;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IIndexerRequestGate _requestGate;
         private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
 
-        public TorrentFileDownloader(ILogger<TorrentFileDownloader> logger)
+        public TorrentFileDownloader(
+            ILogger<TorrentFileDownloader> logger,
+            IHttpClientFactory httpClientFactory,
+            IIndexerRequestGate requestGate)
             : this(
                 logger,
-                static () => new HttpClientHandler
-                {
-                    AutomaticDecompression = DecompressionMethods.All,
-                    AllowAutoRedirect = false
-                },
+                httpClientFactory,
+                requestGate,
                 static (delay, cancellationToken) => Task.Delay(delay, cancellationToken))
         {
         }
 
         internal TorrentFileDownloader(
             ILogger<TorrentFileDownloader> logger,
-            Func<HttpMessageHandler> handlerFactory,
+            IHttpClientFactory httpClientFactory,
+            IIndexerRequestGate requestGate,
             Func<TimeSpan, CancellationToken, Task> delayAsync)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _handlerFactory = handlerFactory ?? throw new ArgumentNullException(nameof(handlerFactory));
+            _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+            _requestGate = requestGate ?? throw new ArgumentNullException(nameof(requestGate));
             _delayAsync = delayAsync ?? throw new ArgumentNullException(nameof(delayAsync));
         }
 
-        public async Task<TorrentDownloadResult> DownloadAsync(string torrentUrl, CancellationToken ct = default)
+        public async Task<TorrentDownloadResult> DownloadAsync(string torrentUrl, int? indexerId, CancellationToken ct = default)
         {
             try
             {
                 using var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 downloadCts.CancelAfter(TimeSpan.FromSeconds(60));
 
-                // Redirects remain manual so every hop passes the SSRF guard.
-                using var handler = _handlerFactory();
-                using var httpClient = new HttpClient(handler)
-                {
-                    Timeout = TimeSpan.FromSeconds(60)
-                };
+                // The Indexer client never follows redirects, so every hop passes the SSRF guard and the gate.
+                using var httpClient = _httpClientFactory.CreateClient(IndexerHttpDispatch.ClientName);
+                var gateContext = new IndexerRequestContext(
+                    indexerId ?? 0, SearchOrigin.Interactive, IndexerRequestKind.DownloadFetch);
 
                 var currentUrl = torrentUrl;
                 var hop = 0;
@@ -82,7 +84,14 @@ namespace Listenarr.Infrastructure.Torrents
                     request.Headers.Accept.ParseAdd("application/x-bittorrent, application/octet-stream, */*");
                     request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
 
-                    using var response = await httpClient.SendAsync(request, downloadCts.Token);
+                    var sent = await IndexerHttpDispatch.SendAsync(
+                        _requestGate, gateContext, httpClient, request, onDispatch: null, downloadCts.Token);
+                    if (sent is IndexerRequestResult.Deferred deferred)
+                    {
+                        throw new IndexerRequestDeferredException(deferred.Deferral);
+                    }
+
+                    using var response = ((IndexerRequestResult.Sent)sent).Response;
 
                     if (response.StatusCode is HttpStatusCode.MovedPermanently or HttpStatusCode.Found
                         or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect
@@ -120,7 +129,7 @@ namespace Listenarr.Infrastructure.Torrents
                     {
                         if (IsTransient(response.StatusCode) && attempt < MaxAttempts)
                         {
-                            var delay = GetRetryDelay(response.Headers.RetryAfter, attempt);
+                            var delay = TimeSpan.FromMilliseconds(250 * Math.Pow(2, attempt - 1));
                             _logger.LogWarning(
                                 "Pre-download attempt {Attempt}/{MaxAttempts} failed ({StatusCode}) from {Url}; retrying in {DelayMs}ms",
                                 attempt,
@@ -173,7 +182,8 @@ namespace Listenarr.Infrastructure.Torrents
                 _logger.LogWarning("Torrent metadata download timed out for {Url}", LogRedaction.SanitizeUrl(torrentUrl));
                 return TorrentDownloadResult.Failed("Torrent metadata download timed out.");
             }
-            catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+            catch (Exception exception) when (exception is not (OperationCanceledException or IndexerRequestDeferredException
+                or OutOfMemoryException or StackOverflowException))
             {
                 _logger.LogWarning(exception, "Failed to pre-download torrent file from {Url}", LogRedaction.SanitizeUrl(torrentUrl));
                 return TorrentDownloadResult.Failed("Torrent metadata download failed.");
@@ -182,26 +192,8 @@ namespace Listenarr.Infrastructure.Torrents
 
         private static bool IsTransient(HttpStatusCode statusCode)
         {
-            return statusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
-                || (int)statusCode >= 500;
-        }
-
-        private static TimeSpan GetRetryDelay(RetryConditionHeaderValue? retryAfter, int attempt)
-        {
-            var retryDelay = retryAfter?.Delta;
-            if (retryDelay == null && retryAfter?.Date is DateTimeOffset retryDate)
-            {
-                retryDelay = retryDate - DateTimeOffset.UtcNow;
-            }
-
-            if (retryDelay is { } requestedDelay && requestedDelay > TimeSpan.Zero)
-            {
-                return requestedDelay > TimeSpan.FromSeconds(10)
-                    ? TimeSpan.FromSeconds(10)
-                    : requestedDelay;
-            }
-
-            return TimeSpan.FromMilliseconds(250 * Math.Pow(2, attempt - 1));
+            // Rate limiting (429, and 503 with Retry-After) never gets here: the gate turns it into a deferral.
+            return statusCode is HttpStatusCode.RequestTimeout || (int)statusCode >= 500;
         }
     }
 }
