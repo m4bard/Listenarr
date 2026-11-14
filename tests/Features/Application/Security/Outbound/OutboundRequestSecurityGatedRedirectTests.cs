@@ -114,6 +114,32 @@ public sealed class OutboundRequestSecurityGatedRedirectTests : BaseTests
         Assert.Equal([0, 1, 2], sender.HopIndexes);
     }
 
+    [Fact]
+    public async Task ClientOverload_RedirectToLoopbackAddress_IsBlockedBeforeTheHopIsSent()
+    {
+        // Given: the first hop redirects to a loopback address
+        var handler = new RecordingHandler(hop => hop == 0 ? Redirect("https://127.0.0.1/next") : Ok());
+        using var client = new HttpClient(handler);
+
+        // When
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => SendWithClientAsync(client, StartUri));
+
+        // Then: the redirect target is rejected and never sent
+        Assert.StartsWith("Blocked redirect target", exception.Message);
+        Assert.Equal([StartUri], handler.SentUris);
+    }
+
+    [Fact]
+    public async Task ClientOverload_LocalInitialHost_IsBlockedBeforeAnySend()
+    {
+        var handler = new RecordingHandler(_ => Ok());
+        using var client = new HttpClient(handler);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => SendWithClientAsync(client, new Uri("https://localhost/start")));
+
+        Assert.Empty(handler.SentUris);
+    }
+
     private static Task<(HttpResponseMessage? Response, Uri FinalUri)> SendAsync(RecordingSender sender, int maxRedirects = 5)
     {
         return OutboundRequestSecurity.SendWithValidatedRedirectsAsync(
@@ -123,6 +149,16 @@ public sealed class OutboundRequestSecurityGatedRedirectTests : BaseTests
             NullLogger.Instance,
             allowPrivateTargets: false,
             maxRedirects: maxRedirects);
+    }
+
+    private static Task<(HttpResponseMessage Response, Uri FinalUri)> SendWithClientAsync(HttpClient client, Uri initialUri)
+    {
+        return OutboundRequestSecurity.SendWithValidatedRedirectsAsync(
+            uri => new HttpRequestMessage(HttpMethod.Get, uri),
+            initialUri,
+            client,
+            NullLogger.Instance,
+            allowPrivateTargets: false);
     }
 
     private static HttpResponseMessage Redirect(string location)
@@ -135,6 +171,25 @@ public sealed class OutboundRequestSecurityGatedRedirectTests : BaseTests
     private static HttpResponseMessage Ok()
     {
         return new HttpResponseMessage(HttpStatusCode.OK);
+    }
+
+    // Answers each request from a script by hop number and records what reached the client.
+    private sealed class RecordingHandler : HttpMessageHandler
+    {
+        private readonly Func<int, HttpResponseMessage> _answer;
+
+        public RecordingHandler(Func<int, HttpResponseMessage> answer)
+        {
+            _answer = answer;
+        }
+
+        public List<Uri> SentUris { get; } = new();
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            SentUris.Add(request.RequestUri!);
+            return Task.FromResult(_answer(SentUris.Count - 1));
+        }
     }
 
     // Answers each hop from a script and records what it was asked to send. A null answer declines the hop.
