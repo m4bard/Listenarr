@@ -78,6 +78,7 @@ public sealed partial class MetadataRescanQueryPlanTests : BaseTests
     }
 
     [Theory]
+    [InlineData(LargeLibraryVariant.Main)]
     [InlineData(LargeLibraryVariant.ForeignSyntaxOldest)]
     [InlineData(LargeLibraryVariant.ForeignBaseOldest)]
     public async Task LargeLibrary_HasTheStatedMix(LargeLibraryVariant variant)
@@ -109,8 +110,18 @@ public sealed partial class MetadataRescanQueryPlanTests : BaseTests
         Assert.Equal(schedule.DueMissingMetadata, await ScalarAsync(fixture, $"SELECT COUNT(*) FROM \"AudiobookFiles\" WHERE {missing} AND {due}"));
         Assert.Equal(schedule.DueMissingForeignSyntax, await ScalarAsync(fixture, $"SELECT COUNT(*) FROM \"AudiobookFiles\" WHERE \"PathSyntax\" = '{foreign}' AND {missing} AND {due}"));
         Assert.Equal(schedule.DueMissingForeignBase, await ScalarAsync(fixture, $"SELECT COUNT(*) FROM \"AudiobookFiles\" WHERE \"PathSyntax\" IS NULL AND {missing} AND {due}"));
-        // The unrescannable rows hold every due time older than any host row.
         var oldestHostDue = $"(SELECT MIN(\"MetadataRescanDueUtc\") FROM \"AudiobookFiles\" WHERE \"PathSyntax\" = '{host}')";
+        if (variant == LargeLibraryVariant.Main)
+        {
+            // Without a variant the due times are spread around the clock: foreign rows hold no special place.
+            Assert.InRange(
+                await ScalarAsync(fixture, $"SELECT COUNT(*) FROM \"AudiobookFiles\" WHERE \"PathSyntax\" = '{foreign}' AND \"MetadataRescanDueUtc\" < {oldestHostDue}"),
+                0,
+                2_999);
+            return;
+        }
+
+        // The unrescannable rows hold every due time older than any host row.
         var oldRows = variant == LargeLibraryVariant.ForeignSyntaxOldest
             ? $"\"PathSyntax\" = '{foreign}'"
             : "\"PathSyntax\" IS NULL";
