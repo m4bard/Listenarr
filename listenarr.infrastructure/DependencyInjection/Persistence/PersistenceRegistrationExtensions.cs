@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Application.Search.Discovery;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -36,6 +37,7 @@ internal static class PersistenceRegistrationExtensions
         services.AddSingleton<IMoveQueuePersistence, EfMoveQueuePersistence>();
         services.AddSingleton<IMoveExecutionStore, EfMoveExecutionStore>();
         services.AddSingleton<IMoveScanHandoffStore, EfMoveScanHandoffStore>();
+        services.AddSingleton<IDiscoveryStore, EfDiscoveryStore>();
         services.AddScoped<IHistoryRepository, EfHistoryRepository>();
         return services;
     }
