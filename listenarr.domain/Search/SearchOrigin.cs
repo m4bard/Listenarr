@@ -47,6 +47,12 @@ namespace Listenarr.Domain.Search
         /// the sweep. Kept apart from Sweep so logs and the sweep's own limits do not mix the
         /// two.
         /// </summary>
-        Bulk = 3
+        Bulk = 3,
+
+        /// <summary>
+        /// Recent-release discovery: the worker that polls indexer feeds for new releases.
+        /// Unattended: nobody is waiting for the answer.
+        /// </summary>
+        Discovery = 4
     }
 }

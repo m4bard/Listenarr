@@ -43,7 +43,17 @@ namespace Listenarr.Application.Search.Contracts
         /// <summary>
         /// A redirect hop that the application follows itself, after the first send.
         /// </summary>
-        Redirect
+        Redirect,
+
+        /// <summary>
+        /// The first request of a recent-release feed poll: the newest page of an indexer feed.
+        /// </summary>
+        FeedPoll,
+
+        /// <summary>
+        /// A later page of a feed poll, requested to reach back to the last checkpoint.
+        /// </summary>
+        FeedPage
     }
 
     /// <summary>
