@@ -30,6 +30,7 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
     private const int MaxItemsToProcess = 20;
 
     private readonly HttpClient _httpClient;
+    private readonly IIndexerRequestGate _requestGate;
     private readonly IConfigurationService _configurationService;
     private readonly ILogger<InternetArchiveSearchProvider> _logger;
 
@@ -37,10 +38,12 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
 
     public InternetArchiveSearchProvider(
         HttpClient httpClient,
+        IIndexerRequestGate requestGate,
         IConfigurationService configurationService,
         ILogger<InternetArchiveSearchProvider> logger)
     {
         _httpClient = httpClient;
+        _requestGate = requestGate;
         _configurationService = configurationService;
         _logger = logger;
     }
@@ -53,7 +56,7 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
         IndexerSearchContext context,
         CancellationToken cancellationToken)
     {
-        var requestCounter = new RequestCounter();
+        var requestCounter = new RequestTally();
         try
         {
             _logger.LogInformation("Searching Internet Archive for: {Query}", LogRedaction.SanitizeText(query));
@@ -119,8 +122,15 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                     queryIndex,
                     queryPlan.Queries.Count);
 
-                requestCounter.Sent++;
-                using var response = await _httpClient.GetAsync(searchUrl, cancellationToken);
+                var sendResult = await SendThroughGateAsync(
+                    searchUrl, indexer, context.Origin, context.QueryKind, context.CycleAllowance, requestCounter, cancellationToken);
+                if (sendResult is IndexerRequestResult.Deferred searchDeferred)
+                {
+                    requestCounter.Deferral = searchDeferred.Deferral;
+                    break;
+                }
+
+                using var response = ((IndexerRequestResult.Sent)sendResult).Response;
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Internet Archive returned status {Status}", response.StatusCode);
@@ -137,15 +147,36 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                     applicationSettings.ExtractArchives,
                     processedIdentifiers,
                     MaxItemsToProcess - processedIdentifiers.Count,
+                    context,
                     requestCounter,
                     cancellationToken);
                 searchResults.AddRange(queryResults);
+                if (requestCounter.Deferral != null)
+                {
+                    break;
+                }
             }
 
             _logger.LogInformation("Internet Archive returned {Count} results", searchResults.Count);
 
-            // A variant that answered with a non-success status fails the search; the results the
-            // other variants found are still returned.
+            // A deferral ends the search with the results gathered so far. A variant that answered
+            // with a non-success status fails the search; the results the other variants found are
+            // still returned. Failed enrichment that left no candidate results is a failure too,
+            // never an empty successful search.
+            if (requestCounter.Deferral != null)
+            {
+                _logger.LogInformation(
+                    "Internet Archive search deferred until {Until} ({Reason})",
+                    requestCounter.Deferral.Value.UntilUtc, requestCounter.Deferral.Value.Reason);
+                return new IndexerSearchOutcome(
+                    indexer.Id, IndexerSearchStatus.Deferred, searchResults, requestCounter.Sent, requestCounter.Deferral);
+            }
+
+            if (failureReason == null && requestCounter.EnrichmentFailures > 0 && searchResults.Count == 0)
+            {
+                failureReason = "enrichment failed";
+            }
+
             return failureReason == null
                 ? new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Completed, searchResults, requestCounter.Sent)
                 : new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Failed, searchResults, requestCounter.Sent, FailureReason: failureReason);
@@ -179,7 +210,8 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
         bool allowArchives,
         ISet<string> processedIdentifiers,
         int remainingItemsToProcess,
-        RequestCounter requestCounter,
+        IndexerSearchContext context,
+        RequestTally requestCounter,
         CancellationToken cancellationToken)
     {
         var results = new List<IndexerSearchResult>();
@@ -242,12 +274,19 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
 
                     // Fetch detailed metadata to get file information
                     var metadataUrl = $"https://archive.org/metadata/{identifier}";
-                    requestCounter.Sent++;
-                    using var metadataResponse = await _httpClient.GetAsync(metadataUrl, cancellationToken);
+                    var metadataResult = await SendThroughGateAsync(
+                        metadataUrl, indexer, context.Origin, IndexerRequestKind.Enrichment, context.CycleAllowance, requestCounter, cancellationToken);
+                    if (metadataResult is IndexerRequestResult.Deferred metadataDeferred)
+                    {
+                        requestCounter.Deferral = metadataDeferred.Deferral;
+                        break;
+                    }
 
+                    using var metadataResponse = ((IndexerRequestResult.Sent)metadataResult).Response;
                     if (!metadataResponse.IsSuccessStatusCode)
                     {
                         _logger.LogWarning("Failed to fetch metadata for {Identifier}", identifier);
+                        requestCounter.EnrichmentFailures++;
                         continue;
                     }
 
@@ -312,6 +351,7 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     _logger.LogError(ex, "Error processing Internet Archive item");
+                    requestCounter.EnrichmentFailures++;
                 }
             }
         }
@@ -336,9 +376,32 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
         };
     }
 
-    // Counts the requests one search sends, across the query variants and their metadata lookups.
-    private sealed class RequestCounter
+    private Task<IndexerRequestResult> SendThroughGateAsync(
+        string url,
+        Indexer indexer,
+        SearchOrigin origin,
+        IndexerRequestKind kind,
+        CycleRequestAllowance? cycleAllowance,
+        RequestTally tally,
+        CancellationToken cancellationToken)
+    {
+        return _requestGate.SendAsync(
+            new IndexerRequestContext(indexer.Id, origin, kind, cycleAllowance),
+            token =>
+            {
+                tally.Sent++;
+                return _httpClient.GetAsync(url, token);
+            },
+            cancellationToken);
+    }
+
+    // What one search sends and meets, across the query variants and their metadata lookups.
+    private sealed class RequestTally
     {
         public int Sent { get; set; }
+
+        public int EnrichmentFailures { get; set; }
+
+        public RequestDeferral? Deferral { get; set; }
     }
 }
