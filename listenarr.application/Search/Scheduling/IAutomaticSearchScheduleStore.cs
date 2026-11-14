@@ -42,4 +42,30 @@ public interface IAutomaticSearchScheduleStore
     Task<IReadOnlyList<AudiobookIndexerSearchState>> GetPairStatesAsync(
         IReadOnlyCollection<int> audiobookIds,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Records one indexer's outcome for a book, creating the pair row when it is missing. The
+    /// next attempt and counts follow <see cref="AutomaticSearchSchedulePolicy"/>. Once started, the
+    /// write is not cancellable, so an outcome already in hand is kept when the cycle is cancelled
+    /// while it is written; a <paramref name="ct"/> already cancelled before the call throws
+    /// <see cref="OperationCanceledException"/> and writes nothing.
+    /// </summary>
+    Task PersistPairAsync(
+        PairScheduleUpdate update,
+        DateTime nowUtc,
+        TimeSpan cooldown,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Records a book's outcome in one transaction: its due time, its book failure count and, when
+    /// a pair completed, its last search time. For outcomes that wrote pair rows the due time is the
+    /// earliest next attempt over the indexers enabled for automatic search, an indexer with no row
+    /// counting as <paramref name="nowUtc"/>. Not cancellable once started, as
+    /// <see cref="PersistPairAsync"/>.
+    /// </summary>
+    Task PersistBookAsync(
+        BookScheduleUpdate update,
+        DateTime nowUtc,
+        TimeSpan cooldown,
+        CancellationToken ct = default);
 }
