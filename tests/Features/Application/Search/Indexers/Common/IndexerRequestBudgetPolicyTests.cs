@@ -93,12 +93,35 @@ public sealed class IndexerRequestBudgetPolicyTests : BaseTests
     public void NextAdmissionUtc_BucketsOutsideTheWindow_AreNotCounted()
     {
         var hour = H0.AddHours(30);
-        var buckets = new[] { (H0, 9), (H0.AddHours(29), 3) };
+        var buckets = new[] { (H0, 9), (H0.AddHours(29), 2) };
 
         var until = IndexerRequestBudgetPolicy.NextAdmissionUtc(buckets, ceiling: 3, hour: hour);
 
-        // Only the recent bucket counts, so the stale one must not be what the walk stops on.
-        Assert.Equal(H0.AddHours(54), until);
+        // The stale bucket is outside the window, so the one in it is under the ceiling already.
+        Assert.Equal(H0.AddHours(31), until);
+    }
+
+    [Fact]
+    public void NextAdmissionUtc_RemainderEqualToCeiling_KeepsWalking()
+    {
+        var buckets = new[] { (H0, 2), (H0.AddHours(1), 3), (H0.AddHours(3), 5) };
+
+        var until = IndexerRequestBudgetPolicy.NextAdmissionUtc(buckets, ceiling: 8, hour: H0.AddHours(5));
+
+        // 10 used: dropping the first bucket leaves 8, which is still at the ceiling.
+        Assert.Equal(H0.AddHours(26), until);
+    }
+
+    [Fact]
+    public void NextAdmissionUtc_UnspecifiedKindBuckets_StillReturnUtc()
+    {
+        var unspecified = DateTime.SpecifyKind(H0, DateTimeKind.Unspecified);
+        var buckets = new[] { (unspecified, 4), (unspecified.AddHours(3), 6) };
+
+        var until = IndexerRequestBudgetPolicy.NextAdmissionUtc(buckets, ceiling: 10, hour: H0.AddHours(5));
+
+        Assert.Equal(H0.AddHours(25), until);
+        Assert.Equal(DateTimeKind.Utc, until.Kind);
     }
 
     [Fact]

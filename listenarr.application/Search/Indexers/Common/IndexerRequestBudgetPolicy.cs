@@ -91,7 +91,7 @@ public static class IndexerRequestBudgetPolicy
         {
             remaining -= bucket.Count;
             if (remaining < ceiling)
-                return bucket.HourStartUtc + CountedHistory + TimeSpan.FromHours(1);
+                return DateTime.SpecifyKind(bucket.HourStartUtc + CountedHistory + TimeSpan.FromHours(1), DateTimeKind.Utc);
         }
 
         return fullWindow;
