@@ -118,7 +118,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Transmission
             string? downloadedUrl = null;
             var downloader = new Mock<ITorrentFileDownloader>(MockBehavior.Strict);
             downloader
-                .Setup(x => x.DownloadAsync("https://indexer.example.com/book.torrent", It.IsAny<CancellationToken>()))
+                .Setup(x => x.DownloadAsync("https://indexer.example.com/book.torrent", It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .Callback<string, CancellationToken>((url, _) => downloadedUrl = url)
                 .ReturnsAsync(TorrentDownloadResult.FromBytes("de"u8.ToArray()));
 
@@ -140,7 +140,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Transmission
 
             Assert.Equal("HASH1", added.ExternalId);
             Assert.Null(downloadedUrl);
-            downloader.Verify(x => x.DownloadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+            downloader.Verify(x => x.DownloadAsync(It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
 
             var transmissionApiMock = _provider.GetRequiredService<TransmissionApiMock>();
             using var document = transmissionApiMock.GetLastJsonContent();
@@ -167,7 +167,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Transmission
             };
 
             var downloader = new Mock<ITorrentFileDownloader>();
-            downloader.Setup(value => value.DownloadAsync(searchResult.TorrentUrl, It.IsAny<CancellationToken>()))
+            downloader.Setup(value => value.DownloadAsync(searchResult.TorrentUrl, It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(TorrentDownloadResult.Failed("The torrent URL was rejected by outbound request validation."));
             var exception = await Assert.ThrowsAsync<DownloadClientSubmissionException>(() =>
                 new GenericTorrentSourceResolver(downloader.Object, new TorrentMetadataService())

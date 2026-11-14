@@ -46,7 +46,8 @@ public sealed class GenericTorrentSourceResolver(
 
         if (bytes == null && string.IsNullOrWhiteSpace(magnet) && !string.IsNullOrWhiteSpace(torrentUrl))
         {
-            var downloaded = await torrentFileDownloader.DownloadAsync(torrentUrl, cancellationToken);
+            var downloaded = await torrentFileDownloader.DownloadAsync(
+                torrentUrl, candidate.SourceDescriptor.IndexerId, cancellationToken);
             bytes = downloaded.TorrentBytes;
             magnet = downloaded.HasMagnet ? downloaded.MagnetUri : magnet;
             if (downloaded.IsEmpty)
