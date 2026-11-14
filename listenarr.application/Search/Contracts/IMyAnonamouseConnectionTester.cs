@@ -23,11 +23,15 @@ public sealed record MyAnonamouseConnectionTestResult(
     bool Succeeded,
     string Message,
     int? StatusCode = null,
-    string? RefreshedMamId = null)
+    string? RefreshedMamId = null,
+    RequestDeferral? Deferral = null)
 {
     public static MyAnonamouseConnectionTestResult Success(string? refreshedMamId = null)
         => new(true, "MyAnonamouse authentication successful", RefreshedMamId: refreshedMamId);
 
     public static MyAnonamouseConnectionTestResult Failure(string message, int? statusCode = null)
         => new(false, message, statusCode);
+
+    public static MyAnonamouseConnectionTestResult Deferred(RequestDeferral deferral)
+        => new(false, deferral.Describe(), Deferral: deferral);
 }

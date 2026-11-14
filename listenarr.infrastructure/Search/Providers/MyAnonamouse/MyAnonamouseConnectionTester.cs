@@ -15,14 +15,17 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse;
 
 public sealed class MyAnonamouseConnectionTester : IMyAnonamouseConnectionTester
 {
-    private readonly HttpClient _httpClient;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IIndexerRequestGate _requestGate;
     private readonly ILogger<MyAnonamouseConnectionTester> _logger;
 
     public MyAnonamouseConnectionTester(
-        HttpClient httpClient,
+        IHttpClientFactory httpClientFactory,
+        IIndexerRequestGate requestGate,
         ILogger<MyAnonamouseConnectionTester> logger)
     {
-        _httpClient = httpClient;
+        _httpClientFactory = httpClientFactory;
+        _requestGate = requestGate;
         _logger = logger;
     }
 
@@ -34,19 +37,28 @@ public sealed class MyAnonamouseConnectionTester : IMyAnonamouseConnectionTester
         try
         {
             var searchUri = MyAnonamouseRequestFactory.BuildSearchUri(indexer, "test", perPage: 1);
-            var useInjectedClient = _httpClient.BaseAddress != null;
+            using var indexerClient = _httpClientFactory.CreateClient(IndexerHttpDispatch.ClientName);
+            var useInjectedClient = indexerClient.BaseAddress != null;
             using var authenticatedClient = useInjectedClient
                 ? null
                 : MyAnonamouseHelper.CreateAuthenticatedHttpClient(mamId, indexer.Url);
-            var client = authenticatedClient ?? _httpClient;
+            var client = authenticatedClient ?? indexerClient;
 
-            var (response, _) = await OutboundRequestSecurity.SendWithValidatedRedirectsAsync(
+            var sendResult = await IndexerHttpDispatch.SendFollowingRedirectsAsync(
+                _requestGate,
+                new IndexerRequestContext(indexer.Id, SearchOrigin.Interactive, IndexerRequestKind.ConnectionTest),
+                client,
                 uri => MyAnonamouseRequestFactory.CreateSearchRequest(uri, mamId, useInjectedClient),
                 searchUri,
-                client,
                 _logger,
-                allowPrivateTargets: true,
-                cancellationToken: cancellationToken);
+                onDispatch: null,
+                cancellationToken);
+            if (sendResult is IndexerRequestResult.Deferred deferred)
+            {
+                return MyAnonamouseConnectionTestResult.Deferred(deferred.Deferral);
+            }
+
+            var response = ((IndexerRequestResult.Sent)sendResult).Response;
             using (response)
             {
                 if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
