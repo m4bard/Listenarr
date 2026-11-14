@@ -9,6 +9,7 @@
  */
 
 using Listenarr.Tests.Builders;
+using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
 {
@@ -66,12 +67,14 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
                 LastOutcome = "NoAcceptableResults",
                 LastCompletedUtc = retryAtUtc.AddHours(-24)
             });
+            // Set-based, as the store writes it: a tracked save of the last search time is ignored.
             await using (var context = Database.CreateContext())
             {
-                var stored = await context.Audiobooks.FindAsync(retry.Id);
-                stored!.LastSearchTime = retryAtUtc.AddHours(-24);
-                await context.SaveChangesAsync();
+                await context.Audiobooks
+                    .Where(book => book.Id == retry.Id)
+                    .ExecuteUpdateAsync(updates => updates.SetProperty(book => book.LastSearchTime, retryAtUtc.AddHours(-24)));
             }
+            Assert.Equal(retryAtUtc.AddHours(-24), (await Database.ReadBookAsync(retry.Id)).LastSearchUtc);
 
             int? retryCycle = null;
             for (var cycle = 1; cycle <= 3 && retryCycle == null; cycle++)

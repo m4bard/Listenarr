@@ -49,6 +49,9 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
         internal RecordingLogger<AutomaticSearchProcessor> Log { get; } = new();
         protected Mock<IDownloadService> Downloads { get; } = new();
 
+        /// <summary>Real providers served beside the scripted one; applied by <see cref="BuildHost"/>.</summary>
+        internal List<IIndexerSearchProvider> AdditionalProviders { get; } = new();
+
         /// <summary>Wraps the schedule store the processor resolves, when a test sets it.</summary>
         internal Func<IAutomaticSearchScheduleStore, IAutomaticSearchScheduleStore>? DecorateStore { get; set; }
 
@@ -95,7 +98,9 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
                 .WithSingleton<IDbContextFactory<ListenArrDbContext>>(factory)
                 .WithSingleton<TimeProvider>(Clock)
                 .WithSingleton<IIndexerRequestGate>(Gate)
-                .WithSingleton<IIndexerSearchProvider>(Indexers)
+                .WithMocks(new[] { Indexers }
+                    .Concat(AdditionalProviders)
+                    .Select(provider => ServiceDescriptor.Singleton(provider)))
                 .WithSingleton(_quality!)
                 .WithSingleton(Downloads.Object)
                 .WithMocks(
