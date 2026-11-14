@@ -39,6 +39,7 @@ internal static class SearchRegistrationExtensions
         services.AddSingleton<IReleaseAnnotationCatalogSource, EmbeddedReleaseAnnotationCatalogSource>();
         services.AddScoped<IAutomaticSearchScheduleStore, EfAutomaticSearchScheduleStore>();
         services.AddScoped<IAutomaticSearchAcquisition, AutomaticSearchAcquisition>();
+        services.AddSingleton<IIndexerRequestStateStore, EfIndexerRequestStateStore>();
         return services;
     }
 }
