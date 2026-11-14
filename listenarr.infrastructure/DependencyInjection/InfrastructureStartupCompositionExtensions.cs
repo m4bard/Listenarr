@@ -82,6 +82,14 @@ public static class InfrastructureStartupCompositionExtensions
                     "[Startup] Normalized {Count} legacy move job row(s) after applying durable move migrations",
                     repairedPostMigrationData.MoveJobsRepaired);
             }
+            var scheduledBooks =
+                AutomaticSearchScheduleStartupRepair.SetScaffoldedDueTimes(ctx, DateTime.UtcNow);
+            if (scheduledBooks > 0)
+            {
+                Log.Logger.Information(
+                    "[Startup] Set the automatic-search due time of {Count} existing book(s) from their last search",
+                    scheduledBooks);
+            }
             Log.Logger.Information("[Startup] EF Core migrations applied successfully");
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
