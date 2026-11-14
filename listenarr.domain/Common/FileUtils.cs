@@ -130,46 +130,6 @@ namespace Listenarr.Domain.Common
             return metadata.HasAudioStream && !metadata.HasVideoStream;
         }
 
-        /// <summary>
-        /// Returns true when the file path has an extension that may or may not be audio and so
-        /// requires a content probe before it can be admitted. This is intentionally separate
-        /// from <see cref="IsAudioFile"/>: an ambiguous container must never be accepted on the
-        /// strength of its extension alone.
-        /// </summary>
-        public static bool IsAmbiguousAudioContainer(string filePath)
-        {
-            var ext = Path.GetExtension(filePath);
-            return !string.IsNullOrEmpty(ext) && AmbiguousAudioExtensions.Contains(ext);
-        }
-
-        /// <summary>
-        /// Returns true when the extension either always carries audio or might carry audio.
-        /// This is NOT a substitute for <see cref="IsAudioFile"/> and it never admits anything on
-        /// its own: it exists for the pre-filters that stand in front of the one content gate, so
-        /// an ambiguous container reaches the probe instead of being dropped on its extension.
-        /// A caller that cannot probe, or that must decide now, wants <see cref="IsAudioFile"/>.
-        /// The library scanner is exactly that caller and deliberately still uses
-        /// <see cref="IsAudioFile"/>: it walks every file and cannot afford a probe each time.
-        /// </summary>
-        public static bool MayBeAudioPendingProbe(string filePath)
-        {
-            return IsAudioFile(filePath) || IsAmbiguousAudioContainer(filePath);
-        }
-
-        /// <summary>
-        /// Decides whether a probed container should be admitted as audio. True when the file
-        /// carries an audio stream and no playable video stream. Attached-picture streams (cover
-        /// art) are not playable video and are ignored by the probe mapper, so an audiobook whose
-        /// only "video" is embedded artwork still qualifies. This is the gate an ambiguous
-        /// container (see <see cref="IsAmbiguousAudioContainer"/>) must pass; the always-audio
-        /// entries in <see cref="AudioExtensions"/> never need it.
-        /// </summary>
-        public static bool IsProbedAudioContent(Listenarr.Domain.Audiobooks.AudioMetadata metadata)
-        {
-            ArgumentNullException.ThrowIfNull(metadata);
-            return metadata.HasAudioStream && !metadata.HasVideoStream;
-        }
-
         public static bool IsPathInvalidForCurrentOs(string? path)
         {
             return IsPathInvalidForOs(path, OperatingSystem.IsWindows());
