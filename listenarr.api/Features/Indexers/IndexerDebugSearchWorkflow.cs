@@ -22,7 +22,8 @@ using System.Text.Json;
 namespace Listenarr.Api.Features.Indexers
 {
     public sealed class IndexerDebugSearchWorkflow(
-        HttpClient httpClient,
+        IHttpClientFactory httpClientFactory,
+        IIndexerRequestGate requestGate,
         ILogger<IndexerDebugSearchWorkflow> logger)
     {
         public async Task<IndexerDebugSearchWorkflowResult> ExecuteMyAnonamouseAsync(
@@ -43,10 +44,23 @@ namespace Listenarr.Api.Features.Indexers
                 }
 
                 var testUrl = $"{indexer.Url.TrimEnd('/')}/tor/js/loadSearchJSONbasic.php";
-                using var request = BuildMamSearchRequest(testUrl, query);
                 using var client = BuildMamHttpClient(indexer, mamId);
 
-                using var response = await client.SendAsync(request);
+                var sendResult = await IndexerHttpDispatch.SendFollowingRedirectsAsync(
+                    requestGate,
+                    new IndexerRequestContext(indexer.Id, SearchOrigin.Interactive, IndexerRequestKind.Search),
+                    client,
+                    uri => BuildMamSearchRequest(uri.ToString(), query),
+                    new Uri(testUrl),
+                    logger,
+                    onDispatch: null,
+                    CancellationToken.None);
+                if (sendResult is IndexerRequestResult.Deferred deferred)
+                {
+                    return IndexerDebugSearchWorkflowResult.BadRequest(new { success = false, message = deferred.Deferral.Describe() });
+                }
+
+                using var response = ((IndexerRequestResult.Sent)sendResult).Response;
                 var raw = await response.Content.ReadAsStringAsync();
                 var parsed = await TryGetParsedResultsAsync(indexer, id, query, requestContext, httpContext);
 
@@ -171,7 +185,7 @@ namespace Listenarr.Api.Features.Indexers
                 logger.LogDebug(ex, "Failed to add www host alias cookie for MyAnonamouse debug search request to {Host}", baseUri.Host);
             }
 
-            var handler = new HttpClientHandler { CookieContainer = cookieContainer, UseCookies = true };
+            var handler = new HttpClientHandler { CookieContainer = cookieContainer, UseCookies = true, AllowAutoRedirect = false };
             var client = new HttpClient(handler);
             ApplyMamHeaders(client.DefaultRequestHeaders);
             client.DefaultRequestHeaders.Referrer = new Uri("https://www.myanonamouse.net/");
@@ -190,7 +204,8 @@ namespace Listenarr.Api.Features.Indexers
                 var scheme = requestContext.Scheme;
                 var hostVal = requestContext.Host.Value;
                 var localSearchUrl = $"{scheme}://{hostVal}{HttpApiVersionUtils.BuildApiPath($"/search/{id}", httpContext)}?query={Uri.EscapeDataString(query)}";
-                using var localResp = await httpClient.GetAsync(localSearchUrl);
+                using var localClient = httpClientFactory.CreateClient("default");
+                using var localResp = await localClient.GetAsync(localSearchUrl);
                 if (!localResp.IsSuccessStatusCode)
                 {
                     return new List<SearchResult>();

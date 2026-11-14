@@ -40,6 +40,8 @@ namespace Listenarr.Api.Features.Indexers
             IIndexerRepository indexerRepository,
             ILogger<IndexersController> logger,
             HttpClient httpClient,
+            IHttpClientFactory httpClientFactory,
+            IIndexerRequestGate requestGate,
             IConfigurationService configurationService,
             IndexerTestWorkflow? indexerTestWorkflow = null,
             ProwlarrIndexerImportWorkflow? prowlarrImportWorkflow = null,
@@ -50,7 +52,8 @@ namespace Listenarr.Api.Features.Indexers
             _configurationService = configurationService;
             _indexerTestWorkflow = indexerTestWorkflow ?? new IndexerTestWorkflow(
                 indexerRepository,
-                httpClient,
+                httpClientFactory,
+                requestGate,
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<IndexerTestWorkflow>.Instance);
             _prowlarrImportWorkflow = prowlarrImportWorkflow ?? new ProwlarrIndexerImportWorkflow(
                 indexerRepository,
@@ -58,7 +61,8 @@ namespace Listenarr.Api.Features.Indexers
                 httpClient,
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<ProwlarrIndexerImportWorkflow>.Instance);
             _debugSearchWorkflow = debugSearchWorkflow ?? new IndexerDebugSearchWorkflow(
-                httpClient,
+                httpClientFactory,
+                requestGate,
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<IndexerDebugSearchWorkflow>.Instance);
             _responseRedactor = new IndexerResponseRedactor();
         }
