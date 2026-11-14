@@ -31,7 +31,8 @@ namespace Listenarr.Application.Search.Contracts
 
         /// <summary>
         /// A search, fallback or redirect request failed (including a timeout while the caller's token
-        /// was not cancelled), or failed enrichment left no candidate results.
+        /// was not cancelled), failed enrichment left no candidate results, or the indexer's
+        /// failure-ladder cooldown held a request back and left no candidate results.
         /// </summary>
         Failed,
 
@@ -68,7 +69,9 @@ namespace Listenarr.Application.Search.Contracts
     /// <param name="Status">How the search ended.</param>
     /// <param name="Results">Whatever was gathered before the search stopped.</param>
     /// <param name="RequestsSent">How many requests went out on the wire.</param>
-    /// <param name="Deferral">The deferral, when <see cref="Status"/> is Deferred.</param>
+    /// <param name="Deferral">The deferral, when <see cref="Status"/> is Deferred, or when it is
+    /// Failed because the indexer's failure-ladder cooldown held back a request and left no
+    /// candidate results.</param>
     /// <param name="FailureReason">A short reason, when <see cref="Status"/> is Failed.</param>
     public sealed record IndexerSearchOutcome(
         int IndexerId,

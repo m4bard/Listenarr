@@ -303,13 +303,29 @@ public class IndexerSearchWorkflow
                 r.Source = fallbackName;
             }
 
-            return outcome;
+            return MapFailureLadderDeferral(outcome);
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error searching indexer {Name}", indexer.Name);
             return Failed(indexer, "error");
         }
+    }
+
+    // A cooldown the indexer's own consecutive failures set is a failing indexer, not a held-back
+    // request: with no candidates left the search failed. It keeps its deferral so the caller still
+    // knows when the indexer may be asked again. Every other deferral, and a deferral that left
+    // candidates, stays Deferred.
+    private static IndexerSearchOutcome MapFailureLadderDeferral(IndexerSearchOutcome outcome)
+    {
+        if (outcome.Status != IndexerSearchStatus.Deferred
+            || outcome.Deferral?.Reason != RequestDeferralReason.FailureLadder
+            || outcome.Results.Count > 0)
+        {
+            return outcome;
+        }
+
+        return outcome with { Status = IndexerSearchStatus.Failed, FailureReason = "indexer failing (cooldown)" };
     }
 
     private static IndexerSearchOutcome Failed(Indexer indexer, string reason)
