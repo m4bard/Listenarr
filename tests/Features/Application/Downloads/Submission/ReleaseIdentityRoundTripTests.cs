@@ -189,7 +189,9 @@ public sealed class ReleaseIdentityRoundTripTests : BaseTests
             // The grab, where the search result is in hand and nothing has moved yet.
             Path.Join("listenarr.application", "Downloads", "Submission", "TrustedDownloadCandidateFactory.cs"),
             // The search side, which only ever has search results to go on.
-            Path.Join("listenarr.application", "Downloads", "Submission", "BlockedReleaseFilter.cs")
+            Path.Join("listenarr.application", "Downloads", "Submission", "BlockedReleaseFilter.cs"),
+            // The discovery feed, which only ever has search results to go on; upstream of the grab.
+            Path.Join("listenarr.infrastructure", "Search", "Providers", "Torznab", "TorznabNewznabSearchProvider.Feed.cs")
         };
 
         var offenders = projects
