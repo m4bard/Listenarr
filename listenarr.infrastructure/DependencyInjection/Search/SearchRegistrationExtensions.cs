@@ -34,6 +34,7 @@ internal static class SearchRegistrationExtensions
     public static IServiceCollection AddSearchInfrastructure(this IServiceCollection services)
     {
         services.AddScoped<IIndexerRepository, EfIndexerRepository>();
+        services.AddSingleton<IIndexerRequestStateStore, EfIndexerRequestStateStore>();
         return services;
     }
 }
