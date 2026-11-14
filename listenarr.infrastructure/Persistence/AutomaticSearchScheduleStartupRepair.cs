@@ -15,16 +15,82 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using System.Globalization;
+using Microsoft.EntityFrameworkCore;
+
 namespace Listenarr.Infrastructure.Persistence;
 
-// WIP test-first skeleton: the repair itself lands in the next commit.
+/// <summary>
+/// Runs at startup after the migrations. The AddAutomaticSearchSchedule migration is a pure EF
+/// scaffold, so every book that existed before it holds the scaffolded due time
+/// (<see cref="DateTime.MinValue"/>) and would be due at once. This gives each such book the due
+/// time its last search and the configured cooldown imply, or now when it was never searched or
+/// its last search time cannot be read. Only rows still at the scaffolded value are written, so a
+/// second run changes nothing, and each set-based update covers at most one chunk of books.
+/// </summary>
 internal static class AutomaticSearchScheduleStartupRepair
 {
+    internal const string AutomaticSearchScheduleMigrationId =
+        "20261114021916_AddAutomaticSearchSchedule";
     internal const int DefaultChunkSize = 500;
 
     public static int SetScaffoldedDueTimes(ListenArrDbContext context, DateTime nowUtc, int chunkSize = DefaultChunkSize)
     {
         ArgumentNullException.ThrowIfNull(context);
-        return 0;
+        ArgumentOutOfRangeException.ThrowIfLessThan(chunkSize, 1);
+
+        if (!context.Database.GetAppliedMigrations().Contains(AutomaticSearchScheduleMigrationId, StringComparer.Ordinal))
+        {
+            return 0;
+        }
+
+        var cooldownHours = ReadCooldown(context).TotalHours;
+        var scaffoldedDueUtc = DateTime.MinValue;
+        var updated = 0;
+        var afterId = 0;
+        while (true)
+        {
+            var chunkIds = context.Audiobooks
+                .AsNoTracking()
+                .Where(book => book.Id > afterId && book.AutomaticSearchDueUtc == scaffoldedDueUtc)
+                .OrderBy(book => book.Id)
+                .Select(book => book.Id)
+                .Take(chunkSize)
+                .ToList();
+            if (chunkIds.Count == 0)
+            {
+                return updated;
+            }
+
+            var lastId = chunkIds[^1];
+            // SQLite's date arithmetic yields NULL for a missing or unreadable last search time;
+            // the coalesce turns both into "due now" instead of failing the NOT NULL column.
+            updated += context.Audiobooks
+                .Where(book => book.Id > afterId
+                    && book.Id <= lastId
+                    && book.AutomaticSearchDueUtc == scaffoldedDueUtc)
+                .ExecuteUpdate(setters => setters.SetProperty(
+                    book => book.AutomaticSearchDueUtc,
+                    book => (DateTime?)book.LastSearchTime!.Value.AddHours(cooldownHours) ?? nowUtc));
+            afterId = lastId;
+        }
+    }
+
+    // The cooldown the sweep would use, with its clamp; the default when the settings row is
+    // absent or its stored value is not an integer.
+    private static TimeSpan ReadCooldown(ListenArrDbContext context)
+    {
+        var storedHours = context.ApplicationSettings
+            .AsNoTracking()
+            .Where(settings => settings.Id == 1)
+            .Select(settings => settings.AutomaticSearchCooldownHours.ToString())
+            .FirstOrDefault();
+        var settings = new ApplicationSettings();
+        if (int.TryParse(storedHours, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hours))
+        {
+            settings.AutomaticSearchCooldownHours = hours;
+        }
+
+        return AutomaticSearchTiming.FromSettings(settings).BookCooldown;
     }
 }
