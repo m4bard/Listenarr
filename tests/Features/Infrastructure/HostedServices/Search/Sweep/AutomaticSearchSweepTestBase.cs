@@ -172,7 +172,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
 
             context.Audiobooks.AddRange(added);
             await context.SaveChangesAsync();
-            return added.Select(book => new SeededBook(book.Id, QueryFor(book))).ToList();
+            return added.Select(book => new SeededBook(book.Id, QueryFor(book), FallbackQueryFor(book), ReleaseNameFor(book))).ToList();
         }
 
         protected Task RunCycleAsync(CancellationToken cancellationToken = default) =>
@@ -198,6 +198,13 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
         private static string QueryFor(Audiobook book) =>
             IndexerQuerySanitizer.Sanitize(new AutomaticSearchResultClassifier(NullLogger.Instance).BuildSearchQuery(book));
 
+        private static string FallbackQueryFor(Audiobook book) =>
+            IndexerQuerySanitizer.Sanitize(new AutomaticSearchResultClassifier(NullLogger.Instance).BuildTitleFallbackSearchQuery(book));
+
+        // A release layout the fallback's title guard accepts: "Author - Title".
+        private static string ReleaseNameFor(Audiobook book) =>
+            string.Join(" - ", new[] { book.Authors?.FirstOrDefault(), book.Title }.Where(part => !string.IsNullOrEmpty(part)));
+
         private static QualityScore Score(SearchResult result) => new()
         {
             SearchResult = result,
@@ -205,7 +212,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             RejectionReasons = result.Source == RejectedSource ? new List<string> { "rejected by the test" } : new List<string>()
         };
 
-        protected sealed record SeededBook(int Id, string Query);
+        protected sealed record SeededBook(int Id, string Query, string FallbackQuery, string ReleaseName);
 
         private sealed class DatabaseFactory(AutomaticSearchScheduleTestDatabase database) : IDbContextFactory<ListenArrDbContext>
         {
