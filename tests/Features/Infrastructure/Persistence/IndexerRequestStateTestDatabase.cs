@@ -48,14 +48,7 @@ internal sealed class IndexerRequestStateTestDatabase : IAsyncDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
         var database = new IndexerRequestStateTestDatabase(databasePath, interceptors);
         await using var context = database.CreateContext();
-        if (targetMigration is null)
-        {
-            await context.Database.MigrateAsync();
-        }
-        else
-        {
-            await context.Database.MigrateAsync(targetMigration);
-        }
+        await context.Database.MigrateAsync();
 
         var indexers = Enumerable.Range(1, indexerCount)
             .Select(number => new Indexer
@@ -69,6 +62,14 @@ internal sealed class IndexerRequestStateTestDatabase : IAsyncDisposable
         context.Indexers.AddRange(indexers);
         await context.SaveChangesAsync();
         database.IndexerIds = indexers.Select(indexer => indexer.Id).ToList();
+
+        // The indexers are written through the current model, which can map columns an older
+        // schema lacks, so an older target is reached by migrating down after seeding.
+        if (targetMigration is not null)
+        {
+            await context.Database.MigrateAsync(targetMigration);
+        }
+
         return database;
     }
 

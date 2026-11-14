@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 using Listenarr.Infrastructure.DependencyInjection;
+using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Tests.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -50,6 +51,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20261029020400_AddReleaseBlocklist";
     private const string IndexerRequestStateMigrationId =
         "20261114012120_AddIndexerRequestState";
+    private const string IndexerRequestBudgetMigrationId =
+        "20261114025436_AddIndexerRequestBudget";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -235,7 +238,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 OperationEvidencePublicationsMigrationId,
                 AutomaticSearchTimingMigrationId,
                 ReleaseBlocklistMigrationId,
-                IndexerRequestStateMigrationId
+                IndexerRequestStateMigrationId,
+                IndexerRequestBudgetMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
@@ -401,6 +405,91 @@ public class SqliteMigrationSchemaTests : BaseTests
     }
 
     [Fact]
+    [Trait("Scenario", "IndexerRequestBudgetUpgrade")]
+    public async Task IndexerRequestBudgetMigration_LeavesExistingIndexersUnlimitedAndReservesAQuarter()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(IndexerRequestStateMigrationId);
+        await InsertRowWithRequiredColumnsAsync(connection, "Indexers");
+        await InsertRowWithRequiredColumnsAsync(connection, "ApplicationSettings");
+
+        await migrator.MigrateAsync(IndexerRequestBudgetMigrationId);
+
+        Assert.Equal(
+            DBNull.Value,
+            await ScalarAsync(connection, "SELECT \"DailyRequestLimit\" FROM \"Indexers\" WHERE \"Id\" = 1"));
+        Assert.Equal(
+            25L,
+            await ScalarAsync(connection, "SELECT \"IndexerInteractiveReservePercent\" FROM \"ApplicationSettings\" WHERE \"Id\" = 1"));
+        Assert.Equal(0L, await ScalarAsync(connection, "SELECT COUNT(*) FROM \"IndexerRequestUsages\""));
+        Assert.True(await IndexExistsAsync(connection, "IX_IndexerRequestUsages_HourStartUtc"));
+        Assert.True(await ForeignKeyHasDeleteActionAsync(
+            connection,
+            "IndexerRequestUsages",
+            "Indexers",
+            "IndexerId",
+            "CASCADE"));
+    }
+
+    [Fact]
+    [Trait("Scenario", "IndexerRequestBudgetDowngrade")]
+    public async Task IndexerRequestBudgetMigration_DownDropsUsageTableAndColumnsAndKeepsRows()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(IndexerRequestBudgetMigrationId);
+        await InsertRowWithRequiredColumnsAsync(connection, "Indexers");
+        await InsertRowWithRequiredColumnsAsync(connection, "ApplicationSettings");
+        await ExecuteNonQueryAsync(
+            connection,
+            """
+            INSERT INTO "IndexerRequestUsages" ("IndexerId", "HourStartUtc", "Count")
+            VALUES (1, '2026-01-01 00:00:00', 3);
+            """);
+
+        await migrator.MigrateAsync(IndexerRequestStateMigrationId);
+
+        Assert.False(await TableExistsAsync(connection, "IndexerRequestUsages"));
+        Assert.False(await ColumnExistsAsync(connection, "Indexers", "DailyRequestLimit"));
+        Assert.False(await ColumnExistsAsync(connection, "ApplicationSettings", "IndexerInteractiveReservePercent"));
+        Assert.Equal(1L, await ScalarAsync(connection, "SELECT COUNT(*) FROM \"Indexers\""));
+        Assert.Equal(1L, await ScalarAsync(connection, "SELECT COUNT(*) FROM \"ApplicationSettings\""));
+    }
+
+    [Theory]
+    [Trait("Scenario", "InteractiveReserveDefaultSentinel")]
+    [InlineData(0)]
+    [InlineData(25)]
+    [InlineData(90)]
+    public async Task StoredInteractiveReserve_SurvivesInsertAndUpdate(int reservePercent)
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = new ListenArrDbContext(CreateOptions(connection));
+        await context.Database.MigrateAsync();
+        var repository = new EfApplicationSettingsRepository(context);
+        const string readReserve =
+            "SELECT \"IndexerInteractiveReservePercent\" FROM \"ApplicationSettings\" WHERE \"Id\" = 1";
+
+        await repository.SaveAsync(new ApplicationSettings { IndexerInteractiveReservePercent = reservePercent });
+        Assert.Equal((long)reservePercent, await ScalarAsync(connection, readReserve));
+
+        foreach (var updatedPercent in new[] { 10, reservePercent })
+        {
+            context.ChangeTracker.Clear();
+            var stored = await repository.GetAsync();
+            stored!.IndexerInteractiveReservePercent = updatedPercent;
+            await repository.SaveAsync(stored);
+            Assert.Equal((long)updatedPercent, await ScalarAsync(connection, readReserve));
+        }
+    }
+
+    [Fact]
     [Trait("Scenario", "FinalSchemaContracts")]
     public async Task FinalSchema_HasDurableDefaultsIndexesAndSetNullOwnershipRootForeignKey()
     {
@@ -455,6 +544,39 @@ public class SqliteMigrationSchemaTests : BaseTests
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<object?> ScalarAsync(
+        SqliteConnection connection,
+        string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return await command.ExecuteScalarAsync();
+    }
+
+    // Writes row Id 1 with a placeholder in every NOT NULL column that has no default, so the
+    // row stands for whatever an older release stored without restating the whole schema.
+    private static async Task InsertRowWithRequiredColumnsAsync(
+        SqliteConnection connection,
+        string table)
+    {
+        var columns = new List<string> { "\"Id\"" };
+        var values = new List<string> { "1" };
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"SELECT name, type FROM pragma_table_info('{table}') WHERE \"notnull\" = 1 AND dflt_value IS NULL AND pk = 0";
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                columns.Add($"\"{reader.GetString(0)}\"");
+                values.Add(reader.GetString(1) == "TEXT" ? "''" : "0");
+            }
+        }
+
+        await ExecuteNonQueryAsync(
+            connection,
+            $"INSERT INTO \"{table}\" ({string.Join(", ", columns)}) VALUES ({string.Join(", ", values)});");
     }
 
     private static async Task InsertCanaryMoveJobAsync(
