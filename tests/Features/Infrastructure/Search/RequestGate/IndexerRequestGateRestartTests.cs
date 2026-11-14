@@ -30,12 +30,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Search.RequestGate;
 public sealed class IndexerRequestGateRestartTests : BaseTests
 {
     [Theory]
-    [InlineData(RequestDeferralReason.RateLimited)]
-    [InlineData(RequestDeferralReason.FailureLadder)]
-    public async Task Cooldown_SurvivesRestart_NewGateDefersWithoutContactingIndexer(RequestDeferralReason reason)
+    [InlineData(RequestDeferralReason.RateLimited, false)]
+    [InlineData(RequestDeferralReason.RateLimited, true)]
+    [InlineData(RequestDeferralReason.FailureLadder, false)]
+    [InlineData(RequestDeferralReason.FailureLadder, true)]
+    public async Task Cooldown_SurvivesRestart_NewGateDefersWithoutContactingIndexer(RequestDeferralReason reason, bool pooling)
     {
         // Given
-        await using var database = await IndexerRequestStateTestDatabase.CreateAsync(indexerCount: 1);
+        await using var database = await IndexerRequestStateTestDatabase.CreateAsync(indexerCount: 1, pooling: pooling);
         var indexerId = database.IndexerIds[0];
         var cooldownResponse = reason == RequestDeferralReason.RateLimited
             ? Sequence(() => RateLimited(new RetryConditionHeaderValue(TimeSpan.FromHours(1))))

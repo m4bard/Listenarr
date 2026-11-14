@@ -37,15 +37,18 @@ public sealed class IndexerRequestGateConcurrentStateTests : BaseTests
     /// <summary>
     /// A rate limit and a success for the same indexer are applied together, in either order.
     /// Whichever is applied first is held inside its database write; the other must wait for
-    /// the indexer's lock rather than read or write around it.
+    /// the indexer's lock rather than read or write around it. Runs with and without connection
+    /// pooling, since production pools.
     /// </summary>
     [Theory]
-    [InlineData("rate-limit-first")]
-    [InlineData("success-first")]
-    public async Task CooldownSurvivesConcurrentSuccess(string completionOrder)
+    [InlineData("rate-limit-first", false)]
+    [InlineData("rate-limit-first", true)]
+    [InlineData("success-first", false)]
+    [InlineData("success-first", true)]
+    public async Task CooldownSurvivesConcurrentSuccess(string completionOrder, bool pooling)
     {
         // Given: one earlier failure, so the success has a count to clear inside the lock.
-        await using var database = await IndexerRequestStateTestDatabase.CreateAsync(indexerCount: 1);
+        await using var database = await IndexerRequestStateTestDatabase.CreateAsync(indexerCount: 1, pooling: pooling);
         var indexerId = database.IndexerIds[0];
         await new EfIndexerRequestStateStore(database.Factory).UpsertAsync(new IndexerRequestState
         {
