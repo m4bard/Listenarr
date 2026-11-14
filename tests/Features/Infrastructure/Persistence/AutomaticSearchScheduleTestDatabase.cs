@@ -20,7 +20,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Persistence;
 /// </summary>
 internal sealed class AutomaticSearchScheduleTestDatabase(string directory)
 {
-    private readonly string _connectionString = new SqliteConnectionStringBuilder
+    public string ConnectionString { get; } = new SqliteConnectionStringBuilder
     {
         DataSource = Path.Combine(directory, "schedule.db"),
         Pooling = false
@@ -28,7 +28,7 @@ internal sealed class AutomaticSearchScheduleTestDatabase(string directory)
 
     public ListenArrDbContext CreateContext(params IInterceptor[] interceptors) =>
         new(new DbContextOptionsBuilder<ListenArrDbContext>()
-            .UseSqlite(_connectionString)
+            .UseSqlite(ConnectionString)
             .AddInterceptors(interceptors)
             .Options);
 
