@@ -104,7 +104,8 @@ public sealed class IndexerTestWorkflowMyAnonamouseTests : BaseTests
         IMyAnonamouseConnectionTester tester)
         => new(
             repository,
-            new HttpClient(),
+            new StubHttpClientFactory(new HttpClientHandler()),
+            new PassThroughIndexerRequestGate(TimeProvider.System),
             NullLogger<IndexerTestWorkflow>.Instance,
             tester);
 

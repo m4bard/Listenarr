@@ -94,6 +94,7 @@ public static class ListenarrWorkflowRegistration
         services.AddScoped<SearchResponseMapper>();
         services.AddScoped<ImagePlaceholderResolver>();
         services.AddScoped<IndexerTestWorkflow>();
+        services.AddScoped<IndexerDebugSearchWorkflow>();
         services.AddScoped<ProwlarrIndexerImportWorkflow>();
         services.AddScoped<ProwlarrIndexerNotificationWorkflow>();
         services.AddScoped<ProwlarrIndexerUpsertWorkflow>();
