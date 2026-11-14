@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 using Listenarr.Infrastructure.DependencyInjection;
+using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Tests.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
