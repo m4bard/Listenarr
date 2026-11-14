@@ -76,9 +76,10 @@ internal sealed class IndexerRequestGateHarness : IDisposable
     public Task<IndexerRequestResult> SendAsync(
         int indexerId,
         CancellationToken cancellationToken = default,
-        SearchOrigin origin = SearchOrigin.Sweep)
+        SearchOrigin origin = SearchOrigin.Sweep,
+        CycleRequestAllowance? cycleAllowance = null)
         => Gate.SendAsync(
-            new IndexerRequestContext(indexerId, origin, IndexerRequestKind.Search),
+            new IndexerRequestContext(indexerId, origin, IndexerRequestKind.Search, cycleAllowance),
             token => _client.GetAsync("https://indexer.example.invalid/api", token),
             cancellationToken);
 
