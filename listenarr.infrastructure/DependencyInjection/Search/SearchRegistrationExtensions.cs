@@ -10,6 +10,7 @@
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Infrastructure.Search.Matching;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Search;
 
@@ -17,6 +18,8 @@ internal static class SearchRegistrationExtensions
 {
     public static IServiceCollection AddSearchServices(this IServiceCollection services)
     {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IIndexerRequestGate, PassThroughIndexerRequestGate>();
         services.AddScoped<IIndexerSearchProvider, InternetArchiveSearchProvider>();
         services.AddScoped<IIndexerSearchProvider, TorznabNewznabSearchProvider>();
         services.AddScoped<IIndexerSearchProvider, MyAnonamouseSearchProvider>();
