@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
@@ -14,16 +15,17 @@ namespace Listenarr.Tests.Features.Infrastructure.Persistence;
 
 /// <summary>
 /// A file-backed SQLite database migrated by the real migration chain, seeded with indexers,
-/// for the indexer request state tests.
+/// for the indexer request state tests. Connection pooling is off unless a test asks for it;
+/// production keeps Microsoft.Data.Sqlite's default, which pools.
 /// </summary>
 internal sealed class IndexerRequestStateTestDatabase : IAsyncDisposable
 {
     private readonly IInterceptor[] _interceptors;
 
-    private IndexerRequestStateTestDatabase(string databasePath, IInterceptor[] interceptors)
+    private IndexerRequestStateTestDatabase(string databasePath, bool pooling, IInterceptor[] interceptors)
     {
         DatabasePath = databasePath;
-        ConnectionString = $"Data Source={databasePath};Pooling=False";
+        ConnectionString = new SqliteConnectionStringBuilder { DataSource = databasePath, Pooling = pooling }.ToString();
         _interceptors = interceptors;
         Factory = new DbContextFactory(this);
     }
@@ -39,6 +41,7 @@ internal sealed class IndexerRequestStateTestDatabase : IAsyncDisposable
     public static async Task<IndexerRequestStateTestDatabase> CreateAsync(
         int indexerCount,
         string? targetMigration = null,
+        bool pooling = false,
         params IInterceptor[] interceptors)
     {
         var databasePath = Path.Join(
@@ -46,7 +49,7 @@ internal sealed class IndexerRequestStateTestDatabase : IAsyncDisposable
             "listenarr-tests",
             $"indexer-request-state-{Guid.NewGuid():N}.db");
         Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
-        var database = new IndexerRequestStateTestDatabase(databasePath, interceptors);
+        var database = new IndexerRequestStateTestDatabase(databasePath, pooling, interceptors);
         await using var context = database.CreateContext();
         if (targetMigration is null)
         {
@@ -80,6 +83,12 @@ internal sealed class IndexerRequestStateTestDatabase : IAsyncDisposable
 
     public ValueTask DisposeAsync()
     {
+        // A pooled connection keeps the file open after its context is disposed.
+        using (var connection = new SqliteConnection(ConnectionString))
+        {
+            SqliteConnection.ClearPool(connection);
+        }
+
         if (File.Exists(DatabasePath))
         {
             File.Delete(DatabasePath);
