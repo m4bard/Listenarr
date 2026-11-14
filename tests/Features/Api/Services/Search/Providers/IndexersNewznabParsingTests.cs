@@ -270,7 +270,7 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
             });
 
             using var httpClient = new HttpClient(handler) { BaseAddress = new System.Uri("https://www.myanonamouse.net") };
-            var provider = new MyAnonamouseSearchProvider(NullLogger<MyAnonamouseSearchProvider>.Instance, httpClient, new EfIndexerRepository(db));
+            var provider = new MyAnonamouseSearchProvider(NullLogger<MyAnonamouseSearchProvider>.Instance, httpClient, new PassThroughIndexerRequestGate(TimeProvider.System), new EfIndexerRepository(db));
 
             // Call provider directly to ensure the AdditionalSettings are applied to the generated request -
             // The provider no longer parses indexer.AdditionalSettings for options automatically, callers should pass a SearchRequest.
@@ -690,6 +690,7 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
             var provider = new MyAnonamouseSearchProvider(
                 NullLogger<MyAnonamouseSearchProvider>.Instance,
                 httpClient,
+                new PassThroughIndexerRequestGate(TimeProvider.System),
                 Mock.Of<IIndexerRepository>());
 
             var results = await provider.SearchResultsAsync(
