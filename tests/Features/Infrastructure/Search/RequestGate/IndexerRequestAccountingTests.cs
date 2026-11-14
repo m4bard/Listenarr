@@ -17,8 +17,6 @@
  */
 
 using System.Net;
-using Listenarr.Infrastructure.Search.Providers.InternetArchive;
-using Listenarr.Infrastructure.Search.Providers.Torznab;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.Logging.Abstractions;
