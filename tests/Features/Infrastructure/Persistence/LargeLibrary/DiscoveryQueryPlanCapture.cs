@@ -1,5 +1,4 @@
 using System.Data.Common;
-using Listenarr.Application.Search.Discovery;
 using Listenarr.Domain.Search.Discovery;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.Data.Sqlite;

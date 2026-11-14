@@ -9,7 +9,6 @@
  */
 using Listenarr.Domain.Search.Discovery;
 using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Tests.Features.Infrastructure.Persistence.LargeLibrary;
 
