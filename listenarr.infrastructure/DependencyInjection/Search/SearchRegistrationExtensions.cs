@@ -21,9 +21,12 @@ internal static class SearchRegistrationExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IndexerRequestStateCache>();
         services.AddSingleton<IIndexerRequestGate, IndexerRequestGate>();
-        services.AddScoped<IIndexerSearchProvider, InternetArchiveSearchProvider>();
-        services.AddScoped<IIndexerSearchProvider, TorznabNewznabSearchProvider>();
-        services.AddScoped<IIndexerSearchProvider, MyAnonamouseSearchProvider>();
+        services.AddScoped<IIndexerSearchProvider>(provider =>
+            ActivatorUtilities.CreateInstance<InternetArchiveSearchProvider>(provider, CreateIndexerClient(provider)));
+        services.AddScoped<IIndexerSearchProvider>(provider =>
+            ActivatorUtilities.CreateInstance<TorznabNewznabSearchProvider>(provider, CreateIndexerClient(provider)));
+        services.AddScoped<IIndexerSearchProvider>(provider =>
+            ActivatorUtilities.CreateInstance<MyAnonamouseSearchProvider>(provider, CreateIndexerClient(provider)));
         services.AddScoped<IMyAnonamouseConnectionTester, MyAnonamouseConnectionTester>();
         services.AddScoped<IndexerAdditionalSettingsParser>();
         services.AddScoped<IndexerSearchWorkflow>();
@@ -32,6 +35,10 @@ internal static class SearchRegistrationExtensions
         services.AddScoped<ISearchService, SearchService>();
         return services;
     }
+
+    // Search providers send on the indexer client, which leaves every redirect hop to the request gate.
+    private static HttpClient CreateIndexerClient(IServiceProvider provider) =>
+        provider.GetRequiredService<IHttpClientFactory>().CreateClient(IndexerHttpDispatch.ClientName);
 
     public static IServiceCollection AddSearchInfrastructure(this IServiceCollection services)
     {

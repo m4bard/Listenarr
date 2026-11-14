@@ -475,10 +475,9 @@ namespace Listenarr.Application.Search.Indexers.Torznab
             CancellationToken cancellationToken)
         {
             var requestContext = new IndexerRequestContext(indexer.Id, SearchOrigin.Interactive, IndexerRequestKind.Enrichment);
-            var sendResult = await _requestGate.SendAsync(
-                requestContext,
-                token => _httpClient.GetAsync(commentsPageUrl, token),
-                cancellationToken);
+            var sendResult = await IndexerHttpDispatch.SendFollowingRedirectsAsync(
+                _requestGate, requestContext, _httpClient, uri => new HttpRequestMessage(HttpMethod.Get, uri),
+                commentsPageUrl, _logger, onDispatch: null, cancellationToken);
             if (sendResult is IndexerRequestResult.Deferred deferred)
             {
                 _logger.LogDebug("Comments page request for {IndexerName} deferred: {Reason}", indexer.Name, deferred.Deferral.Reason);

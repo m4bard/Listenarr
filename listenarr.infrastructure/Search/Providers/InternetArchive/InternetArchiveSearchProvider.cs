@@ -385,13 +385,15 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
         RequestTally tally,
         CancellationToken cancellationToken)
     {
-        return _requestGate.SendAsync(
+        // Each redirect hop is its own gate call.
+        return IndexerHttpDispatch.SendFollowingRedirectsAsync(
+            _requestGate,
             new IndexerRequestContext(indexer.Id, origin, kind, cycleAllowance),
-            token =>
-            {
-                tally.Sent++;
-                return _httpClient.GetAsync(url, token);
-            },
+            _httpClient,
+            uri => new HttpRequestMessage(HttpMethod.Get, uri),
+            new Uri(url),
+            _logger,
+            () => tally.Sent++,
             cancellationToken);
     }
 
