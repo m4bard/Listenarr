@@ -27,5 +27,27 @@ namespace Listenarr.Domain.Search
     {
         public const int DefaultMaxBooksPerCycle = 25;
         public const int DefaultMaxRequestsPerCycle = 300;
+
+        /// <summary>
+        /// The no-result wait never grows past this many hours, unless the configured cooldown is
+        /// longer (the cap is then the cooldown). A book with nothing found is retried at least weekly.
+        /// </summary>
+        public const int NoResultMaxIntervalHours = 168;
+
+        /// <summary>
+        /// The first wait after an indexer failed for a book; it doubles with each further failure.
+        /// </summary>
+        public const int PairFailureBaseMinutes = 60;
+
+        /// <summary>
+        /// A failing indexer is retried for a book at least daily.
+        /// </summary>
+        public const int PairFailureMaxIntervalHours = 24;
+
+        /// <summary>
+        /// The first wait after a book-level failure (or a grab that did not complete); it doubles
+        /// with each further failure up to the configured cooldown.
+        /// </summary>
+        public const int BookFailureBaseMinutes = 15;
     }
 }
