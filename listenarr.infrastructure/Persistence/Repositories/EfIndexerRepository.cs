@@ -57,16 +57,23 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
         public async Task<Indexer> AddAsync(Indexer indexer, CancellationToken ct = default)
         {
             _db.Indexers.Add(indexer);
-            await _db.SaveChangesAsync(ct);
+            await SaveAsync(becameEligible: IsEligibleForAutomaticSearch(indexer), ct);
             return indexer;
         }
 
         public async Task UpdateAsync(Indexer indexer, CancellationToken ct = default)
         {
+            // Read from the database, not from the tracked entity: a caller that loaded the indexer
+            // through this context has already changed the instance FindAsync returns.
+            var wasEligible = await _db.Indexers
+                .AsNoTracking()
+                .Where(stored => stored.Id == indexer.Id)
+                .Select(stored => stored.IsEnabled && stored.EnableAutomaticSearch)
+                .FirstOrDefaultAsync(ct);
             var existing = await _db.Indexers.FindAsync(new object[] { indexer.Id }, ct);
             if (existing == null) throw new InvalidOperationException($"Indexer {indexer.Id} not found.");
             _db.Entry(existing).CurrentValues.SetValues(indexer);
-            await _db.SaveChangesAsync(ct);
+            await SaveAsync(becameEligible: !wasEligible && IsEligibleForAutomaticSearch(indexer), ct);
         }
 
         public async Task DeleteAsync(int id, CancellationToken ct = default)
@@ -76,5 +83,54 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             _db.Indexers.Remove(indexer);
             await _db.SaveChangesAsync(ct);
         }
+
+        private static bool IsEligibleForAutomaticSearch(Indexer indexer) =>
+            indexer.IsEnabled && indexer.EnableAutomaticSearch;
+
+        // An indexer that becomes eligible for automatic search has searched no book yet, so every
+        // monitored book is made due now instead of waiting out the backoff its other indexers set;
+        // their pair rows keep their own times, so only the new indexer is asked. The indexer write
+        // and the due-time pull commit together or not at all. The due time is ignored after save,
+        // so on a relational provider the pull is set-based; EF InMemory has neither set-based
+        // updates nor transactions, and one tracked save carries both there.
+        private async Task SaveAsync(bool becameEligible, CancellationToken ct)
+        {
+            if (!becameEligible)
+            {
+                await _db.SaveChangesAsync(ct);
+                return;
+            }
+
+            var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
+            if (!_db.Database.IsRelational())
+            {
+                foreach (var book in await BooksDueAfter(nowUtc).ToListAsync(ct))
+                {
+                    book.AutomaticSearchDueUtc = nowUtc;
+                }
+
+                await _db.SaveChangesAsync(ct);
+                return;
+            }
+
+            await using var transaction = _db.Database.CurrentTransaction == null
+                ? await _db.Database.BeginTransactionAsync(ct)
+                : null;
+            // Changes are accepted only once both statements have run, so a failed pull leaves the
+            // indexer pending in this context as well as absent from the database.
+            await _db.SaveChangesAsync(acceptAllChangesOnSuccess: false, ct);
+            await BooksDueAfter(nowUtc)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(book => book.AutomaticSearchDueUtc, nowUtc), ct);
+            if (transaction != null)
+            {
+                await transaction.CommitAsync(ct);
+            }
+
+            _db.ChangeTracker.AcceptAllChanges();
+        }
+
+        private IQueryable<Audiobook> BooksDueAfter(DateTime nowUtc) =>
+            _db.Audiobooks.Where(book =>
+                book.Monitored && book.QualityProfileId != null && book.AutomaticSearchDueUtc > nowUtc);
     }
 }

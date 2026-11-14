@@ -55,7 +55,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             }
 
             await RunCycleAsync();
-            Assert.Equal(new[] { (added, book.Query) }, TakeSearches().Select(search => (search.IndexerId, search.Query)));
+            Assert.Equal(new[] { (added, book.Query) }, PrimarySearches());
         }
 
         [Fact]
@@ -86,7 +86,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             }
 
             await RunCycleAsync();
-            Assert.Equal(new[] { (disabled, book.Query) }, TakeSearches().Select(search => (search.IndexerId, search.Query)));
+            Assert.Equal(new[] { (disabled, book.Query) }, PrimarySearches());
         }
 
         // The pull also reaches a book waiting on its own failure ladder: it gets one early retry
@@ -122,6 +122,12 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
                 expected.OrderBy(id => id),
                 TakeSearches().Where(search => search.Query == book.Query).Select(search => search.IndexerId).Distinct().OrderBy(id => id));
         }
+
+        // The title-only fallback that follows a primary query with no results is not asserted here.
+        private IEnumerable<(int IndexerId, string Query)> PrimarySearches() =>
+            TakeSearches()
+                .Where(search => search.Kind == IndexerRequestKind.Search)
+                .Select(search => (search.IndexerId, search.Query));
 
         private static Indexer NewIndexer(string name)
         {
