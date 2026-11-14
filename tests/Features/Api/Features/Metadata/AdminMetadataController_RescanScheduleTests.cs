@@ -1,4 +1,3 @@
-using Listenarr.Api.Features.Metadata;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Tests.Common;
 using Microsoft.AspNetCore.Antiforgery;
