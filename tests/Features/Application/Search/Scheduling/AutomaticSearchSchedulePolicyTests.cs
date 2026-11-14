@@ -9,7 +9,6 @@
  */
 
 using Listenarr.Application.Search.Scheduling;
-using Listenarr.Domain.Search;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Application.Search.Scheduling

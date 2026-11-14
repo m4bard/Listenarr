@@ -8,7 +8,6 @@
  * (at your option) any later version.
  */
 
-using Listenarr.Application.Search.Contracts;
 using Listenarr.Application.Search.Scheduling;
 using Listenarr.Tests.Common;
 
