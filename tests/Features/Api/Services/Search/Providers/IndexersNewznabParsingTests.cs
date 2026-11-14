@@ -21,6 +21,7 @@ using Microsoft.EntityFrameworkCore;
 using Listenarr.Application.Search.Filters;
 using Listenarr.Application.Search.Strategies;
 using Listenarr.Infrastructure.Persistence.Repositories;
+using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Api.Services.Search.Providers
 {
@@ -237,7 +238,7 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
             using var httpClient = new HttpClient(handler) { BaseAddress = new System.Uri("https://api.althub.co.za") };
 
             // Call the provider's URL builder directly (private) to assert it includes extended=1
-            var provider = new TorznabNewznabSearchProvider(httpClient, NullLogger<TorznabNewznabSearchProvider>.Instance);
+            var provider = new TorznabNewznabSearchProvider(httpClient, new PassThroughIndexerRequestGate(TimeProvider.System), NullLogger<TorznabNewznabSearchProvider>.Instance);
             var mi = typeof(TorznabNewznabSearchProvider).GetMethod("BuildTorznabUrl", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             Assert.NotNull(mi);
             var idx1 = db.Indexers.First(i => i.Implementation == "newznab");
@@ -287,7 +288,7 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                 }
             };
 
-            await provider.SearchAsync(db.Indexers.First(i => i.Implementation == "MyAnonamouse"), "Test Title", null, request);
+            await provider.SearchResultsAsync(db.Indexers.First(i => i.Implementation == "MyAnonamouse"), "Test Title", null, request);
 
             Assert.NotNull(capturedUri);
             var q = capturedUri?.Query ?? string.Empty;
@@ -367,7 +368,7 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                 configurationService.Object,
                 NullLogger<InternetArchiveSearchProvider>.Instance);
 
-            var results = await provider.SearchAsync(indexer, "Artemis");
+            var results = await provider.SearchResultsAsync(indexer, "Artemis");
 
             var result = Assert.Single(results);
             Assert.Equal("DDL", result.DownloadType);
@@ -689,7 +690,7 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                 httpClient,
                 Mock.Of<IIndexerRepository>());
 
-            var results = await provider.SearchAsync(
+            var results = await provider.SearchResultsAsync(
                 indexer,
                 "Enrich Test",
                 null,
