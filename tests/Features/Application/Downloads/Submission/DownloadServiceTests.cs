@@ -368,6 +368,28 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             notificationMock.VerifyNoOtherCalls();
         }
 
+        [Fact]
+        public async Task SendToDownloadClientAsync_WhenTheCallerCancelsAfterQbittorrentAcceptedTheTorrent_KeepsTheDownload()
+        {
+            Init();
+            await InitData();
+            var apiMock = _provider.GetRequiredService<Listenarr.Tests.Mocks.Api.QbittorrentApiMock>();
+            using var cts = new CancellationTokenSource();
+            apiMock.OnAddAccepted = () => cts.Cancel();
+
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost").WithPort(8080).WithUsername("admin").WithPassword("admin").WithType("qbittorrent").Build());
+            var initialDownloadCount = (await _downloadRepository.GetAllAsync()).Count;
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+
+            // The client holds the torrent now; a shutdown must not delete the row that tracks it.
+            var downloadId = await downloadService.SendToDownloadClientAsync(MagnetSearchResult(), client.Id, null, cts.Token);
+
+            Assert.Equal(1, apiMock.AddsAccepted);
+            Assert.False(string.IsNullOrEmpty(downloadId));
+            Assert.Equal(initialDownloadCount + 1, (await _downloadRepository.GetAllAsync()).Count);
+        }
+
         private static SearchResult MagnetSearchResult() => new()
         {
             Title = "Artemis",
