@@ -86,6 +86,68 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
         }
 
         [Fact]
+        public async Task RequestBound_BeforeAFallback_DefersThePairAndKeepsTheDueTime()
+        {
+            var (indexer, second) = await ArrangeFallbackAfterTheLastRequestAsync(Allowance);
+            var secondDueUtc = (await Database.ReadBookAsync(second.Id)).DueUtc;
+
+            await RunCycleAsync();
+
+            Assert.Equal(Allowance, Server.Total);
+            Assert.DoesNotContain(TakeSearches(), search => search.Query == second.FallbackQuery);
+            Assert.Null(await Database.ReadPairAsync(second.Id, indexer));
+            Assert.Equal(secondDueUtc, (await Database.ReadBookAsync(second.Id)).DueUtc);
+
+            Clock.Advance(TimeSpan.FromMinutes(5));
+            await RunCycleAsync();
+
+            Assert.Contains((indexer, second.FallbackQuery, IndexerRequestKind.FallbackQuery), TakeSearches());
+            var completed = await Database.ReadPairAsync(second.Id, indexer);
+            Assert.Equal((nameof(PairScheduleResult.NoAcceptableResults), 1), (completed!.LastOutcome, completed.NoResultCount));
+        }
+
+        [Fact]
+        public async Task RoomyAllowance_SendsTheFallback_AndRecordsTheEmptyPair()
+        {
+            var (indexer, second) = await ArrangeFallbackAfterTheLastRequestAsync(10000);
+            var secondDueUtc = (await Database.ReadBookAsync(second.Id)).DueUtc;
+
+            await RunCycleAsync();
+
+            Assert.Contains((indexer, second.FallbackQuery, IndexerRequestKind.FallbackQuery), TakeSearches());
+            var pair = await Database.ReadPairAsync(second.Id, indexer);
+            Assert.Equal((nameof(PairScheduleResult.NoAcceptableResults), 1), (pair!.LastOutcome, pair.NoResultCount));
+            Assert.NotEqual(secondDueUtc, (await Database.ReadBookAsync(second.Id)).DueUtc);
+        }
+
+        [Fact]
+        public async Task RequestBound_BeforeAnIndexer_LeavesItDueAndKeepsTheDueTime()
+        {
+            var (unreached, second) = await ArrangeSecondIndexerAfterTheLastRequestAsync(Allowance);
+            var secondDueUtc = (await Database.ReadBookAsync(second.Id)).DueUtc;
+
+            await RunCycleAsync();
+
+            Assert.Equal(Allowance, Server.Total);
+            Assert.DoesNotContain(TakeSearches(), search => search.IndexerId == unreached && search.Query == second.Query);
+            Assert.Null(await Database.ReadPairAsync(second.Id, unreached));
+            Assert.Equal(secondDueUtc, (await Database.ReadBookAsync(second.Id)).DueUtc);
+        }
+
+        [Fact]
+        public async Task RoomyAllowance_AsksEveryIndexer_AndMovesTheDueTime()
+        {
+            var (unreached, second) = await ArrangeSecondIndexerAfterTheLastRequestAsync(10000);
+            var secondDueUtc = (await Database.ReadBookAsync(second.Id)).DueUtc;
+
+            await RunCycleAsync();
+
+            Assert.Contains(TakeSearches(), search => search.IndexerId == unreached && search.Query == second.Query);
+            Assert.Equal(nameof(PairScheduleResult.NoAcceptableResults), (await Database.ReadPairAsync(second.Id, unreached))!.LastOutcome);
+            Assert.NotEqual(secondDueUtc, (await Database.ReadBookAsync(second.Id)).DueUtc);
+        }
+
+        [Fact]
         public async Task OversizedPair_IsFailedWithAWarning_AndBacksOff()
         {
             await ConfigureAsync(maxRequests: Allowance);
@@ -126,6 +188,32 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
                 Assert.Equal((nameof(PairScheduleResult.NoAcceptableResults), 0), (pair!.LastOutcome, pair.FailureCount));
                 Assert.NotNull(pair.LastCompletedUtc);
             }
+        }
+
+        // The first book uses all but one request; the second book's full query takes the last and
+        // comes back empty, so its title-only fallback is the next request.
+        private async Task<(int Indexer, SeededBook Second)> ArrangeFallbackAfterTheLastRequestAsync(int maxRequests)
+        {
+            await ConfigureAsync(maxRequests: maxRequests);
+            var indexer = await AddIndexerAsync("Only");
+            var first = (await AddBooksAsync(1, StartUtc.AddHours(-2))).Single();
+            var second = (await AddBooksAsync(1, StartUtc.AddHours(-1))).Single();
+            Assert.NotEqual(second.Query, second.FallbackQuery);
+            Indexers.Script = (_, query) => query == first.Query ? Returns(RejectedSource, requests: Allowance - 1) : IndexerScript.Nothing;
+            return (indexer, second);
+        }
+
+        // The first book uses 240 requests across both indexers; the second book's query to the
+        // first indexer takes the last 10, so the second indexer is next.
+        private async Task<(int Unreached, SeededBook Second)> ArrangeSecondIndexerAfterTheLastRequestAsync(int maxRequests)
+        {
+            await ConfigureAsync(maxRequests: maxRequests);
+            await AddIndexerAsync("A");
+            var unreached = await AddIndexerAsync("B");
+            var first = (await AddBooksAsync(1, StartUtc.AddHours(-2))).Single();
+            var second = (await AddBooksAsync(1, StartUtc.AddHours(-1))).Single();
+            Indexers.Script = (_, query) => Returns(RejectedSource, requests: query == first.Query ? 120 : 10);
+            return (unreached, second);
         }
     }
 }

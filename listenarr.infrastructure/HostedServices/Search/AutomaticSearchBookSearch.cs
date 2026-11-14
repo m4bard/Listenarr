@@ -66,15 +66,19 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             var searchQuery = _resultClassifier.BuildSearchQuery(audiobook);
             logger.LogInformation("Searching for audiobook '{Title}' with query: {Query}", audiobook.Title, searchQuery);
 
+            var fallbackQuery = TitleFallbackQuery(audiobook, searchQuery);
             var outcomes = new List<(Indexer Indexer, IndexerSearchOutcome Outcome)>();
             var cutByRequestBound = false;
             foreach (var indexer in dueIndexers)
             {
                 if (AllowanceSpent)
                 {
-                    // The indexers not reached stay due, and the book keeps its due time.
+                    // An indexer not reached is deferred. Nothing is written for it, since a missing
+                    // or past-due pair row is due, and the book keeps its due time.
+                    outcomes.Add((indexer, new IndexerSearchOutcome(
+                        indexer.Id, IndexerSearchStatus.Deferred, Array.Empty<IndexerSearchResult>(), RequestsSent: 0, CycleRequestBoundDeferral())));
                     cutByRequestBound = true;
-                    break;
+                    continue;
                 }
 
                 var outcome = await SearchIndexerAsync(searchQuery, indexer, IndexerRequestKind.Search, ct);
@@ -85,6 +89,11 @@ namespace Listenarr.Infrastructure.HostedServices.Search
 
                 if (outcome.Status == IndexerSearchStatus.Cancelled)
                 {
+                    if (fallbackQuery != null)
+                    {
+                        EndUnsentFallbacks(outcomes, 0, IndexerSearchStatus.Cancelled);
+                    }
+
                     return await RecordCancelledAsync(audiobook, outcomes, progress);
                 }
 
@@ -100,9 +109,13 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             // completed empty is asked again without the author, then the broadened results are
             // constrained to titles that still match this book, so a same-title/different-book
             // release can't pass quality scoring and be grabbed.
-            if (!cutByRequestBound)
+            if (fallbackQuery != null && cutByRequestBound)
             {
-                var fallback = await SearchFallbackAsync(audiobook, searchQuery, outcomes, ct);
+                EndUnsentFallbacks(outcomes, 0, IndexerSearchStatus.Deferred);
+            }
+            else if (fallbackQuery != null)
+            {
+                var fallback = await SearchFallbackAsync(audiobook, fallbackQuery, outcomes, ct);
                 if (fallback == null)
                 {
                     return await RecordCancelledAsync(audiobook, outcomes, progress);
@@ -138,31 +151,35 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             return report.Outcomes.FirstOrDefault(outcome => outcome.IndexerId == indexer.Id);
         }
 
+        // The title-only query, or null when there is none or it repeats the full query.
+        private string? TitleFallbackQuery(Audiobook audiobook, string searchQuery)
+        {
+            var fallbackQuery = _resultClassifier.BuildTitleFallbackSearchQuery(audiobook);
+            return string.IsNullOrWhiteSpace(fallbackQuery)
+                || string.Equals(fallbackQuery, searchQuery, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : fallbackQuery;
+        }
+
         // Runs the title-only query on every indexer whose full query completed with no results.
         // Returns whether the request bound cut a search, or null when the cycle was cancelled.
         private async Task<bool?> SearchFallbackAsync(
             Audiobook audiobook,
-            string searchQuery,
+            string fallbackQuery,
             List<(Indexer Indexer, IndexerSearchOutcome Outcome)> outcomes,
             CancellationToken ct)
         {
-            var fallbackQuery = _resultClassifier.BuildTitleFallbackSearchQuery(audiobook);
-            if (string.IsNullOrWhiteSpace(fallbackQuery)
-                || string.Equals(fallbackQuery, searchQuery, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
             for (var index = 0; index < outcomes.Count; index++)
             {
                 var (indexer, primary) = outcomes[index];
-                if (primary.Status != IndexerSearchStatus.Completed || primary.Results.Count > 0)
+                if (!AwaitsFallback(primary))
                 {
                     continue;
                 }
 
                 if (AllowanceSpent)
                 {
+                    EndUnsentFallbacks(outcomes, index, IndexerSearchStatus.Deferred);
                     return true;
                 }
 
@@ -176,6 +193,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
 
                 if (fallback.Status == IndexerSearchStatus.Cancelled)
                 {
+                    EndUnsentFallbacks(outcomes, index, IndexerSearchStatus.Cancelled);
                     return null;
                 }
 
@@ -188,12 +206,38 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 outcomes[index] = (indexer, merged);
                 if (await PersistUnfinishedAsync(audiobook, indexer, merged, ct))
                 {
+                    EndUnsentFallbacks(outcomes, index + 1, IndexerSearchStatus.Deferred);
                     return true;
                 }
             }
 
             return false;
         }
+
+        private static bool AwaitsFallback(IndexerSearchOutcome primary) =>
+            primary.Status == IndexerSearchStatus.Completed && primary.Results.Count == 0;
+
+        // A full query that completed empty is only half of its indexer's search until the
+        // title-only fallback has run. When the request bound or a cancellation stops the book
+        // first, that search ends Deferred or Cancelled, so it is never recorded as finding nothing.
+        private void EndUnsentFallbacks(
+            List<(Indexer Indexer, IndexerSearchOutcome Outcome)> outcomes,
+            int fromIndex,
+            IndexerSearchStatus endedAs)
+        {
+            var deferral = endedAs == IndexerSearchStatus.Deferred ? CycleRequestBoundDeferral() : (RequestDeferral?)null;
+            for (var index = fromIndex; index < outcomes.Count; index++)
+            {
+                var (indexer, primary) = outcomes[index];
+                if (AwaitsFallback(primary))
+                {
+                    outcomes[index] = (indexer, primary with { Status = endedAs, Deferral = deferral });
+                }
+            }
+        }
+
+        private RequestDeferral CycleRequestBoundDeferral() =>
+            new(clock.GetUtcNow().UtcDateTime, RequestDeferralReason.CycleRequestBound);
 
         // Persists a failed or deferred indexer search at once. Returns whether the cycle's request
         // bound cut it, so its book keeps its due time and heads the next cycle.
@@ -290,9 +334,10 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             return new AutomaticSearchBookResult(outcome, acquired?.DownloadsQueued ?? 0);
         }
 
-        // The cycle was cancelled mid-book. Indexers that completed with nothing are recorded, since
-        // that does not depend on the rest of the search; the rest is left due. Written without the
-        // cancelled token, so the outcomes already in hand are kept.
+        // The cycle was cancelled mid-book. Indexers whose whole search (the fallback too, where one
+        // applies) completed with nothing are recorded, since that does not depend on the rest of the
+        // search; the rest is left due. Written without the cancelled token, so the outcomes already
+        // in hand are kept.
         private async Task<AutomaticSearchBookResult> RecordCancelledAsync(
             Audiobook audiobook,
             List<(Indexer Indexer, IndexerSearchOutcome Outcome)> outcomes,
