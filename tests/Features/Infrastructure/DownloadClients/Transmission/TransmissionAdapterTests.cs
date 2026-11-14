@@ -119,7 +119,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Transmission
             var downloader = new Mock<ITorrentFileDownloader>(MockBehavior.Strict);
             downloader
                 .Setup(x => x.DownloadAsync("https://indexer.example.com/book.torrent", It.IsAny<int?>(), It.IsAny<CancellationToken>()))
-                .Callback<string, CancellationToken>((url, _) => downloadedUrl = url)
+                .Callback<string, int?, CancellationToken>((url, _, _) => downloadedUrl = url)
                 .ReturnsAsync(TorrentDownloadResult.FromBytes("de"u8.ToArray()));
 
             var searchResult = new SearchResult
