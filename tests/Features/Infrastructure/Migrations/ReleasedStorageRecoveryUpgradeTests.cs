@@ -50,11 +50,14 @@ public sealed class ReleasedStorageRecoveryUpgradeTests : BaseTests
             {
                 var migrator = legacy.GetService<IMigrator>();
                 await migrator.MigrateAsync("20260825021432_AddWeakStorageVerifiedCleanup");
-                legacy.RootFolders.Add(scenario.Root);
-                legacy.Audiobooks.Add(scenario.Audiobook);
-                legacy.LibraryDirectoryOwnerships.Add(scenario.Ownership);
-                legacy.MoveJobs.Add(scenario.Job);
-                await legacy.SaveChangesAsync();
+                await using (var seed = new ReleasedSchemaSeedContext(options))
+                {
+                    seed.RootFolders.Add(scenario.Root);
+                    seed.Audiobooks.Add(scenario.Audiobook);
+                    seed.LibraryDirectoryOwnerships.Add(scenario.Ownership);
+                    seed.MoveJobs.Add(scenario.Job);
+                    await seed.SaveChangesAsync();
+                }
                 await migrator.MigrateAsync();
             }
             using var coordinator = new FilesystemMutationCoordinator();
