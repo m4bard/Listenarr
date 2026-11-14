@@ -112,7 +112,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
                     })));
         }
 
-        protected async Task ConfigureAsync(int maxBooks = 1000, int maxRequests = 10000)
+        protected async Task ConfigureAsync(int maxBooks = 1000, int maxRequests = 10000, int bookDelaySeconds = 0)
         {
             await using var context = _database!.CreateContext();
             var settings = await context.ApplicationSettings.FirstOrDefaultAsync();
@@ -124,7 +124,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
 
             settings.OutputPath = FileService.GetTempPath();
             settings.Version = Math.Max(settings.Version, 1);
-            settings.AutomaticSearchBookDelaySeconds = 0;
+            settings.AutomaticSearchBookDelaySeconds = bookDelaySeconds;
             settings.AutomaticSearchCooldownHours = 24;
             settings.AutomaticSearchMaxBooksPerCycle = maxBooks;
             settings.AutomaticSearchMaxRequestsPerCycle = maxRequests;
@@ -173,6 +173,44 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             context.Audiobooks.AddRange(added);
             await context.SaveChangesAsync();
             return added.Select(book => new SeededBook(book.Id, QueryFor(book), FallbackQueryFor(book), ReleaseNameFor(book))).ToList();
+        }
+
+        /// <summary>Gives the book a completed MP3 download against an MP3 cutoff, so its pre-check skips it.</summary>
+        protected async Task MakeCutoffMetAsync(int audiobookId)
+        {
+            await using var context = _database!.CreateContext();
+            var profile = new QualityProfile
+            {
+                Name = $"MP3 {audiobookId}",
+                CutoffQuality = "MP3",
+                Qualities = new List<QualityDefinition> { new() { Quality = "MP3", Priority = 1 } }
+            };
+            context.QualityProfiles.Add(profile);
+            await context.SaveChangesAsync();
+            var book = await context.Audiobooks.SingleAsync(candidate => candidate.Id == audiobookId);
+            book.QualityProfileId = profile.Id;
+            var download = new DownloadBuilder()
+                .WithId($"completed-{audiobookId}")
+                .WithAudiobookId(audiobookId)
+                .WithStatus(DownloadStatus.Completed)
+                .WithTitle(book.Title!)
+                .Build();
+            download.Metadata["Quality"] = "MP3";
+            context.Downloads.Add(download);
+            await context.SaveChangesAsync();
+        }
+
+        /// <summary>Starts a download for the book, as a manual grab would.</summary>
+        protected async Task AddActiveDownloadAsync(int audiobookId)
+        {
+            await using var context = _database!.CreateContext();
+            context.Downloads.Add(new DownloadBuilder()
+                .WithId($"queued-{audiobookId}")
+                .WithAudiobookId(audiobookId)
+                .WithStatus(DownloadStatus.Queued)
+                .WithTitle("release")
+                .Build());
+            await context.SaveChangesAsync();
         }
 
         protected Task RunCycleAsync(CancellationToken cancellationToken = default) =>

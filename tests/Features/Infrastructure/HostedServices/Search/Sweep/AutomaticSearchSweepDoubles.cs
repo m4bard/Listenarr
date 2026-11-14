@@ -32,7 +32,32 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             }
         }
 
+        /// <summary>
+        /// When set, a timer the processor creates (a <c>Task.Delay</c> through this clock) is
+        /// recorded and completes at once, so a pacing delay costs the test nothing.
+        /// </summary>
+        public bool CompleteTimersAtOnce { get; set; }
+
+        /// <summary>Every delay requested while <see cref="CompleteTimersAtOnce"/> is set.</summary>
+        public ConcurrentQueue<TimeSpan> Delays { get; } = new();
+
+        /// <summary>Runs inside each recorded delay, before it ends.</summary>
+        public Action? OnDelay { get; set; }
+
         public override DateTimeOffset GetUtcNow() => new(UtcNow, TimeSpan.Zero);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            if (!CompleteTimersAtOnce)
+            {
+                return base.CreateTimer(callback, state, dueTime, period);
+            }
+
+            Delays.Enqueue(dueTime);
+            OnDelay?.Invoke();
+            ThreadPool.QueueUserWorkItem(_ => callback(state));
+            return new CompletedTimer();
+        }
 
         public void Advance(TimeSpan by)
         {
@@ -41,6 +66,17 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
                 _nowUtc = _nowUtc.Add(by);
             }
         }
+    }
+
+    internal sealed class CompletedTimer : ITimer
+    {
+        public bool Change(TimeSpan dueTime, TimeSpan period) => false;
+
+        public void Dispose()
+        {
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     /// <summary>
