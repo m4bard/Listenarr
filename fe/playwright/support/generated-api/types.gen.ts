@@ -147,6 +147,11 @@ export type ListenarrDomainAudiobooksAudiobookFile = {
     sampleRate?: number | null;
     channels?: number | null;
     createdAt?: string;
+    metadataRescanDueUtc?: string;
+    metadataRescanFailureCount?: number;
+    metadataRescanUnavailableCount?: number;
+    metadataRescanBlockedCount?: number;
+    metadataRescanLastOutcome?: string | null;
     source?: string | null;
 };
 
@@ -469,6 +474,11 @@ export type ListenarrDomainAudiobooksAudiobookFileWritable = {
     sampleRate?: number | null;
     channels?: number | null;
     createdAt?: string;
+    metadataRescanDueUtc?: string;
+    metadataRescanFailureCount?: number;
+    metadataRescanUnavailableCount?: number;
+    metadataRescanBlockedCount?: number;
+    metadataRescanLastOutcome?: string | null;
     source?: string | null;
 };
 
