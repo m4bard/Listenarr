@@ -216,14 +216,9 @@ namespace Listenarr.Tests.Features.Api.Services
         [Fact]
         public async Task AutomaticSearchProcessor_NoEligibleBooks_DoesNotSearchOrDownload()
         {
-            var audiobookRepository = new Mock<IAudiobookRepository>();
-            audiobookRepository
-                .Setup(r => r.GetMonitoredAudiobooksForSearchAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<Audiobook>());
             var searchService = new Mock<ISearchService>();
             var downloadService = new Mock<IDownloadService>();
 
-            _services.AddSingleton(audiobookRepository.Object);
             _services.AddSingleton(searchService.Object);
             _services.AddSingleton(downloadService.Object);
             Init();
@@ -235,13 +230,13 @@ namespace Listenarr.Tests.Features.Api.Services
             await processor.RunCycleAsync(CancellationToken.None);
 
             searchService.Verify(
-                s => s.SearchAsync(
+                s => s.SearchIndexersDetailedAsync(
                     It.IsAny<string>(),
-                    It.IsAny<string?>(),
-                    It.IsAny<List<string>?>(),
-                    It.IsAny<SearchSortBy>(),
-                    It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>()),
+                    It.IsAny<IndexerSearchContext>(),
+                    It.IsAny<IReadOnlyCollection<int>?>(),
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchRequest?>(),
+                    It.IsAny<CancellationToken>()),
                 Times.Never);
             downloadService.Verify(
                 s => s.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()),

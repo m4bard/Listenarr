@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Application.Search.Scheduling;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
@@ -88,6 +89,37 @@ public sealed class AutomaticSearchScheduleSaveBehaviorTests : BaseTests
         Assert.False(await ReadMonitoredAsync(bookId));
     }
 
+    [Fact]
+    public async Task StaleDetachedUpdate_KeepsTheLastSearchTimeTheStoreWrote()
+    {
+        var bookId = await SeedBookAsync();
+        Audiobook stale;
+        await using (var reader = CreateContext())
+        {
+            stale = await reader.Audiobooks.AsNoTracking().SingleAsync(book => book.Id == bookId);
+        }
+        Assert.Null(stale.LastSearchTime);
+
+        // The store's own set-based write lands.
+        await using (var storeContext = CreateContext())
+        {
+            await new EfAutomaticSearchScheduleStore(storeContext).PersistBookAsync(
+                new BookScheduleUpdate(bookId, BookSearchOutcome.NoAcceptableResults, AnyPairCompleted: true),
+                StoreDueUtc,
+                TimeSpan.FromHours(24));
+        }
+        Assert.Equal(StoreDueUtc, await ReadLastSearchAsync(bookId));
+
+        stale.Monitored = false;
+        await using (var editor = CreateContext())
+        {
+            Assert.True(await new AudiobookRepository(editor).UpdateAsync(stale));
+        }
+
+        Assert.Equal(StoreDueUtc, await ReadLastSearchAsync(bookId));
+        Assert.False(await ReadMonitoredAsync(bookId));
+    }
+
     private ListenArrDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<ListenArrDbContext>().UseSqlite(_connection).Options);
 
@@ -120,6 +152,15 @@ public sealed class AutomaticSearchScheduleSaveBehaviorTests : BaseTests
             .Select(book => new { book.AutomaticSearchDueUtc, book.AutomaticSearchFailureCount })
             .SingleAsync();
         return (schedule.AutomaticSearchDueUtc, schedule.AutomaticSearchFailureCount);
+    }
+
+    private async Task<DateTime?> ReadLastSearchAsync(int bookId)
+    {
+        await using var context = CreateContext();
+        return await context.Audiobooks.AsNoTracking()
+            .Where(book => book.Id == bookId)
+            .Select(book => book.LastSearchTime)
+            .SingleAsync();
     }
 
     private async Task<bool> ReadMonitoredAsync(int bookId)

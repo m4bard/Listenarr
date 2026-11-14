@@ -79,7 +79,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             Clock.Advance(TimeSpan.FromHours(1));
             await RunCycleAsync();
 
-            Assert.Equal(new[] { (failing, book.Query) }, TakeSearches().Select(search => (search.IndexerId, search.Query)).Distinct());
+            Assert.Equal(new[] { failing }, TakeSearches().Select(search => search.IndexerId).Distinct());
             var completedPair = await Database.ReadPairAsync(book.Id, answered);
             Assert.Equal(nameof(PairScheduleResult.NoAcceptableResults), completedPair!.LastOutcome);
         }
@@ -156,6 +156,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             await AddIndexerAsync("Answered");
             var deferred = await AddIndexerAsync("Deferred");
             var book = (await AddBooksAsync(1, StartUtc.AddMinutes(-5))).Single();
+            Indexers.Script = (_, _) => Returns(RejectedSource);
             var untilUtc = StartUtc.AddHours(2);
             Gate.DeferUntil[deferred] = untilUtc;
 

@@ -189,8 +189,9 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
         internal static IndexerScript Returns(string source, int requests = 1, string downloadType = DirectDownloadMetadataKeys.ClientId) =>
             new(requests, new[] { new IndexerSearchResult { Title = "release", Source = source, DownloadType = downloadType } });
 
+        // As the indexer receives it: the workflow sanitizes every query before dispatch.
         private static string QueryFor(Audiobook book) =>
-            new AutomaticSearchResultClassifier(NullLogger.Instance).BuildSearchQuery(book);
+            IndexerQuerySanitizer.Sanitize(new AutomaticSearchResultClassifier(NullLogger.Instance).BuildSearchQuery(book));
 
         private static QualityScore Score(SearchResult result) => new()
         {

@@ -76,6 +76,23 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 .ToList();
         }
 
+        /// <summary>
+        /// <see cref="ConstrainFallbackResultsToTitle(List{SearchResult}, Audiobook)"/> for raw indexer results.
+        /// </summary>
+        public IReadOnlyList<IndexerSearchResult> ConstrainFallbackResultsToTitle(
+            IReadOnlyList<IndexerSearchResult> fallbackResults,
+            Audiobook audiobook)
+        {
+            if (fallbackResults.Count == 0 || string.IsNullOrWhiteSpace(audiobook.Title))
+            {
+                return Array.Empty<IndexerSearchResult>();
+            }
+
+            return fallbackResults
+                .Where(result => CanAutomaticallySelectFallback(SearchResultConverters.ToSearchResult(result), audiobook))
+                .ToList();
+        }
+
         // A conservative gate for author-free fallback results before they reach automatic
         // download selection. Only "Title" and "Author - Title" release layouts (with optional
         // trailing year/format suffixes) are parsed; the complete remaining title must match the
