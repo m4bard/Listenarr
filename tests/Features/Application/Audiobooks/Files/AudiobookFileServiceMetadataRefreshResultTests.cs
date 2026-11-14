@@ -41,8 +41,14 @@ public sealed class AudiobookFileServiceMetadataRefreshResultTests : BaseTests
     public async Task RefreshMetadataWithResultAsync_FileOwnedByAnotherAudiobook_ReportsRowGone()
     {
         await using var fixture = await RefreshFixture.CreateAsync(this);
-        var other = await _audiobookRepository.AddAsync(new AudiobookBuilder().WithTitle("Treasure Island")
-            .WithBasePath(fixture.Audiobook.BasePath!).Build());
+        var other = new AudiobookBuilder().WithTitle("Treasure Island").WithBasePath(fixture.Audiobook.BasePath!).Build();
+        // A fresh context: the shared one tracks the fixture graph, whose file row exists only in SQLite.
+        await using (var context = await _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>()
+            .CreateDbContextAsync())
+        {
+            context.Audiobooks.Add(other);
+            await context.SaveChangesAsync();
+        }
 
         var result = await fixture.Service.RefreshMetadataWithResultAsync(other, fixture.File.Id, fixture.Lease.Object);
 
