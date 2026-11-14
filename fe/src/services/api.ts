@@ -771,15 +771,6 @@ class ApiService {
     })
   }
 
-  async retryBlockedImport(
-    id: string,
-  ): Promise<{ message: string; id: string; status: string; jobId: string }> {
-    return this.request<{ message: string; id: string; status: string; jobId: string }>(
-      `/downloads/${id}/retry-import`,
-      { method: 'POST' },
-    )
-  }
-
   async getCachedAnnounces(
     downloadId: string,
   ): Promise<{ downloadId: string; announces: string[] } | null> {
