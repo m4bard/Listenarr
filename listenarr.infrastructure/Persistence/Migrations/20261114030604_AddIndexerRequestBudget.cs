@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -11,9 +11,6 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // Column defaults match the ApplicationSettings property initializers so the
-            // existing singleton settings row behaves exactly like a fresh install. A null
-            // DailyRequestLimit leaves every existing indexer without a budget.
             migrationBuilder.AddColumn<int>(
                 name: "DailyRequestLimit",
                 table: "Indexers",
@@ -32,7 +29,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 table: "ApplicationSettings",
                 type: "INTEGER",
                 nullable: false,
-                defaultValue: 25);
+                defaultValue: 0);
 
             migrationBuilder.CreateTable(
                 name: "IndexerRequestUsages",

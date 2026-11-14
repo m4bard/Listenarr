@@ -49,7 +49,7 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string ReleaseBlocklistMigrationId =
         "20261029020400_AddReleaseBlocklist";
     private const string IndexerRequestBudgetMigrationId =
-        "20261105075017_AddIndexerRequestBudget";
+        "20261114030604_AddIndexerRequestBudget";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
