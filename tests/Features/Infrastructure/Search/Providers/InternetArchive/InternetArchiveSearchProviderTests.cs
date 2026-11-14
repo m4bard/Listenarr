@@ -385,6 +385,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
 
         return new InternetArchiveSearchProvider(
             new HttpClient(handler),
+            new PassThroughIndexerRequestGate(TimeProvider.System),
             configurationService.Object,
             NullLogger<InternetArchiveSearchProvider>.Instance);
     }
