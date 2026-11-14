@@ -81,7 +81,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             var processedIds = new List<int>();
             var searchedBooks = 0;
             var downloadsQueued = 0;
-            var isFirstBook = true;
+            var hasSearched = false;
             var stopped = false;
 
             for (var page = 0; page < AutomaticSearchBounds.SelectionPageBound && !stopped && !cancellationToken.IsCancellationRequested; page++)
@@ -108,14 +108,20 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                     var progress = new AutomaticSearchBookProgress();
                     try
                     {
-                        // Pause between books so a large wanted list does not hammer the indexers.
-                        if (!isFirstBook && timing.BookDelay > TimeSpan.Zero)
-                        {
-                            await Task.Delay(timing.BookDelay, cancellationToken);
-                        }
-                        isFirstBook = false;
-
                         var dueIndexers = await SelectDueIndexersAsync(audiobook, preChecks, indexers, pairStates[audiobook.Id], clock, cancellationToken);
+
+                        // Pause between books that query the indexers so a large wanted list does not
+                        // hammer them. A book skipped before its search sends no request, so it does
+                        // not wait, and a run of skipped books does not hold up the next real search.
+                        if (dueIndexers.Count > 0 && hasSearched && timing.BookDelay > TimeSpan.Zero)
+                        {
+                            await Task.Delay(timing.BookDelay, clock, cancellationToken);
+
+                            // The checks above can be a whole book delay old once the wait ends. Repeat
+                            // them so a download started or an import finished meanwhile is not grabbed again.
+                            dueIndexers = await SelectDueIndexersAsync(audiobook, preChecks, indexers, pairStates[audiobook.Id], clock, cancellationToken);
+                        }
+
                         if (dueIndexers.Count == 0)
                         {
                             await store.PersistBookAsync(
@@ -126,6 +132,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                             continue;
                         }
 
+                        hasSearched = true;
                         var result = await bookSearch.SearchAsync(audiobook, dueIndexers, progress, cancellationToken);
                         downloadsQueued += result.DownloadsQueued;
                         _logger.LogInformation("Processed audiobook '{Title}': {Outcome}, queued {QueuedCount} downloads",
