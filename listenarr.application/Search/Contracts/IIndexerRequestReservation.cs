@@ -20,7 +20,8 @@ namespace Listenarr.Application.Search.Contracts
 {
     /// <summary>
     /// A budget the gate consults before dispatch. The gate takes every registered reservation
-    /// and ships with none.
+    /// and ships with none. Neither method is ever called for an unattributed request (indexer
+    /// id 0 or less).
     /// </summary>
     public interface IIndexerRequestReservation
     {

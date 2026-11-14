@@ -61,7 +61,8 @@ namespace Listenarr.Application.Search.Contracts
     /// Identifies one indexer request to the gate.
     /// </summary>
     /// <param name="IndexerId">The indexer the request goes to; the key for per-indexer state.
-    /// Values of 0 or less mean the request is unattributed and only the global cap applies.</param>
+    /// Values of 0 or less mean the request is unattributed: only the global cap and the cycle
+    /// allowance apply.</param>
     /// <param name="Origin">Who caused the request.</param>
     /// <param name="Kind">What the request is for.</param>
     /// <param name="CycleAllowance">The worker cycle's request allowance, or null when the caller
