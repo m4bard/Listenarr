@@ -22,10 +22,12 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
     public class EfIndexerRepository : IIndexerRepository
     {
         private readonly ListenArrDbContext _db;
+        private readonly TimeProvider _timeProvider;
 
-        public EfIndexerRepository(ListenArrDbContext db)
+        public EfIndexerRepository(ListenArrDbContext db, TimeProvider? timeProvider = null)
         {
             _db = db ?? throw new ArgumentNullException(nameof(db));
+            _timeProvider = timeProvider ?? TimeProvider.System;
         }
 
         public async Task<Indexer?> GetByIdAsync(int id, CancellationToken ct = default)
