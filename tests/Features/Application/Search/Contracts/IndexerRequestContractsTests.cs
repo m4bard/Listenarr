@@ -72,4 +72,21 @@ public sealed class IndexerRequestContractsTests : BaseTests
         // Then
         Assert.Null(deferral);
     }
+
+    [Theory]
+    [InlineData(RequestDeferralReason.RateLimited, "indexer in cooldown until")]
+    [InlineData(RequestDeferralReason.FailureLadder, "indexer in cooldown until")]
+    [InlineData(RequestDeferralReason.CycleRequestBound, "request limit for this cycle reached")]
+    [InlineData(RequestDeferralReason.ReservationUnavailable, "request could not be checked")]
+    [InlineData(RequestDeferralReason.RequestStateUnavailable, "indexer request state could not be loaded")]
+    public void Describe_UsesWordingThatFitsTheReason(RequestDeferralReason reason, string expectedStart)
+    {
+        var untilUtc = new DateTime(2026, 3, 2, 15, 0, 0, DateTimeKind.Utc);
+
+        var text = new RequestDeferral(untilUtc, reason).Describe();
+
+        Assert.StartsWith(expectedStart, text, StringComparison.Ordinal);
+        Assert.Contains(untilUtc.ToString("O"), text, StringComparison.Ordinal);
+        Assert.Contains($"({reason})", text, StringComparison.Ordinal);
+    }
 }

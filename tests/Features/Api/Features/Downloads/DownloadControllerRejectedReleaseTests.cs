@@ -184,6 +184,8 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             var body = status.Value?.ToString() ?? string.Empty;
             Assert.Contains(untilUtc.ToString("O"), body, StringComparison.Ordinal);
             Assert.Contains(nameof(RequestDeferralReason.CycleRequestBound), body, StringComparison.Ordinal);
+            Assert.Equal(untilUtc, Assert.IsType<DateTime>(status.Value!.GetType().GetProperty("untilUtc")!.GetValue(status.Value)));
+            Assert.Equal(nameof(RequestDeferralReason.CycleRequestBound), status.Value.GetType().GetProperty("reason")!.GetValue(status.Value));
         }
     }
 }

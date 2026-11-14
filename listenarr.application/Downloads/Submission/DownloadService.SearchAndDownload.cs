@@ -129,7 +129,25 @@ namespace Listenarr.Application.Downloads.Submission
             }
 
             // Send to download client with audiobookId for proper metadata linking
-            var downloadId2 = await SendToDownloadClientAsync(candidate, downloadClientId, audiobookId);
+            string downloadId2;
+            try
+            {
+                downloadId2 = await SendToDownloadClientAsync(candidate, downloadClientId, audiobookId);
+            }
+            catch (IndexerRequestDeferredException ex)
+            {
+                // The gate held back the .torrent or NZB fetch of the chosen release. Nothing is
+                // broken, so the caller is told when to try again rather than given an error.
+                logger.LogInformation("Download deferred for audiobook {AudiobookId}: {Reason}", audiobookId, ex.Deferral.Describe());
+                return new SearchAndDownloadResult
+                {
+                    Success = false,
+                    Message = $"Download deferred: {ex.Deferral.Describe()}",
+                    DownloadClientUsed = downloadClientId,
+                    SearchResult = topResult.SearchResult,
+                    Deferral = ex.Deferral
+                };
+            }
 
             if (string.IsNullOrEmpty(downloadId2))
             {
