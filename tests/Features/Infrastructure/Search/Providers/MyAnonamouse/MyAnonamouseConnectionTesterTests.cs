@@ -12,12 +12,12 @@ public sealed class MyAnonamouseConnectionTesterTests : BaseTests
     public async Task TestAsync_UsesProductionGetRequestAndAcceptsEmptyResults()
     {
         HttpRequestMessage? captured = null;
-        using var client = CreateClient((request, _) =>
+        var factory = CreateFactory((request, _) =>
         {
             captured = request;
             return Task.FromResult(JsonResponse("""{"data":[]}"""));
         });
-        var tester = CreateTester(client);
+        var tester = CreateTester(factory);
 
         var result = await tester.TestAsync(CreateIndexer("https://mam.example"), "secret-cookie");
 
@@ -36,14 +36,14 @@ public sealed class MyAnonamouseConnectionTesterTests : BaseTests
     [Fact]
     public async Task TestAsync_ReturnsRefreshedMamId()
     {
-        using var client = CreateClient((_, _) =>
+        var factory = CreateFactory((_, _) =>
         {
             var response = JsonResponse("""{"data":[]}""");
             response.Headers.Add("Set-Cookie", "mam_id=refreshed; Path=/; HttpOnly");
             return Task.FromResult(response);
         });
 
-        var result = await CreateTester(client).TestAsync(CreateIndexer(), "original");
+        var result = await CreateTester(factory).TestAsync(CreateIndexer(), "original");
 
         Assert.True(result.Succeeded);
         Assert.Equal("refreshed", result.RefreshedMamId);
@@ -54,10 +54,10 @@ public sealed class MyAnonamouseConnectionTesterTests : BaseTests
     [InlineData(HttpStatusCode.Forbidden)]
     public async Task TestAsync_MapsAuthenticationFailures(HttpStatusCode statusCode)
     {
-        using var client = CreateClient((_, _) =>
+        var factory = CreateFactory((_, _) =>
             Task.FromResult(new HttpResponseMessage(statusCode)));
 
-        var result = await CreateTester(client).TestAsync(CreateIndexer(), "secret");
+        var result = await CreateTester(factory).TestAsync(CreateIndexer(), "secret");
 
         Assert.False(result.Succeeded);
         Assert.Equal((int)statusCode, result.StatusCode);
@@ -68,9 +68,9 @@ public sealed class MyAnonamouseConnectionTesterTests : BaseTests
     [Fact]
     public async Task TestAsync_RejectsMalformedJson()
     {
-        using var client = CreateClient((_, _) => Task.FromResult(JsonResponse("<html>blocked</html>")));
+        var factory = CreateFactory((_, _) => Task.FromResult(JsonResponse("<html>blocked</html>")));
 
-        var result = await CreateTester(client).TestAsync(CreateIndexer(), "secret");
+        var result = await CreateTester(factory).TestAsync(CreateIndexer(), "secret");
 
         Assert.False(result.Succeeded);
         Assert.Contains("invalid JSON", result.Message);
@@ -80,10 +80,10 @@ public sealed class MyAnonamouseConnectionTesterTests : BaseTests
     [Fact]
     public async Task TestAsync_MapsOtherHttpFailuresSafely()
     {
-        using var client = CreateClient((_, _) =>
+        var factory = CreateFactory((_, _) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)));
 
-        var result = await CreateTester(client).TestAsync(CreateIndexer(), "secret");
+        var result = await CreateTester(factory).TestAsync(CreateIndexer(), "secret");
 
         Assert.False(result.Succeeded);
         Assert.Equal(503, result.StatusCode);
@@ -95,7 +95,7 @@ public sealed class MyAnonamouseConnectionTesterTests : BaseTests
     public async Task TestAsync_FollowsRedirectAndReappliesAuthentication()
     {
         var requests = new List<HttpRequestMessage>();
-        using var client = CreateClient((request, _) =>
+        var factory = CreateFactory((request, _) =>
         {
             requests.Add(request);
             if (requests.Count == 1)
@@ -108,7 +108,7 @@ public sealed class MyAnonamouseConnectionTesterTests : BaseTests
             return Task.FromResult(JsonResponse("""{"data":[]}"""));
         });
 
-        var result = await CreateTester(client).TestAsync(CreateIndexer(), "secret");
+        var result = await CreateTester(factory).TestAsync(CreateIndexer(), "secret");
 
         Assert.True(result.Succeeded);
         Assert.Equal(2, requests.Count);
@@ -119,7 +119,7 @@ public sealed class MyAnonamouseConnectionTesterTests : BaseTests
     [Fact]
     public async Task TestAsync_ReturnsSafeCancellationFailure()
     {
-        using var client = CreateClient(async (_, cancellationToken) =>
+        var factory = CreateFactory(async (_, cancellationToken) =>
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             return JsonResponse("""{"data":[]}""");
@@ -127,22 +127,22 @@ public sealed class MyAnonamouseConnectionTesterTests : BaseTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
-        var result = await CreateTester(client).TestAsync(CreateIndexer(), "secret", cancellation.Token);
+        var result = await CreateTester(factory).TestAsync(CreateIndexer(), "secret", cancellation.Token);
 
         Assert.False(result.Succeeded);
         Assert.Contains("cancelled", result.Message);
         Assert.DoesNotContain("secret", result.Message);
     }
 
-    private static MyAnonamouseConnectionTester CreateTester(HttpClient client)
-        => new(client, NullLogger<MyAnonamouseConnectionTester>.Instance);
+    private static MyAnonamouseConnectionTester CreateTester(IHttpClientFactory factory)
+        => new(factory, new PassThroughIndexerRequestGate(TimeProvider.System), NullLogger<MyAnonamouseConnectionTester>.Instance);
 
     private static Indexer CreateIndexer(string url = "https://www.myanonamouse.net")
         => new() { Name = "MAM", Url = url, Implementation = "MyAnonamouse", Type = "Torrent" };
 
-    private static HttpClient CreateClient(
+    private static IHttpClientFactory CreateFactory(
         Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler)
-        => new(new DelegateHandler(handler)) { BaseAddress = new Uri("https://test.invalid") };
+        => new StubHttpClientFactory(new DelegateHandler(handler), new Uri("https://test.invalid"));
 
     private static HttpResponseMessage JsonResponse(string json)
         => new(HttpStatusCode.OK) { Content = new StringContent(json) };

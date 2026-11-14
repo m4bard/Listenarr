@@ -155,6 +155,8 @@ namespace Listenarr.Tests.Common
                 provider.GetRequiredService<IIndexerRepository>(),
                 provider.GetRequiredService<ILogger<IndexersController>>(),
                 new HttpClient(handler),
+                new StubHttpClientFactory(handler),
+                new PassThroughIndexerRequestGate(TimeProvider.System),
                 provider.GetRequiredService<IConfigurationService>());
         }
     }
