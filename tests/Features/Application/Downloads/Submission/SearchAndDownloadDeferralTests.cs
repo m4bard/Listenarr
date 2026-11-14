@@ -50,7 +50,7 @@ public sealed class SearchAndDownloadDeferralTests : BaseTests
                     [
                         new IndexerSearchResult
                         {
-                            Title = "The Only Listing",
+                            Title = "A Princess of Mars",
                             MagnetLink = $"magnet:?xt=urn:btih:{InfoHash}&dn=book",
                             Size = 800_000_000,
                             Seeders = 20
@@ -74,7 +74,7 @@ public sealed class SearchAndDownloadDeferralTests : BaseTests
             .Build());
         var qualityProfile = await _qualityProfileRepository.AddAsync(new QualityProfileBuilder().Build());
         var audiobook = await _audiobookRepository.AddAsync(
-            new AudiobookBuilder().WithTitle("Deferred Book").WithQualityProfile(qualityProfile).Build());
+            new AudiobookBuilder().WithTitle("A Princess of Mars").WithQualityProfile(qualityProfile).Build());
 
         var result = await _provider.GetRequiredService<IDownloadService>().SearchAndDownloadAsync(audiobook.Id);
 
