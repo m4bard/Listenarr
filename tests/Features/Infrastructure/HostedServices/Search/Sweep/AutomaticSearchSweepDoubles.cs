@@ -219,6 +219,9 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
         /// <summary>Indexers whose requests are deferred, and until when.</summary>
         public ConcurrentDictionary<int, DateTime> DeferUntil { get; } = new();
 
+        /// <summary>The reason a deferral carries; the request bound unless a test sets another.</summary>
+        public RequestDeferralReason DeferReason { get; set; } = RequestDeferralReason.CycleRequestBound;
+
         /// <summary>Every request that reached the gate, in order: indexer id and kind.</summary>
         public ConcurrentQueue<(int IndexerId, IndexerRequestKind Kind)> Sends { get; } = new();
 
@@ -231,7 +234,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             if (DeferUntil.TryGetValue(context.IndexerId, out var untilUtc) && clock.GetUtcNow().UtcDateTime < untilUtc)
             {
                 return Task.FromResult<IndexerRequestResult>(new IndexerRequestResult.Deferred(
-                    new RequestDeferral(untilUtc, RequestDeferralReason.CycleRequestBound)));
+                    new RequestDeferral(untilUtc, DeferReason)));
             }
 
             return _inner.SendAsync(context, dispatch, cancellationToken);

@@ -165,5 +165,25 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             var status = Assert.IsType<ObjectResult>(response.Result);
             Assert.Equal(StatusCodes.Status502BadGateway, status.StatusCode);
         }
+
+        [Fact]
+        [Trait("Scenario", "A manual send the indexer's gate deferred answers with the until-time and reason")]
+        public async Task SendToDownloadClient_WhenTheFetchIsDeferred_Answers503WithUntilTimeAndReason()
+        {
+            var untilUtc = new DateTime(2026, 3, 2, 15, 0, 0, DateTimeKind.Utc);
+            var controller = SendController(new IndexerRequestDeferredException(
+                new RequestDeferral(untilUtc, RequestDeferralReason.CycleRequestBound)));
+
+            var response = await controller.SendToDownloadClient(new SendDownloadRequest
+            {
+                DownloadReference = "reference"
+            });
+
+            var status = Assert.IsType<ObjectResult>(response.Result);
+            Assert.Equal(StatusCodes.Status503ServiceUnavailable, status.StatusCode);
+            var body = status.Value?.ToString() ?? string.Empty;
+            Assert.Contains(untilUtc.ToString("O"), body, StringComparison.Ordinal);
+            Assert.Contains(nameof(RequestDeferralReason.CycleRequestBound), body, StringComparison.Ordinal);
+        }
     }
 }

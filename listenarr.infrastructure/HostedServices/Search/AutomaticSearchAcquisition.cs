@@ -199,6 +199,15 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                     audiobook.Title, topResult.SearchResult.Title, topResult.TotalScore);
                 return new AcquisitionResult(BookSearchOutcome.Satisfied, 1);
             }
+            catch (IndexerRequestDeferredException ex)
+            {
+                // The gate held back the .torrent or NZB fetch, which says nothing about the book:
+                // retry once the deferral ends, without counting a failure.
+                _logger.LogInformation(
+                    "Download of '{ResultTitle}' for audiobook '{Title}' deferred until {Until:O} ({Reason})",
+                    topResult.SearchResult.Title, audiobook.Title, ex.Deferral.UntilUtc, ex.Deferral.Reason);
+                return new AcquisitionResult(BookSearchOutcome.GrabNotCompleted, 0, ex.Deferral);
+            }
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Failed to queue download for audiobook '{Title}': {ResultTitle}",
