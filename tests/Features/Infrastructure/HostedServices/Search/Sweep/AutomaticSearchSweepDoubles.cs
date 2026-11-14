@@ -183,11 +183,15 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
         /// <summary>Indexers whose requests are deferred, and until when.</summary>
         public ConcurrentDictionary<int, DateTime> DeferUntil { get; } = new();
 
+        /// <summary>Every request that reached the gate, in order: indexer id and kind.</summary>
+        public ConcurrentQueue<(int IndexerId, IndexerRequestKind Kind)> Sends { get; } = new();
+
         public Task<IndexerRequestResult> SendAsync(
             IndexerRequestContext context,
             Func<CancellationToken, Task<HttpResponseMessage>> dispatch,
             CancellationToken cancellationToken)
         {
+            Sends.Enqueue((context.IndexerId, context.Kind));
             if (DeferUntil.TryGetValue(context.IndexerId, out var untilUtc) && clock.GetUtcNow().UtcDateTime < untilUtc)
             {
                 return Task.FromResult<IndexerRequestResult>(new IndexerRequestResult.Deferred(
