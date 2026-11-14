@@ -44,8 +44,15 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
             _indexerRepository = indexerRepository ?? throw new ArgumentNullException(nameof(indexerRepository));
         }
 
-        public async Task<List<IndexerSearchResult>> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null)
+        public async Task<IndexerSearchOutcome> SearchAsync(
+            Indexer indexer,
+            string query,
+            string? category,
+            SearchRequest? request,
+            IndexerSearchContext context,
+            CancellationToken cancellationToken)
         {
+            var requestsSent = 0;
             try
             {
                 _logger.LogInformation("Searching MyAnonamouse for: {Query}", query);
@@ -56,7 +63,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                 if (string.IsNullOrEmpty(mamId))
                 {
                     _logger.LogWarning("MyAnonamouse indexer {Name} missing mam_id", indexer.Name);
-                    return new List<IndexerSearchResult>();
+                    return Failed(indexer, requestsSent, "missing mam_id");
                 }
 
                 var searchUri = MyAnonamouseRequestFactory.BuildSearchUri(indexer, query, request);
@@ -72,19 +79,21 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                         searchUri.GetLeftPart(UriPartial.Path),
                         LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
 
+                requestsSent++;
                 var (searchResponse, _) = await OutboundRequestSecurity.SendWithValidatedRedirectsAsync(
                     uri => MyAnonamouseRequestFactory.CreateSearchRequest(uri, mamId, addCookieHeader),
                     searchUri,
                     httpClientToUse,
                     _logger,
-                    allowPrivateTargets: true);
+                    allowPrivateTargets: true,
+                    cancellationToken: cancellationToken);
                 using var response = searchResponse;
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("MyAnonamouse returned status {Status}", response.StatusCode);
                     var errorContent = await response.Content.ReadAsStringAsync();
                     _logger.LogWarning("MyAnonamouse error response: {Content}", LogRedaction.RedactText(errorContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
-                    return new List<IndexerSearchResult>();
+                    return Failed(indexer, requestsSent, $"status {(int)response.StatusCode}");
                 }
 
                 // Capture and persist an updated mam_id cookie if the tracker provided one in Set-Cookie
@@ -130,13 +139,29 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                 }
 
                 _logger.LogInformation("MyAnonamouse returned {Count} results", results.Count);
-                return results;
+                return new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Completed, results, requestsSent);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Cancelled, Array.Empty<IndexerSearchResult>(), requestsSent);
+            }
+            catch (OperationCanceledException ex)
+            {
+                // The caller's token is not cancelled, so this is the HttpClient's per-request timeout.
+                _logger.LogWarning(ex, "Timed out searching MyAnonamouse indexer {Name}", indexer.Name);
+                return Failed(indexer, requestsSent, "timeout");
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Error searching MyAnonamouse indexer {Name}", indexer.Name);
-                return new List<IndexerSearchResult>();
+                return Failed(indexer, requestsSent, "error");
             }
+        }
+
+        private static IndexerSearchOutcome Failed(Indexer indexer, int requestsSent, string reason)
+        {
+            return new IndexerSearchOutcome(
+                indexer.Id, IndexerSearchStatus.Failed, Array.Empty<IndexerSearchResult>(), requestsSent, FailureReason: reason);
         }
 
         private async Task EnrichMyAnonamouseResultsAsync(Indexer indexer, List<IndexerSearchResult> results, int topN, string? mamId, HttpClient httpClient)
