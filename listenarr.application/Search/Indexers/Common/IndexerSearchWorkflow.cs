@@ -54,7 +54,8 @@ public class IndexerSearchWorkflow
         SearchSortBy sortBy = SearchSortBy.Seeders,
         SearchSortDirection sortDirection = SearchSortDirection.Descending,
         bool isAutomaticSearch = false,
-        SearchRequest? request = null)
+        SearchRequest? request = null,
+        SearchOrigin origin = SearchOrigin.Interactive)
     {
         var results = new List<IndexerSearchResult>();
         var indexers = await _indexerRepository.GetEnabledAsync(isAutomaticSearch);
@@ -74,7 +75,7 @@ public class IndexerSearchWorkflow
                 _logger.LogInformation("Searching indexer {Name} ({Type}) for query: {Query}", indexer.Name, indexer.Type, query);
                 var perIndexerRequest = ApplyIndexerMamOptions(indexer, request);
 
-                var indexerResults = await SearchIndexerAsync(indexer, query, category, perIndexerRequest);
+                var indexerResults = await SearchIndexerAsync(indexer, query, origin, category, perIndexerRequest);
                 _logger.LogInformation("Found {Count} results from indexer {Name}", indexerResults.Count, indexer.Name);
                 return indexerResults;
             }
@@ -127,7 +128,7 @@ public class IndexerSearchWorkflow
             var mamOpts = _additionalSettingsParser.ParseMamOptions(indexer.AdditionalSettings);
             if (mamOpts != null) req.MyAnonamouse = mamOpts;
 
-            var idxResults = await SearchIndexerAsync(indexer, query, category, req);
+            var idxResults = await SearchIndexerAsync(indexer, query, SearchOrigin.Interactive, category, req);
             return idxResults.Select(SearchResultConverters.ToSearchResult).ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -154,7 +155,7 @@ public class IndexerSearchWorkflow
             }
 
             request = ApplyIndexerMamOptions(indexer, request);
-            return await SearchIndexerAsync(indexer, query, category, request);
+            return await SearchIndexerAsync(indexer, query, SearchOrigin.Interactive, category, request);
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
@@ -209,6 +210,7 @@ public class IndexerSearchWorkflow
     private async Task<List<IndexerSearchResult>> SearchIndexerAsync(
         Indexer indexer,
         string query,
+        SearchOrigin origin,
         string? category = null,
         SearchRequest? request = null)
     {
