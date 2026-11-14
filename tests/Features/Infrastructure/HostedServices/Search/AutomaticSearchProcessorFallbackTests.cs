@@ -26,30 +26,30 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
         [Fact]
         public Task RunCycleAsync_AuthorFreeFallback_SameWordDifferentBook_IsNotDownloaded() =>
             AssertFallbackNotDownloadedAsync(
-                title: "Artemis",
-                author: "Andy Weir",
-                fallbackResultTitle: "Eoin Colfer - Artemis Fowl - 2009");
+                title: "Peter Pan",
+                author: "J M Barrie",
+                fallbackResultTitle: "James M. Barrie - Peter Pan in Kensington Gardens");
 
         [Fact]
         public Task RunCycleAsync_AuthorFreeFallback_SameTitleDifferentAuthor_IsNotDownloaded() =>
             AssertFallbackNotDownloadedAsync(
-                title: "Revival",
-                author: "Stephen King",
-                fallbackResultTitle: "Chris Weitz - Revival");
+                title: "Faust",
+                author: "Johann Wolfgang von Goethe",
+                fallbackResultTitle: "Leo Tolstoy - Faust");
 
         [Fact]
         public async Task RunCycleAsync_AuthorFreeFallback_CorrectlyAttributed_ReachesDownloadSelection()
         {
-            var fullQuery = "Artemis Andy Weir";
-            var fallbackQuery = "Artemis";
-            var correct = new SearchResult
+            var fullQuery = "Peter Pan J M Barrie";
+            var fallbackQuery = "Peter Pan";
+            var correct = new IndexerSearchResult
             {
-                Title = "Andy Weir - Artemis - 2017 - M4B",
+                Title = "J M Barrie - Peter Pan - M4B",
                 DownloadType = DirectDownloadMetadataKeys.ClientId
             };
 
             var search = new Mock<ISearchService>();
-            SetupSearch(search, fullQuery, fallbackQuery, new List<SearchResult> { correct });
+            SetupSearch(search, fullQuery, fallbackQuery, new List<IndexerSearchResult> { correct });
             var download = new Mock<IDownloadService>();
             download.Setup(d => d.StartDownloadAsync(
                     It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()))
@@ -67,7 +67,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                 builder.WithSingleton(download.Object);
                 builder.WithSingleton(quality.Object);
             });
-            var audiobook = await SeedMonitoredAudiobookAsync("Artemis", "Andy Weir");
+            var audiobook = await SeedMonitoredAudiobookAsync("Peter Pan", "J M Barrie");
 
             await RunCycleAsync();
 
@@ -90,7 +90,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                 search,
                 fullQuery,
                 fallbackQuery,
-                new List<SearchResult> { new() { Title = fallbackResultTitle } });
+                new List<IndexerSearchResult> { new() { Title = fallbackResultTitle } });
             var download = new Mock<IDownloadService>(MockBehavior.Strict);
             Init(builder =>
             {
@@ -111,35 +111,38 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             Mock<ISearchService> search,
             string fullQuery,
             string fallbackQuery,
-            List<SearchResult> fallbackResults)
+            List<IndexerSearchResult> fallbackResults)
         {
-            search.Setup(s => s.SearchAsync(
-                    fullQuery,
-                    It.IsAny<string?>(),
-                    It.IsAny<List<string>?>(),
-                    It.IsAny<SearchSortBy>(),
-                    It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>(),
-                    It.IsAny<SearchOrigin>()))
-                .ReturnsAsync(new List<SearchResult>());
-            search.Setup(s => s.SearchAsync(
-                    fallbackQuery,
-                    It.IsAny<string?>(),
-                    It.IsAny<List<string>?>(),
-                    It.IsAny<SearchSortBy>(),
-                    It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>(),
-                    It.IsAny<SearchOrigin>()))
-                .ReturnsAsync(fallbackResults);
+            SetupQuery(search, fullQuery, new List<IndexerSearchResult>());
+            SetupQuery(search, fallbackQuery, fallbackResults);
         }
 
-        private async Task<Audiobook> SeedMonitoredAudiobookAsync(string title, string author) =>
-            await _audiobookRepository.AddAsync(new AudiobookBuilder()
+        // The sweep searches one indexer per call; each call answers for the indexer it names.
+        private static void SetupQuery(Mock<ISearchService> search, string query, List<IndexerSearchResult> results) =>
+            search.Setup(s => s.SearchIndexersDetailedAsync(
+                    query,
+                    It.IsAny<IndexerSearchContext>(),
+                    It.IsAny<IReadOnlyCollection<int>?>(),
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchRequest?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string _, IndexerSearchContext _, IReadOnlyCollection<int>? indexerIds, bool _, SearchRequest? _, CancellationToken _) =>
+                    new IndexerSearchReport(indexerIds!
+                        .Select(id => new IndexerSearchOutcome(id, IndexerSearchStatus.Completed, results, RequestsSent: 1))
+                        .ToList()));
+
+        private async Task<Audiobook> SeedMonitoredAudiobookAsync(string title, string author)
+        {
+            var indexer = new IndexerBuilder().WithName("Only").WithUrl("https://indexer.invalid").WithEnabled().Build();
+            indexer.EnableAutomaticSearch = true;
+            await _indexerRepository.AddAsync(indexer);
+            return await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle(title)
                 .WithAuthor(author)
                 .WithMonitored()
                 .WithQualityProfile(new QualityProfile { Name = "Any" })
                 .Build());
+        }
 
         private async Task RunCycleAsync()
         {
