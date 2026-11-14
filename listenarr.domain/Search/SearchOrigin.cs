@@ -27,7 +27,7 @@ namespace Listenarr.Domain.Search
     {
         /// <summary>
         /// A person asked for this search and is waiting for the answer. This is the attended
-        /// class: it is served first when requests to an indexer have to wait.
+        /// class.
         /// </summary>
         Interactive = 0,
 

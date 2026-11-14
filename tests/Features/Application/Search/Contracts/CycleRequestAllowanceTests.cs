@@ -34,7 +34,7 @@ public sealed class CycleRequestAllowanceTests : BaseTests
         var allowance = new CycleRequestAllowance(MaxRequests);
 
         // When
-        var successes = RunContendedTakes([allowance]);
+        var successes = RunContendedTakes([allowance], MaxRequests);
 
         // Then
         Assert.Equal(MaxRequests, successes[0]);
@@ -42,25 +42,28 @@ public sealed class CycleRequestAllowanceTests : BaseTests
     }
 
     [Fact]
-    public void TryTake_RepeatedContention_NeverTakesMoreThanTheMaximum()
+    public void TryTake_RepeatedContention_TakesExactlyTheMaximumEveryTime()
     {
         // Given
+        // Enough units that many threads are still taking when the last one goes, so the
+        // check and the take of a non-atomic allowance interleave at the boundary.
         const int iterations = 1000;
+        const int contendedMaximum = ThreadCount * 10;
         var allowances = Enumerable.Range(0, iterations)
-            .Select(_ => new CycleRequestAllowance(MaxRequests))
+            .Select(_ => new CycleRequestAllowance(contendedMaximum))
             .ToArray();
 
         // When
-        var successes = RunContendedTakes(allowances);
+        var successes = RunContendedTakes(allowances, contendedMaximum);
 
         // Then
         var violations = Enumerable.Range(0, iterations)
-            .Where(i => successes[i] != MaxRequests || allowances[i].Taken != MaxRequests)
+            .Where(i => successes[i] != contendedMaximum || allowances[i].Taken != contendedMaximum)
             .Select(i => $"iteration {i}: {successes[i]} taken, Taken reports {allowances[i].Taken}")
             .ToArray();
         Assert.True(
             violations.Length == 0,
-            $"Allowance of {MaxRequests} overshot or undershot:{Environment.NewLine}{string.Join(Environment.NewLine, violations)}");
+            $"Allowance of {contendedMaximum} overshot or undershot:{Environment.NewLine}{string.Join(Environment.NewLine, violations)}");
     }
 
     [Fact]
@@ -84,10 +87,12 @@ public sealed class CycleRequestAllowanceTests : BaseTests
     }
 
     /// <summary>
-    /// Runs <see cref="ThreadCount"/> threads that each call TryTake once on every allowance in
-    /// turn, released together by a barrier so the calls on one allowance contend.
+    /// Runs <see cref="ThreadCount"/> threads over every allowance in turn. A barrier releases
+    /// them together onto each allowance, and each thread takes until it is refused. A thread
+    /// stops after one take more than <paramref name="maximum"/>, so an allowance that never
+    /// refuses fails the assertions instead of spinning.
     /// </summary>
-    private static int[] RunContendedTakes(IReadOnlyList<CycleRequestAllowance> allowances)
+    private static int[] RunContendedTakes(IReadOnlyList<CycleRequestAllowance> allowances, int maximum)
     {
         var successes = new int[allowances.Count];
         using var barrier = new Barrier(ThreadCount);
@@ -97,8 +102,10 @@ public sealed class CycleRequestAllowanceTests : BaseTests
                 for (var i = 0; i < allowances.Count; i++)
                 {
                     barrier.SignalAndWait();
-                    if (allowances[i].TryTake())
+                    var takenByThread = 0;
+                    while (takenByThread <= maximum && allowances[i].TryTake())
                     {
+                        takenByThread++;
                         Interlocked.Increment(ref successes[i]);
                     }
                 }
