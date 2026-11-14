@@ -36,28 +36,26 @@ namespace Listenarr.Tests.Features.Application.Search
         public async Task SearchAndDownloadAsync_PassesItsOriginToTheSearch(SearchOrigin origin)
         {
             var search = new Mock<ISearchService>();
-            search.Setup(s => s.SearchAsync(
+            search.Setup(s => s.SearchIndexersDetailedAsync(
                     It.IsAny<string>(),
-                    It.IsAny<string?>(),
-                    It.IsAny<List<string>?>(),
-                    It.IsAny<SearchSortBy>(),
-                    It.IsAny<SearchSortDirection>(),
+                    It.IsAny<IndexerSearchContext>(),
+                    It.IsAny<IReadOnlyCollection<int>?>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchOrigin>()))
-                .ReturnsAsync(new List<SearchResult>());
+                    It.IsAny<SearchRequest?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new IndexerSearchReport(Array.Empty<IndexerSearchOutcome>()));
             Init(builder => builder.WithSingleton(search.Object));
             var book = await SeedMonitoredBookAsync();
 
             await _provider.GetRequiredService<DownloadService>().SearchAndDownloadAsync(book.Id, origin);
 
-            search.Verify(s => s.SearchAsync(
+            search.Verify(s => s.SearchIndexersDetailedAsync(
                     It.IsAny<string>(),
-                    It.IsAny<string?>(),
-                    It.IsAny<List<string>?>(),
-                    It.IsAny<SearchSortBy>(),
-                    It.IsAny<SearchSortDirection>(),
+                    It.Is<IndexerSearchContext>(context => context.Origin == origin && context.CycleAllowance == null),
+                    It.IsAny<IReadOnlyCollection<int>?>(),
                     true,
-                    origin),
+                    It.IsAny<SearchRequest?>(),
+                    It.IsAny<CancellationToken>()),
                 Times.Once);
         }
 

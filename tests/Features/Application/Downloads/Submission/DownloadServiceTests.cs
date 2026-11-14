@@ -467,13 +467,13 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
 
             Assert.False(result.Success);
             searchServiceMock.Verify(
-                s => s.SearchAsync(
+                s => s.SearchIndexersDetailedAsync(
                     It.IsAny<string>(),
-                    It.IsAny<string?>(),
-                    It.IsAny<List<string>?>(),
-                    It.IsAny<SearchSortBy>(),
-                    It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>()),
+                    It.IsAny<IndexerSearchContext>(),
+                    It.IsAny<IReadOnlyCollection<int>?>(),
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchRequest?>(),
+                    It.IsAny<CancellationToken>()),
                 Times.Never);
         }
 
@@ -482,29 +482,36 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
         {
             var searchServiceMock = new Mock<ISearchService>();
             searchServiceMock
-                .Setup(s => s.SearchAsync(
+                .Setup(s => s.SearchIndexersDetailedAsync(
                     It.IsAny<string>(),
-                    It.IsAny<string?>(),
-                    It.IsAny<List<string>?>(),
-                    It.IsAny<SearchSortBy>(),
-                    It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>()))
+                    It.IsAny<IndexerSearchContext>(),
+                    It.IsAny<IReadOnlyCollection<int>?>(),
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchRequest?>(),
+                    It.IsAny<CancellationToken>()))
                 .ReturnsAsync(() =>
                 {
                     // Simulate duplicate download initiated concurrently during indexer search
                     _download.Status = DownloadStatus.Downloading;
                     _downloadRepository.UpdateAsync(_download).GetAwaiter().GetResult();
-                    return new List<SearchResult>
+                    return new IndexerSearchReport(new[]
                     {
-                        new SearchResult
-                        {
-                            Title = "Artemis",
-                            Artist = "Andy Weir",
-                            DownloadType = "Torrent",
-                            MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
-                            Size = 123456789
-                        }
-                    };
+                        new IndexerSearchOutcome(
+                            1,
+                            IndexerSearchStatus.Completed,
+                            new[]
+                            {
+                                new IndexerSearchResult
+                                {
+                                    Title = "Artemis",
+                                    Artist = "Andy Weir",
+                                    DownloadType = "Torrent",
+                                    MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                                    Size = 123456789
+                                }
+                            },
+                            RequestsSent: 1)
+                    });
                 });
 
             var historyMock = new Mock<IDownloadHistoryService>(MockBehavior.Strict);
@@ -529,13 +536,13 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             var result = await downloadService.SearchAndDownloadAsync(_audiobook.Id);
 
             searchServiceMock.Verify(
-                s => s.SearchAsync(
+                s => s.SearchIndexersDetailedAsync(
                     It.IsAny<string>(),
-                    It.IsAny<string?>(),
-                    It.IsAny<List<string>?>(),
-                    It.IsAny<SearchSortBy>(),
-                    It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>()),
+                    It.IsAny<IndexerSearchContext>(),
+                    It.IsAny<IReadOnlyCollection<int>?>(),
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchRequest?>(),
+                    It.IsAny<CancellationToken>()),
                 Times.Once);
             Assert.False(result.Success);
             Assert.True(string.IsNullOrEmpty(result.DownloadId));
