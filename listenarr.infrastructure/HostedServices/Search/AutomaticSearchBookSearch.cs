@@ -96,10 +96,11 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             logger.LogInformation("Found {Count} raw search results for audiobook '{Title}'", candidates.Count, audiobook.Title);
 
             // Author-free fallback: release names often omit the author, so a full title+author
-            // query can return nothing even when the book is available. Retry without the author,
-            // then constrain the broadened results to titles that still match this book, so a
-            // same-title/different-book release can't pass quality scoring and be grabbed.
-            if (candidates.Count == 0 && !cutByRequestBound)
+            // query can return nothing even when the book is available. An indexer whose full query
+            // completed empty is asked again without the author, then the broadened results are
+            // constrained to titles that still match this book, so a same-title/different-book
+            // release can't pass quality scoring and be grabbed.
+            if (!cutByRequestBound)
             {
                 var fallback = await SearchFallbackAsync(audiobook, searchQuery, outcomes, ct);
                 if (fallback == null)
@@ -137,8 +138,8 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             return report.Outcomes.FirstOrDefault(outcome => outcome.IndexerId == indexer.Id);
         }
 
-        // Runs the title-only query on every indexer whose full query completed. Returns whether the
-        // request bound cut a search, or null when the cycle was cancelled.
+        // Runs the title-only query on every indexer whose full query completed with no results.
+        // Returns whether the request bound cut a search, or null when the cycle was cancelled.
         private async Task<bool?> SearchFallbackAsync(
             Audiobook audiobook,
             string searchQuery,
@@ -152,12 +153,10 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 return false;
             }
 
-            logger.LogInformation("No results for '{Title}' with the full query; retrying without the author: {Query}",
-                audiobook.Title, fallbackQuery);
             for (var index = 0; index < outcomes.Count; index++)
             {
                 var (indexer, primary) = outcomes[index];
-                if (primary.Status != IndexerSearchStatus.Completed)
+                if (primary.Status != IndexerSearchStatus.Completed || primary.Results.Count > 0)
                 {
                     continue;
                 }
@@ -167,6 +166,8 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                     return true;
                 }
 
+                logger.LogInformation("No results for '{Title}' from indexer '{Indexer}' with the full query; retrying without the author: {Query}",
+                    audiobook.Title, indexer.Name, fallbackQuery);
                 var fallback = await SearchIndexerAsync(fallbackQuery, indexer, IndexerRequestKind.FallbackQuery, ct);
                 if (fallback == null)
                 {
