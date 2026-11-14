@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using System.Collections.Concurrent;
 using Listenarr.Application.Common.Exceptions;
 using Listenarr.Tests.Common;
 using Xunit.Abstractions;
@@ -62,10 +63,8 @@ public sealed partial class MetadataRescanSchedulingTests : BaseTests
     {
         await InitSqliteAsync();
         var retry = await SeedBookAsync("retry", 1, NowUtc.AddMinutes(-1));
-        var attempts = 0;
-        _extract = path => path == retry.Paths[0] && Interlocked.Increment(ref attempts) == 1
-            ? throw new InvalidOperationException("The first extraction fails.")
-            : Task.FromResult<AudioMetadata?>(CompleteMetadata());
+        var retrySucceeds = false;
+        _extract = path => Task.FromResult(path == retry.Paths[0] && !retrySucceeds ? null : CompleteMetadata());
         var processor = NewProcessor();
         DateTime? retryDueUtc = null;
 
@@ -74,12 +73,13 @@ public sealed partial class MetadataRescanSchedulingTests : BaseTests
             await SeedBookAsync($"arrivals-{cycle}", 20, NowUtc);
             var cycleNowUtc = NowUtc;
             var extracted = await RunCycleAsync(processor);
-            var retried = attempts == 2 && extracted.Contains(retry.Paths[0]);
+            var retried = retrySucceeds && extracted.Contains(retry.Paths[0]);
             _output.WriteLine($"cycle {cycle} at +{(cycleNowUtc - _clock.Start).TotalMinutes} min: extracted {extracted.Count}, retry extracted {extracted.Contains(retry.Paths[0])}");
             if (cycle == 1)
             {
                 retryDueUtc = (await ReadFileAsync(retry.Files[0].Id)).MetadataRescanDueUtc;
                 Assert.Equal(cycleNowUtc + MetadataRescanSchedulePolicy.FailureBaseDelay, retryDueUtc);
+                retrySucceeds = true;
                 continue;
             }
 
@@ -115,18 +115,19 @@ public sealed partial class MetadataRescanSchedulingTests : BaseTests
         await InitSqliteAsync();
         var book = await SeedBookAsync("cancel", 3);
         using var cycleCancellation = new CancellationTokenSource();
-        var calls = 0;
-        // The first extraction fails and is stored; the second stops the cycle once it is
-        // stored; any later one waits for the stop. Both of those end cancelled.
-        _extract = async _ =>
+        var roles = new ConcurrentDictionary<string, int>();
+        // The first file to reach the extractor yields no metadata and is stored; the second
+        // stops the cycle once that is stored; any later one waits for the stop. Both of those
+        // end cancelled.
+        _extract = async path =>
         {
-            var call = Interlocked.Increment(ref calls);
-            if (call == 1)
+            var role = roles.GetOrAdd(path, _ => roles.Count + 1);
+            if (role == 1)
             {
-                throw new InvalidOperationException("The extraction fails before the cycle is stopped.");
+                return null;
             }
 
-            if (call == 2)
+            if (role == 2)
             {
                 await WaitForAsync(async () => await StoredFailuresAsync(book) == 1);
                 await cycleCancellation.CancelAsync();
@@ -152,10 +153,10 @@ public sealed partial class MetadataRescanSchedulingTests : BaseTests
             stored.Add(await ReadFileAsync(id));
         }
 
-        Assert.True(calls >= 2, $"only {calls} extraction ran before the cycle stopped");
+        Assert.True(roles.Count >= 2, $"only {roles.Count} file reached the extractor before the cycle stopped");
         var failed = Assert.Single(stored, file => file.MetadataRescanFailureCount != 0);
         Assert.Equal(1, failed.MetadataRescanFailureCount);
-        Assert.Equal(nameof(MetadataRescanOutcome.ExtractionFailed), failed.MetadataRescanLastOutcome);
+        Assert.Equal(nameof(MetadataRescanOutcome.NoMetadata), failed.MetadataRescanLastOutcome);
         foreach (var cancelled in stored.Where(file => file.Id != failed.Id))
         {
             Assert.Null(cancelled.MetadataRescanLastOutcome);
@@ -184,17 +185,23 @@ public sealed partial class MetadataRescanSchedulingTests : BaseTests
     [InlineData(false)]
     public async Task RunCycleAsync_MoveRecoveryBlockInsideTheTask_LeavesTheFailureCountAtZero(bool conflictDuringRefresh)
     {
-        await InitSqliteAsync();
+        // Either the refresh's own mutation check refuses, or the task's recovery check (which
+        // runs after selection) finds the block.
+        var refusing = RefusingMoveQueue(new ApplicationConflictException("move_recovery_pending", "A move must be recovered first."));
+        await InitSqliteAsync(builder =>
+        {
+            if (conflictDuringRefresh)
+            {
+                builder.WithSingleton(refusing);
+            }
+        });
         var book = await SeedBookAsync("blocked-in-task", 1);
         var taskMoveQueue = new Mock<IMoveQueueService>();
         taskMoveQueue.Setup(service => service.GetRecoveryStateForAudiobookAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(conflictDuringRefresh
-                ? MoveRecoveryState.None
-                : MoveRecoveryState.None with { Disposition = MoveRecoveryDisposition.InProgress });
-        _extract = _ => throw new ApplicationConflictException("move_recovery_pending", "A move must be recovered first.");
+            .ReturnsAsync(MoveRecoveryState.None with { Disposition = MoveRecoveryDisposition.InProgress });
         var cycleNowUtc = NowUtc;
 
-        await RunCycleAsync(NewProcessor(taskMoveQueue.Object));
+        await RunCycleAsync(conflictDuringRefresh ? NewProcessor() : NewProcessor(taskMoveQueue.Object));
 
         var file = await ReadFileAsync(book.Files[0].Id);
         Assert.Equal(nameof(MetadataRescanOutcome.MoveRecoveryBlocked), file.MetadataRescanLastOutcome);
@@ -240,7 +247,7 @@ public sealed partial class MetadataRescanSchedulingTests : BaseTests
         var blocked = await SeedBookAsync("blocked", 60);
         var healthy = await SeedBookAsync("healthy", 1);
         await MoveJobTestFactory.SeedUnresolvedExecutionAsync(
-            _provider,
+            _store,
             blocked.AudiobookId,
             blocked.BasePath,
             Path.Join(FileService.GetTempPath(), $"rescan-move-target-{Guid.NewGuid():N}"));
@@ -264,8 +271,10 @@ public sealed partial class MetadataRescanSchedulingTests : BaseTests
         await InitSqliteAsync(builder => builder.WithSingleton(fileSystem.Object));
         var book = await SeedBookAsync("vanished", 1);
         File.Delete(book.Paths[0]);
+        var logger = new CapturingLogger();
 
-        await RunCycleAsync(NewProcessor());
+        await RunCycleAsync(NewProcessor(logger: logger));
+        _output.WriteLine(string.Join(Environment.NewLine, logger.Describe()));
 
         var file = await ReadFileAsync(book.Files[0].Id);
         Assert.Equal(nameof(MetadataRescanOutcome.FileMissing), file.MetadataRescanLastOutcome);
@@ -277,9 +286,9 @@ public sealed partial class MetadataRescanSchedulingTests : BaseTests
     [Fact]
     public async Task RunCycleAsync_RepeatedFailureAfterARestart_LogsOnlyTheFirstAtWarning()
     {
-        await InitSqliteAsync();
+        await InitSqliteAsync(builder => builder.WithSingleton(
+            RefusingMoveQueue(new InvalidOperationException("The guarded flow fails."))));
         var book = await SeedBookAsync("logging", 1);
-        _extract = _ => throw new InvalidOperationException("The extraction fails.");
         var logger = new CapturingLogger();
 
         await RunCycleAsync(NewProcessor(logger: logger));
@@ -294,12 +303,23 @@ public sealed partial class MetadataRescanSchedulingTests : BaseTests
         Assert.Equal(2, (await ReadFileAsync(book.Files[0].Id)).MetadataRescanFailureCount);
     }
 
+    // These files never yield metadata (NoMetadata, a failure-ladder outcome).
     private static Func<string, Task<AudioMetadata?>> FailFor(IEnumerable<string> paths)
     {
         var failing = paths.ToHashSet(StringComparer.Ordinal);
-        return path => failing.Contains(path)
-            ? throw new InvalidOperationException("The extraction always fails for this file.")
-            : Task.FromResult<AudioMetadata?>(CompleteMetadata());
+        return path => Task.FromResult(failing.Contains(path) ? null : CompleteMetadata());
+    }
+
+    // A move queue that reports no recovery state, so selection passes, and then refuses the
+    // refresh's own filesystem-mutation check with the given exception.
+    private static IMoveQueueService RefusingMoveQueue(Exception refusal)
+    {
+        var moveQueue = new Mock<IMoveQueueService>();
+        moveQueue.Setup(service => service.GetRecoveryStateForAudiobookAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MoveRecoveryState.None);
+        moveQueue.Setup(service => service.EnsureFilesystemMutationAllowedAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(refusal);
+        return moveQueue.Object;
     }
 
     // The 1-based cycle in which the file was extracted, or null if it never was.

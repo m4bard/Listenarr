@@ -11,7 +11,6 @@ using System.Collections.Concurrent;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Features.Infrastructure.Persistence.LargeLibrary;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -24,21 +23,23 @@ public sealed partial class MetadataRescanSchedulingTests
     // An hour ahead of the wall clock, so rows created with the wall-clock default are due.
     private readonly ManualClock _clock = new(DateTimeOffset.UtcNow.AddHours(1));
     private readonly ConcurrentQueue<string> _cycleExtractions = new();
-    private readonly List<string> _databasePaths = [];
+    private readonly List<ServiceProvider> _stores = [];
     private IDbContextFactory<ListenArrDbContext> _factory = null!;
+    private ServiceProvider _store = null!;
     private int _seededBooks;
 
     // Decides each extraction by the file's public path; the default returns complete metadata.
     private Func<string, Task<AudioMetadata?>> _extract = _ => Task.FromResult<AudioMetadata?>(CompleteMetadata());
 
+    // The stores' databases live in the test's temporary directory, which the base class removes.
     public override async Task DisposeAsync()
     {
-        await base.DisposeAsync();
-        SqliteConnection.ClearAllPools();
-        foreach (var databasePath in _databasePaths)
+        foreach (var store in _stores)
         {
-            File.Delete(databasePath);
+            await store.DisposeAsync();
         }
+
+        await base.DisposeAsync();
     }
 
     private static AudioMetadata CompleteMetadata() => new()
@@ -53,7 +54,6 @@ public sealed partial class MetadataRescanSchedulingTests
     private async Task InitSqliteAsync(Action<ServiceCollectionBuilder>? configure = null)
     {
         var databasePath = Path.Join(FileService.GetTempPath(), $"rescan-scheduling-{Guid.NewGuid():N}.db");
-        _databasePaths.Add(databasePath);
         var options = new DbContextOptionsBuilder<ListenArrDbContext>()
             .UseSqlite($"Data Source={databasePath};Pooling=False")
             .Options;
@@ -66,14 +66,15 @@ public sealed partial class MetadataRescanSchedulingTests
                 _cycleExtractions.Enqueue(source.PublicPath);
                 return _extract(source.PublicPath);
             });
-        Init(builder =>
-        {
-            builder.WithSingleton<IDbContextFactory<ListenArrDbContext>>(factory)
-                .WithMocks(ServiceDescriptor.Scoped<ListenArrDbContext>(_ => factory.CreateDbContext()))
-                .WithSingleton(extractor.Object)
-                .WithSingleton<TimeProvider>(_clock);
-            configure?.Invoke(builder);
-        });
+        var builder = new ServiceCollectionBuilder()
+            .WithContentRootPath(FileService.GetTempPath())
+            .WithSingleton<IDbContextFactory<ListenArrDbContext>>(factory)
+            .WithMocks(ServiceDescriptor.Scoped<ListenArrDbContext>(_ => factory.CreateDbContext()))
+            .WithSingleton(extractor.Object)
+            .WithSingleton<TimeProvider>(_clock);
+        configure?.Invoke(builder);
+        _store = builder.Build().BuildServiceProvider();
+        _stores.Add(_store);
         await using var setup = await factory.CreateDbContextAsync();
         await setup.Database.EnsureCreatedAsync();
     }
@@ -81,9 +82,9 @@ public sealed partial class MetadataRescanSchedulingTests
     private MetadataRescanProcessor NewProcessor(
         IMoveQueueService? moveQueueService = null,
         ILogger<MetadataRescanProcessor>? logger = null) => new(
-        _provider.GetRequiredService<IServiceScopeFactory>(),
-        _provider.GetRequiredService<IAudiobookOperationCoordinator>(),
-        moveQueueService ?? _provider.GetRequiredService<IMoveQueueService>(),
+        _store.GetRequiredService<IServiceScopeFactory>(),
+        _store.GetRequiredService<IAudiobookOperationCoordinator>(),
+        moveQueueService ?? _store.GetRequiredService<IMoveQueueService>(),
         logger ?? NullLogger<MetadataRescanProcessor>.Instance);
 
     // One audiobook (a corpus title) with real files on disk. A due time, when given, replaces
@@ -93,7 +94,7 @@ public sealed partial class MetadataRescanSchedulingTests
         var books = LargeLibraryFixtureBuilder.LoadBooks();
         var corpusBook = books[_seededBooks++ % books.Count];
         var basePath = FileService.GetTempDirectory($"rescan-scheduling-{folder}");
-        var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+        var audiobook = await _store.GetRequiredService<IAudiobookRepository>().AddAsync(new AudiobookBuilder()
             .WithTitle(corpusBook.Title)
             .WithBasePath(basePath)
             .Build());
@@ -107,7 +108,7 @@ public sealed partial class MetadataRescanSchedulingTests
                 pending.MetadataRescanDueUtc = dueUtc.Value;
             }
 
-            var file = await _audiobookFileRepository.AddAsync(pending);
+            var file = await _store.GetRequiredService<IAudiobookFileRepository>().AddAsync(pending);
             files.Add((file.Id, path));
         }
 
@@ -162,12 +163,15 @@ public sealed partial class MetadataRescanSchedulingTests
 
     private sealed class CapturingLogger : ILogger<MetadataRescanProcessor>
     {
-        private readonly ConcurrentQueue<(LogLevel Level, string Message)> _entries = new();
+        private readonly ConcurrentQueue<(LogLevel Level, string Message, Exception? Exception)> _entries = new();
 
         public IReadOnlyList<LogLevel> LevelsContaining(string text) =>
             _entries.Where(entry => entry.Message.Contains(text, StringComparison.Ordinal))
                 .Select(entry => entry.Level)
                 .ToList();
+
+        public IEnumerable<string> Describe() =>
+            _entries.Select(entry => $"{entry.Level} {entry.Message} {entry.Exception?.GetType().Name}");
 
         public void Clear() => _entries.Clear();
 
@@ -181,6 +185,6 @@ public sealed partial class MetadataRescanSchedulingTests
             TState state,
             Exception? exception,
             Func<TState, Exception?, string> formatter) =>
-            _entries.Enqueue((logLevel, formatter(state, exception)));
+            _entries.Enqueue((logLevel, formatter(state, exception), exception));
     }
 }
