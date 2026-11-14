@@ -19,9 +19,8 @@
 namespace Listenarr.Application.Search.Contracts
 {
     /// <summary>
-    /// The only way production code sends one HTTP request to an indexer. Every search-path wire
-    /// request, redirect hops included, goes through <see cref="SendAsync"/>, so the per-cycle
-    /// request bound counts real requests.
+    /// Sends one indexer request, or defers it. Each call is exactly one request on the wire, so a
+    /// per-cycle request bound counts real requests.
     /// </summary>
     public interface IIndexerRequestGate
     {

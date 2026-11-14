@@ -24,12 +24,14 @@ namespace Listenarr.Application.Search.Contracts
     public enum IndexerSearchStatus
     {
         /// <summary>
-        /// Every request was answered successfully. The results may be empty.
+        /// The indexer answered its search requests. Failed enrichment requests are skipped. The results
+        /// may be empty.
         /// </summary>
         Completed,
 
         /// <summary>
-        /// A request failed, including a timeout while the caller's token was not cancelled.
+        /// A search, fallback or redirect request failed (including a timeout while the caller's token
+        /// was not cancelled), or failed enrichment left no candidate results.
         /// </summary>
         Failed,
 
