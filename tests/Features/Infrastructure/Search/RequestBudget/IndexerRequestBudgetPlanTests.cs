@@ -46,7 +46,9 @@ public sealed class IndexerRequestBudgetPlanTests : BaseTests
     private const string UsageKeyIndex = "sqlite_autoindex_IndexerRequestUsages_1";
     private const string UsageHourIndex = "IX_IndexerRequestUsages_HourStartUtc";
     private const string WindowSearch = $"USING INDEX {UsageKeyIndex} (IndexerId=? AND HourStartUtc>?)";
-    private const string PruneSearch = $"USING INDEX {UsageHourIndex} (HourStartUtc<?)";
+    // With foreign keys enforced, as the application's connections have them, SQLite collects
+    // the rows to delete from the hour index alone before deleting them, so it reads as covering.
+    private const string PruneSearch = $"USING COVERING INDEX {UsageHourIndex} (HourStartUtc<?)";
     private const string KeySearch = "USING INTEGER PRIMARY KEY (rowid=?)";
     private static readonly DateTime ClockUtc = new(2026, 3, 1, 12, 30, 0, DateTimeKind.Utc);
 
@@ -79,6 +81,9 @@ public sealed class IndexerRequestBudgetPlanTests : BaseTests
         var statements = await CaptureStatementsAsync(fixture, indexerIds[0]);
 
         // Then
+        _output.WriteLine(
+            $"SQLite {await ScalarTextAsync(fixture, "SELECT sqlite_version()")}, "
+            + $"foreign_keys={await ScalarTextAsync(fixture, "PRAGMA foreign_keys")}");
         var failures = new List<string>();
         foreach (var analyzed in new[] { false, true })
         {
@@ -213,13 +218,16 @@ public sealed class IndexerRequestBudgetPlanTests : BaseTests
         return plan.ToString().TrimEnd();
     }
 
-    private static async Task<int> ScalarAsync(LargeLibraryFixture fixture, string sql)
+    private static async Task<int> ScalarAsync(LargeLibraryFixture fixture, string sql) =>
+        Convert.ToInt32(await ScalarTextAsync(fixture, sql));
+
+    private static async Task<string> ScalarTextAsync(LargeLibraryFixture fixture, string sql)
     {
         await using var connection = new SqliteConnection(fixture.ConnectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        return Convert.ToInt32(await command.ExecuteScalarAsync());
+        return Convert.ToString(await command.ExecuteScalarAsync())!;
     }
 
     private static async Task ExecuteAsync(LargeLibraryFixture fixture, string sql)
