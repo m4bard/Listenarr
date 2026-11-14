@@ -219,6 +219,32 @@ public sealed class IndexerFeedPollerGapTests : BaseTests
         Assert.Equal(CheckpointUtc, (await kit.ReadCheckpointAsync())!.NewestPublishedUtc);
     }
 
+    [Fact]
+    public async Task EmptyFeedPolledThreeTimes_RecordsNoGapAndNoWarning_AndMovesOnlyThePollTime()
+    {
+        // E7: a poll that reads no items has nothing to compare with the checkpoint.
+        var kit = await BaselineAsync();
+        kit.Feed.Items = [];
+
+        for (var poll = 1; poll <= 3; poll++)
+        {
+            var pollUtc = BaselineUtc.AddMinutes(15 * poll);
+
+            var result = await kit.PollAsync(pollUtc);
+
+            Assert.Null(result.Gap);
+            Assert.False(result.Advanced);
+            var checkpoint = await kit.ReadCheckpointAsync();
+            Assert.Equal(pollUtc, checkpoint!.LastPollUtc);
+            Assert.Equal(BaselineUtc, checkpoint.LastSuccessUtc);
+            Assert.Equal(CheckpointUtc, checkpoint.NewestPublishedUtc);
+            Assert.Equal(ReleaseId(0), checkpoint.NewestReleaseId);
+        }
+
+        Assert.Empty(await kit.ReadGapsAsync());
+        Assert.Empty(kit.Log.Warnings);
+    }
+
     private async Task<IndexerFeedPollerTestKit> BaselineAsync()
     {
         var kit = await CreateAsync(FileService.GetTempPath());
