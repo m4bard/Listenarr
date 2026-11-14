@@ -203,13 +203,12 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
             RequestTally tally,
             CancellationToken cancellationToken)
         {
-            var result = await _requestGate.SendAsync(
+            var result = await IndexerHttpDispatch.SendAsync(
+                _requestGate,
                 new IndexerRequestContext(indexer.Id, context.Origin, kind, context.CycleAllowance),
-                token =>
-                {
-                    tally.CountSent();
-                    return httpClient.SendAsync(request, token);
-                },
+                httpClient,
+                request,
+                tally.CountSent,
                 cancellationToken);
             if (result is IndexerRequestResult.Deferred deferred)
             {

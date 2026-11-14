@@ -32,6 +32,11 @@ internal static class PlatformRegistrationExtensions
                 client.Timeout = TimeSpan.FromSeconds(
                     provider.GetRequiredService<IOptions<ExternalRequestOptions>>().Value.TimeoutSeconds))
             .ConfigurePrimaryHttpMessageHandler(CreateExternalHandler);
+        services.AddHttpClient(IndexerHttpDispatch.ClientName)
+            .ConfigureHttpClient((provider, client) =>
+                client.Timeout = TimeSpan.FromSeconds(
+                    provider.GetRequiredService<IOptions<ExternalRequestOptions>>().Value.TimeoutSeconds))
+            .ConfigurePrimaryHttpMessageHandler(CreateIndexerHandler);
         return services;
     }
 
@@ -50,4 +55,12 @@ internal static class PlatformRegistrationExtensions
             AutomaticDecompression = DecompressionMethods.All,
             UseProxy = false
         };
+
+    // Indexer requests follow redirects one hop at a time through the request gate, never inside the handler.
+    internal static HttpClientHandler CreateIndexerHandler()
+    {
+        var handler = CreateExternalHandler();
+        handler.AllowAutoRedirect = false;
+        return handler;
+    }
 }
