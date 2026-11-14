@@ -17,22 +17,28 @@ public sealed class BlocklistSearchWiringTests : BaseTests
     public async Task SearchAndDownloadAsync_WhenTheOnlyCandidateIsBlocked_ReportsNoAcceptableResults()
     {
         var search = new Mock<ISearchService>();
-        search.Setup(service => service.SearchAsync(
+        search.Setup(service => service.SearchIndexersDetailedAsync(
                 It.IsAny<string>(),
-                It.IsAny<string?>(),
-                It.IsAny<List<string>?>(),
-                It.IsAny<SearchSortBy>(),
-                It.IsAny<SearchSortDirection>(),
-                It.IsAny<bool>()))
-            .ReturnsAsync([
-                new SearchResult
-                {
-                    Title = "The Only Listing",
-                    MagnetLink = $"magnet:?xt=urn:btih:{InfoHash}&dn=book",
-                    Size = 800_000_000,
-                    Seeders = 20
-                }
-            ]);
+                It.IsAny<IndexerSearchContext>(),
+                It.IsAny<IReadOnlyCollection<int>?>(),
+                It.IsAny<bool>(),
+                It.IsAny<SearchRequest?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new IndexerSearchReport([
+                new IndexerSearchOutcome(
+                    1,
+                    IndexerSearchStatus.Completed,
+                    [
+                        new IndexerSearchResult
+                        {
+                            Title = "The Only Listing",
+                            MagnetLink = $"magnet:?xt=urn:btih:{InfoHash}&dn=book",
+                            Size = 800_000_000,
+                            Seeders = 20
+                        }
+                    ],
+                    RequestsSent: 1)
+            ]));
         _services.AddSingleton(search.Object);
         Init();
 
