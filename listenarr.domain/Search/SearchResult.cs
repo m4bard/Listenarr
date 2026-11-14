@@ -177,16 +177,6 @@ namespace Listenarr.Domain.Search
         public IReadOnlyList<DirectDownloadArtifactDescriptor> DirectDownloadArtifacts { get; set; } = [];
     }
 
-    public class SearchAndDownloadResult
-    {
-        public bool Success { get; set; }
-        public string? Message { get; set; }
-        public string? DownloadId { get; set; }
-        public string? IndexerUsed { get; set; }
-        public string? DownloadClientUsed { get; set; }
-        public SearchResult? SearchResult { get; set; }
-    }
-
     /// <summary>
     /// DTO representing indexer results in a Prowlarr-like shape for the public API
     /// </summary>
