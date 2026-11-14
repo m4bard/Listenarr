@@ -280,6 +280,60 @@ public class MigrationMetadataTests : BaseTests
         Assert.NotNull(applicationSettings.FindProperty("AutomaticSearchBookDelaySeconds"));
     }
 
+    [Fact]
+    public void AddAutomaticSearchSchedule_AddsScheduleColumnsPairTableAndFilteredIndex()
+    {
+        AssertMigrationId<AddAutomaticSearchSchedule>(
+            "20261114021916_AddAutomaticSearchSchedule");
+
+        var migration = new AddAutomaticSearchSchedule();
+        var up = BuildOperations(migration, "Up").Operations;
+        var down = BuildOperations(migration, "Down").Operations;
+
+        // A pure scaffold: column adds, the pair table and two indexes, and no data repair.
+        Assert.Empty(up.OfType<SqlOperation>());
+        Assert.Equal(7, up.Count);
+        var columns = up.OfType<AddColumnOperation>().ToDictionary(column => column.Name);
+        Assert.Equal(4, columns.Count);
+        Assert.All(columns.Values, column => Assert.False(column.IsNullable));
+        Assert.Equal("Audiobooks", columns["AutomaticSearchDueUtc"].Table);
+        Assert.Equal(DateTime.MinValue, columns["AutomaticSearchDueUtc"].DefaultValue);
+        Assert.Equal(("Audiobooks", (object?)0), (columns["AutomaticSearchFailureCount"].Table, columns["AutomaticSearchFailureCount"].DefaultValue));
+        Assert.Equal(
+            ("ApplicationSettings", (object?)AutomaticSearchBounds.DefaultMaxBooksPerCycle),
+            (columns["AutomaticSearchMaxBooksPerCycle"].Table, columns["AutomaticSearchMaxBooksPerCycle"].DefaultValue));
+        Assert.Equal(
+            ("ApplicationSettings", (object?)AutomaticSearchBounds.DefaultMaxRequestsPerCycle),
+            (columns["AutomaticSearchMaxRequestsPerCycle"].Table, columns["AutomaticSearchMaxRequestsPerCycle"].DefaultValue));
+
+        var table = Assert.Single(up.OfType<CreateTableOperation>());
+        Assert.Equal("AudiobookIndexerSearchStates", table.Name);
+        Assert.Equal(["AudiobookId", "IndexerId"], table.PrimaryKey!.Columns);
+        Assert.Equal(
+            [("Audiobooks", ReferentialAction.Cascade), ("Indexers", ReferentialAction.Cascade)],
+            table.ForeignKeys.Select(key => (key.PrincipalTable, key.OnDelete)));
+        Assert.Equal(32, table.Columns.Single(column => column.Name == "LastOutcome").MaxLength);
+
+        var indexes = up.OfType<CreateIndexOperation>().ToDictionary(index => index.Name);
+        var due = indexes["IX_Audiobooks_AutomaticSearchDue"];
+        Assert.Equal(("Audiobooks", "\"Monitored\" AND \"QualityProfileId\" IS NOT NULL"), (due.Table, due.Filter));
+        Assert.Equal(["AutomaticSearchDueUtc"], due.Columns);
+        Assert.Equal(["IndexerId"], indexes["IX_AudiobookIndexerSearchStates_IndexerId"].Columns);
+
+        // Down drops the table and the index before the columns it covers.
+        Assert.Equal("AudiobookIndexerSearchStates", Assert.IsType<DropTableOperation>(down[0]).Name);
+        Assert.Equal("IX_Audiobooks_AutomaticSearchDue", Assert.IsType<DropIndexOperation>(down[1]).Name);
+        Assert.Equal(
+            columns.Keys.Order(),
+            down.Skip(2).Cast<DropColumnOperation>().Select(column => column.Name).Order());
+        Assert.Equal(6, down.Count);
+
+        var audiobook = AssertEntity(migration.TargetModel, "Listenarr.Domain.Audiobooks.Audiobook");
+        Assert.NotNull(audiobook.FindProperty("AutomaticSearchDueUtc"));
+        Assert.NotNull(audiobook.FindProperty("AutomaticSearchFailureCount"));
+        AssertEntity(migration.TargetModel, "Listenarr.Domain.Search.AudiobookIndexerSearchState");
+    }
+
     private static MigrationBuilder BuildOperations(Migration migration, string methodName)
     {
         var builder = new MigrationBuilder("Microsoft.EntityFrameworkCore.Sqlite");
