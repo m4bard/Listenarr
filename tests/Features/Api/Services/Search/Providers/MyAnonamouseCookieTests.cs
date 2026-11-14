@@ -126,7 +126,7 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
 
             var searchProvider = MockUtils.CreateMyAnonamouseSearchProvider(_provider);
 
-            await searchProvider.SearchAsync(_indexer, "Test Title", null, null);
+            await searchProvider.SearchResultsAsync(_indexer, "Test Title", null, null);
 
             // Verify the db indexer was updated with new mam_id
             var updated = await _indexerRepository.GetByIdAsync(_indexer.Id);
@@ -134,7 +134,7 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
 
             // Verify injected HttpClient received the cookie on subsequent calls when BaseAddress differs
             _indexer.Url = "https://another-host.example";
-            await searchProvider.SearchAsync(_indexer, "Test Title", null, null);
+            await searchProvider.SearchResultsAsync(_indexer, "Test Title", null, null);
 
             // Ensure the request includes a Cookie header with the new mam_id
             var messageHandler = _provider.GetRequiredService<MyAnonamouseApiMock>();

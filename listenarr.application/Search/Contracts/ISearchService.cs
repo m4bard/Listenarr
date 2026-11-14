@@ -68,6 +68,18 @@ namespace Listenarr.Application.Search.Contracts
         Task<List<IndexerSearchResult>> SearchIndexersAsync(string query, string? category = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, SearchRequest? request = null, SearchOrigin origin = SearchOrigin.Interactive);
 
         /// <summary>
+        /// Searches configured indexers and reports one typed outcome per indexer: completed, failed, deferred or cancelled
+        /// </summary>
+        /// <param name="query">Search query string</param>
+        /// <param name="context">Who caused the search, the cycle's request allowance, and the kind of the primary send</param>
+        /// <param name="indexerIds">Restricts the search to these indexers; null searches every enabled indexer</param>
+        /// <param name="isAutomaticSearch">Whether this is an automatic search</param>
+        /// <param name="request">Optional request object to pass indexer-specific parameters</param>
+        /// <param name="cancellationToken">The caller's token; only its cancellation makes an outcome Cancelled</param>
+        /// <returns>One outcome per indexer searched</returns>
+        Task<IndexerSearchReport> SearchIndexersDetailedAsync(string query, IndexerSearchContext context, IReadOnlyCollection<int>? indexerIds, bool isAutomaticSearch, SearchRequest? request, CancellationToken cancellationToken);
+
+        /// <summary>
         /// Gets all enabled metadata sources (Audible, Audnexus, OpenLibrary, etc.)
         /// </summary>
         /// <returns>List of enabled metadata source configurations</returns>

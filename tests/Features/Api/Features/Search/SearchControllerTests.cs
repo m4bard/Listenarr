@@ -670,6 +670,11 @@ namespace Listenarr.Tests.Features.Api.Features.Search
             return Task.FromResult(new List<IndexerSearchResult>());
         }
 
+        public Task<IndexerSearchReport> SearchIndexersDetailedAsync(string query, IndexerSearchContext context, IReadOnlyCollection<int>? indexerIds, bool isAutomaticSearch, SearchRequest? request, System.Threading.CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new IndexerSearchReport(Array.Empty<IndexerSearchOutcome>()));
+        }
+
         public Task<List<ApiConfiguration>> GetEnabledMetadataSourcesAsync()
         {
             return Task.FromResult(new List<ApiConfiguration>());
