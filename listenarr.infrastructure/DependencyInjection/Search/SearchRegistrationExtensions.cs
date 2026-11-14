@@ -8,7 +8,6 @@
  * (at your option) any later version.
  */
 using Listenarr.Application.Search.Scheduling;
-using Listenarr.Infrastructure.HostedServices.Search;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
