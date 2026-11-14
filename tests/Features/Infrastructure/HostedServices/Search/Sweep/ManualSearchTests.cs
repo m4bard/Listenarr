@@ -16,7 +16,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
 {
     // The manual search (SearchAndDownloadAsync) over the sweep's harness: real DownloadService, real
     // schedule store, scripted indexers behind the scripted gate. It ignores due times, goes through
-    // the gate, and writes only Completed pair outcomes.
+    // the gate, and writes only Satisfied pair outcomes: its query is narrower than the sweep's (no
+    // series, no fallback), so finding nothing must not push back the sweep's retries.
     [Trait("Name", "ManualSearchTests")]
     [Trait("Category", "Infrastructure")]
     public sealed class ManualSearchTests : AutomaticSearchSweepTestBase
@@ -111,21 +112,35 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             Assert.Null(lastSearchUtc);
         }
 
-        [Fact]
-        public async Task ManualSearch_WithNothingAcceptable_RecordsANoResultPair()
+        [Theory]
+        [InlineData(false, "No search results found")]
+        [InlineData(true, "No acceptable search results found")]
+        public async Task ManualSearch_FindingNothing_LeavesThePairUntouched(bool returnsRejected, string expectedMessage)
         {
             await ConfigureManualAsync();
             var indexer = await AddIndexerAsync("Only");
             var book = (await AddBooksAsync(1, NotDueForDaysUtc)).Single();
-            Indexers.Script = (_, _) => Release(RejectedSource);
+            var sweepRetryUtc = StartUtc.AddHours(6);
+            await Database.SeedPairAsync(new AudiobookIndexerSearchState
+            {
+                AudiobookId = book.Id,
+                IndexerId = indexer,
+                NextAttemptUtc = sweepRetryUtc,
+                NoResultCount = 1,
+                LastOutcome = nameof(PairScheduleResult.NoAcceptableResults),
+                LastCompletedUtc = StartUtc.AddHours(-18)
+            });
+            Indexers.Script = (_, _) => returnsRejected ? Release(RejectedSource) : IndexerScript.Nothing;
 
             var result = await ManualSearchAsync(book.Id);
 
             Assert.False(result.Success);
-            Assert.Equal("No acceptable search results found", result.Message);
+            Assert.Equal(expectedMessage, result.Message);
+            Assert.Equal(1, Server.ServedFor(indexer));
             var pair = await Database.ReadPairAsync(book.Id, indexer);
-            Assert.Equal(nameof(PairScheduleResult.NoAcceptableResults), pair!.LastOutcome);
-            Assert.Equal(1, pair.NoResultCount);
+            Assert.Equal(
+                (sweepRetryUtc, 1, 0, nameof(PairScheduleResult.NoAcceptableResults), (DateTime?)StartUtc.AddHours(-18)),
+                (pair!.NextAttemptUtc, pair.NoResultCount, pair.FailureCount, pair.LastOutcome, pair.LastCompletedUtc));
         }
 
         [Fact]
@@ -136,11 +151,12 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             var failing = await AddIndexerAsync("Failing");
             var book = (await AddBooksAsync(1, NotDueForDaysUtc)).Single();
             Server.StatusFor = indexerId => indexerId == failing ? HttpStatusCode.InternalServerError : HttpStatusCode.OK;
+            Indexers.Script = (_, _) => Release(AcceptableSource);
 
             var result = await ManualSearchAsync(book.Id);
 
-            Assert.False(result.Success);
-            Assert.NotNull(await Database.ReadPairAsync(book.Id, answered));
+            Assert.True(result.Success, result.Message);
+            Assert.Equal(nameof(PairScheduleResult.Satisfied), (await Database.ReadPairAsync(book.Id, answered))!.LastOutcome);
             Assert.Null(await Database.ReadPairAsync(book.Id, failing));
             var (dueUtc, failureCount, _, _) = await Database.ReadBookAsync(book.Id);
             Assert.Equal(NotDueForDaysUtc, dueUtc);
@@ -155,10 +171,12 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             var deferred = await AddIndexerAsync("Deferred");
             var book = (await AddBooksAsync(1, NotDueForDaysUtc)).Single();
             Gate.DeferUntil[deferred] = StartUtc.AddHours(1);
+            Indexers.Script = (_, _) => Release(AcceptableSource);
 
-            await ManualSearchAsync(book.Id);
+            var result = await ManualSearchAsync(book.Id);
 
-            Assert.NotNull(await Database.ReadPairAsync(book.Id, answered));
+            Assert.True(result.Success, result.Message);
+            Assert.Equal(nameof(PairScheduleResult.Satisfied), (await Database.ReadPairAsync(book.Id, answered))!.LastOutcome);
             Assert.Null(await Database.ReadPairAsync(book.Id, deferred));
         }
 
