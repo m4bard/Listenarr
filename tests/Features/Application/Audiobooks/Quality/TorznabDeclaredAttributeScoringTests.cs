@@ -77,11 +77,11 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Quality
                 Implementation = "torznab"
             };
 
-            List<IndexerSearchResult> parsed = parser == "application"
+            IReadOnlyList<IndexerSearchResult> parsed = parser == "application"
                 ? await new TorznabResponseParser(new HttpClient(), NullLogger.Instance).ParseAsync(xml, indexer)
-                : await new TorznabNewznabSearchProvider(
+                : (await new TorznabNewznabSearchProvider(
                     new HttpClient(new FeedHandler(xml)),
-                    NullLogger<TorznabNewznabSearchProvider>.Instance).SearchAsync(indexer, BookTitle);
+                    NullLogger<TorznabNewznabSearchProvider>.Instance).SearchAsync(indexer, BookTitle)).Results;
 
             var item = Assert.Single(parsed);
             var result = SearchResultConverters.ToSearchResult(item);
