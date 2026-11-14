@@ -17,7 +17,6 @@
  */
 
 using System.Collections.Concurrent;
-using Listenarr.Infrastructure.Downloads.Submission;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks.Api;
