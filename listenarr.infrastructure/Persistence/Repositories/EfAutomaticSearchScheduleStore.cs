@@ -20,7 +20,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Persistence.Repositories;
 
-public sealed class EfAutomaticSearchScheduleStore(ListenArrDbContext db) : IAutomaticSearchScheduleStore
+public sealed partial class EfAutomaticSearchScheduleStore(ListenArrDbContext db) : IAutomaticSearchScheduleStore
 {
     // The first two terms are the filter of IX_Audiobooks_AutomaticSearchDue in the form EF
     // emits them; with the due range and the ordering below, SQLite reads the page straight off
