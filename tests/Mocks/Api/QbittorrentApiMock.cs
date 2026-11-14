@@ -23,6 +23,8 @@ namespace Listenarr.Tests.Mocks.Api
         /// at all, so the success body is a variable and not a constant.
         /// </summary>
         public string? AddSuccessResponseBody { get; set; }
+        public int AddsAccepted { get; private set; }
+        public Action? OnAddAccepted { get; set; }
 
         public string? InfoResponseOverride { get; set; }
         public NameValueCollection? LastForceStartForm { get; private set; }
@@ -103,6 +105,8 @@ namespace Listenarr.Tests.Mocks.Api
                 };
             }
 
+            AddsAccepted++;
+            OnAddAccepted?.Invoke();
             return MockUtils.GetCannedResponse(AddSuccessResponseBody ?? "Ok");
         }
 

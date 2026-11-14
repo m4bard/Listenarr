@@ -113,7 +113,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
 
             logger.LogInformation("Successfully sent torrent to qBittorrent");
 
-            await Task.Delay(1000, ct);
+            // qBittorrent holds the torrent from here on, so the steps below must not be cut short by
+            // the caller's token. A shutdown that cancelled them would make the caller delete the
+            // provisional download row while the torrent downloads on unnoticed.
+            await Task.Delay(1000, CancellationToken.None);
 
             // Force start cannot be asked for on the add call. Sending forceStart there is
             // accepted and ignored, so it takes a second request once the torrent exists.
@@ -127,7 +130,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                         new KeyValuePair<string, string>("hashes", addPlan.Hash),
                         new KeyValuePair<string, string>("value", "true")
                     ]);
-                    using var forceResponse = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/setForceStart", forceContent, ct);
+                    using var forceResponse = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/setForceStart", forceContent, CancellationToken.None);
                     if (!forceResponse.IsSuccessStatusCode)
                     {
                         logger.LogWarning(
@@ -135,11 +138,11 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                             (int)forceResponse.StatusCode);
                     }
                 }
-                catch (TaskCanceledException exception) when (!ct.IsCancellationRequested)
+                catch (TaskCanceledException exception)
                 {
                     // An HttpClient timeout arrives as TaskCanceledException even though nothing
-                    // was cancelled, so it has to be told apart from a real cancellation the way
-                    // DownloadMonitorService already does. Letting it out would fail a submission
+                    // was cancelled, and this request no longer takes the caller's token, so every
+                    // TaskCanceledException here is a timeout. Letting it out would fail a submission
                     // the client has already accepted, and the caller answers that by deleting
                     // the provisional download row while the torrent downloads on unnoticed.
                     logger.LogWarning(exception, "qBittorrent force start request timed out; the torrent was added and will download at normal priority");
@@ -170,7 +173,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                             new KeyValuePair<string, string>("hash", addPlan.Hash),
                             new KeyValuePair<string, string>("urls", trackerUrls)
                         });
-                        using var trackersResp = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/addTrackers", addTrackersData, ct);
+                        using var trackersResp = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/addTrackers", addTrackersData, CancellationToken.None);
                         if (trackersResp.IsSuccessStatusCode)
                             logger.LogInformation($"Injected {trackerAnnounces.Count} tracker(s) for torrent {addPlan.Hash} via addTrackers API");
                         else

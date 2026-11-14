@@ -248,7 +248,7 @@ namespace Listenarr.Tests.Features.Api.Services
                     It.IsAny<bool>()),
                 Times.Never);
             downloadService.Verify(
-                s => s.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()),
+                s => s.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()),
                 Times.Never);
         }
 
