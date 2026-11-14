@@ -29,6 +29,26 @@ namespace Listenarr.Domain.Search
         public const int DefaultMaxRequestsPerCycle = 300;
 
         /// <summary>
+        /// The configured books per cycle are clamped to this range.
+        /// </summary>
+        public const int MinBooksPerCycle = 1;
+        public const int MaxBooksPerCycle = 1000;
+
+        /// <summary>
+        /// The configured requests per cycle are clamped to this range. The floor sits above what one
+        /// indexer search for one book normally needs, so a search cut by the bound fits in full
+        /// when its book heads the next cycle.
+        /// </summary>
+        public const int MinRequestsPerCycle = 250;
+        public const int MaxRequestsPerCycle = 10000;
+
+        /// <summary>
+        /// One sweep reads due books this many at a time, and at most <see cref="SelectionPageBound"/> pages.
+        /// </summary>
+        public const int SelectionPageSize = 50;
+        public const int SelectionPageBound = 4;
+
+        /// <summary>
         /// The no-result wait never grows past this many hours, unless the configured cooldown is
         /// longer (the cap is then the cooldown). A book with nothing found is retried at least weekly.
         /// </summary>
