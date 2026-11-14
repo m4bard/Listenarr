@@ -156,5 +156,10 @@ namespace Listenarr.Application.Search.Core
             return await _indexerSearchWorkflow.SearchIndexersAsync(query, category, sortBy, sortDirection, isAutomaticSearch, request, origin);
         }
 
+        public Task<IndexerSearchReport> SearchIndexersDetailedAsync(string query, IndexerSearchContext context, IReadOnlyCollection<int>? indexerIds, bool isAutomaticSearch, SearchRequest? request, CancellationToken cancellationToken)
+        {
+            return _indexerSearchWorkflow.SearchIndexersDetailedAsync(query, context, indexerIds, isAutomaticSearch, request, cancellationToken);
+        }
+
     }
 }

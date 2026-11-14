@@ -22,6 +22,8 @@ namespace Listenarr.Application.Search.Indexers.Common;
 
 public class IndexerSearchWorkflow
 {
+    private static readonly IndexerSearchContext InteractiveContext = new(SearchOrigin.Interactive, CycleAllowance: null);
+
     private readonly HttpClient _httpClient;
     private readonly IConfigurationService _configurationService;
     private readonly IIndexerRepository _indexerRepository;
@@ -57,53 +59,104 @@ public class IndexerSearchWorkflow
         SearchRequest? request = null,
         SearchOrigin origin = SearchOrigin.Interactive)
     {
-        var results = new List<IndexerSearchResult>();
-        var indexers = await _indexerRepository.GetEnabledAsync(isAutomaticSearch);
-
-        _logger.LogInformation("Searching {Count} enabled indexers for query: {Query}", indexers.Count, query);
-
-        if (!indexers.Any())
-        {
-            _logger.LogWarning("No indexers configured or enabled; search returned no results for query: {Query}", query);
-            return results;
-        }
-
-        var searchTasks = indexers.Select(async indexer =>
-        {
-            try
-            {
-                _logger.LogInformation("Searching indexer {Name} ({Type}) for query: {Query}", indexer.Name, indexer.Type, query);
-                var perIndexerRequest = ApplyIndexerMamOptions(indexer, request);
-
-                var indexerResults = await SearchIndexerAsync(indexer, query, origin, category, perIndexerRequest);
-                _logger.LogInformation("Found {Count} results from indexer {Name}", indexerResults.Count, indexer.Name);
-                return indexerResults;
-            }
-            catch (OperationCanceledException ex)
-            {
-                // No workflow-level cancellation token flows into this search, so an
-                // OperationCanceledException here is an HttpClient per-request timeout
-                // (TaskCanceledException derives from OperationCanceledException). Contain it
-                // to this indexer so a single slow indexer can't abort every other one's results.
-                _logger.LogWarning(ex, "Timed out searching indexer {Name} for query: {Query}", indexer.Name, query);
-                return new List<IndexerSearchResult>();
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                _logger.LogError(ex, "Error searching indexer {Name} for query: {Query}", indexer.Name, query);
-                return new List<IndexerSearchResult>();
-            }
-        }).ToList();
-
-        var indexerResults = await Task.WhenAll(searchTasks);
-        foreach (var indexerResult in indexerResults)
-        {
-            results.AddRange(indexerResult);
-        }
+        var report = await SearchEnabledIndexersAsync(
+            query,
+            category,
+            new IndexerSearchContext(origin, CycleAllowance: null),
+            indexerIds: null,
+            isAutomaticSearch,
+            request,
+            CancellationToken.None);
+        var results = report.Outcomes.SelectMany(outcome => outcome.Results).ToList();
 
         _logger.LogInformation("Total {Count} results from all indexers for query: {Query}", results.Count, query);
 
         return results.OrderByDescending(r => r.Seeders ?? 0).ThenByDescending(r => r.PublishedDate).ToList();
+    }
+
+    /// <summary>
+    /// Searches the enabled indexers and reports one typed outcome per indexer, so a caller can tell
+    /// an indexer that failed, was deferred or was cancelled from one that answered with nothing.
+    /// </summary>
+    /// <param name="query">The search query.</param>
+    /// <param name="context">Who caused the search, the cycle's request allowance, and the primary send's kind.</param>
+    /// <param name="indexerIds">Restricts the search to these indexers; null searches every enabled indexer.</param>
+    /// <param name="isAutomaticSearch">Whether only indexers enabled for automatic search are used.</param>
+    /// <param name="request">Optional indexer-specific parameters.</param>
+    /// <param name="cancellationToken">The caller's token. Only its cancellation makes an outcome Cancelled.</param>
+    public Task<IndexerSearchReport> SearchIndexersDetailedAsync(
+        string query,
+        IndexerSearchContext context,
+        IReadOnlyCollection<int>? indexerIds,
+        bool isAutomaticSearch,
+        SearchRequest? request,
+        CancellationToken cancellationToken)
+    {
+        return SearchEnabledIndexersAsync(query, category: null, context, indexerIds, isAutomaticSearch, request, cancellationToken);
+    }
+
+    private async Task<IndexerSearchReport> SearchEnabledIndexersAsync(
+        string query,
+        string? category,
+        IndexerSearchContext context,
+        IReadOnlyCollection<int>? indexerIds,
+        bool isAutomaticSearch,
+        SearchRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var indexers = await _indexerRepository.GetEnabledAsync(isAutomaticSearch, cancellationToken);
+        if (indexerIds != null)
+        {
+            indexers = indexers.Where(indexer => indexerIds.Contains(indexer.Id)).ToList();
+        }
+
+        _logger.LogInformation("Searching {Count} enabled indexers for query: {Query}", indexers.Count, query);
+
+        if (indexers.Count == 0)
+        {
+            _logger.LogWarning("No indexers configured or enabled; search returned no results for query: {Query}", query);
+            return new IndexerSearchReport(Array.Empty<IndexerSearchOutcome>());
+        }
+
+        var outcomes = await Task.WhenAll(indexers.Select(indexer =>
+            SearchIndexerContainedAsync(indexer, query, category, request, context, cancellationToken)));
+        return new IndexerSearchReport(outcomes);
+    }
+
+    private async Task<IndexerSearchOutcome> SearchIndexerContainedAsync(
+        Indexer indexer,
+        string query,
+        string? category,
+        SearchRequest? request,
+        IndexerSearchContext context,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("Searching indexer {Name} ({Type}) for query: {Query}", indexer.Name, indexer.Type, query);
+            var perIndexerRequest = ApplyIndexerMamOptions(indexer, request);
+
+            var outcome = await SearchIndexerAsync(indexer, query, category, perIndexerRequest, context, cancellationToken);
+            _logger.LogInformation("Found {Count} results from indexer {Name}", outcome.Results.Count, indexer.Name);
+            return outcome;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new IndexerSearchOutcome(indexer.Id, IndexerSearchStatus.Cancelled, Array.Empty<IndexerSearchResult>(), RequestsSent: 0);
+        }
+        catch (OperationCanceledException ex)
+        {
+            // The caller's token is not cancelled, so this is an HttpClient per-request timeout
+            // (TaskCanceledException derives from OperationCanceledException). It is a failure of
+            // this indexer, contained so a single slow indexer can't abort every other one's results.
+            _logger.LogWarning(ex, "Timed out searching indexer {Name} for query: {Query}", indexer.Name, query);
+            return Failed(indexer, "timeout");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
+            _logger.LogError(ex, "Error searching indexer {Name} for query: {Query}", indexer.Name, query);
+            return Failed(indexer, "error");
+        }
     }
 
     public async Task<List<SearchResult>> SearchByApiAsync(string apiId, string query, string? category = null)
@@ -128,8 +181,8 @@ public class IndexerSearchWorkflow
             var mamOpts = _additionalSettingsParser.ParseMamOptions(indexer.AdditionalSettings);
             if (mamOpts != null) req.MyAnonamouse = mamOpts;
 
-            var idxResults = await SearchIndexerAsync(indexer, query, SearchOrigin.Interactive, category, req);
-            return idxResults.Select(SearchResultConverters.ToSearchResult).ToList();
+            var outcome = await SearchIndexerAsync(indexer, query, category, req, InteractiveContext, CancellationToken.None);
+            return outcome.Results.Select(SearchResultConverters.ToSearchResult).ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
@@ -155,7 +208,8 @@ public class IndexerSearchWorkflow
             }
 
             request = ApplyIndexerMamOptions(indexer, request);
-            return await SearchIndexerAsync(indexer, query, SearchOrigin.Interactive, category, request);
+            var outcome = await SearchIndexerAsync(indexer, query, category, request, InteractiveContext, CancellationToken.None);
+            return outcome.Results.ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
@@ -207,12 +261,13 @@ public class IndexerSearchWorkflow
         return request;
     }
 
-    private async Task<List<IndexerSearchResult>> SearchIndexerAsync(
+    private async Task<IndexerSearchOutcome> SearchIndexerAsync(
         Indexer indexer,
         string query,
-        SearchOrigin origin,
-        string? category = null,
-        SearchRequest? request = null)
+        string? category,
+        SearchRequest? request,
+        IndexerSearchContext context,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -225,7 +280,7 @@ public class IndexerSearchWorkflow
                 _logger.LogWarning(
                     "Skipping indexer {Name} ({Implementation}): the search query was empty after sanitization",
                     indexer.Name, indexer.Implementation);
-                return new List<IndexerSearchResult>();
+                return Failed(indexer, "empty query");
             }
             _logger.LogInformation("Searching indexer {Name} ({Implementation}) for: {Query}", indexer.Name, indexer.Implementation, query);
 
@@ -238,22 +293,32 @@ public class IndexerSearchWorkflow
             if (provider == null)
             {
                 _logger.LogWarning("No provider found for indexer type: {Implementation}", indexer.Implementation);
-                return new List<IndexerSearchResult>();
+                return Failed(indexer, "no provider");
             }
 
-            var providerResults = await provider.SearchAsync(indexer, query, category, request);
-            foreach (var r in providerResults.Where(r => string.IsNullOrWhiteSpace(r.Source)))
+            var outcome = await provider.SearchAsync(indexer, query, category, request, context, cancellationToken);
+            foreach (var r in outcome.Results.Where(r => string.IsNullOrWhiteSpace(r.Source)))
             {
                 r.Source = fallbackName;
             }
 
-            return providerResults;
+            return outcome;
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error searching indexer {Name}", indexer.Name);
-            return new List<IndexerSearchResult>();
+            return Failed(indexer, "error");
         }
+    }
+
+    private static IndexerSearchOutcome Failed(Indexer indexer, string reason)
+    {
+        return new IndexerSearchOutcome(
+            indexer.Id,
+            IndexerSearchStatus.Failed,
+            Array.Empty<IndexerSearchResult>(),
+            RequestsSent: 0,
+            FailureReason: reason);
     }
 
     private static string GetFallbackIndexerName(Indexer indexer)
