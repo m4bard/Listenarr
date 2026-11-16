@@ -37,6 +37,10 @@ public sealed partial class EfAutomaticSearchScheduleStore(ListenArrDbContext db
         return await db.Audiobooks
             .AsNoTracking()
             .Include(book => book.QualityProfile)
+            // The staleness check before a download rebuilds the book's target fingerprint from a
+            // read that carries its series memberships; assessed without them, a book in a second
+            // series never matches and is never grabbed.
+            .Include(book => book.SeriesMemberships)
             .Where(book => book.Monitored && book.QualityProfileId != null)
             .Where(book => book.AutomaticSearchDueUtc <= nowUtc)
             .Where(book => !excludedIds.Contains(book.Id))
