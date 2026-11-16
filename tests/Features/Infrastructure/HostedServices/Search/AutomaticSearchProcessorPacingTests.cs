@@ -114,8 +114,9 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchQueryPlan?>()))
-                .ReturnsAsync((string query, string? _, List<string>? _, SearchSortBy _, SearchSortDirection _, bool _, SearchQueryPlan? _) =>
+                    It.IsAny<SearchQueryPlan?>(),
+                    It.IsAny<SearchOrigin>()))
+                .ReturnsAsync((string query, string? _, List<string>? _, SearchSortBy _, SearchSortDirection _, bool _, SearchQueryPlan? _, SearchOrigin _) =>
                     new List<SearchResult> { new() { Title = $"{query} M4B", DownloadType = DirectDownloadMetadataKeys.ClientId } });
             var books = new[]
             {
@@ -147,7 +148,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchQueryPlan?>()))
+                    It.IsAny<SearchQueryPlan?>(),
+                    It.IsAny<SearchOrigin>()))
                 .ReturnsAsync(new List<SearchResult>());
             Init(builder =>
             {
@@ -213,7 +215,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchQueryPlan?>()),
+                    It.IsAny<SearchQueryPlan?>(),
+                    It.IsAny<SearchOrigin>()),
                 times);
 
         private void VerifySearchedOnlyFor(params string[] titles) =>
@@ -224,7 +227,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchQueryPlan?>()),
+                    It.IsAny<SearchQueryPlan?>(),
+                    It.IsAny<SearchOrigin>()),
                 Times.Never);
 
         private async Task RunCycleAsync()

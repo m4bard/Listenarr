@@ -10,6 +10,7 @@
 using Listenarr.Tests.Common;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using MetadataRefreshResult = Listenarr.Application.Metadata.Refresh.MetadataRefreshResult;
 
 namespace Listenarr.Tests.Features.Api.Features.Library;
 

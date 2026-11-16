@@ -22,6 +22,7 @@ using Listenarr.Tests.Mocks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using MetadataRefreshResult = Listenarr.Application.Metadata.Refresh.MetadataRefreshResult;
 
 namespace Listenarr.Tests.Features.Api
 {

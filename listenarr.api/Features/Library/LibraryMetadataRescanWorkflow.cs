@@ -19,6 +19,7 @@
 using Listenarr.Application.Common.Exceptions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
+using MetadataRefreshResult = Listenarr.Application.Metadata.Refresh.MetadataRefreshResult;
 
 namespace Listenarr.Api.Features.Library
 {

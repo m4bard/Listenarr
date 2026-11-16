@@ -19,6 +19,7 @@ using AsyncKeyedLock;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using MetadataRefreshResult = Listenarr.Application.Audiobooks.Files.MetadataRefreshResult;
 
 namespace Listenarr.Infrastructure.Metadata.Jobs
 {

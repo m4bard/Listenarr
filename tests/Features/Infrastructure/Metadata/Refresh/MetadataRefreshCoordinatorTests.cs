@@ -5,6 +5,7 @@
 using Listenarr.Application.Common.Exceptions;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.Hosting;
+using MetadataRefreshResult = Listenarr.Application.Metadata.Refresh.MetadataRefreshResult;
 
 namespace Listenarr.Tests.Features.Infrastructure.Metadata.Refresh;
 

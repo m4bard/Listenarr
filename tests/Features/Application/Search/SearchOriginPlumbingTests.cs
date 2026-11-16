@@ -43,6 +43,7 @@ namespace Listenarr.Tests.Features.Application.Search
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>(),
+                    It.IsAny<SearchQueryPlan?>(),
                     It.IsAny<SearchOrigin>()))
                 .ReturnsAsync(new List<SearchResult>());
             Init(builder => builder.WithSingleton(search.Object));
@@ -57,6 +58,7 @@ namespace Listenarr.Tests.Features.Application.Search
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     true,
+                    It.IsAny<SearchQueryPlan?>(),
                     origin),
                 Times.Once);
         }

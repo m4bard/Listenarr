@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Microsoft.EntityFrameworkCore;
+using MetadataRefreshResult = Listenarr.Application.Audiobooks.Files.MetadataRefreshResult;
 
 namespace Listenarr.Tests.Features.Application.Audiobooks.Files;
 
