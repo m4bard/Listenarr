@@ -73,13 +73,14 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             return book;
         }
 
-        private void IndexerReturns(params SearchResult[] results)
+        private void IndexerReturns(params IndexerSearchResult[] results)
         {
             _searchService
-                .Setup(s => s.SearchAsync(
-                    It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<List<string>?>(),
-                    It.IsAny<SearchSortBy>(), It.IsAny<SearchSortDirection>(), It.IsAny<bool>()))
-                .ReturnsAsync(results.ToList());
+                .Setup(s => s.SearchIndexersDetailedAsync(
+                    It.IsAny<string>(), It.IsAny<IndexerSearchContext>(), It.IsAny<IReadOnlyCollection<int>?>(),
+                    It.IsAny<bool>(), It.IsAny<SearchRequest?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new IndexerSearchReport(
+                    [new IndexerSearchOutcome(1, IndexerSearchStatus.Completed, results, RequestsSent: 1)]));
         }
 
         [Theory]
@@ -129,7 +130,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             Assert.Equal(expected ? 1 : 0, _submitted.Count);
         }
 
-        private static SearchResult Release(string title, string artist = "", int seeders = 50) => new()
+        private static IndexerSearchResult Release(string title, string artist = "", int seeders = 50) => new()
         {
             Title = title,
             Artist = artist,

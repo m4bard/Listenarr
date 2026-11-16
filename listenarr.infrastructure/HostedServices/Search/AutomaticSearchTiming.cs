@@ -33,8 +33,8 @@ namespace Listenarr.Infrastructure.HostedServices.Search
     {
         public const int MinSweepIntervalHours = 1;
         public const int MaxSweepIntervalHours = 168;
-        public const int MinCooldownHours = 1;
-        public const int MaxCooldownHours = 720;
+        public const int MinCooldownHours = AutomaticSearchBounds.MinCooldownHours;
+        public const int MaxCooldownHours = AutomaticSearchBounds.MaxCooldownHours;
         public const int MinBookDelaySeconds = 0;
         public const int MaxBookDelaySeconds = 300;
 
@@ -51,10 +51,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                     settings.AutomaticSearchIntervalHours,
                     MinSweepIntervalHours,
                     MaxSweepIntervalHours)),
-                TimeSpan.FromHours(Math.Clamp(
-                    settings.AutomaticSearchCooldownHours,
-                    MinCooldownHours,
-                    MaxCooldownHours)),
+                AutomaticSearchBounds.Cooldown(settings.AutomaticSearchCooldownHours),
                 TimeSpan.FromSeconds(Math.Clamp(
                     settings.AutomaticSearchBookDelaySeconds,
                     MinBookDelaySeconds,
