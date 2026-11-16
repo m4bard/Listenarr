@@ -244,19 +244,7 @@ public sealed class ManualImportCompanionPlacementTests : BaseTests
             {
                 [audiobook.Id] = destinationResolution
             },
-            importBlacklist: [],
-            rootFolders:
-            [
-                // PR #832 authorizes a companion against a configured root folder rather than the
-                // book folder, so the pass needs one. The library root is the book folder's parent
-                // here, which is the shape every case below builds.
-                new RootFolder
-                {
-                    Id = 1,
-                    Name = "library",
-                    Path = Path.GetDirectoryName(audiobookBasePath)!
-                }
-            ]);
+            importBlacklist: []);
 
         return new CompanionOutcome(imported, destinations, logger.MessagesAt(LogLevel.Warning));
     }
