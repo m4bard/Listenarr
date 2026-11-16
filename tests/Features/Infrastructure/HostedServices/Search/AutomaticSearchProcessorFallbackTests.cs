@@ -120,7 +120,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchQueryPlan?>()))
+                    It.IsAny<SearchQueryPlan?>(),
+                    It.IsAny<SearchOrigin>()))
                 .ReturnsAsync(new List<SearchResult>());
             search.Setup(s => s.SearchAsync(
                     fallbackQuery,
@@ -129,7 +130,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchQueryPlan?>()))
+                    It.IsAny<SearchQueryPlan?>(),
+                    It.IsAny<SearchOrigin>()))
                 .ReturnsAsync(fallbackResults);
         }
 

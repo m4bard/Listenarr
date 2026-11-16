@@ -791,7 +791,10 @@ class ApiService {
     return { blob, filename }
   }
 
-  async searchAndDownload(audiobookId: number): Promise<{
+  async searchAndDownload(
+    audiobookId: number,
+    options: { bulk?: boolean } = {},
+  ): Promise<{
     success: boolean
     message?: string
     downloadId?: string
@@ -808,7 +811,7 @@ class ApiService {
       searchResult?: SearchResult
     }>('/download/search-and-download', {
       method: 'POST',
-      body: JSON.stringify({ audiobookId }),
+      body: JSON.stringify(options.bulk ? { audiobookId, bulk: true } : { audiobookId }),
     })
   }
 

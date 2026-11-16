@@ -59,6 +59,7 @@ public partial class IndexerSearchWorkflow
         bool isAutomaticSearch = false,
         SearchRequest? request = null,
         SearchQueryPlan? plan = null,
+        SearchOrigin origin = SearchOrigin.Interactive,
         bool filterBlocked = true,
         CancellationToken ct = default)
     {
@@ -132,7 +133,7 @@ public partial class IndexerSearchWorkflow
                     // RunQueryPlanAsync collapses the walk to the answer it stopped on. That is what
                     // the failure backoff is fed, so a four-rung miss counts as the one "answered and
                     // had nothing" it actually was, not as four separate failures.
-                    var observation = await RunQueryPlanAsync(indexer, queryPlan, category, perIndexerRequest, ct);
+                    var observation = await RunQueryPlanAsync(indexer, queryPlan, category, perIndexerRequest, ct, origin);
                     observations[entry.Index] = (indexer, observation);
                     await RecordOutcomeAsync(indexer, observation, ct);
                 }
@@ -196,7 +197,7 @@ public partial class IndexerSearchWorkflow
             var mamOpts = _additionalSettingsParser.ParseMamOptions(indexer.AdditionalSettings);
             if (mamOpts != null) req.MyAnonamouse = mamOpts;
 
-            var observation = await SearchIndexerAsync(indexer, query, category, req);
+            var observation = await SearchIndexerAsync(indexer, query, SearchOrigin.Interactive, category, req);
             await RecordOutcomeAsync(indexer, observation);
             return observation.Results.Select(SearchResultConverters.ToSearchResult).ToList();
         }
@@ -234,7 +235,7 @@ public partial class IndexerSearchWorkflow
             }
 
             request = ApplyIndexerMamOptions(indexer, request);
-            var observation = await SearchIndexerAsync(indexer, query, category, request);
+            var observation = await SearchIndexerAsync(indexer, query, SearchOrigin.Interactive, category, request);
 
             // Deliberately not filtered by the backoff above: an operator naming one indexer has
             // overridden the policy by asking. Recording the answer is what makes that request
@@ -318,7 +319,8 @@ public partial class IndexerSearchWorkflow
         SearchQueryPlan plan,
         string? category,
         SearchRequest? request,
-        CancellationToken ct)
+        CancellationToken ct,
+        SearchOrigin origin = SearchOrigin.Interactive)
     {
         IndexerQueryObservation? observation = null;
 
@@ -335,7 +337,7 @@ public partial class IndexerSearchWorkflow
             // The caller's own token, not the loop's linked one: Parallel.ForEachAsync cancels
             // its linked token when any body faults, and a sibling indexer faulting must not
             // make this indexer's in-flight HttpClient timeout read as a caller cancellation.
-            observation = await SearchIndexerAsync(indexer, form.Query, category, request, ct, form.Tier);
+            observation = await SearchIndexerAsync(indexer, form.Query, origin, category, request, ct, form.Tier);
             _logger.LogInformation(
                 "Found {Count} results from indexer {Name} at tier {Tier}",
                 observation.Results.Count,
@@ -355,6 +357,7 @@ public partial class IndexerSearchWorkflow
     private async Task<IndexerQueryObservation> SearchIndexerAsync(
         Indexer indexer,
         string query,
+        SearchOrigin origin,
         string? category = null,
         SearchRequest? request = null,
         CancellationToken ct = default,
