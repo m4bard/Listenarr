@@ -45,6 +45,30 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
     }
 
     /// <summary>
+    /// <see cref="SourceScoring"/>'s candidates under the production service's target fingerprint,
+    /// with the production staleness check, which rebuilds that fingerprint from a fresh read of
+    /// the book.
+    /// </summary>
+    internal sealed class FingerprintScoring(SourceScoring candidates, AutomaticSearchScoringService production)
+        : IAutomaticSearchScoringService
+    {
+        public async Task<AutomaticSearchAssessment> ScoreAsync(Audiobook book, List<SearchResult> results,
+            QualityProfile profile, CancellationToken cancellationToken = default)
+        {
+            var target = await production.ScoreAsync(book, results, profile, cancellationToken);
+            var scored = await candidates.ScoreAsync(book, results, profile, cancellationToken);
+            return new AutomaticSearchAssessment(target.TargetFingerprint, scored.Candidates);
+        }
+
+        public AutomaticCandidateScore? SelectBest(AutomaticSearchAssessment assessment) =>
+            candidates.SelectBest(assessment);
+
+        public Task<bool> IsCurrentAsync(AutomaticSearchAssessment assessment, int bookId,
+            CancellationToken cancellationToken = default) =>
+            production.IsCurrentAsync(assessment, bookId, cancellationToken);
+    }
+
+    /// <summary>
     /// A settable UTC clock shared by the processor, the gate and the stub server.
     /// </summary>
     internal sealed class SweepClock(DateTime startUtc) : TimeProvider

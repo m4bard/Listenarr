@@ -56,6 +56,12 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
         /// <summary>Wraps the schedule store the processor resolves, when a test sets it.</summary>
         internal Func<IAutomaticSearchScheduleStore, IAutomaticSearchScheduleStore>? DecorateStore { get; set; }
 
+        /// <summary>
+        /// Has assessments carry the production target fingerprint and staleness check, so a test
+        /// sees what the real service sees of the book; applied by <see cref="BuildHost"/>.
+        /// </summary>
+        internal bool ProductionFingerprints { get; set; }
+
         internal AutomaticSearchScheduleTestDatabase Database => _database!;
 
         public override async Task InitializeAsync()
@@ -103,7 +109,10 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
                     .Concat(AdditionalProviders)
                     .Select(provider => ServiceDescriptor.Singleton(provider)))
                 .WithSingleton(_quality!)
-                .WithSingleton<IAutomaticSearchScoringService>(new SourceScoring(_quality!))
+                .WithMocks(ProductionFingerprints
+                    ? ServiceDescriptor.Scoped<IAutomaticSearchScoringService>(provider => new FingerprintScoring(
+                        new SourceScoring(_quality!), ActivatorUtilities.CreateInstance<AutomaticSearchScoringService>(provider)))
+                    : ServiceDescriptor.Singleton<IAutomaticSearchScoringService>(new SourceScoring(_quality!)))
                 .WithSingleton(Downloads.Object)
                 .WithMocks(
                     ServiceDescriptor.Scoped<ListenArrDbContext>(_ => factory.CreateDbContext()),
@@ -176,6 +185,18 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             context.Audiobooks.AddRange(added);
             await context.SaveChangesAsync();
             return added.Select(book => new SeededBook(book.Id, QueryFor(book), FallbackQueryFor(book), ReleaseNameFor(book))).ToList();
+        }
+
+        /// <summary>Adds the given book, monitored under the test's profile and due at <paramref name="dueUtc"/>.</summary>
+        protected async Task<SeededBook> AddBookAsync(Audiobook book, DateTime dueUtc)
+        {
+            book.Monitored = true;
+            book.QualityProfileId = _qualityProfileId;
+            book.AutomaticSearchDueUtc = dueUtc;
+            await using var context = _database!.CreateContext();
+            context.Audiobooks.Add(book);
+            await context.SaveChangesAsync();
+            return new SeededBook(book.Id, QueryFor(book), FallbackQueryFor(book), ReleaseNameFor(book));
         }
 
         /// <summary>Gives the book a completed MP3 download against an MP3 cutoff, so its pre-check skips it.</summary>
