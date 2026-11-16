@@ -163,7 +163,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<List<string>?>(),
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
-                    It.IsAny<bool>()))
+                    It.IsAny<bool>(),
+                    It.IsAny<SearchQueryPlan?>()))
                 .ReturnsAsync(results.ToList());
             return search;
         }
@@ -175,7 +176,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             var quality = new Mock<IQualityProfileService>();
             quality.Setup(q => q.ScoreSearchResults(
                     It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>()))
-                .ReturnsAsync((List<SearchResult> results, QualityProfile _) =>
+                .ReturnsAsync((List<SearchResult> results, QualityProfile _, bool _) =>
                     results.Select(r => new QualityScore { SearchResult = r, TotalScore = 100 }).ToList());
             return quality;
         }

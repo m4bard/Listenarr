@@ -33,7 +33,7 @@ public sealed class AutomaticSearchScoringTests : BaseTests
         var second = Result("Dune", "Frank Herbert", 2);
         var quality = new Mock<IQualityProfileService>();
         quality.Setup(q => q.ScoreSearchResults(It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>()))
-            .ReturnsAsync((List<SearchResult> candidates, QualityProfile _) => candidates.Select(r =>
+            .ReturnsAsync((List<SearchResult> candidates, QualityProfile _, bool _) => candidates.Select(r =>
                 new QualityScore { SearchResult = r, TotalScore = 100 }).ToList());
         var scorer = New(quality);
         var target = new Audiobook { Title = "Dune", Authors = ["Frank Herbert"] };
