@@ -110,10 +110,12 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             // sort, which is the same shape LastSearchTime has always been indexed for.
             builder.HasIndex(a => a.LastMetadataRefreshAt);
 
-            // The automatic-search schedule is written only by set-based updates in the schedule
-            // store. Ignoring it after save keeps a stale whole-entity save (a detached
-            // UpdateAsync, or a tracked entity read before the store's write) from putting an
-            // old due time or failure count back.
+            // The automatic-search schedule and the last search time are written only by
+            // set-based updates in the schedule store. Ignoring them after save keeps a stale
+            // whole-entity save (a detached UpdateAsync, or a tracked entity read before the
+            // store's write) from putting an old value back.
+            builder.Property(a => a.LastSearchTime)
+                .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
             builder.Property(a => a.AutomaticSearchDueUtc)
                 .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
             builder.Property(a => a.AutomaticSearchFailureCount)

@@ -101,8 +101,6 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<List<Audiobook>> GetLibraryAsync();
         Task<Dictionary<int, List<AudiobookSeriesMembership>>> GetAllSeriesMembershipsGroupedByAudiobookIdAsync(CancellationToken ct = default);
         Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, CancellationToken ct = default);
-        Task<List<Audiobook>> GetMonitoredAudiobooksForSearchAsync(DateTime cutoff, CancellationToken ct = default);
-
         /// <summary>
         /// Projects the audiobooks whose stored PublishedDate falls inside a coarse string range,
         /// for the calendar window query.

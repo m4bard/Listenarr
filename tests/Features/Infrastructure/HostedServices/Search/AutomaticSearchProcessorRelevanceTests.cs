@@ -36,7 +36,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             Init(builder => { builder.WithSingleton(search.Object); builder.WithSingleton(download.Object); builder.WithSingleton(AcceptingQualityService().Object); });
             var book = await SeedMonitoredAudiobookAsync(title, author);
             await RunCycleAsync();
-            download.Verify(d => d.StartDownloadAsync(It.Is<SearchResult>(r => ReferenceEquals(r, correct)), DirectDownloadMetadataKeys.ClientId, book.Id), Times.Once);
+            download.Verify(d => d.StartDownloadAsync(It.Is<SearchResult>(r => r.Title == correct.Title), DirectDownloadMetadataKeys.ClientId, book.Id), Times.Once);
             download.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()), Times.Once);
         }
 
@@ -86,7 +86,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             await RunCycleAsync();
 
             download.Verify(d => d.StartDownloadAsync(
-                    It.Is<SearchResult>(r => ReferenceEquals(r, correct)),
+                    It.Is<SearchResult>(r => r.Title == correct.Title),
                     DirectDownloadMetadataKeys.ClientId,
                     audiobook.Id),
                 Times.Once);
@@ -118,7 +118,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             book.SeriesNumber = number;
             await _audiobookRepository.UpdateAsync(book);
             await RunCycleAsync();
-            download.Verify(d => d.StartDownloadAsync(It.Is<SearchResult>(r => ReferenceEquals(r, correct)),
+            download.Verify(d => d.StartDownloadAsync(It.Is<SearchResult>(r => r.Title == correct.Title),
                 DirectDownloadMetadataKeys.ClientId, book.Id), Times.Once);
             download.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()), Times.Once);
         }
@@ -146,7 +146,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             download.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()), expected ? Times.Once() : Times.Never());
         }
 
-        private static SearchResult Release(string title, string artist) => new()
+        // The sweep hands on a converted copy of each indexer result, so a grab is matched by title.
+        private static IndexerSearchResult Release(string title, string artist) => new()
         {
             Title = title,
             Artist = artist,
@@ -154,18 +155,21 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             DownloadType = DirectDownloadMetadataKeys.ClientId
         };
 
-        private static Mock<ISearchService> SearchReturning(params SearchResult[] results)
+        // The sweep searches one indexer per call; each call answers for the indexer it names.
+        private static Mock<ISearchService> SearchReturning(params IndexerSearchResult[] results)
         {
             var search = new Mock<ISearchService>();
-            search.Setup(s => s.SearchAsync(
+            search.Setup(s => s.SearchIndexersDetailedAsync(
                     It.IsAny<string>(),
-                    It.IsAny<string?>(),
-                    It.IsAny<List<string>?>(),
-                    It.IsAny<SearchSortBy>(),
-                    It.IsAny<SearchSortDirection>(),
+                    It.IsAny<IndexerSearchContext>(),
+                    It.IsAny<IReadOnlyCollection<int>?>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchOrigin>()))
-                .ReturnsAsync(results.ToList());
+                    It.IsAny<SearchRequest?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string _, IndexerSearchContext _, IReadOnlyCollection<int>? indexerIds, bool _, SearchRequest? _, CancellationToken _) =>
+                    new IndexerSearchReport(indexerIds!
+                        .Select(id => new IndexerSearchOutcome(id, IndexerSearchStatus.Completed, results, RequestsSent: 1))
+                        .ToList()));
             return search;
         }
 
@@ -181,14 +185,19 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             return quality;
         }
 
-        private async Task<Audiobook> SeedMonitoredAudiobookAsync(string title, string author) =>
-            await _audiobookRepository.AddAsync(new AudiobookBuilder()
+        private async Task<Audiobook> SeedMonitoredAudiobookAsync(string title, string author)
+        {
+            var indexer = new IndexerBuilder().WithName("Only").WithUrl("https://indexer.invalid").WithEnabled().Build();
+            indexer.EnableAutomaticSearch = true;
+            await _indexerRepository.AddAsync(indexer);
+            return await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithTitle(title)
                 .WithSubtitle(title.Contains(": ", StringComparison.Ordinal) ? title[(title.IndexOf(": ", StringComparison.Ordinal) + 2)..] : null)
                 .WithAuthor(author)
                 .WithMonitored()
                 .WithQualityProfile(new QualityProfile { Name = "Any" })
                 .Build());
+        }
 
         private async Task RunCycleAsync()
         {

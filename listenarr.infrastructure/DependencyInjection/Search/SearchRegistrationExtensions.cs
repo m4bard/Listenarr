@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Application.Search.Scheduling;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Infrastructure.Search.Matching;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,6 +37,8 @@ internal static class SearchRegistrationExtensions
     {
         services.AddScoped<IIndexerRepository, EfIndexerRepository>();
         services.AddSingleton<IReleaseAnnotationCatalogSource, EmbeddedReleaseAnnotationCatalogSource>();
+        services.AddScoped<IAutomaticSearchScheduleStore, EfAutomaticSearchScheduleStore>();
+        services.AddScoped<IAutomaticSearchAcquisition, AutomaticSearchAcquisition>();
         return services;
     }
 }

@@ -157,7 +157,14 @@ public sealed partial class AutomaticSearchSchedulePlanTests : BaseTests
         var capture = new CommandCapture();
         await using var context = new ListenArrDbContext(fixture.CreateOptions(capture));
         await context.Database.OpenConnectionAsync();
-        var books = await new AudiobookRepository(context).GetMonitoredAudiobooksForSearchAsync(ClockUtc.AddHours(-1));
+        // The previous repository query, verbatim; the sweep no longer has it.
+        var cutoff = ClockUtc.AddHours(-1);
+        var books = await context.Audiobooks
+            .Include(a => a.QualityProfile)
+            .Where(a => a.Monitored &&
+                        a.QualityProfileId != null &&
+                        (a.LastSearchTime == null || a.LastSearchTime < cutoff))
+            .ToListAsync();
 
         var command = Assert.Single(capture.Commands);
         var plan = await ExplainAsync(context.Database.GetDbConnection(), command);
