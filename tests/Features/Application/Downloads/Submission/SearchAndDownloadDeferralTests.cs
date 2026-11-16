@@ -50,7 +50,10 @@ public sealed class SearchAndDownloadDeferralTests : BaseTests
                     [
                         new IndexerSearchResult
                         {
-                            Title = "A Princess of Mars",
+                            // Automatic selection only grabs a release whose identity it can
+                            // confirm, so the release names the book and its author.
+                            Title = "Edgar Rice Burroughs - A Princess of Mars [M4B]",
+                            IdentityEvidence = new CandidateIdentityEvidence { ReleaseName = "Edgar Rice Burroughs - A Princess of Mars [M4B]" },
                             MagnetLink = $"magnet:?xt=urn:btih:{InfoHash}&dn=book",
                             Size = 800_000_000,
                             Seeders = 20
@@ -74,7 +77,7 @@ public sealed class SearchAndDownloadDeferralTests : BaseTests
             .Build());
         var qualityProfile = await _qualityProfileRepository.AddAsync(new QualityProfileBuilder().Build());
         var audiobook = await _audiobookRepository.AddAsync(
-            new AudiobookBuilder().WithTitle("A Princess of Mars").WithQualityProfile(qualityProfile).Build());
+            new AudiobookBuilder().WithTitle("A Princess of Mars").WithAuthor("Edgar Rice Burroughs").WithQualityProfile(qualityProfile).Build());
 
         var result = await _provider.GetRequiredService<IDownloadService>().SearchAndDownloadAsync(audiobook.Id);
 
