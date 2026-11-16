@@ -47,6 +47,10 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         /// </summary>
         private const int ExpectedCrossProtocolScore = 76;
 
+        private const string BookTitle = "Pride and Prejudice";
+        private const string BookAuthor = "Jane Austen";
+        private const string ReleaseATitle = $"{BookAuthor} - {BookTitle}";
+
         private static QualityProfile BuildProfile()
         {
             var profile = new QualityProfileBuilder()
@@ -116,6 +120,22 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         /// being skipped for Usenet. Before that a usenet release took no deduction at all, and
         /// the tie was arranged by giving the torrent alone a ten point one.
         /// </summary>
+        /// <summary>
+        /// Three releases of <see cref="BookTitle"/> that differ only in title wording, in an order
+        /// that is not their tiebreak order. Both selection sites pass candidates through the
+        /// book identity gate first, so each title names the book and its author: a release the
+        /// gate rejects never reaches the tiebreak.
+        /// </summary>
+        private static List<SearchResult> IdentifiedReleasesOutOfOrder()
+        {
+            return
+            [
+                Torrent("release-b", $"{BookTitle} - {BookAuthor}"),
+                Torrent("release-a", ReleaseATitle),
+                Torrent("release-c", $"{BookTitle} by {BookAuthor}")
+            ];
+        }
+
         private static SearchResult TorrentMatchingUsenetScore(string id, string title, int seeders = 20)
         {
             return Torrent(id, title, seeders: seeders, leechers: 0, quality: "MP3 320kbps", format: "m4b", language: "German");
@@ -212,12 +232,7 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         [Fact]
         public async Task SearchAndDownload_GrabsSameRelease_WhenScoredResultsArriveInIndexerOrder()
         {
-            var forward = new List<SearchResult>
-            {
-                Torrent("release-b", "Bravo Release"),
-                Torrent("release-a", "Alpha Release"),
-                Torrent("release-c", "Charlie Release")
-            };
+            var forward = IdentifiedReleasesOutOfOrder();
             var reversed = Enumerable.Reverse(forward).ToList();
 
             // Control: the scorer cannot separate these, so only the tiebreak can decide.
@@ -547,12 +562,7 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         [Fact]
         public async Task AutomaticSearch_QueuesSameRelease_WhenScoredResultsArriveInIndexerOrder()
         {
-            var forward = new List<SearchResult>
-            {
-                Torrent("release-b", "Bravo Release"),
-                Torrent("release-a", "Alpha Release"),
-                Torrent("release-c", "Charlie Release")
-            };
+            var forward = IdentifiedReleasesOutOfOrder();
             var reversed = Enumerable.Reverse(forward).ToList();
 
             // Control: the scorer cannot separate these, so only the tiebreak can decide.
@@ -561,8 +571,8 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             var forwardGrab = await RunAutomaticSearchCycleAsync(forward);
             var reversedGrab = await RunAutomaticSearchCycleAsync(reversed);
 
-            Assert.Equal("Alpha Release", forwardGrab);
-            Assert.Equal("Alpha Release", reversedGrab);
+            Assert.Equal(ReleaseATitle, forwardGrab);
+            Assert.Equal(ReleaseATitle, reversedGrab);
         }
 
         // ------------------------------------------------------------------
@@ -649,7 +659,11 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
         private async Task<Audiobook> ArrangeMonitoredAudiobookAsync()
         {
             var profile = await _qualityProfileRepository.AddAsync(BuildProfile());
-            var audiobook = await CreateAudiobook();
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithBasePath(FileService.GetTempPath())
+                .WithTitle(BookTitle)
+                .WithAuthor(BookAuthor)
+                .Build());
             audiobook.QualityProfileId = profile.Id;
             audiobook.Monitored = true;
             audiobook.LastSearchTime = null;

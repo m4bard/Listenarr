@@ -69,7 +69,9 @@ public sealed class ClientDuplicateReleaseFilterTests : BaseTests
             .ReturnsAsync([
                 new SearchResult
                 {
-                    Title = "The Only Listing",
+                    // Title and author both, so the book identity gate confirms the release and
+                    // the hold is what the second search has to get past.
+                    Title = "Jane Austen - Pride and Prejudice",
                     MagnetLink = Magnet,
                     Size = 800_000_000,
                     Seeders = 20
@@ -90,7 +92,8 @@ public sealed class ClientDuplicateReleaseFilterTests : BaseTests
             new QualityProfileBuilder().Build());
         var audiobook = await _audiobookRepository.AddAsync(
             new AudiobookBuilder()
-                .WithTitle("The Only Listing")
+                .WithTitle("Pride and Prejudice")
+                .WithAuthor("Jane Austen")
                 .WithQualityProfile(qualityProfile)
                 .Build());
 
