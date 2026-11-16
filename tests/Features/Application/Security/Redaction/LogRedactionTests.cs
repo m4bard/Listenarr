@@ -187,5 +187,46 @@ namespace Listenarr.Tests.Features.Application.Security.Redaction
                 Environment.SetEnvironmentVariable("TOKEN", previous);
             }
         }
+
+        [Theory]
+        [InlineData("secret%7Etoken")]
+        [InlineData("secret\\token")]
+        [InlineData("secret token")]
+        [InlineData("secret/../token")]
+        [InlineData("plain-secret-token")]
+        public void SanitizeWebhookUrl_GenericUrl_MasksEnvironmentSecretThatCanonicalizationWouldRewrite(string token)
+        {
+            var previous = Environment.GetEnvironmentVariable("TOKEN");
+            try
+            {
+                Environment.SetEnvironmentVariable("TOKEN", token);
+
+                var sanitized = LogRedaction.SanitizeWebhookUrl($"https://example.com/hooks/{token}");
+
+                Assert.Equal("https://example.com/hooks/<redacted>", sanitized);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("TOKEN", previous);
+            }
+        }
+
+        [Fact]
+        public void SanitizeWebhookUrl_GenericUrl_KeepsPathWhenNoEnvironmentSecretMatches()
+        {
+            var previous = Environment.GetEnvironmentVariable("TOKEN");
+            try
+            {
+                Environment.SetEnvironmentVariable("TOKEN", "unrelated-secret%7Evalue");
+
+                var sanitized = LogRedaction.SanitizeWebhookUrl("https://example.com/hooks/channel?x=1");
+
+                Assert.Equal("https://example.com/hooks/channel", sanitized);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("TOKEN", previous);
+            }
+        }
     }
 }
