@@ -426,7 +426,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
 
             var downloadServiceMock = new Mock<IDownloadService>();
             downloadServiceMock
-                .Setup(service => service.SearchAndDownloadAsync(It.IsAny<int>()))
+                .Setup(service => service.SearchAndDownloadAsync(It.IsAny<int>(), It.IsAny<SearchOrigin>()))
                 .ReturnsAsync(new SearchAndDownloadResult { Success = true });
 
             // Everything that needs to be visible to the freshly built provider's repositories
@@ -466,7 +466,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
 
             Assert.Equal(1, gatewayMock.GetCallCount(nameof(IDownloadClientGateway.RemoveAsync)));
             downloadServiceMock.Verify(
-                service => service.SearchAndDownloadAsync(audiobook.Id),
+                service => service.SearchAndDownloadAsync(audiobook.Id, SearchOrigin.Retry),
                 Times.Once);
         }
 
@@ -482,7 +482,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
 
             var downloadServiceMock = new Mock<IDownloadService>();
             downloadServiceMock
-                .Setup(service => service.SearchAndDownloadAsync(It.IsAny<int>()))
+                .Setup(service => service.SearchAndDownloadAsync(It.IsAny<int>(), It.IsAny<SearchOrigin>()))
                 .ThrowsAsync(new InvalidOperationException("simulated auto-search failure"));
 
             // See the comment on the equivalent Init() call above: data has to be created after
@@ -524,7 +524,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             // Without this, a lookup failure that skipped the auto-search branch entirely (never
             // reaching the throw) would read as a pass here for the wrong reason.
             downloadServiceMock.Verify(
-                service => service.SearchAndDownloadAsync(audiobook.Id),
+                service => service.SearchAndDownloadAsync(audiobook.Id, SearchOrigin.Retry),
                 Times.Once);
         }
 

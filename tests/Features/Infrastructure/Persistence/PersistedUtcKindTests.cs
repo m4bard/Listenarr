@@ -120,9 +120,9 @@ public sealed class PersistedUtcKindTests : BaseTests
             using var command = connection.CreateCommand();
             command.CommandText =
                 "insert into AudiobookFiles (AudiobookId, Path, PhysicalObjectIdentity, " +
-                "PhysicalIdentityVersion, PhysicalIdentityObservedAtUtc, CreatedAt) values " +
+                "PhysicalIdentityVersion, PhysicalIdentityObservedAtUtc, CreatedAt, MetadataRescanDueUtc) values " +
                 $"({audiobookId}, '/library/legacy.m4b', 'dev:1:legacy', 1, " +
-                "'2026-09-01 20:47:07.303729', '2026-01-01 00:00:00')";
+                "'2026-09-01 20:47:07.303729', '2026-01-01 00:00:00', '0001-01-01 00:00:00')";
             await command.ExecuteNonQueryAsync();
         }
 
