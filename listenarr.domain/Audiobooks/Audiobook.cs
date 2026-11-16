@@ -76,6 +76,19 @@ namespace Listenarr.Domain.Audiobooks
         public DateTime? LastSearchTime { get; set; }
 
         /// <summary>
+        /// When the automatic search next considers this book. A new book is due at once.
+        /// Only the automatic-search schedule store writes it after the book is created.
+        /// </summary>
+        public DateTime AutomaticSearchDueUtc { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// Consecutive book-level failures of the automatic search (the search reached the
+        /// indexers but the book could not be processed or its grab did not complete). Drives the
+        /// book failure back-off; only the automatic-search schedule store writes it.
+        /// </summary>
+        public int AutomaticSearchFailureCount { get; set; }
+
+        /// <summary>
         /// Create AudioMetadata from the Audiobook as a basic metadata for imported files
         /// </summary>
         /// <returns>AudioMetada based on the audiobook retrieved metadata</returns>

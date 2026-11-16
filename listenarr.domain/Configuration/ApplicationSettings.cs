@@ -257,5 +257,17 @@ namespace Listenarr.Domain.Configuration
         /// unaffected. Clamped to [0, 300].
         /// </summary>
         public int AutomaticSearchBookDelaySeconds { get; set; } = 5;
+
+        /// <summary>
+        /// Most books one automatic-search sweep searches. Books left over stay due and head the
+        /// next sweep.
+        /// </summary>
+        public int AutomaticSearchMaxBooksPerCycle { get; set; } = AutomaticSearchBounds.DefaultMaxBooksPerCycle;
+
+        /// <summary>
+        /// Most indexer requests one automatic-search sweep sends, counting the requests the
+        /// application sends for a search: queries (including Internet Archive's query variants), fallback queries, and pages fetched for extra detail.
+        /// </summary>
+        public int AutomaticSearchMaxRequestsPerCycle { get; set; } = AutomaticSearchBounds.DefaultMaxRequestsPerCycle;
     }
 }

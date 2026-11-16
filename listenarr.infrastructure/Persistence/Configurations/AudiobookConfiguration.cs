@@ -17,6 +17,7 @@
  */
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Listenarr.Infrastructure.Persistence.Converters;
@@ -103,6 +104,23 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             // Performance indexes commonly used by queries
             builder.HasIndex(a => a.Monitored);
             builder.HasIndex(a => a.LastSearchTime);
+
+            // The automatic-search schedule is written only by set-based updates in the schedule
+            // store. Ignoring it after save keeps a stale whole-entity save (a detached
+            // UpdateAsync, or a tracked entity read before the store's write) from putting an
+            // old due time or failure count back.
+            builder.Property(a => a.AutomaticSearchDueUtc)
+                .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
+            builder.Property(a => a.AutomaticSearchFailureCount)
+                .HasDefaultValue(0)
+                .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
+
+            // Only books the automatic search can pick are indexed. SQLite uses a partial index
+            // only when the query's WHERE clause carries the same terms, so the filter is the
+            // text EF emits for the schedule store's eligibility predicate.
+            builder.HasIndex(a => a.AutomaticSearchDueUtc)
+                .HasDatabaseName("IX_Audiobooks_AutomaticSearchDue")
+                .HasFilter("\"Monitored\" AND \"QualityProfileId\" IS NOT NULL");
         }
     }
 }
