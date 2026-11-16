@@ -225,14 +225,16 @@ public sealed partial class FileRegistrationRecoveryService(
                         ? FileRegistrationRecoveryDisposition.WaitingForOwnerRetry
                         : FileRegistrationRecoveryDisposition.AutomaticRecovery,
             CanRetry: recoverable,
-            CanAbandon: false,
-            sourceRetained
-                ? "The publication completed successfully, but the source was retained because delete authority does not survive a restart."
-                : cleared
-                    ? "The file-registration recovery boundary is clear."
-                    : needsAttention || !recoverable
-                        ? "This publication still requires operator repair; no destructive action was authorized."
-                        : "Recovery remains pending because its operation evidence could not yet be reconciled.");
+            CanAbandon: needsAttention,
+            IsAbandonedByOperator(journal)
+                ? "This publication was abandoned by operator request without verification; that action deleted no source and changed no file."
+                : sourceRetained
+                    ? "The publication completed successfully, but the source was retained because delete authority does not survive a restart."
+                    : cleared
+                        ? "The file-registration recovery boundary is clear."
+                        : needsAttention || !recoverable
+                            ? "This publication still requires operator repair; no destructive action was authorized."
+                            : "Recovery remains pending because its operation evidence could not yet be reconciled.");
     }
 
     private async Task<FileRegistrationRecoveryReceipt?> ReconcileOperationAsync(

@@ -81,6 +81,14 @@ public interface IFileRegistrationRecoveryService
         Guid operationId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Clears a registration publication that requires operator attention without
+    /// verifying it. It deletes no source and changes no file.
+    /// </summary>
+    Task<FileRegistrationRecoveryStatus> AbandonAsync(
+        Guid operationId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<FileRegistrationRecoveryReceipt>>
         ReconcileAudiobookWithReceiptsAsync(
             int audiobookId,
