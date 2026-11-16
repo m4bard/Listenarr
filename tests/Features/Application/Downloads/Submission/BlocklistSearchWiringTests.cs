@@ -18,27 +18,32 @@ public sealed class BlocklistSearchWiringTests : BaseTests
     public async Task SearchAndDownloadAsync_WhenTheOnlyCandidateIsBlocked_ReportsNoAcceptableResults()
     {
         var search = new Mock<ISearchService>();
-        search.Setup(service => service.SearchAsync(
+        search.Setup(service => service.SearchIndexersDetailedAsync(
                 It.IsAny<string>(),
-                It.IsAny<string?>(),
-                It.IsAny<List<string>?>(),
-                It.IsAny<SearchSortBy>(),
-                It.IsAny<SearchSortDirection>(),
+                It.IsAny<IndexerSearchContext>(),
+                It.IsAny<IReadOnlyCollection<int>?>(),
                 It.IsAny<bool>(),
-                It.IsAny<SearchOrigin>()))
-            .ReturnsAsync([
-                new SearchResult
-                {
-                    // The release has to name the book and its author: automatic selection only
-                    // grabs a candidate whose identity it can confirm, and the precondition below
-                    // needs this one to be grabbable.
-                    Title = ReleaseName,
-                    IdentityEvidence = new CandidateIdentityEvidence { ReleaseName = ReleaseName },
-                    MagnetLink = $"magnet:?xt=urn:btih:{InfoHash}&dn=book",
-                    Size = 800_000_000,
-                    Seeders = 20
-                }
-            ]);
+                It.IsAny<SearchRequest?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new IndexerSearchReport([
+                new IndexerSearchOutcome(
+                    1,
+                    IndexerSearchStatus.Completed,
+                    [
+                        new IndexerSearchResult
+                        {
+                            // The release has to name the book and its author: automatic selection only
+                            // grabs a candidate whose identity it can confirm, and the precondition below
+                            // needs this one to be grabbable.
+                            Title = ReleaseName,
+                            IdentityEvidence = new CandidateIdentityEvidence { ReleaseName = ReleaseName },
+                            MagnetLink = $"magnet:?xt=urn:btih:{InfoHash}&dn=book",
+                            Size = 800_000_000,
+                            Seeders = 20
+                        }
+                    ],
+                    RequestsSent: 1)
+            ]));
         _services.AddSingleton(search.Object);
         Init();
 

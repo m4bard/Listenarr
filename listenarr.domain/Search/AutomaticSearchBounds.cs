@@ -43,6 +43,15 @@ namespace Listenarr.Domain.Search
         public const int MaxRequestsPerCycle = 10000;
 
         /// <summary>
+        /// The configured cooldown is clamped to this many hours, for the sweep and the manual search alike.
+        /// </summary>
+        public const int MinCooldownHours = 1;
+        public const int MaxCooldownHours = 720;
+
+        public static TimeSpan Cooldown(int configuredHours) =>
+            TimeSpan.FromHours(Math.Clamp(configuredHours, MinCooldownHours, MaxCooldownHours));
+
+        /// <summary>
         /// One sweep reads due books this many at a time, and at most <see cref="SelectionPageBound"/> pages.
         /// </summary>
         public const int SelectionPageSize = 50;

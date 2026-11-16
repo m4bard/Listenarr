@@ -17,6 +17,7 @@
  */
 
 using Listenarr.Application.Common;
+using Listenarr.Application.Search.Scheduling;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Downloads.Submission
@@ -39,7 +40,9 @@ namespace Listenarr.Application.Downloads.Submission
         DownloadCachedTorrentStore cachedTorrentStore,
         IDownloadSubmissionPreparer submissionPreparer,
         DirectDownloadWorkflow directDownloadWorkflow,
-        DownloadRemovalWorkflow downloadRemovalWorkflow) : IDownloadService
+        DownloadRemovalWorkflow downloadRemovalWorkflow,
+        IAutomaticSearchScheduleStore scheduleStore,
+        TimeProvider clock) : IDownloadService
     {
         // Cache expiration constants
         private const int QueueCacheExpirationSeconds = 10;
