@@ -43,7 +43,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
             ? Ok(CreateSearchResponse("Alice in Wonderland").Replace("\"Lewis Carroll\"", creatorJson, StringComparison.Ordinal)
                 .Replace("2010-03-01", DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal))
             : Ok(metadata));
-        var results = await provider.SearchAsync(CreateIndexer(), "Alice in Wonderland");
+        var results = (await provider.SearchAsync(CreateIndexer(), "Alice in Wonderland")).Results;
         Assert.Equal(2, results.Count);
         var quality = new QualityProfileService(Mock.Of<IQualityProfileRepository>(), NullLogger<QualityProfileService>.Instance);
         var scorer = new AutomaticSearchScoringService(quality, Mock.Of<IAudiobookRepository>(), NullLogger<AutomaticSearchScoringService>.Instance, TestAnnotationCatalog.CreateProvider());
@@ -163,7 +163,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         const string metadata = """
         {"metadata":{"language":["eng","swe"]},"files":[{"name":"book.m4b","format":"LibriVox Apple Audiobook","size":"900"}]}
         """;
-        var result = Assert.Single(await CreateProvider(metadata).SearchAsync(CreateIndexer(), "Alice"));
+        var result = Assert.Single((await CreateProvider(metadata).SearchAsync(CreateIndexer(), "Alice")).Results);
         Assert.Equal("English; Swedish", result.Language);
         Assert.Equal(IdentityEvidenceOrigin.ProviderSupplied, result.LanguageOrigin);
     }
@@ -174,7 +174,7 @@ public sealed class InternetArchiveSearchProviderTests : BaseTests
         const string metadata = """
         {"metadata":{},"files":[{"name":"book.m4b","format":"LibriVox Apple Audiobook","size":"900"}]}
         """;
-        var result = Assert.Single(await CreateProvider(metadata, "French Lessons").SearchAsync(CreateIndexer(), "French"));
+        var result = Assert.Single((await CreateProvider(metadata, "French Lessons").SearchAsync(CreateIndexer(), "French")).Results);
         Assert.Equal("French", result.Language);
         Assert.Equal(IdentityEvidenceOrigin.ReleaseNameDerived, result.LanguageOrigin);
     }
