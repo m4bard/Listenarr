@@ -37,7 +37,6 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<List<Audiobook>> GetLibraryAsync();
         Task<Dictionary<int, List<AudiobookSeriesMembership>>> GetAllSeriesMembershipsGroupedByAudiobookIdAsync(CancellationToken ct = default);
         Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, CancellationToken ct = default);
-        Task<List<Audiobook>> GetMonitoredAudiobooksForSearchAsync(DateTime cutoff, CancellationToken ct = default);
         Task NormalizeJsonColumnsAsync(CancellationToken ct = default);
         /// <summary>
         /// The region of every book's ASINs, by book and normalized ASIN. An ASIN held in several
