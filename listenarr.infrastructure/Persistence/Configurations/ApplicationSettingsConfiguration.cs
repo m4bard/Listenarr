@@ -65,6 +65,15 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             // older build that still reads it can be put back on the same database.
             builder.Property<int>("MaxConcurrentIndexerSearches");
 
+            // The defaults give the existing settings row a fresh install's bounds. The sentinel is
+            // the default itself, so EF writes any other value it is given, including 0.
+            builder.Property(e => e.AutomaticSearchMaxBooksPerCycle)
+                .HasDefaultValue(AutomaticSearchBounds.DefaultMaxBooksPerCycle)
+                .HasSentinel(AutomaticSearchBounds.DefaultMaxBooksPerCycle);
+            builder.Property(e => e.AutomaticSearchMaxRequestsPerCycle)
+                .HasDefaultValue(AutomaticSearchBounds.DefaultMaxRequestsPerCycle)
+                .HasSentinel(AutomaticSearchBounds.DefaultMaxRequestsPerCycle);
+
             // AllowedFileExtensions stored as pipe-delimited list
             builder.Property(e => e.AllowedFileExtensions)
                 .HasConversion(
