@@ -92,7 +92,7 @@ public sealed class TorznabIndexerFlagSurfacingTests : BaseTests
         // Torznab attributes are parsed in two places. Both have to learn about the flags, or a
         // result carries them only on whichever code path happened to handle it.
         using var httpClient = new HttpClient();
-        var provider = new TorznabNewznabSearchProvider(httpClient, NullLogger<TorznabNewznabSearchProvider>.Instance);
+        var provider = new TorznabNewznabSearchProvider(httpClient, new PassThroughIndexerRequestGate(TimeProvider.System), NullLogger<TorznabNewznabSearchProvider>.Instance);
 
         var results = await ParseWithTheInfrastructureProviderAsync(provider, FeedWithFlags, CreateIndexer());
 
@@ -155,12 +155,18 @@ public sealed class TorznabIndexerFlagSurfacingTests : BaseTests
 
     private static object? ArgumentFor(ParameterInfo parameter)
     {
-        // Nothing here is called while the parse takes only the feed and the indexer. It exists so
-        // that a parameter added later is filled with something harmless rather than stopping the
-        // flag assertions: a string is the likely shape and anything else falls back to its default.
+        // Fills the parameters after the feed and the indexer with something harmless, so a
+        // parameter added later does not stop the flag assertions: a string is the likely shape, a
+        // search context is an interactive one with no cycle allowance, and anything else is its
+        // default or a fresh instance of a type that can be made without arguments.
         if (parameter.ParameterType == typeof(string))
         {
             return "a free book";
+        }
+
+        if (parameter.ParameterType == typeof(IndexerSearchContext))
+        {
+            return new IndexerSearchContext(SearchOrigin.Interactive, CycleAllowance: null);
         }
 
         if (parameter.HasDefaultValue)
@@ -169,12 +175,13 @@ public sealed class TorznabIndexerFlagSurfacingTests : BaseTests
         }
 
         Assert.True(
-            parameter.ParameterType.IsValueType,
+            parameter.ParameterType.IsValueType
+                || parameter.ParameterType.GetConstructor(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, Type.EmptyTypes) != null,
             $"{ParseMethodName} grew a required '{parameter.Name}' of type "
                 + $"{parameter.ParameterType.Name}, which this test has no sensible value for. Supply "
                 + "a real one here.");
 
-        return Activator.CreateInstance(parameter.ParameterType);
+        return Activator.CreateInstance(parameter.ParameterType, nonPublic: true);
     }
 
     private static IReadOnlyList<IndexerSearchResult> ResultsFrom(object? parsed)

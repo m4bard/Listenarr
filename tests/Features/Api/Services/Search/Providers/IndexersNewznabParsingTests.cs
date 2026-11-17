@@ -863,9 +863,10 @@ namespace Listenarr.Tests.Features.Api.Services.Search.Providers
                 using var httpClient = new HttpClient(handler);
                 var provider = new TorznabNewznabSearchProvider(
                     httpClient,
+                    new PassThroughIndexerRequestGate(TimeProvider.System),
                     NullLogger<TorznabNewznabSearchProvider>.Instance);
 
-                return Assert.Single(await provider.SearchAsync(indexer, "the governor"));
+                return Assert.Single(await provider.SearchResultsAsync(indexer, "the governor"));
             }
 
             var withoutDescription = await SearchOnce(
