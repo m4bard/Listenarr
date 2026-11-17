@@ -34,14 +34,16 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
         private readonly Dictionary<string, int> _scoreByTitle = new();
 
         [Theory]
-        [InlineData("qb-seedbox", "qb-seedbox")]
+        [InlineData("qb-archive", "qb-archive")]
         [InlineData(null, "qb-local")]
         public async Task TorrentFromAnIndexer_GoesToItsBoundClient_OtherwiseByPriority(string? boundClient, string expectedClient)
         {
             // The second row is the control: the same two clients with no binding, so priority decides.
+            // The priority-10 client is saved first and sorts first by id, so only its priority keeps
+            // it from being picked.
             var book = await ArrangeAsync(new QualityProfile { Name = "Any" });
+            await SaveTorrentClientAsync("qb-archive", priority: 10);
             await SaveTorrentClientAsync("qb-local", priority: 1);
-            await SaveTorrentClientAsync("qb-seedbox", priority: 10);
             var tracker = await _indexerRepository.AddAsync(new IndexerBuilder()
                 .WithName("Private Tracker")
                 .WithUrl("https://tracker.invalid")
