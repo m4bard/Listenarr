@@ -290,21 +290,7 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
                         var declaredCodec = NamesCodec(tags ?? "") || NamesCodec(rawFormatField) ? finalFormat : null;
 
                         // Additional fallback: if format still looks generic MP3, probe description/title
-                        if (finalFormat == "MP3")
-                        {
-                            if (!string.IsNullOrEmpty(description))
-                            {
-                                var f = SearchResultAttributeParser.DetectFormatFromTags(description);
-                                if (!string.IsNullOrEmpty(f) && f != "MP3") finalFormat = f;
-                            }
-
-                            if (finalFormat == "MP3")
-                            {
-                                var probeText = title;
-                                var f = SearchResultAttributeParser.DetectFormatFromTags(probeText);
-                                if (!string.IsNullOrEmpty(f) && f != "MP3") finalFormat = f;
-                            }
-                        }
+                        finalFormat = ProbeGenericFormat(finalFormat, description, title);
 
                         // Log explicit filetype when present
                         if (!string.IsNullOrEmpty(rawFormatField))
@@ -500,8 +486,5 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
 
             return results;
         }
-
-        private static bool NamesCodec(string text)
-            => SearchResultAttributeParser.DetectFormatFromTags(text) != "MP3" || text.Contains("mp3", StringComparison.OrdinalIgnoreCase);
     }
 }

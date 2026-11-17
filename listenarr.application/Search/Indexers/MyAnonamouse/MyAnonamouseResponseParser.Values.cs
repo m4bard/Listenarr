@@ -56,5 +56,26 @@ namespace Listenarr.Application.Search.Indexers.MyAnonamouse
                 _ => false
             };
         }
+
+        private static bool NamesCodec(string text)
+            => SearchResultAttributeParser.DetectFormatFromTags(text) != "MP3" || text.Contains("mp3", StringComparison.OrdinalIgnoreCase);
+
+        // A format that still reads as the generic MP3 is probed in the description, then the title.
+        private static string ProbeGenericFormat(string format, string? description, string title)
+        {
+            if (format == "MP3" && !string.IsNullOrEmpty(description))
+            {
+                var f = SearchResultAttributeParser.DetectFormatFromTags(description);
+                if (!string.IsNullOrEmpty(f) && f != "MP3") format = f;
+            }
+
+            if (format == "MP3")
+            {
+                var f = SearchResultAttributeParser.DetectFormatFromTags(title);
+                if (!string.IsNullOrEmpty(f) && f != "MP3") format = f;
+            }
+
+            return format;
+        }
     }
 }
