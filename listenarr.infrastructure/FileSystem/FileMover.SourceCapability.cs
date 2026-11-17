@@ -99,7 +99,6 @@ public partial class FileMover : IFilePublicationSourceCapability
             var reason = ComposeUnsupportedReason(exception, FindRefusingLink(sourcePath, proofParent));
 
             _logger.LogWarning(
-                exception,
                 "Source publication capability unavailable for {Source}: {Detail} (native error {NativeError})",
                 LogRedaction.SanitizeText(sourcePath),
                 reason,

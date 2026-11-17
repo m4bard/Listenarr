@@ -410,4 +410,59 @@ public sealed class FileMoverSymlinkedSourcePathTests : BaseTests
         Assert.True(end > start, $"expected a closing quote around the named link: {reason}");
         return reason[start..end];
     }
+
+    [LinuxFact]
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    [Trait("Scenario", "A newline in the refused path cannot start a second log record")]
+    public async Task CheckAsync_NewlineInTheRefusedPath_StaysInTheOneWarning()
+    {
+        // The refusal is logged once, with the path and cause sanitized. A logger renders an
+        // attached exception on lines of its own, and its message quotes the path unsanitized,
+        // so a directory name containing a newline would print an error-looking line.
+        var directory = FileService.GetTempDirectory("symlink-newline-in-path");
+        var root = Directory.CreateDirectory(Path.Join(directory, "library\nfatal: forged record")).FullName;
+        await AddAuthorizedRootAsync(root, "Newline root");
+        var source = Path.Join(Directory.CreateDirectory(Path.Join(root, "Book")).FullName, "book.m4b");
+        await File.WriteAllTextAsync(source, "audio");
+        var logger = new CapturingLogger();
+        var mover = new FileMover(
+            logger,
+            dbContextFactory: _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
+            rootFolderRepository: _rootFolderRepository);
+        var originalMode = File.GetUnixFileMode(root);
+        try
+        {
+            File.SetUnixFileMode(root, UnixFileMode.None);
+
+            var result = await mover.CheckAsync(source);
+
+            Assert.False(result.IsSupported);
+        }
+        finally
+        {
+            File.SetUnixFileMode(root, originalMode);
+        }
+
+        var warning = Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.Contains("forged record", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain('\n', warning.Message);
+        Assert.Null(warning.Exception);
+    }
+
+    private sealed class CapturingLogger : ILogger<FileMover>
+    {
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception), exception));
+    }
 }
