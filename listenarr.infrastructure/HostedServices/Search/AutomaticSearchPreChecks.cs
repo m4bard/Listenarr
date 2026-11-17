@@ -21,9 +21,10 @@ using Microsoft.Extensions.Logging;
 namespace Listenarr.Infrastructure.HostedServices.Search
 {
     /// <summary>
-    /// Whether a book still needs an automatic search, and the best quality it already has.
+    /// Whether a book still needs an automatic search, the best quality it already has, and the
+    /// book's downloads, which the acquisition reads for releases the client holds as duplicates.
     /// </summary>
-    internal sealed record AutomaticSearchNeed(bool Needed, string? BestExistingQuality);
+    internal sealed record AutomaticSearchNeed(bool Needed, string? BestExistingQuality, IReadOnlyList<Download> Downloads);
 
     /// <summary>
     /// The checks that skip a book before any indexer request: no quality profile, an active
@@ -41,7 +42,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             if (audiobook.QualityProfile == null)
             {
                 logger.LogWarning("Audiobook '{Title}' has no quality profile assigned", audiobook.Title);
-                return new AutomaticSearchNeed(false, null);
+                return new AutomaticSearchNeed(false, null, Array.Empty<Download>());
             }
 
             // Check if there's already an active download for this audiobook
@@ -58,7 +59,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             {
                 logger.LogInformation("Audiobook '{Title}' already has an active download (ID: {DownloadId}, Status: {Status}), skipping automatic search",
                     audiobook.Title, activeDownload.Id, activeDownload.Status);
-                return new AutomaticSearchNeed(false, null);
+                return new AutomaticSearchNeed(false, null, allDownloads);
             }
 
             // Check existing quality and decide whether to search
@@ -70,10 +71,10 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             if (cutoffMet)
             {
                 logger.LogInformation("Quality cutoff already met for audiobook '{Title}', skipping automatic search", audiobook.Title);
-                return new AutomaticSearchNeed(false, bestExistingQuality);
+                return new AutomaticSearchNeed(false, bestExistingQuality, allDownloads);
             }
 
-            return new AutomaticSearchNeed(true, bestExistingQuality);
+            return new AutomaticSearchNeed(true, bestExistingQuality, allDownloads);
         }
     }
 }

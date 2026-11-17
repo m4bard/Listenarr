@@ -85,7 +85,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 }
 
                 var searchResults = candidates.Select(SearchResultConverters.ToSearchResult).ToList();
-                var selection = await SelectTopResultAsync(audiobook, searchResults, need.BestExistingQuality, ct);
+                var selection = await SelectTopResultAsync(audiobook, searchResults, need, ct);
                 if (selection == null)
                 {
                     return new AcquisitionResult(BookSearchOutcome.NoAcceptableResults, 0);
@@ -108,16 +108,21 @@ namespace Listenarr.Infrastructure.HostedServices.Search
         private async Task<(AutomaticSearchAssessment Assessment, AutomaticCandidateScore TopResult)?> SelectTopResultAsync(
             Audiobook audiobook,
             List<SearchResult> searchResults,
-            string? bestExistingQuality,
+            AutomaticSearchNeed need,
             CancellationToken ct)
         {
-            // Drop releases already blocked for this book before they are assessed.
+            var bestExistingQuality = need.BestExistingQuality;
+
+            // Drop releases already blocked for this book, or held by the client as a duplicate of
+            // content it already has, before they are assessed.
             //
             // This is the path that actually re-grabs: it selects here and calls StartDownloadAsync
             // directly rather than going through SearchAndDownloadAsync, so without this a release
             // could fail, be blocked, and be grabbed again by the next automatic pass.
-            searchResults = await BlockedReleaseFilter.ExcludeAsync(
-                _blocklistService, audiobook.Id, searchResults, _logger);
+            searchResults = ClientDuplicateReleaseFilter.Exclude(
+                need.Downloads,
+                await BlockedReleaseFilter.ExcludeAsync(_blocklistService, audiobook.Id, searchResults, _logger),
+                _logger);
 
             var assessment = await _automaticScoring.ScoreAsync(audiobook, searchResults, audiobook.QualityProfile!, ct);
             var scoredResults = assessment.Candidates;
