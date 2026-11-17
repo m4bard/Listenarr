@@ -125,6 +125,19 @@ public sealed class AutomaticSearchScheduleStartupRepairTests : BaseTests
         services.AddDbContextFactory<ListenArrDbContext>(options =>
             options.UseSqlite(connection, sqlite =>
                 sqlite.MigrationsAssembly(typeof(ListenArrDbContext).Assembly.GetName().Name)));
+        // This upgrades a populated database, so the startup path takes a pre-migration backup.
+        // Stubbed because this test is about the due-time repair, not about what is archived.
+        var backupService = new Mock<IBackupService>();
+        backupService
+            .Setup(service => service.CreateAsync(It.IsAny<BackupTrigger>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BackupArchive
+            {
+                Name = "stub.zip",
+                Trigger = BackupTrigger.Migration,
+                SizeBytes = 0,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+        services.AddSingleton(backupService.Object);
         await using var provider = services.BuildServiceProvider();
 
         provider.ApplyListenarrDatabaseMigrations();
