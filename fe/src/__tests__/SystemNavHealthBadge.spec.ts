@@ -136,7 +136,7 @@ describe('SystemNavHealthBadge', () => {
     expect(wrapper.find('.pill').classes()).toContain('pill-error')
   })
 
-  it('refreshes when an indexer enters or leaves backoff, without a page load', async () => {
+  it('re-reads health when the indexer list changes (IndexersUpdated), without a page load', async () => {
     getServiceHealth.mockResolvedValueOnce(healthWith(healthy))
     const wrapper = await mountBadge()
     expect(wrapper.find('.pill').exists()).toBe(false)
