@@ -55,9 +55,11 @@ namespace Listenarr.Tests.Features.Application.Search.Indexers.Torznab
                 return await new TorznabResponseParser(new HttpClient(), logger).ParseAsync(xml, TestIndexer);
             }
 
-            var provider = new TorznabNewznabSearchProvider(new HttpClient(), new LoggerAdapter(logger));
+            var provider = new TorznabNewznabSearchProvider(new HttpClient(), new PassThroughIndexerRequestGate(TimeProvider.System), new LoggerAdapter(logger));
             var method = typeof(TorznabNewznabSearchProvider).GetMethod("ParseTorznabResponseAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
-            return await (Task<List<IndexerSearchResult>>)method.Invoke(provider, [xml, TestIndexer])!;
+            var tally = Activator.CreateInstance(method.GetParameters()[3].ParameterType, nonPublic: true);
+            var context = new IndexerSearchContext(SearchOrigin.Interactive, CycleAllowance: null);
+            return await (Task<List<IndexerSearchResult>>)method.Invoke(provider, [xml, TestIndexer, context, tally, CancellationToken.None])!;
         }
 
         [Theory]
