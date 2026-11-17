@@ -11,6 +11,17 @@
     </button>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="!busy && !reviews.length && !error">No operations requiring review.</p>
+    <p v-if="reviews.length" role="status">
+      Showing {{ reviews.length }} of {{ total }} operations.
+    </p>
+    <button
+      v-if="reviews.length < total"
+      class="btn btn-secondary"
+      :disabled="busy"
+      @click="loadMore"
+    >
+      Load more
+    </button>
     <ul>
       <li v-for="review in reviews" :key="review.operationId">
         {{ review.action }} · Book {{ review.audiobookId ?? 'unknown' }} · {{ review.state }}
@@ -94,6 +105,7 @@ import { apiService } from '@/services/api'
 import type { RegistrationReview } from '@/types/registrationRecovery'
 
 const reviews = ref<RegistrationReview[]>([])
+const total = ref(0)
 const selected = ref<RegistrationReview | null>(null)
 const busy = ref(false)
 const error = ref('')
@@ -105,9 +117,26 @@ async function refresh() {
   error.value = ''
   selected.value = null
   try {
-    reviews.value = await apiService.getRegistrationReviews()
+    const list = await apiService.getRegistrationReviews()
+    reviews.value = list.reviews
+    total.value = list.total
   } catch {
     error.value = 'Could not load recovery operations. Try refreshing.'
+  } finally {
+    busy.value = false
+  }
+}
+
+async function loadMore() {
+  busy.value = true
+  error.value = ''
+  try {
+    const list = await apiService.getRegistrationReviews(reviews.value.length)
+    const known = new Set(reviews.value.map((r) => r.operationId))
+    reviews.value = [...reviews.value, ...list.reviews.filter((r) => !known.has(r.operationId))]
+    total.value = list.total
+  } catch {
+    error.value = 'Could not load more recovery operations. Try again.'
   } finally {
     busy.value = false
   }
@@ -138,7 +167,16 @@ async function resolve() {
       selected.value.reviewToken,
       note.value,
     )
-    reviews.value = await apiService.getRegistrationReviews()
+    const loaded = reviews.value.length
+    const reloaded: RegistrationReview[] = []
+    let list = await apiService.getRegistrationReviews()
+    reloaded.push(...list.reviews)
+    while (reloaded.length < loaded && list.reviews.length) {
+      list = await apiService.getRegistrationReviews(reloaded.length)
+      reloaded.push(...list.reviews)
+    }
+    reviews.value = reloaded
+    total.value = list.total
   } catch {
     selected.value = null
     error.value =
