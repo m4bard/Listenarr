@@ -155,6 +155,19 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
             Assert.Equal("0", metadata.SeriesPositionRaw);
         }
 
+        [Fact]
+        public void LeadingZeroPosition_SurvivesInTheFilename()
+        {
+            // At canary, the token round-tripped through decimal: "01" parsed to 1 and the
+            // leading zero was gone from the filename. The raw string is used instead, so it
+            // is not.
+            var metadata = Book("01").CreateBasicAudioMetadata();
+
+            var name = Naming().ApplyNamingPattern("{SeriesNumber}", metadata, treatAsFilename: true);
+
+            Assert.Equal("01", name);
+        }
+
         [Theory]
         [InlineData("en-US")]
         [InlineData("de-DE")]
