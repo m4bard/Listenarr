@@ -18,8 +18,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
 
             var ffmpegService = new FfmpegService(
                 new Mock<ILogger<FfmpegService>>().Object,
-                new HttpClient(),
-                _provider.GetRequiredService<IStartupConfigService>(),
                 _provider.GetRequiredService<IProcessRunner>(),
                 Mock.Of<IApplicationPathService>(service => service.FfmpegRootPath == ffmpegDirectory));
 
@@ -41,8 +39,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             var processRunner = new Mock<IProcessRunner>();
             var service = new FfmpegService(
                 new Mock<ILogger<FfmpegService>>().Object,
-                new HttpClient(),
-                _provider.GetRequiredService<IStartupConfigService>(),
                 processRunner.Object,
                 Mock.Of<IApplicationPathService>(applicationPathService => applicationPathService.FfmpegRootPath == ffmpegDirectory),
                 FileService.GetTempDirectory("ffprobe-no-packaged-binary"));
@@ -80,8 +76,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             processRunner.AnswerFfprobeVersionCheck();
             var service = new FfmpegService(
                 new Mock<ILogger<FfmpegService>>().Object,
-                new HttpClient(),
-                _provider.GetRequiredService<IStartupConfigService>(),
                 processRunner.Object,
                 Mock.Of<IApplicationPathService>(applicationPathService =>
                     applicationPathService.FfmpegRootPath == ffmpegDirectory),
@@ -140,8 +134,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             processRunner.AnswerFfprobeVersionCheck();
             var service = new FfmpegService(
                 new Mock<ILogger<FfmpegService>>().Object,
-                new HttpClient(),
-                _provider.GetRequiredService<IStartupConfigService>(),
                 processRunner.Object,
                 Mock.Of<IApplicationPathService>(applicationPathService =>
                     applicationPathService.FfmpegRootPath == ffmpegDirectory),
@@ -190,8 +182,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             processRunner.AnswerFfprobeVersionCheck();
             var service = new FfmpegService(
                 new Mock<ILogger<FfmpegService>>().Object,
-                new HttpClient(),
-                _provider.GetRequiredService<IStartupConfigService>(),
                 processRunner.Object,
                 Mock.Of<IApplicationPathService>(applicationPathService =>
                     applicationPathService.FfmpegRootPath == ffmpegDirectory),
@@ -214,8 +204,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             var processRunner = new Mock<IProcessRunner>();
             var service = new FfmpegService(
                 new Mock<ILogger<FfmpegService>>().Object,
-                new HttpClient(),
-                _provider.GetRequiredService<IStartupConfigService>(),
                 processRunner.Object,
                 Mock.Of<IApplicationPathService>(applicationPathService => applicationPathService.FfmpegRootPath == ffmpegDirectory),
                 FileService.GetTempDirectory("ffprobe-no-packaged-binary"));

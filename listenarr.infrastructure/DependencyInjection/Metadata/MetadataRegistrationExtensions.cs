@@ -40,12 +40,9 @@ internal static class MetadataRegistrationExtensions
         services.AddScoped<IAudiobookMetadataService, AudiobookMetadataService>();
         services.AddScoped<IOpenLibraryService, OpenLibraryService>();
         services.AddSingleton<MetadataExtractionLimiter>();
-        services.AddHttpClient("Ffmpeg");
         services.AddSingleton<IFfmpegService>(provider =>
             new FfmpegService(
                 provider.GetRequiredService<ILogger<FfmpegService>>(),
-                provider.GetRequiredService<IHttpClientFactory>().CreateClient("Ffmpeg"),
-                provider.GetRequiredService<IStartupConfigService>(),
                 provider.GetRequiredService<IProcessRunner>(),
                 provider.GetRequiredService<IApplicationPathService>()));
         return services;
