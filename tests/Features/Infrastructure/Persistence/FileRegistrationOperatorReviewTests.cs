@@ -70,7 +70,7 @@ public sealed class FileRegistrationOperatorReviewTests : BaseTests
         await service.ResolveAsync(id, review.ReviewToken, note, true, "tester");
         var entry = Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
         Assert.Contains(id.ToString(), entry.Message);
-        Assert.Contains("865", entry.Message);
+        Assert.Contains("audiobook 865 ", entry.Message);
         Assert.DoesNotContain(note, entry.Message);
         Assert.DoesNotContain(source, entry.Message);
         Assert.DoesNotContain(target, entry.Message);
