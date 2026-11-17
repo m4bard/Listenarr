@@ -114,7 +114,8 @@ class ApiService {
     )
     const total =
       header.total !== null && /^\d+$/.test(header.total.trim()) ? Number(header.total) : NaN
-    return { reviews, total: Number.isSafeInteger(total) ? total : reviews.length }
+    const headerTotal = Number.isSafeInteger(total) ? total : 0
+    return { reviews, total: Math.max(headerTotal, reviews.length) }
   }
 
   inspectRegistration(operationId: string) {

@@ -49,6 +49,17 @@ describe('ApiService getRegistrationReviews', () => {
   })
 
   it.each([
+    ['zero', { 'X-Total-Count': '0' }],
+    ['smaller than the rows returned', { 'X-Total-Count': '1' }],
+  ])(
+    'never reports fewer than the rows returned when the header is %s',
+    async (_label, headers) => {
+      const result = await listWith(headers)
+      expect(result.total).toBe(2)
+    },
+  )
+
+  it.each([
     ['absent', {}],
     ['empty', { 'X-Total-Count': '' }],
     ['blank', { 'X-Total-Count': '  ' }],
