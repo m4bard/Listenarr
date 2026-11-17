@@ -77,7 +77,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 if (!infoResp.IsSuccessStatusCode)
                 {
                     var infoBody = await infoResp.Content.ReadAsStringAsync(ct);
-                    _logger.LogWarning("qBittorrent presence check returned {Status}: {Body}", infoResp.StatusCode, LogRedaction.RedactText(infoBody, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    _logger.LogWarning("qBittorrent presence check returned {Status}: {Body}", infoResp.StatusCode, LogRedaction.SanitizeText(LogRedaction.RedactText(infoBody, LogRedaction.GetSensitiveValuesFromEnvironment()), 500));
                     return false;
                 }
 
