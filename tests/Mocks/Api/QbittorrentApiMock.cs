@@ -30,6 +30,13 @@ namespace Listenarr.Tests.Mocks.Api
         /// Body returned with a non-OK <see cref="InfoStatusCode"/>. Null keeps the bare status.
         /// </summary>
         public string? InfoErrorResponseBody { get; set; }
+
+        public HttpStatusCode DeleteStatusCode { get; set; } = HttpStatusCode.OK;
+
+        /// <summary>
+        /// Body returned with a non-OK <see cref="DeleteStatusCode"/>. Null keeps the bare status.
+        /// </summary>
+        public string? DeleteErrorResponseBody { get; set; }
         public NameValueCollection? LastForceStartForm { get; private set; }
         public HttpStatusCode ForceStartStatusCode { get; set; } = HttpStatusCode.OK;
 
@@ -167,6 +174,14 @@ namespace Listenarr.Tests.Mocks.Api
         {
             if (!Authenticated) return new HttpResponseMessage(HttpStatusCode.Forbidden);
             LastDeleteForm = HttpUtility.ParseQueryString(await request.Content!.ReadAsStringAsync(ct));
+
+            if (DeleteStatusCode != HttpStatusCode.OK)
+            {
+                return DeleteErrorResponseBody is null
+                    ? new HttpResponseMessage(DeleteStatusCode)
+                    : new HttpResponseMessage(DeleteStatusCode) { Content = new StringContent(DeleteErrorResponseBody) };
+            }
+
             return MockUtils.GetCannedResponse("Ok");
         }
 

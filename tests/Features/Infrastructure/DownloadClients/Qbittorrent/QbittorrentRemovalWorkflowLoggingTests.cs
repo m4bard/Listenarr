@@ -24,9 +24,9 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
 {
     /// <summary>
     /// Removal asks qBittorrent whether the torrent is present before deleting it, and logs the
-    /// client's body when that presence check fails. Redaction masks known secret values only, so
-    /// these pin that the body also goes through the sanitizer: no newline can start a forged log
-    /// line, and an oversized body cannot flood the log.
+    /// client's body when that presence check or the delete itself fails. Redaction masks known
+    /// secret values only, so these pin that the body also goes through the sanitizer: no newline
+    /// can start a forged log line, and an oversized body cannot flood the log.
     /// </summary>
     [Trait("Area", "DownloadClients")]
     [Trait("Name", "QbittorrentRemovalWorkflowLoggingTests")]
@@ -34,17 +34,29 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
     public sealed class QbittorrentRemovalWorkflowLoggingTests : BaseTests
     {
         private const string PresenceCheckLogFragment = "presence check returned";
+        private const string DeleteLogFragment = "delete returned";
 
-        private async Task<IReadOnlyList<string>> LoggedPresenceCheckLinesForBody(string body)
+        private Task<IReadOnlyList<string>> LoggedPresenceCheckLinesForBody(string body) =>
+            LoggedLinesForFailedRemoval(
+                apiMock =>
+                {
+                    apiMock.InfoStatusCode = HttpStatusCode.InternalServerError;
+                    apiMock.InfoErrorResponseBody = body;
+                },
+                "ABCDEF123456",
+                PresenceCheckLogFragment);
+
+        private async Task<IReadOnlyList<string>> LoggedLinesForFailedRemoval(
+            Action<QbittorrentApiMock> failRequest,
+            string torrentId,
+            string logFragment)
         {
             var logs = new RemovalLogRecorder();
             Init(builder => builder
                 .WithSingleton<ILoggerProvider>(logs)
                 .WithMocks(RemovalLogRecorder.CaptureEveryLevel));
 
-            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
-            apiMock.InfoStatusCode = HttpStatusCode.InternalServerError;
-            apiMock.InfoErrorResponseBody = body;
+            failRequest(_provider.GetRequiredService<QbittorrentApiMock>());
 
             var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
                 .WithHost("localhost")
@@ -56,9 +68,9 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
 
             var gateway = _provider.GetRequiredService<IDownloadClientGateway>();
 
-            Assert.False(await gateway.RemoveAsync(client, "ABCDEF123456", deleteFiles: false));
+            Assert.False(await gateway.RemoveAsync(client, torrentId, deleteFiles: false));
 
-            return logs.EntriesContaining(PresenceCheckLogFragment);
+            return logs.EntriesContaining(logFragment);
         }
 
         [Fact]
@@ -83,6 +95,31 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
 
             var line = Assert.Single(lines);
             Assert.Contains(new string('x', 500) + "...", line, StringComparison.Ordinal);
+            Assert.DoesNotContain(new string('x', 501), line, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        [Trait("Scenario", "A delete error body cannot forge a log line or flood the log")]
+        public async Task RemoveAsync_WhenTheDeleteFails_SanitizesAndTruncatesTheLoggedResponseBody()
+        {
+            // The mock's torrent list holds NEWHASH, so removal gets past the presence check to the
+            // delete. Its body starts a forged line, then runs far past the cap.
+            var lines = await LoggedLinesForFailedRemoval(
+                apiMock =>
+                {
+                    apiMock.DeleteStatusCode = HttpStatusCode.InternalServerError;
+                    apiMock.DeleteErrorResponseBody =
+                        "Internal error\r\nfail: Listenarr.Api[0] Download client removed every audiobook file " + new string('x', 4000);
+                },
+                "NEWHASH",
+                DeleteLogFragment);
+
+            var line = Assert.Single(lines);
+            Assert.DoesNotContain('\n', line);
+            Assert.DoesNotContain('\r', line);
+            Assert.Contains("Download client removed every audiobook file", line, StringComparison.Ordinal);
+            // 84 characters of text come first, so a 500 cap keeps 416 of the x's before the marker.
+            Assert.Contains(new string('x', 400) + "...", line, StringComparison.Ordinal);
             Assert.DoesNotContain(new string('x', 501), line, StringComparison.Ordinal);
         }
 
