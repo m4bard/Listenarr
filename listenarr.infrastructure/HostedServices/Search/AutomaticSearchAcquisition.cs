@@ -158,26 +158,39 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 return null;
             }
 
-            _logger.LogInformation("Found top result for audiobook '{Title}': {ResultTitle} (Score: {Score}, Quality: {Quality})",
-                audiobook.Title, topResult.SearchResult.Title, topResult.TotalScore, topResult.SearchResult.Quality);
-
-            // Check if the found result is better quality than what we already have
+            // Take the best candidate that is actually an upgrade, rather than testing only the
+            // first and abandoning the search when it fails. The gate below resolves a quality
+            // label by exact profile name while the ranking resolves it by codec and bitrate, so
+            // the two disagree on a label such as a bare "AAC": the ranking places it and the gate
+            // cannot, and one unresolvable release at the top used to discard every release
+            // behind it, including ones that would have passed. SelectBest still picks among the
+            // upgrades, so they are taken in the same order as every other selection.
             if (!string.IsNullOrEmpty(bestExistingQuality))
             {
-                var resultIsBetter = _qualityEvaluator.IsQualityBetter(topResult.SearchResult.Quality, bestExistingQuality, audiobook.QualityProfile);
-                if (!resultIsBetter)
+                topResult = _automaticScoring.SelectBest(assessment with
                 {
-                    _logger.LogInformation("Top result quality '{ResultQuality}' is not better than existing quality '{ExistingQuality}' for audiobook '{Title}', skipping download",
-                        topResult.SearchResult.Quality, bestExistingQuality, audiobook.Title);
+                    Candidates = assessment.Candidates
+                        .Where(candidate => _qualityEvaluator.IsQualityBetter(candidate.SearchResult.Quality, bestExistingQuality, audiobook.QualityProfile))
+                        .ToList()
+                });
+
+                if (topResult == null)
+                {
+                    _logger.LogInformation("No result for audiobook '{Title}' is better than the existing quality '{ExistingQuality}', skipping download",
+                        audiobook.Title, bestExistingQuality);
                     return null;
                 }
-                _logger.LogInformation("Top result quality '{ResultQuality}' is better than existing quality '{ExistingQuality}', proceeding with download",
+
+                _logger.LogInformation("Chose quality '{ResultQuality}' over existing quality '{ExistingQuality}', proceeding with download",
                     topResult.SearchResult.Quality, bestExistingQuality);
             }
             else
             {
                 _logger.LogInformation("No existing files for audiobook '{Title}', proceeding with download", audiobook.Title);
             }
+
+            _logger.LogInformation("Chose result for audiobook '{Title}': {ResultTitle} (Score: {Score}, Quality: {Quality})",
+                audiobook.Title, topResult.SearchResult.Title, topResult.TotalScore, topResult.SearchResult.Quality);
 
             return (assessment, topResult);
         }
