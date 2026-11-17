@@ -17,6 +17,7 @@
  */
 
 using Listenarr.Application.Search.Scheduling;
+using Listenarr.Application.Search.Scoring;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -125,13 +126,18 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 _logger);
 
             var assessment = await _automaticScoring.ScoreAsync(audiobook, searchResults, audiobook.QualityProfile!, ct);
-            var scoredResults = assessment.Candidates;
 
-            // Log all scored results for debugging
-            _logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", scoredResults.Count, audiobook.Title);
+            // Ranked once, in the order SelectBest considers candidates, so the debug log and the
+            // grab agree and neither inherits indexer order. The operator's own quality ordering
+            // decides first and the score breaks its ties; see
+            // AutomaticSearchScoringService.InSelectionOrder for why.
+            var ranked = AutomaticSearchScoringService.InSelectionOrder(assessment.Candidates, audiobook.QualityProfile).ToList();
+            _logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", ranked.Count, audiobook.Title);
 
-            await BroadcastScoredResultsAsync(audiobook, scoredResults);
-            foreach (var scoredResult in scoredResults.OrderByDescending(s => s.TotalScore))
+            await BroadcastScoredResultsAsync(audiobook, ranked);
+            // Same ordering as the selection below, so the log lists candidates in the order
+            // they were actually considered.
+            foreach (var scoredResult in ranked)
             {
                 var status = scoredResult.IsRejected ? "REJECTED" : (scoredResult.TotalScore > 0 ? "ACCEPTABLE" : "LOW SCORE");
                 _logger.LogInformation("  [{Status}] Score: {Score} | Title: {Title} | Source: {Source} | Size: {Size}MB | Seeders: {Seeders} | Quality: {Quality}",
