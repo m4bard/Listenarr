@@ -71,7 +71,6 @@ const tracker = (overrides: Partial<Indexer> = {}): Indexer =>
     additionalSettings: '',
     createdAt: '',
     updatedAt: '',
-    escalationLevel: 0,
     ...overrides,
   }) as Indexer
 

@@ -39,12 +39,11 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
         _logger = logger;
     }
 
-    public async Task<IndexerQueryObservation> SearchAsync(
+    public async Task<List<IndexerSearchResult>> SearchAsync(
         Indexer indexer,
         string query,
         string? category = null,
-        SearchRequest? request = null,
-        CancellationToken ct = default)
+        SearchRequest? request = null)
     {
         try
         {
@@ -59,43 +58,25 @@ public partial class TorznabNewznabSearchProvider : IIndexerSearchProvider
             var userAgent = $"Listenarr/{version} (+https://github.com/Listenarrs/listenarr)";
             requestMessage.Headers.UserAgent.ParseAdd(userAgent);
 
-            var response = await _httpClient.SendAsync(requestMessage, ct);
+            var response = await _httpClient.SendAsync(requestMessage);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Indexer {Name} returned status {Status}", indexer.Name, response.StatusCode);
-                return IndexerQueryObservation.Unavailable(
-                    IndexerQueryFailureClassifier.Classify(response.StatusCode),
-                    query,
-                    IndexerQueryFailureClassifier.Describe(response.StatusCode),
-                    retryAfter: IndexerQueryFailureClassifier.ReadRetryAfter(response.Headers.RetryAfter));
+                return new List<IndexerSearchResult>();
             }
 
             var xmlContent = await response.Content.ReadAsStringAsync();
 
             // Parse Torznab/Newznab XML response
-            var observation = await ParseTorznabResponseAsync(xmlContent, indexer, query);
+            var results = await ParseTorznabResponseAsync(xmlContent, indexer);
 
-            _logger.LogInformation("Indexer {Name} returned {Count} results", indexer.Name, observation.Results.Count);
-            return observation;
-        }
-        catch (Exception ex) when (ex is OperationCanceledException or TimeoutException && !ct.IsCancellationRequested)
-        {
-            // HttpClient reports its own request timeout as a cancellation, and the caller did not
-            // ask to cancel. Left uncaught it escapes the per-indexer containment upstream and fails
-            // the whole fan-out. A genuinely cancelled token falls through to propagate instead.
-            _logger.LogWarning(ex, "Torznab/Newznab indexer {Name} did not answer in time", indexer.Name);
-            return IndexerQueryObservation.Unavailable(
-                IndexerQueryFailureClassifier.Classify(ex),
-                query,
-                IndexerQueryFailureClassifier.Describe(ex));
+            _logger.LogInformation("Indexer {Name} returned {Count} results", indexer.Name, results.Count);
+            return results;
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error searching Torznab/Newznab indexer {Name}", indexer.Name);
-            return IndexerQueryObservation.Unavailable(
-                IndexerQueryFailureClassifier.Classify(ex),
-                query,
-                IndexerQueryFailureClassifier.Describe(ex));
+            return new List<IndexerSearchResult>();
         }
     }
 

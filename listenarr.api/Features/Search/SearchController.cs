@@ -400,8 +400,7 @@ namespace Listenarr.Api.Features.Search
             [FromQuery] string? mamLanguage = null,
             [FromQuery] string? mamFreeleechWedge = null,
             [FromQuery] bool? mamEnrichResults = null,
-            [FromQuery] int? mamEnrichTopResults = null,
-            [FromQuery] bool includeOutcome = false)
+            [FromQuery] int? mamEnrichTopResults = null)
         {
             try
             {
@@ -425,19 +424,7 @@ namespace Listenarr.Api.Features.Search
 
                 // Use the raw indexer results when the caller expects indexer-specific fields. SearchIndexerResultsAsync will
                 // apply any MyAnonamouse options found in the indexer's AdditionalSettings if no explicit request was supplied.
-                // includeOutcome asks for the envelope that says whether the indexer could be asked
-                // at all; without it an indexer that timed out and one that had nothing look the same.
-                IndexerQueryObservation? observation = null;
-                List<IndexerSearchResult> idxResults;
-                if (includeOutcome)
-                {
-                    observation = await _searchService.SearchIndexerObservationAsync(apiId, query, category, request);
-                    idxResults = observation?.Results.ToList() ?? new List<IndexerSearchResult>();
-                }
-                else
-                {
-                    idxResults = await _searchService.SearchIndexerResultsAsync(apiId, query, category, request);
-                }
+                var idxResults = await _searchService.SearchIndexerResultsAsync(apiId, query, category, request);
 
                 // If the underlying indexer implementation indicates MyAnonamouse (set on results by SearchIndexerAsync), return Prowlarr-like DTO shape
                 if (idxResults.Count > 0 && !string.IsNullOrWhiteSpace(idxResults[0].IndexerImplementation) && string.Equals(idxResults[0].IndexerImplementation, "MyAnonamouse", StringComparison.OrdinalIgnoreCase))
@@ -452,7 +439,7 @@ namespace Listenarr.Api.Features.Search
                         dto.DownloadUrl = null;
                         return dto;
                     }).ToList();
-                    return Ok(IndexerSearchOutcomeResponse.Wrap(dtos, includeOutcome, observation));
+                    return Ok(dtos);
                 }
 
                 // Otherwise, return the legacy SearchResult shape
@@ -464,7 +451,7 @@ namespace Listenarr.Api.Features.Search
                     return mapped;
                 }).ToList();
                 _logger.LogInformation("SearchByApi returning {Count} results for apiId: {ApiId}", results.Count, apiId);
-                return Ok(IndexerSearchOutcomeResponse.Wrap(results, includeOutcome, observation));
+                return Ok(results);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

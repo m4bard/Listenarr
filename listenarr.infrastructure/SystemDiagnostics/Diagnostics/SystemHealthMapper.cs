@@ -24,18 +24,14 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             string version,
             string uptime,
             DownloadClientHealth downloadClientHealth,
-            ExternalApiHealth externalApiHealth,
-            IndexerHealth? indexerHealth = null)
+            ExternalApiHealth externalApiHealth)
         {
-            var indexers = indexerHealth ?? new IndexerHealth();
-            var childStatuses = new[] { downloadClientHealth.Status, externalApiHealth.Status, indexers.Status };
-
             var overallStatus = "healthy";
-            if (childStatuses.Contains("error"))
+            if (downloadClientHealth.Status == "error" || externalApiHealth.Status == "error")
             {
                 overallStatus = "error";
             }
-            else if (childStatuses.Contains("warning"))
+            else if (downloadClientHealth.Status == "warning" || externalApiHealth.Status == "warning")
             {
                 overallStatus = "warning";
             }
@@ -46,8 +42,7 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
                 Version = version,
                 Uptime = uptime,
                 DownloadClients = downloadClientHealth,
-                ExternalApis = externalApiHealth,
-                Indexers = indexers
+                ExternalApis = externalApiHealth
             };
         }
 
@@ -189,7 +184,7 @@ namespace Listenarr.Infrastructure.SystemDiagnostics.Diagnostics
             };
         }
 
-        internal static string BuildChildStatus(int connectedCount, int totalEnabled)
+        private static string BuildChildStatus(int connectedCount, int totalEnabled)
         {
             if (connectedCount == 0 && totalEnabled > 0)
             {

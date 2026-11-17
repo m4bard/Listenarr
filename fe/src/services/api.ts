@@ -112,15 +112,6 @@ const buildApiRequestUrl = (endpoint: string): string => {
 
 type ErrorWithStatus = Error & { status?: number; body?: string; retryAfter?: number }
 
-/** GET /search/{apiId}?includeOutcome=true */
-export interface IndexerSearchOutcome {
-  results: unknown[]
-  /** False when the indexer timed out, errored, or could not be used: its empty list means nothing. */
-  answered: boolean
-  /** Left out of the JSON when null: when the indexer answered, or no reason was recorded. */
-  failureReason?: string | null
-}
-
 class ApiService {
   private antiforgeryToken: string | null = null
   private antiforgeryTokenSession: string | null = null
@@ -350,13 +341,8 @@ class ApiService {
       mamFreeleechWedge?: string
       mamEnrichResults?: boolean
       mamEnrichTopResults?: number
-      /**
-       * Asks for the IndexerSearchOutcome envelope instead of the bare list. A backend that
-       * predates it ignores the flag, so the caller must accept either shape.
-       */
-      includeOutcome?: boolean
     },
-  ): Promise<SearchResult[] | IndexerSearchOutcome> {
+  ): Promise<SearchResult[]> {
     const params = new URLSearchParams({ query })
     if (category) params.append('category', category)
 
@@ -374,9 +360,8 @@ class ApiService {
       params.append('mamEnrichResults', String(opts.mamEnrichResults))
     if (opts?.mamEnrichTopResults !== undefined)
       params.append('mamEnrichTopResults', String(opts.mamEnrichTopResults))
-    if (opts?.includeOutcome) params.append('includeOutcome', 'true')
 
-    return this.request<SearchResult[] | IndexerSearchOutcome>(`/search/${apiId}?${params}`)
+    return this.request<SearchResult[]>(`/search/${apiId}?${params}`)
   }
 
   async testApiConnection(apiId: string): Promise<boolean> {

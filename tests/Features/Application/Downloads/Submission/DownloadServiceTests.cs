@@ -584,7 +584,6 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchQueryPlan?>(),
                     It.IsAny<SearchOrigin>()))
                 .ReturnsAsync(() =>
                 {
@@ -633,7 +632,6 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchQueryPlan?>(),
                     It.IsAny<SearchOrigin>()),
                 Times.Once);
             Assert.False(result.Success);

@@ -44,7 +44,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
             _indexerRepository = indexerRepository ?? throw new ArgumentNullException(nameof(indexerRepository));
         }
 
-        public async Task<IndexerQueryObservation> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null, CancellationToken ct = default)
+        public async Task<List<IndexerSearchResult>> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null)
         {
             try
             {
@@ -56,7 +56,7 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                 if (string.IsNullOrEmpty(mamId))
                 {
                     _logger.LogWarning("MyAnonamouse indexer {Name} missing mam_id", indexer.Name);
-                    return IndexerQueryObservation.NotConfigured(IndexerQueryReason.None, query, "missing mam_id");
+                    return new List<IndexerSearchResult>();
                 }
 
                 var searchUri = MyAnonamouseRequestFactory.BuildSearchUri(indexer, query, request);
@@ -77,19 +77,14 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                     searchUri,
                     httpClientToUse,
                     _logger,
-                    allowPrivateTargets: true,
-                    cancellationToken: ct);
+                    allowPrivateTargets: true);
                 using var response = searchResponse;
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("MyAnonamouse returned status {Status}", response.StatusCode);
                     var errorContent = await response.Content.ReadAsStringAsync();
                     _logger.LogWarning("MyAnonamouse error response: {Content}", LogRedaction.RedactText(errorContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
-                    return IndexerQueryObservation.Unavailable(
-                        IndexerQueryFailureClassifier.Classify(response.StatusCode),
-                        query,
-                        IndexerQueryFailureClassifier.Describe(response.StatusCode),
-                        retryAfter: IndexerQueryFailureClassifier.ReadRetryAfter(response.Headers.RetryAfter));
+                    return new List<IndexerSearchResult>();
                 }
 
                 // Capture and persist an updated mam_id cookie if the tracker provided one in Set-Cookie
@@ -135,26 +130,12 @@ namespace Listenarr.Infrastructure.Search.Providers.MyAnonamouse
                 }
 
                 _logger.LogInformation("MyAnonamouse returned {Count} results", results.Count);
-                return IndexerQueryObservation.FromResults(results, query);
-            }
-            catch (Exception ex) when (ex is OperationCanceledException or TimeoutException && !ct.IsCancellationRequested)
-            {
-                // HttpClient reports its own request timeout as a cancellation, and the caller did not
-                // ask to cancel. Left uncaught it escapes the per-indexer containment upstream and fails
-                // the whole fan-out. A genuinely cancelled token falls through to propagate instead.
-                _logger.LogWarning(ex, "MyAnonamouse indexer {Name} did not answer in time", indexer.Name);
-                return IndexerQueryObservation.Unavailable(
-                    IndexerQueryFailureClassifier.Classify(ex),
-                    query,
-                    IndexerQueryFailureClassifier.Describe(ex));
+                return results;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogError(ex, "Error searching MyAnonamouse indexer {Name}", indexer.Name);
-                return IndexerQueryObservation.Unavailable(
-                    IndexerQueryFailureClassifier.Classify(ex),
-                    query,
-                    IndexerQueryFailureClassifier.Describe(ex));
+                return new List<IndexerSearchResult>();
             }
         }
 

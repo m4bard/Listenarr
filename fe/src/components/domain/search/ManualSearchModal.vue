@@ -69,34 +69,12 @@
                 {{ displayResults.length }} result{{ displayResults.length !== 1 ? 's' : '' }} found
               </div>
             </div>
-            <!-- Shown whatever the result count: a search with some results and one indexer that
-                 timed out looks complete and is not. -->
-            <div
-              v-if="!searching && unavailableIndexers.length > 0"
-              class="could-not-search"
-              data-testid="could-not-search"
-            >
-              <PhWarning />
-              <span
-                >Could not search {{ unavailableIndexers.length }} of {{ totalIndexers }} indexer{{
-                  totalIndexers !== 1 ? 's' : ''
-                }}: {{ unavailableIndexers.map(describeUnavailable).join(', ') }}</span
-              >
-            </div>
           </div>
 
           <div v-if="displayResults.length === 0 && !searching" class="no-results">
             <PhMagnifyingGlass />
-            <template v-if="totalIndexers > 0 && unavailableIndexers.length === totalIndexers">
-              <p>No indexer could be searched</p>
-              <p class="hint">
-                Every enabled indexer failed to answer; check System for indexer health
-              </p>
-            </template>
-            <template v-else>
-              <p>No results found</p>
-              <p class="hint">Try adjusting your indexer settings or search criteria</p>
-            </template>
+            <p>No results found</p>
+            <p class="hint">Try adjusting your indexer settings or search criteria</p>
           </div>
 
           <div v-else class="results-table-wrapper">
@@ -312,11 +290,9 @@ import {
   PhXCircle,
   PhDownloadSimple,
   PhArrowsDownUp,
-  PhWarning,
 } from '@phosphor-icons/vue'
 import { useToast } from '@/services/toastService'
 import { apiService } from '@/services/api'
-import type { IndexerSearchOutcome } from '@/services/api'
 import { logger } from '@/utils/logger'
 import type {
   Audiobook,
@@ -346,16 +322,6 @@ const searching = ref(false)
 const downloading = ref<Record<string, boolean>>({})
 const searchedIndexers = ref(0)
 const totalIndexers = ref(0)
-// Indexers that gave no usable answer this search, kept apart from those that answered with nothing.
-const unavailableIndexers = ref<Array<{ name: string; reason: string | null }>>([])
-
-// Reason names come from the backend's query reasons; the few that read badly are reworded.
-const reasonLabels: Record<string, string> = {
-  NotConfigured: 'not configured',
-  NotFound: 'not found',
-}
-const describeUnavailable = (entry: { name: string; reason: string | null }) =>
-  entry.reason ? `${entry.name} (${reasonLabels[entry.reason] ?? entry.reason})` : entry.name
 const qualityScores = ref<Map<string, QualityScore>>(new Map())
 const qualityProfile = ref<QualityProfile | null>(null)
 const sortBy = ref<SearchSortBy | 'Score'>('Score')
@@ -525,15 +491,6 @@ function sortFrontendResults() {
   })
 }
 
-/**
- * One indexer's answer as the envelope, whichever shape arrived. A backend that predates the
- * envelope sends the bare list and says nothing about failure, so that is read as answered.
- */
-function readIndexerOutcome(raw: unknown): IndexerSearchOutcome {
-  if (Array.isArray(raw)) return { results: raw, answered: true, failureReason: null }
-  return raw as IndexerSearchOutcome
-}
-
 async function search() {
   if (!props.audiobook) return
 
@@ -541,7 +498,6 @@ async function search() {
   results.value = []
   searchedIndexers.value = 0
   totalIndexers.value = 0
-  unavailableIndexers.value = []
 
   try {
     // Get count of enabled indexers first
@@ -554,8 +510,6 @@ async function search() {
     // Search each indexer individually to show progress
     const allResults: SearchResult[] = []
     const searchPromises = enabledIndexers.map(async (indexer) => {
-      // Recorded at most once per indexer, even if handling its answer throws afterwards.
-      let recordedUnavailable = false
       try {
         // Map MyAnonamouse indexer options (if present on the indexer) to searchByApi opts so backend can apply them
 
@@ -585,20 +539,12 @@ async function search() {
           }
         }
 
-        const outcome = readIndexerOutcome(
-          await apiService.searchByApi(indexer.id.toString(), query, undefined, {
-            ...opts,
-            includeOutcome: true,
-          }),
+        const indexerResultsRaw: unknown[] = await apiService.searchByApi(
+          indexer.id.toString(),
+          query,
+          undefined,
+          opts,
         )
-        if (!outcome.answered) {
-          recordedUnavailable = true
-          unavailableIndexers.value.push({
-            name: indexer.name,
-            reason: outcome.failureReason ?? null,
-          })
-        }
-        const indexerResultsRaw: unknown[] = outcome.results
 
         // Normalize Prowlarr-like IndexerResultDto into local SearchResult shape for the UI
         let normalized: SearchResult[] = []
@@ -695,9 +641,6 @@ async function search() {
         searchedIndexers.value++
       } catch (error) {
         logger.warn(`Failed to search indexer ${indexer.name}:`, error)
-        if (!recordedUnavailable) {
-          unavailableIndexers.value.push({ name: indexer.name, reason: 'Error' })
-        }
         searchedIndexers.value++ // Still count as completed even if failed
       }
     })
@@ -1148,19 +1091,6 @@ function getScoreClass(score: number): string {
 .search-input-wrapper .btn {
   height: 40px;
   padding: 0 1rem;
-}
-
-.could-not-search {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid rgba(243, 156, 18, 0.3);
-  border-radius: 6px;
-  background: rgba(243, 156, 18, 0.1);
-  color: #f39c12;
-  font-size: 0.9rem;
 }
 
 .no-results {

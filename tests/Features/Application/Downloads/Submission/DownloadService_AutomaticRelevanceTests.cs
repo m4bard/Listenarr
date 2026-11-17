@@ -78,7 +78,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
             _searchService
                 .Setup(s => s.SearchAsync(
                     It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<List<string>?>(),
-                    It.IsAny<SearchSortBy>(), It.IsAny<SearchSortDirection>(), It.IsAny<bool>(), It.IsAny<SearchQueryPlan?>(), It.IsAny<SearchOrigin>()))
+                    It.IsAny<SearchSortBy>(), It.IsAny<SearchSortDirection>(), It.IsAny<bool>(), It.IsAny<SearchOrigin>()))
                 .ReturnsAsync(results.ToList());
         }
 

@@ -56,15 +56,14 @@ namespace Listenarr.Application.Downloads.Submission
             }
 
             // Build search query from audiobook metadata
-            var searchPlan = DownloadSearchQueryBuilder.BuildPlan(audiobook);
-            var searchQuery = searchPlan.PrimaryQuery;
-            logger.LogInformation("Searching for audiobook '{Title}' with query: {Query} ({Tiers} query forms available)", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeText(searchQuery), searchPlan.Forms.Count);
+            var searchQuery = DownloadSearchQueryBuilder.Build(audiobook);
+            logger.LogInformation("Searching for audiobook '{Title}' with query: {Query}", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeText(searchQuery));
 
             // Search using the working search service. This is an automatic search (triggered
             // by the background/manual 'search-and-download' endpoint), so set isAutomaticSearch
             // to true to ensure only indexers are queried (no Amazon/Audible scraping). The origin,
             // not that flag, says who caused the search.
-            var searchResults = await searchService.SearchAsync(searchQuery, isAutomaticSearch: true, plan: searchPlan, origin: origin);
+            var searchResults = await searchService.SearchAsync(searchQuery, isAutomaticSearch: true, origin: origin);
 
             if (searchResults == null || !searchResults.Any())
             {

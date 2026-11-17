@@ -15,10 +15,9 @@ namespace Listenarr.Application.Search.Contracts
         /// <param name="sortBy">Sort results by seeders, peers, size, or age</param>
         /// <param name="sortDirection">Sort direction (ascending or descending)</param>
         /// <param name="isAutomaticSearch">Whether this is an automatic search (affects logging)</param>
-        /// <param name="plan">Ordered query forms to try in turn against each indexer. Omitted for free-text search, which has one form: the text as typed.</param>
         /// <param name="origin">Who caused the search: a person waiting for the answer, the background sweep, a retry after a failed download, or one of many searches started together</param>
         /// <returns>List of search results from all configured indexers</returns>
-        Task<List<SearchResult>> SearchAsync(string query, string? category = null, List<string>? apiIds = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, SearchQueryPlan? plan = null, SearchOrigin origin = SearchOrigin.Interactive);
+        Task<List<SearchResult>> SearchAsync(string query, string? category = null, List<string>? apiIds = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, SearchOrigin origin = SearchOrigin.Interactive);
 
         /// <summary>
         /// Performs intelligent search with metadata enrichment
@@ -49,13 +48,6 @@ namespace Listenarr.Application.Search.Contracts
         Task<List<IndexerSearchResult>> SearchIndexerResultsAsync(string apiId, string query, string? category = null, SearchRequest? request = null);
 
         /// <summary>
-        /// Searches one indexer and keeps how it answered, so a caller can tell an indexer that had
-        /// nothing from one that could not be asked. Null when the indexer does not exist or is
-        /// disabled.
-        /// </summary>
-        Task<IndexerQueryObservation?> SearchIndexerObservationAsync(string apiId, string query, string? category = null, SearchRequest? request = null);
-
-        /// <summary>
         /// Tests connectivity and authentication for a specific API
         /// </summary>
         /// <param name="apiId">The API configuration ID to test</param>
@@ -71,10 +63,9 @@ namespace Listenarr.Application.Search.Contracts
         /// <param name="sortDirection">Sort direction (ascending or descending)</param>
         /// <param name="isAutomaticSearch">Whether this is an automatic search</param>
         /// <param name="request">Optional request object to pass indexer-specific parameters</param>
-        /// <param name="plan">Ordered query forms to try in turn against each indexer. Omitted for free-text search, which has one form: the text as typed.</param>
         /// <param name="origin">Who caused the search: a person waiting for the answer, the background sweep, a retry after a failed download, or one of many searches started together</param>
         /// <returns>List of search results from indexers only</returns>
-        Task<List<IndexerSearchResult>> SearchIndexersAsync(string query, string? category = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, SearchRequest? request = null, SearchQueryPlan? plan = null, SearchOrigin origin = SearchOrigin.Interactive);
+        Task<List<IndexerSearchResult>> SearchIndexersAsync(string query, string? category = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, SearchRequest? request = null, SearchOrigin origin = SearchOrigin.Interactive);
 
         /// <summary>
         /// Gets all enabled metadata sources (Audible, Audnexus, OpenLibrary, etc.)

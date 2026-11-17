@@ -579,7 +579,6 @@ export interface ApplicationSettings {
   enableAudibleSearch?: boolean
   defaultSearchRegion?: string
   defaultSearchLanguage?: string
-  maxConcurrentIndexerSearches?: number
 
   // Scheduled provider-metadata refresh
   metadataRefreshEnabled?: boolean
@@ -1076,16 +1075,6 @@ export interface Indexer {
   lastTestedAt?: string
   lastTestSuccessful?: boolean
   lastTestError?: string
-  /** Start of the current run of failures, set once rather than per failure. */
-  initialFailure?: string
-  /** Most recent failure to answer a search. */
-  mostRecentFailure?: string
-  /** Position on the failure-backoff ladder; 0 means healthy. */
-  escalationLevel: number
-  /** When the current failure cooldown expires. While it is in the future the indexer is not queried. */
-  disabledTill?: string
-  /** Name of the query reason behind the current cooldown, eg. Timeout, RateLimited, AuthFailure. */
-  lastFailureReason?: string
 }
 
 export interface SystemReadiness {
@@ -1158,25 +1147,6 @@ export interface ServiceHealth {
   uptime: string
   downloadClients: DownloadClientHealth
   externalApis: ExternalApiHealth
-  /** Absent from a backend that predates indexer health checks. */
-  indexers?: IndexerHealth
-}
-
-export interface IndexerHealth {
-  status: string // "healthy", "warning", "error", "unknown"
-  /** Enabled indexers not in a failure-backoff cooldown right now. */
-  available: number
-  /** Enabled indexers. */
-  total: number
-  checks: IndexerHealthCheck[]
-}
-
-export interface IndexerHealthCheck {
-  /** "IndexerStatus" (failure run began within six hours) or "IndexerLongTermStatus" (longer). */
-  kind: string
-  status: string // "warning", "error"
-  message: string
-  indexerNames: string[]
 }
 
 export interface DownloadClientHealth {

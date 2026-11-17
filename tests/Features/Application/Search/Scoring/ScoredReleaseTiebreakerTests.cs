@@ -604,7 +604,6 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     true,
-                    It.IsAny<SearchQueryPlan?>(),
                     It.IsAny<SearchOrigin>()))
                 .ReturnsAsync(candidates);
 

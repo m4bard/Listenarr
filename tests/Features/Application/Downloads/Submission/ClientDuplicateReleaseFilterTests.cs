@@ -65,7 +65,6 @@ public sealed class ClientDuplicateReleaseFilterTests : BaseTests
                 It.IsAny<SearchSortBy>(),
                 It.IsAny<SearchSortDirection>(),
                 It.IsAny<bool>(),
-                It.IsAny<SearchQueryPlan?>(),
                 It.IsAny<SearchOrigin>()))
             .ReturnsAsync([
                 new SearchResult
@@ -183,7 +182,6 @@ public sealed class ClientDuplicateReleaseFilterTests : BaseTests
                 It.IsAny<SearchSortBy>(),
                 It.IsAny<SearchSortDirection>(),
                 true,
-                It.IsAny<SearchQueryPlan?>(),
                 It.IsAny<SearchOrigin>()))
             .ReturnsAsync([release]);
         var scoring = new Mock<IQualityProfileService>();

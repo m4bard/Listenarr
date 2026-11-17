@@ -640,7 +640,7 @@ namespace Listenarr.Tests.Features.Api.Features.Search
             _results = results;
         }
 
-        public Task<List<SearchResult>> SearchAsync(string query, string? category = null, List<string>? apiIds = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, SearchQueryPlan? plan = null, SearchOrigin origin = SearchOrigin.Interactive)
+        public Task<List<SearchResult>> SearchAsync(string query, string? category = null, List<string>? apiIds = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, SearchOrigin origin = SearchOrigin.Interactive)
         {
             return Task.FromResult(new List<SearchResult>());
         }
@@ -660,17 +660,12 @@ namespace Listenarr.Tests.Features.Api.Features.Search
             return Task.FromResult(new List<IndexerSearchResult>());
         }
 
-        public Task<IndexerQueryObservation?> SearchIndexerObservationAsync(string apiId, string query, string? category = null, SearchRequest? request = null)
-        {
-            return Task.FromResult<IndexerQueryObservation?>(IndexerQueryObservation.NoMatch(IndexerQueryReason.EmptyChannel, query));
-        }
-
         public Task<bool> TestApiConnectionAsync(string apiId)
         {
             return Task.FromResult(true);
         }
 
-        public Task<List<IndexerSearchResult>> SearchIndexersAsync(string query, string? category = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, SearchRequest? request = null, SearchQueryPlan? plan = null, SearchOrigin origin = SearchOrigin.Interactive)
+        public Task<List<IndexerSearchResult>> SearchIndexersAsync(string query, string? category = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, SearchRequest? request = null, SearchOrigin origin = SearchOrigin.Interactive)
         {
             return Task.FromResult(new List<IndexerSearchResult>());
         }

@@ -25,7 +25,6 @@ public sealed class BlocklistSearchWiringTests : BaseTests
                 It.IsAny<SearchSortBy>(),
                 It.IsAny<SearchSortDirection>(),
                 It.IsAny<bool>(),
-                It.IsAny<SearchQueryPlan?>(),
                 It.IsAny<SearchOrigin>()))
             .ReturnsAsync([
                 new SearchResult

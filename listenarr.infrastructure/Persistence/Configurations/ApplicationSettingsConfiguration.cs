@@ -59,6 +59,12 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
         public void Configure(EntityTypeBuilder<ApplicationSettings> builder)
         {
             builder.Property(e => e.Version).IsConcurrencyToken();
+
+            // The indexer fan-out ceiling migration 20260923050237 added, kept as a shadow property
+            // now that nothing reads it, so the snapshot and the column stay as they were and an
+            // older build that still reads it can be put back on the same database.
+            builder.Property<int>("MaxConcurrentIndexerSearches");
+
             // AllowedFileExtensions stored as pipe-delimited list
             builder.Property(e => e.AllowedFileExtensions)
                 .HasConversion(

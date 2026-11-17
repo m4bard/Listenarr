@@ -38,7 +38,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
 
             await RunCycleAsync();
 
-            VerifySearched("The Wonderful Wizard of Oz L Frank Baum", Times.Once());
+            VerifySearched("The Wonderful Wizard of Oz L. Frank Baum", Times.Once());
             VerifySearchedOnlyFor("The Wonderful Wizard of Oz");
             Assert.Empty(_timeProvider.Delays);
         }
@@ -52,7 +52,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
 
             await RunCycleAsync();
 
-            VerifySearched("The Wonderful Wizard of Oz L Frank Baum", Times.Once());
+            VerifySearched("The Wonderful Wizard of Oz L. Frank Baum", Times.Once());
             VerifySearched("The Jungle Book Rudyard Kipling", Times.Once());
             Assert.Equal(new[] { TimeSpan.FromSeconds(BookDelaySeconds) }, _timeProvider.Delays);
         }
@@ -114,9 +114,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchQueryPlan?>(),
                     It.IsAny<SearchOrigin>()))
-                .ReturnsAsync((string query, string? _, List<string>? _, SearchSortBy _, SearchSortDirection _, bool _, SearchQueryPlan? _, SearchOrigin _) =>
+                .ReturnsAsync((string query, string? _, List<string>? _, SearchSortBy _, SearchSortDirection _, bool _, SearchOrigin _) =>
                     new List<SearchResult> { new() { Title = $"{query} M4B", DownloadType = DirectDownloadMetadataKeys.ClientId } });
             var books = new[]
             {
@@ -148,7 +147,6 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchQueryPlan?>(),
                     It.IsAny<SearchOrigin>()))
                 .ReturnsAsync(new List<SearchResult>());
             Init(builder =>
@@ -215,7 +213,6 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchQueryPlan?>(),
                     It.IsAny<SearchOrigin>()),
                 times);
 
@@ -227,7 +224,6 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                     It.IsAny<SearchSortBy>(),
                     It.IsAny<SearchSortDirection>(),
                     It.IsAny<bool>(),
-                    It.IsAny<SearchQueryPlan?>(),
                     It.IsAny<SearchOrigin>()),
                 Times.Never);
 
