@@ -72,7 +72,9 @@ jobs:
           # The manifest records the patch count as it stood BEFORE the manifest-writing
           # commit itself was added (tools/local_stack.sh's publish step computes it, then
           # commits the file), so the real count one commit later is declared_patches + 1.
-          actual_patches=$(( $(git rev-list --count "$base_sha..HEAD") - 1 ))
+          # Patches are counted along the first parent: a merge in the stack is one patch,
+          # and the commits it brings in from its side branch are not counted again.
+          actual_patches=$(( $(git rev-list --first-parent --count "$base_sha..HEAD") - 1 ))
           if [ "$actual_patches" != "$declared_patches" ]; then
             echo "::error::STACK-MANIFEST.md says $declared_patches patches on $base_sha, but HEAD is actually $actual_patches past it. The manifest is stale -- regenerate it with tools/local_stack.sh (publish mode) before pushing, so the version stamp isn't ambiguous about which build this is."
             exit 1
