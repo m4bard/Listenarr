@@ -831,7 +831,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         public async Task GetQueueAsync_WithIds_WhenTheBreakerOpensMidPoll_StillFailsThePoll()
         {
             var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
-            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("500");
+            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("\"downloading\"");
             apiMock.FilesRequestsBeforeBreakerOpens = 1;
             var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
             var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
@@ -847,7 +847,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         public async Task OrphanCleanup_WhenTheBreakerOpensMidPoll_KeepsTheUnreadTorrentsRecords()
         {
             var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
-            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("500");
+            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("\"downloading\"");
             apiMock.FilesRequestsBeforeBreakerOpens = 1;
             var tracked = await TrackDownloadsAsync("aaaa1111", "bbbb2222", "cccc3333");
 
@@ -937,7 +937,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         public async Task OrphanCleanup_WhenOneTorrentIsUnreadable_KeepsItsTrackingRecord()
         {
             var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
-            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("\"600\"");
+            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("123");
             var tracked = await TrackDownloadsAsync("aaaa1111", "bbbb2222", "cccc3333");
 
             await RunOrphanCleanupAsync(tracked);
@@ -952,7 +952,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         public async Task OrphanCleanup_WhenEveryTorrentIsReadable_StillRemovesAGenuineOrphan()
         {
             var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
-            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("500");
+            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent("\"downloading\"");
             var tracked = await TrackDownloadsAsync("aaaa1111", "bbbb2222", "cccc3333", "dddd4444");
 
             await RunOrphanCleanupAsync(tracked);
