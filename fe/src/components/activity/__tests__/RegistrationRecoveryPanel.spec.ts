@@ -31,7 +31,7 @@ const review = {
 
 beforeEach(() => {
   vi.resetAllMocks()
-  api.getRegistrationReviews.mockResolvedValue([review])
+  api.getRegistrationReviews.mockResolvedValue({ reviews: [review], total: 1 })
   api.inspectRegistration.mockResolvedValue(review)
 })
 
@@ -91,5 +91,12 @@ describe('RegistrationRecoveryPanel', () => {
     await flushPromises()
     expect((wrapper.get('input[type=checkbox]').element as HTMLInputElement).checked).toBe(false)
     expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('shows how many of the total operations are listed when the list is truncated', async () => {
+    api.getRegistrationReviews.mockResolvedValue({ reviews: [review], total: 342 })
+    const wrapper = mount(RegistrationRecoveryPanel)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Showing 1 of 342 operations.')
   })
 })

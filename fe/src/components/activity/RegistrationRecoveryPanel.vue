@@ -10,6 +10,9 @@
     </button>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="!busy && !reviews.length && !error">No operations requiring review.</p>
+    <p v-if="reviews.length" role="status">
+      Showing {{ reviews.length }} of {{ total }} operations.
+    </p>
     <ul>
       <li v-for="review in reviews" :key="review.operationId">
         {{ review.action }} · Book {{ review.audiobookId ?? 'unknown' }} · {{ review.state }}
@@ -93,6 +96,7 @@ import { apiService } from '@/services/api'
 import type { RegistrationReview } from '@/types/registrationRecovery'
 
 const reviews = ref<RegistrationReview[]>([])
+const total = ref(0)
 const selected = ref<RegistrationReview | null>(null)
 const busy = ref(false)
 const error = ref('')
@@ -104,7 +108,9 @@ async function refresh() {
   error.value = ''
   selected.value = null
   try {
-    reviews.value = await apiService.getRegistrationReviews()
+    const list = await apiService.getRegistrationReviews()
+    reviews.value = list.reviews
+    total.value = list.total
   } catch {
     error.value = 'Could not load recovery operations. Try refreshing.'
   } finally {
@@ -137,7 +143,9 @@ async function resolve() {
       selected.value.reviewToken,
       note.value,
     )
-    reviews.value = await apiService.getRegistrationReviews()
+    const list = await apiService.getRegistrationReviews()
+    reviews.value = list.reviews
+    total.value = list.total
   } catch {
     selected.value = null
     error.value =
