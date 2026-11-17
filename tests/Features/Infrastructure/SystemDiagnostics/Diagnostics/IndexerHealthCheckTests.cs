@@ -21,6 +21,7 @@ using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Infrastructure.Search.RequestGate;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Features.Infrastructure.Persistence;
+using Listenarr.Tests.Features.Infrastructure.Search.RequestGate;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Listenarr.Tests.Features.Infrastructure.SystemDiagnostics.Diagnostics
@@ -159,6 +160,33 @@ namespace Listenarr.Tests.Features.Infrastructure.SystemDiagnostics.Diagnostics
             Assert.Equal(("healthy", 2, 2), (health.Indexers.Status, health.Indexers.Available, health.Indexers.Total));
             Assert.Empty(health.Indexers.Checks);
             Assert.Empty(health.Indexers.Cooldowns);
+        }
+
+        [Fact]
+        [Trait("Method", "GetServiceHealthAsync")]
+        [Trait("Scenario", "AsksAsAnInteractiveSearch")]
+        public async Task GetServiceHealthAsync_ReservationDefersOnlyInteractive_IsReported()
+        {
+            // Given: a reservation that holds back only a search the operator starts. The check
+            // reports what an interactive search would meet, so it must ask with that origin.
+            await using var database = await IndexerRequestStateTestDatabase.CreateAsync(indexerCount: 1);
+            var interactiveOnly = new IndexerRequestGateHarness.SpyReservation(
+                peek: (_, origin, _) => Task.FromResult<RequestDeferral?>(origin == SearchOrigin.Interactive ? RateLimited : null));
+            var gate = new IndexerRequestGate(
+                new IndexerRequestStateCache(new EfIndexerRequestStateStore(database.Factory), NullLogger<IndexerRequestStateCache>.Instance),
+                [interactiveOnly],
+                new MutableTimeProvider(new DateTimeOffset(Now)),
+                NullLogger<IndexerRequestGate>.Instance);
+            await using var context = database.CreateContext();
+
+            // When
+            var health = await CreateSystemService(new EfIndexerRepository(context), gate).GetServiceHealthAsync();
+
+            // Then
+            var cooldown = Assert.Single(health.Indexers.Cooldowns);
+            Assert.Equal((Now.AddHours(1), "RateLimited"), (cooldown.UntilUtc, cooldown.Reason));
+            Assert.Equal(1, interactiveOnly.PeekCalls);
+            Assert.Equal(0, interactiveOnly.ReserveCalls);
         }
 
         private static Indexer Enabled(int id, string name) => new()
