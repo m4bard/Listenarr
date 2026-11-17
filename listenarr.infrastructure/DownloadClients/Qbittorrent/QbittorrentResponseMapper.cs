@@ -56,7 +56,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 DownloadClient = client.Name,
                 DownloadClientId = client.Id,
                 DownloadClientType = "qbittorrent",
-                AddedAt = DateTimeOffset.FromUnixTimeSeconds(addedOn).DateTime,
+                AddedAt = UnixSecondsToDateTimeOrEpoch(addedOn),
                 Seeders = numSeeds,
                 Leechers = numLeechs,
                 Ratio = ratio,
@@ -89,8 +89,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             var numSeeds = GetNullableInt32(torrent, "num_seeds");
             var numLeechs = GetNullableInt32(torrent, "num_leechs");
             var ratio = GetNullableDouble(torrent, "ratio");
-            var ratioLimit = (float)GetDouble(torrent, "ratio_limit", -2);
-            var seedingTimeLimit = GetInt64(torrent, "seeding_time_limit", -2);
+            var ratioLimitValue = ReadDouble(torrent, "ratio_limit");
+            var seedingTimeLimitValue = ReadInt64(torrent, "seeding_time_limit", truncateFraction: false);
+            var ratioLimit = (float)(ratioLimitValue ?? -2);
+            var seedingTimeLimit = seedingTimeLimitValue ?? -2;
             var seedingTime = GetNullableInt64(torrent, "seeding_time");
             var savePath = GetString(torrent, "save_path");
             var category = GetString(torrent, "category");
@@ -108,9 +110,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 globalMaxSeedingTimeEnabled,
                 globalMaxSeedingTime);
             // A per-torrent limit that is present but unreadable must not fall back to "inherit the
-            // global limit", which could authorize removal the real limit would forbid.
-            var seedLimitReadable = IsReadableOrAbsent(ReadDouble(torrent, "ratio_limit"), torrent, "ratio_limit") &&
-                IsReadableOrAbsent(ReadInt64(torrent, "seeding_time_limit"), torrent, "seeding_time_limit");
+            // global limit", which could authorize removal the real limit would forbid. A seeding
+            // time limit is a whole number of minutes, so a fractional one is unreadable too.
+            var seedLimitReadable = IsReadableOrAbsent(ratioLimitValue, torrent, "ratio_limit") &&
+                IsReadableOrAbsent(seedingTimeLimitValue, torrent, "seeding_time_limit");
             var canBeRemoved = removeCompletedDownloads && seedLimitReached && seedLimitReadable;
 
             return new DownloadClientItem
@@ -219,8 +222,12 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
         // which made the caller drop that torrent from the poll result.
         //
         // Numeric strings are deliberately NOT parsed here; a quoted number is treated as
-        // unreadable.
-        private static long? ReadInt64(Dictionary<string, JsonElement> values, string key)
+        // unreadable. qBittorrent's WebUI API documents every field read here as an integer or a
+        // float, so no documented response needs it.
+        //
+        // truncateFraction: false is for values that only make sense as whole numbers, where 60.0
+        // and 6e1 still read as 60 but 60.5 is unreadable instead of becoming 60.
+        private static long? ReadInt64(Dictionary<string, JsonElement> values, string key, bool truncateFraction = true)
         {
             if (!values.TryGetValue(key, out var element) || element.ValueKind != JsonValueKind.Number)
             {
@@ -235,6 +242,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             // (double)long.MaxValue rounds up to 2^63, which no long can hold, so the bound is exclusive
             return element.TryGetDouble(out var doubleValue) &&
                 double.IsFinite(doubleValue) &&
+                (truncateFraction || double.IsInteger(doubleValue)) &&
                 doubleValue >= long.MinValue &&
                 doubleValue < (double)long.MaxValue
                 ? (long)doubleValue
@@ -269,6 +277,16 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             }
 
             return element.TryGetDouble(out var value) && double.IsFinite(value) ? value : null;
+        }
+
+        // added_on only orders the queue view. A value that is negative or past the last second a
+        // DateTime can hold would make FromUnixTimeSeconds throw and drop the whole torrent, so it
+        // falls back to the epoch, the same value a missing added_on produces.
+        private static DateTime UnixSecondsToDateTimeOrEpoch(long unixSeconds)
+        {
+            return unixSeconds >= 0 && unixSeconds <= DateTimeOffset.MaxValue.ToUnixTimeSeconds()
+                ? DateTimeOffset.FromUnixTimeSeconds(unixSeconds).DateTime
+                : DateTimeOffset.UnixEpoch.DateTime;
         }
 
         private static bool IsReadableOrAbsent<T>(T? value, Dictionary<string, JsonElement> values, string key)
