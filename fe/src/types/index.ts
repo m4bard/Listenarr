@@ -1147,6 +1147,36 @@ export interface ServiceHealth {
   uptime: string
   downloadClients: DownloadClientHealth
   externalApis: ExternalApiHealth
+  /** Absent from a backend that predates indexer health checks. */
+  indexers?: IndexerHealth
+}
+
+export interface IndexerHealth {
+  status: string // "healthy", "warning", "error", "unknown"
+  /** Enabled indexers the request gate would send a search to right now. */
+  available: number
+  /** Enabled indexers. */
+  total: number
+  checks: IndexerHealthCheck[]
+  /** The enabled indexers in a request cooldown. Absent from a backend that predates it. */
+  cooldowns?: IndexerCooldownHealth[]
+}
+
+export interface IndexerHealthCheck {
+  /** "IndexerStatus": enabled indexers the request gate is holding back. */
+  kind: string
+  status: string // "warning", "error"
+  message: string
+  indexerNames: string[]
+}
+
+export interface IndexerCooldownHealth {
+  indexerId: number
+  name: string
+  /** UTC; the earliest time a request may be sent again. */
+  untilUtc: string
+  /** The deferral reason's name, eg. RateLimited or FailureLadder. */
+  reason: string
 }
 
 export interface DownloadClientHealth {
