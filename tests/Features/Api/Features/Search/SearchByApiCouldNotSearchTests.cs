@@ -17,7 +17,6 @@
  */
 
 using System.Text.Json;
-using Listenarr.Application.Search.Indexers.Common;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Microsoft.AspNetCore.Http;
