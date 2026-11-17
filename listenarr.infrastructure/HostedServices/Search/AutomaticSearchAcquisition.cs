@@ -208,7 +208,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                     return new AcquisitionResult(BookSearchOutcome.GrabNotCompleted, 0);
                 }
 
-                await _downloadService.StartDownloadAsync(topResult.SearchResult, downloadClientId, audiobook.Id);
+                await _downloadService.StartDownloadAsync(topResult.SearchResult, downloadClientId, audiobook.Id, ct);
 
                 _logger.LogInformation("Queued download for audiobook '{Title}': {ResultTitle} (Score: {Score})",
                     audiobook.Title, topResult.SearchResult.Title, topResult.TotalScore);
