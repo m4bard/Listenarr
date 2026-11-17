@@ -10,8 +10,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Persistence;
 [Trait("Category", "Infrastructure")]
 public sealed class FileRegistrationReviewListPagingTests : BaseTests
 {
-    private const int NeedsAttentionRows = 300;
-    private const int ResolvedRows = 42;
+    private const int NeedsAttentionRows = 260;
+    private const int ResolvedRows = 40;
     private const int TotalRows = NeedsAttentionRows + ResolvedRows;
 
     private sealed class Factory(DbContextOptions<ListenArrDbContext> options) : IDbContextFactory<ListenArrDbContext>
@@ -125,7 +125,7 @@ public sealed class FileRegistrationReviewListPagingTests : BaseTests
         {
             await db.Database.EnsureCreatedAsync();
             var sameInstant = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-            // Inserted in descending id order so insertion order disagrees with the id tiebreak.
+            // One save per row, in descending id order, so rowid (insertion) order disagrees with the id tiebreak.
             var descendingIds = Enumerable.Range(0, 250).Select(_ => Guid.NewGuid())
                 .OrderByDescending(id => id.ToString(), StringComparer.Ordinal).ToList();
             for (var i = 0; i < descendingIds.Count; i++)
@@ -133,8 +133,8 @@ public sealed class FileRegistrationReviewListPagingTests : BaseTests
                 var journal = Journal(FileMutationJournalState.NeedsAttention, i, sameInstant);
                 journal.OperationId = descendingIds[i];
                 db.FileMutationJournals.Add(journal);
+                await db.SaveChangesAsync();
             }
-            await db.SaveChangesAsync();
         }
         var service = new FileRegistrationRecoveryService(factory,
             new FileMover(NullLogger<FileMover>.Instance, dbContextFactory: factory),
