@@ -105,7 +105,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 if (!deleteResp.IsSuccessStatusCode)
                 {
                     var body = await deleteResp.Content.ReadAsStringAsync(ct);
-                    _logger.LogWarning("qBittorrent delete returned {Status}: {Body}", deleteResp.StatusCode, LogRedaction.RedactText(body, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    _logger.LogWarning("qBittorrent delete returned {Status}: {Body}", deleteResp.StatusCode, LogRedaction.SanitizeText(LogRedaction.RedactText(body, LogRedaction.GetSensitiveValuesFromEnvironment()), 500));
                     return false;
                 }
 
