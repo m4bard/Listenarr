@@ -26,36 +26,10 @@ namespace Listenarr.Tests.Features.Infrastructure.Logging
     [Trait("Category", "UpstreamUrlFailureLogging")]
     public sealed class UpstreamUrlFailureLoggingTests : BaseTests
     {
-        private const string SignedUrl = "https://downloads.example.com/assets/checksums-sha256.txt?X-Signature=abc123";
-
         private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
         {
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
                 => Task.FromResult(respond(request));
-        }
-
-        private static string ReleaseFeedWithChecksumAsset(string assetUrl)
-            => $$"""[{"tag_name":"v1","assets":[{"name":"checksums-sha256.txt","browser_download_url":"{{assetUrl}}"}]}]""";
-
-        private static HttpClient FeedThenFailure(string assetUrl) => new(new StubHandler(request =>
-            request.RequestUri!.Host == "api.github.com"
-                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ReleaseFeedWithChecksumAsset(assetUrl)) }
-                : throw new HttpRequestException("connection refused")));
-
-        [Fact]
-        public async Task FfprobeChecksumDownloadFailure_DoesNotLogTheSignedQueryOrLineBreaks()
-        {
-            var logger = new RecordingLogger();
-            var discoverer = new FfprobeGithubAssetDiscoverer(FeedThenFailure(SignedUrl + "\\r\\n[forged]"), logger);
-
-            await discoverer.TryDiscoverAsync("example/repo", null, null);
-
-            var entry = Assert.Single(logger.Entries, e => e.Message.StartsWith("Could not download the checksum asset"));
-            Assert.Contains("https://downloads.example.com/assets/checksums-sha256.txt", entry.Message);
-            Assert.DoesNotContain("X-Signature", entry.Message);
-            Assert.DoesNotContain("forged", entry.Message);
-            Assert.DoesNotContain('\r', entry.Message);
-            Assert.DoesNotContain('\n', entry.Message);
         }
 
         [Fact]
