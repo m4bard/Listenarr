@@ -98,10 +98,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             // for a torrent the client never accepted, so the download is tracked, never
             // progresses, and nothing explains why.
             //
-            // Readarr reads the same body at both of its add sites, src/NzbDrone.Core/Download/
-            // Clients/QBittorrent/QBittorrentProxyV2.cs:161 and :183, with the same note that
-            // older versions returned nothing, so an equality test against "Ok." would be wrong
-            // where a test against "Fails." is not.
+            // The test is for the refusal, not for "Ok.": older builds answer 200 with an empty
+            // body on success, so a positive test would fail every grab against them.
             var addBody = await addResponse.Content.ReadAsStringAsync(ct);
             if (string.Equals(addBody.Trim(), "Fails.", StringComparison.Ordinal))
             {
