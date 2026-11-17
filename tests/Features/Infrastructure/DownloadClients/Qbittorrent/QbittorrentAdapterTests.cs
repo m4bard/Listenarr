@@ -53,6 +53,36 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             Assert.Equal(knownPolicy, item.CanBeRemoved);
         }
 
+        // A limit that cannot be read must never be treated as "inherit the global limit", because
+        // that can authorize removal the user's per-torrent limit would have forbidden. The torrent
+        // stays in the queue but is not removable. The well-formed rows are the control.
+        [Theory]
+        [InlineData("\"ratio_limit\":2", true)]
+        [InlineData("\"seeding_time_limit\":-2", true)]
+        [InlineData("\"ratio_limit\":\"2\"", false)]
+        [InlineData("\"ratio_limit\":{}", false)]
+        [InlineData("\"seeding_time_limit\":\"60\"", false)]
+        [InlineData("\"seeding_time_limit\":[]", false)]
+        public async Task GetItemsAsync_UnreadableSeedLimitKeepsTheTorrentButCannotAuthorizeRemoval(string limitField, bool expectedRemovable)
+        {
+            using var http = new HttpClient(new DelegatingHandlerMock((request, _) =>
+            {
+                var path = request.RequestUri!.AbsolutePath;
+                var response = path.EndsWith("/preferences")
+                    ? """{"max_ratio_enabled":true,"max_ratio":2,"max_seeding_time_enabled":false,"max_seeding_time":30}"""
+                    : path.EndsWith("/login") ? "Ok."
+                    : $$"""[{"hash":"EXACT","name":"Book","state":"stoppedUP","progress":1,"ratio":3,{{limitField}}}]""";
+                return Task.FromResult(MockUtils.GetCannedResponse(response));
+            }));
+            var factory = new Mock<IHttpClientFactory>();
+            factory.Setup(value => value.CreateClient(It.IsAny<string>())).Returns(http);
+            var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<QbittorrentAdapter>.Instance;
+            var workflow = new QbittorrentItemFetchWorkflow(factory.Object, new QbittorrentAuthSession(logger), logger, "qbittorrent");
+            var client = new DownloadClientConfiguration { Host = "localhost", Port = 8080, RemoveCompletedDownloads = "remove_and_delete" };
+            var item = Assert.Single(await workflow.GetItemsAsync(client));
+            Assert.Equal(expectedRemovable, item.CanBeRemoved);
+        }
+
         private DownloadClientConfiguration _client = null!;
 
         public override async Task InitializeAsync()
@@ -696,7 +726,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         // every numeric shape qBittorrent might actually send and only falls back to the default
         // for a token that cannot be read as a number at all.
         //
-        // - "600.0" is an integral JSON number: TryGetInt64 succeeds directly.
+        // - "600.0" is an integral value written with a fraction: TryGetInt64 fails, TryGetDouble
+        //   succeeds (600.0), truncates to 600.
         // - "600.5" is non-integral: TryGetInt64 fails, TryGetDouble succeeds (600.5), truncates.
         // - "6e2" is exponent notation: TryGetInt64 fails even though the value is whole,
         //   TryGetDouble succeeds (600.0), truncates to the same 600.
@@ -787,8 +818,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         // seed-limit evaluator, with no field of its own on the mapped item. Unlike the fields
         // above, this case only confirms the mapping survives at all for a malformed value; it
         // doesn't assert the resulting seed-limit decision, since that depends on several other
-        // fields too and is already covered by QbittorrentSeedLimitEvaluatorTests-equivalent
-        // cases elsewhere in this file.
+        // fields too.
         [Theory]
         [InlineData("7200.5")]
         [InlineData("{}")]

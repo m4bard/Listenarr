@@ -107,7 +107,11 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 globalMaxRatio,
                 globalMaxSeedingTimeEnabled,
                 globalMaxSeedingTime);
-            var canBeRemoved = removeCompletedDownloads && seedLimitReached;
+            // A per-torrent limit that is present but unreadable must not fall back to "inherit the
+            // global limit", which could authorize removal the real limit would forbid.
+            var seedLimitReadable = IsReadableOrAbsent(ReadDouble(torrent, "ratio_limit"), torrent, "ratio_limit") &&
+                IsReadableOrAbsent(ReadInt64(torrent, "seeding_time_limit"), torrent, "seeding_time_limit");
+            var canBeRemoved = removeCompletedDownloads && seedLimitReached && seedLimitReadable;
 
             return new DownloadClientItem
             {
@@ -212,10 +216,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
         // number (600.5), exponent notation (6e2, which GetInt64/GetInt32 cannot parse even
         // though the value is whole), or a quoted string or object. Calling GetInt64/GetInt32/
         // GetDouble directly threw FormatException or InvalidOperationException on any of these,
-        // which aborted the mapping of every torrent after the malformed one.
+        // which made the caller drop that torrent from the poll result.
         //
-        // Numeric strings are deliberately NOT parsed here. That is the NZBGet adapter's
-        // behavior for a different, unrelated field shape and is not being ported over.
+        // Numeric strings are deliberately NOT parsed here; a quoted number is treated as
+        // unreadable.
         private static long? ReadInt64(Dictionary<string, JsonElement> values, string key)
         {
             if (!values.TryGetValue(key, out var element) || element.ValueKind != JsonValueKind.Number)
@@ -264,6 +268,12 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             }
 
             return element.TryGetDouble(out var value) && double.IsFinite(value) ? value : null;
+        }
+
+        private static bool IsReadableOrAbsent<T>(T? value, Dictionary<string, JsonElement> values, string key)
+            where T : struct
+        {
+            return value.HasValue || !values.ContainsKey(key);
         }
 
         private static double GetDouble(Dictionary<string, JsonElement> values, string key, double defaultValue = 0)
