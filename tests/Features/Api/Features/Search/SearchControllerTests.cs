@@ -660,6 +660,11 @@ namespace Listenarr.Tests.Features.Api.Features.Search
             return Task.FromResult(new List<IndexerSearchResult>());
         }
 
+        public Task<IndexerSearchOutcome?> SearchIndexerOutcomeAsync(string apiId, string query, string? category = null, SearchRequest? request = null)
+        {
+            return Task.FromResult<IndexerSearchOutcome?>(null);
+        }
+
         public Task<bool> TestApiConnectionAsync(string apiId)
         {
             return Task.FromResult(true);

@@ -48,6 +48,13 @@ namespace Listenarr.Application.Search.Contracts
         Task<List<IndexerSearchResult>> SearchIndexerResultsAsync(string apiId, string query, string? category = null, SearchRequest? request = null);
 
         /// <summary>
+        /// Searches one indexer and keeps how it ended, so a caller can tell an indexer that had
+        /// nothing from one that failed or was held back by the request gate. Null when the indexer
+        /// does not exist or is disabled.
+        /// </summary>
+        Task<IndexerSearchOutcome?> SearchIndexerOutcomeAsync(string apiId, string query, string? category = null, SearchRequest? request = null);
+
+        /// <summary>
         /// Tests connectivity and authentication for a specific API
         /// </summary>
         /// <param name="apiId">The API configuration ID to test</param>

@@ -198,6 +198,16 @@ public class IndexerSearchWorkflow
         string? category = null,
         SearchRequest? request = null)
     {
+        return (await SearchIndexerOutcomeAsync(apiId, query, category, request))?.Results.ToList() ?? new List<IndexerSearchResult>();
+    }
+
+    /// <summary>One indexer's interactive search with its outcome kept; null when missing or disabled.</summary>
+    public async Task<IndexerSearchOutcome?> SearchIndexerOutcomeAsync(
+        string apiId,
+        string query,
+        string? category = null,
+        SearchRequest? request = null)
+    {
         try
         {
             var indexer = await GetIndexerByApiIdAsync(apiId);
@@ -205,17 +215,16 @@ public class IndexerSearchWorkflow
             if (indexer == null || !indexer.IsEnabled)
             {
                 _logger.LogWarning("Indexer not found or disabled for apiId: {ApiId}", apiId);
-                return new List<IndexerSearchResult>();
+                return null;
             }
 
             request = ApplyIndexerMamOptions(indexer, request);
-            var outcome = await SearchIndexerAsync(indexer, query, category, request, InteractiveContext, CancellationToken.None);
-            return outcome.Results.ToList();
+            return await SearchIndexerAsync(indexer, query, category, request, InteractiveContext, CancellationToken.None);
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             _logger.LogError(ex, "Error searching indexer {ApiId} for query: {Query}", apiId, query);
-            return new List<IndexerSearchResult>();
+            return new IndexerSearchOutcome(0, IndexerSearchStatus.Failed, Array.Empty<IndexerSearchResult>(), RequestsSent: 0, FailureReason: "error");
         }
     }
 
