@@ -55,7 +55,7 @@ internal static class IndexerTrafficClassification
         ("listenarr.application/Notifications/", "notification payload attachments, not an indexer"),
         ("listenarr.infrastructure/DependencyInjection/", "client registration only, sends nothing"),
         ("listenarr.infrastructure/DownloadClients/", "adapters for the user's own download clients"),
-        ("listenarr.infrastructure/Ffmpeg/", "ffmpeg installer downloads"),
+        ("listenarr.infrastructure/Downloads/Status/", "failure records for the user's own download clients"),
         ("listenarr.infrastructure/Images/", "cover image download, caching and validation"),
         ("listenarr.infrastructure/Metadata/", "metadata providers (Audnexus, Open Library), not an indexer"),
         ("listenarr.infrastructure/Notifications/", "webhook and chat delivery to the user's own endpoints")
