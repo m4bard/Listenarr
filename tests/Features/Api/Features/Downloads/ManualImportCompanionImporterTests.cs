@@ -618,4 +618,94 @@ public sealed class ManualImportCompanionImporterTests : BaseTests
             }
         }
     }
+
+    [Fact]
+    public async Task ImportWithOutcomeAsync_DestinationOutsideAuthorizedBoundary_ImportsNothing()
+    {
+        var testRoot = Path.Join(
+            Path.GetTempPath(),
+            "listenarr-tests",
+            $"manual-import-companion-escape-{Guid.NewGuid():N}");
+        var authorizedRoot = Path.Join(testRoot, "authorized-root");
+        var selectedDirectory = Path.Join(testRoot, "source");
+        var destinationDirectory = Path.Join(testRoot, "elsewhere", "book");
+        Directory.CreateDirectory(authorizedRoot);
+        Directory.CreateDirectory(selectedDirectory);
+        Directory.CreateDirectory(destinationDirectory);
+        var audioSource = Path.Join(selectedDirectory, "book.m4b");
+        await File.WriteAllTextAsync(audioSource, "audio");
+        await File.WriteAllTextAsync(Path.Join(selectedDirectory, "cover.jpg"), "image");
+
+        try
+        {
+            var mover = new Mock<IFileMover>();
+            var sourceCapability = new Mock<IFilePublicationSourceCapability>();
+            var directoryOwnershipStore = new Mock<ILibraryDirectoryOwnershipStore>();
+            var importer = new ManualImportCompanionImporter(
+                Mock.Of<IMetadataService>(),
+                mover.Object,
+                sourceCapability.Object,
+                new LocalFileSystem(),
+                directoryOwnershipStore.Object,
+                NullLogger<ManualImportCompanionImporter>.Instance,
+                Mock.Of<IAudiobookFileService>());
+            var tracker = new ManualImportDestinationTracker(
+                new LocalFileSystem(),
+                Mock.Of<IFilePublicationSourceCapability>());
+            var semanticsResolver = new FileSystemSemanticsResolver();
+            var sourceResolution = await semanticsResolver.ResolveAsync(selectedDirectory);
+            var boundaryResolution = await semanticsResolver.ResolveAsync(authorizedRoot);
+            Assert.Equal(PathIdentityState.Valid, boundaryResolution.State);
+            var audiobook = new Audiobook
+            {
+                Id = 42,
+                BasePath = destinationDirectory
+            };
+            var items = new[]
+            {
+                new ManualImportItemDto
+                {
+                    FullPath = audioSource,
+                    MatchedAudiobookId = audiobook.Id
+                }
+            };
+            var results = new[]
+            {
+                new ManualImportResultDto
+                {
+                    Success = true,
+                    SourcePath = audioSource,
+                    DestinationPath = Path.Join(destinationDirectory, "book.m4b"),
+                    Audiobook = audiobook
+                }
+            };
+
+            var outcome = await importer.ImportWithOutcomeAsync(
+                FileAction.Move,
+                items,
+                results,
+                selectedDirectory,
+                selectedAudioProfiles: [],
+                tracker,
+                sourceResolution.Semantics,
+                new Dictionary<int, FileSystemSemanticsResolution>
+                {
+                    [audiobook.Id] = boundaryResolution with { BoundaryPath = authorizedRoot }
+                },
+                importBlacklist: [],
+                compatibilityBatchId: Guid.NewGuid());
+
+            Assert.Empty(mover.Invocations);
+            Assert.Empty(sourceCapability.Invocations);
+            Assert.Empty(directoryOwnershipStore.Invocations);
+            Assert.False(outcome.Succeeded);
+        }
+        finally
+        {
+            if (Directory.Exists(testRoot))
+            {
+                Directory.Delete(testRoot, recursive: true);
+            }
+        }
+    }
 }
