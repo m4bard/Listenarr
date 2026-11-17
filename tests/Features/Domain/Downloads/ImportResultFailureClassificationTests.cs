@@ -42,8 +42,8 @@ namespace Listenarr.Tests.Features.Domain.Downloads
 
         [Theory]
         [InlineData(typeof(UnauthorizedAccessException), ImportFailureClass.PermissionDenied)]
-        [InlineData(typeof(DirectoryNotFoundException), ImportFailureClass.DestinationUnavailable)]
-        [InlineData(typeof(FileNotFoundException), ImportFailureClass.DestinationUnavailable)]
+        [InlineData(typeof(DirectoryNotFoundException), ImportFailureClass.PathNotFound)]
+        [InlineData(typeof(FileNotFoundException), ImportFailureClass.PathNotFound)]
         [InlineData(typeof(PathTooLongException), ImportFailureClass.PathTooLong)]
         public void Exception_ClassifiesByExceptionType(Type exceptionType, ImportFailureClass expected)
         {
@@ -103,7 +103,7 @@ namespace Listenarr.Tests.Features.Domain.Downloads
 
         [Theory]
         [InlineData(ImportFailureClass.PermissionDenied)]
-        [InlineData(ImportFailureClass.DestinationUnavailable)]
+        [InlineData(ImportFailureClass.PathNotFound)]
         [InlineData(ImportFailureClass.DestinationConflict)]
         [InlineData(ImportFailureClass.PathTooLong)]
         [InlineData(ImportFailureClass.FileInUse)]

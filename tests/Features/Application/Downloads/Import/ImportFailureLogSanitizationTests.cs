@@ -126,7 +126,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Import
                 .ImportDownloadFilesAsync(audiobook, [sourceFile]));
 
             Assert.False(result.Success);
-            Assert.Equal(ImportFailureClass.DestinationUnavailable, result.FailureClass);
+            Assert.Equal(ImportFailureClass.PathNotFound, result.FailureClass);
 
             var logLine = Assert.Single(capturingLogger.Messages, m =>
                 m.Contains("Failed processing file in directory import", StringComparison.Ordinal));
@@ -177,8 +177,11 @@ namespace Listenarr.Tests.Features.Application.Downloads.Import
                 .GetRequiredService<IDownloadImportService>()
                 .ImportDownloadFilesAsync(audiobook, [audioFile, companionFile]);
 
+            // The audio file must import for real first, or the companion is skipped before the
+            // line under test is reached.
+            Assert.Contains(results, r => r.Success && r.SourcePath == audioFile);
             var companionResult = Assert.Single(results, r => r.SourcePath == companionFile);
-            Assert.False(companionResult.Success);
+            Assert.False(companionResult.Success, companionResult.Message);
 
             var logLine = Assert.Single(capturingLogger.Messages, m =>
                 m.Contains("Failed companion-file import", StringComparison.Ordinal));

@@ -41,7 +41,7 @@ namespace Listenarr.Domain.Downloads
         /// <summary>Not a failure, or no classification recorded.</summary>
         None = 0,
         PermissionDenied,
-        DestinationUnavailable,
+        PathNotFound,
         DestinationConflict,
         PathTooLong,
         FileInUse,
@@ -63,7 +63,7 @@ namespace Listenarr.Domain.Downloads
         public static string Describe(ImportFailureClass failureClass) => failureClass switch
         {
             ImportFailureClass.PermissionDenied => "Failed to import file, permission denied",
-            ImportFailureClass.DestinationUnavailable => "Failed to import file, destination unavailable",
+            ImportFailureClass.PathNotFound => "Failed to import file, path not found",
             ImportFailureClass.DestinationConflict => "Failed to import file, destination already exists",
             ImportFailureClass.PathTooLong => "Failed to import file, path too long",
             ImportFailureClass.FileInUse => "Failed to import file, file in use",
@@ -179,8 +179,8 @@ namespace Listenarr.Domain.Downloads
         private static ImportFailureClass ClassifyException(Exception exception) => exception switch
         {
             UnauthorizedAccessException => ImportFailureClass.PermissionDenied,
-            DirectoryNotFoundException => ImportFailureClass.DestinationUnavailable,
-            FileNotFoundException => ImportFailureClass.DestinationUnavailable,
+            DirectoryNotFoundException => ImportFailureClass.PathNotFound,
+            FileNotFoundException => ImportFailureClass.PathNotFound,
             PathTooLongException => ImportFailureClass.PathTooLong,
             IOException ioException when ioException.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase) =>
                 ImportFailureClass.DestinationConflict,
