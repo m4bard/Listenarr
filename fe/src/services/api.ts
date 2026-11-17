@@ -112,11 +112,9 @@ class ApiService {
         header.total = resp.headers.get('X-Total-Count')
       },
     )
-    const total = Number(header.total)
-    return {
-      reviews,
-      total: header.total !== null && Number.isInteger(total) ? total : reviews.length,
-    }
+    const total =
+      header.total !== null && /^\d+$/.test(header.total.trim()) ? Number(header.total) : NaN
+    return { reviews, total: Number.isSafeInteger(total) ? total : reviews.length }
   }
 
   inspectRegistration(operationId: string) {
