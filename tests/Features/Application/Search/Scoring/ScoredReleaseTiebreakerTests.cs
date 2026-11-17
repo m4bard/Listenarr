@@ -596,27 +596,19 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
             var handedBack = new StrongBox<List<QualityScore>?>(null);
 
             var searchServiceMock = new Mock<ISearchService>();
-            searchServiceMock
-                .Setup(service => service.SearchAsync(
-                    It.IsAny<string>(),
-                    It.IsAny<string?>(),
-                    It.IsAny<List<string>?>(),
-                    It.IsAny<SearchSortBy>(),
-                    It.IsAny<SearchSortDirection>(),
-                    true,
-                    It.IsAny<SearchOrigin>()))
-                .ReturnsAsync(candidates);
-            // The automatic sweep searches one indexer per call; each call answers for the indexer it names.
+            // Both selection sites search through the detailed report. The sweep asks one indexer
+            // per call and each call answers for the indexers it names; the manual search names
+            // none, and one indexer answers.
             searchServiceMock
                 .Setup(service => service.SearchIndexersDetailedAsync(
                     It.IsAny<string>(),
                     It.IsAny<IndexerSearchContext>(),
                     It.IsAny<IReadOnlyCollection<int>?>(),
-                    true,
+                    It.IsAny<bool>(),
                     It.IsAny<SearchRequest?>(),
                     It.IsAny<CancellationToken>()))
                 .ReturnsAsync((string _, IndexerSearchContext _, IReadOnlyCollection<int>? indexerIds, bool _, SearchRequest? _, CancellationToken _) =>
-                    new IndexerSearchReport(indexerIds!
+                    new IndexerSearchReport((indexerIds ?? [1])
                         .Select(id => new IndexerSearchOutcome(
                             id, IndexerSearchStatus.Completed, candidates.Select(SearchResultConverters.ToIndexerSearchResult).ToList(), RequestsSent: 1))
                         .ToList()));

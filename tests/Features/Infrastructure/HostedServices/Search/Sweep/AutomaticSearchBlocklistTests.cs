@@ -36,9 +36,9 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             await RunCycleAsync();
 
             Downloads.Verify(d => d.StartDownloadAsync(
-                It.Is<SearchResult>(result => result.SourceLink == allowed.SourceLink), It.IsAny<string>(), book.Id), Times.Once);
+                It.Is<SearchResult>(result => result.SourceLink == allowed.SourceLink), It.IsAny<string>(), book.Id, It.IsAny<CancellationToken>()), Times.Once);
             Downloads.Verify(d => d.StartDownloadAsync(
-                It.Is<SearchResult>(result => result.SourceLink == blocked.SourceLink), It.IsAny<string>(), It.IsAny<int?>()), Times.Never);
+                It.Is<SearchResult>(result => result.SourceLink == blocked.SourceLink), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         private static IndexerSearchResult Release(string title, string sourceLink) => new()

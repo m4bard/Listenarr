@@ -94,7 +94,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
 
             Assert.Single(Clock.Delays);
             Assert.Equal(new[] { books[0].Query }, TakeFullQueries());
-            Downloads.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()), Times.Once);
+            Downloads.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Once);
             var skipped = await Database.ReadBookAsync(books[1].Id);
             Assert.Equal((StartUtc.AddHours(24), (DateTime?)null), (skipped.DueUtc, skipped.LastSearchUtc));
         }

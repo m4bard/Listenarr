@@ -41,7 +41,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
 
             await RunCycleAsync();
 
-            Downloads.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), book.Id), Times.Once);
+            Downloads.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), book.Id, It.IsAny<CancellationToken>()), Times.Once);
             Assert.Equal(nameof(PairScheduleResult.Satisfied), (await Database.ReadPairAsync(book.Id, indexer))!.LastOutcome);
         }
 
@@ -54,8 +54,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             Indexers.Script = (_, _) => Returns(AcceptableSource);
             var quality = new Mock<IQualityProfileService>();
             quality
-                .Setup(q => q.ScoreSearchResults(It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>()))
-                .Returns(async (List<SearchResult> results, QualityProfile _) =>
+                .Setup(q => q.ScoreSearchResults(It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>(), It.IsAny<bool>()))
+                .Returns(async (List<SearchResult> results, QualityProfile _, bool _) =>
                 {
                     // The book is edited while its results are being assessed.
                     await using var context = Database.CreateContext();
@@ -68,7 +68,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
 
             await RunCycleAsync();
 
-            Downloads.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()), Times.Never);
+            Downloads.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
             Assert.Equal(nameof(PairScheduleResult.GrabNotCompleted), (await Database.ReadPairAsync(book.Id, indexer))!.LastOutcome);
         }
 

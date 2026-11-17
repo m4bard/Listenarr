@@ -58,25 +58,30 @@ public sealed class ClientDuplicateReleaseFilterTests : BaseTests
         // The filter's unit tests pass whether or not DownloadService calls it. This one fails if
         // the call is removed.
         var search = new Mock<ISearchService>();
-        search.Setup(service => service.SearchAsync(
+        search.Setup(service => service.SearchIndexersDetailedAsync(
                 It.IsAny<string>(),
-                It.IsAny<string?>(),
-                It.IsAny<List<string>?>(),
-                It.IsAny<SearchSortBy>(),
-                It.IsAny<SearchSortDirection>(),
+                It.IsAny<IndexerSearchContext>(),
+                It.IsAny<IReadOnlyCollection<int>?>(),
                 It.IsAny<bool>(),
-                It.IsAny<SearchOrigin>()))
-            .ReturnsAsync([
-                new SearchResult
-                {
-                    // Title and author both, so the book identity gate confirms the release and
-                    // the hold is what the second search has to get past.
-                    Title = "Jane Austen - Pride and Prejudice",
-                    MagnetLink = Magnet,
-                    Size = 800_000_000,
-                    Seeders = 20
-                }
-            ]);
+                It.IsAny<SearchRequest?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new IndexerSearchReport([
+                new IndexerSearchOutcome(
+                    1,
+                    IndexerSearchStatus.Completed,
+                    [
+                        new IndexerSearchResult
+                        {
+                            // Title and author both, so the book identity gate confirms the release and
+                            // the hold is what the second search has to get past.
+                            Title = "Jane Austen - Pride and Prejudice",
+                            MagnetLink = Magnet,
+                            Size = 800_000_000,
+                            Seeders = 20
+                        }
+                    ],
+                    RequestsSent: 1)
+            ]));
         _services.AddSingleton(search.Object);
         Init();
 
