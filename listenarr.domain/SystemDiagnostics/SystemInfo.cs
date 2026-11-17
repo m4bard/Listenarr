@@ -97,6 +97,50 @@ namespace Listenarr.Domain.SystemDiagnostics
         public string Uptime { get; set; } = string.Empty;
         public DownloadClientHealth DownloadClients { get; set; } = new();
         public ExternalApiHealth ExternalApis { get; set; } = new();
+        public IndexerHealth Indexers { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Enabled indexers against those a search would be held back from right now, with the check
+    /// that names them and, per indexer, the cooldown's end and reason.
+    /// </summary>
+    public class IndexerHealth
+    {
+        public string Status { get; set; } = "unknown"; // healthy, warning, error, unknown
+        /// <summary>Enabled indexers not in a request cooldown right now.</summary>
+        public int Available { get; set; }
+        /// <summary>Enabled indexers.</summary>
+        public int Total { get; set; }
+        /// <summary>One entry per check that fired; empty when every enabled indexer is available.</summary>
+        public List<IndexerHealthCheck> Checks { get; set; } = new();
+        /// <summary>The enabled indexers in a request cooldown, with when it ends and why.</summary>
+        public List<IndexerCooldownHealth> Cooldowns { get; set; } = new();
+    }
+
+    /// <summary>
+    /// One failed indexer health check.
+    /// </summary>
+    public class IndexerHealthCheck
+    {
+        public const string StatusKind = "IndexerStatus";
+
+        public string Kind { get; set; } = string.Empty;
+        public string Status { get; set; } = "warning"; // warning, error
+        public string Message { get; set; } = string.Empty;
+        public List<string> IndexerNames { get; set; } = new();
+    }
+
+    /// <summary>
+    /// One indexer the request gate is holding requests back from.
+    /// </summary>
+    public class IndexerCooldownHealth
+    {
+        public int IndexerId { get; set; }
+        public string Name { get; set; } = string.Empty;
+        /// <summary>The earliest time, in UTC, a request may be sent again.</summary>
+        public DateTime UntilUtc { get; set; }
+        /// <summary>The deferral reason's name, eg. RateLimited or FailureLadder.</summary>
+        public string Reason { get; set; } = string.Empty;
     }
 
     public class DownloadClientHealth
