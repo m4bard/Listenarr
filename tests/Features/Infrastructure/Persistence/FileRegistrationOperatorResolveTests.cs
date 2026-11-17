@@ -129,12 +129,14 @@ public sealed class FileRegistrationOperatorResolveTests : BaseTests
         Assert.True(Guid.TryParse(downloadId, out _));
         var parkedBystander = await SeedBystanderAsync(seeded, FileMutationJournalState.NeedsAttention);
         await SeedBystanderAsync(seeded, FileMutationJournalState.Completed);
+        var twin = await SeedTwinAsync(seeded);
         var tablesBefore = await SnapshotAsync(seeded, journalsOnly: false);
         var journalsBefore = await SnapshotAsync(seeded, journalsOnly: true, exceptOperationId: seeded.OperationId);
         Assert.Contains(downloadId, tablesBefore["Downloads"]);
         Assert.Contains(downloadId, tablesBefore["DownloadProcessingJobs"]);
         Assert.Contains(downloadId, tablesBefore["History"]);
         Assert.Contains(parkedBystander.ToString().ToUpperInvariant(), journalsBefore["FileMutationJournals"]);
+        Assert.Contains(twin.ToString().ToUpperInvariant(), journalsBefore["FileMutationJournals"]);
         var service = CreateService(seeded.Factory);
         var review = await service.InspectAsync(seeded.OperationId);
 
@@ -223,6 +225,17 @@ public sealed class FileRegistrationOperatorResolveTests : BaseTests
         });
         await db.SaveChangesAsync();
         return downloadId;
+    }
+
+    /// <summary>A parked row identical to the selected one in every column but its operation id.</summary>
+    private static async Task<Guid> SeedTwinAsync(Seeded seeded)
+    {
+        var twin = await LoadJournalAsync(seeded);
+        twin.OperationId = Guid.NewGuid();
+        await using var db = seeded.Factory.CreateDbContext();
+        db.FileMutationJournals.Add(twin);
+        await db.SaveChangesAsync();
+        return twin.OperationId;
     }
 
     private static async Task<Guid> SeedBystanderAsync(Seeded seeded, FileMutationJournalState state)
