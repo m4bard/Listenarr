@@ -37,7 +37,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
         private readonly AutomaticSearchPreChecks _preChecks;
         private readonly AutomaticSearchResultClassifier _resultClassifier;
         private readonly AutomaticSearchQualityEvaluator _qualityEvaluator;
-        private readonly AutomaticSearchDownloadClientSelector _downloadClientSelector;
+        private readonly DownloadClientSelector _downloadClientSelector;
 
         public AutomaticSearchAcquisition(
             ILogger<AutomaticSearchAcquisition> logger,
@@ -46,7 +46,8 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             IAudiobookFileRepository fileRepository,
             IAutomaticSearchScoringService automaticScoring,
             IDownloadService downloadService,
-            IBlocklistService blocklistService)
+            IBlocklistService blocklistService,
+            DownloadClientSelector downloadClientSelector)
         {
             _logger = logger;
             _serviceScopeFactory = serviceScopeFactory;
@@ -56,7 +57,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             _preChecks = new AutomaticSearchPreChecks(downloadRepository, fileRepository, logger);
             _resultClassifier = new AutomaticSearchResultClassifier(logger);
             _qualityEvaluator = new AutomaticSearchQualityEvaluator(logger);
-            _downloadClientSelector = new AutomaticSearchDownloadClientSelector(serviceScopeFactory, logger);
+            _downloadClientSelector = downloadClientSelector;
         }
 
         public async Task<AcquisitionResult> AcquireAsync(
@@ -185,12 +186,13 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             try
             {
                 // Determine appropriate download client for this result
-                var isTorrent = _resultClassifier.IsTorrentResult(topResult.SearchResult);
-                var downloadClientId = await _downloadClientSelector.GetAppropriateDownloadClientAsync(topResult.SearchResult, isTorrent);
+                var protocol = _resultClassifier.ResolveProtocol(topResult.SearchResult);
+                var downloadClientId = await _downloadClientSelector.GetAppropriateDownloadClientAsync(
+                    protocol, topResult.SearchResult.IndexerId);
 
                 if (string.IsNullOrEmpty(downloadClientId))
                 {
-                    _logger.LogWarning("No suitable download client found for result type: {Type}", isTorrent ? "torrent" : "NZB");
+                    _logger.LogWarning("No suitable download client found for protocol: {Protocol}", protocol);
                     return new AcquisitionResult(BookSearchOutcome.GrabNotCompleted, 0);
                 }
 

@@ -69,14 +69,14 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
 
             var quality = new Mock<IQualityProfileService>();
             quality
-                .Setup(q => q.ScoreSearchResults(It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>()))
-                .ReturnsAsync((List<SearchResult> results, QualityProfile _) =>
+                .Setup(q => q.ScoreSearchResults(It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>(), It.IsAny<bool>()))
+                .ReturnsAsync((List<SearchResult> results, QualityProfile _, bool _) =>
                     results.Any(result => result.Source == ScoringThrowsSource)
                         ? throw new InvalidOperationException("scoring failed")
                         : results.Select(Score).ToList());
             Downloads
-                .Setup(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()))
-                .ReturnsAsync((SearchResult result, string _, int? _) =>
+                .Setup(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((SearchResult result, string _, int? _, CancellationToken _) =>
                     result.Source == StartThrowsSource ? throw new InvalidOperationException("client refused") : "download");
 
             BuildHost(quality.Object);

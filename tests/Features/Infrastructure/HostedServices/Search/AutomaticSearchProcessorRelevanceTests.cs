@@ -32,12 +32,12 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             var correct = Release(title + " - " + author + " [M4B]", artist: "");
             var search = SearchReturning(Release(title + " - Other Writer [M4B]", artist: "Other Writer"), correct);
             var download = new Mock<IDownloadService>();
-            download.Setup(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>())).ReturnsAsync("download-span");
+            download.Setup(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>())).ReturnsAsync("download-span");
             Init(builder => { builder.WithSingleton(search.Object); builder.WithSingleton(download.Object); builder.WithSingleton(AcceptingQualityService().Object); });
             var book = await SeedMonitoredAudiobookAsync(title, author);
             await RunCycleAsync();
-            download.Verify(d => d.StartDownloadAsync(It.Is<SearchResult>(r => r.Title == correct.Title), DirectDownloadMetadataKeys.ClientId, book.Id), Times.Once);
-            download.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()), Times.Once);
+            download.Verify(d => d.StartDownloadAsync(It.Is<SearchResult>(r => r.Title == correct.Title), DirectDownloadMetadataKeys.ClientId, book.Id, It.IsAny<CancellationToken>()), Times.Once);
+            download.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
         [Fact]
@@ -60,7 +60,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             // The gate drops both before scoring, so the download service is never asked to grab
             // either (the strict mock would throw on any call).
             download.Verify(d => d.StartDownloadAsync(
-                It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()), Times.Never);
+                It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
@@ -73,7 +73,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                 correct);
             var download = new Mock<IDownloadService>();
             download.Setup(d => d.StartDownloadAsync(
-                    It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()))
+                    It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync("download-1");
             Init(builder =>
             {
@@ -88,10 +88,10 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             download.Verify(d => d.StartDownloadAsync(
                     It.Is<SearchResult>(r => r.Title == correct.Title),
                     DirectDownloadMetadataKeys.ClientId,
-                    audiobook.Id),
+                    audiobook.Id, It.IsAny<CancellationToken>()),
                 Times.Once);
             download.Verify(d => d.StartDownloadAsync(
-                    It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()),
+                    It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()),
                 Times.Once);
         }
 
@@ -111,7 +111,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             var correct = Release(release, artist: "");
             var search = SearchReturning(Release("Another Work - " + author, artist: ""), correct);
             var download = new Mock<IDownloadService>();
-            download.Setup(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>())).ReturnsAsync("download-layout");
+            download.Setup(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>())).ReturnsAsync("download-layout");
             Init(builder => { builder.WithSingleton(search.Object); builder.WithSingleton(download.Object); builder.WithSingleton(AcceptingQualityService().Object); });
             var book = await SeedMonitoredAudiobookAsync(title, author);
             book.Series = series;
@@ -119,8 +119,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             await _audiobookRepository.UpdateAsync(book);
             await RunCycleAsync();
             download.Verify(d => d.StartDownloadAsync(It.Is<SearchResult>(r => r.Title == correct.Title),
-                DirectDownloadMetadataKeys.ClientId, book.Id), Times.Once);
-            download.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()), Times.Once);
+                DirectDownloadMetadataKeys.ClientId, book.Id, It.IsAny<CancellationToken>()), Times.Once);
+            download.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
 
@@ -137,13 +137,13 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             var candidate = Release(release, artist: ""); candidate.Language = language;
             var search = SearchReturning(candidate);
             var download = new Mock<IDownloadService>();
-            download.Setup(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>())).ReturnsAsync("compatibility");
+            download.Setup(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>())).ReturnsAsync("compatibility");
             Init(builder => { builder.WithSingleton(search.Object); builder.WithSingleton(download.Object); builder.WithSingleton(AcceptingQualityService().Object); });
             var book = await SeedMonitoredAudiobookAsync("The Harbor Lantern", "Mira Chen");
             book.Subtitle = subtitle;
             await _audiobookRepository.UpdateAsync(book);
             await RunCycleAsync();
-            download.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()), expected ? Times.Once() : Times.Never());
+            download.Verify(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), expected ? Times.Once() : Times.Never());
         }
 
         // The sweep hands on a converted copy of each indexer result, so a grab is matched by title.
@@ -179,7 +179,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
         {
             var quality = new Mock<IQualityProfileService>();
             quality.Setup(q => q.ScoreSearchResults(
-                    It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>()))
+                    It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>(), It.IsAny<bool>()))
                 .ReturnsAsync((List<SearchResult> results, QualityProfile _, bool _) =>
                     results.Select(r => new QualityScore { SearchResult = r, TotalScore = 100 }).ToList());
             return quality;

@@ -35,7 +35,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             Assert.Equal(BookSearchOutcome.Satisfied, result.Outcome);
             Assert.Equal(1, result.DownloadsQueued);
             _downloadService.Verify(d => d.StartDownloadAsync(
-                It.IsAny<SearchResult>(), DirectDownloadMetadataKeys.ClientId, book.Id), Times.Once);
+                It.IsAny<SearchResult>(), DirectDownloadMetadataKeys.ClientId, book.Id, It.IsAny<CancellationToken>()), Times.Once);
             AssertNoIndexerTraffic();
         }
 
@@ -60,7 +60,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
 
             Assert.Equal(BookSearchOutcome.NotNeeded, result.Outcome);
             _qualityProfileService.Verify(q => q.ScoreSearchResults(
-                It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>()), Times.Never);
+                It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>(), It.IsAny<bool>()), Times.Never);
             AssertNoIndexerTraffic();
         }
 
@@ -69,7 +69,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
         {
             var book = await ArrangeAsync();
             _qualityProfileService
-                .Setup(q => q.ScoreSearchResults(It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>()))
+                .Setup(q => q.ScoreSearchResults(It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>(), It.IsAny<bool>()))
                 .ThrowsAsync(new InvalidOperationException("scoring failed"));
 
             var result = await AcquireAsync(book, Candidate(DirectDownloadMetadataKeys.ClientId));
@@ -89,7 +89,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             Assert.Equal(0, result.DownloadsQueued);
             Assert.Null(result.GrabDeferral);
             _downloadService.Verify(d => d.StartDownloadAsync(
-                It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()), Times.Never);
+                It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
             AssertNoIndexerTraffic();
         }
 
@@ -98,7 +98,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
         {
             var book = await ArrangeAsync();
             _downloadService
-                .Setup(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()))
+                .Setup(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("client refused"));
 
             var result = await AcquireAsync(book, Candidate(DirectDownloadMetadataKeys.ClientId));
@@ -128,7 +128,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
             Assert.Equal(BookSearchOutcome.GrabNotCompleted, result.Outcome);
             Assert.Equal(0, result.DownloadsQueued);
             _downloadService.Verify(d => d.StartDownloadAsync(
-                It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()), Times.Never);
+                It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
             AssertNoIndexerTraffic();
         }
 
@@ -146,11 +146,11 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
         private async Task<Audiobook> ArrangeAsync(QualityProfile? profile = null)
         {
             _downloadService
-                .Setup(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>()))
+                .Setup(d => d.StartDownloadAsync(It.IsAny<SearchResult>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync("download-1");
             _qualityProfileService
-                .Setup(q => q.ScoreSearchResults(It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>()))
-                .ReturnsAsync((List<SearchResult> results, QualityProfile _) =>
+                .Setup(q => q.ScoreSearchResults(It.IsAny<List<SearchResult>>(), It.IsAny<QualityProfile>(), It.IsAny<bool>()))
+                .ReturnsAsync((List<SearchResult> results, QualityProfile _, bool _) =>
                     results.Select(r => new QualityScore { SearchResult = r, TotalScore = 100 }).ToList());
             Init(builder =>
             {

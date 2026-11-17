@@ -606,6 +606,20 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
                     true,
                     It.IsAny<SearchOrigin>()))
                 .ReturnsAsync(candidates);
+            // The automatic sweep searches one indexer per call; each call answers for the indexer it names.
+            searchServiceMock
+                .Setup(service => service.SearchIndexersDetailedAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<IndexerSearchContext>(),
+                    It.IsAny<IReadOnlyCollection<int>?>(),
+                    true,
+                    It.IsAny<SearchRequest?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string _, IndexerSearchContext _, IReadOnlyCollection<int>? indexerIds, bool _, SearchRequest? _, CancellationToken _) =>
+                    new IndexerSearchReport(indexerIds!
+                        .Select(id => new IndexerSearchOutcome(
+                            id, IndexerSearchStatus.Completed, candidates.Select(SearchResultConverters.ToIndexerSearchResult).ToList(), RequestsSent: 1))
+                        .ToList()));
 
             var gatewayMock = new Mock<IDownloadClientGateway>();
             gatewayMock
@@ -658,6 +672,11 @@ namespace Listenarr.Tests.Features.Application.Search.Scoring
 
         private async Task<Audiobook> ArrangeMonitoredAudiobookAsync()
         {
+            // The automatic sweep searches only the indexers enabled for automatic search.
+            var indexer = new IndexerBuilder().WithName("Only").WithUrl("https://indexer.invalid").WithEnabled().Build();
+            indexer.EnableAutomaticSearch = true;
+            await _indexerRepository.AddAsync(indexer);
+
             var profile = await _qualityProfileRepository.AddAsync(BuildProfile());
             var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
                 .WithBasePath(FileService.GetTempPath())

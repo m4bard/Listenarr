@@ -175,21 +175,27 @@ public sealed class ClientDuplicateReleaseFilterTests : BaseTests
             Size = 500L * 1024 * 1024
         };
         var search = new Mock<ISearchService>();
-        search.Setup(service => service.SearchAsync(
+        // The sweep searches one indexer per call; each call answers for the indexer it names.
+        search.Setup(service => service.SearchIndexersDetailedAsync(
                 It.IsAny<string>(),
-                It.IsAny<string?>(),
-                It.IsAny<List<string>?>(),
-                It.IsAny<SearchSortBy>(),
-                It.IsAny<SearchSortDirection>(),
+                It.IsAny<IndexerSearchContext>(),
+                It.IsAny<IReadOnlyCollection<int>?>(),
                 true,
-                It.IsAny<SearchOrigin>()))
-            .ReturnsAsync([release]);
+                It.IsAny<SearchRequest?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, IndexerSearchContext _, IReadOnlyCollection<int>? indexerIds, bool _, SearchRequest? _, CancellationToken _) =>
+                new IndexerSearchReport(indexerIds!
+                    .Select(id => new IndexerSearchOutcome(
+                        id, IndexerSearchStatus.Completed, new[] { release }.Select(SearchResultConverters.ToIndexerSearchResult).ToList(), RequestsSent: 1))
+                    .ToList()));
         var scoring = new Mock<IQualityProfileService>();
         scoring.Setup(service => service.ScoreSearchResults(
                 It.IsAny<List<SearchResult>>(),
                 It.IsAny<QualityProfile>(),
                 It.IsAny<bool>()))
-            .ReturnsAsync(() => [new QualityScore { SearchResult = release, TotalScore = 90 }]);
+            // The sweep hands on a converted copy of each indexer result, so score what arrives.
+            .ReturnsAsync((List<SearchResult> results, QualityProfile _, bool _) =>
+                results.Select(result => new QualityScore { SearchResult = result, TotalScore = 90 }).ToList());
         var gateway = new Mock<IDownloadClientGateway>();
         gateway.Setup(client => client.AddAsync(
                 It.IsAny<DownloadClientConfiguration>(),
@@ -213,6 +219,10 @@ public sealed class ClientDuplicateReleaseFilterTests : BaseTests
             Port = 8080,
             IsEnabled = true
         });
+        // The sweep searches only the indexers enabled for automatic search.
+        var indexer = new IndexerBuilder().WithName("Only").WithUrl("https://indexer.invalid").WithEnabled().Build();
+        indexer.EnableAutomaticSearch = true;
+        await _indexerRepository.AddAsync(indexer);
         var profile = await _qualityProfileRepository.AddAsync(new QualityProfileBuilder().Build());
         var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
             .WithBasePath(FileService.GetTempPath())
