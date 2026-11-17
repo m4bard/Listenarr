@@ -16,7 +16,7 @@ public sealed class FileRegistrationOperatorReviewTests : BaseTests
         public ListenArrDbContext CreateDbContext() => new(options);
     }
 
-    private async Task<(Factory Factory, FileRegistrationRecoveryService Service, Guid Id, string Source, string Target)> SeedAsync()
+    private async Task<(Factory Factory, FileRegistrationRecoveryService Service, Guid Id, string Source, string Target)> SeedAsync(ILogger<FileRegistrationRecoveryService>? logger = null)
     {
         var root = FileService.GetTempPath();
         var source = Path.Join(root, "source.m4b");
@@ -44,7 +44,36 @@ public sealed class FileRegistrationOperatorReviewTests : BaseTests
         await db.SaveChangesAsync();
         return (factory, new FileRegistrationRecoveryService(factory,
             new FileMover(NullLogger<FileMover>.Instance, dbContextFactory: factory),
-            TimeProvider.System, NullLogger<FileRegistrationRecoveryService>.Instance), id, source, target);
+            TimeProvider.System, logger ?? NullLogger<FileRegistrationRecoveryService>.Instance), id, source, target);
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Entries.Add((logLevel, formatter(state, exception)));
+    }
+
+    [Fact]
+    public async Task Resolution_LogsWarningWithIdsOnly_AndNotOnReplay()
+    {
+        var logger = new CapturingLogger<FileRegistrationRecoveryService>();
+        var (_, service, id, source, target) = await SeedAsync(logger);
+        var review = await service.InspectAsync(id);
+        const string note = "Distinctive operator note text";
+        await service.ResolveAsync(id, review.ReviewToken, note, true, "tester");
+        await service.ResolveAsync(id, review.ReviewToken, note, true, "tester");
+        var entry = Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
+        Assert.Contains(id.ToString(), entry.Message);
+        Assert.Contains("865", entry.Message);
+        Assert.DoesNotContain(note, entry.Message);
+        Assert.DoesNotContain(source, entry.Message);
+        Assert.DoesNotContain(target, entry.Message);
     }
 
     [Fact]

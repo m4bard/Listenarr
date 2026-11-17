@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Listenarr.Application.Common.Exceptions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Persistence;
 
@@ -108,7 +109,12 @@ public sealed partial class FileRegistrationRecoveryService
                 .SetProperty(j => j.ResolutionNote, note.Trim()).SetProperty(j => j.ResolvedBy, actor)
                 .SetProperty(j => j.ResolvedAtUtc, now).SetProperty(j => j.ResolutionReviewJson, evidence)
                 .SetProperty(j => j.UpdatedAt, now), cancellationToken);
-        if (affected != 1)
+        if (affected == 1)
+            logger.LogWarning(
+                "File-registration publication {OperationId} for audiobook {AudiobookId} was released from NeedsAttention by operator review",
+                operationId,
+                journal.AudiobookId);
+        else
         {
             var current = await LoadRegistrationPublicationAsync(operationId, cancellationToken);
             if (!IsResolutionReplay(current, reviewToken, note.Trim())) throw StaleReview();
