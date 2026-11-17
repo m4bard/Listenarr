@@ -25,6 +25,11 @@ namespace Listenarr.Tests.Mocks.Api
         public string? AddSuccessResponseBody { get; set; }
 
         public string? InfoResponseOverride { get; set; }
+
+        /// <summary>
+        /// Body returned with a non-OK <see cref="InfoStatusCode"/>. Null keeps the bare status.
+        /// </summary>
+        public string? InfoErrorResponseBody { get; set; }
         public NameValueCollection? LastForceStartForm { get; private set; }
         public HttpStatusCode ForceStartStatusCode { get; set; } = HttpStatusCode.OK;
 
@@ -108,7 +113,9 @@ namespace Listenarr.Tests.Mocks.Api
 
             if (InfoStatusCode != HttpStatusCode.OK)
             {
-                return new HttpResponseMessage(InfoStatusCode);
+                return InfoErrorResponseBody is null
+                    ? new HttpResponseMessage(InfoStatusCode)
+                    : new HttpResponseMessage(InfoStatusCode) { Content = new StringContent(InfoErrorResponseBody) };
             }
 
             return MockUtils.GetCannedResponse(InfoResponseOverride ?? """
