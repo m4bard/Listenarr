@@ -15,6 +15,8 @@ using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Infrastructure.Search.RequestGate;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
@@ -69,6 +71,31 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             await AssertDeferredUntilRetryAfterAsync(next.Id, indexer);
         }
 
+        // The gate's IndexerRequestStates row is the only cooldown store: the backoff columns the
+        // retired ladder kept on Indexers stay as stored, and the gate neither reads nor writes them.
+        [Fact]
+        public async Task RateLimitedIndexer_StoresOneCooldownRow_AndLeavesTheRetiredBackoffColumnsAsStored()
+        {
+            const string RetiredColumns = "3|2030-01-01 00:00:00|2029-12-31 00:00:00|2029-12-31 12:00:00|Timeout";
+            await ConfigureAsync();
+            var indexer = await AddTorznabIndexerAsync();
+            await ExecuteAsync(
+                $"UPDATE Indexers SET EscalationLevel = 3, DisabledTill = '2030-01-01 00:00:00', InitialFailure = '2029-12-31 00:00:00', MostRecentFailure = '2029-12-31 12:00:00', LastFailureReason = 'Timeout' WHERE Id = {indexer}");
+            await AddBooksAsync(2, StartUtc.AddMinutes(-5));
+
+            await RunCycleAsync();
+
+            Assert.Equal(1, _wire.Hits);
+            await using var context = Database.CreateContext();
+            var state = Assert.Single(await context.IndexerRequestStates.AsNoTracking().ToListAsync());
+            Assert.Equal(
+                (indexer, nameof(RequestDeferralReason.RateLimited), (DateTime?)(StartUtc + RetryAfter)),
+                (state.IndexerId, state.CooldownReason, state.CooldownUntilUtc));
+            Assert.Equal(
+                RetiredColumns,
+                await ScalarAsync($"SELECT EscalationLevel || '|' || DisabledTill || '|' || InitialFailure || '|' || MostRecentFailure || '|' || LastFailureReason FROM Indexers WHERE Id = {indexer}"));
+        }
+
         private async Task AssertDeferredUntilRetryAfterAsync(int bookId, int indexerId)
         {
             var pair = await Database.ReadPairAsync(bookId, indexerId);
@@ -107,6 +134,24 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
             context.Indexers.Add(indexer);
             await context.SaveChangesAsync();
             return indexer.Id;
+        }
+
+        private async Task ExecuteAsync(string sql)
+        {
+            await using var connection = new SqliteConnection(Database.ConnectionString);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        private async Task<object?> ScalarAsync(string sql)
+        {
+            await using var connection = new SqliteConnection(Database.ConnectionString);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            return await command.ExecuteScalarAsync();
         }
 
         // Answers every request with 429 and Retry-After, and counts what reaches it.
