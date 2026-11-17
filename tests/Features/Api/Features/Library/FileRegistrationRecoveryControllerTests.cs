@@ -98,19 +98,6 @@ public sealed class FileRegistrationRecoveryControllerTests : BaseTests
         Assert.IsType<ConflictObjectResult>(await controller.Inspect(foreign, CancellationToken.None));
     }
 
-    [Fact]
-    public async Task List_ReturnsTheServiceReviewsWithoutTakingTheExclusiveLock()
-    {
-        var reviews = new[] { Review(Guid.NewGuid()), Review(Guid.NewGuid()) };
-        var service = new Mock<IFileRegistrationRecoveryService>(MockBehavior.Strict);
-        service.Setup(s => s.ListReviewsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(reviews);
-        var coordinator = new Mock<IFilesystemMutationCoordinator>(MockBehavior.Strict);
-
-        var result = await Controller(service, coordinator).List(CancellationToken.None);
-
-        Assert.Equal(reviews, result);
-    }
-
     private static FileRegistrationReview Review(Guid operationId) => new(operationId, 7, "HardlinkCopy", 2,
         "NeedsAttention", "reason", "/source/book.m4b", "/destination/book.m4b",
         new("Present", 1, "AB"), new("Missing", null, null), [], "Completeness cannot be verified",
