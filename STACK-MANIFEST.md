@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        bfbb0526e378d406bd136ecda619d09693739647
     base short:  bfbb0526e
-    patches:     739
-    version:     1.9.1+m4bard.739
+    patches:     741
+    version:     1.9.1+m4bard.741
 
 ## Patches, oldest first
 
@@ -748,6 +748,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     2e03ac40a  #-    stack: manifest for 081c858be plus 736 patches
     7d96241b7  #-    stack: merge v1.9.1-canary
     6a25c15a7  #-    stack: regenerate the Playwright API types for the stack's API surface
+    fed713305  #-    stack: manifest for bfbb0526e plus 739 patches
+    ec3f02125  #-    stack: the new backend integration tests create their quality profile with upgrades off
 
 ## How this stack was built
 
@@ -831,7 +833,7 @@ worker registrations (the stack's, through upstream's AddScanQueueService and Ad
 using in DownloadMonitorServiceTests, and the deleted AudibleApiMock, whose author-identity routes this stack had
 extended: they are ported to fixture files and a contributors route in the new Audible fixture provider, and the one
 test that needs the contributor endpoint to fail adds that failure in front of the stub. The stack's other tests are
-pointed at the new mock namespaces, and the Playwright API types are regenerated for the stack's API surface.
+pointed at the new mock namespaces, the Playwright API types are regenerated for the stack's API surface, and the new backend integration tests create their quality profile with upgrades off, because the stack refuses a profile whose cutoff names no allowed quality.
 fe/eslint-report.json, which upstream deleted, is kept: the leak scanner blocks any commit that removes its lines.
 
 ## Known differences from the 1.7.4 stack
