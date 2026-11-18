@@ -23,5 +23,13 @@ namespace Listenarr.Application.Downloads.Queue
         {
             return AudiobookSearchQueryBuilder.Build(audiobook);
         }
+
+        // Author-free fallback query: release names often omit the author, so the title+author
+        // query can return nothing even when the book is available. Title only, in the query form
+        // Build uses; the automatic sweep's fallback also appends the series.
+        public static string BuildTitleFallback(Audiobook audiobook)
+        {
+            return AudiobookSearchQueryBuilder.BuildQueryTitle(audiobook.Title);
+        }
     }
 }
