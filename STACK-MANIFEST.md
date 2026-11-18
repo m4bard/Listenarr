@@ -2,10 +2,10 @@
 
 This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
-    base:        c35b58fe3da31feed60c69fa458b553b4e1ca956
-    base short:  c35b58fe3
-    patches:     734
-    version:     1.8.6+m4bard.734
+    base:        081c858be79e1f77a69262d23cb076677d435324
+    base short:  081c858be
+    patches:     736
+    version:     1.9.0+m4bard.736
 
 ## Patches, oldest first
 
@@ -743,6 +743,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     1aa3a30a6  #-    stack: merge v1.8.5-canary
     3b0cb5b58  #-    stack: manifest for 942fe990d plus 732 patches
     a4f963095  #-    stack: merge v1.8.6-canary
+    4a201b702  #-    stack: manifest for c35b58fe3 plus 734 patches
+    a6bd720d8  #-    stack: merge v1.9.0-canary
 
 ## How this stack was built
 
@@ -804,6 +806,16 @@ audiobookSearch service) and the version bump. The merge had no conflicts: no co
 #1086 removes or rewrites, and the stack's one change to a file #1086 also edits (the abridged-format check in
 AddNewView and AddLibraryModal) merged cleanly.
 
+The 1.8.6 stack ends at its manifest commit, "stack: manifest for c35b58fe3 plus 734 patches", which is the row before
+the 1.9.0 merge. Upstream canary 1.9.0 (081c858be) is then merged in ("stack: merge v1.9.0-canary"), so the 1.8.6
+stack is an ancestor of this one and every row above it is the 1.8.6 stack's own commit. 1.9.0 brings upstream #1082
+(the "Broken books" group in the library: a server-computed list of the reasons a book cannot fetch metadata, and a
+group menu entry that shows only those books) and the version bump. It adds no migration. The merge had one conflict,
+in AudiobooksView.vue, where this stack's Select All is already scoped to the books shown (and labelled with their
+count, and disabled when none is shown); that call covers the broken books group, so #1082's own Select All helper is
+not carried, and its test finds the button by the "Select All" prefix because the label carries the count while the
+group filters the list.
+
 ## Known differences from the 1.7.4 stack
 
 - A fresh install stores MaxConcurrentIndexerSearches=0. Rolled back to the 1.7.4 stack, such an install searches
@@ -819,5 +831,5 @@ AddNewView and AddLibraryModal) merged cleanly.
 
 Migrations: the newest fork migration is 20261114075422 (the request state table). #1023 stays at 20261112054132,
 the fork-local #914 at 20261112054145, and #1151 at 20261114004926. Upstream added no migration since
-20261029020400, and 1.8.5 and 1.8.6 add none. The history repoint for a database that ran an earlier stack is recomputed
+20261029020400, and 1.8.5, 1.8.6 and 1.9.0 add none. The history repoint for a database that ran an earlier stack is recomputed
 with this build's upgrade packet.
