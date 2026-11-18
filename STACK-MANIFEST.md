@@ -2,10 +2,10 @@
 
 This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
-    base:        b635a856c16ff7aa492cbb788384d4689f71f3fd
-    base short:  b635a856c
-    patches:     730
-    version:     1.8.4+m4bard.730
+    base:        942fe990db4ccb27295d7ed6493434704acf02ba
+    base short:  942fe990d
+    patches:     732
+    version:     1.8.5+m4bard.732
 
 ## Patches, oldest first
 
@@ -739,6 +739,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     1418dc287  #-    test(qbittorrent): pin that a delete error body cannot forge or flood the log
     3ab019b6f  #-    fix(qbittorrent): sanitize the delete error body before logging it
     d653b2eb5  #-    test(manual-import): pin that companion files stay inside the destination boundary
+    b0053c1bf  #-    stack: manifest for b635a856c plus 730 patches
+    1aa3a30a6  #-    stack: merge v1.8.5-canary
 
 ## How this stack was built
 
@@ -780,6 +782,18 @@ merges (779 against 726 before these fixes) and would have failed the image buil
 pass of manual import to its destination boundary: when the destination root lies outside the audiobook's authorized
 filesystem boundary, the pass moves nothing and reports failure.
 
+The 1.8.4 stack ends at its manifest commit, "stack: manifest for b635a856c plus 730 patches", which is the row
+before the 1.8.5 merge. Upstream canary 1.8.5 (942fe990d) is then merged in ("stack: merge v1.8.5-canary"), so the
+1.8.4 stack is an ancestor of this one and every row above it is the 1.8.4 stack's own commit. 1.8.5 brings upstream
+#1176 and the version bump. #1176 makes the Search button retry without the author when the full query finds nothing;
+upstream's retry calls SearchAsync, while this stack's Search button searches each indexer through the request gate.
+The merge ports the retry onto that path the way the automatic sweep does it: only an indexer whose full query
+completed with no results is asked again, as a fallback request for the same origin; a failed or deferred indexer is
+not asked again, and a fallback the gate held back reports its deferral. As upstream, the retry runs only when the
+full query found nothing at all, and its query is the title alone (in the same query form, edition annotations
+removed). Upstream's tests for the retry are rewritten on this stack's search path, with cases for the per-indexer
+handling added.
+
 ## Known differences from the 1.7.4 stack
 
 - A fresh install stores MaxConcurrentIndexerSearches=0. Rolled back to the 1.7.4 stack, such an install searches
@@ -795,5 +809,5 @@ filesystem boundary, the pass moves nothing and reports failure.
 
 Migrations: the newest fork migration is 20261114075422 (the request state table). #1023 stays at 20261112054132,
 the fork-local #914 at 20261112054145, and #1151 at 20261114004926. Upstream added no migration since
-20261029020400. The history repoint for a database that ran an earlier stack is recomputed with this build's
-upgrade packet.
+20261029020400, and 1.8.5 adds none. The history repoint for a database that ran an earlier stack is recomputed
+with this build's upgrade packet.
