@@ -2,10 +2,10 @@
 
 This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
-    base:        942fe990db4ccb27295d7ed6493434704acf02ba
-    base short:  942fe990d
-    patches:     732
-    version:     1.8.5+m4bard.732
+    base:        c35b58fe3da31feed60c69fa458b553b4e1ca956
+    base short:  c35b58fe3
+    patches:     734
+    version:     1.8.6+m4bard.734
 
 ## Patches, oldest first
 
@@ -741,6 +741,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     d653b2eb5  #-    test(manual-import): pin that companion files stay inside the destination boundary
     b0053c1bf  #-    stack: manifest for b635a856c plus 730 patches
     1aa3a30a6  #-    stack: merge v1.8.5-canary
+    3b0cb5b58  #-    stack: manifest for 942fe990d plus 732 patches
+    a4f963095  #-    stack: merge v1.8.6-canary
 
 ## How this stack was built
 
@@ -794,6 +796,14 @@ full query found nothing at all, and its query is the title alone (in the same q
 removed). Upstream's tests for the retry are rewritten on this stack's search path, with cases for the per-indexer
 handling added.
 
+The 1.8.5 stack ends at its manifest commit, "stack: manifest for 942fe990d plus 732 patches", which is the row before
+the 1.8.6 merge. Upstream canary 1.8.6 (c35b58fe3) is then merged in ("stack: merge v1.8.6-canary"), so the 1.8.5 stack
+is an ancestor of this one and every row above it is the 1.8.5 stack's own commit. 1.8.6 brings upstream #1086 (the
+frontend search consolidation: the search view, search store and advanced search modal are replaced by one
+audiobookSearch service) and the version bump. The merge had no conflicts: no commit of this stack touches the files
+#1086 removes or rewrites, and the stack's one change to a file #1086 also edits (the abridged-format check in
+AddNewView and AddLibraryModal) merged cleanly.
+
 ## Known differences from the 1.7.4 stack
 
 - A fresh install stores MaxConcurrentIndexerSearches=0. Rolled back to the 1.7.4 stack, such an install searches
@@ -809,5 +819,5 @@ handling added.
 
 Migrations: the newest fork migration is 20261114075422 (the request state table). #1023 stays at 20261112054132,
 the fork-local #914 at 20261112054145, and #1151 at 20261114004926. Upstream added no migration since
-20261029020400, and 1.8.5 adds none. The history repoint for a database that ran an earlier stack is recomputed
+20261029020400, and 1.8.5 and 1.8.6 add none. The history repoint for a database that ran an earlier stack is recomputed
 with this build's upgrade packet.
