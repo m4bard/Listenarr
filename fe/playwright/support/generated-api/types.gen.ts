@@ -105,6 +105,9 @@ export type ListenarrDomainAudiobooksAudiobook = {
     qualityProfileId?: number | null;
     qualityProfile?: ListenarrDomainAudiobooksQualityProfile;
     lastSearchTime?: string | null;
+    lastMetadataRefreshAt?: string | null;
+    automaticSearchDueUtc?: string;
+    automaticSearchFailureCount?: number;
 };
 
 export type ListenarrDomainAudiobooksAudiobookExternalIdentifier = {
@@ -147,6 +150,11 @@ export type ListenarrDomainAudiobooksAudiobookFile = {
     sampleRate?: number | null;
     channels?: number | null;
     createdAt?: string;
+    metadataRescanDueUtc?: string;
+    metadataRescanFailureCount?: number;
+    metadataRescanUnavailableCount?: number;
+    metadataRescanBlockedCount?: number;
+    metadataRescanLastOutcome?: string | null;
     source?: string | null;
 };
 
@@ -162,6 +170,8 @@ export type ListenarrDomainAudiobooksAudiobookSeriesMembership = {
 
 export type ListenarrDomainAudiobooksEnumerationsFileAction = 'none' | 'move' | 'copy' | 'hardlink/copy';
 
+export type ListenarrDomainAudiobooksEnumerationsReleaseShapePreference = 'none' | 'individual' | 'bundle';
+
 export type ListenarrDomainAudiobooksQualityDefinition = {
     quality: string;
     allowed?: boolean;
@@ -176,6 +186,7 @@ export type ListenarrDomainAudiobooksQualityProfile = {
     name: string;
     description?: string | null;
     qualities?: Array<ListenarrDomainAudiobooksQualityDefinition> | null;
+    upgradeAllowed?: boolean;
     cutoffQuality?: string | null;
     minimumSize?: number;
     maximumSize?: number;
@@ -189,6 +200,7 @@ export type ListenarrDomainAudiobooksQualityProfile = {
     isDefault?: boolean;
     preferNewerReleases?: boolean;
     maximumAge?: number;
+    preferredReleaseShape?: ListenarrDomainAudiobooksEnumerationsReleaseShapePreference;
     customGroupNames?: {
         [key: string]: string;
     } | null;
@@ -234,25 +246,35 @@ export type ListenarrDomainConfigurationApplicationSettings = {
     multiFileNamingPattern?: string | null;
     enableMetadataProcessing?: boolean;
     enableCoverArtDownload?: boolean;
+    embedCoverArtInAudioFiles?: boolean;
     audnexusApiUrl?: string | null;
     maxConcurrentDownloads?: number;
     pollingIntervalSeconds?: number;
     enableNotifications?: boolean;
+    backupRetentionDays?: number;
     allowedFileExtensions?: Array<string> | null;
     downloadCompletionStabilitySeconds?: number;
     missingSourceRetryInitialDelaySeconds?: number;
     missingSourceMaxRetries?: number;
     completedFileAction?: ListenarrDomainAudiobooksEnumerationsFileAction;
     extractArchives?: boolean;
+    minimumFreeSpaceWhenImporting?: number;
+    skipFreeSpaceCheckWhenImporting?: boolean;
     unmatchedScanConcurrency?: number;
     showCompletedExternalDownloads?: boolean;
     historyRetentionDays?: number;
+    housekeepingRetentionDays?: number;
+    housekeepingDryRun?: boolean;
+    downloadClientHistoryLimit?: number;
     failedDownloadHandlingEnabled?: boolean;
     failedDownloadAutoSearch?: boolean;
+    stalledDownloadTimeoutHours?: number;
     importBlacklistExtensions?: Array<string> | null;
     webhookUrl?: string | null;
     enabledNotificationTriggers?: Array<string> | null;
     webhooks?: Array<ListenarrDomainConfigurationWebhookConfiguration> | null;
+    customScripts?: Array<ListenarrDomainConfigurationCustomScriptConfiguration> | null;
+    emails?: Array<ListenarrDomainConfigurationEmailConfiguration> | null;
     adminUsername?: string | null;
     adminPassword?: string | null;
     discordBotEnabled?: boolean;
@@ -276,6 +298,43 @@ export type ListenarrDomainConfigurationApplicationSettings = {
     automaticSearchIntervalHours?: number;
     automaticSearchCooldownHours?: number;
     automaticSearchBookDelaySeconds?: number;
+    metadataRefreshEnabled?: boolean;
+    metadataRefreshIntervalHours?: number;
+    metadataRefreshStaleAfterDays?: number;
+    metadataRefreshRequestsPerHour?: number;
+    metadataRefreshMinimumSpacingMs?: number;
+    authorIdentityRepairEnabled?: boolean;
+    authorIdentityRepairDryRun?: boolean;
+    authorIdentityRepairIntervalHours?: number;
+    authorIdentityRepairMaxRowsPerRun?: number;
+    authorIdentityRepairRecheckAfterDays?: number;
+    rejectClearlyMusicReleases?: boolean;
+    automaticSearchMaxBooksPerCycle?: number;
+    automaticSearchMaxRequestsPerCycle?: number;
+};
+
+export type ListenarrDomainConfigurationCustomScriptConfiguration = {
+    id?: string | null;
+    name?: string | null;
+    path?: string | null;
+    channels?: Array<ListenarrDomainNotificationsNotificationChannel> | null;
+    isEnabled?: boolean;
+};
+
+export type ListenarrDomainConfigurationEmailConfiguration = {
+    id?: string | null;
+    name?: string | null;
+    server?: string | null;
+    port?: number;
+    requireEncryption?: boolean;
+    username?: string | null;
+    password?: string | null;
+    from?: string | null;
+    to?: Array<string> | null;
+    cc?: Array<string> | null;
+    bcc?: Array<string> | null;
+    channels?: Array<ListenarrDomainNotificationsNotificationChannel> | null;
+    isEnabled?: boolean;
 };
 
 export type ListenarrDomainConfigurationFfmpegConfig = {
@@ -291,6 +350,7 @@ export type ListenarrDomainConfigurationStartupConfig = {
     port?: number | null;
     sslPort?: number | null;
     urlBase?: string | null;
+    applicationUrl?: string | null;
     bindAddress?: string | null;
     apiKey?: string | null;
     updateMechanism?: string | null;
@@ -362,6 +422,7 @@ export type ListenarrDomainDownloadsDownloadClientConfiguration = {
     downloadPath?: string | null;
     useSSL?: boolean;
     isEnabled?: boolean;
+    priority?: number;
     removeCompletedDownloads?: string | null;
     settingsJson?: string | null;
     createdAt?: string;
@@ -371,6 +432,8 @@ export type ListenarrDomainDownloadsDownloadClientConfiguration = {
 };
 
 export type ListenarrDomainDownloadsDownloadStatus = 'Queued' | 'Downloading' | 'Paused' | 'Completed' | 'Failed' | 'Processing' | 'Ready' | 'Moved' | 'ImportBlocked' | 'ImportPending';
+
+export type ListenarrDomainNotificationsNotificationChannel = 'Test' | 'Grab' | 'Download' | 'DownloadFailed' | 'BookAdded' | 'BookAvailable' | 'Rename';
 
 export type ListenarrDomainSystemDiagnosticsApiStatus = {
     name?: string | null;
@@ -382,6 +445,7 @@ export type ListenarrDomainSystemDiagnosticsClientStatus = {
     name?: string | null;
     status?: string | null;
     type?: string | null;
+    failureReason?: string | null;
 };
 
 export type ListenarrDomainSystemDiagnosticsDownloadClientHealth = {
@@ -398,12 +462,35 @@ export type ListenarrDomainSystemDiagnosticsExternalApiHealth = {
     apis?: Array<ListenarrDomainSystemDiagnosticsApiStatus> | null;
 };
 
+export type ListenarrDomainSystemDiagnosticsIndexerCooldownHealth = {
+    indexerId?: number;
+    name?: string | null;
+    untilUtc?: string;
+    reason?: string | null;
+};
+
+export type ListenarrDomainSystemDiagnosticsIndexerHealth = {
+    status?: string | null;
+    available?: number;
+    total?: number;
+    checks?: Array<ListenarrDomainSystemDiagnosticsIndexerHealthCheck> | null;
+    cooldowns?: Array<ListenarrDomainSystemDiagnosticsIndexerCooldownHealth> | null;
+};
+
+export type ListenarrDomainSystemDiagnosticsIndexerHealthCheck = {
+    kind?: string | null;
+    status?: string | null;
+    message?: string | null;
+    indexerNames?: Array<string> | null;
+};
+
 export type ListenarrDomainSystemDiagnosticsServiceHealth = {
     status?: string | null;
     version?: string | null;
     uptime?: string | null;
     downloadClients?: ListenarrDomainSystemDiagnosticsDownloadClientHealth;
     externalApis?: ListenarrDomainSystemDiagnosticsExternalApiHealth;
+    indexers?: ListenarrDomainSystemDiagnosticsIndexerHealth;
 };
 
 export type MicrosoftAspNetCoreMvcProblemDetails = {
@@ -451,6 +538,9 @@ export type ListenarrDomainAudiobooksAudiobookWritable = {
     qualityProfileId?: number | null;
     qualityProfile?: ListenarrDomainAudiobooksQualityProfile;
     lastSearchTime?: string | null;
+    lastMetadataRefreshAt?: string | null;
+    automaticSearchDueUtc?: string;
+    automaticSearchFailureCount?: number;
 };
 
 export type ListenarrDomainAudiobooksAudiobookFileWritable = {
@@ -469,6 +559,11 @@ export type ListenarrDomainAudiobooksAudiobookFileWritable = {
     sampleRate?: number | null;
     channels?: number | null;
     createdAt?: string;
+    metadataRescanDueUtc?: string;
+    metadataRescanFailureCount?: number;
+    metadataRescanUnavailableCount?: number;
+    metadataRescanBlockedCount?: number;
+    metadataRescanLastOutcome?: string | null;
     source?: string | null;
 };
 
